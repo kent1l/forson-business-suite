@@ -5,6 +5,9 @@ const supplierRoutes = require('./routes/supplierRoutes');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Middleware to parse JSON bodies
+app.use(express.json());
+
 // API Routes
 app.use('/api', supplierRoutes);
 
