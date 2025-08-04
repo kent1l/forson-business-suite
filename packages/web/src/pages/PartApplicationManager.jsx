@@ -79,28 +79,24 @@ const PartApplicationManager = ({ part, onCancel }) => {
         e.preventDefault();
         if (!newLinkData.application_id) return;
 
-        const promise = axios.post(`http://localhost:3001/api/parts/${part.part_id}/applications`, newLinkData);
-        toast.promise(promise, {
-            loading: 'Linking application...',
-            success: () => {
-                fetchData();
-                setNewLinkData({ application_id: '', year_start: '', year_end: '' });
-                return 'Application linked successfully!';
-            },
-            error: 'Failed to link application.'
-        });
+        try {
+            await axios.post(`http://localhost:3001/api/parts/${part.part_id}/applications`, newLinkData);
+            fetchData();
+            setNewLinkData({ application_id: '', year_start: '', year_end: '' });
+        } catch (err) {
+            alert('Failed to link application.');
+            console.error(err);
+        }
     };
     
     const handleUnlinkApp = async (applicationId) => {
-        const promise = axios.delete(`http://localhost:3001/api/parts/${part.part_id}/applications/${applicationId}`);
-        toast.promise(promise, {
-            loading: 'Unlinking...',
-            success: () => {
-                fetchData();
-                return 'Application unlinked!';
-            },
-            error: 'Failed to unlink application.'
-        });
+        try {
+            await axios.delete(`http://localhost:3001/api/parts/${part.part_id}/applications/${applicationId}`);
+            fetchData();
+        } catch (err) {
+            alert('Failed to unlink application.');
+            console.error(err);
+        }
     };
 
     const handleEditLink = (link) => {
@@ -109,16 +105,26 @@ const PartApplicationManager = ({ part, onCancel }) => {
     };
     
     const handleSaveYears = async (partAppId, years) => {
-        const promise = axios.put(`http://localhost:3001/api/part-applications/${partAppId}`, years);
-        toast.promise(promise, {
-            loading: 'Saving years...',
-            success: () => {
-                setIsEditModalOpen(false);
-                fetchData();
-                return 'Year range updated!';
-            },
-            error: 'Failed to update year range.'
-        });
+        try {
+            await axios.put(`http://localhost:3001/api/part-applications/${partAppId}`, years);
+            setIsEditModalOpen(false);
+            fetchData();
+        } catch (err) {
+            alert('Failed to update year range.');
+        }
+    };
+
+    const formatYearRange = (start, end) => {
+        const startYear = parseInt(start, 10);
+        const endYear = parseInt(end, 10);
+
+        if (startYear && endYear) {
+            if (startYear === endYear) return `[${startYear}]`;
+            return `[${startYear}-${endYear}]`;
+        }
+        if (startYear) return `[${startYear}]`;
+        if (endYear) return `[${endYear}]`;
+        return '';
     };
 
     return (
@@ -130,7 +136,7 @@ const PartApplicationManager = ({ part, onCancel }) => {
                         <li key={app.part_app_id} className="text-sm flex justify-between items-center py-1">
                            <div>
                                 <span>{app.make} {app.model} ({app.engine})</span>
-                                <span className="text-xs text-gray-500 ml-2">[{app.year_start || '...'} - {app.year_end || '...'}]</span>
+                                <span className="text-xs text-gray-500 ml-2">{formatYearRange(app.year_start, app.year_end)}</span>
                            </div>
                            <div className="flex items-center space-x-3">
                                <button onClick={() => handleEditLink(app)} className="text-blue-600 hover:text-blue-800"><Icon path={ICONS.edit} className="h-4 w-4"/></button>

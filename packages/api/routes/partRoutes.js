@@ -37,10 +37,13 @@ router.get('/parts', async (req, res) => {
         ) AS part_numbers,
         (
           SELECT STRING_AGG(
-            CONCAT(
-              a.make, ' ', a.model, 
-              ' [', COALESCE(pa.year_start::text, '...'), '-', COALESCE(pa.year_end::text, '...'), ']'
-            ), 
+            CASE 
+              WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL AND pa.year_start = pa.year_end THEN CONCAT(a.make, ' ', a.model, ' [', pa.year_start, ']')
+              WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL THEN CONCAT(a.make, ' ', a.model, ' [', pa.year_start, '-', pa.year_end, ']')
+              WHEN pa.year_start IS NOT NULL THEN CONCAT(a.make, ' ', a.model, ' [', pa.year_start, ']')
+              WHEN pa.year_end IS NOT NULL THEN CONCAT(a.make, ' ', a.model, ' [', pa.year_end, ']')
+              ELSE CONCAT(a.make, ' ', a.model)
+            END,
             '; '
           )
           FROM part_application pa
@@ -96,10 +99,13 @@ router.get('/parts/:id', async (req, res) => {
         ) AS part_numbers,
         (
           SELECT STRING_AGG(
-            CONCAT(
-              a.make, ' ', a.model, 
-              ' [', COALESCE(pa.year_start::text, '...'), '-', COALESCE(pa.year_end::text, '...'), ']'
-            ), 
+            CASE 
+              WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL AND pa.year_start = pa.year_end THEN CONCAT(a.make, ' ', a.model, ' [', pa.year_start, ']')
+              WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL THEN CONCAT(a.make, ' ', a.model, ' [', pa.year_start, '-', pa.year_end, ']')
+              WHEN pa.year_start IS NOT NULL THEN CONCAT(a.make, ' ', a.model, ' [', pa.year_start, ']')
+              WHEN pa.year_end IS NOT NULL THEN CONCAT(a.make, ' ', a.model, ' [', pa.year_end, ']')
+              ELSE CONCAT(a.make, ' ', a.model)
+            END,
             '; '
           )
           FROM part_application pa

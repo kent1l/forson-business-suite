@@ -335,15 +335,17 @@ const PartsPage = ({ user }) => {
                                 <tr>
                                     <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Display Name</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Applications</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {parts.map(part => (
                                     <tr key={part.part_id} className="border-b hover:bg-gray-50">
-                                        <td className="p-3 text-sm font-mono">{part.internal_sku}</td>
-                                        <td className="p-3 text-sm font-medium text-gray-800">{part.display_name}</td>
-                                        <td className="p-3 text-sm text-right space-x-4">
+                                        <td className="p-3 text-sm font-mono align-top">{part.internal_sku}</td>
+                                        <td className="p-3 text-sm font-medium text-gray-800 align-top">{part.display_name}</td>
+                                        <td className="p-3 text-sm text-gray-600 align-top">{part.applications}</td>
+                                        <td className="p-3 text-sm text-right space-x-4 align-top">
                                             <button onClick={() => handleManageApps(part)} className="text-green-600 hover:text-green-800" title="Manage Part Applications"><Icon path={ICONS.link} className="h-5 w-5"/></button>
                                             <button onClick={() => handleManageNumbers(part)} className="text-gray-600 hover:text-gray-800" title="Manage Part Numbers"><Icon path={ICONS.numbers} className="h-5 w-5"/></button>
                                             <button onClick={() => handleEdit(part)} className="text-blue-600 hover:text-blue-800" title="Edit Part"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
