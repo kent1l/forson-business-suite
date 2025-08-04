@@ -3,9 +3,11 @@ import axios from 'axios';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
-import PartNumberManager from './PartNumberManager'; // 1. Import the new component
+import PartNumberManager from './PartNumberManager';
+import PartApplicationManager from './PartApplicationManager'; // 1. Import the new component
 
 const PartForm = ({ part, brands, groups, onSave, onCancel }) => {
+    // ... (existing PartForm code remains the same)
     const [formData, setFormData] = useState({ detail: '', brand_id: '', group_id: '' });
 
     useEffect(() => {
@@ -61,7 +63,8 @@ const PartsPage = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [isFormModalOpen, setIsFormModalOpen] = useState(false);
-    const [isNumberModalOpen, setIsNumberModalOpen] = useState(false); // 2. New state for the number manager modal
+    const [isNumberModalOpen, setIsNumberModalOpen] = useState(false);
+    const [isAppModalOpen, setIsAppModalOpen] = useState(false); // 2. New state for the application modal
     const [currentPart, setCurrentPart] = useState(null);
 
     const fetchData = async () => {
@@ -97,10 +100,15 @@ const PartsPage = () => {
         setIsFormModalOpen(true);
     };
     
-    // 3. New handler to open the number manager
     const handleManageNumbers = (part) => {
         setCurrentPart(part);
         setIsNumberModalOpen(true);
+    };
+
+    // 3. New handler for the application manager
+    const handleManageApps = (part) => {
+        setCurrentPart(part);
+        setIsAppModalOpen(true);
     };
 
     const handleDelete = async (partId) => {
@@ -158,11 +166,20 @@ const PartsPage = () => {
                                         <td className="p-3 text-sm font-medium text-gray-800">{part.detail}</td>
                                         <td className="p-3 text-sm">{part.brand_name}</td>
                                         <td className="p-3 text-sm">{part.group_name}</td>
-                                        <td className="p-3 text-sm text-right">
-                                            {/* 4. New button to manage numbers */}
-                                            <button onClick={() => handleManageNumbers(part)} className="text-gray-600 hover:text-gray-800 mr-4"><Icon path={ICONS.numbers} className="h-5 w-5"/></button>
-                                            <button onClick={() => handleEdit(part)} className="text-blue-600 hover:text-blue-800 mr-4"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
-                                            <button onClick={() => handleDelete(part.part_id)} className="text-red-600 hover:text-red-800"><Icon path={ICONS.trash} className="h-5 w-5"/></button>
+                                        <td className="p-3 text-sm text-right space-x-4">
+                                            {/* 4. New button to manage applications */}
+                                            <button onClick={() => handleManageApps(part)} className="text-green-600 hover:text-green-800" title="Manage Part Applications">
+                                                <Icon path={ICONS.link} className="h-5 w-5"/>
+                                            </button>
+                                            <button onClick={() => handleManageNumbers(part)} className="text-gray-600 hover:text-gray-800" title="Manage Part Numbers">
+                                                <Icon path={ICONS.numbers} className="h-5 w-5"/>
+                                            </button>
+                                            <button onClick={() => handleEdit(part)} className="text-blue-600 hover:text-blue-800" title="Edit Part">
+                                                <Icon path={ICONS.edit} className="h-5 w-5"/>
+                                            </button>
+                                            <button onClick={() => handleDelete(part.part_id)} className="text-red-600 hover:text-red-800" title="Delete Part">
+                                                <Icon path={ICONS.trash} className="h-5 w-5"/>
+                                            </button>
                                         </td>
                                     </tr>
                                 ))}
@@ -175,9 +192,13 @@ const PartsPage = () => {
                 <PartForm part={currentPart} brands={brands} groups={groups} onSave={handleSave} onCancel={() => setIsFormModalOpen(false)} />
             </Modal>
             
-            {/* 5. New modal for the number manager */}
             <Modal isOpen={isNumberModalOpen} onClose={() => setIsNumberModalOpen(false)} title={`Manage Numbers for: ${currentPart?.detail}`}>
                 <PartNumberManager part={currentPart} onCancel={() => setIsNumberModalOpen(false)} />
+            </Modal>
+
+            {/* 5. New modal for the application manager */}
+            <Modal isOpen={isAppModalOpen} onClose={() => setIsAppModalOpen(false)} title={`Manage Applications for: ${currentPart?.detail}`}>
+                <PartApplicationManager part={currentPart} onCancel={() => setIsAppModalOpen(false)} />
             </Modal>
         </div>
     );
