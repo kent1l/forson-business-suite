@@ -11,7 +11,8 @@ const brandRoutes = require('./routes/brandRoutes');
 const groupRoutes = require('./routes/groupRoutes');
 const goodsReceiptRoutes = require('./routes/goodsReceiptRoutes');
 const invoiceRoutes = require('./routes/invoiceRoutes');
-const customerRoutes = require('./routes/customerRoutes'); // 1. Import
+const customerRoutes = require('./routes/customerRoutes');
+const partNumberRoutes = require('./routes/partNumberRoutes'); // 1. Import
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -28,7 +29,8 @@ app.use('/api', brandRoutes);
 app.use('/api', groupRoutes);
 app.use('/api', goodsReceiptRoutes);
 app.use('/api', invoiceRoutes);
-app.use('/api', customerRoutes); // 2. Use
+app.use('/api', customerRoutes);
+app.use('/api', partNumberRoutes); // 2. Use
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
