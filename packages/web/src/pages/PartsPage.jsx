@@ -278,7 +278,7 @@ const PartsPage = ({ user }) => {
         const promise = axios.delete(`http://localhost:3001/api/parts/${partId}`);
         toast.promise(promise, {
             loading: 'Deleting part...',
-            success: () => { setSearchTerm(''); return 'Part deleted!'; },
+            success: () => { fetchData(); return 'Part deleted!'; },
             error: 'Failed to delete part.',
         });
     };
@@ -298,7 +298,7 @@ const PartsPage = ({ user }) => {
             loading: 'Saving part...',
             success: () => {
                 setIsFormModalOpen(false);
-                setSearchTerm('');
+                fetchData();
                 return 'Part saved successfully!';
             },
             error: 'Failed to save part.',

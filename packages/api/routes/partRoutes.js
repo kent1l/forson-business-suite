@@ -5,17 +5,24 @@ const router = express.Router();
 // Helper function to construct the display name
 const constructDisplayName = (part) => {
     const displayNameParts = [];
+
+    // Part 1: GroupName (BrandName)
     const category = `${part.group_name || ''} (${part.brand_name || ''})`.replace('()', '').trim();
     if (category) displayNameParts.push(category);
+
+    // Part 2: Detail
     if (part.detail) displayNameParts.push(part.detail);
+
+    // Part 3: Part Numbers
     if (part.part_numbers) displayNameParts.push(part.part_numbers);
+
     return displayNameParts.join(' | ');
 };
 
-// GET all parts with intelligent search
+// GET all parts with intelligent search including applications
 router.get('/parts', async (req, res) => {
-  const { search = '' } = req.query; // Default to empty string if no search term
-  const searchTerm = `%${search}%`; // Add wildcards for LIKE query
+  const { search = '' } = req.query;
+  const searchTerm = `%${search}%`;
 
   try {
     const query = `
@@ -27,7 +34,19 @@ router.get('/parts', async (req, res) => {
           SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) 
           FROM part_number pn 
           WHERE pn.part_id = p.part_id
-        ) AS part_numbers
+        ) AS part_numbers,
+        (
+          SELECT STRING_AGG(
+            CONCAT(
+              a.make, ' ', a.model, 
+              ' [', COALESCE(pa.year_start::text, '...'), '-', COALESCE(pa.year_end::text, '...'), ']'
+            ), 
+            '; '
+          )
+          FROM part_application pa
+          JOIN application a ON pa.application_id = a.application_id
+          WHERE pa.part_id = p.part_id
+        ) AS applications
       FROM part AS p
       LEFT JOIN brand AS b ON p.brand_id = b.brand_id
       LEFT JOIN "group" AS g ON p.group_id = g.group_id
@@ -39,6 +58,11 @@ router.get('/parts', async (req, res) => {
         EXISTS (
             SELECT 1 FROM part_number pn 
             WHERE pn.part_id = p.part_id AND pn.part_number ILIKE $1
+        ) OR
+        EXISTS (
+            SELECT 1 FROM part_application pa
+            JOIN application a ON pa.application_id = a.application_id
+            WHERE pa.part_id = p.part_id AND CONCAT(a.make, ' ', a.model) ILIKE $1
         )
       ORDER BY p.part_id;
     `;
@@ -56,7 +80,6 @@ router.get('/parts', async (req, res) => {
   }
 });
 
-// ... (The rest of the partRoutes.js file remains the same)
 // GET a single part by ID
 router.get('/parts/:id', async (req, res) => {
   const { id } = req.params;
@@ -70,7 +93,19 @@ router.get('/parts/:id', async (req, res) => {
           SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) 
           FROM part_number pn 
           WHERE pn.part_id = p.part_id
-        ) AS part_numbers
+        ) AS part_numbers,
+        (
+          SELECT STRING_AGG(
+            CONCAT(
+              a.make, ' ', a.model, 
+              ' [', COALESCE(pa.year_start::text, '...'), '-', COALESCE(pa.year_end::text, '...'), ']'
+            ), 
+            '; '
+          )
+          FROM part_application pa
+          JOIN application a ON pa.application_id = a.application_id
+          WHERE pa.part_id = p.part_id
+        ) AS applications
       FROM part AS p
       LEFT JOIN brand AS b ON p.brand_id = b.brand_id
       LEFT JOIN "group" AS g ON p.group_id = g.group_id
@@ -91,6 +126,7 @@ router.get('/parts/:id', async (req, res) => {
   }
 });
 
+// ... (POST, PUT, DELETE routes remain the same)
 // POST - Create a new part with all fields
 router.post('/parts', async (req, res) => {
   const { 
