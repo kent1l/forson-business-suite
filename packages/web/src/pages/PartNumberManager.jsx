@@ -17,6 +17,7 @@ const PartNumberManager = ({ part, onSave, onCancel }) => {
                 setNumbers(response.data);
             } catch (err) {
                 console.error("Failed to fetch part numbers", err);
+                toast.error("Could not load part numbers.");
             } finally {
                 setLoading(false);
             }
@@ -40,7 +41,7 @@ const PartNumberManager = ({ part, onSave, onCancel }) => {
             success: (response) => {
                 setNumbers(response.data);
                 setNewNumbersString('');
-                onSave(); // Tell parent to refetch part data for display name
+                onSave();
                 return 'Numbers added successfully!';
             },
             error: 'Failed to add numbers.'
@@ -61,8 +62,7 @@ const PartNumberManager = ({ part, onSave, onCancel }) => {
         toast.promise(promise, {
             loading: 'Saving order...',
             success: () => {
-                onSave(); // Tell parent to refetch part data for display name
-                onCancel(); // This will now close the modal
+                onSave();
                 return 'Order saved successfully!';
             },
             error: 'Failed to save order.'

@@ -214,13 +214,14 @@ const PartsPage = ({ user }) => {
     const [isNumberModalOpen, setIsNumberModalOpen] = useState(false);
     const [isAppModalOpen, setIsAppModalOpen] = useState(false);
     const [currentPart, setCurrentPart] = useState(null);
+    const [searchTerm, setSearchTerm] = useState('');
 
     const fetchData = async () => {
         try {
             setLoading(true);
             setError('');
             const [partsRes, brandsRes, groupsRes] = await Promise.all([
-                axios.get('http://localhost:3001/api/parts'),
+                axios.get(`http://localhost:3001/api/parts?search=${searchTerm}`),
                 axios.get('http://localhost:3001/api/brands'),
                 axios.get('http://localhost:3001/api/groups')
             ]);
@@ -235,8 +236,11 @@ const PartsPage = ({ user }) => {
     };
 
     useEffect(() => {
-        fetchData();
-    }, []);
+        const debounceTimer = setTimeout(() => {
+            fetchData();
+        }, 300);
+        return () => clearTimeout(debounceTimer);
+    }, [searchTerm]);
 
     const handleAdd = () => {
         setCurrentPart(null);
@@ -274,7 +278,7 @@ const PartsPage = ({ user }) => {
         const promise = axios.delete(`http://localhost:3001/api/parts/${partId}`);
         toast.promise(promise, {
             loading: 'Deleting part...',
-            success: () => { fetchData(); return 'Part deleted!'; },
+            success: () => { setSearchTerm(''); return 'Part deleted!'; },
             error: 'Failed to delete part.',
         });
     };
@@ -294,7 +298,7 @@ const PartsPage = ({ user }) => {
             loading: 'Saving part...',
             success: () => {
                 setIsFormModalOpen(false);
-                fetchData();
+                setSearchTerm('');
                 return 'Part saved successfully!';
             },
             error: 'Failed to save part.',
@@ -303,11 +307,23 @@ const PartsPage = ({ user }) => {
 
     return (
         <div>
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
                 <h1 className="text-2xl font-semibold text-gray-800">Parts</h1>
-                <button onClick={handleAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
-                    Add Part
-                </button>
+                <div className="w-full sm:w-auto flex items-center space-x-2">
+                    <div className="relative w-full sm:w-64">
+                         <Icon path={ICONS.search} className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                         <input 
+                            type="text"
+                            placeholder="Search parts..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg"
+                         />
+                    </div>
+                    <button onClick={handleAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition whitespace-nowrap">
+                        Add Part
+                    </button>
+                </div>
             </div>
             <div className="bg-white p-6 rounded-xl border border-gray-200">
                 {loading && <p>Loading parts...</p>}
@@ -352,7 +368,7 @@ const PartsPage = ({ user }) => {
             </Modal>
             
             <Modal isOpen={isNumberModalOpen} onClose={() => setIsNumberModalOpen(false)} title={`Manage Numbers for: ${currentPart?.detail}`}>
-                <PartNumberManager part={currentPart} onSave={fetchData} onCancel={() => setIsNumberModalOpen(false)} />
+                <PartNumberManager part={currentPart} onSave={() => setSearchTerm('')} onCancel={() => setIsNumberModalOpen(false)} />
             </Modal>
 
             <Modal isOpen={isAppModalOpen} onClose={() => setIsAppModalOpen(false)} title={`Manage Applications for: ${currentPart?.detail}`}>

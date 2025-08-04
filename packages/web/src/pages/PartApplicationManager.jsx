@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import Modal from '../components/ui/Modal';
@@ -78,24 +79,28 @@ const PartApplicationManager = ({ part, onCancel }) => {
         e.preventDefault();
         if (!newLinkData.application_id) return;
 
-        try {
-            await axios.post(`http://localhost:3001/api/parts/${part.part_id}/applications`, newLinkData);
-            fetchData();
-            setNewLinkData({ application_id: '', year_start: '', year_end: '' });
-        } catch (err) {
-            alert('Failed to link application.');
-            console.error(err);
-        }
+        const promise = axios.post(`http://localhost:3001/api/parts/${part.part_id}/applications`, newLinkData);
+        toast.promise(promise, {
+            loading: 'Linking application...',
+            success: () => {
+                fetchData();
+                setNewLinkData({ application_id: '', year_start: '', year_end: '' });
+                return 'Application linked successfully!';
+            },
+            error: 'Failed to link application.'
+        });
     };
     
     const handleUnlinkApp = async (applicationId) => {
-        try {
-            await axios.delete(`http://localhost:3001/api/parts/${part.part_id}/applications/${applicationId}`);
-            fetchData();
-        } catch (err) {
-            alert('Failed to unlink application.');
-            console.error(err);
-        }
+        const promise = axios.delete(`http://localhost:3001/api/parts/${part.part_id}/applications/${applicationId}`);
+        toast.promise(promise, {
+            loading: 'Unlinking...',
+            success: () => {
+                fetchData();
+                return 'Application unlinked!';
+            },
+            error: 'Failed to unlink application.'
+        });
     };
 
     const handleEditLink = (link) => {
@@ -104,13 +109,16 @@ const PartApplicationManager = ({ part, onCancel }) => {
     };
     
     const handleSaveYears = async (partAppId, years) => {
-        try {
-            await axios.put(`http://localhost:3001/api/part-applications/${partAppId}`, years);
-            setIsEditModalOpen(false);
-            fetchData();
-        } catch (err) {
-            alert('Failed to update year range.');
-        }
+        const promise = axios.put(`http://localhost:3001/api/part-applications/${partAppId}`, years);
+        toast.promise(promise, {
+            loading: 'Saving years...',
+            success: () => {
+                setIsEditModalOpen(false);
+                fetchData();
+                return 'Year range updated!';
+            },
+            error: 'Failed to update year range.'
+        });
     };
 
     return (
