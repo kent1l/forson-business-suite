@@ -245,7 +245,6 @@ const PartsPage = () => {
         try {
             setLoading(true);
             setError('');
-            // Fetch all data in parallel
             const [partsRes, brandsRes, groupsRes] = await Promise.all([
                 axios.get('http://localhost:3001/api/parts'),
                 axios.get('http://localhost:3001/api/brands'),
@@ -265,6 +264,27 @@ const PartsPage = () => {
         fetchData();
     }, []);
 
+    const handleAdd = () => {
+        setCurrentPart(null);
+        setIsModalOpen(true);
+    };
+
+    const handleEdit = (part) => {
+        setCurrentPart(part);
+        setIsModalOpen(true);
+    };
+
+    const handleDelete = async (partId) => {
+        if (window.confirm('Are you sure you want to delete this part?')) {
+            try {
+                await axios.delete(`http://localhost:3001/api/parts/${partId}`);
+                fetchData();
+            } catch (err) {
+                alert('Failed to delete part.');
+            }
+        }
+    };
+
     const handleSave = async (partData) => {
         try {
             if (currentPart) {
@@ -283,7 +303,7 @@ const PartsPage = () => {
         <div>
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-semibold text-gray-800">Parts</h1>
-                <button onClick={() => { setCurrentPart(null); setIsModalOpen(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
+                <button onClick={handleAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
                     Add Part
                 </button>
             </div>
@@ -299,6 +319,7 @@ const PartsPage = () => {
                                     <th className="p-3 text-sm font-semibold text-gray-600">Detail</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Brand</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Group</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -308,6 +329,10 @@ const PartsPage = () => {
                                         <td className="p-3 text-sm font-medium text-gray-800">{part.detail}</td>
                                         <td className="p-3 text-sm">{part.brand_name}</td>
                                         <td className="p-3 text-sm">{part.group_name}</td>
+                                        <td className="p-3 text-sm text-right">
+                                            <button onClick={() => handleEdit(part)} className="text-blue-600 hover:text-blue-800 mr-4"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
+                                            <button onClick={() => handleDelete(part.part_id)} className="text-red-600 hover:text-red-800"><Icon path={ICONS.trash} className="h-5 w-5"/></button>
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -556,3 +581,4 @@ function App() {
 }
 
 export default App;
+// --- END OF APP COMPONENT ---
