@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 
@@ -24,6 +25,7 @@ const InvoicingPage = ({ user }) => {
                 setParts(partsRes.data);
             } catch (err) {
                 console.error("Failed to fetch initial data for invoicing", err);
+                toast.error("Failed to load initial data.");
             } finally {
                 setLoading(false);
             }
@@ -70,7 +72,7 @@ const InvoicingPage = ({ user }) => {
 
     const handlePostInvoice = async () => {
         if (!selectedCustomer || lines.length === 0) {
-            alert('Please select a customer and add at least one item.');
+            toast.error('Please select a customer and add at least one item.');
             return;
         }
 
@@ -84,15 +86,17 @@ const InvoicingPage = ({ user }) => {
             })),
         };
 
-        try {
-            await axios.post('http://localhost:3001/api/invoices', payload);
-            alert('Invoice created successfully!');
-            setLines([]);
-            setSelectedCustomer('');
-        } catch (err) {
-            alert('Failed to create invoice.');
-            console.error(err);
-        }
+        const promise = axios.post('http://localhost:3001/api/invoices', payload);
+
+        toast.promise(promise, {
+            loading: 'Posting invoice...',
+            success: () => {
+                setLines([]);
+                setSelectedCustomer('');
+                return 'Invoice created successfully!';
+            },
+            error: 'Failed to create invoice.',
+        });
     };
 
     if (loading) return <p>Loading data...</p>;
