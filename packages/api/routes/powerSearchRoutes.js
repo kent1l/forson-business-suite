@@ -12,45 +12,70 @@ const constructDisplayName = (part) => {
     return displayNameParts.join(' | ');
 };
 
-// GET /api/power-search/parts - Advanced search for parts
+// GET /api/power-search/parts - Advanced multi-filter text search
 router.get('/power-search/parts', async (req, res) => {
-    const { brand_id, group_id, application_id } = req.query;
+    const { keyword, brand, group, application } = req.query;
 
     let queryParams = [];
-    let whereClauses = ["1 = 1"]; // Start with a clause that is always true
+    let whereClauses = [];
 
     let baseQuery = `
-      SELECT
-        p.*,
+      SELECT DISTINCT
+        p.part_id,
+        p.internal_sku,
+        p.detail,
         b.brand_name,
         g.group_name,
         (
           SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) 
           FROM part_number pn 
           WHERE pn.part_id = p.part_id
-        ) AS part_numbers
+        ) AS part_numbers,
+        (
+          SELECT STRING_AGG(
+            CASE 
+              WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL AND pa.year_start = pa.year_end THEN CONCAT(a.make, ' ', a.model, ' [', pa.year_start, ']')
+              WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL THEN CONCAT(a.make, ' ', a.model, ' [', pa.year_start, '-', pa.year_end, ']')
+              WHEN pa.year_start IS NOT NULL THEN CONCAT(a.make, ' ', a.model, ' [', pa.year_start, ']')
+              WHEN pa.year_end IS NOT NULL THEN CONCAT(a.make, ' ', a.model, ' [', pa.year_end, ']')
+              ELSE CONCAT(a.make, ' ', a.model)
+            END,
+            '; '
+          )
+          FROM part_application pa
+          JOIN application a ON pa.application_id = a.application_id
+          WHERE pa.part_id = p.part_id
+        ) AS applications
       FROM part AS p
       LEFT JOIN brand AS b ON p.brand_id = b.brand_id
       LEFT JOIN "group" AS g ON p.group_id = g.group_id
+      LEFT JOIN part_number p_num ON p.part_id = p_num.part_id
+      LEFT JOIN part_application p_app ON p.part_id = p_app.part_id
+      LEFT JOIN application app ON p_app.application_id = app.application_id
     `;
 
-    if (application_id) {
-        baseQuery += ` JOIN part_application pa ON p.part_id = pa.part_id`;
-        queryParams.push(application_id);
-        whereClauses.push(`pa.application_id = $${queryParams.length}`);
+    if (keyword) {
+        queryParams.push(`%${keyword}%`);
+        whereClauses.push(`(p.detail ILIKE $${queryParams.length} OR p.internal_sku ILIKE $${queryParams.length} OR p_num.part_number ILIKE $${queryParams.length})`);
+    }
+    if (brand) {
+        queryParams.push(`%${brand}%`);
+        whereClauses.push(`b.brand_name ILIKE $${queryParams.length}`);
+    }
+    if (group) {
+        queryParams.push(`%${group}%`);
+        whereClauses.push(`g.group_name ILIKE $${queryParams.length}`);
+    }
+    if (application) {
+        queryParams.push(`%${application}%`);
+        whereClauses.push(`(app.make ILIKE $${queryParams.length} OR app.model ILIKE $${queryParams.length})`);
     }
 
-    if (brand_id) {
-        queryParams.push(brand_id);
-        whereClauses.push(`p.brand_id = $${queryParams.length}`);
+    let finalQuery = baseQuery;
+    if (whereClauses.length > 0) {
+        finalQuery += ` WHERE ${whereClauses.join(' AND ')}`;
     }
-
-    if (group_id) {
-        queryParams.push(group_id);
-        whereClauses.push(`p.group_id = $${queryParams.length}`);
-    }
-
-    const finalQuery = `${baseQuery} WHERE ${whereClauses.join(' AND ')} ORDER BY p.part_id;`;
+    finalQuery += ` ORDER BY p.part_id;`;
 
     try {
         const { rows } = await db.query(finalQuery, queryParams);

@@ -5,11 +5,12 @@ import { ICONS } from '../../constants';
 const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
     const navItems = [
         { name: 'Dashboard', icon: ICONS.dashboard, page: 'dashboard' },
+        { name: 'Power Search', icon: ICONS.power_search, page: 'power_search' },
         { name: 'Invoicing', icon: ICONS.invoice, page: 'invoicing' },
         { name: 'Goods Receipt', icon: ICONS.receipt, page: 'goods_receipt' },
         { name: 'Parts', icon: ICONS.parts, page: 'parts' },
         { name: 'Suppliers', icon: ICONS.suppliers, page: 'suppliers' },
-        { name: 'Customers', icon: ICONS.customers, page: 'customers' }, // Add new nav item
+        { name: 'Customers', icon: ICONS.customers, page: 'customers' },
         { name: 'Applications', icon: ICONS.applications, page: 'applications' },
     ];
 
