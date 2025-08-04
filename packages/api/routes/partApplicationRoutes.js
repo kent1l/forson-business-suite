@@ -23,7 +23,7 @@ router.get('/parts/:partId/applications', async (req, res) => {
 // POST a new application link for a part
 router.post('/parts/:partId/applications', async (req, res) => {
   const { partId } = req.params;
-  const { application_id } = req.body;
+  const { application_id, year_start, year_end } = req.body;
 
   if (!application_id) {
     return res.status(400).json({ message: 'Application ID is required.' });
@@ -31,18 +31,41 @@ router.post('/parts/:partId/applications', async (req, res) => {
 
   try {
     const query = `
-        INSERT INTO part_application (part_id, application_id)
-        VALUES ($1, $2)
+        INSERT INTO part_application (part_id, application_id, year_start, year_end)
+        VALUES ($1, $2, $3, $4)
         ON CONFLICT (part_id, application_id) DO NOTHING
         RETURNING *;
     `;
-    const result = await db.query(query, [partId, application_id]);
+    const result = await db.query(query, [partId, application_id, year_start || null, year_end || null]);
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server Error');
   }
 });
+
+// PUT - Update year range for an existing application link
+router.put('/part-applications/:partAppId', async (req, res) => {
+    const { partAppId } = req.params;
+    const { year_start, year_end } = req.body;
+
+    try {
+        const updatedLink = await db.query(
+            'UPDATE part_application SET year_start = $1, year_end = $2 WHERE part_app_id = $3 RETURNING *',
+            [year_start || null, year_end || null, partAppId]
+        );
+
+        if (updatedLink.rows.length === 0) {
+            return res.status(404).json({ message: 'Application link not found' });
+        }
+
+        res.json(updatedLink.rows[0]);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
 
 // DELETE an application link from a part
 router.delete('/parts/:partId/applications/:appId', async (req, res) => {

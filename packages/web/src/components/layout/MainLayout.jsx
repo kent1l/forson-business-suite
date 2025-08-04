@@ -5,7 +5,8 @@ import Dashboard from '../../pages/Dashboard';
 import SuppliersPage from '../../pages/SuppliersPage';
 import PartsPage from '../../pages/PartsPage';
 import GoodsReceiptPage from '../../pages/GoodsReceiptPage';
-import InvoicingPage from '../../pages/InvoicingPage'; // 1. Import the new page
+import InvoicingPage from '../../pages/InvoicingPage';
+import ApplicationsPage from '../../pages/ApplicationsPage'; // 1. Import the new page
 
 const MainLayout = ({ user, onLogout, onNavigate, currentPage }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -15,8 +16,9 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage }) => {
             case 'dashboard': return <Dashboard />;
             case 'suppliers': return <SuppliersPage />;
             case 'parts': return <PartsPage />;
+            case 'applications': return <ApplicationsPage />; // 2. Add the new case
             case 'goods_receipt': return <GoodsReceiptPage user={user} />;
-            case 'invoicing': return <InvoicingPage user={user} />; // 2. Add the new case
+            case 'invoicing': return <InvoicingPage user={user} />;
             default: return <Dashboard />;
         }
     };

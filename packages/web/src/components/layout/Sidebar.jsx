@@ -7,8 +7,9 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
         { name: 'Dashboard', icon: ICONS.dashboard, page: 'dashboard' },
         { name: 'Suppliers', icon: ICONS.suppliers, page: 'suppliers' },
         { name: 'Parts', icon: ICONS.parts, page: 'parts' },
+        { name: 'Applications', icon: ICONS.applications, page: 'applications' }, // Add new nav item
         { name: 'Goods Receipt', icon: ICONS.receipt, page: 'goods_receipt' },
-        { name: 'Invoicing', icon: ICONS.invoice, page: 'invoicing' }, // Add new nav item
+        { name: 'Invoicing', icon: ICONS.invoice, page: 'invoicing' },
     ];
 
     return (
