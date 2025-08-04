@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
@@ -109,29 +110,60 @@ const PartsPage = () => {
         setIsAppModalOpen(true);
     };
 
-    const handleDelete = async (partId) => {
-        if (window.confirm('Are you sure you want to delete this part?')) {
-            try {
-                await axios.delete(`http://localhost:3001/api/parts/${partId}`);
+    const handleDelete = (partId) => {
+        toast((t) => (
+            <div className="flex flex-col items-center">
+                <p className="font-semibold">Are you sure?</p>
+                <p className="text-sm text-gray-600 mb-3">This action cannot be undone.</p>
+                <div className="flex space-x-2">
+                    <button
+                        onClick={() => {
+                            toast.dismiss(t.id);
+                            confirmDelete(partId);
+                        }}
+                        className="px-3 py-1 bg-red-600 text-white text-sm rounded-md hover:bg-red-700"
+                    >
+                        Delete
+                    </button>
+                    <button
+                        onClick={() => toast.dismiss(t.id)}
+                        className="px-3 py-1 bg-gray-200 text-gray-800 text-sm rounded-md hover:bg-gray-300"
+                    >
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        ), {
+            duration: 6000,
+        });
+    };
+
+    const confirmDelete = async (partId) => {
+        const promise = axios.delete(`http://localhost:3001/api/parts/${partId}`);
+        toast.promise(promise, {
+            loading: 'Deleting part...',
+            success: () => {
                 fetchData();
-            } catch (err) {
-                alert('Failed to delete part.');
-            }
-        }
+                return 'Part deleted successfully!';
+            },
+            error: 'Failed to delete part.',
+        });
     };
 
     const handleSave = async (partData) => {
-        try {
-            if (currentPart) {
-                await axios.put(`http://localhost:3001/api/parts/${currentPart.part_id}`, partData);
-            } else {
-                await axios.post('http://localhost:3001/api/parts', partData);
-            }
-            setIsFormModalOpen(false);
-            fetchData();
-        } catch (err) {
-            alert('Failed to save part.');
-        }
+        const promise = currentPart
+            ? axios.put(`http://localhost:3001/api/parts/${currentPart.part_id}`, partData)
+            : axios.post('http://localhost:3001/api/parts', partData);
+
+        toast.promise(promise, {
+            loading: 'Saving part...',
+            success: () => {
+                setIsFormModalOpen(false);
+                fetchData();
+                return 'Part saved successfully!';
+            },
+            error: 'Failed to save part.',
+        });
     };
 
     return (
