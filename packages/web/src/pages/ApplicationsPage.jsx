@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
@@ -81,29 +82,58 @@ const ApplicationsPage = () => {
         setIsModalOpen(true);
     };
 
-    const handleDelete = async (appId) => {
-        if (window.confirm('Are you sure you want to delete this application?')) {
-            try {
-                await axios.delete(`http://localhost:3001/api/applications/${appId}`);
+    const handleDelete = (appId) => {
+        toast((t) => (
+            <div className="flex flex-col items-center">
+                <p className="font-semibold">Are you sure?</p>
+                <p className="text-sm text-gray-600 mb-3">This may affect linked parts.</p>
+                <div className="flex space-x-2">
+                    <button
+                        onClick={() => {
+                            toast.dismiss(t.id);
+                            confirmDelete(appId);
+                        }}
+                        className="px-3 py-1 bg-red-600 text-white text-sm rounded-md hover:bg-red-700"
+                    >
+                        Delete
+                    </button>
+                    <button
+                        onClick={() => toast.dismiss(t.id)}
+                        className="px-3 py-1 bg-gray-200 text-gray-800 text-sm rounded-md hover:bg-gray-300"
+                    >
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        ));
+    };
+
+    const confirmDelete = async (appId) => {
+        const promise = axios.delete(`http://localhost:3001/api/applications/${appId}`);
+        toast.promise(promise, {
+            loading: 'Deleting application...',
+            success: () => {
                 fetchApplications();
-            } catch (err) {
-                alert(err.response?.data?.message || 'Failed to delete application.');
-            }
-        }
+                return 'Application deleted successfully!';
+            },
+            error: (err) => err.response?.data?.message || 'Failed to delete application.',
+        });
     };
 
     const handleSave = async (appData) => {
-        try {
-            if (currentApp) {
-                await axios.put(`http://localhost:3001/api/applications/${currentApp.application_id}`, appData);
-            } else {
-                await axios.post('http://localhost:3001/api/applications', appData);
-            }
-            setIsModalOpen(false);
-            fetchApplications();
-        } catch (err) {
-            alert('Failed to save application.');
-        }
+        const promise = currentApp
+            ? axios.put(`http://localhost:3001/api/applications/${currentApp.application_id}`, appData)
+            : axios.post('http://localhost:3001/api/applications', appData);
+
+        toast.promise(promise, {
+            loading: 'Saving application...',
+            success: () => {
+                setIsModalOpen(false);
+                fetchApplications();
+                return 'Application saved successfully!';
+            },
+            error: 'Failed to save application.',
+        });
     };
 
     return (
