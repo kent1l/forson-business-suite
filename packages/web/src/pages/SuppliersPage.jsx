@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import toast from 'react-hot-toast'; // 1. Import toast
+import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 
 const SupplierForm = ({ supplier, onSave, onCancel }) => {
-    // ... (This component remains the same)
     const [formData, setFormData] = useState({
         supplier_name: '', contact_person: '', phone: '', email: '', address: ''
     });
@@ -57,6 +56,7 @@ const SuppliersPage = () => {
     const [error, setError] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentSupplier, setCurrentSupplier] = useState(null);
+    const [searchTerm, setSearchTerm] = useState(''); // 1. State for the search term
 
     const fetchSuppliers = async () => {
         try {
@@ -86,7 +86,6 @@ const SuppliersPage = () => {
     };
 
     const handleDelete = (supplierId) => {
-        // 2. Use a confirmation toast
         toast((t) => (
             <div className="flex flex-col items-center">
                 <p className="font-semibold">Are you sure?</p>
@@ -117,11 +116,10 @@ const SuppliersPage = () => {
     const confirmDelete = async (supplierId) => {
         const promise = axios.delete(`http://localhost:3001/api/suppliers/${supplierId}`);
         
-        // 3. Use a promise-based toast for loading, success, and error states
         toast.promise(promise, {
             loading: 'Deleting supplier...',
             success: () => {
-                fetchSuppliers(); // Refresh the list on success
+                fetchSuppliers();
                 return 'Supplier deleted successfully!';
             },
             error: 'Failed to delete supplier.',
@@ -143,14 +141,33 @@ const SuppliersPage = () => {
             error: 'Failed to save supplier.',
         });
     };
+    
+    // 2. Filter logic
+    const filteredSuppliers = suppliers.filter(supplier => 
+        supplier.supplier_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (supplier.contact_person && supplier.contact_person.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
 
     return (
         <div>
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
                 <h1 className="text-2xl font-semibold text-gray-800">Suppliers</h1>
-                <button onClick={handleAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
-                    Add Supplier
-                </button>
+                <div className="w-full sm:w-auto flex items-center space-x-2">
+                    {/* 3. Search input field */}
+                    <div className="relative w-full sm:w-64">
+                         <Icon path={ICONS.search} className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                         <input 
+                            type="text"
+                            placeholder="Search suppliers..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg"
+                         />
+                    </div>
+                    <button onClick={handleAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition whitespace-nowrap">
+                        Add Supplier
+                    </button>
+                </div>
             </div>
             <div className="bg-white p-6 rounded-xl border border-gray-200">
                 {loading && <p>Loading suppliers...</p>}
@@ -168,7 +185,8 @@ const SuppliersPage = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {suppliers.map(supplier => (
+                                {/* 4. Map over the filtered list */}
+                                {filteredSuppliers.map(supplier => (
                                     <tr key={supplier.supplier_id} className="border-b hover:bg-gray-50">
                                         <td className="p-3 text-sm">{supplier.supplier_id}</td>
                                         <td className="p-3 text-sm font-medium text-gray-800">{supplier.supplier_name}</td>
