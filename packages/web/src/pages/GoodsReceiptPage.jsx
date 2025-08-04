@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 
 const GoodsReceiptPage = ({ user }) => {
     const [suppliers, setSuppliers] = useState([]);
     const [parts, setParts] = useState([]);
-    const [lines, setLines] = useState([]);
+    const [lines, setLines] = useState([]); // Simulates tblGRN_TempLines
     const [selectedSupplier, setSelectedSupplier] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        // Fetch initial data for suppliers and parts dropdowns/search
         const fetchData = async () => {
             try {
                 setLoading(true);
@@ -24,6 +26,7 @@ const GoodsReceiptPage = ({ user }) => {
                 setParts(partsRes.data);
             } catch (err) {
                 console.error("Failed to fetch initial data for goods receipt", err);
+                toast.error("Failed to load initial data.");
             } finally {
                 setLoading(false);
             }
@@ -48,7 +51,7 @@ const GoodsReceiptPage = ({ user }) => {
         const existingLine = lines.find(line => line.part_id === part.part_id);
         if (existingLine) {
             setLines(lines.map(line =>
-                line.part_id === part.part_id ? { ...line, quantity: Number(line.quantity) + 1 } : line
+                line.part_id === part.part_id ? { ...line, quantity: line.quantity + 1 } : line
             ));
         } else {
             setLines([...lines, { ...part, part_id: part.part_id, quantity: 1, cost_price: part.last_cost || 0 }]);
@@ -69,7 +72,7 @@ const GoodsReceiptPage = ({ user }) => {
 
     const handlePostTransaction = async () => {
         if (!selectedSupplier || lines.length === 0) {
-            alert('Please select a supplier and add at least one item.');
+            toast.error('Please select a supplier and add at least one item.');
             return;
         }
 
@@ -83,14 +86,17 @@ const GoodsReceiptPage = ({ user }) => {
             })),
         };
 
-        try {
-            await axios.post('http://localhost:3001/api/goods-receipts', payload);
-            alert('Goods receipt created successfully!');
-            setLines([]);
-            setSelectedSupplier('');
-        } catch (err) {
-            alert('Failed to create goods receipt.');
-        }
+        const promise = axios.post('http://localhost:3001/api/goods-receipts', payload);
+
+        toast.promise(promise, {
+            loading: 'Posting transaction...',
+            success: () => {
+                setLines([]);
+                setSelectedSupplier('');
+                return 'Goods receipt created successfully!';
+            },
+            error: 'Failed to create goods receipt.',
+        });
     };
 
     if (loading) return <p>Loading data...</p>;
@@ -99,6 +105,7 @@ const GoodsReceiptPage = ({ user }) => {
         <div>
             <h1 className="text-2xl font-semibold text-gray-800 mb-6">New Goods Receipt</h1>
             <div className="bg-white p-6 rounded-xl border border-gray-200 space-y-6">
+                {/* Header */}
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
                     <select value={selectedSupplier} onChange={e => setSelectedSupplier(e.target.value)} className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-lg">
@@ -107,6 +114,7 @@ const GoodsReceiptPage = ({ user }) => {
                     </select>
                 </div>
                 
+                {/* Part Search */}
                 <div className="relative">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Add Part</label>
                     <div className="relative">
@@ -130,6 +138,7 @@ const GoodsReceiptPage = ({ user }) => {
                     )}
                 </div>
 
+                {/* Line Items Table */}
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
                         <thead className="border-b">
@@ -153,6 +162,7 @@ const GoodsReceiptPage = ({ user }) => {
                     </table>
                 </div>
 
+                {/* Post Button */}
                 <div className="flex justify-end pt-4 border-t">
                     <button onClick={handlePostTransaction} className="bg-green-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-green-700 transition">
                         Post Transaction
