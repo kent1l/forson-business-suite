@@ -7,46 +7,35 @@ import { ICONS } from '../constants';
 import PartNumberManager from './PartNumberManager';
 import PartApplicationManager from './PartApplicationManager';
 
-const PartForm = ({ part, brands, groups, onSave, onCancel }) => {
-    const [formData, setFormData] = useState({ detail: '', brand_id: '', group_id: '' });
+const BrandGroupForm = ({ type, onSave, onCancel }) => {
+    const [name, setName] = useState('');
+    const [code, setCode] = useState('');
 
-    useEffect(() => {
-        if (part) {
-            setFormData(part);
-        } else {
-            setFormData({ detail: '', brand_id: '', group_id: '' });
-        }
-    }, [part]);
-
-    const handleChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
-    };
-
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        onSave(formData);
+        const endpoint = type === 'Brand' ? '/api/brands' : '/api/groups';
+        const payload = type === 'Brand' ? { brand_name: name, brand_code: code } : { group_name: name, group_code: code };
+        
+        const promise = axios.post(`http://localhost:3001${endpoint}`, payload);
+        toast.promise(promise, {
+            loading: `Adding ${type}...`,
+            success: (response) => {
+                onSave(response.data);
+                return `${type} added successfully!`;
+            },
+            error: `Failed to add ${type}.`
+        });
     };
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Part Detail</label>
-                <input type="text" name="detail" value={formData.detail} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
+                <label className="block text-sm font-medium text-gray-700 mb-1">{type} Name</label>
+                <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
-                <select name="brand_id" value={formData.brand_id} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required>
-                    <option value="">Select a Brand</option>
-                    {brands.map(brand => <option key={brand.brand_id} value={brand.brand_id}>{brand.brand_name}</option>)}
-                </select>
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Group</label>
-                <select name="group_id" value={formData.group_id} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required>
-                    <option value="">Select a Group</option>
-                    {groups.map(group => <option key={group.group_id} value={group.group_id}>{group.group_name}</option>)}
-                </select>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{type} Code (max 10 chars)</label>
+                <input type="text" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} maxLength="10" className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
             </div>
             <div className="mt-6 flex justify-end space-x-4">
                 <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
@@ -56,7 +45,166 @@ const PartForm = ({ part, brands, groups, onSave, onCancel }) => {
     );
 };
 
-const PartsPage = () => {
+const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded }) => {
+    const [formData, setFormData] = useState({
+        detail: '', brand_id: '', group_id: '', part_numbers_string: '',
+        reorder_point: 0, warning_quantity: 0, is_active: true,
+        last_cost: 0, last_sale_price: 0, barcode: '', measurement_unit: 'pcs',
+        is_price_change_allowed: true, is_using_default_quantity: true,
+        is_service: false, low_stock_warning: false
+    });
+    const [isBrandModalOpen, setIsBrandModalOpen] = useState(false);
+    const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+    const [showAdvanced, setShowAdvanced] = useState(false); // State for the advanced options drawer
+
+    useEffect(() => {
+        if (part) {
+            setFormData({
+                detail: part.detail || '',
+                brand_id: part.brand_id || '',
+                group_id: part.group_id || '',
+                part_numbers_string: '',
+                reorder_point: part.reorder_point || 0,
+                warning_quantity: part.warning_quantity || 0,
+                is_active: part.is_active,
+                last_cost: part.last_cost || 0,
+                last_sale_price: part.last_sale_price || 0,
+                barcode: part.barcode || '',
+                measurement_unit: part.measurement_unit || 'pcs',
+                is_price_change_allowed: part.is_price_change_allowed,
+                is_using_default_quantity: part.is_using_default_quantity,
+                is_service: part.is_service,
+                low_stock_warning: part.low_stock_warning,
+            });
+        } else {
+            setFormData({
+                detail: '', brand_id: '', group_id: '', part_numbers_string: '',
+                reorder_point: 0, warning_quantity: 0, is_active: true,
+                last_cost: 0, last_sale_price: 0, barcode: '', measurement_unit: 'pcs',
+                is_price_change_allowed: true, is_using_default_quantity: true,
+                is_service: false, low_stock_warning: false
+            });
+        }
+    }, [part]);
+
+    const handleChange = (e) => {
+        const { name, value, type, checked } = e.target;
+        setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
+    };
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        onSave(formData);
+    };
+    
+    const handleNewBrandGroup = (newItem, type) => {
+        onBrandGroupAdded();
+        if(type === 'Brand') {
+            setFormData(prev => ({...prev, brand_id: newItem.brand_id}));
+            setIsBrandModalOpen(false);
+        } else {
+            setFormData(prev => ({...prev, group_id: newItem.group_id}));
+            setIsGroupModalOpen(false);
+        }
+    };
+
+    return (
+        <>
+            <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto p-1">
+                {/* --- Primary Fields --- */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Part Detail</label>
+                    <input type="text" name="detail" value={formData.detail} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
+                </div>
+                {!part && (
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Part Numbers (optional)</label>
+                        <textarea name="part_numbers_string" value={formData.part_numbers_string} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows="2" placeholder="OEM123, MFG456; ALT789"></textarea>
+                    </div>
+                )}
+                <div className="flex items-end space-x-2">
+                    <div className="flex-grow">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
+                        <select name="brand_id" value={formData.brand_id} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required>
+                            <option value="">Select a Brand</option>
+                            {brands.map(brand => <option key={brand.brand_id} value={brand.brand_id}>{brand.brand_name}</option>)}
+                        </select>
+                    </div>
+                    <button type="button" onClick={() => setIsBrandModalOpen(true)} className="px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm">New</button>
+                </div>
+                <div className="flex items-end space-x-2">
+                    <div className="flex-grow">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Group</label>
+                        <select name="group_id" value={formData.group_id} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required>
+                            <option value="">Select a Group</option>
+                            {groups.map(group => <option key={group.group_id} value={group.group_id}>{group.group_name}</option>)}
+                        </select>
+                    </div>
+                    <button type="button" onClick={() => setIsGroupModalOpen(true)} className="px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm">New</button>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Last Cost</label>
+                        <input type="number" step="0.01" name="last_cost" value={formData.last_cost} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Last Sale Price</label>
+                        <input type="number" step="0.01" name="last_sale_price" value={formData.last_sale_price} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                    </div>
+                </div>
+
+                {/* --- Advanced Options Drawer --- */}
+                <div className="pt-4 border-t">
+                    <button type="button" onClick={() => setShowAdvanced(!showAdvanced)} className="text-sm font-medium text-blue-600 hover:text-blue-800">
+                        {showAdvanced ? 'Hide Advanced Options' : 'Show Advanced Options'}
+                    </button>
+                    <div className={`transition-all duration-300 ease-in-out overflow-hidden ${showAdvanced ? 'max-h-96 mt-4' : 'max-h-0'}`}>
+                        <div className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Barcode</label>
+                                    <input type="text" name="barcode" value={formData.barcode} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+                                    <input type="text" name="measurement_unit" value={formData.measurement_unit} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Point</label>
+                                    <input type="number" name="reorder_point" value={formData.reorder_point} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Warning Qty</label>
+                                    <input type="number" name="warning_quantity" value={formData.warning_quantity} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-4 border-t">
+                                <div className="flex items-center"><input type="checkbox" name="is_active" checked={formData.is_active} onChange={handleChange} className="h-4 w-4" /><label className="ml-2 text-sm">Active</label></div>
+                                <div className="flex items-center"><input type="checkbox" name="is_service" checked={formData.is_service} onChange={handleChange} className="h-4 w-4" /><label className="ml-2 text-sm">Is Service</label></div>
+                                <div className="flex items-center"><input type="checkbox" name="low_stock_warning" checked={formData.low_stock_warning} onChange={handleChange} className="h-4 w-4" /><label className="ml-2 text-sm">Low Stock Warning</label></div>
+                                <div className="flex items-center"><input type="checkbox" name="is_price_change_allowed" checked={formData.is_price_change_allowed} onChange={handleChange} className="h-4 w-4" /><label className="ml-2 text-sm">Price Change Allowed</label></div>
+                                <div className="flex items-center"><input type="checkbox" name="is_using_default_quantity" checked={formData.is_using_default_quantity} onChange={handleChange} className="h-4 w-4" /><label className="ml-2 text-sm">Use Default Qty</label></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="mt-6 flex justify-end space-x-4 pt-4 border-t">
+                    <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
+                    <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>
+                </div>
+            </form>
+            <Modal isOpen={isBrandModalOpen} onClose={() => setIsBrandModalOpen(false)} title="Add New Brand">
+                <BrandGroupForm type="Brand" onSave={(newBrand) => handleNewBrandGroup(newBrand, 'Brand')} onCancel={() => setIsBrandModalOpen(false)} />
+            </Modal>
+            <Modal isOpen={isGroupModalOpen} onClose={() => setIsGroupModalOpen(false)} title="Add New Group">
+                <BrandGroupForm type="Group" onSave={(newGroup) => handleNewBrandGroup(newGroup, 'Group')} onCancel={() => setIsGroupModalOpen(false)} />
+            </Modal>
+        </>
+    );
+};
+
+const PartsPage = ({ user }) => {
     const [parts, setParts] = useState([]);
     const [brands, setBrands] = useState([]);
     const [groups, setGroups] = useState([]);
@@ -114,46 +262,33 @@ const PartsPage = () => {
         toast((t) => (
             <div className="flex flex-col items-center">
                 <p className="font-semibold">Are you sure?</p>
-                <p className="text-sm text-gray-600 mb-3">This action cannot be undone.</p>
-                <div className="flex space-x-2">
-                    <button
-                        onClick={() => {
-                            toast.dismiss(t.id);
-                            confirmDelete(partId);
-                        }}
-                        className="px-3 py-1 bg-red-600 text-white text-sm rounded-md hover:bg-red-700"
-                    >
-                        Delete
-                    </button>
-                    <button
-                        onClick={() => toast.dismiss(t.id)}
-                        className="px-3 py-1 bg-gray-200 text-gray-800 text-sm rounded-md hover:bg-gray-300"
-                    >
-                        Cancel
-                    </button>
+                <div className="flex space-x-2 mt-2">
+                    <button onClick={() => { toast.dismiss(t.id); confirmDelete(partId); }} className="px-3 py-1 bg-red-600 text-white text-sm rounded-md">Delete</button>
+                    <button onClick={() => toast.dismiss(t.id)} className="px-3 py-1 bg-gray-200 text-gray-800 text-sm rounded-md">Cancel</button>
                 </div>
             </div>
-        ), {
-            duration: 6000,
-        });
+        ));
     };
 
     const confirmDelete = async (partId) => {
         const promise = axios.delete(`http://localhost:3001/api/parts/${partId}`);
         toast.promise(promise, {
             loading: 'Deleting part...',
-            success: () => {
-                fetchData();
-                return 'Part deleted successfully!';
-            },
+            success: () => { fetchData(); return 'Part deleted!'; },
             error: 'Failed to delete part.',
         });
     };
 
     const handleSave = async (partData) => {
+        const payload = {
+            ...partData,
+            created_by: !currentPart ? user.employee_id : undefined,
+            modified_by: currentPart ? user.employee_id : undefined,
+        };
+
         const promise = currentPart
-            ? axios.put(`http://localhost:3001/api/parts/${currentPart.part_id}`, partData)
-            : axios.post('http://localhost:3001/api/parts', partData);
+            ? axios.put(`http://localhost:3001/api/parts/${currentPart.part_id}`, payload)
+            : axios.post('http://localhost:3001/api/parts', payload);
 
         toast.promise(promise, {
             loading: 'Saving part...',
@@ -197,18 +332,10 @@ const PartsPage = () => {
                                         <td className="p-3 text-sm">{part.brand_name}</td>
                                         <td className="p-3 text-sm">{part.group_name}</td>
                                         <td className="p-3 text-sm text-right space-x-4">
-                                            <button onClick={() => handleManageApps(part)} className="text-green-600 hover:text-green-800" title="Manage Part Applications">
-                                                <Icon path={ICONS.link} className="h-5 w-5"/>
-                                            </button>
-                                            <button onClick={() => handleManageNumbers(part)} className="text-gray-600 hover:text-gray-800" title="Manage Part Numbers">
-                                                <Icon path={ICONS.numbers} className="h-5 w-5"/>
-                                            </button>
-                                            <button onClick={() => handleEdit(part)} className="text-blue-600 hover:text-blue-800" title="Edit Part">
-                                                <Icon path={ICONS.edit} className="h-5 w-5"/>
-                                            </button>
-                                            <button onClick={() => handleDelete(part.part_id)} className="text-red-600 hover:text-red-800" title="Delete Part">
-                                                <Icon path={ICONS.trash} className="h-5 w-5"/>
-                                            </button>
+                                            <button onClick={() => handleManageApps(part)} className="text-green-600 hover:text-green-800" title="Manage Part Applications"><Icon path={ICONS.link} className="h-5 w-5"/></button>
+                                            <button onClick={() => handleManageNumbers(part)} className="text-gray-600 hover:text-gray-800" title="Manage Part Numbers"><Icon path={ICONS.numbers} className="h-5 w-5"/></button>
+                                            <button onClick={() => handleEdit(part)} className="text-blue-600 hover:text-blue-800" title="Edit Part"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
+                                            <button onClick={() => handleDelete(part.part_id)} className="text-red-600 hover:text-red-800" title="Delete Part"><Icon path={ICONS.trash} className="h-5 w-5"/></button>
                                         </td>
                                     </tr>
                                 ))}
@@ -218,7 +345,14 @@ const PartsPage = () => {
                 )}
             </div>
             <Modal isOpen={isFormModalOpen} onClose={() => setIsFormModalOpen(false)} title={currentPart ? 'Edit Part' : 'Add New Part'}>
-                <PartForm part={currentPart} brands={brands} groups={groups} onSave={handleSave} onCancel={() => setIsFormModalOpen(false)} />
+                <PartForm 
+                    part={currentPart} 
+                    brands={brands} 
+                    groups={groups} 
+                    onSave={handleSave} 
+                    onCancel={() => setIsFormModalOpen(false)}
+                    onBrandGroupAdded={fetchData}
+                />
             </Modal>
             
             <Modal isOpen={isNumberModalOpen} onClose={() => setIsNumberModalOpen(false)} title={`Manage Numbers for: ${currentPart?.detail}`}>

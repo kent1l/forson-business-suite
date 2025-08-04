@@ -48,11 +48,13 @@ router.get('/parts/:id', async (req, res) => {
   }
 });
 
-// POST - Create a new part with automatic SKU generation and part numbers
+// POST - Create a new part with all fields
 router.post('/parts', async (req, res) => {
   const { 
     detail, brand_id, group_id, part_numbers_string,
-    reorder_point, warning_quantity, is_active, last_cost, last_sale_price 
+    reorder_point, warning_quantity, is_active, last_cost, last_sale_price,
+    barcode, measurement_unit, is_price_change_allowed, is_using_default_quantity,
+    is_service, low_stock_warning, created_by
   } = req.body;
 
   if (!detail || !brand_id || !group_id) {
@@ -64,7 +66,7 @@ router.post('/parts', async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // 1. SKU Generation Logic (from before)
+    // SKU Generation Logic
     const brandRes = await client.query('SELECT brand_code FROM brand WHERE brand_id = $1', [brand_id]);
     const groupRes = await client.query('SELECT group_code FROM "group" WHERE group_id = $1', [group_id]);
     if (brandRes.rows.length === 0 || groupRes.rows.length === 0) { throw new Error('Invalid brand_id or group_id'); }
@@ -82,22 +84,26 @@ router.post('/parts', async (req, res) => {
     const formattedSeqNum = String(nextSeqNum).padStart(4, '0');
     const internalSku = `${skuPrefix}-${formattedSeqNum}`;
 
-    // 2. Insert the new part with all the new fields
+    // Insert the new part with all fields
     const newPartQuery = `
         INSERT INTO part (
             detail, brand_id, group_id, internal_sku, reorder_point, 
-            warning_quantity, is_active, last_cost, last_sale_price
+            warning_quantity, is_active, last_cost, last_sale_price, barcode,
+            measurement_unit, is_price_change_allowed, is_using_default_quantity,
+            is_service, low_stock_warning, created_by
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         RETURNING *;
     `;
     const newPart = await client.query(newPartQuery, [
-        detail, brand_id, group_id, internalSku, reorder_point || 0, 
-        warning_quantity || 0, is_active, last_cost || 0, last_sale_price || 0
+        detail, brand_id, group_id, internalSku, reorder_point, 
+        warning_quantity, is_active, last_cost, last_sale_price, barcode,
+        measurement_unit, is_price_change_allowed, is_using_default_quantity,
+        is_service, low_stock_warning, created_by
     ]);
     const newPartData = newPart.rows[0];
 
-    // 3. Process and insert part numbers if they exist
+    // Process and insert part numbers
     if (part_numbers_string) {
         const numbers = part_numbers_string.split(/[,;]/).map(num => num.trim()).filter(Boolean);
         if (numbers.length > 0) {
@@ -128,7 +134,9 @@ router.put('/parts/:id', async (req, res) => {
     const { id } = req.params;
     const {
         detail, brand_id, group_id, reorder_point, 
-        warning_quantity, is_active, last_cost, last_sale_price
+        warning_quantity, is_active, last_cost, last_sale_price,
+        barcode, measurement_unit, is_price_change_allowed, is_using_default_quantity,
+        is_service, low_stock_warning, modified_by
     } = req.body;
 
     if (!detail || !brand_id || !group_id) {
@@ -140,9 +148,15 @@ router.put('/parts/:id', async (req, res) => {
             `UPDATE part SET 
                 detail = $1, brand_id = $2, group_id = $3, reorder_point = $4, 
                 warning_quantity = $5, is_active = $6, last_cost = $7, last_sale_price = $8, 
-                date_modified = CURRENT_TIMESTAMP 
-            WHERE part_id = $9 RETURNING *`,
-            [detail, brand_id, group_id, reorder_point, warning_quantity, is_active, last_cost, last_sale_price, id]
+                barcode = $9, measurement_unit = $10, is_price_change_allowed = $11, 
+                is_using_default_quantity = $12, is_service = $13, low_stock_warning = $14, 
+                modified_by = $15, date_modified = CURRENT_TIMESTAMP 
+            WHERE part_id = $16 RETURNING *`,
+            [
+                detail, brand_id, group_id, reorder_point, warning_quantity, is_active, 
+                last_cost, last_sale_price, barcode, measurement_unit, is_price_change_allowed, 
+                is_using_default_quantity, is_service, low_stock_warning, modified_by, id
+            ]
         );
 
         if (updatedPart.rows.length === 0) {
@@ -156,7 +170,7 @@ router.put('/parts/:id', async (req, res) => {
     }
 });
 
-// DELETE - Delete a part
+// ... (DELETE route remains the same)
 router.delete('/parts/:id', async (req, res) => {
     const { id } = req.params;
     try {
@@ -170,5 +184,6 @@ router.delete('/parts/:id', async (req, res) => {
         res.status(500).send('Server Error');
     }
 });
+
 
 module.exports = router;
