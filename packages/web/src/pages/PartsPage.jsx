@@ -3,6 +3,7 @@ import axios from 'axios';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
+import PartNumberManager from './PartNumberManager'; // 1. Import the new component
 
 const PartForm = ({ part, brands, groups, onSave, onCancel }) => {
     const [formData, setFormData] = useState({ detail: '', brand_id: '', group_id: '' });
@@ -59,7 +60,8 @@ const PartsPage = () => {
     const [groups, setGroups] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isFormModalOpen, setIsFormModalOpen] = useState(false);
+    const [isNumberModalOpen, setIsNumberModalOpen] = useState(false); // 2. New state for the number manager modal
     const [currentPart, setCurrentPart] = useState(null);
 
     const fetchData = async () => {
@@ -87,12 +89,18 @@ const PartsPage = () => {
 
     const handleAdd = () => {
         setCurrentPart(null);
-        setIsModalOpen(true);
+        setIsFormModalOpen(true);
     };
 
     const handleEdit = (part) => {
         setCurrentPart(part);
-        setIsModalOpen(true);
+        setIsFormModalOpen(true);
+    };
+    
+    // 3. New handler to open the number manager
+    const handleManageNumbers = (part) => {
+        setCurrentPart(part);
+        setIsNumberModalOpen(true);
     };
 
     const handleDelete = async (partId) => {
@@ -113,7 +121,7 @@ const PartsPage = () => {
             } else {
                 await axios.post('http://localhost:3001/api/parts', partData);
             }
-            setIsModalOpen(false);
+            setIsFormModalOpen(false);
             fetchData();
         } catch (err) {
             alert('Failed to save part.');
@@ -151,6 +159,8 @@ const PartsPage = () => {
                                         <td className="p-3 text-sm">{part.brand_name}</td>
                                         <td className="p-3 text-sm">{part.group_name}</td>
                                         <td className="p-3 text-sm text-right">
+                                            {/* 4. New button to manage numbers */}
+                                            <button onClick={() => handleManageNumbers(part)} className="text-gray-600 hover:text-gray-800 mr-4"><Icon path={ICONS.numbers} className="h-5 w-5"/></button>
                                             <button onClick={() => handleEdit(part)} className="text-blue-600 hover:text-blue-800 mr-4"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
                                             <button onClick={() => handleDelete(part.part_id)} className="text-red-600 hover:text-red-800"><Icon path={ICONS.trash} className="h-5 w-5"/></button>
                                         </td>
@@ -161,8 +171,13 @@ const PartsPage = () => {
                     </div>
                 )}
             </div>
-            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={currentPart ? 'Edit Part' : 'Add New Part'}>
-                <PartForm part={currentPart} brands={brands} groups={groups} onSave={handleSave} onCancel={() => setIsModalOpen(false)} />
+            <Modal isOpen={isFormModalOpen} onClose={() => setIsFormModalOpen(false)} title={currentPart ? 'Edit Part' : 'Add New Part'}>
+                <PartForm part={currentPart} brands={brands} groups={groups} onSave={handleSave} onCancel={() => setIsFormModalOpen(false)} />
+            </Modal>
+            
+            {/* 5. New modal for the number manager */}
+            <Modal isOpen={isNumberModalOpen} onClose={() => setIsNumberModalOpen(false)} title={`Manage Numbers for: ${currentPart?.detail}`}>
+                <PartNumberManager part={currentPart} onCancel={() => setIsNumberModalOpen(false)} />
             </Modal>
         </div>
     );
