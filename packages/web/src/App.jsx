@@ -94,7 +94,6 @@ const SuppliersPage = () => {
             setSuppliers(response.data);
         } catch (err) {
             setError('Failed to fetch suppliers.');
-            console.error(err);
         } finally {
             setLoading(false);
         }
@@ -105,7 +104,7 @@ const SuppliersPage = () => {
     }, []);
 
     const handleAdd = () => {
-        setCurrentSupplier(null); // Clear any existing supplier data
+        setCurrentSupplier(null);
         setIsModalOpen(true);
     };
 
@@ -118,10 +117,9 @@ const SuppliersPage = () => {
         if (window.confirm('Are you sure you want to delete this supplier?')) {
             try {
                 await axios.delete(`http://localhost:3001/api/suppliers/${supplierId}`);
-                fetchSuppliers(); // Refresh the list
+                fetchSuppliers();
             } catch (err) {
                 alert('Failed to delete supplier.');
-                console.error(err);
             }
         }
     };
@@ -129,17 +127,14 @@ const SuppliersPage = () => {
     const handleSave = async (supplierData) => {
         try {
             if (currentSupplier) {
-                // Update existing supplier
                 await axios.put(`http://localhost:3001/api/suppliers/${currentSupplier.supplier_id}`, supplierData);
             } else {
-                // Create new supplier
                 await axios.post('http://localhost:3001/api/suppliers', supplierData);
             }
             setIsModalOpen(false);
-            fetchSuppliers(); // Refresh the list
+            fetchSuppliers();
         } catch (err) {
             alert('Failed to save supplier.');
-            console.error(err);
         }
     };
 
@@ -193,22 +188,12 @@ const SuppliersPage = () => {
 
 const SupplierForm = ({ supplier, onSave, onCancel }) => {
     const [formData, setFormData] = useState({
-        supplier_name: '',
-        contact_person: '',
-        phone: '',
-        email: '',
-        address: ''
+        supplier_name: '', contact_person: '', phone: '', email: '', address: ''
     });
 
     useEffect(() => {
         if (supplier) {
-            setFormData({
-                supplier_name: supplier.supplier_name || '',
-                contact_person: supplier.contact_person || '',
-                phone: supplier.phone || '',
-                email: supplier.email || '',
-                address: supplier.address || ''
-            });
+            setFormData(supplier);
         } else {
              setFormData({ supplier_name: '', contact_person: '', phone: '', email: '', address: '' });
         }
@@ -225,28 +210,18 @@ const SupplierForm = ({ supplier, onSave, onCancel }) => {
     };
 
     return (
-        <form onSubmit={handleSubmit}>
-            <div className="space-y-4">
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Supplier Name</label>
-                    <input type="text" name="supplier_name" value={formData.supplier_name} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
-                    <input type="text" name="contact_person" value={formData.contact_person} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                    <input type="text" name="phone" value={formData.phone} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </div>
-                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                    <input type="email" name="email" value={formData.email} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </div>
-                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
-                    <textarea name="address" value={formData.address} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg"></textarea>
-                </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Supplier Name</label>
+                <input type="text" name="supplier_name" value={formData.supplier_name} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
+                <input type="text" name="contact_person" value={formData.contact_person} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                <input type="text" name="phone" value={formData.phone} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
             </div>
             <div className="mt-6 flex justify-end space-x-4">
                 <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
@@ -259,30 +234,59 @@ const SupplierForm = ({ supplier, onSave, onCancel }) => {
 
 const PartsPage = () => {
     const [parts, setParts] = useState([]);
+    const [brands, setBrands] = useState([]);
+    const [groups, setGroups] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [currentPart, setCurrentPart] = useState(null);
+
+    const fetchData = async () => {
+        try {
+            setLoading(true);
+            setError('');
+            // Fetch all data in parallel
+            const [partsRes, brandsRes, groupsRes] = await Promise.all([
+                axios.get('http://localhost:3001/api/parts'),
+                axios.get('http://localhost:3001/api/brands'),
+                axios.get('http://localhost:3001/api/groups')
+            ]);
+            setParts(partsRes.data);
+            setBrands(brandsRes.data);
+            setGroups(groupsRes.data);
+        } catch (err) {
+            setError('Failed to fetch data.');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
-        const fetchParts = async () => {
-            try {
-                setError('');
-                setLoading(true);
-                const response = await axios.get('http://localhost:3001/api/parts');
-                setParts(response.data);
-            } catch (err) {
-                setError('Failed to fetch parts.');
-                console.error(err);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchParts();
+        fetchData();
     }, []);
+
+    const handleSave = async (partData) => {
+        try {
+            if (currentPart) {
+                await axios.put(`http://localhost:3001/api/parts/${currentPart.part_id}`, partData);
+            } else {
+                await axios.post('http://localhost:3001/api/parts', partData);
+            }
+            setIsModalOpen(false);
+            fetchData();
+        } catch (err) {
+            alert('Failed to save part.');
+        }
+    };
 
     return (
         <div>
-            <h1 className="text-2xl font-semibold text-gray-800 mb-6">Parts</h1>
+            <div className="flex justify-between items-center mb-6">
+                <h1 className="text-2xl font-semibold text-gray-800">Parts</h1>
+                <button onClick={() => { setCurrentPart(null); setIsModalOpen(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
+                    Add Part
+                </button>
+            </div>
             <div className="bg-white p-6 rounded-xl border border-gray-200">
                 {loading && <p>Loading parts...</p>}
                 {error && <p className="text-red-500">{error}</p>}
@@ -295,7 +299,6 @@ const PartsPage = () => {
                                     <th className="p-3 text-sm font-semibold text-gray-600">Detail</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Brand</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Group</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-right">Last Cost</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -305,7 +308,6 @@ const PartsPage = () => {
                                         <td className="p-3 text-sm font-medium text-gray-800">{part.detail}</td>
                                         <td className="p-3 text-sm">{part.brand_name}</td>
                                         <td className="p-3 text-sm">{part.group_name}</td>
-                                        <td className="p-3 text-sm text-right">{part.last_cost}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -313,7 +315,59 @@ const PartsPage = () => {
                     </div>
                 )}
             </div>
+            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={currentPart ? 'Edit Part' : 'Add New Part'}>
+                <PartForm part={currentPart} brands={brands} groups={groups} onSave={handleSave} onCancel={() => setIsModalOpen(false)} />
+            </Modal>
         </div>
+    );
+};
+
+const PartForm = ({ part, brands, groups, onSave, onCancel }) => {
+    const [formData, setFormData] = useState({ detail: '', brand_id: '', group_id: '' });
+
+    useEffect(() => {
+        if (part) {
+            setFormData(part);
+        } else {
+            setFormData({ detail: '', brand_id: '', group_id: '' });
+        }
+    }, [part]);
+
+    const handleChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        onSave(formData);
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Part Detail</label>
+                <input type="text" name="detail" value={formData.detail} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
+                <select name="brand_id" value={formData.brand_id} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required>
+                    <option value="">Select a Brand</option>
+                    {brands.map(brand => <option key={brand.brand_id} value={brand.brand_id}>{brand.brand_name}</option>)}
+                </select>
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Group</label>
+                <select name="group_id" value={formData.group_id} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required>
+                    <option value="">Select a Group</option>
+                    {groups.map(group => <option key={group.group_id} value={group.group_id}>{group.group_name}</option>)}
+                </select>
+            </div>
+            <div className="mt-6 flex justify-end space-x-4">
+                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>
+            </div>
+        </form>
     );
 };
 
