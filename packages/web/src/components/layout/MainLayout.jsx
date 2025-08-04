@@ -7,6 +7,7 @@ import PartsPage from '../../pages/PartsPage';
 import GoodsReceiptPage from '../../pages/GoodsReceiptPage';
 import InvoicingPage from '../../pages/InvoicingPage';
 import ApplicationsPage from '../../pages/ApplicationsPage';
+import CustomersPage from '../../pages/CustomersPage'; // 1. Import the new page
 
 const MainLayout = ({ user, onLogout, onNavigate, currentPage }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -15,8 +16,9 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage }) => {
         switch (currentPage) {
             case 'dashboard': return <Dashboard />;
             case 'suppliers': return <SuppliersPage />;
-            case 'parts': return <PartsPage user={user} />; // Pass user prop here
+            case 'parts': return <PartsPage user={user} />;
             case 'applications': return <ApplicationsPage />;
+            case 'customers': return <CustomersPage />; // 2. Add the new case
             case 'goods_receipt': return <GoodsReceiptPage user={user} />;
             case 'invoicing': return <InvoicingPage user={user} />;
             default: return <Dashboard />;
