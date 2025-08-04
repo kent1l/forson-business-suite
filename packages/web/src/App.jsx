@@ -19,7 +19,32 @@ const ICONS = {
   box: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4",
   warning: "M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z",
   truck: "M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z M9 11a1 1 0 100-2 1 1 0 000 2z",
+  edit: "M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.536l12.232-12.232z",
+  trash: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16",
+  close: "M6 18L18 6M6 6l12 12",
 };
+
+// --- REUSABLE MODAL COMPONENT ---
+const Modal = ({ isOpen, onClose, title, children }) => {
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+                <div className="p-4 border-b flex justify-between items-center">
+                    <h2 className="text-lg font-semibold">{title}</h2>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-800">
+                        <Icon path={ICONS.close} />
+                    </button>
+                </div>
+                <div className="p-6">
+                    {children}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 
 // --- PAGE COMPONENTS ---
 
@@ -58,59 +83,239 @@ const SuppliersPage = () => {
     const [suppliers, setSuppliers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [currentSupplier, setCurrentSupplier] = useState(null);
+
+    const fetchSuppliers = async () => {
+        try {
+            setError('');
+            setLoading(true);
+            const response = await axios.get('http://localhost:3001/api/suppliers');
+            setSuppliers(response.data);
+        } catch (err) {
+            setError('Failed to fetch suppliers.');
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
-        const fetchSuppliers = async () => {
+        fetchSuppliers();
+    }, []);
+
+    const handleAdd = () => {
+        setCurrentSupplier(null); // Clear any existing supplier data
+        setIsModalOpen(true);
+    };
+
+    const handleEdit = (supplier) => {
+        setCurrentSupplier(supplier);
+        setIsModalOpen(true);
+    };
+
+    const handleDelete = async (supplierId) => {
+        if (window.confirm('Are you sure you want to delete this supplier?')) {
+            try {
+                await axios.delete(`http://localhost:3001/api/suppliers/${supplierId}`);
+                fetchSuppliers(); // Refresh the list
+            } catch (err) {
+                alert('Failed to delete supplier.');
+                console.error(err);
+            }
+        }
+    };
+
+    const handleSave = async (supplierData) => {
+        try {
+            if (currentSupplier) {
+                // Update existing supplier
+                await axios.put(`http://localhost:3001/api/suppliers/${currentSupplier.supplier_id}`, supplierData);
+            } else {
+                // Create new supplier
+                await axios.post('http://localhost:3001/api/suppliers', supplierData);
+            }
+            setIsModalOpen(false);
+            fetchSuppliers(); // Refresh the list
+        } catch (err) {
+            alert('Failed to save supplier.');
+            console.error(err);
+        }
+    };
+
+    return (
+        <div>
+            <div className="flex justify-between items-center mb-6">
+                <h1 className="text-2xl font-semibold text-gray-800">Suppliers</h1>
+                <button onClick={handleAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
+                    Add Supplier
+                </button>
+            </div>
+            <div className="bg-white p-6 rounded-xl border border-gray-200">
+                {loading && <p>Loading suppliers...</p>}
+                {error && <p className="text-red-500">{error}</p>}
+                {!loading && !error && (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead className="border-b">
+                                <tr>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">ID</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Name</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 hidden sm:table-cell">Contact Person</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 hidden md:table-cell">Phone</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {suppliers.map(supplier => (
+                                    <tr key={supplier.supplier_id} className="border-b hover:bg-gray-50">
+                                        <td className="p-3 text-sm">{supplier.supplier_id}</td>
+                                        <td className="p-3 text-sm font-medium text-gray-800">{supplier.supplier_name}</td>
+                                        <td className="p-3 text-sm hidden sm:table-cell">{supplier.contact_person}</td>
+                                        <td className="p-3 text-sm hidden md:table-cell">{supplier.phone}</td>
+                                        <td className="p-3 text-sm text-right">
+                                            <button onClick={() => handleEdit(supplier)} className="text-blue-600 hover:text-blue-800 mr-4"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
+                                            <button onClick={() => handleDelete(supplier.supplier_id)} className="text-red-600 hover:text-red-800"><Icon path={ICONS.trash} className="h-5 w-5"/></button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={currentSupplier ? 'Edit Supplier' : 'Add New Supplier'}>
+                <SupplierForm supplier={currentSupplier} onSave={handleSave} onCancel={() => setIsModalOpen(false)} />
+            </Modal>
+        </div>
+    );
+};
+
+const SupplierForm = ({ supplier, onSave, onCancel }) => {
+    const [formData, setFormData] = useState({
+        supplier_name: '',
+        contact_person: '',
+        phone: '',
+        email: '',
+        address: ''
+    });
+
+    useEffect(() => {
+        if (supplier) {
+            setFormData({
+                supplier_name: supplier.supplier_name || '',
+                contact_person: supplier.contact_person || '',
+                phone: supplier.phone || '',
+                email: supplier.email || '',
+                address: supplier.address || ''
+            });
+        } else {
+             setFormData({ supplier_name: '', contact_person: '', phone: '', email: '', address: '' });
+        }
+    }, [supplier]);
+
+    const handleChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        onSave(formData);
+    };
+
+    return (
+        <form onSubmit={handleSubmit}>
+            <div className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Supplier Name</label>
+                    <input type="text" name="supplier_name" value={formData.supplier_name} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
+                    <input type="text" name="contact_person" value={formData.contact_person} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                    <input type="text" name="phone" value={formData.phone} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                </div>
+                 <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <input type="email" name="email" value={formData.email} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                </div>
+                 <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                    <textarea name="address" value={formData.address} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg"></textarea>
+                </div>
+            </div>
+            <div className="mt-6 flex justify-end space-x-4">
+                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>
+            </div>
+        </form>
+    );
+};
+
+
+const PartsPage = () => {
+    const [parts, setParts] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+        const fetchParts = async () => {
             try {
                 setError('');
                 setLoading(true);
-                const response = await axios.get('http://localhost:3001/api/suppliers');
-                setSuppliers(response.data);
+                const response = await axios.get('http://localhost:3001/api/parts');
+                setParts(response.data);
             } catch (err) {
-                setError('Failed to fetch suppliers.');
+                setError('Failed to fetch parts.');
                 console.error(err);
             } finally {
                 setLoading(false);
             }
         };
 
-        fetchSuppliers();
-    }, []); // The empty array means this effect runs only once when the component mounts
+        fetchParts();
+    }, []);
 
     return (
         <div>
-            <h1 className="text-2xl font-semibold text-gray-800 mb-6">Suppliers</h1>
+            <h1 className="text-2xl font-semibold text-gray-800 mb-6">Parts</h1>
             <div className="bg-white p-6 rounded-xl border border-gray-200">
-                {loading && <p>Loading suppliers...</p>}
+                {loading && <p>Loading parts...</p>}
                 {error && <p className="text-red-500">{error}</p>}
                 {!loading && !error && (
-                    <table className="w-full text-left">
-                        <thead className="border-b">
-                            <tr>
-                                <th className="p-3 text-sm font-semibold text-gray-600">ID</th>
-                                <th className="p-3 text-sm font-semibold text-gray-600">Name</th>
-                                <th className="p-3 text-sm font-semibold text-gray-600">Contact Person</th>
-                                <th className="p-3 text-sm font-semibold text-gray-600">Phone</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {suppliers.map(supplier => (
-                                <tr key={supplier.supplier_id} className="border-b hover:bg-gray-50">
-                                    <td className="p-3 text-sm">{supplier.supplier_id}</td>
-                                    <td className="p-3 text-sm font-medium text-gray-800">{supplier.supplier_name}</td>
-                                    <td className="p-3 text-sm">{supplier.contact_person}</td>
-                                    <td className="p-3 text-sm">{supplier.phone}</td>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead className="border-b">
+                                <tr>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Detail</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Brand</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Group</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 text-right">Last Cost</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {parts.map(part => (
+                                    <tr key={part.part_id} className="border-b hover:bg-gray-50">
+                                        <td className="p-3 text-sm font-mono">{part.internal_sku}</td>
+                                        <td className="p-3 text-sm font-medium text-gray-800">{part.detail}</td>
+                                        <td className="p-3 text-sm">{part.brand_name}</td>
+                                        <td className="p-3 text-sm">{part.group_name}</td>
+                                        <td className="p-3 text-sm text-right">{part.last_cost}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 )}
             </div>
         </div>
     );
 };
-
-const PartsPage = () => <h1 className="text-2xl font-semibold text-gray-800">Parts</h1>;
 
 
 // --- LAYOUT COMPONENT ---
