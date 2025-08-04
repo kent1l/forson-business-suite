@@ -14,6 +14,7 @@ const ICONS = {
   dashboard: "M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z",
   suppliers: "M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10l2-2h8a1 1 0 001-1z",
   parts: "M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4",
+  receipt: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
   logout: "M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1",
   menu: "M4 6h16M4 12h16M4 18h16",
   box: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4",
@@ -22,24 +23,20 @@ const ICONS = {
   edit: "M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.536l12.232-12.232z",
   trash: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16",
   close: "M6 18L18 6M6 6l12 12",
+  search: "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z",
 };
 
 // --- REUSABLE MODAL COMPONENT ---
 const Modal = ({ isOpen, onClose, title, children }) => {
     if (!isOpen) return null;
-
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4">
             <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
                 <div className="p-4 border-b flex justify-between items-center">
                     <h2 className="text-lg font-semibold">{title}</h2>
-                    <button onClick={onClose} className="text-gray-500 hover:text-gray-800">
-                        <Icon path={ICONS.close} />
-                    </button>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-800"><Icon path={ICONS.close} /></button>
                 </div>
-                <div className="p-6">
-                    {children}
-                </div>
+                <div className="p-6">{children}</div>
             </div>
         </div>
     );
@@ -396,6 +393,166 @@ const PartForm = ({ part, brands, groups, onSave, onCancel }) => {
     );
 };
 
+const GoodsReceiptPage = ({ user }) => {
+    const [suppliers, setSuppliers] = useState([]);
+    const [parts, setParts] = useState([]);
+    const [lines, setLines] = useState([]);
+    const [selectedSupplier, setSelectedSupplier] = useState('');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [searchResults, setSearchResults] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                setLoading(true);
+                const [suppliersRes, partsRes] = await Promise.all([
+                    axios.get('http://localhost:3001/api/suppliers'),
+                    axios.get('http://localhost:3001/api/parts')
+                ]);
+                setSuppliers(suppliersRes.data);
+                setParts(partsRes.data);
+            } catch (err) {
+                console.error("Failed to fetch initial data for goods receipt", err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchData();
+    }, []);
+
+    useEffect(() => {
+        if (searchTerm.trim() === '') {
+            setSearchResults([]);
+            return;
+        }
+        setSearchResults(
+            parts.filter(p =>
+                p.detail.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (p.internal_sku && p.internal_sku.toLowerCase().includes(searchTerm.toLowerCase()))
+            ).slice(0, 5)
+        );
+    }, [searchTerm, parts]);
+
+    const addPartToLines = (part) => {
+        const existingLine = lines.find(line => line.part_id === part.part_id);
+        if (existingLine) {
+            setLines(lines.map(line =>
+                line.part_id === part.part_id ? { ...line, quantity: Number(line.quantity) + 1 } : line
+            ));
+        } else {
+            setLines([...lines, { ...part, part_id: part.part_id, quantity: 1, cost_price: part.last_cost || 0 }]);
+        }
+        setSearchTerm('');
+    };
+
+    const handleLineChange = (partId, field, value) => {
+        const numericValue = parseFloat(value) || 0;
+        setLines(lines.map(line =>
+            line.part_id === partId ? { ...line, [field]: numericValue } : line
+        ));
+    };
+
+    const removeLine = (partId) => {
+        setLines(lines.filter(line => line.part_id !== partId));
+    };
+
+    const handlePostTransaction = async () => {
+        if (!selectedSupplier || lines.length === 0) {
+            alert('Please select a supplier and add at least one item.');
+            return;
+        }
+
+        const payload = {
+            supplier_id: selectedSupplier,
+            received_by: user.employee_id,
+            lines: lines.map(line => ({
+                part_id: line.part_id,
+                quantity: line.quantity,
+                cost_price: line.cost_price,
+            })),
+        };
+
+        try {
+            await axios.post('http://localhost:3001/api/goods-receipts', payload);
+            alert('Goods receipt created successfully!');
+            setLines([]);
+            setSelectedSupplier('');
+        } catch (err) {
+            alert('Failed to create goods receipt.');
+        }
+    };
+
+    if (loading) return <p>Loading data...</p>;
+
+    return (
+        <div>
+            <h1 className="text-2xl font-semibold text-gray-800 mb-6">New Goods Receipt</h1>
+            <div className="bg-white p-6 rounded-xl border border-gray-200 space-y-6">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
+                    <select value={selectedSupplier} onChange={e => setSelectedSupplier(e.target.value)} className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-lg">
+                        <option value="">Select a Supplier</option>
+                        {suppliers.map(s => <option key={s.supplier_id} value={s.supplier_id}>{s.supplier_name}</option>)}
+                    </select>
+                </div>
+                
+                <div className="relative">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Add Part</label>
+                    <div className="relative">
+                        <Icon path={ICONS.search} className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                        <input
+                            type="text"
+                            placeholder="Search by part name or SKU..."
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            className="w-full px-3 py-2 pl-10 border border-gray-300 rounded-lg"
+                        />
+                    </div>
+                    {searchResults.length > 0 && (
+                        <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg">
+                            {searchResults.map(part => (
+                                <li key={part.part_id} onClick={() => addPartToLines(part)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer">
+                                    <strong>{part.detail}</strong> ({part.internal_sku})
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                        <thead className="border-b">
+                            <tr>
+                                <th className="p-3 text-sm font-semibold text-gray-600">Part Detail</th>
+                                <th className="p-3 text-sm font-semibold text-gray-600 w-28">Quantity</th>
+                                <th className="p-3 text-sm font-semibold text-gray-600 w-32">Cost Price</th>
+                                <th className="p-3 text-sm font-semibold text-gray-600 w-16 text-center"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {lines.map(line => (
+                                <tr key={line.part_id} className="border-b">
+                                    <td className="p-2 text-sm font-medium text-gray-800">{line.detail}</td>
+                                    <td className="p-2"><input type="number" value={line.quantity} onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)} className="w-full p-1 border rounded-md" /></td>
+                                    <td className="p-2"><input type="number" value={line.cost_price} onChange={e => handleLineChange(line.part_id, 'cost_price', e.target.value)} className="w-full p-1 border rounded-md" /></td>
+                                    <td className="p-2 text-center"><button onClick={() => removeLine(line.part_id)} className="text-red-500 hover:text-red-700"><Icon path={ICONS.trash} className="h-5 w-5"/></button></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div className="flex justify-end pt-4 border-t">
+                    <button onClick={handlePostTransaction} className="bg-green-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-green-700 transition">
+                        Post Transaction
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 
 // --- LAYOUT COMPONENT ---
 
@@ -404,18 +561,14 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
         { name: 'Dashboard', icon: ICONS.dashboard, page: 'dashboard' },
         { name: 'Suppliers', icon: ICONS.suppliers, page: 'suppliers' },
         { name: 'Parts', icon: ICONS.parts, page: 'parts' },
+        { name: 'Goods Receipt', icon: ICONS.receipt, page: 'goods_receipt' },
     ];
 
     return (
         <>
-            <div
-                className={`fixed inset-0 bg-black bg-opacity-50 z-20 md:hidden ${isOpen ? 'block' : 'hidden'}`}
-                onClick={() => setIsOpen(false)}
-            ></div>
+            <div className={`fixed inset-0 bg-black bg-opacity-50 z-20 md:hidden ${isOpen ? 'block' : 'hidden'}`} onClick={() => setIsOpen(false)}></div>
             <div className={`fixed top-0 left-0 h-full bg-white border-r border-gray-200 flex flex-col z-30 w-64 md:w-60 md:relative md:translate-x-0 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                <div className="h-16 flex items-center px-6 text-lg font-bold text-blue-600">
-                    Forson Suite
-                </div>
+                <div className="h-16 flex items-center px-6 text-lg font-bold text-blue-600">Forson Suite</div>
                 <nav className="flex-1 px-4 py-4 space-y-1">
                     {navItems.map(item => (
                         <a
@@ -471,6 +624,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage }) => {
             case 'dashboard': return <Dashboard />;
             case 'suppliers': return <SuppliersPage />;
             case 'parts': return <PartsPage />;
+            case 'goods_receipt': return <GoodsReceiptPage user={user} />;
             default: return <Dashboard />;
         }
     };
@@ -564,12 +718,10 @@ function App() {
     const [user, setUser] = useState(null);
     const [currentPage, setCurrentPage] = useState('dashboard');
 
-    // If there's no user, show the login screen
     if (!user) {
         return <LoginScreen onLogin={setUser} />;
     }
 
-    // If a user is logged in, show the main application layout
     return (
         <MainLayout
             user={user}
@@ -581,4 +733,3 @@ function App() {
 }
 
 export default App;
-// --- END OF APP COMPONENT ---
