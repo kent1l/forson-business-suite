@@ -14,7 +14,7 @@ const constructDisplayName = (part) => {
 
 // GET /api/power-search/parts - Advanced multi-filter text search
 router.get('/power-search/parts', async (req, res) => {
-    const { keyword, brand, group, application } = req.query;
+    const { keyword, brand, group, application, year } = req.query;
 
     let queryParams = [];
     let whereClauses = [];
@@ -69,6 +69,14 @@ router.get('/power-search/parts', async (req, res) => {
     if (application) {
         queryParams.push(`%${application}%`);
         whereClauses.push(`(app.make ILIKE $${queryParams.length} OR app.model ILIKE $${queryParams.length})`);
+    }
+    if (year) {
+        const numericYear = parseInt(year, 10);
+        if (!isNaN(numericYear)) {
+            queryParams.push(numericYear);
+            const yearIndex = queryParams.length;
+            whereClauses.push(`p_app.part_id IS NOT NULL AND ($${yearIndex} >= p_app.year_start OR p_app.year_start IS NULL) AND ($${yearIndex} <= p_app.year_end OR p_app.year_end IS NULL)`);
+        }
     }
 
     let finalQuery = baseQuery;

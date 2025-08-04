@@ -13,6 +13,7 @@ const PowerSearchPage = () => {
         brand: '',
         group: '',
         application: '',
+        year: '',
     });
 
     const handleFilterChange = (e) => {
@@ -41,6 +42,7 @@ const PowerSearchPage = () => {
                 if (filters.brand) queryParams.append('brand', filters.brand);
                 if (filters.group) queryParams.append('group', filters.group);
                 if (filters.application) queryParams.append('application', filters.application);
+                if (filters.year) queryParams.append('year', filters.year);
 
                 const response = await axios.get(`http://localhost:3001/api/power-search/parts?${queryParams.toString()}`);
                 setResults(response.data);
@@ -67,7 +69,7 @@ const PowerSearchPage = () => {
             
             {/* Filter Controls */}
             <div className="bg-white p-6 rounded-xl border border-gray-200 mb-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                     <input 
                         type="text"
                         name="keyword"
@@ -97,6 +99,14 @@ const PowerSearchPage = () => {
                         name="application"
                         placeholder="Application (Make/Model)..."
                         value={filters.application}
+                        onChange={handleFilterChange}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                    <input 
+                        type="number"
+                        name="year"
+                        placeholder="Year..."
+                        value={filters.year}
                         onChange={handleFilterChange}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                     />
