@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import toast from 'react-hot-toast'; // 1. Import toast
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 
 const SupplierForm = ({ supplier, onSave, onCancel }) => {
+    // ... (This component remains the same)
     const [formData, setFormData] = useState({
         supplier_name: '', contact_person: '', phone: '', email: '', address: ''
     });
@@ -83,29 +85,63 @@ const SuppliersPage = () => {
         setIsModalOpen(true);
     };
 
-    const handleDelete = async (supplierId) => {
-        if (window.confirm('Are you sure you want to delete this supplier?')) {
-            try {
-                await axios.delete(`http://localhost:3001/api/suppliers/${supplierId}`);
-                fetchSuppliers();
-            } catch (err) {
-                alert('Failed to delete supplier.');
-            }
-        }
+    const handleDelete = (supplierId) => {
+        // 2. Use a confirmation toast
+        toast((t) => (
+            <div className="flex flex-col items-center">
+                <p className="font-semibold">Are you sure?</p>
+                <p className="text-sm text-gray-600 mb-3">This action cannot be undone.</p>
+                <div className="flex space-x-2">
+                    <button
+                        onClick={() => {
+                            toast.dismiss(t.id);
+                            confirmDelete(supplierId);
+                        }}
+                        className="px-3 py-1 bg-red-600 text-white text-sm rounded-md hover:bg-red-700"
+                    >
+                        Delete
+                    </button>
+                    <button
+                        onClick={() => toast.dismiss(t.id)}
+                        className="px-3 py-1 bg-gray-200 text-gray-800 text-sm rounded-md hover:bg-gray-300"
+                    >
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        ), {
+            duration: 6000,
+        });
+    };
+    
+    const confirmDelete = async (supplierId) => {
+        const promise = axios.delete(`http://localhost:3001/api/suppliers/${supplierId}`);
+        
+        // 3. Use a promise-based toast for loading, success, and error states
+        toast.promise(promise, {
+            loading: 'Deleting supplier...',
+            success: () => {
+                fetchSuppliers(); // Refresh the list on success
+                return 'Supplier deleted successfully!';
+            },
+            error: 'Failed to delete supplier.',
+        });
     };
 
     const handleSave = async (supplierData) => {
-        try {
-            if (currentSupplier) {
-                await axios.put(`http://localhost:3001/api/suppliers/${currentSupplier.supplier_id}`, supplierData);
-            } else {
-                await axios.post('http://localhost:3001/api/suppliers', supplierData);
-            }
-            setIsModalOpen(false);
-            fetchSuppliers();
-        } catch (err) {
-            alert('Failed to save supplier.');
-        }
+        const promise = currentSupplier
+            ? axios.put(`http://localhost:3001/api/suppliers/${currentSupplier.supplier_id}`, supplierData)
+            : axios.post('http://localhost:3001/api/suppliers', supplierData);
+
+        toast.promise(promise, {
+            loading: 'Saving supplier...',
+            success: () => {
+                setIsModalOpen(false);
+                fetchSuppliers();
+                return 'Supplier saved successfully!';
+            },
+            error: 'Failed to save supplier.',
+        });
     };
 
     return (
