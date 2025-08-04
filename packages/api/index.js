@@ -15,7 +15,8 @@ const customerRoutes = require('./routes/customerRoutes');
 const partNumberRoutes = require('./routes/partNumberRoutes');
 const applicationRoutes = require('./routes/applicationRoutes');
 const partApplicationRoutes = require('./routes/partApplicationRoutes');
-const dashboardRoutes = require('./routes/dashboardRoutes'); // 1. Import
+const dashboardRoutes = require('./routes/dashboardRoutes');
+const powerSearchRoutes = require('./routes/powerSearchRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -25,18 +26,20 @@ app.use(cors());
 app.use(express.json());
 
 // --- API Routes ---
-app.use('/api', supplierRoutes);
-app.use('/api', partRoutes);
-app.use('/api', employeeRoutes);
-app.use('/api', brandRoutes);
-app.use('/api', groupRoutes);
+// Register more specific routes BEFORE more generic routes to avoid conflicts.
+app.use('/api', powerSearchRoutes);
+app.use('/api', dashboardRoutes);
+app.use('/api', partNumberRoutes);
+app.use('/api', partApplicationRoutes);
 app.use('/api', goodsReceiptRoutes);
 app.use('/api', invoiceRoutes);
 app.use('/api', customerRoutes);
-app.use('/api', partNumberRoutes);
 app.use('/api', applicationRoutes);
-app.use('/api', partApplicationRoutes);
-app.use('/api', dashboardRoutes); // 2. Use
+app.use('/api', brandRoutes);
+app.use('/api', groupRoutes);
+app.use('/api', supplierRoutes);
+app.use('/api', employeeRoutes);
+app.use('/api', partRoutes); // Generic '/parts/:id' route is last.
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
