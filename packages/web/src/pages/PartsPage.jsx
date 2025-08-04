@@ -4,10 +4,9 @@ import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import PartNumberManager from './PartNumberManager';
-import PartApplicationManager from './PartApplicationManager'; // 1. Import the new component
+import PartApplicationManager from './PartApplicationManager';
 
 const PartForm = ({ part, brands, groups, onSave, onCancel }) => {
-    // ... (existing PartForm code remains the same)
     const [formData, setFormData] = useState({ detail: '', brand_id: '', group_id: '' });
 
     useEffect(() => {
@@ -64,7 +63,7 @@ const PartsPage = () => {
     const [error, setError] = useState('');
     const [isFormModalOpen, setIsFormModalOpen] = useState(false);
     const [isNumberModalOpen, setIsNumberModalOpen] = useState(false);
-    const [isAppModalOpen, setIsAppModalOpen] = useState(false); // 2. New state for the application modal
+    const [isAppModalOpen, setIsAppModalOpen] = useState(false);
     const [currentPart, setCurrentPart] = useState(null);
 
     const fetchData = async () => {
@@ -105,7 +104,6 @@ const PartsPage = () => {
         setIsNumberModalOpen(true);
     };
 
-    // 3. New handler for the application manager
     const handleManageApps = (part) => {
         setCurrentPart(part);
         setIsAppModalOpen(true);
@@ -167,7 +165,6 @@ const PartsPage = () => {
                                         <td className="p-3 text-sm">{part.brand_name}</td>
                                         <td className="p-3 text-sm">{part.group_name}</td>
                                         <td className="p-3 text-sm text-right space-x-4">
-                                            {/* 4. New button to manage applications */}
                                             <button onClick={() => handleManageApps(part)} className="text-green-600 hover:text-green-800" title="Manage Part Applications">
                                                 <Icon path={ICONS.link} className="h-5 w-5"/>
                                             </button>
@@ -196,7 +193,6 @@ const PartsPage = () => {
                 <PartNumberManager part={currentPart} onCancel={() => setIsNumberModalOpen(false)} />
             </Modal>
 
-            {/* 5. New modal for the application manager */}
             <Modal isOpen={isAppModalOpen} onClose={() => setIsAppModalOpen(false)} title={`Manage Applications for: ${currentPart?.detail}`}>
                 <PartApplicationManager part={currentPart} onCancel={() => setIsAppModalOpen(false)} />
             </Modal>
