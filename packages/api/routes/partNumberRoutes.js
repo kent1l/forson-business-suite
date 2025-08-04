@@ -2,11 +2,11 @@ const express = require('express');
 const db = require('../db');
 const router = express.Router();
 
-// GET all numbers for a specific part
+// GET all numbers for a specific part, ordered correctly
 router.get('/parts/:partId/numbers', async (req, res) => {
   const { partId } = req.params;
   try {
-    const { rows } = await db.query('SELECT * FROM part_number WHERE part_id = $1', [partId]);
+    const { rows } = await db.query('SELECT * FROM part_number WHERE part_id = $1 ORDER BY display_order', [partId]);
     res.json(rows);
   } catch (err) {
     console.error(err.message);
@@ -15,7 +15,6 @@ router.get('/parts/:partId/numbers', async (req, res) => {
 });
 
 // POST new numbers for a specific part
-// Accepts a single string of numbers separated by commas or semicolons
 router.post('/parts/:partId/numbers', async (req, res) => {
   const { partId } = req.params;
   const { numbersString } = req.body;
@@ -24,7 +23,6 @@ router.post('/parts/:partId/numbers', async (req, res) => {
     return res.status(400).json({ message: 'Numbers string is required.' });
   }
 
-  // Split the string by comma or semicolon, trim whitespace, and filter out empty strings
   const numbers = numbersString.split(/[,;]/).map(num => num.trim()).filter(Boolean);
 
   if (numbers.length === 0) {
@@ -36,7 +34,6 @@ router.post('/parts/:partId/numbers', async (req, res) => {
     await client.query('BEGIN');
 
     for (const number of numbers) {
-      // "ON CONFLICT DO NOTHING" prevents errors if a number already exists for this part
       const query = `
         INSERT INTO part_number (part_id, part_number)
         VALUES ($1, $2)
@@ -47,8 +44,7 @@ router.post('/parts/:partId/numbers', async (req, res) => {
 
     await client.query('COMMIT');
     
-    // Return the updated list of all numbers for the part
-    const updatedNumbers = await client.query('SELECT * FROM part_number WHERE part_id = $1', [partId]);
+    const updatedNumbers = await client.query('SELECT * FROM part_number WHERE part_id = $1 ORDER BY display_order', [partId]);
     res.status(201).json(updatedNumbers.rows);
 
   } catch (err) {
@@ -58,6 +54,36 @@ router.post('/parts/:partId/numbers', async (req, res) => {
   } finally {
     client.release();
   }
+});
+
+// PUT - Reorder part numbers
+router.put('/parts/:partId/numbers/reorder', async (req, res) => {
+    const { orderedIds } = req.body; // Expect an array of part_number_id in the new order
+
+    if (!Array.isArray(orderedIds)) {
+        return res.status(400).json({ message: 'orderedIds must be an array.' });
+    }
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+
+        // Update the display_order for each ID based on its position in the array
+        for (let i = 0; i < orderedIds.length; i++) {
+            const id = orderedIds[i];
+            const order = i + 1; // display_order starts at 1
+            await client.query('UPDATE part_number SET display_order = $1 WHERE part_number_id = $2', [order, id]);
+        }
+
+        await client.query('COMMIT');
+        res.json({ message: 'Order updated successfully.' });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    } finally {
+        client.release();
+    }
 });
 
 module.exports = router;

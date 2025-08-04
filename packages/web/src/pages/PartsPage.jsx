@@ -55,7 +55,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded })
     });
     const [isBrandModalOpen, setIsBrandModalOpen] = useState(false);
     const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
-    const [showAdvanced, setShowAdvanced] = useState(false); // State for the advanced options drawer
+    const [showAdvanced, setShowAdvanced] = useState(false);
 
     useEffect(() => {
         if (part) {
@@ -318,9 +318,7 @@ const PartsPage = ({ user }) => {
                             <thead className="border-b">
                                 <tr>
                                     <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Detail</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Brand</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Group</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Display Name</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>
@@ -328,9 +326,7 @@ const PartsPage = ({ user }) => {
                                 {parts.map(part => (
                                     <tr key={part.part_id} className="border-b hover:bg-gray-50">
                                         <td className="p-3 text-sm font-mono">{part.internal_sku}</td>
-                                        <td className="p-3 text-sm font-medium text-gray-800">{part.detail}</td>
-                                        <td className="p-3 text-sm">{part.brand_name}</td>
-                                        <td className="p-3 text-sm">{part.group_name}</td>
+                                        <td className="p-3 text-sm font-medium text-gray-800">{part.display_name}</td>
                                         <td className="p-3 text-sm text-right space-x-4">
                                             <button onClick={() => handleManageApps(part)} className="text-green-600 hover:text-green-800" title="Manage Part Applications"><Icon path={ICONS.link} className="h-5 w-5"/></button>
                                             <button onClick={() => handleManageNumbers(part)} className="text-gray-600 hover:text-gray-800" title="Manage Part Numbers"><Icon path={ICONS.numbers} className="h-5 w-5"/></button>
@@ -356,7 +352,7 @@ const PartsPage = ({ user }) => {
             </Modal>
             
             <Modal isOpen={isNumberModalOpen} onClose={() => setIsNumberModalOpen(false)} title={`Manage Numbers for: ${currentPart?.detail}`}>
-                <PartNumberManager part={currentPart} onCancel={() => setIsNumberModalOpen(false)} />
+                <PartNumberManager part={currentPart} onSave={fetchData} onCancel={() => setIsNumberModalOpen(false)} />
             </Modal>
 
             <Modal isOpen={isAppModalOpen} onClose={() => setIsAppModalOpen(false)} title={`Manage Applications for: ${currentPart?.detail}`}>

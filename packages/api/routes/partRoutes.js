@@ -2,21 +2,49 @@ const express = require('express');
 const db = require('../db');
 const router = express.Router();
 
-// GET all parts with brand and group names
+// Helper function to construct the display name
+const constructDisplayName = (part) => {
+    const displayNameParts = [];
+
+    // Part 1: GroupName (BrandName)
+    const category = `${part.group_name || ''} (${part.brand_name || ''})`.replace('()', '').trim();
+    if (category) displayNameParts.push(category);
+
+    // Part 2: Detail
+    if (part.detail) displayNameParts.push(part.detail);
+
+    // Part 3: Part Numbers
+    if (part.part_numbers) displayNameParts.push(part.part_numbers);
+
+    return displayNameParts.join(' | ');
+};
+
+// GET all parts with brand, group, and ordered part numbers
 router.get('/parts', async (req, res) => {
   try {
     const query = `
       SELECT
         p.*,
         b.brand_name,
-        g.group_name
+        g.group_name,
+        (
+          SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) 
+          FROM part_number pn 
+          WHERE pn.part_id = p.part_id
+        ) AS part_numbers
       FROM part AS p
       LEFT JOIN brand AS b ON p.brand_id = b.brand_id
       LEFT JOIN "group" AS g ON p.group_id = g.group_id
       ORDER BY p.part_id;
     `;
     const { rows } = await db.query(query);
-    res.json(rows);
+    
+    const partsWithDisplayName = rows.map(part => ({
+        ...part,
+        display_name: constructDisplayName(part)
+    }));
+
+    res.json(partsWithDisplayName);
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server Error');
@@ -31,7 +59,12 @@ router.get('/parts/:id', async (req, res) => {
       SELECT
         p.*,
         b.brand_name,
-        g.group_name
+        g.group_name,
+        (
+          SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) 
+          FROM part_number pn 
+          WHERE pn.part_id = p.part_id
+        ) AS part_numbers
       FROM part AS p
       LEFT JOIN brand AS b ON p.brand_id = b.brand_id
       LEFT JOIN "group" AS g ON p.group_id = g.group_id
@@ -41,7 +74,11 @@ router.get('/parts/:id', async (req, res) => {
     if (rows.length === 0) {
       return res.status(404).json({ message: 'Part not found' });
     }
-    res.json(rows[0]);
+
+    const part = rows[0];
+    part.display_name = constructDisplayName(part);
+    
+    res.json(part);
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server Error');
@@ -170,7 +207,7 @@ router.put('/parts/:id', async (req, res) => {
     }
 });
 
-// ... (DELETE route remains the same)
+// DELETE - Delete a part
 router.delete('/parts/:id', async (req, res) => {
     const { id } = req.params;
     try {
