@@ -8,9 +8,7 @@ const pool = new Pool({
   database: process.env.DB_NAME,
 });
 
-// Add this line for debugging
-console.log("Database connection pool configured for:", pool.options);
-
 module.exports = {
   query: (text, params) => pool.query(text, params),
+  getClient: () => pool.connect(), // Export a function to get a client
 };
