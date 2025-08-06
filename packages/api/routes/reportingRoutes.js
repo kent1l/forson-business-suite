@@ -83,4 +83,52 @@ router.get('/reports/sales-summary', async (req, res) => {
     }
 });
 
+// GET /api/reports/inventory-valuation - Fetch a report of current inventory value
+router.get('/reports/inventory-valuation', async (req, res) => {
+    const { format = 'json' } = req.query;
+    try {
+        const query = `
+            SELECT
+                p.internal_sku,
+                p.detail,
+                b.brand_name,
+                g.group_name,
+                p.last_cost,
+                (
+                    SELECT COALESCE(SUM(it.quantity), 0) 
+                    FROM inventory_transaction it 
+                    WHERE it.part_id = p.part_id
+                ) AS stock_on_hand,
+                (
+                    p.last_cost * (
+                        SELECT COALESCE(SUM(it.quantity), 0) 
+                        FROM inventory_transaction it 
+                        WHERE it.part_id = p.part_id
+                    )
+                ) AS total_value
+            FROM part p
+            LEFT JOIN brand b ON p.brand_id = b.brand_id
+            LEFT JOIN "group" g ON p.group_id = g.group_id
+            WHERE p.is_service = FALSE AND p.is_active = TRUE
+            GROUP BY p.part_id, b.brand_name, g.group_name
+            ORDER BY p.detail;
+        `;
+
+        const { rows } = await db.query(query);
+
+        if (format === 'csv') {
+            const json2csvParser = new Parser();
+            const csv = json2csvParser.parse(rows);
+            res.header('Content-Type', 'text/csv');
+            res.attachment(`inventory-valuation-report.csv`);
+            return res.send(csv);
+        }
+
+        res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
 module.exports = router;
