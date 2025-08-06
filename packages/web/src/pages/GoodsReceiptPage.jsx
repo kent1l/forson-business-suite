@@ -7,6 +7,7 @@ import Modal from '../components/ui/Modal';
 import SupplierForm from '../components/forms/SupplierForm';
 
 const GoodsReceiptPage = ({ user }) => {
+    // ... (logic remains the same)
     const [suppliers, setSuppliers] = useState([]);
     const [parts, setParts] = useState([]);
     const [lines, setLines] = useState([]);
@@ -58,7 +59,6 @@ const GoodsReceiptPage = ({ user }) => {
         });
     };
 
-    // ... (rest of the component logic remains the same)
     useEffect(() => {
         if (searchTerm.trim() === '') {
             setSearchResults([]);
@@ -66,8 +66,7 @@ const GoodsReceiptPage = ({ user }) => {
         }
         setSearchResults(
             parts.filter(p =>
-                p.detail.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                (p.internal_sku && p.internal_sku.toLowerCase().includes(searchTerm.toLowerCase()))
+                p.display_name.toLowerCase().includes(searchTerm.toLowerCase())
             ).slice(0, 5)
         );
     }, [searchTerm, parts]);
@@ -126,7 +125,6 @@ const GoodsReceiptPage = ({ user }) => {
 
     if (loading) return <p>Loading data...</p>;
 
-
     return (
         <div>
             <h1 className="text-2xl font-semibold text-gray-800 mb-6">New Goods Receipt</h1>
@@ -142,7 +140,6 @@ const GoodsReceiptPage = ({ user }) => {
                     </div>
                 </div>
                 
-                {/* ... (rest of the JSX remains the same) */}
                 <div className="relative">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Add Part</label>
                     <div className="relative">
@@ -159,7 +156,7 @@ const GoodsReceiptPage = ({ user }) => {
                         <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg">
                             {searchResults.map(part => (
                                 <li key={part.part_id} onClick={() => addPartToLines(part)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer">
-                                    <strong>{part.detail}</strong> ({part.internal_sku})
+                                    {part.display_name} {/* Use display_name */}
                                 </li>
                             ))}
                         </ul>
@@ -179,7 +176,7 @@ const GoodsReceiptPage = ({ user }) => {
                         <tbody>
                             {lines.map(line => (
                                 <tr key={line.part_id} className="border-b">
-                                    <td className="p-2 text-sm font-medium text-gray-800">{line.detail}</td>
+                                    <td className="p-2 text-sm font-medium text-gray-800">{line.display_name}</td> {/* Use display_name */}
                                     <td className="p-2"><input type="number" value={line.quantity} onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)} className="w-full p-1 border rounded-md" /></td>
                                     <td className="p-2"><input type="number" value={line.cost_price} onChange={e => handleLineChange(line.part_id, 'cost_price', e.target.value)} className="w-full p-1 border rounded-md" /></td>
                                     <td className="p-2 text-center"><button onClick={() => removeLine(line.part_id)} className="text-red-500 hover:text-red-700"><Icon path={ICONS.trash} className="h-5 w-5"/></button></td>
