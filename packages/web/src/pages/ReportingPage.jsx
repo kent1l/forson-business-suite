@@ -110,7 +110,7 @@ const SalesReport = () => {
                             <tr>
                                 <th className="p-3 text-sm font-semibold text-gray-600">Date</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600">Invoice #</th>
-                                <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
+                                <th className="p-3 text-sm font-semibold text-gray-600">Item Name</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total</th>
                             </tr>
                         </thead>
@@ -188,7 +188,7 @@ const InventoryValuationReport = () => {
                             <thead className="border-b">
                                 <tr>
                                     <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Item Name</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-center">Stock on Hand</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Last Cost</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total Value</th>
@@ -300,7 +300,7 @@ const TopSellingReport = () => {
                         <thead className="border-b">
                             <tr>
                                 <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
-                                <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
+                                <th className="p-3 text-sm font-semibold text-gray-600">Item Name</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 text-center">Qty Sold</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total Revenue</th>
                             </tr>
@@ -377,7 +377,7 @@ const LowStockReport = () => {
                             <thead className="border-b">
                                 <tr>
                                     <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Item Name</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-center">Stock on Hand</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-center">Reorder Point</th>
                                 </tr>
@@ -546,7 +546,7 @@ const InventoryMovementReport = () => {
                             <thead className="border-b">
                                 <tr>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Date</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Item Name</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Type</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-center">Quantity</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Reference</th>
@@ -632,7 +632,7 @@ const ProfitabilityReport = () => {
                         <table className="w-full text-left">
                             <thead className="border-b">
                                 <tr>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Item Name</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total Revenue</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total Cost</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total Profit</th>
