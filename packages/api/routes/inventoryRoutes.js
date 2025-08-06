@@ -2,20 +2,17 @@ const express = require('express');
 const db = require('../db');
 const router = express.Router();
 
-// Helper function to construct the display name
-const constructDisplayName = (part) => {
-    const displayNameParts = [];
-    const category = `${part.group_name || ''} (${part.brand_name || ''})`.replace('()', '').trim();
-    if (category) displayNameParts.push(category);
-    if (part.detail) displayNameParts.push(part.detail);
-    if (part.part_numbers) displayNameParts.push(part.part_numbers);
-    return displayNameParts.join(' | ');
-};
-
-// GET /api/inventory - Get current stock levels with search
+// GET /api/inventory - Get current stock levels with search and status filter
 router.get('/inventory', async (req, res) => {
-    const { search = '' } = req.query;
+    const { search = '', status = 'active' } = req.query;
     const searchTerm = `%${search}%`;
+
+    let statusFilter = "AND p.is_active = TRUE";
+    if (status === 'inactive') {
+        statusFilter = "AND p.is_active = FALSE";
+    } else if (status === 'all') {
+        statusFilter = ""; // No status filter
+    }
 
     try {
         const query = `
@@ -29,40 +26,38 @@ router.get('/inventory', async (req, res) => {
                 b.brand_name,
                 g.group_name,
                 (
-                    SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) 
-                    FROM part_number pn 
-                    WHERE pn.part_id = p.part_id
-                ) AS part_numbers,
-                (
                     SELECT COALESCE(SUM(it.quantity), 0) 
                     FROM inventory_transaction it 
                     WHERE it.part_id = p.part_id
-                ) AS stock_on_hand
+                ) AS stock_on_hand,
+                (
+                    p.last_cost * (
+                        SELECT COALESCE(SUM(it.quantity), 0) 
+                        FROM inventory_transaction it 
+                        WHERE it.part_id = p.part_id
+                    )
+                ) AS total_value
             FROM part p
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
             WHERE 
-                p.detail ILIKE $1 OR
+                (p.detail ILIKE $1 OR
                 p.internal_sku ILIKE $1 OR
                 b.brand_name ILIKE $1 OR
-                g.group_name ILIKE $1
+                g.group_name ILIKE $1)
+                ${statusFilter}
             GROUP BY p.part_id, b.brand_name, g.group_name
-            ORDER BY p.detail;
+            ORDER BY p.detail ASC;
         `;
 
         const { rows } = await db.query(query, [searchTerm]);
-        const inventoryWithDisplayName = rows.map(item => ({
-            ...item,
-            display_name: constructDisplayName(item)
-        }));
-        res.json(inventoryWithDisplayName);
+        res.json(rows);
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
     }
 });
 
-// ... (rest of the inventoryRoutes.js file remains the same)
 // GET /api/inventory/:partId/history
 router.get('/inventory/:partId/history', async (req, res) => {
     const { partId } = req.params;

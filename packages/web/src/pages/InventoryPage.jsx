@@ -15,19 +15,23 @@ const InventoryPage = ({ user }) => {
     const [currentItem, setCurrentItem] = useState(null);
     const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+    const [statusFilter, setStatusFilter] = useState('active');
 
     const fetchInventory = useCallback(async () => {
         try {
             setError('');
-            const response = await axios.get(`http://localhost:3001/api/inventory?search=${searchTerm}`);
+            const params = {
+                search: searchTerm,
+                status: statusFilter,
+            };
+            const response = await axios.get('http://localhost:3001/api/inventory', { params });
             setInventory(response.data);
         } catch (err) {
             setError('Failed to fetch inventory data.');
-            toast.error('Failed to fetch inventory data.');
         } finally {
             setLoading(false);
         }
-    }, [searchTerm]);
+    }, [searchTerm, statusFilter]);
 
     useEffect(() => {
         setLoading(true);
@@ -35,7 +39,7 @@ const InventoryPage = ({ user }) => {
             fetchInventory();
         }, 300);
         return () => clearTimeout(debounceTimer);
-    }, [searchTerm, fetchInventory]);
+    }, [searchTerm, statusFilter, fetchInventory]);
 
     const getStatusIndicator = (item) => {
         const stock = Number(item.stock_on_hand);
@@ -66,7 +70,7 @@ const InventoryPage = ({ user }) => {
             loading: 'Adjusting stock...',
             success: () => {
                 setIsAdjustModalOpen(false);
-                fetchInventory(); // Directly call fetchInventory to refresh data
+                fetchInventory();
                 return 'Stock adjusted successfully!';
             },
             error: 'Failed to adjust stock.'
@@ -88,6 +92,15 @@ const InventoryPage = ({ user }) => {
                      />
                 </div>
             </div>
+
+            <div className="mb-4">
+                <div className="flex space-x-4 border-b">
+                    <button onClick={() => setStatusFilter('active')} className={`py-2 px-4 text-sm font-medium ${statusFilter === 'active' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>Active</button>
+                    <button onClick={() => setStatusFilter('inactive')} className={`py-2 px-4 text-sm font-medium ${statusFilter === 'inactive' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>Inactive</button>
+                    <button onClick={() => setStatusFilter('all')} className={`py-2 px-4 text-sm font-medium ${statusFilter === 'all' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>All</button>
+                </div>
+            </div>
+
             <div className="bg-white p-6 rounded-xl border border-gray-200">
                 {loading && <p>Loading inventory...</p>}
                 {error && <p className="text-red-500">{error}</p>}
@@ -98,7 +111,7 @@ const InventoryPage = ({ user }) => {
                                 <tr>
                                     <th className="p-3 text-sm font-semibold text-gray-600 w-12">Status</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Part Detail</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-center">Stock on Hand</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total Value</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-center">Actions</th>
@@ -109,7 +122,7 @@ const InventoryPage = ({ user }) => {
                                     <tr key={item.part_id} className="border-b hover:bg-gray-50">
                                         <td className="p-3 text-center">{getStatusIndicator(item)}</td>
                                         <td className="p-3 text-sm font-mono">{item.internal_sku}</td>
-                                        <td className="p-3 text-sm font-medium text-gray-800">{item.display_name}</td>
+                                        <td className="p-3 text-sm font-medium text-gray-800">{item.detail}</td>
                                         <td className="p-3 text-sm text-center font-semibold">{Number(item.stock_on_hand).toLocaleString()}</td>
                                         <td className="p-3 text-sm text-right font-mono">
                                             ₱{(Number(item.stock_on_hand) * Number(item.last_cost)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
