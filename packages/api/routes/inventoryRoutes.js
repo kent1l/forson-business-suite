@@ -43,4 +43,44 @@ router.get('/inventory', async (req, res) => {
     }
 });
 
+// GET /api/inventory/:partId/history - Get transaction history for a part
+router.get('/inventory/:partId/history', async (req, res) => {
+    const { partId } = req.params;
+    try {
+        const query = `
+            SELECT it.*, e.first_name, e.last_name
+            FROM inventory_transaction it
+            LEFT JOIN employee e ON it.employee_id = e.employee_id
+            WHERE it.part_id = $1
+            ORDER BY it.transaction_date DESC;
+        `;
+        const { rows } = await db.query(query, [partId]);
+        res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// POST /api/inventory/adjust - Post a manual stock adjustment
+router.post('/inventory/adjust', async (req, res) => {
+    const { part_id, quantity, notes, employee_id } = req.body;
+
+    if (!part_id || !quantity || !employee_id) {
+        return res.status(400).json({ message: 'Part ID, quantity, and employee ID are required.' });
+    }
+
+    try {
+        const transactionQuery = `
+            INSERT INTO inventory_transaction (part_id, trans_type, quantity, notes, employee_id)
+            VALUES ($1, 'Adjustment', $2, $3, $4) RETURNING *;
+        `;
+        const newTransaction = await db.query(transactionQuery, [part_id, quantity, notes, employee_id]);
+        res.status(201).json(newTransaction.rows[0]);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
 module.exports = router;
