@@ -1,17 +1,8 @@
 const express = require('express');
 const db = require('../db');
 const { Parser } = require('json2csv');
+const { constructDisplayName } = require('../helpers/displayNameHelper'); // Import the helper
 const router = express.Router();
-
-// Helper function to construct the display name
-const constructDisplayName = (part) => {
-    const displayNameParts = [];
-    const category = `${part.group_name || ''} (${part.brand_name || ''})`.replace('()', '').trim();
-    if (category) displayNameParts.push(category);
-    if (part.detail) displayNameParts.push(part.detail);
-    if (part.part_numbers) displayNameParts.push(part.part_numbers);
-    return displayNameParts.join(' | ');
-};
 
 // GET /api/reports/sales-summary
 router.get('/reports/sales-summary', async (req, res) => {
@@ -113,7 +104,7 @@ router.get('/reports/top-selling', async (req, res) => {
     }
 });
 
-// ... (inventory-valuation route remains the same)
+// GET /api/reports/inventory-valuation - Fetch a report of current inventory value
 router.get('/reports/inventory-valuation', async (req, res) => {
     const { format = 'json' } = req.query;
     try {
@@ -123,6 +114,11 @@ router.get('/reports/inventory-valuation', async (req, res) => {
                 p.detail,
                 b.brand_name,
                 g.group_name,
+                (
+                    SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) 
+                    FROM part_number pn 
+                    WHERE pn.part_id = p.part_id
+                ) AS part_numbers,
                 p.last_cost,
                 (
                     SELECT COALESCE(SUM(it.quantity), 0) 
@@ -145,16 +141,17 @@ router.get('/reports/inventory-valuation', async (req, res) => {
         `;
 
         const { rows } = await db.query(query);
+        const data = rows.map(row => ({ ...row, display_name: constructDisplayName(row) }));
 
         if (format === 'csv') {
             const json2csvParser = new Parser();
-            const csv = json2csvParser.parse(rows);
+            const csv = json2csvParser.parse(data);
             res.header('Content-Type', 'text/csv');
             res.attachment(`inventory-valuation-report.csv`);
             return res.send(csv);
         }
 
-        res.json(rows);
+        res.json(data);
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');

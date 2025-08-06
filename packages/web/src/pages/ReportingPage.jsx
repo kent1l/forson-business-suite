@@ -4,7 +4,6 @@ import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 
-// ... (ReportCard component remains the same)
 const ReportCard = ({ title, value, icon, color, isCurrency = false }) => (
     <div className="bg-white p-6 rounded-lg border border-gray-200">
         <div className="flex items-center space-x-4">
@@ -21,9 +20,7 @@ const ReportCard = ({ title, value, icon, color, isCurrency = false }) => (
     </div>
 );
 
-
 const SalesReport = () => {
-    // ... (logic remains the same)
     const [reportData, setReportData] = useState([]);
     const [summary, setSummary] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -113,7 +110,7 @@ const SalesReport = () => {
                             <tr>
                                 <th className="p-3 text-sm font-semibold text-gray-600">Date</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600">Invoice #</th>
-                                <th className="p-3 text-sm font-semibold text-gray-600">Part</th>
+                                <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total</th>
                             </tr>
                         </thead>
@@ -122,7 +119,7 @@ const SalesReport = () => {
                                 <tr key={index} className="border-b hover:bg-gray-50">
                                     <td className="p-3 text-sm">{new Date(row.invoice_date).toLocaleDateString()}</td>
                                     <td className="p-3 text-sm font-mono">{row.invoice_number}</td>
-                                    <td className="p-3 text-sm">{row.display_name}</td> {/* Use display_name */}
+                                    <td className="p-3 text-sm">{row.display_name}</td>
                                     <td className="p-3 text-sm text-right font-mono">₱{parseFloat(row.line_total).toFixed(2)}</td>
                                 </tr>
                             ))}
@@ -191,7 +188,7 @@ const InventoryValuationReport = () => {
                             <thead className="border-b">
                                 <tr>
                                     <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Part Detail</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-center">Stock on Hand</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Last Cost</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total Value</th>
@@ -201,7 +198,7 @@ const InventoryValuationReport = () => {
                                 {reportData.map((row, index) => (
                                     <tr key={index} className="border-b hover:bg-gray-50">
                                         <td className="p-3 text-sm font-mono">{row.internal_sku}</td>
-                                        <td className="p-3 text-sm">{row.detail}</td>
+                                        <td className="p-3 text-sm">{row.display_name}</td>
                                         <td className="p-3 text-sm text-center font-semibold">{Number(row.stock_on_hand).toLocaleString()}</td>
                                         <td className="p-3 text-sm text-right font-mono">₱{parseFloat(row.last_cost).toFixed(2)}</td>
                                         <td className="p-3 text-sm text-right font-mono">₱{parseFloat(row.total_value).toFixed(2)}</td>
@@ -253,7 +250,7 @@ const TopSellingReport = () => {
                 const url = window.URL.createObjectURL(new Blob([response.data]));
                 const link = document.createElement('a');
                 link.href = url;
-                link.setAttribute('download', `top-selling-report-${dates.startDate}-to-${endDate}.csv`);
+                link.setAttribute('download', `top-selling-report-${dates.startDate}-to-${dates.endDate}.csv`);
                 document.body.appendChild(link);
                 link.click();
                 link.remove();
@@ -303,7 +300,7 @@ const TopSellingReport = () => {
                         <thead className="border-b">
                             <tr>
                                 <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
-                                <th className="p-3 text-sm font-semibold text-gray-600">Part Detail</th>
+                                <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 text-center">Qty Sold</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total Revenue</th>
                             </tr>
@@ -312,7 +309,7 @@ const TopSellingReport = () => {
                             {reportData.map((row, index) => (
                                 <tr key={index} className="border-b hover:bg-gray-50">
                                     <td className="p-3 text-sm font-mono">{row.internal_sku}</td>
-                                    <td className="p-3 text-sm">{row.display_name}</td> {/* Use display_name */}
+                                    <td className="p-3 text-sm">{row.display_name}</td>
                                     <td className="p-3 text-sm text-center font-semibold">{Number(row.total_quantity_sold).toLocaleString()}</td>
                                     <td className="p-3 text-sm text-right font-mono">₱{parseFloat(row.total_revenue).toFixed(2)}</td>
                                 </tr>
@@ -330,8 +327,8 @@ const TopSellingReport = () => {
     );
 };
 
+
 const ReportingPage = () => {
-    // ... (existing code)
     const [activeTab, setActiveTab] = useState('sales');
 
     return (

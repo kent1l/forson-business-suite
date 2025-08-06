@@ -60,18 +60,18 @@ const InventoryPage = ({ user }) => {
         setIsAdjustModalOpen(true);
     };
 
-    const handleSaveAdjustment = useCallback((payload) => {
+    const handleSaveAdjustment = (payload) => {
         const promise = axios.post('http://localhost:3001/api/inventory/adjust', payload);
         toast.promise(promise, {
             loading: 'Adjusting stock...',
             success: () => {
                 setIsAdjustModalOpen(false);
-                fetchInventory(); // This will now call the correct, up-to-date function
+                fetchInventory(); // Directly call fetchInventory to refresh data
                 return 'Stock adjusted successfully!';
             },
             error: 'Failed to adjust stock.'
         });
-    }, [fetchInventory]); // Dependency ensures this function always has the latest fetchInventory
+    };
 
     return (
         <div>
@@ -98,7 +98,7 @@ const InventoryPage = ({ user }) => {
                                 <tr>
                                     <th className="p-3 text-sm font-semibold text-gray-600 w-12">Status</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Part Detail</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-center">Stock on Hand</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total Value</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-center">Actions</th>
@@ -109,7 +109,7 @@ const InventoryPage = ({ user }) => {
                                     <tr key={item.part_id} className="border-b hover:bg-gray-50">
                                         <td className="p-3 text-center">{getStatusIndicator(item)}</td>
                                         <td className="p-3 text-sm font-mono">{item.internal_sku}</td>
-                                        <td className="p-3 text-sm font-medium text-gray-800">{item.detail}</td>
+                                        <td className="p-3 text-sm font-medium text-gray-800">{item.display_name}</td>
                                         <td className="p-3 text-sm text-center font-semibold">{Number(item.stock_on_hand).toLocaleString()}</td>
                                         <td className="p-3 text-sm text-right font-mono">
                                             ₱{(Number(item.stock_on_hand) * Number(item.last_cost)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

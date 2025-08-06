@@ -1,29 +1,10 @@
 const express = require('express');
 const db = require('../db');
+const { constructDisplayName } = require('../helpers/displayNameHelper'); // Import the helper
 const router = express.Router();
 
-// Helper function to construct the display name
-const constructDisplayName = (part) => {
-    const displayNameParts = [];
-
-    // Part 1: GroupName (BrandName)
-    const category = `${part.group_name || ''} (${part.brand_name || ''})`.replace('()', '').trim();
-    if (category) displayNameParts.push(category);
-
-    // Part 2: Detail
-    if (part.detail) displayNameParts.push(part.detail);
-
-    // Part 3: Part Numbers
-    if (part.part_numbers) displayNameParts.push(part.part_numbers);
-
-    return displayNameParts.join(' | ');
-};
-
-// GET all parts with intelligent search including applications
+// GET all parts with brand, group, and ordered part numbers
 router.get('/parts', async (req, res) => {
-  const { search = '' } = req.query;
-  const searchTerm = `%${search}%`;
-
   try {
     const query = `
       SELECT
@@ -34,42 +15,13 @@ router.get('/parts', async (req, res) => {
           SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) 
           FROM part_number pn 
           WHERE pn.part_id = p.part_id
-        ) AS part_numbers,
-        (
-          SELECT STRING_AGG(
-            CASE 
-              WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL AND pa.year_start = pa.year_end THEN CONCAT(a.make, ' ', a.model, ' [', pa.year_start, ']')
-              WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL THEN CONCAT(a.make, ' ', a.model, ' [', pa.year_start, '-', pa.year_end, ']')
-              WHEN pa.year_start IS NOT NULL THEN CONCAT(a.make, ' ', a.model, ' [', pa.year_start, ']')
-              WHEN pa.year_end IS NOT NULL THEN CONCAT(a.make, ' ', a.model, ' [', pa.year_end, ']')
-              ELSE CONCAT(a.make, ' ', a.model)
-            END,
-            '; '
-          )
-          FROM part_application pa
-          JOIN application a ON pa.application_id = a.application_id
-          WHERE pa.part_id = p.part_id
-        ) AS applications
+        ) AS part_numbers
       FROM part AS p
       LEFT JOIN brand AS b ON p.brand_id = b.brand_id
       LEFT JOIN "group" AS g ON p.group_id = g.group_id
-      WHERE 
-        p.detail ILIKE $1 OR
-        p.internal_sku ILIKE $1 OR
-        b.brand_name ILIKE $1 OR
-        g.group_name ILIKE $1 OR
-        EXISTS (
-            SELECT 1 FROM part_number pn 
-            WHERE pn.part_id = p.part_id AND pn.part_number ILIKE $1
-        ) OR
-        EXISTS (
-            SELECT 1 FROM part_application pa
-            JOIN application a ON pa.application_id = a.application_id
-            WHERE pa.part_id = p.part_id AND CONCAT(a.make, ' ', a.model) ILIKE $1
-        )
       ORDER BY p.part_id;
     `;
-    const { rows } = await db.query(query, [searchTerm]);
+    const { rows } = await db.query(query);
     
     const partsWithDisplayName = rows.map(part => ({
         ...part,
@@ -96,22 +48,7 @@ router.get('/parts/:id', async (req, res) => {
           SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) 
           FROM part_number pn 
           WHERE pn.part_id = p.part_id
-        ) AS part_numbers,
-        (
-          SELECT STRING_AGG(
-            CASE 
-              WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL AND pa.year_start = pa.year_end THEN CONCAT(a.make, ' ', a.model, ' [', pa.year_start, ']')
-              WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL THEN CONCAT(a.make, ' ', a.model, ' [', pa.year_start, '-', pa.year_end, ']')
-              WHEN pa.year_start IS NOT NULL THEN CONCAT(a.make, ' ', a.model, ' [', pa.year_start, ']')
-              WHEN pa.year_end IS NOT NULL THEN CONCAT(a.make, ' ', a.model, ' [', pa.year_end, ']')
-              ELSE CONCAT(a.make, ' ', a.model)
-            END,
-            '; '
-          )
-          FROM part_application pa
-          JOIN application a ON pa.application_id = a.application_id
-          WHERE pa.part_id = p.part_id
-        ) AS applications
+        ) AS part_numbers
       FROM part AS p
       LEFT JOIN brand AS b ON p.brand_id = b.brand_id
       LEFT JOIN "group" AS g ON p.group_id = g.group_id
@@ -132,7 +69,6 @@ router.get('/parts/:id', async (req, res) => {
   }
 });
 
-// ... (POST, PUT, DELETE routes remain the same)
 // POST - Create a new part with all fields
 router.post('/parts', async (req, res) => {
   const { 

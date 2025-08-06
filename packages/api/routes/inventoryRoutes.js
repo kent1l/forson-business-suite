@@ -2,6 +2,16 @@ const express = require('express');
 const db = require('../db');
 const router = express.Router();
 
+// Helper function to construct the display name
+const constructDisplayName = (part) => {
+    const displayNameParts = [];
+    const category = `${part.group_name || ''} (${part.brand_name || ''})`.replace('()', '').trim();
+    if (category) displayNameParts.push(category);
+    if (part.detail) displayNameParts.push(part.detail);
+    if (part.part_numbers) displayNameParts.push(part.part_numbers);
+    return displayNameParts.join(' | ');
+};
+
 // GET /api/inventory - Get current stock levels with search
 router.get('/inventory', async (req, res) => {
     const { search = '' } = req.query;
@@ -18,6 +28,11 @@ router.get('/inventory', async (req, res) => {
                 p.warning_quantity,
                 b.brand_name,
                 g.group_name,
+                (
+                    SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) 
+                    FROM part_number pn 
+                    WHERE pn.part_id = p.part_id
+                ) AS part_numbers,
                 (
                     SELECT COALESCE(SUM(it.quantity), 0) 
                     FROM inventory_transaction it 
@@ -36,14 +51,19 @@ router.get('/inventory', async (req, res) => {
         `;
 
         const { rows } = await db.query(query, [searchTerm]);
-        res.json(rows);
+        const inventoryWithDisplayName = rows.map(item => ({
+            ...item,
+            display_name: constructDisplayName(item)
+        }));
+        res.json(inventoryWithDisplayName);
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
     }
 });
 
-// GET /api/inventory/:partId/history - Get transaction history for a part
+// ... (rest of the inventoryRoutes.js file remains the same)
+// GET /api/inventory/:partId/history
 router.get('/inventory/:partId/history', async (req, res) => {
     const { partId } = req.params;
     try {
@@ -62,7 +82,7 @@ router.get('/inventory/:partId/history', async (req, res) => {
     }
 });
 
-// POST /api/inventory/adjust - Post a manual stock adjustment
+// POST /api/inventory/adjust
 router.post('/inventory/adjust', async (req, res) => {
     const { part_id, quantity, notes, employee_id } = req.body;
 
@@ -82,5 +102,6 @@ router.post('/inventory/adjust', async (req, res) => {
         res.status(500).send('Server Error');
     }
 });
+
 
 module.exports = router;
