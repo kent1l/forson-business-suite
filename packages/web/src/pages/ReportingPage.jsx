@@ -21,6 +21,7 @@ const ReportCard = ({ title, value, icon, color, isCurrency = false }) => (
 );
 
 const SalesReport = () => {
+    // ... (existing code for SalesReport)
     const [reportData, setReportData] = useState([]);
     const [summary, setSummary] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -327,6 +328,84 @@ const TopSellingReport = () => {
     );
 };
 
+const LowStockReport = () => {
+    const [reportData, setReportData] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    const fetchReport = async (format = 'json') => {
+        if (format === 'json') setLoading(true);
+        try {
+            const response = await axios.get('http://localhost:3001/api/reports/low-stock', {
+                params: { format },
+                responseType: format === 'csv' ? 'blob' : 'json',
+            });
+
+            if (format === 'csv') {
+                const url = window.URL.createObjectURL(new Blob([response.data]));
+                const link = document.createElement('a');
+                link.href = url;
+                link.setAttribute('download', 'low-stock-report.csv');
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                toast.success('Report exported successfully!');
+            } else {
+                setReportData(response.data);
+            }
+        } catch (err) {
+            toast.error('Failed to generate report.');
+        } finally {
+            if (format === 'json') setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchReport();
+    }, []);
+
+    return (
+        <>
+            <div className="bg-white p-6 rounded-xl border border-gray-200 mb-6 flex justify-between items-center">
+                <p className="text-lg">This report shows all items that are at or below their reorder point.</p>
+                <button onClick={() => fetchReport('csv')} disabled={loading} className="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition disabled:bg-green-300">
+                    Export CSV
+                </button>
+            </div>
+            <div className="bg-white p-6 rounded-xl border border-gray-200">
+                {loading ? <p>Loading report...</p> : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead className="border-b">
+                                <tr>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 text-center">Stock on Hand</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 text-center">Reorder Point</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {reportData.map((row, index) => (
+                                    <tr key={index} className="border-b hover:bg-gray-50">
+                                        <td className="p-3 text-sm font-mono">{row.internal_sku}</td>
+                                        <td className="p-3 text-sm">{row.display_name}</td>
+                                        <td className="p-3 text-sm text-center font-semibold text-red-600">{Number(row.stock_on_hand).toLocaleString()}</td>
+                                        <td className="p-3 text-sm text-center">{Number(row.reorder_point).toLocaleString()}</td>
+                                    </tr>
+                                ))}
+                                {reportData.length === 0 && !loading && (
+                                    <tr>
+                                        <td colSpan="4" className="p-4 text-center text-gray-500">No items are currently low on stock.</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+        </>
+    );
+};
+
 
 const ReportingPage = () => {
     const [activeTab, setActiveTab] = useState('sales');
@@ -354,6 +433,12 @@ const ReportingPage = () => {
                     >
                         Top-Selling Products
                     </button>
+                    <button
+                        onClick={() => setActiveTab('low_stock')}
+                        className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'low_stock' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
+                    >
+                        Low Stock
+                    </button>
                 </nav>
             </div>
 
@@ -361,6 +446,7 @@ const ReportingPage = () => {
                 {activeTab === 'sales' && <SalesReport />}
                 {activeTab === 'valuation' && <InventoryValuationReport />}
                 {activeTab === 'top_selling' && <TopSellingReport />}
+                {activeTab === 'low_stock' && <LowStockReport />}
             </div>
         </div>
     );

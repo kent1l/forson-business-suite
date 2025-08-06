@@ -1,9 +1,10 @@
 const express = require('express');
 const db = require('../db');
 const { Parser } = require('json2csv');
-const { constructDisplayName } = require('../helpers/displayNameHelper'); // Import the helper
+const { constructDisplayName } = require('../helpers/displayNameHelper');
 const router = express.Router();
 
+// ... (existing sales and top-selling report routes remain the same)
 // GET /api/reports/sales-summary
 router.get('/reports/sales-summary', async (req, res) => {
     const { startDate, endDate, format = 'json' } = req.query;
@@ -104,7 +105,7 @@ router.get('/reports/top-selling', async (req, res) => {
     }
 });
 
-// GET /api/reports/inventory-valuation - Fetch a report of current inventory value
+// GET /api/reports/inventory-valuation
 router.get('/reports/inventory-valuation', async (req, res) => {
     const { format = 'json' } = req.query;
     try {
@@ -152,6 +153,51 @@ router.get('/reports/inventory-valuation', async (req, res) => {
         }
 
         res.json(data);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// GET /api/reports/low-stock - Fetch a report of items low on stock
+router.get('/reports/low-stock', async (req, res) => {
+    const { format = 'json' } = req.query;
+    try {
+        const query = `
+            SELECT 
+                p.internal_sku,
+                p.detail,
+                b.brand_name,
+                g.group_name,
+                (
+                    SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) 
+                    FROM part_number pn 
+                    WHERE pn.part_id = p.part_id
+                ) AS part_numbers,
+                p.reorder_point,
+                (
+                    SELECT COALESCE(SUM(it.quantity), 0) 
+                    FROM inventory_transaction it 
+                    WHERE it.part_id = p.part_id
+                ) AS stock_on_hand
+            FROM part p
+            LEFT JOIN brand b ON p.brand_id = b.brand_id
+            LEFT JOIN "group" g ON p.group_id = g.group_id
+            WHERE p.is_active = TRUE AND p.low_stock_warning = TRUE
+            GROUP BY p.part_id, b.brand_name, g.group_name
+            HAVING COALESCE(SUM( (SELECT SUM(it.quantity) FROM inventory_transaction it WHERE it.part_id = p.part_id) ), 0) <= p.reorder_point
+            ORDER BY p.detail;
+        `;
+        const { rows } = await db.query(query);
+        const data = rows.map(row => ({ ...row, display_name: constructDisplayName(row) }));
+
+        if (format === 'csv') {
+            const json2csvParser = new Parser();
+            const csv = json2csvParser.parse(data);
+            res.header('Content-Type', 'text/csv').attachment('low-stock-report.csv').send(csv);
+        } else {
+            res.json(data);
+        }
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
