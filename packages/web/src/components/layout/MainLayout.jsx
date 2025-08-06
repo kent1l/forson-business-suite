@@ -9,7 +9,7 @@ import InvoicingPage from '../../pages/InvoicingPage';
 import ApplicationsPage from '../../pages/ApplicationsPage';
 import CustomersPage from '../../pages/CustomersPage';
 import PowerSearchPage from '../../pages/PowerSearchPage';
-import InventoryPage from '../../pages/InventoryPage'; // 1. Import
+import InventoryPage from '../../pages/InventoryPage';
 
 const MainLayout = ({ user, onLogout, onNavigate, currentPage }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -24,7 +24,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage }) => {
             case 'customers': return <CustomersPage />;
             case 'goods_receipt': return <GoodsReceiptPage user={user} />;
             case 'invoicing': return <InvoicingPage user={user} />;
-            case 'inventory': return <InventoryPage />; // 2. Add case
+            case 'inventory': return <InventoryPage user={user} />; // <-- This line has been fixed
             default: return <Dashboard />;
         }
     };

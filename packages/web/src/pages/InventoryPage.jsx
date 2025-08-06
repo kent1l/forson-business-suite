@@ -1,18 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
+import Modal from '../components/ui/Modal';
+import StockAdjustmentForm from '../components/forms/StockAdjustmentForm';
+import TransactionHistoryModal from '../components/ui/TransactionHistoryModal';
 
-const InventoryPage = () => {
+const InventoryPage = ({ user }) => {
     const [inventory, setInventory] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
+    const [currentItem, setCurrentItem] = useState(null);
+    const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
+    const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
 
-    const fetchInventory = async () => {
+    const fetchInventory = useCallback(async () => {
         try {
-            setLoading(true);
             setError('');
             const response = await axios.get(`http://localhost:3001/api/inventory?search=${searchTerm}`);
             setInventory(response.data);
@@ -22,14 +27,15 @@ const InventoryPage = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [searchTerm]);
 
     useEffect(() => {
+        setLoading(true);
         const debounceTimer = setTimeout(() => {
             fetchInventory();
         }, 300);
         return () => clearTimeout(debounceTimer);
-    }, [searchTerm]);
+    }, [searchTerm, fetchInventory]);
 
     const getStatusIndicator = (item) => {
         const stock = Number(item.stock_on_hand);
@@ -38,16 +44,34 @@ const InventoryPage = () => {
         if (stock <= 0) {
             return <span className="inline-block w-3 h-3 bg-blue-500 rounded-full" title="Out of Stock"></span>;
         }
-        if (stock <= reorderPoint) {
+        if (stock > 0 && stock <= reorderPoint) {
             return <span className="inline-block w-3 h-3 bg-yellow-500 rounded-full" title="Low Stock"></span>;
         }
         return <span className="inline-block w-3 h-3 bg-green-500 rounded-full" title="In Stock"></span>;
     };
     
-    const handleViewHistory = (partId) => {
-        // This is a placeholder for future functionality
-        toast.success(`Viewing history for part ID: ${partId}`);
+    const handleViewHistory = (item) => {
+        setCurrentItem(item);
+        setIsHistoryModalOpen(true);
     };
+
+    const handleAdjustStock = (item) => {
+        setCurrentItem(item);
+        setIsAdjustModalOpen(true);
+    };
+
+    const handleSaveAdjustment = useCallback((payload) => {
+        const promise = axios.post('http://localhost:3001/api/inventory/adjust', payload);
+        toast.promise(promise, {
+            loading: 'Adjusting stock...',
+            success: () => {
+                setIsAdjustModalOpen(false);
+                fetchInventory(); // This will now call the correct, up-to-date function
+                return 'Stock adjusted successfully!';
+            },
+            error: 'Failed to adjust stock.'
+        });
+    }, [fetchInventory]); // Dependency ensures this function always has the latest fetchInventory
 
     return (
         <div>
@@ -90,8 +114,11 @@ const InventoryPage = () => {
                                         <td className="p-3 text-sm text-right font-mono">
                                             ₱{(Number(item.stock_on_hand) * Number(item.last_cost)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </td>
-                                        <td className="p-3 text-center">
-                                            <button onClick={() => handleViewHistory(item.part_id)} className="text-gray-500 hover:text-blue-600" title="View Transaction History">
+                                        <td className="p-3 text-center space-x-4">
+                                            <button onClick={() => handleAdjustStock(item)} className="text-gray-500 hover:text-blue-600" title="Adjust Stock">
+                                                <Icon path={ICONS.edit} className="h-5 w-5" />
+                                            </button>
+                                            <button onClick={() => handleViewHistory(item)} className="text-gray-500 hover:text-blue-600" title="View Transaction History">
                                                 <Icon path={ICONS.receipt} className="h-5 w-5" />
                                             </button>
                                         </td>
@@ -102,6 +129,10 @@ const InventoryPage = () => {
                     </div>
                 )}
             </div>
+            <Modal isOpen={isAdjustModalOpen} onClose={() => setIsAdjustModalOpen(false)} title={`Adjust Stock for ${currentItem?.detail}`}>
+                <StockAdjustmentForm part={currentItem} user={user} onSave={handleSaveAdjustment} onCancel={() => setIsAdjustModalOpen(false)} />
+            </Modal>
+            <TransactionHistoryModal part={currentItem} isOpen={isHistoryModalOpen} onClose={() => setIsHistoryModalOpen(false)} />
         </div>
     );
 };
