@@ -8,6 +8,7 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
         { name: 'Power Search', icon: ICONS.power_search, page: 'power_search' },
         { name: 'Invoicing', icon: ICONS.invoice, page: 'invoicing' },
         { name: 'Goods Receipt', icon: ICONS.receipt, page: 'goods_receipt' },
+        { name: 'Inventory', icon: ICONS.inventory, page: 'inventory' }, // Add new nav item
         { name: 'Parts', icon: ICONS.parts, page: 'parts' },
         { name: 'Suppliers', icon: ICONS.suppliers, page: 'suppliers' },
         { name: 'Customers', icon: ICONS.customers, page: 'customers' },
