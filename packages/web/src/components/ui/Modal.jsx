@@ -1,12 +1,13 @@
 import React from 'react';
 import Icon from './Icon';
-import { ICONS } from '../../constants'; // We will create this file next
+import { ICONS } from '../../constants';
 
 const Modal = ({ isOpen, onClose, title, children }) => {
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4">
+        // The change is on this line: removed backdrop-blur and increased opacity
+        <div className="fixed inset-0 bg-neutral-800/50 z-40 flex items-center justify-center p-4">
             <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
                 <div className="p-4 border-b flex justify-between items-center">
                     <h2 className="text-lg font-semibold">{title}</h2>

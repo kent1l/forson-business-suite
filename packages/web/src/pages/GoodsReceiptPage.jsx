@@ -3,37 +3,62 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
+import Modal from '../components/ui/Modal';
+import SupplierForm from '../components/forms/SupplierForm';
 
 const GoodsReceiptPage = ({ user }) => {
     const [suppliers, setSuppliers] = useState([]);
     const [parts, setParts] = useState([]);
-    const [lines, setLines] = useState([]); // Simulates tblGRN_TempLines
+    const [lines, setLines] = useState([]);
     const [selectedSupplier, setSelectedSupplier] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
+
+    const fetchInitialData = async () => {
+        try {
+            setLoading(true);
+            const [suppliersRes, partsRes] = await Promise.all([
+                axios.get('http://localhost:3001/api/suppliers'),
+                axios.get('http://localhost:3001/api/parts')
+            ]);
+            setSuppliers(suppliersRes.data);
+            setParts(partsRes.data);
+        } catch (err) {
+            toast.error("Failed to load initial data.");
+        } finally {
+            setLoading(false);
+        }
+    };
+    
+    const fetchSuppliers = async () => {
+        const response = await axios.get('http://localhost:3001/api/suppliers');
+        setSuppliers(response.data);
+        return response.data;
+    };
 
     useEffect(() => {
-        // Fetch initial data for suppliers and parts dropdowns/search
-        const fetchData = async () => {
-            try {
-                setLoading(true);
-                const [suppliersRes, partsRes] = await Promise.all([
-                    axios.get('http://localhost:3001/api/suppliers'),
-                    axios.get('http://localhost:3001/api/parts')
-                ]);
-                setSuppliers(suppliersRes.data);
-                setParts(partsRes.data);
-            } catch (err) {
-                console.error("Failed to fetch initial data for goods receipt", err);
-                toast.error("Failed to load initial data.");
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchData();
+        fetchInitialData();
     }, []);
 
+    const handleNewSupplierSave = async (supplierData) => {
+        const promise = axios.post('http://localhost:3001/api/suppliers', supplierData);
+        toast.promise(promise, {
+            loading: 'Saving supplier...',
+            success: (response) => {
+                const newSupplier = response.data;
+                fetchSuppliers().then(() => {
+                    setSelectedSupplier(newSupplier.supplier_id);
+                });
+                setIsSupplierModalOpen(false);
+                return 'Supplier saved successfully!';
+            },
+            error: 'Failed to save supplier.',
+        });
+    };
+
+    // ... (rest of the component logic remains the same)
     useEffect(() => {
         if (searchTerm.trim() === '') {
             setSearchResults([]);
@@ -101,20 +126,23 @@ const GoodsReceiptPage = ({ user }) => {
 
     if (loading) return <p>Loading data...</p>;
 
+
     return (
         <div>
             <h1 className="text-2xl font-semibold text-gray-800 mb-6">New Goods Receipt</h1>
             <div className="bg-white p-6 rounded-xl border border-gray-200 space-y-6">
-                {/* Header */}
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
-                    <select value={selectedSupplier} onChange={e => setSelectedSupplier(e.target.value)} className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-lg">
-                        <option value="">Select a Supplier</option>
-                        {suppliers.map(s => <option key={s.supplier_id} value={s.supplier_id}>{s.supplier_name}</option>)}
-                    </select>
+                    <div className="flex items-center space-x-2">
+                        <select value={selectedSupplier} onChange={e => setSelectedSupplier(e.target.value)} className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-lg">
+                            <option value="">Select a Supplier</option>
+                            {suppliers.map(s => <option key={s.supplier_id} value={s.supplier_id}>{s.supplier_name}</option>)}
+                        </select>
+                        <button onClick={() => setIsSupplierModalOpen(true)} className="px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm">New</button>
+                    </div>
                 </div>
                 
-                {/* Part Search */}
+                {/* ... (rest of the JSX remains the same) */}
                 <div className="relative">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Add Part</label>
                     <div className="relative">
@@ -138,7 +166,6 @@ const GoodsReceiptPage = ({ user }) => {
                     )}
                 </div>
 
-                {/* Line Items Table */}
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
                         <thead className="border-b">
@@ -162,13 +189,15 @@ const GoodsReceiptPage = ({ user }) => {
                     </table>
                 </div>
 
-                {/* Post Button */}
                 <div className="flex justify-end pt-4 border-t">
                     <button onClick={handlePostTransaction} className="bg-green-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-green-700 transition">
                         Post Transaction
                     </button>
                 </div>
             </div>
+            <Modal isOpen={isSupplierModalOpen} onClose={() => setIsSupplierModalOpen(false)} title="Add New Supplier">
+                <SupplierForm onSave={handleNewSupplierSave} onCancel={() => setIsSupplierModalOpen(false)} />
+            </Modal>
         </div>
     );
 };

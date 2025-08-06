@@ -3,6 +3,8 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
+import Modal from '../components/ui/Modal';
+import CustomerForm from '../components/forms/CustomerForm';
 
 const InvoicingPage = ({ user }) => {
     const [customers, setCustomers] = useState([]);
@@ -12,27 +14,51 @@ const InvoicingPage = ({ user }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+
+    const fetchInitialData = async () => {
+        try {
+            setLoading(true);
+            const [customersRes, partsRes] = await Promise.all([
+                axios.get('http://localhost:3001/api/customers'),
+                axios.get('http://localhost:3001/api/parts')
+            ]);
+            setCustomers(customersRes.data);
+            setParts(partsRes.data);
+        } catch (err) {
+            toast.error("Failed to load initial data.");
+        } finally {
+            setLoading(false);
+        }
+    };
+    
+    const fetchCustomers = async () => {
+        const response = await axios.get('http://localhost:3001/api/customers');
+        setCustomers(response.data);
+        return response.data;
+    };
 
     useEffect(() => {
-        const fetchData = async () => {
-            try {
-                setLoading(true);
-                const [customersRes, partsRes] = await Promise.all([
-                    axios.get('http://localhost:3001/api/customers'),
-                    axios.get('http://localhost:3001/api/parts')
-                ]);
-                setCustomers(customersRes.data);
-                setParts(partsRes.data);
-            } catch (err) {
-                console.error("Failed to fetch initial data for invoicing", err);
-                toast.error("Failed to load initial data.");
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchData();
+        fetchInitialData();
     }, []);
 
+    const handleNewCustomerSave = async (customerData) => {
+        const promise = axios.post('http://localhost:3001/api/customers', customerData);
+        toast.promise(promise, {
+            loading: 'Saving customer...',
+            success: (response) => {
+                const newCustomer = response.data;
+                fetchCustomers().then(() => {
+                    setSelectedCustomer(newCustomer.customer_id);
+                });
+                setIsCustomerModalOpen(false);
+                return 'Customer saved successfully!';
+            },
+            error: 'Failed to save customer.',
+        });
+    };
+
+    // ... (rest of the component logic remains the same)
     useEffect(() => {
         if (searchTerm.trim() === '') {
             setSearchResults([]);
@@ -56,7 +82,6 @@ const InvoicingPage = ({ user }) => {
             setLines([...lines, { ...part, part_id: part.part_id, quantity: 1, sale_price: part.last_sale_price || 0 }]);
         }
         setSearchTerm('');
-        setSearchResults([]);
     };
 
     const handleLineChange = (partId, field, value) => {
@@ -107,12 +132,16 @@ const InvoicingPage = ({ user }) => {
             <div className="bg-white p-6 rounded-xl border border-gray-200 space-y-6">
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
-                    <select value={selectedCustomer} onChange={e => setSelectedCustomer(e.target.value)} className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-lg">
-                        <option value="">Select a Customer</option>
-                        {customers.map(c => <option key={c.customer_id} value={c.customer_id}>{c.first_name} {c.last_name}</option>)}
-                    </select>
+                    <div className="flex items-center space-x-2">
+                        <select value={selectedCustomer} onChange={e => setSelectedCustomer(e.target.value)} className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-lg">
+                            <option value="">Select a Customer</option>
+                            {customers.map(c => <option key={c.customer_id} value={c.customer_id}>{c.first_name} {c.last_name}</option>)}
+                        </select>
+                        <button onClick={() => setIsCustomerModalOpen(true)} className="px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm">New</button>
+                    </div>
                 </div>
                 
+                {/* ... (rest of the JSX remains the same) */}
                 <div className="relative">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Add Part</label>
                     <div className="relative">
@@ -165,6 +194,9 @@ const InvoicingPage = ({ user }) => {
                     </button>
                 </div>
             </div>
+            <Modal isOpen={isCustomerModalOpen} onClose={() => setIsCustomerModalOpen(false)} title="Add New Customer">
+                <CustomerForm onSave={handleNewCustomerSave} onCancel={() => setIsCustomerModalOpen(false)} />
+            </Modal>
         </div>
     );
 };
