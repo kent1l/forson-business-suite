@@ -2,10 +2,19 @@ const express = require('express');
 const db = require('../db');
 const router = express.Router();
 
-// GET all suppliers
+// GET all suppliers with status filter
 router.get('/suppliers', async (req, res) => {
+  const { status = 'active' } = req.query; // Default to 'active'
+
+  let whereClause = "WHERE is_active = TRUE";
+  if (status === 'inactive') {
+    whereClause = "WHERE is_active = FALSE";
+  } else if (status === 'all') {
+    whereClause = ""; // No filter
+  }
+
   try {
-    const { rows } = await db.query('SELECT * FROM supplier ORDER BY supplier_name');
+    const { rows } = await db.query(`SELECT * FROM supplier ${whereClause} ORDER BY supplier_name`);
     res.json(rows);
   } catch (err) {
     console.error(err.message);
@@ -13,89 +22,75 @@ router.get('/suppliers', async (req, res) => {
   }
 });
 
-// GET a single supplier by ID
-router.get('/suppliers/:id', async (req, res) => {
-  const { id } = req.params;
-  try {
-    const { rows } = await db.query('SELECT * FROM supplier WHERE supplier_id = $1', [id]);
-    if (rows.length === 0) {
-      return res.status(404).json({ message: 'Supplier not found' });
+// ... (rest of the supplierRoutes.js file remains the same)
+// POST a new supplier
+router.post('/customers', async (req, res) => {
+    const { first_name, last_name, company_name, phone, email, address } = req.body;
+    if (!first_name || !last_name) {
+        return res.status(400).json({ message: 'First name and last name are required.' });
     }
-    res.json(rows[0]);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server Error');
-  }
+    try {
+        const newCustomer = await db.query(
+            'INSERT INTO customer (first_name, last_name, company_name, phone, email, address) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+            [first_name, last_name, company_name, phone, email || null, address]
+        );
+        res.status(201).json(newCustomer.rows[0]);
+    } catch (err) {
+        // Add specific error handling for unique constraint violation
+        if (err.code === '23505' && err.constraint === 'customer_email_key') {
+            return res.status(409).json({ message: 'A customer with this email already exists.' });
+        }
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
 });
 
-// POST - Create a new supplier
-router.post('/suppliers', async (req, res) => {
-  const { supplier_name, contact_person, phone, email, address } = req.body;
+// PUT - Update an existing customer
+router.put('/customers/:id', async (req, res) => {
+    const { id } = req.params;
+    const { first_name, last_name, company_name, phone, email, address } = req.body;
 
-  // Basic validation
-  if (!supplier_name) {
-    return res.status(400).json({ message: 'Supplier name is required' });
-  }
-
-  try {
-    const newSupplier = await db.query(
-      'INSERT INTO supplier (supplier_name, contact_person, phone, email, address) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [supplier_name, contact_person, phone, email, address]
-    );
-    res.status(201).json(newSupplier.rows[0]);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server Error');
-  }
-});
-
-
-// PUT - Update an existing supplier
-router.put('/suppliers/:id', async (req, res) => {
-  const { id } = req.params;
-  const { supplier_name, contact_person, phone, email, address } = req.body;
-
-  if (!supplier_name) {
-    return res.status(400).json({ message: 'Supplier name is required' });
-  }
-
-  try {
-    const updatedSupplier = await db.query(
-      'UPDATE supplier SET supplier_name = $1, contact_person = $2, phone = $3, email = $4, address = $5, date_modified = CURRENT_TIMESTAMP WHERE supplier_id = $6 RETURNING *',
-      [supplier_name, contact_person, phone, email, address, id]
-    );
-
-    if (updatedSupplier.rows.length === 0) {
-      return res.status(404).json({ message: 'Supplier not found' });
+    if (!first_name || !last_name) {
+        return res.status(400).json({ message: 'First name and last name are required' });
     }
 
-    res.json(updatedSupplier.rows[0]);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server Error');
-  }
-});
+    try {
+        const updatedCustomer = await db.query(
+            'UPDATE customer SET first_name = $1, last_name = $2, company_name = $3, phone = $4, email = $5, address = $6 WHERE customer_id = $7 RETURNING *',
+            [first_name, last_name, company_name, phone, email || null, address, id]
+        );
 
+        if (updatedCustomer.rows.length === 0) {
+            return res.status(404).json({ message: 'Customer not found' });
+        }
 
-// DELETE - Delete a supplier
-router.delete('/suppliers/:id', async (req, res) => {
-  const { id } = req.params;
-
-  try {
-    const deleteOp = await db.query(
-      'DELETE FROM supplier WHERE supplier_id = $1 RETURNING *',
-      [id]
-    );
-
-    if (deleteOp.rowCount === 0) {
-      return res.status(404).json({ message: 'Supplier not found' });
+        res.json(updatedCustomer.rows[0]);
+    } catch (err) {
+        if (err.code === '23505' && err.constraint === 'customer_email_key') {
+            return res.status(409).json({ message: 'A customer with this email already exists.' });
+        }
+        console.error(err.message);
+        res.status(500).send('Server Error');
     }
-
-    res.json({ message: 'Supplier deleted successfully' });
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server Error');
-  }
 });
+
+// DELETE - Delete a customer
+router.delete('/customers/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const deleteOp = await db.query('DELETE FROM customer WHERE customer_id = $1 RETURNING *', [id]);
+        if (deleteOp.rowCount === 0) {
+            return res.status(404).json({ message: 'Customer not found' });
+        }
+        res.json({ message: 'Customer deleted successfully' });
+    } catch (err) {
+        if (err.code === '23503') {
+            return res.status(400).json({ message: 'Cannot delete this customer because they are linked to one or more invoices.' });
+        }
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
 
 module.exports = router;

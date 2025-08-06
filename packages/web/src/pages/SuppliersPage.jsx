@@ -4,51 +4,7 @@ import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
-
-const SupplierForm = ({ supplier, onSave, onCancel }) => {
-    const [formData, setFormData] = useState({
-        supplier_name: '', contact_person: '', phone: '', email: '', address: ''
-    });
-
-    useEffect(() => {
-        if (supplier) {
-            setFormData(supplier);
-        } else {
-             setFormData({ supplier_name: '', contact_person: '', phone: '', email: '', address: '' });
-        }
-    }, [supplier]);
-
-    const handleChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
-    };
-
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        onSave(formData);
-    };
-
-    return (
-        <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Supplier Name</label>
-                <input type="text" name="supplier_name" value={formData.supplier_name} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
-                <input type="text" name="contact_person" value={formData.contact_person} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                <input type="text" name="phone" value={formData.phone} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-            </div>
-            <div className="mt-6 flex justify-end space-x-4">
-                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>
-            </div>
-        </form>
-    );
-};
+import SupplierForm from '../components/forms/SupplierForm';
 
 const SuppliersPage = () => {
     const [suppliers, setSuppliers] = useState([]);
@@ -56,13 +12,13 @@ const SuppliersPage = () => {
     const [error, setError] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentSupplier, setCurrentSupplier] = useState(null);
-    const [searchTerm, setSearchTerm] = useState(''); // 1. State for the search term
+    const [statusFilter, setStatusFilter] = useState('active');
 
     const fetchSuppliers = async () => {
         try {
             setError('');
             setLoading(true);
-            const response = await axios.get('http://localhost:3001/api/suppliers');
+            const response = await axios.get(`http://localhost:3001/api/suppliers?status=${statusFilter}`);
             setSuppliers(response.data);
         } catch (err) {
             setError('Failed to fetch suppliers.');
@@ -73,7 +29,7 @@ const SuppliersPage = () => {
 
     useEffect(() => {
         fetchSuppliers();
-    }, []);
+    }, [statusFilter]);
 
     const handleAdd = () => {
         setCurrentSupplier(null);
@@ -89,39 +45,19 @@ const SuppliersPage = () => {
         toast((t) => (
             <div className="flex flex-col items-center">
                 <p className="font-semibold">Are you sure?</p>
-                <p className="text-sm text-gray-600 mb-3">This action cannot be undone.</p>
-                <div className="flex space-x-2">
-                    <button
-                        onClick={() => {
-                            toast.dismiss(t.id);
-                            confirmDelete(supplierId);
-                        }}
-                        className="px-3 py-1 bg-red-600 text-white text-sm rounded-md hover:bg-red-700"
-                    >
-                        Delete
-                    </button>
-                    <button
-                        onClick={() => toast.dismiss(t.id)}
-                        className="px-3 py-1 bg-gray-200 text-gray-800 text-sm rounded-md hover:bg-gray-300"
-                    >
-                        Cancel
-                    </button>
+                <div className="flex space-x-2 mt-2">
+                    <button onClick={() => { toast.dismiss(t.id); confirmDelete(supplierId); }} className="px-3 py-1 bg-red-600 text-white text-sm rounded-md">Delete</button>
+                    <button onClick={() => toast.dismiss(t.id)} className="px-3 py-1 bg-gray-200 text-gray-800 text-sm rounded-md">Cancel</button>
                 </div>
             </div>
-        ), {
-            duration: 6000,
-        });
+        ));
     };
     
     const confirmDelete = async (supplierId) => {
         const promise = axios.delete(`http://localhost:3001/api/suppliers/${supplierId}`);
-        
         toast.promise(promise, {
             loading: 'Deleting supplier...',
-            success: () => {
-                fetchSuppliers();
-                return 'Supplier deleted successfully!';
-            },
+            success: () => { fetchSuppliers(); return 'Supplier deleted!'; },
             error: 'Failed to delete supplier.',
         });
     };
@@ -136,39 +72,29 @@ const SuppliersPage = () => {
             success: () => {
                 setIsModalOpen(false);
                 fetchSuppliers();
-                return 'Supplier saved successfully!';
+                return 'Supplier saved!';
             },
             error: 'Failed to save supplier.',
         });
     };
-    
-    // 2. Filter logic
-    const filteredSuppliers = suppliers.filter(supplier => 
-        supplier.supplier_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (supplier.contact_person && supplier.contact_person.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
 
     return (
         <div>
-            <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+            <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-semibold text-gray-800">Suppliers</h1>
-                <div className="w-full sm:w-auto flex items-center space-x-2">
-                    {/* 3. Search input field */}
-                    <div className="relative w-full sm:w-64">
-                         <Icon path={ICONS.search} className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                         <input 
-                            type="text"
-                            placeholder="Search suppliers..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg"
-                         />
-                    </div>
-                    <button onClick={handleAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition whitespace-nowrap">
-                        Add Supplier
-                    </button>
+                <button onClick={handleAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
+                    Add Supplier
+                </button>
+            </div>
+
+            <div className="mb-4">
+                <div className="flex space-x-4 border-b">
+                    <button onClick={() => setStatusFilter('active')} className={`py-2 px-4 text-sm font-medium ${statusFilter === 'active' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>Active</button>
+                    <button onClick={() => setStatusFilter('inactive')} className={`py-2 px-4 text-sm font-medium ${statusFilter === 'inactive' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>Inactive</button>
+                    <button onClick={() => setStatusFilter('all')} className={`py-2 px-4 text-sm font-medium ${statusFilter === 'all' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>All</button>
                 </div>
             </div>
+
             <div className="bg-white p-6 rounded-xl border border-gray-200">
                 {loading && <p>Loading suppliers...</p>}
                 {error && <p className="text-red-500">{error}</p>}
@@ -185,8 +111,7 @@ const SuppliersPage = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {/* 4. Map over the filtered list */}
-                                {filteredSuppliers.map(supplier => (
+                                {suppliers.map(supplier => (
                                     <tr key={supplier.supplier_id} className="border-b hover:bg-gray-50">
                                         <td className="p-3 text-sm">{supplier.supplier_id}</td>
                                         <td className="p-3 text-sm font-medium text-gray-800">{supplier.supplier_name}</td>

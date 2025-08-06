@@ -2,10 +2,19 @@ const express = require('express');
 const db = require('../db');
 const router = express.Router();
 
-// GET all customers
+// GET all customers with status filter
 router.get('/customers', async (req, res) => {
+  const { status = 'active' } = req.query; // Default to 'active'
+
+  let whereClause = "WHERE is_active = TRUE";
+  if (status === 'inactive') {
+    whereClause = "WHERE is_active = FALSE";
+  } else if (status === 'all') {
+    whereClause = ""; // No filter
+  }
+
   try {
-    const { rows } = await db.query('SELECT * FROM customer ORDER BY last_name, first_name');
+    const { rows } = await db.query(`SELECT * FROM customer ${whereClause} ORDER BY last_name, first_name`);
     res.json(rows);
   } catch (err) {
     console.error(err.message);
@@ -13,6 +22,7 @@ router.get('/customers', async (req, res) => {
   }
 });
 
+// ... (rest of the customerRoutes.js file remains the same)
 // POST a new customer
 router.post('/customers', async (req, res) => {
     const { first_name, last_name, company_name, phone, email, address } = req.body;
@@ -81,5 +91,6 @@ router.delete('/customers/:id', async (req, res) => {
         res.status(500).send('Server Error');
     }
 });
+
 
 module.exports = router;

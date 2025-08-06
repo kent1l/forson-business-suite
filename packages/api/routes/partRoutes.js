@@ -1,10 +1,19 @@
 const express = require('express');
 const db = require('../db');
-const { constructDisplayName } = require('../helpers/displayNameHelper'); // Import the helper
+const { constructDisplayName } = require('../helpers/displayNameHelper');
 const router = express.Router();
 
-// GET all parts with brand, group, and ordered part numbers
+// GET all parts with status filter
 router.get('/parts', async (req, res) => {
+  const { status = 'active' } = req.query; // Default to 'active'
+
+  let statusFilter = "WHERE p.is_active = TRUE";
+  if (status === 'inactive') {
+    statusFilter = "WHERE p.is_active = FALSE";
+  } else if (status === 'all') {
+    statusFilter = ""; // No filter
+  }
+
   try {
     const query = `
       SELECT
@@ -19,6 +28,7 @@ router.get('/parts', async (req, res) => {
       FROM part AS p
       LEFT JOIN brand AS b ON p.brand_id = b.brand_id
       LEFT JOIN "group" AS g ON p.group_id = g.group_id
+      ${statusFilter}
       ORDER BY p.part_id;
     `;
     const { rows } = await db.query(query);
@@ -35,6 +45,7 @@ router.get('/parts', async (req, res) => {
   }
 });
 
+// ... (The rest of the partRoutes.js file remains the same)
 // GET a single part by ID
 router.get('/parts/:id', async (req, res) => {
   const { id } = req.params;

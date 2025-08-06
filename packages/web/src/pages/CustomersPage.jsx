@@ -4,65 +4,7 @@ import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
-
-const CustomerForm = ({ customer, onSave, onCancel }) => {
-    const [formData, setFormData] = useState({ first_name: '', last_name: '', company_name: '', phone: '', email: '', address: '' });
-
-    useEffect(() => {
-        if (customer) {
-            setFormData(customer);
-        } else {
-            setFormData({ first_name: '', last_name: '', company_name: '', phone: '', email: '', address: '' });
-        }
-    }, [customer]);
-
-    const handleChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
-    };
-
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        onSave(formData);
-    };
-
-    return (
-        <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
-                    <input type="text" name="first_name" value={formData.first_name} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
-                    <input type="text" name="last_name" value={formData.last_name} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </div>
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
-                <input type="text" name="company_name" value={formData.company_name} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                    <input type="text" name="phone" value={formData.phone} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                    <input type="email" name="email" value={formData.email} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </div>
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
-                <textarea name="address" value={formData.address} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows="3"></textarea>
-            </div>
-            <div className="mt-6 flex justify-end space-x-4">
-                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>
-            </div>
-        </form>
-    );
-};
+import CustomerForm from '../components/forms/CustomerForm';
 
 const CustomersPage = () => {
     const [customers, setCustomers] = useState([]);
@@ -70,12 +12,13 @@ const CustomersPage = () => {
     const [error, setError] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentCustomer, setCurrentCustomer] = useState(null);
+    const [statusFilter, setStatusFilter] = useState('active');
 
     const fetchCustomers = async () => {
         try {
             setError('');
             setLoading(true);
-            const response = await axios.get('http://localhost:3001/api/customers');
+            const response = await axios.get(`http://localhost:3001/api/customers?status=${statusFilter}`);
             setCustomers(response.data);
         } catch (err) {
             setError('Failed to fetch customers.');
@@ -86,7 +29,7 @@ const CustomersPage = () => {
 
     useEffect(() => {
         fetchCustomers();
-    }, []);
+    }, [statusFilter]);
 
     const handleAdd = () => {
         setCurrentCustomer(null);
@@ -143,6 +86,15 @@ const CustomersPage = () => {
                     Add Customer
                 </button>
             </div>
+
+            <div className="mb-4">
+                <div className="flex space-x-4 border-b">
+                    <button onClick={() => setStatusFilter('active')} className={`py-2 px-4 text-sm font-medium ${statusFilter === 'active' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>Active</button>
+                    <button onClick={() => setStatusFilter('inactive')} className={`py-2 px-4 text-sm font-medium ${statusFilter === 'inactive' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>Inactive</button>
+                    <button onClick={() => setStatusFilter('all')} className={`py-2 px-4 text-sm font-medium ${statusFilter === 'all' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>All</button>
+                </div>
+            </div>
+
             <div className="bg-white p-6 rounded-xl border border-gray-200">
                 {loading && <p>Loading customers...</p>}
                 {error && <p className="text-red-500">{error}</p>}
