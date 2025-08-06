@@ -557,7 +557,7 @@ const InventoryMovementReport = () => {
                                 {reportData.map((row, index) => (
                                     <tr key={index} className="border-b hover:bg-gray-50">
                                         <td className="p-3 text-sm whitespace-nowrap">{new Date(row.transaction_date).toLocaleString()}</td>
-                                        <td className="p-3 text-sm font-medium text-gray-800">{row.detail}</td>
+                                        <td className="p-3 text-sm font-medium text-gray-800">{row.display_name}</td>
                                         <td className="p-3 text-sm">{row.trans_type}</td>
                                         <td className={`p-3 text-sm text-center font-semibold ${row.quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>{row.quantity > 0 ? `+${row.quantity}`: row.quantity}</td>
                                         <td className="p-3 text-sm font-mono">{row.reference_no}</td>
@@ -641,7 +641,7 @@ const ProfitabilityReport = () => {
                             <tbody>
                                 {reportData.map((row) => (
                                     <tr key={row.internal_sku} className="border-b hover:bg-gray-50">
-                                        <td className="p-3 text-sm font-medium text-gray-800">{row.detail}</td>
+                                        <td className="p-3 text-sm font-medium text-gray-800">{row.display_name}</td>
                                         <td className="p-3 text-sm text-right font-mono">₱{parseFloat(row.total_revenue).toFixed(2)}</td>
                                         <td className="p-3 text-sm text-right font-mono">₱{parseFloat(row.total_cost).toFixed(2)}</td>
                                         <td className="p-3 text-sm text-right font-mono font-bold text-blue-600">₱{parseFloat(row.total_profit).toFixed(2)}</td>

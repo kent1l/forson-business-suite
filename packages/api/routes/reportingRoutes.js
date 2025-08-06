@@ -4,7 +4,6 @@ const { Parser } = require('json2csv');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
 const router = express.Router();
 
-// ... (existing sales, top-selling, inventory-valuation, and low-stock routes remain the same)
 // GET /api/reports/sales-summary
 router.get('/reports/sales-summary', async (req, res) => {
     const { startDate, endDate, format = 'json' } = req.query;
@@ -251,23 +250,34 @@ router.get('/reports/inventory-movement', async (req, res) => {
                 it.transaction_date,
                 p.internal_sku,
                 p.detail,
+                b.brand_name,
+                g.group_name,
+                (
+                    SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) 
+                    FROM part_number pn 
+                    WHERE pn.part_id = p.part_id
+                ) AS part_numbers,
                 it.trans_type,
                 it.quantity,
                 it.reference_no,
                 e.first_name || ' ' || e.last_name as employee_name
             FROM inventory_transaction it
             JOIN part p ON it.part_id = p.part_id
+            LEFT JOIN brand b ON p.brand_id = b.brand_id
+            LEFT JOIN "group" g ON p.group_id = g.group_id
             LEFT JOIN employee e ON it.employee_id = e.employee_id
             WHERE it.transaction_date::date BETWEEN $1 AND $2
             ORDER BY it.transaction_date DESC;
         `;
         const { rows } = await db.query(query, [startDate, endDate]);
+        const data = rows.map(row => ({ ...row, display_name: constructDisplayName(row) }));
+
         if (format === 'csv') {
             const json2csvParser = new Parser();
-            const csv = json2csvParser.parse(rows);
+            const csv = json2csvParser.parse(data);
             res.header('Content-Type', 'text/csv').attachment('inventory-movement.csv').send(csv);
         } else {
-            res.json(rows);
+            res.json(data);
         }
     } catch (err) {
         console.error(err.message);
@@ -285,6 +295,13 @@ router.get('/reports/profitability-by-product', async (req, res) => {
             SELECT
                 p.internal_sku,
                 p.detail,
+                b.brand_name,
+                g.group_name,
+                (
+                    SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) 
+                    FROM part_number pn 
+                    WHERE pn.part_id = p.part_id
+                ) AS part_numbers,
                 SUM(il.quantity) AS total_quantity_sold,
                 SUM(il.quantity * il.sale_price) AS total_revenue,
                 SUM(il.quantity * p.last_cost) AS total_cost,
@@ -292,17 +309,21 @@ router.get('/reports/profitability-by-product', async (req, res) => {
             FROM invoice_line il
             JOIN part p ON il.part_id = p.part_id
             JOIN invoice i ON il.invoice_id = i.invoice_id
+            LEFT JOIN brand b ON p.brand_id = b.brand_id
+            LEFT JOIN "group" g ON p.group_id = g.group_id
             WHERE i.invoice_date::date BETWEEN $1 AND $2
-            GROUP BY p.part_id
+            GROUP BY p.part_id, b.brand_name, g.group_name
             ORDER BY total_profit DESC;
         `;
         const { rows } = await db.query(query, [startDate, endDate]);
+        const data = rows.map(row => ({ ...row, display_name: constructDisplayName(row) }));
+
         if (format === 'csv') {
             const json2csvParser = new Parser();
-            const csv = json2csvParser.parse(rows);
+            const csv = json2csvParser.parse(data);
             res.header('Content-Type', 'text/csv').attachment('profitability-by-product.csv').send(csv);
         } else {
-            res.json(rows);
+            res.json(data);
         }
     } catch (err) {
         console.error(err.message);
