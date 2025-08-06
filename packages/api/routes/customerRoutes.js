@@ -16,16 +16,20 @@ router.get('/customers', async (req, res) => {
 // POST a new customer
 router.post('/customers', async (req, res) => {
     const { first_name, last_name, company_name, phone, email, address } = req.body;
-    if (!first_name) {
-        return res.status(400).json({ message: 'First name is required.' });
+    if (!first_name || !last_name) {
+        return res.status(400).json({ message: 'First name and last name are required.' });
     }
     try {
         const newCustomer = await db.query(
             'INSERT INTO customer (first_name, last_name, company_name, phone, email, address) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-            [first_name, last_name, company_name, phone, email, address]
+            [first_name, last_name, company_name, phone, email || null, address]
         );
         res.status(201).json(newCustomer.rows[0]);
     } catch (err) {
+        // Add specific error handling for unique constraint violation
+        if (err.code === '23505' && err.constraint === 'customer_email_key') {
+            return res.status(409).json({ message: 'A customer with this email already exists.' });
+        }
         console.error(err.message);
         res.status(500).send('Server Error');
     }
@@ -36,14 +40,14 @@ router.put('/customers/:id', async (req, res) => {
     const { id } = req.params;
     const { first_name, last_name, company_name, phone, email, address } = req.body;
 
-    if (!first_name) {
-        return res.status(400).json({ message: 'First name is required' });
+    if (!first_name || !last_name) {
+        return res.status(400).json({ message: 'First name and last name are required' });
     }
 
     try {
         const updatedCustomer = await db.query(
             'UPDATE customer SET first_name = $1, last_name = $2, company_name = $3, phone = $4, email = $5, address = $6 WHERE customer_id = $7 RETURNING *',
-            [first_name, last_name, company_name, phone, email, address, id]
+            [first_name, last_name, company_name, phone, email || null, address, id]
         );
 
         if (updatedCustomer.rows.length === 0) {
@@ -52,6 +56,9 @@ router.put('/customers/:id', async (req, res) => {
 
         res.json(updatedCustomer.rows[0]);
     } catch (err) {
+        if (err.code === '23505' && err.constraint === 'customer_email_key') {
+            return res.status(409).json({ message: 'A customer with this email already exists.' });
+        }
         console.error(err.message);
         res.status(500).send('Server Error');
     }
