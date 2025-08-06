@@ -131,4 +131,51 @@ router.get('/reports/inventory-valuation', async (req, res) => {
     }
 });
 
+// GET /api/reports/top-selling - Fetch a report of top selling products
+router.get('/reports/top-selling', async (req, res) => {
+    const { startDate, endDate, sortBy = 'revenue', format = 'json' } = req.query;
+
+    if (!startDate || !endDate) {
+        return res.status(400).json({ message: 'Start date and end date are required.' });
+    }
+
+    const orderByClause = sortBy === 'quantity' ? 'total_quantity_sold DESC' : 'total_revenue DESC';
+
+    try {
+        const query = `
+            SELECT
+                p.internal_sku,
+                p.detail,
+                b.brand_name,
+                g.group_name,
+                SUM(il.quantity) AS total_quantity_sold,
+                SUM(il.quantity * il.sale_price) AS total_revenue
+            FROM invoice_line il
+            JOIN part p ON il.part_id = p.part_id
+            JOIN invoice i ON il.invoice_id = i.invoice_id
+            LEFT JOIN brand b ON p.brand_id = b.brand_id
+            LEFT JOIN "group" g ON p.group_id = g.group_id
+            WHERE i.invoice_date::date BETWEEN $1 AND $2
+            GROUP BY p.part_id, b.brand_name, g.group_name
+            ORDER BY ${orderByClause}
+            LIMIT 100; -- Limit to top 100 results for performance
+        `;
+
+        const { rows } = await db.query(query, [startDate, endDate]);
+
+        if (format === 'csv') {
+            const json2csvParser = new Parser();
+            const csv = json2csvParser.parse(rows);
+            res.header('Content-Type', 'text/csv');
+            res.attachment(`top-selling-report-${startDate}-to-${endDate}.csv`);
+            return res.send(csv);
+        }
+
+        res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
 module.exports = router;
