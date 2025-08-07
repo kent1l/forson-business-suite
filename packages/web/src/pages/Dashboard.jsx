@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 
@@ -20,20 +21,21 @@ const DashboardCard = ({ title, value, icon, color, loading }) => (
 );
 
 const Dashboard = () => {
-    const [stats, setStats] = useState({
-        totalParts: 0,
-        lowStockItems: 0,
-        pendingOrders: 0,
-    });
+    const [stats, setStats] = useState({ totalParts: 0, lowStockItems: 0, pendingOrders: 0 });
+    const [chartData, setChartData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
     useEffect(() => {
-        const fetchStats = async () => {
+        const fetchData = async () => {
             try {
                 setLoading(true);
-                const response = await axios.get('http://localhost:3001/api/dashboard/stats');
-                setStats(response.data);
+                const [statsRes, chartRes] = await Promise.all([
+                    axios.get('http://localhost:3001/api/dashboard/stats'),
+                    axios.get('http://localhost:3001/api/dashboard/sales-chart')
+                ]);
+                setStats(statsRes.data);
+                setChartData(chartRes.data);
             } catch (err) {
                 setError('Failed to load dashboard data.');
                 console.error(err);
@@ -42,7 +44,7 @@ const Dashboard = () => {
             }
         };
 
-        fetchStats();
+        fetchData();
     }, []);
 
     if (error) {
@@ -52,7 +54,7 @@ const Dashboard = () => {
     return (
         <div>
             <h1 className="text-2xl font-semibold text-gray-800 mb-6">Dashboard</h1>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
                 <DashboardCard 
                     title="Total Parts" 
                     value={stats.totalParts.toLocaleString()} 
@@ -74,6 +76,28 @@ const Dashboard = () => {
                     color={{bg: 'bg-red-100', text: 'text-red-600'}} 
                     loading={loading}
                 />
+            </div>
+
+            <div className="bg-white p-6 rounded-xl border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Last 30 Days Sales</h3>
+                {loading ? (
+                    <div className="h-80 bg-gray-200 rounded animate-pulse"></div>
+                ) : (
+                    <div style={{ width: '100%', height: 300 }}>
+                        <ResponsiveContainer>
+                            <BarChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                <XAxis dataKey="date" fontSize={12} tickLine={false} axisLine={false} />
+                                <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `₱${value/1000}k`} />
+                                <Tooltip
+                                    cursor={{ fill: 'rgba(239, 246, 255, 0.5)' }}
+                                    formatter={(value) => [`₱${Number(value).toLocaleString()}`, "Sales"]}
+                                />
+                                <Bar dataKey="total_sales" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                )}
             </div>
         </div>
     );
