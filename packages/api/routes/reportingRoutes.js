@@ -4,6 +4,7 @@ const { Parser } = require('json2csv');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
 const router = express.Router();
 
+// ... (sales-summary, inventory-valuation, low-stock reports remain the same)
 // GET /api/reports/sales-summary
 router.get('/reports/sales-summary', async (req, res) => {
     const { startDate, endDate, format = 'json' } = req.query;
@@ -203,12 +204,19 @@ router.get('/reports/low-stock', async (req, res) => {
     }
 });
 
-// --- NEW REPORTS ---
 
-// GET /api/reports/sales-by-customer
+// GET /api/reports/sales-by-customer with search
 router.get('/reports/sales-by-customer', async (req, res) => {
-    const { startDate, endDate, format = 'json' } = req.query;
+    const { startDate, endDate, customerId, format = 'json' } = req.query;
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
+
+    let whereClauses = ["i.invoice_date::date BETWEEN $1 AND $2"];
+    let queryParams = [startDate, endDate];
+
+    if (customerId) {
+        queryParams.push(customerId);
+        whereClauses.push(`c.customer_id = $${queryParams.length}`);
+    }
 
     try {
         const query = `
@@ -221,11 +229,11 @@ router.get('/reports/sales-by-customer', async (req, res) => {
                 SUM(i.total_amount) as total_sales
             FROM customer c
             JOIN invoice i ON c.customer_id = i.customer_id
-            WHERE i.invoice_date::date BETWEEN $1 AND $2
+            WHERE ${whereClauses.join(' AND ')}
             GROUP BY c.customer_id
             ORDER BY total_sales DESC;
         `;
-        const { rows } = await db.query(query, [startDate, endDate]);
+        const { rows } = await db.query(query, queryParams);
         if (format === 'csv') {
             const json2csvParser = new Parser();
             const csv = json2csvParser.parse(rows);
@@ -239,10 +247,18 @@ router.get('/reports/sales-by-customer', async (req, res) => {
     }
 });
 
-// GET /api/reports/inventory-movement
+// GET /api/reports/inventory-movement with filters
 router.get('/reports/inventory-movement', async (req, res) => {
-    const { startDate, endDate, format = 'json' } = req.query;
+    const { startDate, endDate, partId, format = 'json' } = req.query;
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
+
+    let whereClauses = ["it.transaction_date::date BETWEEN $1 AND $2"];
+    let queryParams = [startDate, endDate];
+
+    if (partId) {
+        queryParams.push(partId);
+        whereClauses.push(`it.part_id = $${queryParams.length}`);
+    }
 
     try {
         const query = `
@@ -252,11 +268,7 @@ router.get('/reports/inventory-movement', async (req, res) => {
                 p.detail,
                 b.brand_name,
                 g.group_name,
-                (
-                    SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) 
-                    FROM part_number pn 
-                    WHERE pn.part_id = p.part_id
-                ) AS part_numbers,
+                (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id) AS part_numbers,
                 it.trans_type,
                 it.quantity,
                 it.reference_no,
@@ -266,12 +278,12 @@ router.get('/reports/inventory-movement', async (req, res) => {
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
             LEFT JOIN employee e ON it.employee_id = e.employee_id
-            WHERE it.transaction_date::date BETWEEN $1 AND $2
+            WHERE ${whereClauses.join(' AND ')}
             ORDER BY it.transaction_date DESC;
         `;
-        const { rows } = await db.query(query, [startDate, endDate]);
+        const { rows } = await db.query(query, queryParams);
         const data = rows.map(row => ({ ...row, display_name: constructDisplayName(row) }));
-
+        
         if (format === 'csv') {
             const json2csvParser = new Parser();
             const csv = json2csvParser.parse(data);
@@ -285,11 +297,23 @@ router.get('/reports/inventory-movement', async (req, res) => {
     }
 });
 
-// GET /api/reports/profitability-by-product
+// GET /api/reports/profitability-by-product with filters
 router.get('/reports/profitability-by-product', async (req, res) => {
-    const { startDate, endDate, format = 'json' } = req.query;
+    const { startDate, endDate, brandId, groupId, format = 'json' } = req.query;
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
     
+    let whereClauses = ["i.invoice_date::date BETWEEN $1 AND $2"];
+    let queryParams = [startDate, endDate];
+
+    if (brandId) {
+        queryParams.push(brandId);
+        whereClauses.push(`p.brand_id = $${queryParams.length}`);
+    }
+    if (groupId) {
+        queryParams.push(groupId);
+        whereClauses.push(`p.group_id = $${queryParams.length}`);
+    }
+
     try {
         const query = `
             SELECT
@@ -297,11 +321,7 @@ router.get('/reports/profitability-by-product', async (req, res) => {
                 p.detail,
                 b.brand_name,
                 g.group_name,
-                (
-                    SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) 
-                    FROM part_number pn 
-                    WHERE pn.part_id = p.part_id
-                ) AS part_numbers,
+                (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id) AS part_numbers,
                 SUM(il.quantity) AS total_quantity_sold,
                 SUM(il.quantity * il.sale_price) AS total_revenue,
                 SUM(il.quantity * p.last_cost) AS total_cost,
@@ -311,11 +331,11 @@ router.get('/reports/profitability-by-product', async (req, res) => {
             JOIN invoice i ON il.invoice_id = i.invoice_id
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
-            WHERE i.invoice_date::date BETWEEN $1 AND $2
+            WHERE ${whereClauses.join(' AND ')}
             GROUP BY p.part_id, b.brand_name, g.group_name
             ORDER BY total_profit DESC;
         `;
-        const { rows } = await db.query(query, [startDate, endDate]);
+        const { rows } = await db.query(query, queryParams);
         const data = rows.map(row => ({ ...row, display_name: constructDisplayName(row) }));
 
         if (format === 'csv') {

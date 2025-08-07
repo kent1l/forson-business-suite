@@ -3,6 +3,7 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
+import Combobox from '../components/ui/Combobox'; // Import the new component
 
 const ReportCard = ({ title, value, icon, color, isCurrency = false }) => (
     <div className="bg-white p-6 rounded-lg border border-gray-200">
@@ -110,7 +111,7 @@ const SalesReport = () => {
                             <tr>
                                 <th className="p-3 text-sm font-semibold text-gray-600">Date</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600">Invoice #</th>
-                                <th className="p-3 text-sm font-semibold text-gray-600">Item Name</th>
+                                <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total</th>
                             </tr>
                         </thead>
@@ -407,25 +408,37 @@ const LowStockReport = () => {
 
 const SalesByCustomerReport = () => {
     const [reportData, setReportData] = useState([]);
+    const [customers, setCustomers] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [dates, setDates] = useState({
+    const [filters, setFilters] = useState({
         startDate: new Date().toISOString().split('T')[0],
         endDate: new Date().toISOString().split('T')[0],
+        customerId: ''
     });
 
+    useEffect(() => {
+        axios.get('http://localhost:3001/api/customers').then(res => setCustomers(res.data));
+    }, []);
+
+    const customerOptions = customers.map(c => ({ value: c.customer_id, label: `${c.first_name} ${c.last_name}` }));
+
+    const handleFilterChange = (name, value) => {
+        setFilters(prev => ({ ...prev, [name]: value }));
+    };
+
     const fetchReport = async (format = 'json') => {
-        if (!dates.startDate || !dates.endDate) return toast.error('Please select both a start and end date.');
+        if (!filters.startDate || !filters.endDate) return toast.error('Please select both a start and end date.');
         if (format === 'json') setLoading(true);
         try {
             const response = await axios.get('http://localhost:3001/api/reports/sales-by-customer', {
-                params: { ...dates, format },
+                params: { ...filters, format },
                 responseType: format === 'csv' ? 'blob' : 'json',
             });
             if (format === 'csv') {
                 const url = window.URL.createObjectURL(new Blob([response.data]));
                 const link = document.createElement('a');
                 link.href = url;
-                link.setAttribute('download', `sales-by-customer-${dates.startDate}-to-${dates.endDate}.csv`);
+                link.setAttribute('download', `sales-by-customer.csv`);
                 document.body.appendChild(link);
                 link.click();
                 link.remove();
@@ -446,11 +459,20 @@ const SalesByCustomerReport = () => {
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-                        <input type="date" name="startDate" value={dates.startDate} onChange={(e) => setDates(prev => ({...prev, startDate: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <input type="date" name="startDate" value={filters.startDate} onChange={(e) => handleFilterChange('startDate', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-                        <input type="date" name="endDate" value={dates.endDate} onChange={(e) => setDates(prev => ({...prev, endDate: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <input type="date" name="endDate" value={filters.endDate} onChange={(e) => handleFilterChange('endDate', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
+                        <Combobox 
+                            options={[{value: '', label: 'All Customers'}, ...customerOptions]}
+                            value={filters.customerId}
+                            onChange={(value) => handleFilterChange('customerId', value)}
+                            placeholder="Search customers..."
+                        />
                     </div>
                     <div className="flex space-x-2">
                         <button onClick={() => fetchReport('json')} disabled={loading} className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition disabled:bg-blue-300">View Report</button>
@@ -488,25 +510,37 @@ const SalesByCustomerReport = () => {
 
 const InventoryMovementReport = () => {
     const [reportData, setReportData] = useState([]);
+    const [parts, setParts] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [dates, setDates] = useState({
+    const [filters, setFilters] = useState({
         startDate: new Date().toISOString().split('T')[0],
         endDate: new Date().toISOString().split('T')[0],
+        partId: ''
     });
 
+    useEffect(() => {
+        axios.get('http://localhost:3001/api/parts?status=all').then(res => setParts(res.data));
+    }, []);
+    
+    const partOptions = parts.map(p => ({ value: p.part_id, label: p.display_name }));
+
+    const handleFilterChange = (name, value) => {
+        setFilters(prev => ({ ...prev, [name]: value }));
+    };
+
     const fetchReport = async (format = 'json') => {
-        if (!dates.startDate || !dates.endDate) return toast.error('Please select both a start and end date.');
+        if (!filters.startDate || !filters.endDate) return toast.error('Please select both a start and end date.');
         if (format === 'json') setLoading(true);
         try {
             const response = await axios.get('http://localhost:3001/api/reports/inventory-movement', {
-                params: { ...dates, format },
+                params: { ...filters, format },
                 responseType: format === 'csv' ? 'blob' : 'json',
             });
             if (format === 'csv') {
                 const url = window.URL.createObjectURL(new Blob([response.data]));
                 const link = document.createElement('a');
                 link.href = url;
-                link.setAttribute('download', `inventory-movement-${dates.startDate}-to-${dates.endDate}.csv`);
+                link.setAttribute('download', `inventory-movement.csv`);
                 document.body.appendChild(link);
                 link.click();
                 link.remove();
@@ -527,11 +561,20 @@ const InventoryMovementReport = () => {
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-                        <input type="date" name="startDate" value={dates.startDate} onChange={(e) => setDates(prev => ({...prev, startDate: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <input type="date" name="startDate" value={filters.startDate} onChange={(e) => handleFilterChange('startDate', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-                        <input type="date" name="endDate" value={dates.endDate} onChange={(e) => setDates(prev => ({...prev, endDate: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <input type="date" name="endDate" value={filters.endDate} onChange={(e) => handleFilterChange('endDate', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Part</label>
+                        <Combobox 
+                            options={[{value: '', label: 'All Parts'}, ...partOptions]}
+                            value={filters.partId}
+                            onChange={(value) => handleFilterChange('partId', value)}
+                            placeholder="Search parts..."
+                        />
                     </div>
                     <div className="flex space-x-2">
                         <button onClick={() => fetchReport('json')} disabled={loading} className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition disabled:bg-blue-300">View Report</button>
@@ -546,7 +589,7 @@ const InventoryMovementReport = () => {
                             <thead className="border-b">
                                 <tr>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Date</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Item Name</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Type</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-center">Quantity</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Reference</th>
@@ -575,25 +618,41 @@ const InventoryMovementReport = () => {
 
 const ProfitabilityReport = () => {
     const [reportData, setReportData] = useState([]);
+    const [brands, setBrands] = useState([]);
+    const [groups, setGroups] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [dates, setDates] = useState({
+    const [filters, setFilters] = useState({
         startDate: new Date().toISOString().split('T')[0],
         endDate: new Date().toISOString().split('T')[0],
+        brandId: '',
+        groupId: ''
     });
 
+    useEffect(() => {
+        axios.get('http://localhost:3001/api/brands').then(res => setBrands(res.data));
+        axios.get('http://localhost:3001/api/groups').then(res => setGroups(res.data));
+    }, []);
+    
+    const brandOptions = brands.map(b => ({ value: b.brand_id, label: b.brand_name }));
+    const groupOptions = groups.map(g => ({ value: g.group_id, label: g.group_name }));
+
+    const handleFilterChange = (name, value) => {
+        setFilters(prev => ({ ...prev, [name]: value }));
+    };
+
     const fetchReport = async (format = 'json') => {
-        if (!dates.startDate || !dates.endDate) return toast.error('Please select both a start and end date.');
+        if (!filters.startDate || !filters.endDate) return toast.error('Please select both a start and end date.');
         if (format === 'json') setLoading(true);
         try {
             const response = await axios.get('http://localhost:3001/api/reports/profitability-by-product', {
-                params: { ...dates, format },
+                params: { ...filters, format },
                 responseType: format === 'csv' ? 'blob' : 'json',
             });
             if (format === 'csv') {
                 const url = window.URL.createObjectURL(new Blob([response.data]));
                 const link = document.createElement('a');
                 link.href = url;
-                link.setAttribute('download', `profitability-report-${dates.startDate}-to-${dates.endDate}.csv`);
+                link.setAttribute('download', `profitability-report.csv`);
                 document.body.appendChild(link);
                 link.click();
                 link.remove();
@@ -611,14 +670,32 @@ const ProfitabilityReport = () => {
     return (
         <>
             <div className="bg-white p-6 rounded-xl border border-gray-200 mb-6">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-                        <input type="date" name="startDate" value={dates.startDate} onChange={(e) => setDates(prev => ({...prev, startDate: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <input type="date" name="startDate" value={filters.startDate} onChange={(e) => handleFilterChange('startDate', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-                        <input type="date" name="endDate" value={dates.endDate} onChange={(e) => setDates(prev => ({...prev, endDate: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <input type="date" name="endDate" value={filters.endDate} onChange={(e) => handleFilterChange('endDate', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
+                        <Combobox 
+                            options={[{value: '', label: 'All Brands'}, ...brandOptions]}
+                            value={filters.brandId}
+                            onChange={(value) => handleFilterChange('brandId', value)}
+                            placeholder="Search brands..."
+                        />
+                    </div>
+                     <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Group</label>
+                        <Combobox 
+                            options={[{value: '', label: 'All Groups'}, ...groupOptions]}
+                            value={filters.groupId}
+                            onChange={(value) => handleFilterChange('groupId', value)}
+                            placeholder="Search groups..."
+                        />
                     </div>
                     <div className="flex space-x-2">
                         <button onClick={() => fetchReport('json')} disabled={loading} className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition disabled:bg-blue-300">View Report</button>
@@ -632,7 +709,7 @@ const ProfitabilityReport = () => {
                         <table className="w-full text-left">
                             <thead className="border-b">
                                 <tr>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Item Name</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total Revenue</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total Cost</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total Profit</th>
