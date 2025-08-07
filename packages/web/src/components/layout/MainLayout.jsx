@@ -11,6 +11,7 @@ import CustomersPage from '../../pages/CustomersPage';
 import PowerSearchPage from '../../pages/PowerSearchPage';
 import InventoryPage from '../../pages/InventoryPage';
 import ReportingPage from '../../pages/ReportingPage';
+import EmployeesPage from '../../pages/EmployeesPage'; // 1. Import
 
 const MainLayout = ({ user, onLogout, onNavigate, currentPage }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -27,13 +28,14 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage }) => {
             case 'goods_receipt': return <GoodsReceiptPage user={user} />;
             case 'invoicing': return <InvoicingPage user={user} />;
             case 'inventory': return <InventoryPage user={user} />;
+            case 'employees': return <EmployeesPage user={user} />; // 2. Add case
             default: return <Dashboard />;
         }
     };
 
     return (
         <div className="flex h-screen bg-slate-50 font-sans text-gray-800">
-            <Sidebar onNavigate={onNavigate} currentPage={currentPage} isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
+            <Sidebar user={user} onNavigate={onNavigate} currentPage={currentPage} isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
             <div className="flex-1 flex flex-col overflow-hidden">
                 <Header user={user} onLogout={onLogout} onMenuClick={() => setSidebarOpen(true)} />
                 <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-50 p-4 sm:p-6 md:p-8">
