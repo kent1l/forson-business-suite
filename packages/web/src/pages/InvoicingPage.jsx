@@ -5,17 +5,21 @@ import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import Modal from '../components/ui/Modal';
 import CustomerForm from '../components/forms/CustomerForm';
+import { useSettings } from '../contexts/SettingsContext';
 
 const InvoicingPage = ({ user }) => {
-    // ... (logic remains the same)
+    const { settings } = useSettings();
     const [customers, setCustomers] = useState([]);
     const [parts, setParts] = useState([]);
     const [lines, setLines] = useState([]);
     const [selectedCustomer, setSelectedCustomer] = useState('');
+    const [paymentMethod, setPaymentMethod] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+
+    const paymentMethods = settings?.PAYMENT_METHODS ? settings.PAYMENT_METHODS.split(',') : [];
 
     const fetchInitialData = async () => {
         try {
@@ -26,6 +30,9 @@ const InvoicingPage = ({ user }) => {
             ]);
             setCustomers(customersRes.data);
             setParts(partsRes.data);
+            if (paymentMethods.length > 0) {
+                setPaymentMethod(paymentMethods[0]); // Set a default payment method
+            }
         } catch (err) {
             toast.error("Failed to load initial data.");
         } finally {
@@ -95,14 +102,15 @@ const InvoicingPage = ({ user }) => {
     };
 
     const handlePostInvoice = async () => {
-        if (!selectedCustomer || lines.length === 0) {
-            toast.error('Please select a customer and add at least one item.');
+        if (!selectedCustomer || lines.length === 0 || !paymentMethod) {
+            toast.error('Please select a customer, payment method, and add at least one item.');
             return;
         }
 
         const payload = {
             customer_id: selectedCustomer,
             employee_id: user.employee_id,
+            payment_method: paymentMethod,
             lines: lines.map(line => ({
                 part_id: line.part_id,
                 quantity: line.quantity,
@@ -129,14 +137,22 @@ const InvoicingPage = ({ user }) => {
         <div>
             <h1 className="text-2xl font-semibold text-gray-800 mb-6">New Invoice</h1>
             <div className="bg-white p-6 rounded-xl border border-gray-200 space-y-6">
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
-                    <div className="flex items-center space-x-2">
-                        <select value={selectedCustomer} onChange={e => setSelectedCustomer(e.target.value)} className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-lg">
-                            <option value="">Select a Customer</option>
-                            {customers.map(c => <option key={c.customer_id} value={c.customer_id}>{c.first_name} {c.last_name}</option>)}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
+                        <div className="flex items-center space-x-2">
+                            <select value={selectedCustomer} onChange={e => setSelectedCustomer(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                <option value="">Select a Customer</option>
+                                {customers.map(c => <option key={c.customer_id} value={c.customer_id}>{c.first_name} {c.last_name}</option>)}
+                            </select>
+                            <button onClick={() => setIsCustomerModalOpen(true)} className="px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm">New</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
+                        <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            {paymentMethods.map(method => <option key={method} value={method}>{method}</option>)}
                         </select>
-                        <button onClick={() => setIsCustomerModalOpen(true)} className="px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm">New</button>
                     </div>
                 </div>
                 
@@ -156,7 +172,7 @@ const InvoicingPage = ({ user }) => {
                         <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg">
                             {searchResults.map(part => (
                                 <li key={part.part_id} onClick={() => addPartToLines(part)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer">
-                                    {part.display_name} {/* Use display_name */}
+                                    {part.display_name}
                                 </li>
                             ))}
                         </ul>
@@ -167,7 +183,7 @@ const InvoicingPage = ({ user }) => {
                     <table className="w-full text-left">
                         <thead className="border-b">
                             <tr>
-                                <th className="p-3 text-sm font-semibold text-gray-600">Part Detail</th>
+                                <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 w-28">Quantity</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 w-32">Sale Price</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 w-16 text-center"></th>
@@ -176,7 +192,7 @@ const InvoicingPage = ({ user }) => {
                         <tbody>
                             {lines.map(line => (
                                 <tr key={line.part_id} className="border-b">
-                                    <td className="p-2 text-sm font-medium text-gray-800">{line.display_name}</td> {/* Use display_name */}
+                                    <td className="p-2 text-sm font-medium text-gray-800">{line.display_name}</td>
                                     <td className="p-2"><input type="number" value={line.quantity} onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)} className="w-full p-1 border rounded-md" /></td>
                                     <td className="p-2"><input type="number" value={line.sale_price} onChange={e => handleLineChange(line.part_id, 'sale_price', e.target.value)} className="w-full p-1 border rounded-md" /></td>
                                     <td className="p-2 text-center"><button onClick={() => removeLine(line.part_id)} className="text-red-500 hover:text-red-700"><Icon path={ICONS.trash} className="h-5 w-5"/></button></td>

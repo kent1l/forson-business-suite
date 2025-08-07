@@ -1,14 +1,14 @@
 const express = require('express');
 const db = require('../db');
-const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator'); // 1. Import the helper
+const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const router = express.Router();
 
 // POST /invoices - Create a new Invoice
 router.post('/invoices', async (req, res) => {
-  const { customer_id, employee_id, lines } = req.body;
+  const { customer_id, employee_id, lines, payment_method } = req.body;
 
-  if (!customer_id || !employee_id || !lines || !Array.isArray(lines) || lines.length === 0) {
-    return res.status(400).json({ message: 'Missing required fields.' });
+  if (!customer_id || !employee_id || !lines || !Array.isArray(lines) || lines.length === 0 || !payment_method) {
+    return res.status(400).json({ message: 'Missing required fields: customer_id, employee_id, payment_method, and a non-empty lines array.' });
   }
 
   const client = await db.getClient();
@@ -16,20 +16,22 @@ router.post('/invoices', async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // 2. Generate the new invoice number
     const invoice_number = await getNextDocumentNumber(client, 'INV');
     let total_amount = 0;
 
     for (const line of lines) {
         total_amount += line.quantity * line.sale_price;
     }
+    
+    // Determine the status based on the payment method
+    const status = (payment_method.toLowerCase() === 'on account') ? 'Unpaid' : 'Paid';
 
     const invoiceQuery = `
       INSERT INTO invoice (invoice_number, customer_id, employee_id, total_amount, amount_paid, status)
-      VALUES ($1, $2, $3, $4, $4, 'Paid')
+      VALUES ($1, $2, $3, $4, $4, $5) -- amount_paid is assumed to be the full amount for non-credit sales
       RETURNING invoice_id;
     `;
-    const invoiceResult = await client.query(invoiceQuery, [invoice_number, customer_id, employee_id, total_amount]);
+    const invoiceResult = await client.query(invoiceQuery, [invoice_number, customer_id, employee_id, total_amount, status]);
     const newInvoiceId = invoiceResult.rows[0].invoice_id;
 
     for (const line of lines) {
