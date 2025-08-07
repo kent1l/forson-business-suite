@@ -3,16 +3,21 @@ const db = require('../db');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
 const router = express.Router();
 
-// GET all parts with status filter
+// GET all parts with status filter, search, and sorting
 router.get('/parts', async (req, res) => {
-  const { status = 'active' } = req.query; // Default to 'active'
+  const { status = 'active', search = '', sortBy = 'part_id', sortOrder = 'ASC' } = req.query;
+  const searchTerm = `%${search}%`;
 
   let statusFilter = "WHERE p.is_active = TRUE";
   if (status === 'inactive') {
     statusFilter = "WHERE p.is_active = FALSE";
   } else if (status === 'all') {
-    statusFilter = ""; // No filter
+    statusFilter = "";
   }
+  
+  const validSortColumns = ['part_id', 'internal_sku', 'display_name', 'brand_name', 'group_name'];
+  const safeSortBy = validSortColumns.includes(sortBy) ? sortBy : 'part_id';
+  const safeSortOrder = sortOrder.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
 
   try {
     const query = `
@@ -29,9 +34,10 @@ router.get('/parts', async (req, res) => {
       LEFT JOIN brand AS b ON p.brand_id = b.brand_id
       LEFT JOIN "group" AS g ON p.group_id = g.group_id
       ${statusFilter}
-      ORDER BY p.part_id;
+      AND (p.detail ILIKE $1 OR p.internal_sku ILIKE $1)
+      ORDER BY ${safeSortBy} ${safeSortOrder};
     `;
-    const { rows } = await db.query(query);
+    const { rows } = await db.query(query, [searchTerm]);
     
     const partsWithDisplayName = rows.map(part => ({
         ...part,
@@ -45,7 +51,7 @@ router.get('/parts', async (req, res) => {
   }
 });
 
-// ... (The rest of the partRoutes.js file remains the same)
+// ... (rest of the file remains the same)
 // GET a single part by ID
 router.get('/parts/:id', async (req, res) => {
   const { id } = req.params;
