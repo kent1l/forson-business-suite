@@ -1,9 +1,22 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 const db = require('../db');
+const { protect, isAdmin } = require('../middleware/authMiddleware'); // 1. Import the middleware
 const router = express.Router();
 
-// POST /login - User Authentication
+// Helper to generate a token
+const generateToken = (user) => {
+    return jwt.sign({
+        employee_id: user.employee_id,
+        username: user.username,
+        permission_level_id: user.permission_level_id
+    }, process.env.JWT_SECRET, {
+        expiresIn: '1d', // Token expires in 1 day
+    });
+};
+
+// POST /login - User Authentication (Public)
 router.post('/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
@@ -19,16 +32,26 @@ router.post('/login', async (req, res) => {
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
+
+    // On success, send back user data and the new token
     const { password_hash, password_salt, ...user_data } = user;
-    res.json({ message: 'Login successful', user: user_data });
+    res.json({ 
+        message: 'Login successful', 
+        user: user_data,
+        token: generateToken(user_data) 
+    });
+
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server Error');
   }
 });
 
-// GET /employees - Get all employees (non-sensitive data)
-router.get('/employees', async (req, res) => {
+
+// --- SECURED ADMIN ROUTES ---
+
+// 2. Apply the middleware. Requests must have a valid token AND be from an admin.
+router.get('/employees', protect, isAdmin, async (req, res) => {
     try {
         const { rows } = await db.query('SELECT employee_id, employee_code, first_name, last_name, position_title, permission_level_id, username, is_active FROM employee ORDER BY last_name, first_name');
         res.json(rows);
@@ -38,8 +61,7 @@ router.get('/employees', async (req, res) => {
     }
 });
 
-// GET /employees/:id - Get a single employee's details
-router.get('/employees/:id', async (req, res) => {
+router.get('/employees/:id', protect, isAdmin, async (req, res) => {
     const { id } = req.params;
     try {
         const { rows } = await db.query('SELECT employee_id, employee_code, first_name, last_name, position_title, permission_level_id, username, is_active FROM employee WHERE employee_id = $1', [id]);
@@ -53,9 +75,7 @@ router.get('/employees/:id', async (req, res) => {
     }
 });
 
-
-// POST /employees - Create a new employee
-router.post('/employees', async (req, res) => {
+router.post('/employees', protect, isAdmin, async (req, res) => {
   const { first_name, last_name, username, password, permission_level_id, position_title } = req.body;
   if (!username || !password || !first_name || !last_name || !permission_level_id) {
     return res.status(400).json({ message: 'All required fields must be filled' });
@@ -77,8 +97,7 @@ router.post('/employees', async (req, res) => {
   }
 });
 
-// PUT /employees/:id - Update an employee
-router.put('/employees/:id', async (req, res) => {
+router.put('/employees/:id', protect, isAdmin, async (req, res) => {
     const { id } = req.params;
     const { first_name, last_name, username, permission_level_id, position_title, is_active } = req.body;
 
