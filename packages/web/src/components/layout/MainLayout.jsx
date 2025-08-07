@@ -11,7 +11,7 @@ import CustomersPage from '../../pages/CustomersPage';
 import PowerSearchPage from '../../pages/PowerSearchPage';
 import InventoryPage from '../../pages/InventoryPage';
 import ReportingPage from '../../pages/ReportingPage';
-import EmployeesPage from '../../pages/EmployeesPage'; // 1. Import
+import EmployeesPage from '../../pages/EmployeesPage';
 
 const MainLayout = ({ user, onLogout, onNavigate, currentPage }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -28,7 +28,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage }) => {
             case 'goods_receipt': return <GoodsReceiptPage user={user} />;
             case 'invoicing': return <InvoicingPage user={user} />;
             case 'inventory': return <InventoryPage user={user} />;
-            case 'employees': return <EmployeesPage user={user} />; // 2. Add case
+            case 'employees': return <EmployeesPage user={user} />;
             default: return <Dashboard />;
         }
     };

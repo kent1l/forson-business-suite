@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import api from '../api'; // Use the new api helper
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 
@@ -14,8 +14,9 @@ const LoginScreen = ({ onLogin }) => {
         setError('');
         setLoading(true);
         try {
-            const response = await axios.post('http://localhost:3001/api/login', { username, password });
-            onLogin(response.data.user);
+            const response = await api.post('/login', { username, password });
+            // onLogin now receives the full response data: { user: {...}, token: '...' }
+            onLogin(response.data); 
         } catch (err) {
             setError(err.response?.data?.message || 'Login failed. Please try again.');
         } finally {

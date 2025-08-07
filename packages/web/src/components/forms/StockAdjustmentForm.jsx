@@ -7,7 +7,6 @@ const StockAdjustmentForm = ({ part, user, onSave, onCancel }) => {
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        
         const numericQuantity = parseFloat(quantity);
         if (isNaN(numericQuantity) || numericQuantity === 0) {
             return toast.error('Please enter a valid, non-zero quantity.');
@@ -17,7 +16,7 @@ const StockAdjustmentForm = ({ part, user, onSave, onCancel }) => {
             part_id: part.part_id,
             quantity: numericQuantity,
             notes,
-            employee_id: user.employee_id, // This will now work correctly
+            employee_id: user.employee_id,
         };
         onSave(payload);
     };

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api'; // Use the new api helper
 import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
@@ -25,7 +25,7 @@ const EmployeeForm = ({ employee, onSave, onCancel }) => {
                 position_title: employee.position_title || '',
                 permission_level_id: employee.permission_level_id || 1,
                 is_active: employee.is_active,
-                password: '' // Password is not sent for edits, but can be changed
+                password: ''
             });
         } else {
             setFormData({
@@ -99,7 +99,7 @@ const EmployeesPage = ({ user }) => {
     const fetchEmployees = async () => {
         try {
             setLoading(true);
-            const response = await axios.get('http://localhost:3001/api/employees');
+            const response = await api.get('/employees');
             setEmployees(response.data);
         } catch (err) {
             setError('Failed to fetch employees.');
@@ -109,7 +109,6 @@ const EmployeesPage = ({ user }) => {
     };
 
     useEffect(() => {
-        // This check ensures only Admins can view this page's data
         if (user.permission_level_id === 10) {
             fetchEmployees();
         }
@@ -127,8 +126,8 @@ const EmployeesPage = ({ user }) => {
 
     const handleSave = async (employeeData) => {
         const promise = currentEmployee
-            ? axios.put(`http://localhost:3001/api/employees/${currentEmployee.employee_id}`, employeeData)
-            : axios.post('http://localhost:3001/api/employees', employeeData);
+            ? api.put(`/employees/${currentEmployee.employee_id}`, employeeData)
+            : api.post('/employees', employeeData);
 
         toast.promise(promise, {
             loading: 'Saving employee...',
@@ -141,7 +140,6 @@ const EmployeesPage = ({ user }) => {
         });
     };
     
-    // If the user is not an admin, show an access denied message.
     if (user.permission_level_id !== 10) {
         return (
             <div className="text-center p-8">
