@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import api from '../api'; // Use the new api helper
+import api from '../api';
 import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
@@ -25,7 +25,7 @@ const EmployeeForm = ({ employee, onSave, onCancel }) => {
                 position_title: employee.position_title || '',
                 permission_level_id: employee.permission_level_id || 1,
                 is_active: employee.is_active,
-                password: ''
+                password: '' // Always clear password field for security
             });
         } else {
             setFormData({
@@ -66,7 +66,7 @@ const EmployeeForm = ({ employee, onSave, onCancel }) => {
                 <input type="text" name="position_title" value={formData.position_title} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
                 <input type="password" name="password" value={formData.password} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder={employee ? "Leave blank to keep unchanged" : ""} required={!employee} />
             </div>
             <div>
