@@ -16,9 +16,9 @@ const Sidebar = ({ user, onNavigate, currentPage, isOpen, setIsOpen }) => {
         { name: 'Applications', icon: ICONS.applications, page: 'applications' },
     ];
     
-    // Conditionally add the Employees link for Admins
     if (user && user.permission_level_id === 10) {
         navItems.push({ name: 'Employees', icon: ICONS.employees, page: 'employees' });
+        navItems.push({ name: 'Settings', icon: ICONS.settings, page: 'settings' });
     }
 
     return (

@@ -3,25 +3,30 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
-import Combobox from '../components/ui/Combobox'; // Import the new component
+import { useSettings } from '../contexts/SettingsContext';
+import Combobox from '../components/ui/Combobox'; // Import the Combobox component
 
-const ReportCard = ({ title, value, icon, color, isCurrency = false }) => (
-    <div className="bg-white p-6 rounded-lg border border-gray-200">
-        <div className="flex items-center space-x-4">
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center ${color.bg}`}>
-                <Icon path={icon} className={`h-6 w-6 ${color.text}`} />
-            </div>
-            <div>
-                <h3 className="text-sm font-medium text-gray-500">{title}</h3>
-                <p className="text-2xl font-bold text-gray-800 mt-1">
-                    {isCurrency ? `₱${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : Number(value).toLocaleString()}
-                </p>
+const ReportCard = ({ title, value, icon, color, isCurrency = false }) => {
+    const { settings } = useSettings();
+    return (
+        <div className="bg-white p-6 rounded-lg border border-gray-200">
+            <div className="flex items-center space-x-4">
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${color.bg}`}>
+                    <Icon path={icon} className={`h-6 w-6 ${color.text}`} />
+                </div>
+                <div>
+                    <h3 className="text-sm font-medium text-gray-500">{title}</h3>
+                    <p className="text-2xl font-bold text-gray-800 mt-1">
+                        {isCurrency ? `${settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : Number(value).toLocaleString()}
+                    </p>
+                </div>
             </div>
         </div>
-    </div>
-);
+    );
+};
 
 const SalesReport = () => {
+    const { settings } = useSettings();
     const [reportData, setReportData] = useState([]);
     const [summary, setSummary] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -121,7 +126,7 @@ const SalesReport = () => {
                                     <td className="p-3 text-sm">{new Date(row.invoice_date).toLocaleDateString()}</td>
                                     <td className="p-3 text-sm font-mono">{row.invoice_number}</td>
                                     <td className="p-3 text-sm">{row.display_name}</td>
-                                    <td className="p-3 text-sm text-right font-mono">₱{parseFloat(row.line_total).toFixed(2)}</td>
+                                    <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.line_total).toFixed(2)}</td>
                                 </tr>
                             ))}
                              {reportData.length === 0 && !loading && (
@@ -138,6 +143,7 @@ const SalesReport = () => {
 };
 
 const InventoryValuationReport = () => {
+    const { settings } = useSettings();
     const [reportData, setReportData] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -189,7 +195,7 @@ const InventoryValuationReport = () => {
                             <thead className="border-b">
                                 <tr>
                                     <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Item Name</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-center">Stock on Hand</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Last Cost</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total Value</th>
@@ -201,15 +207,15 @@ const InventoryValuationReport = () => {
                                         <td className="p-3 text-sm font-mono">{row.internal_sku}</td>
                                         <td className="p-3 text-sm">{row.display_name}</td>
                                         <td className="p-3 text-sm text-center font-semibold">{Number(row.stock_on_hand).toLocaleString()}</td>
-                                        <td className="p-3 text-sm text-right font-mono">₱{parseFloat(row.last_cost).toFixed(2)}</td>
-                                        <td className="p-3 text-sm text-right font-mono">₱{parseFloat(row.total_value).toFixed(2)}</td>
+                                        <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.last_cost).toFixed(2)}</td>
+                                        <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.total_value).toFixed(2)}</td>
                                     </tr>
                                 ))}
                             </tbody>
                             <tfoot className="font-bold">
                                 <tr>
                                     <td colSpan="4" className="p-3 text-right text-blue-600">Grand Total Inventory Value:</td>
-                                    <td className="p-3 text-right font-mono text-blue-600">₱{grandTotal.toFixed(2)}</td>
+                                    <td className="p-3 text-right font-mono text-blue-600">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{grandTotal.toFixed(2)}</td>
                                 </tr>
                             </tfoot>
                         </table>
@@ -617,6 +623,7 @@ const InventoryMovementReport = () => {
 };
 
 const ProfitabilityReport = () => {
+    const { settings } = useSettings();
     const [reportData, setReportData] = useState([]);
     const [brands, setBrands] = useState([]);
     const [groups, setGroups] = useState([]);
@@ -719,9 +726,9 @@ const ProfitabilityReport = () => {
                                 {reportData.map((row) => (
                                     <tr key={row.internal_sku} className="border-b hover:bg-gray-50">
                                         <td className="p-3 text-sm font-medium text-gray-800">{row.display_name}</td>
-                                        <td className="p-3 text-sm text-right font-mono">₱{parseFloat(row.total_revenue).toFixed(2)}</td>
-                                        <td className="p-3 text-sm text-right font-mono">₱{parseFloat(row.total_cost).toFixed(2)}</td>
-                                        <td className="p-3 text-sm text-right font-mono font-bold text-blue-600">₱{parseFloat(row.total_profit).toFixed(2)}</td>
+                                        <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.total_revenue).toFixed(2)}</td>
+                                        <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.total_cost).toFixed(2)}</td>
+                                        <td className="p-3 text-sm text-right font-mono font-bold text-blue-600">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.total_profit).toFixed(2)}</td>
                                     </tr>
                                 ))}
                             </tbody>

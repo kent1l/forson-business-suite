@@ -18,7 +18,8 @@ const partApplicationRoutes = require('./routes/partApplicationRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const powerSearchRoutes = require('./routes/powerSearchRoutes');
 const inventoryRoutes = require('./routes/inventoryRoutes');
-const reportingRoutes = require('./routes/reportingRoutes'); // 1. Import
+const reportingRoutes = require('./routes/reportingRoutes');
+const settingsRoutes = require('./routes/settingsRoutes'); // 1. Import
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -41,7 +42,8 @@ app.use('/api', groupRoutes);
 app.use('/api', supplierRoutes);
 app.use('/api', employeeRoutes);
 app.use('/api', inventoryRoutes);
-app.use('/api', reportingRoutes); // 2. Use
+app.use('/api', reportingRoutes);
+app.use('/api', settingsRoutes); // 2. Use
 app.use('/api', partRoutes); 
 
 app.listen(PORT, () => {

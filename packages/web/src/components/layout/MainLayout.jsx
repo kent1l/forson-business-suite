@@ -12,6 +12,7 @@ import PowerSearchPage from '../../pages/PowerSearchPage';
 import InventoryPage from '../../pages/InventoryPage';
 import ReportingPage from '../../pages/ReportingPage';
 import EmployeesPage from '../../pages/EmployeesPage';
+import SettingsPage from '../../pages/SettingsPage'; // 1. Import
 
 const MainLayout = ({ user, onLogout, onNavigate, currentPage }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -29,6 +30,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage }) => {
             case 'invoicing': return <InvoicingPage user={user} />;
             case 'inventory': return <InventoryPage user={user} />;
             case 'employees': return <EmployeesPage user={user} />;
+            case 'settings': return <SettingsPage user={user} />; // 2. Add case
             default: return <Dashboard />;
         }
     };
