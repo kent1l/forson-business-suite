@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import { useSettings } from '../contexts/SettingsContext';
 import Modal from '../components/ui/Modal';
+import CustomerForm from '../components/forms/CustomerForm';
+import Combobox from '../components/ui/Combobox';
 
 const PriceQuantityModal = ({ item, onConfirm, onCancel }) => {
     const [price, setPrice] = useState(item.sale_price || 0);
@@ -60,18 +62,26 @@ const POSPage = ({ user, lines, setLines }) => {
     const { settings } = useSettings();
     const [searchTerm, setSearchTerm] = useState('');
     const [parts, setParts] = useState([]);
+    const [customers, setCustomers] = useState([]);
+    const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [isPriceModalOpen, setIsPriceModalOpen] = useState(false);
+    const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
     const [currentItem, setCurrentItem] = useState(null);
     const [highlightedIndex, setHighlightedIndex] = useState(-1);
     const searchInputRef = useRef(null);
     
-    const walkInCustomerId = 1;
+    const walkInCustomer = { customer_id: 1, first_name: 'Walk-in', last_name: 'Customer' };
 
     useEffect(() => {
-        axios.get('http://localhost:3001/api/parts?status=active')
-            .then(res => setParts(res.data))
-            .catch(err => toast.error("Could not load parts."));
+        axios.get('http://localhost:3001/api/parts?status=active').then(res => setParts(res.data));
+        axios.get('http://localhost:3001/api/customers?status=active').then(res => setCustomers([walkInCustomer, ...res.data]));
+        setSelectedCustomer(walkInCustomer);
     }, []);
+
+    const customerOptions = useMemo(() => customers.map(c => ({
+        value: c.customer_id,
+        label: `${c.first_name} ${c.last_name}`
+    })), [customers]);
 
     const searchResults = searchTerm 
         ? parts.filter(p => p.display_name.toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 10)
@@ -118,21 +128,8 @@ const POSPage = ({ user, lines, setLines }) => {
                     <p className="font-semibold">Cancel Sale?</p>
                     <p className="text-sm text-gray-600 mb-3">All items will be removed.</p>
                     <div className="flex space-x-2">
-                        <button
-                            onClick={() => {
-                                toast.dismiss(t.id);
-                                setLines([]);
-                            }}
-                            className="px-3 py-1 bg-red-600 text-white text-sm rounded-md hover:bg-red-700"
-                        >
-                            Confirm
-                        </button>
-                        <button
-                            onClick={() => toast.dismiss(t.id)}
-                            className="px-3 py-1 bg-gray-200 text-gray-800 text-sm rounded-md hover:bg-gray-300"
-                        >
-                            Cancel
-                        </button>
+                        <button onClick={() => { toast.dismiss(t.id); setLines([]); }} className="px-3 py-1 bg-red-600 text-white text-sm rounded-md hover:bg-red-700">Confirm</button>
+                        <button onClick={() => toast.dismiss(t.id)} className="px-3 py-1 bg-gray-200 text-gray-800 text-sm rounded-md hover:bg-gray-300">Cancel</button>
                     </div>
                 </div>
             ));
@@ -144,11 +141,10 @@ const POSPage = ({ user, lines, setLines }) => {
     const total = subtotal + tax;
 
     const handleCheckout = async () => {
-        if (lines.length === 0) {
-            return toast.error("Please add items to the cart.");
-        }
+        if (lines.length === 0) return toast.error("Please add items to the cart.");
+        
         const payload = {
-            customer_id: walkInCustomerId,
+            customer_id: selectedCustomer.customer_id,
             employee_id: user.employee_id,
             payment_method: 'Cash',
             lines: lines.map(line => ({
@@ -162,6 +158,7 @@ const POSPage = ({ user, lines, setLines }) => {
             loading: 'Processing sale...',
             success: () => {
                 setLines([]);
+                setSelectedCustomer(walkInCustomer);
                 return 'Sale completed successfully!';
             },
             error: 'Failed to process sale.',
@@ -184,6 +181,12 @@ const POSPage = ({ user, lines, setLines }) => {
             }
         }
     };
+    
+    const handleCustomerSelect = (customerId) => {
+        const customer = customers.find(c => c.customer_id === customerId);
+        setSelectedCustomer(customer);
+        setIsCustomerModalOpen(false);
+    };
 
     return (
         <>
@@ -203,11 +206,7 @@ const POSPage = ({ user, lines, setLines }) => {
                          {searchResults.length > 0 && (
                             <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg">
                                 {searchResults.map((part, index) => (
-                                    <li 
-                                        key={part.part_id} 
-                                        onClick={() => handleSelectPart(part)} 
-                                        className={`px-4 py-3 cursor-pointer ${index === highlightedIndex ? 'bg-blue-100' : 'hover:bg-blue-50'}`}
-                                    >
+                                    <li key={part.part_id} onClick={() => handleSelectPart(part)} className={`px-4 py-3 cursor-pointer ${index === highlightedIndex ? 'bg-blue-100' : 'hover:bg-blue-50'}`}>
                                         {part.display_name}
                                     </li>
                                 ))}
@@ -217,11 +216,14 @@ const POSPage = ({ user, lines, setLines }) => {
                 </div>
 
                 <div className="w-full md:w-1/3 bg-white rounded-xl border border-gray-200 flex flex-col">
-                    <div className="p-4 border-b flex justify-between items-center">
-                        <h2 className="font-semibold">Current Sale</h2>
-                        <button onClick={handleCancelSale} className="text-sm text-red-600 hover:text-red-800 font-semibold">
-                            Cancel Sale
-                        </button>
+                    <div className="p-4 border-b">
+                        <div className="font-semibold mb-2">Customer</div>
+                        <div className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                           <span className="text-sm font-medium">{selectedCustomer?.first_name} {selectedCustomer?.last_name}</span>
+                           <button onClick={() => setIsCustomerModalOpen(true)} className="text-sm text-blue-600 hover:text-blue-800 font-semibold">
+                               {selectedCustomer?.customer_id === 1 ? 'Select Customer' : 'Change'}
+                           </button>
+                        </div>
                     </div>
                     <div className="flex-1 p-4 overflow-y-auto">
                         {lines.map(line => (
@@ -234,38 +236,31 @@ const POSPage = ({ user, lines, setLines }) => {
                                         <input type="number" step="0.01" value={line.sale_price} onChange={(e) => handleLineChange(line.part_id, 'sale_price', e.target.value)} className="w-24 px-2 py-1 border rounded-md text-sm" />
                                     </div>
                                 </div>
-                                <p className="text-sm font-semibold pt-1">
-                                    {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{(line.quantity * line.sale_price).toFixed(2)}
-                                </p>
-                                <button onClick={() => removeLine(line.part_id)} className="ml-3 text-red-500 hover:text-red-700 pt-1">
-                                    <Icon path={ICONS.close} className="h-5 w-5" />
-                                </button>
+                                <p className="text-sm font-semibold pt-1">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{(line.quantity * line.sale_price).toFixed(2)}</p>
+                                <button onClick={() => removeLine(line.part_id)} className="ml-3 text-red-500 hover:text-red-700 pt-1"><Icon path={ICONS.close} className="h-5 w-5" /></button>
                             </div>
                         ))}
                         {lines.length === 0 && <p className="text-sm text-gray-500 text-center py-8">No items in cart.</p>}
                     </div>
                     <div className="p-4 border-t space-y-2">
-                        <div className="flex justify-between text-sm">
-                            <span>Subtotal</span>
-                            <span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{subtotal.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                            <span>Tax</span>
-                            <span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{tax.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between font-bold text-lg">
-                            <span>Total</span>
-                            <span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{total.toFixed(2)}</span>
-                        </div>
-                        <button onClick={handleCheckout} className="w-full mt-4 bg-green-600 text-white py-3 rounded-lg font-semibold text-lg hover:bg-green-700 transition">
-                            Checkout
-                        </button>
+                        <div className="flex justify-between text-sm"><span>Subtotal</span><span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{subtotal.toFixed(2)}</span></div>
+                        <div className="flex justify-between text-sm"><span>Tax</span><span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{tax.toFixed(2)}</span></div>
+                        <div className="flex justify-between font-bold text-lg"><span>Total</span><span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{total.toFixed(2)}</span></div>
+                        <button onClick={handleCheckout} className="w-full mt-4 bg-green-600 text-white py-3 rounded-lg font-semibold text-lg hover:bg-green-700 transition">Checkout</button>
                     </div>
                 </div>
             </div>
 
             <Modal isOpen={isPriceModalOpen} onClose={() => setIsPriceModalOpen(false)} title="Add Item to Sale">
                 {currentItem && <PriceQuantityModal item={currentItem} onConfirm={handleConfirmAddItem} onCancel={() => setIsPriceModalOpen(false)} />}
+            </Modal>
+            <Modal isOpen={isCustomerModalOpen} onClose={() => setIsCustomerModalOpen(false)} title="Select Customer">
+                <Combobox
+                    options={customerOptions}
+                    value={selectedCustomer?.customer_id}
+                    onChange={(value) => handleCustomerSelect(value)}
+                    placeholder="Search for a customer..."
+                />
             </Modal>
         </>
     );
