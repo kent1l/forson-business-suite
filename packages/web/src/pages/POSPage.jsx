@@ -70,17 +70,28 @@ const POSPage = ({ user, lines, setLines }) => {
     const [highlightedIndex, setHighlightedIndex] = useState(-1);
     const searchInputRef = useRef(null);
     
-    const walkInCustomer = { customer_id: 1, first_name: 'Walk-in', last_name: 'Customer' };
-
     useEffect(() => {
-        axios.get('http://localhost:3001/api/parts?status=active').then(res => setParts(res.data));
-        axios.get('http://localhost:3001/api/customers?status=active').then(res => setCustomers([walkInCustomer, ...res.data]));
-        setSelectedCustomer(walkInCustomer);
+        const fetchInitialData = async () => {
+            try {
+                const [partsRes, customersRes] = await Promise.all([
+                    axios.get('http://localhost:3001/api/parts?status=active'),
+                    axios.get('http://localhost:3001/api/customers?status=active')
+                ]);
+                setParts(partsRes.data);
+                setCustomers(customersRes.data);
+                // Find and set the 'Walk-in' customer as the default
+                const walkIn = customersRes.data.find(c => c.first_name.toLowerCase() === 'walk-in');
+                setSelectedCustomer(walkIn || null);
+            } catch (err) {
+                toast.error("Could not load initial data.");
+            }
+        };
+        fetchInitialData();
     }, []);
 
     const customerOptions = useMemo(() => customers.map(c => ({
         value: c.customer_id,
-        label: `${c.first_name} ${c.last_name}`
+        label: `${c.first_name} ${c.last_name || ''}`.trim()
     })), [customers]);
 
     const searchResults = searchTerm 
@@ -142,6 +153,7 @@ const POSPage = ({ user, lines, setLines }) => {
 
     const handleCheckout = async () => {
         if (lines.length === 0) return toast.error("Please add items to the cart.");
+        if (!selectedCustomer) return toast.error("Please select a customer.");
         
         const payload = {
             customer_id: selectedCustomer.customer_id,
@@ -158,7 +170,8 @@ const POSPage = ({ user, lines, setLines }) => {
             loading: 'Processing sale...',
             success: () => {
                 setLines([]);
-                setSelectedCustomer(walkInCustomer);
+                const walkIn = customers.find(c => c.first_name.toLowerCase() === 'walk-in');
+                setSelectedCustomer(walkIn || null);
                 return 'Sale completed successfully!';
             },
             error: 'Failed to process sale.',
@@ -221,7 +234,7 @@ const POSPage = ({ user, lines, setLines }) => {
                         <div className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
                            <span className="text-sm font-medium">{selectedCustomer?.first_name} {selectedCustomer?.last_name}</span>
                            <button onClick={() => setIsCustomerModalOpen(true)} className="text-sm text-blue-600 hover:text-blue-800 font-semibold">
-                               {selectedCustomer?.customer_id === 1 ? 'Select Customer' : 'Change'}
+                               Change
                            </button>
                         </div>
                     </div>

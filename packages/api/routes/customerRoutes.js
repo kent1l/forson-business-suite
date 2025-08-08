@@ -22,12 +22,12 @@ router.get('/customers', async (req, res) => {
   }
 });
 
-// ... (rest of the customerRoutes.js file remains the same)
 // POST a new customer
 router.post('/customers', async (req, res) => {
     const { first_name, last_name, company_name, phone, email, address } = req.body;
-    if (!first_name || !last_name) {
-        return res.status(400).json({ message: 'First name and last name are required.' });
+    // FIX: Only require first_name
+    if (!first_name) {
+        return res.status(400).json({ message: 'First name is required.' });
     }
     try {
         const newCustomer = await db.query(
@@ -36,7 +36,6 @@ router.post('/customers', async (req, res) => {
         );
         res.status(201).json(newCustomer.rows[0]);
     } catch (err) {
-        // Add specific error handling for unique constraint violation
         if (err.code === '23505' && err.constraint === 'customer_email_key') {
             return res.status(409).json({ message: 'A customer with this email already exists.' });
         }
@@ -50,8 +49,9 @@ router.put('/customers/:id', async (req, res) => {
     const { id } = req.params;
     const { first_name, last_name, company_name, phone, email, address } = req.body;
 
-    if (!first_name || !last_name) {
-        return res.status(400).json({ message: 'First name and last name are required' });
+    // FIX: Only require first_name
+    if (!first_name) {
+        return res.status(400).json({ message: 'First name is required' });
     }
 
     try {
