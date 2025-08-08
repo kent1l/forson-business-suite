@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import ReactDOM from 'react-dom/client';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
@@ -7,56 +8,9 @@ import { useSettings } from '../contexts/SettingsContext';
 import Modal from '../components/ui/Modal';
 import CustomerForm from '../components/forms/CustomerForm';
 import Combobox from '../components/ui/Combobox';
-
-const PriceQuantityModal = ({ item, onConfirm, onCancel }) => {
-    const [price, setPrice] = useState(item.sale_price || 0);
-    const [quantity, setQuantity] = useState(1);
-    const priceInputRef = useRef(null);
-
-    useEffect(() => {
-        if (priceInputRef.current) {
-            priceInputRef.current.select();
-        }
-    }, []);
-
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        onConfirm({ ...item, sale_price: parseFloat(price), quantity: parseInt(quantity, 10) });
-    };
-
-    return (
-        <form onSubmit={handleSubmit}>
-            <div className="space-y-4">
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Sale Price</label>
-                    <input
-                        ref={priceInputRef}
-                        type="number"
-                        step="0.01"
-                        value={price}
-                        onChange={(e) => setPrice(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-lg"
-                    />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
-                    <input
-                        type="number"
-                        value={quantity}
-                        onChange={(e) => setQuantity(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-lg"
-                        min="1"
-                    />
-                </div>
-            </div>
-            <div className="mt-6 flex justify-end">
-                <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                    Add to Sale
-                </button>
-            </div>
-        </form>
-    );
-};
+import PaymentModal from '../components/ui/PaymentModal';
+import PriceQuantityModal from '../components/ui/PriceQuantityModal';
+import Receipt from '../components/ui/Receipt';
 
 const POSPage = ({ user, lines, setLines }) => {
     const { settings } = useSettings();
@@ -66,10 +20,13 @@ const POSPage = ({ user, lines, setLines }) => {
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [isPriceModalOpen, setIsPriceModalOpen] = useState(false);
     const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+    const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
     const [currentItem, setCurrentItem] = useState(null);
+    const [lastSale, setLastSale] = useState(null);
     const [highlightedIndex, setHighlightedIndex] = useState(-1);
     const searchInputRef = useRef(null);
-    
+    const receiptRef = useRef(null);
+
     useEffect(() => {
         const fetchInitialData = async () => {
             try {
@@ -79,7 +36,6 @@ const POSPage = ({ user, lines, setLines }) => {
                 ]);
                 setParts(partsRes.data);
                 setCustomers(customersRes.data);
-                // Find and set the 'Walk-in' customer as the default
                 const walkIn = customersRes.data.find(c => c.first_name.toLowerCase() === 'walk-in');
                 setSelectedCustomer(walkIn || null);
             } catch (err) {
@@ -151,14 +107,17 @@ const POSPage = ({ user, lines, setLines }) => {
     const tax = subtotal * (settings?.DEFAULT_TAX_RATE || 0);
     const total = subtotal + tax;
 
-    const handleCheckout = async () => {
+    const handleCheckout = () => {
         if (lines.length === 0) return toast.error("Please add items to the cart.");
         if (!selectedCustomer) return toast.error("Please select a customer.");
-        
+        setIsPaymentModalOpen(true);
+    };
+
+    const handleConfirmPayment = (paymentMethod) => {
         const payload = {
             customer_id: selectedCustomer.customer_id,
             employee_id: user.employee_id,
-            payment_method: 'Cash',
+            payment_method: paymentMethod,
             lines: lines.map(line => ({
                 part_id: line.part_id,
                 quantity: line.quantity,
@@ -168,14 +127,47 @@ const POSPage = ({ user, lines, setLines }) => {
         const promise = axios.post('http://localhost:3001/api/invoices', payload);
         toast.promise(promise, {
             loading: 'Processing sale...',
-            success: () => {
+            success: (response) => {
+                const newInvoiceNumber = response.data.invoice_number;
+                const saleDataForReceipt = { lines, total, subtotal, tax, invoice_number: newInvoiceNumber };
+                setLastSale(saleDataForReceipt);
                 setLines([]);
                 const walkIn = customers.find(c => c.first_name.toLowerCase() === 'walk-in');
                 setSelectedCustomer(walkIn || null);
+                setIsPaymentModalOpen(false);
+                
+                toast.success(
+                    (t) => (
+                        <div className="flex items-center">
+                            <span className="mr-4">Sale completed!</span>
+                            <button
+                                onClick={() => {
+                                    toast.dismiss(t.id);
+                                    handlePrintReceipt(saleDataForReceipt);
+                                }}
+                                className="px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
+                            >
+                                Print Receipt
+                            </button>
+                        </div>
+                    ), { duration: 10000 }
+                );
                 return 'Sale completed successfully!';
             },
             error: 'Failed to process sale.',
         });
+    };
+    
+    const handlePrintReceipt = (saleData) => {
+        const printWindow = window.open('/print.html', '_blank', 'width=300,height=500');
+        printWindow.onload = () => {
+            const root = ReactDOM.createRoot(printWindow.document.getElementById('receipt-root'));
+            root.render(<Receipt saleData={saleData} settings={settings} />);
+            setTimeout(() => {
+                printWindow.print();
+                printWindow.close();
+            }, 500);
+        };
     };
 
     const handleKeyDown = (e) => {
@@ -275,6 +267,16 @@ const POSPage = ({ user, lines, setLines }) => {
                     placeholder="Search for a customer..."
                 />
             </Modal>
+            <PaymentModal 
+                isOpen={isPaymentModalOpen}
+                onClose={() => setIsPaymentModalOpen(false)}
+                total={total}
+                onConfirmPayment={handleConfirmPayment}
+            />
+            {/* Hidden div for printing */}
+            <div className="hidden">
+                <Receipt saleData={lastSale} settings={settings} />
+            </div>
         </>
     );
 };
