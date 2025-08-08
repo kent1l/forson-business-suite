@@ -1,0 +1,46 @@
+# Docker Compose file version
+version: '3.8'
+
+# Define the services (containers) for your application
+services:
+  
+  # --- Database Service ---
+  db:
+    image: postgres:15-alpine # Use the official PostgreSQL image
+    container_name: forson_db
+    restart: always # Always restart the container if it stops
+    environment:
+      POSTGRES_PASSWORD: postgres123 # <-- IMPORTANT: Replace with your password
+      POSTGRES_DB: forson_business_suite
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # Persist database data
+    ports:
+      - "5432:5432" # Map port 5432 on the host to 5432 in the container
+
+  # --- Backend API Service ---
+  backend:
+    container_name: forson_backend
+    build:
+      context: ./packages/api # Path to the backend Dockerfile
+    restart: always
+    depends_on:
+      - db # This service will wait for the 'db' service to start
+    ports:
+      - "3001:3001" # Map port 3001 on the host to 3001 in the container
+    env_file:
+      - ./packages/api/.env # Load environment variables from the .env file
+
+  # --- Frontend Service ---
+  frontend:
+    container_name: forson_frontend
+    build:
+      context: ./packages/web # Path to the frontend Dockerfile
+    restart: always
+    depends_on:
+      - backend # This service will wait for the 'backend' service to start
+    ports:
+      - "8080:80" # Map port 8080 on the host to port 80 in the container (Nginx)
+
+# Define a named volume to persist the PostgreSQL data
+volumes:
+  postgres_data:
