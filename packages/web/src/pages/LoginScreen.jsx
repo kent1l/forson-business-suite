@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import api from '../api'; // Use the new api helper
+import api from '../api';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 
 const LoginScreen = ({ onLogin }) => {
-    const [username, setUsername] = useState('kent.pilar');
-    const [password, setPassword] = useState('password123');
+    const [username, setUsername] = useState(''); // Removed hard-coded username
+    const [password, setPassword] = useState(''); // Removed hard-coded password
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
@@ -15,7 +15,6 @@ const LoginScreen = ({ onLogin }) => {
         setLoading(true);
         try {
             const response = await api.post('/login', { username, password });
-            // onLogin now receives the full response data: { user: {...}, token: '...' }
             onLogin(response.data); 
         } catch (err) {
             setError(err.response?.data?.message || 'Login failed. Please try again.');

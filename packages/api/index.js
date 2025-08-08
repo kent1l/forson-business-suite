@@ -3,7 +3,8 @@ const express = require('express');
 const cors = require('cors');
 const db = require('./db');
 
-// Import Routes
+// Import ALL routes, including the new setup route
+const setupRoutes = require('./routes/setupRoutes');
 const supplierRoutes = require('./routes/supplierRoutes');
 const partRoutes = require('./routes/partRoutes');
 const employeeRoutes = require('./routes/employeeRoutes');
@@ -19,7 +20,7 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const powerSearchRoutes = require('./routes/powerSearchRoutes');
 const inventoryRoutes = require('./routes/inventoryRoutes');
 const reportingRoutes = require('./routes/reportingRoutes');
-const settingsRoutes = require('./routes/settingsRoutes'); // 1. Import
+const settingsRoutes = require('./routes/settingsRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -29,6 +30,10 @@ app.use(cors());
 app.use(express.json());
 
 // --- API Routes ---
+// Public setup routes must come before any other routes
+app.use('/api', setupRoutes);
+
+// All other routes
 app.use('/api', powerSearchRoutes);
 app.use('/api', dashboardRoutes);
 app.use('/api', partNumberRoutes);
@@ -43,7 +48,7 @@ app.use('/api', supplierRoutes);
 app.use('/api', employeeRoutes);
 app.use('/api', inventoryRoutes);
 app.use('/api', reportingRoutes);
-app.use('/api', settingsRoutes); // 2. Use
+app.use('/api', settingsRoutes);
 app.use('/api', partRoutes); 
 
 app.listen(PORT, () => {
