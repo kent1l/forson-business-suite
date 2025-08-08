@@ -5,6 +5,7 @@ import { ICONS } from '../../constants';
 const Sidebar = ({ user, onNavigate, currentPage, isOpen, setIsOpen }) => {
     const navItems = [
         { name: 'Dashboard', icon: ICONS.dashboard, page: 'dashboard' },
+        { name: 'POS', icon: ICONS.pos, page: 'pos' }, // New POS Link
         { name: 'Reporting', icon: ICONS.reporting, page: 'reporting' },
         { name: 'Power Search', icon: ICONS.power_search, page: 'power_search' },
         { name: 'Invoicing', icon: ICONS.invoice, page: 'invoicing' },

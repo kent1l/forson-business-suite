@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Toaster } from 'react-hot-toast';
 import LoginScreen from './pages/LoginScreen';
 import MainLayout from './components/layout/MainLayout';
-import { SettingsProvider } from './contexts/SettingsContext'; // 1. Import the provider
+import { SettingsProvider } from './contexts/SettingsContext';
 
 function App() {
     const [user, setUser] = useState(null);
     const [currentPage, setCurrentPage] = useState('dashboard');
+    const [posLines, setPosLines] = useState([]); // POS cart state is now here
 
     useEffect(() => {
         const sessionData = localStorage.getItem('userSession');
@@ -30,25 +31,21 @@ function App() {
         setUser(null);
     };
 
-    if (!user) {
-        return (
-            <>
-                <Toaster position="top-center" /> 
-                <LoginScreen onLogin={handleLogin} />
-            </>
-        );
-    }
-
     return (
-        // 2. Wrap the main layout with the provider
         <SettingsProvider>
             <Toaster position="top-center" /> 
-            <MainLayout
-                user={user}
-                onLogout={handleLogout}
-                currentPage={currentPage}
-                onNavigate={setCurrentPage}
-            />
+            { !user ? (
+                <LoginScreen onLogin={handleLogin} />
+            ) : (
+                <MainLayout
+                    user={user}
+                    onLogout={handleLogout}
+                    currentPage={currentPage}
+                    onNavigate={setCurrentPage}
+                    posLines={posLines}
+                    setPosLines={setPosLines}
+                />
+            )}
         </SettingsProvider>
     );
 }

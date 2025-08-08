@@ -21,34 +21,38 @@ const InvoicingPage = ({ user }) => {
 
     const paymentMethods = settings?.PAYMENT_METHODS ? settings.PAYMENT_METHODS.split(',') : [];
 
-    const fetchInitialData = async () => {
-        try {
-            setLoading(true);
-            const [customersRes, partsRes] = await Promise.all([
-                axios.get('http://localhost:3001/api/customers'),
-                axios.get('http://localhost:3001/api/parts')
-            ]);
-            setCustomers(customersRes.data);
-            setParts(partsRes.data);
-            if (paymentMethods.length > 0) {
-                setPaymentMethod(paymentMethods[0]); // Set a default payment method
+    useEffect(() => {
+        const fetchInitialData = async () => {
+            try {
+                setLoading(true);
+                const [customersRes, partsRes] = await Promise.all([
+                    axios.get('http://localhost:3001/api/customers'),
+                    axios.get('http://localhost:3001/api/parts')
+                ]);
+                setCustomers(customersRes.data);
+                setParts(partsRes.data);
+            } catch (err) {
+                toast.error("Failed to load initial data.");
+            } finally {
+                setLoading(false);
             }
-        } catch (err) {
-            toast.error("Failed to load initial data.");
-        } finally {
-            setLoading(false);
+        };
+        
+        fetchInitialData();
+    }, []);
+
+    // This new effect runs only when paymentMethods are loaded
+    useEffect(() => {
+        if (paymentMethods.length > 0 && !paymentMethod) {
+            setPaymentMethod(paymentMethods[0]); // Set a default payment method
         }
-    };
-    
+    }, [paymentMethods]);
+
     const fetchCustomers = async () => {
         const response = await axios.get('http://localhost:3001/api/customers');
         setCustomers(response.data);
         return response.data;
     };
-
-    useEffect(() => {
-        fetchInitialData();
-    }, []);
 
     const handleNewCustomerSave = async (customerData) => {
         const promise = axios.post('http://localhost:3001/api/customers', customerData);
