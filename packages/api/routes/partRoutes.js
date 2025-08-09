@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
+const { protect, isManagerOrAdmin } = require('../middleware/authMiddleware'); 
 const router = express.Router();
 
 // GET all parts with status filter, search, and sorting
@@ -51,7 +52,6 @@ router.get('/parts', async (req, res) => {
   }
 });
 
-// ... (rest of the file remains the same)
 // GET a single part by ID
 router.get('/parts/:id', async (req, res) => {
   const { id } = req.params;
@@ -167,6 +167,64 @@ router.post('/parts', async (req, res) => {
   }
 });
 
+// =================================================================
+//  --- FIX: BULK UPDATE ENDPOINT MOVED ---
+//  This route is now placed BEFORE the dynamic '/parts/:id' route
+//  to ensure it's matched correctly by Express.
+// =================================================================
+router.put('/parts/bulk-update', protect, isManagerOrAdmin, async (req, res) => {
+    const { partIds, updates } = req.body;
+
+    if (!Array.isArray(partIds) || partIds.length === 0) {
+        return res.status(400).json({ message: 'partIds must be a non-empty array.' });
+    }
+    if (typeof updates !== 'object' || Object.keys(updates).length === 0) {
+        return res.status(400).json({ message: 'Updates object cannot be empty.' });
+    }
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+
+        const setClauses = [];
+        const queryParams = [];
+        let paramIndex = 1;
+
+        for (const key in updates) {
+            if (Object.hasOwnProperty.call(updates, key)) {
+                setClauses.push(`${key} = $${paramIndex++}`);
+                queryParams.push(updates[key]);
+            }
+        }
+        
+        // Add modified_by and date_modified automatically
+        setClauses.push(`modified_by = $${paramIndex++}`);
+        queryParams.push(req.user.employee_id);
+        setClauses.push(`date_modified = CURRENT_TIMESTAMP`);
+
+        queryParams.push(partIds);
+        
+        const query = `
+            UPDATE part 
+            SET ${setClauses.join(', ')}
+            WHERE part_id = ANY($${paramIndex})
+            RETURNING *;
+        `;
+
+        const { rows } = await client.query(query, queryParams);
+
+        await client.query('COMMIT');
+        res.json({ message: `${rows.length} parts updated successfully.` });
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Bulk update transaction error:', err.message);
+        res.status(500).send('Server Error');
+    } finally {
+        client.release();
+    }
+});
+
 // PUT - Update an existing part with all fields
 router.put('/parts/:id', async (req, res) => {
     const { id } = req.params;
@@ -222,6 +280,5 @@ router.delete('/parts/:id', async (req, res) => {
         res.status(500).send('Server Error');
     }
 });
-
 
 module.exports = router;

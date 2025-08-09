@@ -34,4 +34,14 @@ const isAdmin = (req, res, next) => {
     }
 };
 
-module.exports = { protect, isAdmin };
+// NEW: Middleware to check if the user is a Manager or Admin
+const isManagerOrAdmin = (req, res, next) => {
+    if (req.user && req.user.permission_level_id >= 5) {
+        next();
+    } else {
+        res.status(403).json({ message: 'Not authorized for this action' });
+    }
+};
+
+
+module.exports = { protect, isAdmin, isManagerOrAdmin };
