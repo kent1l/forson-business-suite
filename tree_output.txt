@@ -1,0 +1,95 @@
+forson-business-suite/
+├── .gitignore
+├── database/
+│   └── initial_schema.sql
+├── docker-compose.yml
+├── packages/
+│   ├── api/
+│   │   ├── db.js
+│   │   ├── Dockerfile
+│   │   ├── helpers/
+│   │   │   ├── displayNameHelper.js
+│   │   │   └── documentNumberGenerator.js
+│   │   ├── index.js
+│   │   ├── middleware/
+│   │   │   └── authMiddleware.js
+│   │   ├── package-lock.json
+│   │   ├── package.json
+│   │   └── routes/
+│   │       ├── applicationRoutes.js
+│   │       ├── brandRoutes.js
+│   │       ├── customerRoutes.js
+│   │       ├── dashboardRoutes.js
+│   │       ├── employeeRoutes.js
+│   │       ├── goodsReceiptRoutes.js
+│   │       ├── groupRoutes.js
+│   │       ├── inventoryRoutes.js
+│   │       ├── invoiceRoutes.js
+│   │       ├── partApplicationRoutes.js
+│   │       ├── partNumberRoutes.js
+│   │       ├── partRoutes.js
+│   │       ├── powerSearchRoutes.js
+│   │       ├── reportingRoutes.js
+│   │       ├── settingsRoutes.js
+│   │       ├── setupRoutes.js
+│   │       └── supplierRoutes.js
+│   └── web/
+│       ├── .gitignore
+│       ├── Dockerfile
+│       ├── eslint.config.js
+│       ├── index.html
+│       ├── package-lock.json
+│       ├── package.json
+│       ├── public/
+│       │   ├── print.html
+│       │   └── vite.svg
+│       ├── README.md
+│       ├── src/
+│       │   ├── api.js
+│       │   ├── App.jsx
+│       │   ├── components/
+│       │   │   ├── forms/
+│       │   │   │   ├── CustomerForm.jsx
+│       │   │   │   ├── StockAdjustmentForm.jsx
+│       │   │   │   └── SupplierForm.jsx
+│       │   │   ├── layout/
+│       │   │   │   ├── Header.jsx
+│       │   │   │   ├── MainLayout.jsx
+│       │   │   │   └── Sidebar.jsx
+│       │   │   └── ui/
+│       │   │       ├── Combobox.jsx
+│       │   │       ├── Icon.jsx
+│       │   │       ├── Modal.jsx
+│       │   │       ├── PaymentModal.jsx
+│       │   │       ├── PriceQuantityModal.jsx
+│       │   │       ├── Receipt.jsx
+│       │   │       ├── SortableHeader.jsx
+│       │   │       └── TransactionHistoryModal.jsx
+│       │   ├── constants.js
+│       │   ├── contexts/
+│       │   │   └── SettingsContext.jsx
+│       │   ├── index.css
+│       │   ├── main.jsx
+│       │   └── pages/
+│       │       ├── ApplicationsPage.jsx
+│       │       ├── CustomersPage.jsx
+│       │       ├── Dashboard.jsx
+│       │       ├── EmployeesPage.jsx
+│       │       ├── GoodsReceiptPage.jsx
+│       │       ├── InventoryPage.jsx
+│       │       ├── InvoicingPage.jsx
+│       │       ├── LoginScreen.jsx
+│       │       ├── PartApplicationManager.jsx
+│       │       ├── PartNumberManager.jsx
+│       │       ├── PartsPage.jsx
+│       │       ├── POSPage.jsx
+│       │       ├── PowerSearchPage.jsx
+│       │       ├── ReportingPage.jsx
+│       │       ├── SettingsPage.jsx
+│       │       ├── SetupPage.jsx
+│       │       └── SuppliersPage.jsx
+│       ├── tailwind.config.js
+│       └── vite.config.js
+├── PRD_forson-business-suite.md
+├── PRD_Functional_Breakdown.md
+└── README.md
