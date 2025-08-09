@@ -3,13 +3,16 @@ import axios from 'axios';
 import { Toaster } from 'react-hot-toast';
 import LoginScreen from './pages/LoginScreen';
 import MainLayout from './components/layout/MainLayout';
-import SetupPage from './pages/SetupPage'; // 1. Import the new page
+import SetupPage from './pages/SetupPage';
 import { SettingsProvider } from './contexts/SettingsContext';
 
 function App() {
     const [user, setUser] = useState(null);
     const [currentPage, setCurrentPage] = useState('dashboard');
     const [needsSetup, setNeedsSetup] = useState(null); // null = loading, true = needs setup, false = setup complete
+    
+    // Proper POS state management at the App level
+    const [posLines, setPosLines] = useState([]);
 
     const checkSetupStatus = async () => {
         try {
@@ -43,6 +46,18 @@ function App() {
     const handleLogout = () => {
         localStorage.removeItem('userSession');
         setUser(null);
+        // Clear POS cart on logout for security/privacy
+        setPosLines([]);
+    };
+
+    // Clear POS cart when navigating away from POS (optional - for UX)
+    const handleNavigate = (page) => {
+        // Optionally clear cart when leaving POS page
+        if (currentPage === 'pos' && page !== 'pos' && posLines.length > 0) {
+            // Could add a confirmation dialog here if needed
+            // For now, we'll preserve the cart across navigation
+        }
+        setCurrentPage(page);
     };
 
     // --- Render Logic ---
@@ -71,9 +86,9 @@ function App() {
                 user={user}
                 onLogout={handleLogout}
                 currentPage={currentPage}
-                onNavigate={setCurrentPage}
-                posLines={[]} // Placeholder for POS state
-                setPosLines={() => {}} // Placeholder for POS state
+                onNavigate={handleNavigate}
+                posLines={posLines}
+                setPosLines={setPosLines}
             />
         </SettingsProvider>
     );
