@@ -14,6 +14,7 @@ const InvoicingPage = ({ user }) => {
     const [lines, setLines] = useState([]);
     const [selectedCustomer, setSelectedCustomer] = useState('');
     const [paymentMethod, setPaymentMethod] = useState('');
+    const [terms, setTerms] = useState(''); // NEW state for terms
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -41,12 +42,14 @@ const InvoicingPage = ({ user }) => {
         fetchInitialData();
     }, []);
 
-    // This new effect runs only when paymentMethods are loaded
     useEffect(() => {
-        if (paymentMethods.length > 0 && !paymentMethod) {
-            setPaymentMethod(paymentMethods[0]); // Set a default payment method
+        if (settings) {
+            setTerms(settings.DEFAULT_PAYMENT_TERMS || ''); // Set default terms
         }
-    }, [paymentMethods]);
+        if (paymentMethods.length > 0 && !paymentMethod) {
+            setPaymentMethod(paymentMethods[0]);
+        }
+    }, [settings, paymentMethods, paymentMethod]);
 
     const fetchCustomers = async () => {
         const response = await axios.get('http://localhost:3001/api/customers');
@@ -115,6 +118,7 @@ const InvoicingPage = ({ user }) => {
             customer_id: selectedCustomer,
             employee_id: user.employee_id,
             payment_method: paymentMethod,
+            terms: terms, // Add terms to payload
             lines: lines.map(line => ({
                 part_id: line.part_id,
                 quantity: line.quantity,
@@ -129,11 +133,14 @@ const InvoicingPage = ({ user }) => {
             success: () => {
                 setLines([]);
                 setSelectedCustomer('');
+                setTerms(settings.DEFAULT_PAYMENT_TERMS || ''); // Reset terms
                 return 'Invoice created successfully!';
             },
             error: 'Failed to create invoice.',
         });
     };
+
+    const subtotal = lines.reduce((acc, line) => acc + (line.quantity * line.sale_price), 0);
 
     if (loading) return <p>Loading data...</p>;
 
@@ -158,6 +165,16 @@ const InvoicingPage = ({ user }) => {
                             {paymentMethods.map(method => <option key={method} value={method}>{method}</option>)}
                         </select>
                     </div>
+                </div>
+                
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Payment Terms</label>
+                    <input 
+                        type="text"
+                        value={terms}
+                        onChange={e => setTerms(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
                 </div>
                 
                 <div className="relative">
@@ -206,7 +223,11 @@ const InvoicingPage = ({ user }) => {
                     </table>
                 </div>
 
-                <div className="flex justify-end pt-4 border-t">
+                <div className="flex justify-between items-start pt-4 border-t">
+                    <div className="text-right">
+                        <p className="text-lg font-semibold">Subtotal: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{subtotal.toFixed(2)}</p>
+                        <p className="text-sm text-gray-500">+ Tax (calculated upon posting)</p>
+                    </div>
                     <button onClick={handlePostInvoice} className="bg-green-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-green-700 transition">
                         Post Invoice
                     </button>

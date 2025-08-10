@@ -92,7 +92,7 @@ router.post('/parts', async (req, res) => {
     detail, brand_id, group_id, part_numbers_string,
     reorder_point, warning_quantity, is_active, last_cost, last_sale_price,
     barcode, measurement_unit, is_price_change_allowed, is_using_default_quantity,
-    is_service, low_stock_warning, created_by
+    is_service, low_stock_warning, created_by, tax_rate_id // UPDATED
   } = req.body;
 
   if (!detail || !brand_id || !group_id) {
@@ -128,16 +128,16 @@ router.post('/parts', async (req, res) => {
             detail, brand_id, group_id, internal_sku, reorder_point, 
             warning_quantity, is_active, last_cost, last_sale_price, barcode,
             measurement_unit, is_price_change_allowed, is_using_default_quantity,
-            is_service, low_stock_warning, created_by
+            is_service, low_stock_warning, created_by, tax_rate_id -- UPDATED
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) -- UPDATED
         RETURNING *;
     `;
     const newPart = await client.query(newPartQuery, [
         detail, brand_id, group_id, internalSku, reorder_point, 
         warning_quantity, is_active, last_cost, last_sale_price, barcode,
         measurement_unit, is_price_change_allowed, is_using_default_quantity,
-        is_service, low_stock_warning, created_by
+        is_service, low_stock_warning, created_by, tax_rate_id // UPDATED
     ]);
     const newPartData = newPart.rows[0];
 
@@ -232,7 +232,7 @@ router.put('/parts/:id', async (req, res) => {
         detail, brand_id, group_id, reorder_point, 
         warning_quantity, is_active, last_cost, last_sale_price,
         barcode, measurement_unit, is_price_change_allowed, is_using_default_quantity,
-        is_service, low_stock_warning, modified_by
+        is_service, low_stock_warning, modified_by, tax_rate_id // UPDATED
     } = req.body;
 
     if (!detail || !brand_id || !group_id) {
@@ -246,12 +246,12 @@ router.put('/parts/:id', async (req, res) => {
                 warning_quantity = $5, is_active = $6, last_cost = $7, last_sale_price = $8, 
                 barcode = $9, measurement_unit = $10, is_price_change_allowed = $11, 
                 is_using_default_quantity = $12, is_service = $13, low_stock_warning = $14, 
-                modified_by = $15, date_modified = CURRENT_TIMESTAMP 
-            WHERE part_id = $16 RETURNING *`,
+                modified_by = $15, date_modified = CURRENT_TIMESTAMP, tax_rate_id = $16 -- UPDATED
+            WHERE part_id = $17 RETURNING *`, // UPDATED
             [
                 detail, brand_id, group_id, reorder_point, warning_quantity, is_active, 
                 last_cost, last_sale_price, barcode, measurement_unit, is_price_change_allowed, 
-                is_using_default_quantity, is_service, low_stock_warning, modified_by, id
+                is_using_default_quantity, is_service, low_stock_warning, modified_by, tax_rate_id, id // UPDATED
             ]
         );
 

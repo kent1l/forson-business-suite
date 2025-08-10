@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-// FIX: Import the pre-configured 'api' instance instead of the global 'axios'
 import api from '../api'; 
 import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
@@ -7,7 +6,7 @@ import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import PartNumberManager from './PartNumberManager';
 import PartApplicationManager from './PartApplicationManager';
-import FilterBar from '../components/ui/FilterBar'; // Import the new component
+import FilterBar from '../components/ui/FilterBar';
 
 const BrandGroupForm = ({ type, onSave, onCancel }) => {
     const [name, setName] = useState('');
@@ -18,7 +17,6 @@ const BrandGroupForm = ({ type, onSave, onCancel }) => {
         const endpoint = type === 'Brand' ? '/brands' : '/groups';
         const payload = type === 'Brand' ? { brand_name: name, brand_code: code } : { group_name: name, group_code: code };
         
-        // FIX: Use the 'api' instance
         const promise = api.post(endpoint, payload);
         toast.promise(promise, {
             loading: `Adding ${type}...`,
@@ -53,7 +51,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
         if (isBulkEdit) {
             return {
                 brand_id: '', group_id: '',
-                reorder_point: '', warning_quantity: '', last_cost: '', last_sale_price: '', barcode: '', measurement_unit: '',
+                reorder_point: '', warning_quantity: '', last_cost: '', last_sale_price: '', barcode: '', measurement_unit: '', tax_rate_id: '',
                 is_active: 'unchanged', is_price_change_allowed: 'unchanged', is_using_default_quantity: 'unchanged',
                 is_service: 'unchanged', low_stock_warning: 'unchanged'
             };
@@ -61,19 +59,37 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
         return {
             detail: '', brand_id: '', group_id: '', part_numbers_string: '',
             reorder_point: 0, warning_quantity: 0, is_active: true,
-            last_cost: 0, last_sale_price: 0, barcode: '', measurement_unit: 'pcs',
+            last_cost: 0, last_sale_price: 0, barcode: '', measurement_unit: 'pcs', tax_rate_id: '',
             is_price_change_allowed: true, is_using_default_quantity: true,
             is_service: false, low_stock_warning: false
         };
     };
 
     const [formData, setFormData] = useState(getInitialState());
+    const [taxRates, setTaxRates] = useState([]);
     const [isBrandModalOpen, setIsBrandModalOpen] = useState(false);
     const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
     const [showAdvanced, setShowAdvanced] = useState(false);
 
     useEffect(() => {
-        if (part && !isBulkEdit) {
+        const fetchTaxRates = async () => {
+            try {
+                const response = await api.get('/tax-rates');
+                setTaxRates(response.data);
+            } catch (err) {
+                toast.error("Could not load tax rates.");
+            }
+        };
+        fetchTaxRates();
+    }, []);
+
+    useEffect(() => {
+        if (isBulkEdit) {
+            setFormData(getInitialState());
+            return;
+        }
+
+        if (part) { // Editing an existing part
             setFormData({
                 detail: part.detail || '',
                 brand_id: part.brand_id || '',
@@ -86,15 +102,23 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                 last_sale_price: part.last_sale_price || 0,
                 barcode: part.barcode || '',
                 measurement_unit: part.measurement_unit || 'pcs',
+                tax_rate_id: part.tax_rate_id || '',
                 is_price_change_allowed: part.is_price_change_allowed,
                 is_using_default_quantity: part.is_using_default_quantity,
                 is_service: part.is_service,
                 low_stock_warning: part.low_stock_warning,
             });
-        } else {
-             setFormData(getInitialState());
+        } else { // Creating a new part
+            const initialState = getInitialState();
+            if (taxRates.length > 0) {
+                const defaultRate = taxRates.find(r => r.is_default);
+                if (defaultRate) {
+                    initialState.tax_rate_id = defaultRate.tax_rate_id;
+                }
+            }
+            setFormData(initialState);
         }
-    }, [part, isBulkEdit]);
+    }, [part, isBulkEdit, taxRates]);
 
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
@@ -225,6 +249,13 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Warning Qty</label>
                                     <input type="number" name="warning_quantity" value={formData.warning_quantity} onChange={handleChange} placeholder={isBulkEdit ? 'No Change' : '0'} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                                 </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Tax Rate</label>
+                                    <select name="tax_rate_id" value={formData.tax_rate_id} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                        <option value="">{isBulkEdit ? 'No Change' : 'Select a Tax Rate'}</option>
+                                        {taxRates.map(rate => <option key={rate.tax_rate_id} value={rate.tax_rate_id}>{rate.rate_name} ({(rate.rate_percentage * 100).toFixed(2)}%)</option>)}
+                                    </select>
+                                </div>
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t">
                                 {isBulkEdit ? (
@@ -284,7 +315,6 @@ const PartsPage = ({ user }) => {
         { key: 'inactive', label: 'Inactive' },
         { key: 'all', label: 'All' },
     ];
-    
 
     const fetchData = useCallback(async () => {
         try {
@@ -294,7 +324,6 @@ const PartsPage = ({ user }) => {
                 search: searchTerm,
                 status: statusFilter,
             };
-            // FIX: Use the 'api' instance
             const partsRes = await api.get('/parts', { params });
             setParts(partsRes.data);
         } catch (err) {
@@ -307,7 +336,6 @@ const PartsPage = ({ user }) => {
     useEffect(() => {
         const fetchDropdownData = async () => {
             try {
-                // FIX: Use the 'api' instance
                 const [brandsRes, groupsRes] = await Promise.all([
                     api.get('/brands'),
                     api.get('/groups')
@@ -364,7 +392,6 @@ const PartsPage = ({ user }) => {
     };
 
     const confirmDelete = async (partId) => {
-        // FIX: Use the 'api' instance
         const promise = api.delete(`/parts/${partId}`);
         toast.promise(promise, {
             loading: 'Deleting part...',
@@ -382,7 +409,6 @@ const PartsPage = ({ user }) => {
             
             console.log('Sending bulk update payload:', JSON.stringify(payload, null, 2));
 
-            // FIX: Use the 'api' instance
             const promise = api.put('/parts/bulk-update', payload);
             toast.promise(promise, {
                 loading: 'Applying bulk update...',
@@ -404,7 +430,6 @@ const PartsPage = ({ user }) => {
                 created_by: !currentPart ? user.employee_id : undefined,
                 modified_by: currentPart ? user.employee_id : undefined,
             };
-            // FIX: Use the 'api' instance
             const promise = currentPart
                 ? api.put(`/parts/${currentPart.part_id}`, payload)
                 : api.post('/parts', payload);

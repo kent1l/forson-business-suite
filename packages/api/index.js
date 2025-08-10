@@ -3,8 +3,9 @@ const express = require('express');
 const cors = require('cors');
 const db = require('./db');
 
-// Import ALL routes, including the new setup route
+// Import ALL routes, including the new setup and tax rate routes
 const setupRoutes = require('./routes/setupRoutes');
+const taxRateRoutes = require('./routes/taxRateRoutes'); // NEW
 const supplierRoutes = require('./routes/supplierRoutes');
 const partRoutes = require('./routes/partRoutes');
 const employeeRoutes = require('./routes/employeeRoutes');
@@ -34,6 +35,7 @@ app.use(express.json());
 app.use('/api', setupRoutes);
 
 // All other routes
+app.use('/api', taxRateRoutes); // NEW
 app.use('/api', powerSearchRoutes);
 app.use('/api', dashboardRoutes);
 app.use('/api', partNumberRoutes);
