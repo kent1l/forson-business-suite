@@ -6,40 +6,43 @@ services:
   
   # --- Database Service ---
   db:
-    image: postgres:15-alpine # Use the official PostgreSQL image
+    image: postgres:15-alpine 
     container_name: forson_db
-    restart: always # Always restart the container if it stops
+    restart: always
     environment:
-      POSTGRES_PASSWORD: postgres123 # <-- IMPORTANT: Replace with your password
+      # UPDATED: Using an environment variable for the password for better security.
+      # Make sure to add DB_PASSWORD=your_password to your .env file in packages/api.
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: forson_business_suite
     volumes:
-      - postgres_data:/var/lib/postgresql/data # Persist database data
+      - postgres_data:/var/lib/postgresql/data 
     ports:
-      - "5432:5432" # Map port 5432 on the host to 5432 in the container
+      - "5432:5432"
 
   # --- Backend API Service ---
   backend:
     container_name: forson_backend
-    build:
-      context: ./packages/api # Path to the backend Dockerfile
+    # REMOVED: The 'build' instruction is replaced by 'image'.
+    # This tells Docker Compose to pull a pre-built image from Docker Hub.
+    image: kentonel/forson-backend:latest 
     restart: always
     depends_on:
-      - db # This service will wait for the 'db' service to start
+      - db 
     ports:
-      - "3001:3001" # Map port 3001 on the host to 3001 in the container
+      - "3001:3001"
     env_file:
-      - ./packages/api/.env # Load environment variables from the .env file
+      - ./packages/api/.env 
 
   # --- Frontend Service ---
   frontend:
     container_name: forson_frontend
-    build:
-      context: ./packages/web # Path to the frontend Dockerfile
+    # REMOVED: The 'build' instruction is replaced by 'image'.
+    image: kentonel/forson-frontend:latest
     restart: always
     depends_on:
-      - backend # This service will wait for the 'backend' service to start
+      - backend 
     ports:
-      - "8080:80" # Map port 8080 on the host to port 80 in the container (Nginx)
+      - "8080:80"
 
 # Define a named volume to persist the PostgreSQL data
 volumes:

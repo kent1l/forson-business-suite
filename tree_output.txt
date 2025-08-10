@@ -32,7 +32,8 @@ forson-business-suite/
 │   │       ├── reportingRoutes.js
 │   │       ├── settingsRoutes.js
 │   │       ├── setupRoutes.js
-│   │       └── supplierRoutes.js
+│   │       ├── supplierRoutes.js
+│   │       └── taxRateRoutes.js
 │   └── web/
 │       ├── .gitignore
 │       ├── Dockerfile
@@ -58,6 +59,7 @@ forson-business-suite/
 │       │   │   │   └── Sidebar.jsx
 │       │   │   └── ui/
 │       │   │       ├── Combobox.jsx
+│       │   │       ├── FilterBar.jsx
 │       │   │       ├── Icon.jsx
 │       │   │       ├── Modal.jsx
 │       │   │       ├── PaymentModal.jsx
@@ -92,4 +94,5 @@ forson-business-suite/
 │       └── vite.config.js
 ├── PRD_forson-business-suite.md
 ├── PRD_Functional_Breakdown.md
-└── README.md
+├── README.md
+└── tree_output.txt
