@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
@@ -14,7 +14,7 @@ const InvoicingPage = ({ user }) => {
     const [lines, setLines] = useState([]);
     const [selectedCustomer, setSelectedCustomer] = useState('');
     const [paymentMethod, setPaymentMethod] = useState('');
-    const [terms, setTerms] = useState(''); // NEW state for terms
+    const [terms, setTerms] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -27,8 +27,8 @@ const InvoicingPage = ({ user }) => {
             try {
                 setLoading(true);
                 const [customersRes, partsRes] = await Promise.all([
-                    axios.get('http://localhost:3001/api/customers'),
-                    axios.get('http://localhost:3001/api/parts')
+                    api.get('/customers'),
+                    api.get('/parts')
                 ]);
                 setCustomers(customersRes.data);
                 setParts(partsRes.data);
@@ -42,23 +42,24 @@ const InvoicingPage = ({ user }) => {
         fetchInitialData();
     }, []);
 
+    // FIX: This useEffect now correctly sets the default terms only when settings are first loaded.
     useEffect(() => {
         if (settings) {
-            setTerms(settings.DEFAULT_PAYMENT_TERMS || ''); // Set default terms
+            setTerms(settings.DEFAULT_PAYMENT_TERMS || '');
+            if (paymentMethods.length > 0) {
+                setPaymentMethod(paymentMethods[0]);
+            }
         }
-        if (paymentMethods.length > 0 && !paymentMethod) {
-            setPaymentMethod(paymentMethods[0]);
-        }
-    }, [settings, paymentMethods, paymentMethod]);
+    }, [settings]); // This now only depends on `settings`.
 
     const fetchCustomers = async () => {
-        const response = await axios.get('http://localhost:3001/api/customers');
+        const response = await api.get('/customers');
         setCustomers(response.data);
         return response.data;
     };
 
     const handleNewCustomerSave = async (customerData) => {
-        const promise = axios.post('http://localhost:3001/api/customers', customerData);
+        const promise = api.post('/customers', customerData);
         toast.promise(promise, {
             loading: 'Saving customer...',
             success: (response) => {
@@ -118,7 +119,7 @@ const InvoicingPage = ({ user }) => {
             customer_id: selectedCustomer,
             employee_id: user.employee_id,
             payment_method: paymentMethod,
-            terms: terms, // Add terms to payload
+            terms: terms,
             lines: lines.map(line => ({
                 part_id: line.part_id,
                 quantity: line.quantity,
@@ -126,14 +127,14 @@ const InvoicingPage = ({ user }) => {
             })),
         };
 
-        const promise = axios.post('http://localhost:3001/api/invoices', payload);
+        const promise = api.post('/invoices', payload);
 
         toast.promise(promise, {
             loading: 'Posting invoice...',
             success: () => {
                 setLines([]);
                 setSelectedCustomer('');
-                setTerms(settings.DEFAULT_PAYMENT_TERMS || ''); // Reset terms
+                setTerms(settings.DEFAULT_PAYMENT_TERMS || ''); // Reset terms after posting
                 return 'Invoice created successfully!';
             },
             error: 'Failed to create invoice.',
