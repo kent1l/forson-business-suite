@@ -20,6 +20,7 @@ const POSPage = ({ user, lines, setLines }) => {
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [isPriceModalOpen, setIsPriceModalOpen] = useState(false);
     const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+    const [isNewCustomerModalOpen, setIsNewCustomerModalOpen] = useState(false); // New state for the customer form
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
     const [currentItem, setCurrentItem] = useState(null);
     const [lastSale, setLastSale] = useState(null);
@@ -27,17 +28,26 @@ const POSPage = ({ user, lines, setLines }) => {
     const searchInputRef = useRef(null);
     const receiptRef = useRef(null);
 
+    const fetchCustomers = async () => {
+        try {
+            const customersRes = await axios.get('http://localhost:3001/api/customers?status=active');
+            setCustomers(customersRes.data);
+            return customersRes.data;
+        } catch (err) {
+            toast.error("Could not load customer data.");
+        }
+    };
+
     useEffect(() => {
         const fetchInitialData = async () => {
             try {
-                const [partsRes, customersRes] = await Promise.all([
-                    axios.get('http://localhost:3001/api/parts?status=active'),
-                    axios.get('http://localhost:3001/api/customers?status=active')
-                ]);
+                const partsRes = await axios.get('http://localhost:3001/api/parts?status=active');
                 setParts(partsRes.data);
-                setCustomers(customersRes.data);
-                const walkIn = customersRes.data.find(c => c.first_name.toLowerCase() === 'walk-in');
-                setSelectedCustomer(walkIn || null);
+                const customersData = await fetchCustomers();
+                if (customersData) {
+                    const walkIn = customersData.find(c => c.first_name.toLowerCase() === 'walk-in');
+                    setSelectedCustomer(walkIn || null);
+                }
             } catch (err) {
                 toast.error("Could not load initial data.");
             }
@@ -193,9 +203,25 @@ const POSPage = ({ user, lines, setLines }) => {
         setIsCustomerModalOpen(false);
     };
 
+    const handleSaveNewCustomer = (customerData) => {
+        const promise = axios.post('http://localhost:3001/api/customers', customerData);
+        toast.promise(promise, {
+            loading: 'Saving customer...',
+            success: async (response) => {
+                const newCustomer = response.data;
+                await fetchCustomers(); // Refresh the customer list
+                setSelectedCustomer(newCustomer); // Auto-select the new customer
+                setIsNewCustomerModalOpen(false); // Close the form modal
+                return 'New customer added successfully!';
+            },
+            error: 'Failed to save customer.',
+        });
+    };
+
     return (
         <>
             <div className="flex flex-col md:flex-row h-full gap-6">
+                {/* Search and Cart section (unchanged) */}
                 <div className="w-full md:w-2/3">
                     <div className="relative">
                         <Icon path={ICONS.search} className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
@@ -219,7 +245,8 @@ const POSPage = ({ user, lines, setLines }) => {
                         )}
                     </div>
                 </div>
-
+                
+                {/* Right Panel (unchanged) */}
                 <div className="w-full md:w-1/3 bg-white rounded-xl border border-gray-200 flex flex-col">
                     <div className="p-4 border-b">
                         <div className="font-semibold mb-2">Customer</div>
@@ -256,17 +283,40 @@ const POSPage = ({ user, lines, setLines }) => {
                 </div>
             </div>
 
+            {/* Modals */}
             <Modal isOpen={isPriceModalOpen} onClose={() => setIsPriceModalOpen(false)} title="Add Item to Sale">
                 {currentItem && <PriceQuantityModal item={currentItem} onConfirm={handleConfirmAddItem} onCancel={() => setIsPriceModalOpen(false)} />}
             </Modal>
+
+            {/* UPDATED: Select Customer Modal */}
             <Modal isOpen={isCustomerModalOpen} onClose={() => setIsCustomerModalOpen(false)} title="Select Customer">
-                <Combobox
-                    options={customerOptions}
-                    value={selectedCustomer?.customer_id}
-                    onChange={(value) => handleCustomerSelect(value)}
-                    placeholder="Search for a customer..."
+                <div className="space-y-4">
+                    <Combobox
+                        options={customerOptions}
+                        value={selectedCustomer?.customer_id}
+                        onChange={(value) => handleCustomerSelect(value)}
+                        placeholder="Search for a customer..."
+                    />
+                    <button 
+                        onClick={() => {
+                            setIsCustomerModalOpen(false);
+                            setIsNewCustomerModalOpen(true);
+                        }}
+                        className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition"
+                    >
+                        Add New Customer
+                    </button>
+                </div>
+            </Modal>
+
+            {/* NEW: Add New Customer Modal */}
+            <Modal isOpen={isNewCustomerModalOpen} onClose={() => setIsNewCustomerModalOpen(false)} title="Add New Customer">
+                <CustomerForm 
+                    onSave={handleSaveNewCustomer}
+                    onCancel={() => setIsNewCustomerModalOpen(false)}
                 />
             </Modal>
+
             <PaymentModal 
                 isOpen={isPaymentModalOpen}
                 onClose={() => setIsPaymentModalOpen(false)}
