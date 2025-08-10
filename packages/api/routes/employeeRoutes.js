@@ -48,8 +48,23 @@ router.post('/login', async (req, res) => {
 // --- SECURED ADMIN ROUTES ---
 
 router.get('/employees', protect, isAdmin, async (req, res) => {
+    const { status = 'active' } = req.query;
+
+    let whereClause = "WHERE is_active = TRUE";
+    if (status === 'inactive') {
+        whereClause = "WHERE is_active = FALSE";
+    } else if (status === 'all') {
+        whereClause = ""; // No filter
+    }
+
     try {
-        const { rows } = await db.query('SELECT employee_id, employee_code, first_name, last_name, position_title, permission_level_id, username, is_active FROM employee ORDER BY last_name, first_name');
+        const query = `
+            SELECT employee_id, employee_code, first_name, last_name, position_title, permission_level_id, username, is_active 
+            FROM employee 
+            ${whereClause} 
+            ORDER BY last_name, first_name
+        `;
+        const { rows } = await db.query(query);
         res.json(rows);
     } catch (err) {
         console.error(err.message);

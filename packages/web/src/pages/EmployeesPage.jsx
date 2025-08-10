@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
+import FilterBar from '../components/ui/FilterBar'; // Import the new component
 
 const EmployeeForm = ({ employee, onSave, onCancel }) => {
     const [formData, setFormData] = useState({
@@ -95,11 +96,19 @@ const EmployeesPage = ({ user }) => {
     const [error, setError] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentEmployee, setCurrentEmployee] = useState(null);
+    const [statusFilter, setStatusFilter] = useState('active'); // State for the filter
+
+    const filterTabs = [
+        { key: 'active', label: 'Active' },
+        { key: 'inactive', label: 'Inactive' },
+        { key: 'all', label: 'All' },
+    ];
 
     const fetchEmployees = async () => {
         try {
             setLoading(true);
-            const response = await api.get('/employees');
+            // Pass the statusFilter in the request params
+            const response = await api.get('/employees', { params: { status: statusFilter } });
             setEmployees(response.data);
         } catch (err) {
             setError('Failed to fetch employees.');
@@ -108,11 +117,12 @@ const EmployeesPage = ({ user }) => {
         }
     };
 
+    // Re-fetch data when the statusFilter changes
     useEffect(() => {
         if (user.permission_level_id === 10) {
             fetchEmployees();
         }
-    }, [user.permission_level_id]);
+    }, [user.permission_level_id, statusFilter]);
 
     const handleAdd = () => {
         setCurrentEmployee(null);
@@ -157,6 +167,14 @@ const EmployeesPage = ({ user }) => {
                     Add Employee
                 </button>
             </div>
+
+            {/* Use the new FilterBar component */}
+            <FilterBar
+                tabs={filterTabs}
+                activeTab={statusFilter}
+                onTabClick={setStatusFilter}
+            />
+
             <div className="bg-white p-6 rounded-xl border border-gray-200">
                 {loading && <p>Loading employees...</p>}
                 {error && <p className="text-red-500">{error}</p>}

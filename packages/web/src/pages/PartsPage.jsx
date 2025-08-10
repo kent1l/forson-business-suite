@@ -7,6 +7,7 @@ import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import PartNumberManager from './PartNumberManager';
 import PartApplicationManager from './PartApplicationManager';
+import FilterBar from '../components/ui/FilterBar'; // Import the new component
 
 const BrandGroupForm = ({ type, onSave, onCancel }) => {
     const [name, setName] = useState('');
@@ -278,6 +279,13 @@ const PartsPage = ({ user }) => {
     const [isSelectMode, setIsSelectMode] = useState(false);
     const [selectedParts, setSelectedParts] = useState(new Set());
 
+    const filterTabs = [
+        { key: 'active', label: 'Active' },
+        { key: 'inactive', label: 'Inactive' },
+        { key: 'all', label: 'All' },
+    ];
+    
+
     const fetchData = useCallback(async () => {
         try {
             setLoading(true);
@@ -479,13 +487,11 @@ const PartsPage = ({ user }) => {
                 </div>
             )}
 
-            <div className="mb-4">
-                <div className="flex space-x-4 border-b">
-                    <button onClick={() => setStatusFilter('active')} className={`py-2 px-4 text-sm font-medium ${statusFilter === 'active' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>Active</button>
-                    <button onClick={() => setStatusFilter('inactive')} className={`py-2 px-4 text-sm font-medium ${statusFilter === 'inactive' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>Inactive</button>
-                    <button onClick={() => setStatusFilter('all')} className={`py-2 px-4 text-sm font-medium ${statusFilter === 'all' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>All</button>
-                </div>
-            </div>
+            <FilterBar 
+                tabs={filterTabs}
+                activeTab={statusFilter}
+                onTabClick={setStatusFilter}
+            />
 
             <div className="bg-white p-6 rounded-xl border border-gray-200">
                 {loading && <p>Loading parts...</p>}

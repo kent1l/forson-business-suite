@@ -5,6 +5,7 @@ import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import CustomerForm from '../components/forms/CustomerForm';
+import FilterBar from '../components/ui/FilterBar'; // Import the new component
 
 const CustomersPage = () => {
     const [customers, setCustomers] = useState([]);
@@ -13,6 +14,12 @@ const CustomersPage = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentCustomer, setCurrentCustomer] = useState(null);
     const [statusFilter, setStatusFilter] = useState('active');
+
+    const filterTabs = [
+        { key: 'active', label: 'Active' },
+        { key: 'inactive', label: 'Inactive' },
+        { key: 'all', label: 'All' },
+    ];
 
     const fetchCustomers = async () => {
         try {
@@ -87,13 +94,11 @@ const CustomersPage = () => {
                 </button>
             </div>
 
-            <div className="mb-4">
-                <div className="flex space-x-4 border-b">
-                    <button onClick={() => setStatusFilter('active')} className={`py-2 px-4 text-sm font-medium ${statusFilter === 'active' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>Active</button>
-                    <button onClick={() => setStatusFilter('inactive')} className={`py-2 px-4 text-sm font-medium ${statusFilter === 'inactive' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>Inactive</button>
-                    <button onClick={() => setStatusFilter('all')} className={`py-2 px-4 text-sm font-medium ${statusFilter === 'all' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>All</button>
-                </div>
-            </div>
+            <FilterBar 
+                tabs={filterTabs}
+                activeTab={statusFilter}
+                onTabClick={setStatusFilter}
+            />
 
             <div className="bg-white p-6 rounded-xl border border-gray-200">
                 {loading && <p>Loading customers...</p>}
