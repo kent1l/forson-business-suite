@@ -23,20 +23,19 @@ router.get('/suppliers', async (req, res) => {
 });
 
 // POST a new supplier
-router.post('/suppliers', async (req, res) => { // FIX: Was /customers
-    const { supplier_name, contact_person, phone, email, address } = req.body;
+router.post('/suppliers', async (req, res) => {
+    const { supplier_name, contact_person, phone, email, address, is_active } = req.body;
     if (!supplier_name) {
         return res.status(400).json({ message: 'Supplier name is required.' });
     }
     try {
         const newSupplier = await db.query(
-            'INSERT INTO supplier (supplier_name, contact_person, phone, email, address) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-            [supplier_name, contact_person, phone, email, address]
+            'INSERT INTO supplier (supplier_name, contact_person, phone, email, address, is_active) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+            [supplier_name, contact_person, phone, email, address, is_active]
         );
         res.status(201).json(newSupplier.rows[0]);
     } catch (err) {
-        // Add specific error handling for unique constraint violation
-        if (err.code === '23505') { // Assuming a unique constraint on supplier_name
+        if (err.code === '23505') { 
             return res.status(409).json({ message: 'A supplier with this name already exists.' });
         }
         console.error(err.message);
@@ -45,9 +44,9 @@ router.post('/suppliers', async (req, res) => { // FIX: Was /customers
 });
 
 // PUT - Update an existing supplier
-router.put('/suppliers/:id', async (req, res) => { // FIX: Was /customers/:id
+router.put('/suppliers/:id', async (req, res) => {
     const { id } = req.params;
-    const { supplier_name, contact_person, phone, email, address } = req.body;
+    const { supplier_name, contact_person, phone, email, address, is_active } = req.body;
 
     if (!supplier_name) {
         return res.status(400).json({ message: 'Supplier name is required' });
@@ -55,8 +54,8 @@ router.put('/suppliers/:id', async (req, res) => { // FIX: Was /customers/:id
 
     try {
         const updatedSupplier = await db.query(
-            'UPDATE supplier SET supplier_name = $1, contact_person = $2, phone = $3, email = $4, address = $5 WHERE supplier_id = $6 RETURNING *',
-            [supplier_name, contact_person, phone, email, address, id]
+            'UPDATE supplier SET supplier_name = $1, contact_person = $2, phone = $3, email = $4, address = $5, is_active = $6 WHERE supplier_id = $7 RETURNING *',
+            [supplier_name, contact_person, phone, email, address, is_active, id]
         );
 
         if (updatedSupplier.rows.length === 0) {

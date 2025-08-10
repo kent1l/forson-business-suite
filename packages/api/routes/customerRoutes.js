@@ -24,15 +24,14 @@ router.get('/customers', async (req, res) => {
 
 // POST a new customer
 router.post('/customers', async (req, res) => {
-    const { first_name, last_name, company_name, phone, email, address } = req.body;
-    // FIX: Only require first_name
+    const { first_name, last_name, company_name, phone, email, address, is_active } = req.body;
     if (!first_name) {
         return res.status(400).json({ message: 'First name is required.' });
     }
     try {
         const newCustomer = await db.query(
-            'INSERT INTO customer (first_name, last_name, company_name, phone, email, address) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-            [first_name, last_name, company_name, phone, email || null, address]
+            'INSERT INTO customer (first_name, last_name, company_name, phone, email, address, is_active) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+            [first_name, last_name, company_name, phone, email || null, address, is_active]
         );
         res.status(201).json(newCustomer.rows[0]);
     } catch (err) {
@@ -47,17 +46,16 @@ router.post('/customers', async (req, res) => {
 // PUT - Update an existing customer
 router.put('/customers/:id', async (req, res) => {
     const { id } = req.params;
-    const { first_name, last_name, company_name, phone, email, address } = req.body;
+    const { first_name, last_name, company_name, phone, email, address, is_active } = req.body;
 
-    // FIX: Only require first_name
     if (!first_name) {
         return res.status(400).json({ message: 'First name is required' });
     }
 
     try {
         const updatedCustomer = await db.query(
-            'UPDATE customer SET first_name = $1, last_name = $2, company_name = $3, phone = $4, email = $5, address = $6 WHERE customer_id = $7 RETURNING *',
-            [first_name, last_name, company_name, phone, email || null, address, id]
+            'UPDATE customer SET first_name = $1, last_name = $2, company_name = $3, phone = $4, email = $5, address = $6, is_active = $7 WHERE customer_id = $8 RETURNING *',
+            [first_name, last_name, company_name, phone, email || null, address, is_active, id]
         );
 
         if (updatedCustomer.rows.length === 0) {

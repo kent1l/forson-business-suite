@@ -5,7 +5,7 @@ import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import CustomerForm from '../components/forms/CustomerForm';
-import FilterBar from '../components/ui/FilterBar'; // Import the new component
+import FilterBar from '../components/ui/FilterBar';
 
 const CustomersPage = () => {
     const [customers, setCustomers] = useState([]);
@@ -111,7 +111,7 @@ const CustomersPage = () => {
                                     <th className="p-3 text-sm font-semibold text-gray-600">Name</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Company</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 hidden sm:table-cell">Phone</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 hidden md:table-cell">Email</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 text-center">Status</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>
@@ -121,7 +121,11 @@ const CustomersPage = () => {
                                         <td className="p-3 text-sm font-medium text-gray-800">{customer.first_name} {customer.last_name}</td>
                                         <td className="p-3 text-sm">{customer.company_name}</td>
                                         <td className="p-3 text-sm hidden sm:table-cell">{customer.phone}</td>
-                                        <td className="p-3 text-sm hidden md:table-cell">{customer.email}</td>
+                                        <td className="p-3 text-sm text-center">
+                                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${customer.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                                {customer.is_active ? 'Active' : 'Inactive'}
+                                            </span>
+                                        </td>
                                         <td className="p-3 text-sm text-right">
                                             <button onClick={() => handleEdit(customer)} className="text-blue-600 hover:text-blue-800 mr-4"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
                                             <button onClick={() => handleDelete(customer.customer_id)} className="text-red-600 hover:text-red-800"><Icon path={ICONS.trash} className="h-5 w-5"/></button>

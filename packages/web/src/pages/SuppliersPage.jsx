@@ -5,7 +5,7 @@ import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import SupplierForm from '../components/forms/SupplierForm';
-import FilterBar from '../components/ui/FilterBar'; // Import the new component
+import FilterBar from '../components/ui/FilterBar';
 
 const SuppliersPage = () => {
     const [suppliers, setSuppliers] = useState([]);
@@ -108,20 +108,24 @@ const SuppliersPage = () => {
                         <table className="w-full text-left">
                             <thead className="border-b">
                                 <tr>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">ID</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Name</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 hidden sm:table-cell">Contact Person</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 hidden md:table-cell">Phone</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 text-center">Status</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {suppliers.map(supplier => (
                                     <tr key={supplier.supplier_id} className="border-b hover:bg-gray-50">
-                                        <td className="p-3 text-sm">{supplier.supplier_id}</td>
                                         <td className="p-3 text-sm font-medium text-gray-800">{supplier.supplier_name}</td>
                                         <td className="p-3 text-sm hidden sm:table-cell">{supplier.contact_person}</td>
                                         <td className="p-3 text-sm hidden md:table-cell">{supplier.phone}</td>
+                                        <td className="p-3 text-sm text-center">
+                                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${supplier.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                                {supplier.is_active ? 'Active' : 'Inactive'}
+                                            </span>
+                                        </td>
                                         <td className="p-3 text-sm text-right">
                                             <button onClick={() => handleEdit(supplier)} className="text-blue-600 hover:text-blue-800 mr-4"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
                                             <button onClick={() => handleDelete(supplier.supplier_id)} className="text-red-600 hover:text-red-800"><Icon path={ICONS.trash} className="h-5 w-5"/></button>
