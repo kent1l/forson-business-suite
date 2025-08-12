@@ -1,8 +1,9 @@
 import axios from 'axios';
-import toast from 'react-hot-toast'; // Import toast
+import toast from 'react-hot-toast';
 
 const api = axios.create({
-    baseURL: 'http://localhost:3001/api',
+    // UPDATED: The base URL is now relative.
+    baseURL: '/api', 
     headers: {
         'Content-Type': 'application/json'
     }
@@ -19,23 +20,17 @@ api.interceptors.request.use(config => {
     return Promise.reject(error);
 });
 
-// NEW: Response interceptor for global error handling
+// Response interceptor for global error handling
 api.interceptors.response.use(
-    (response) => response, // Directly return successful responses
+    (response) => response,
     (error) => {
-        // Check if the error is a 401 Unauthorized response
         if (error.response && error.response.status === 401) {
-            // Clear the user session from local storage
             localStorage.removeItem('userSession');
-            // Show a toast notification to the user
             toast.error('Session expired. Please log in again.');
-            // Reload the application
             window.location.href = '/'; 
         }
-        // For all other errors, just pass them along
         return Promise.reject(error);
     }
 );
-
 
 export default api;
