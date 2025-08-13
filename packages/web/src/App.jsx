@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from './api'; // Correctly import the configured api instance
 import { Toaster } from 'react-hot-toast';
 import LoginScreen from './pages/LoginScreen';
 import MainLayout from './components/layout/MainLayout';
@@ -16,7 +16,8 @@ function App() {
 
     const checkSetupStatus = async () => {
         try {
-            const response = await axios.get('http://localhost:3001/api/setup/status');
+            // Use the configured 'api' instance with a relative path
+            const response = await api.get('/setup/status');
             setNeedsSetup(!response.data.isAdminCreated);
         } catch (error) {
             console.error("Failed to check setup status", error);

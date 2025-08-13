@@ -3,8 +3,11 @@ const bcrypt = require('bcrypt');
 const db = require('../db');
 const router = express.Router();
 
+console.log('--- [DEBUG] Loading setupRoutes.js file ---');
+
 // GET /api/setup/status - Check if an admin account exists
 router.get('/setup/status', async (req, res) => {
+    console.log('[DEBUG] HIT: GET /api/setup/status'); // Log when the route is actually called
     try {
         const result = await db.query("SELECT EXISTS (SELECT 1 FROM employee WHERE permission_level_id = 10) as admin_exists;");
         res.json({ isAdminCreated: result.rows[0].admin_exists });
@@ -16,6 +19,7 @@ router.get('/setup/status', async (req, res) => {
 
 // POST /api/setup/create-admin - Create the very first admin account
 router.post('/setup/create-admin', async (req, res) => {
+    console.log('[DEBUG] HIT: POST /api/setup/create-admin'); // Log when the route is actually called
     const { first_name, last_name, username, password } = req.body;
 
     if (!username || !password || !first_name || !last_name) {
@@ -56,4 +60,5 @@ router.post('/setup/create-admin', async (req, res) => {
     }
 });
 
+console.log('[DEBUG] setupRoutes.js router configured.');
 module.exports = router;

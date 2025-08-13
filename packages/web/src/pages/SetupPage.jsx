@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import api from '../api'; // 👈 1. Import your configured api instance
 import toast from 'react-hot-toast';
 
 const SetupPage = ({ onSetupComplete }) => {
@@ -20,7 +20,8 @@ const SetupPage = ({ onSetupComplete }) => {
         e.preventDefault();
         setLoading(true);
         try {
-            await axios.post('http://localhost:3001/api/setup/create-admin', formData);
+            // 👇 2. Use the 'api' instance with a relative path
+            await api.post('/setup/create-admin', formData);
             toast.success('Admin account created successfully! Please log in.');
             onSetupComplete(); // Tell the main App component to refresh its state
         } catch (err) {
