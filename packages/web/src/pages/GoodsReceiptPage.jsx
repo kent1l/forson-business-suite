@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api'; // Use the configured api instance
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
@@ -7,7 +7,6 @@ import Modal from '../components/ui/Modal';
 import SupplierForm from '../components/forms/SupplierForm';
 
 const GoodsReceiptPage = ({ user }) => {
-    // ... (logic remains the same)
     const [suppliers, setSuppliers] = useState([]);
     const [parts, setParts] = useState([]);
     const [lines, setLines] = useState([]);
@@ -21,8 +20,8 @@ const GoodsReceiptPage = ({ user }) => {
         try {
             setLoading(true);
             const [suppliersRes, partsRes] = await Promise.all([
-                axios.get('http://localhost:3001/api/suppliers'),
-                axios.get('http://localhost:3001/api/parts')
+                api.get('/suppliers'),
+                api.get('/parts')
             ]);
             setSuppliers(suppliersRes.data);
             setParts(partsRes.data);
@@ -34,7 +33,7 @@ const GoodsReceiptPage = ({ user }) => {
     };
     
     const fetchSuppliers = async () => {
-        const response = await axios.get('http://localhost:3001/api/suppliers');
+        const response = await api.get('/suppliers');
         setSuppliers(response.data);
         return response.data;
     };
@@ -44,7 +43,7 @@ const GoodsReceiptPage = ({ user }) => {
     }, []);
 
     const handleNewSupplierSave = async (supplierData) => {
-        const promise = axios.post('http://localhost:3001/api/suppliers', supplierData);
+        const promise = api.post('/suppliers', supplierData);
         toast.promise(promise, {
             loading: 'Saving supplier...',
             success: (response) => {
@@ -110,7 +109,7 @@ const GoodsReceiptPage = ({ user }) => {
             })),
         };
 
-        const promise = axios.post('http://localhost:3001/api/goods-receipts', payload);
+        const promise = api.post('/goods-receipts', payload);
 
         toast.promise(promise, {
             loading: 'Posting transaction...',
@@ -156,7 +155,7 @@ const GoodsReceiptPage = ({ user }) => {
                         <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg">
                             {searchResults.map(part => (
                                 <li key={part.part_id} onClick={() => addPartToLines(part)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer">
-                                    {part.display_name} {/* Use display_name */}
+                                    {part.display_name}
                                 </li>
                             ))}
                         </ul>
@@ -176,7 +175,7 @@ const GoodsReceiptPage = ({ user }) => {
                         <tbody>
                             {lines.map(line => (
                                 <tr key={line.part_id} className="border-b">
-                                    <td className="p-2 text-sm font-medium text-gray-800">{line.display_name}</td> {/* Use display_name */}
+                                    <td className="p-2 text-sm font-medium text-gray-800">{line.display_name}</td>
                                     <td className="p-2"><input type="number" value={line.quantity} onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)} className="w-full p-1 border rounded-md" /></td>
                                     <td className="p-2"><input type="number" value={line.cost_price} onChange={e => handleLineChange(line.part_id, 'cost_price', e.target.value)} className="w-full p-1 border rounded-md" /></td>
                                     <td className="p-2 text-center"><button onClick={() => removeLine(line.part_id)} className="text-red-500 hover:text-red-700"><Icon path={ICONS.trash} className="h-5 w-5"/></button></td>

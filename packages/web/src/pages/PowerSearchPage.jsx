@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api'; // Use the configured api instance
 
 const PowerSearchPage = () => {
     const [results, setResults] = useState([]);
@@ -7,7 +7,6 @@ const PowerSearchPage = () => {
     const [error, setError] = useState('');
     const [hasSearched, setHasSearched] = useState(false);
 
-    // State for the text in each filter box
     const [filters, setFilters] = useState({
         keyword: '',
         brand: '',
@@ -21,10 +20,8 @@ const PowerSearchPage = () => {
         setFilters(prev => ({ ...prev, [name]: value }));
     };
 
-    // This effect runs whenever a filter text box changes
     useEffect(() => {
         const fetchResults = async () => {
-            // Don't search if all filters are empty
             const activeFilters = Object.values(filters).some(val => val.trim() !== '');
             if (!activeFilters) {
                 setResults([]);
@@ -44,7 +41,7 @@ const PowerSearchPage = () => {
                 if (filters.application) queryParams.append('application', filters.application);
                 if (filters.year) queryParams.append('year', filters.year);
 
-                const response = await axios.get(`http://localhost:3001/api/power-search/parts?${queryParams.toString()}`);
+                const response = await api.get(`/power-search/parts?${queryParams.toString()}`);
                 setResults(response.data);
 
             } catch (err) {
@@ -55,19 +52,17 @@ const PowerSearchPage = () => {
             }
         };
 
-        // Debounce: wait 500ms after the user stops typing to make the API call
         const debounceTimer = setTimeout(() => {
             fetchResults();
         }, 500);
 
-        return () => clearTimeout(debounceTimer); // Cleanup the timer
-    }, [filters]); // This effect depends on the entire filters object
+        return () => clearTimeout(debounceTimer);
+    }, [filters]);
 
     return (
         <div>
             <h1 className="text-2xl font-semibold text-gray-800 mb-6">Power Search</h1>
             
-            {/* Filter Controls */}
             <div className="bg-white p-6 rounded-xl border border-gray-200 mb-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                     <input 
@@ -113,7 +108,6 @@ const PowerSearchPage = () => {
                 </div>
             </div>
 
-            {/* Results Table */}
             <div className="bg-white p-6 rounded-xl border border-gray-200">
                 {loading && <p>Searching...</p>}
                 {error && <p className="text-red-500">{error}</p>}

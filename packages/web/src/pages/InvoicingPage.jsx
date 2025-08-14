@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import api from '../api';
+import api from '../api'; // Use the configured api instance
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
@@ -42,7 +42,6 @@ const InvoicingPage = ({ user }) => {
         fetchInitialData();
     }, []);
 
-    // FIX: This useEffect now correctly sets the default terms only when settings are first loaded.
     useEffect(() => {
         if (settings) {
             setTerms(settings.DEFAULT_PAYMENT_TERMS || '');
@@ -50,7 +49,7 @@ const InvoicingPage = ({ user }) => {
                 setPaymentMethod(paymentMethods[0]);
             }
         }
-    }, [settings]); // This now only depends on `settings`.
+    }, [settings]);
 
     const fetchCustomers = async () => {
         const response = await api.get('/customers');
@@ -134,7 +133,7 @@ const InvoicingPage = ({ user }) => {
             success: () => {
                 setLines([]);
                 setSelectedCustomer('');
-                setTerms(settings.DEFAULT_PAYMENT_TERMS || ''); // Reset terms after posting
+                setTerms(settings.DEFAULT_PAYMENT_TERMS || '');
                 return 'Invoice created successfully!';
             },
             error: 'Failed to create invoice.',

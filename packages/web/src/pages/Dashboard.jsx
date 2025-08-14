@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api'; // Use the configured api instance
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
@@ -31,8 +31,8 @@ const Dashboard = () => {
             try {
                 setLoading(true);
                 const [statsRes, chartRes] = await Promise.all([
-                    axios.get('http://localhost:3001/api/dashboard/stats'),
-                    axios.get('http://localhost:3001/api/dashboard/sales-chart')
+                    api.get('/dashboard/stats'),
+                    api.get('/dashboard/sales-chart')
                 ]);
                 setStats(statsRes.data);
                 setChartData(chartRes.data);

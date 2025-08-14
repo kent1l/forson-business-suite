@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import api from '../api';
+import api from '../api'; // Already using the correct instance
 import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';

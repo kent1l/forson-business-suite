@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
-import axios from 'axios';
+import api from '../api'; // Use the configured api instance
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
@@ -20,17 +20,16 @@ const POSPage = ({ user, lines, setLines }) => {
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [isPriceModalOpen, setIsPriceModalOpen] = useState(false);
     const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
-    const [isNewCustomerModalOpen, setIsNewCustomerModalOpen] = useState(false); // New state for the customer form
+    const [isNewCustomerModalOpen, setIsNewCustomerModalOpen] = useState(false);
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
     const [currentItem, setCurrentItem] = useState(null);
     const [lastSale, setLastSale] = useState(null);
     const [highlightedIndex, setHighlightedIndex] = useState(-1);
     const searchInputRef = useRef(null);
-    const receiptRef = useRef(null);
 
     const fetchCustomers = async () => {
         try {
-            const customersRes = await axios.get('http://localhost:3001/api/customers?status=active');
+            const customersRes = await api.get('/customers?status=active');
             setCustomers(customersRes.data);
             return customersRes.data;
         } catch (err) {
@@ -41,7 +40,7 @@ const POSPage = ({ user, lines, setLines }) => {
     useEffect(() => {
         const fetchInitialData = async () => {
             try {
-                const partsRes = await axios.get('http://localhost:3001/api/parts?status=active');
+                const partsRes = await api.get('/parts?status=active');
                 setParts(partsRes.data);
                 const customersData = await fetchCustomers();
                 if (customersData) {
@@ -98,21 +97,6 @@ const POSPage = ({ user, lines, setLines }) => {
         setLines(lines.filter(line => line.part_id !== partId));
     };
     
-    const handleCancelSale = () => {
-        if (lines.length > 0) {
-            toast((t) => (
-                <div className="flex flex-col items-center">
-                    <p className="font-semibold">Cancel Sale?</p>
-                    <p className="text-sm text-gray-600 mb-3">All items will be removed.</p>
-                    <div className="flex space-x-2">
-                        <button onClick={() => { toast.dismiss(t.id); setLines([]); }} className="px-3 py-1 bg-red-600 text-white text-sm rounded-md hover:bg-red-700">Confirm</button>
-                        <button onClick={() => toast.dismiss(t.id)} className="px-3 py-1 bg-gray-200 text-gray-800 text-sm rounded-md hover:bg-gray-300">Cancel</button>
-                    </div>
-                </div>
-            ));
-        }
-    };
-
     const subtotal = lines.reduce((acc, line) => acc + (line.quantity * line.sale_price), 0);
     const tax = subtotal * (settings?.DEFAULT_TAX_RATE || 0);
     const total = subtotal + tax;
@@ -134,7 +118,7 @@ const POSPage = ({ user, lines, setLines }) => {
                 sale_price: line.sale_price,
             })),
         };
-        const promise = axios.post('http://localhost:3001/api/invoices', payload);
+        const promise = api.post('/invoices', payload);
         toast.promise(promise, {
             loading: 'Processing sale...',
             success: (response) => {
@@ -204,7 +188,7 @@ const POSPage = ({ user, lines, setLines }) => {
     };
 
     const handleSaveNewCustomer = (customerData) => {
-        const promise = axios.post('http://localhost:3001/api/customers', customerData);
+        const promise = api.post('/customers', customerData);
         toast.promise(promise, {
             loading: 'Saving customer...',
             success: async (response) => {
@@ -221,7 +205,6 @@ const POSPage = ({ user, lines, setLines }) => {
     return (
         <>
             <div className="flex flex-col md:flex-row h-full gap-6">
-                {/* Search and Cart section (unchanged) */}
                 <div className="w-full md:w-2/3">
                     <div className="relative">
                         <Icon path={ICONS.search} className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
@@ -246,7 +229,6 @@ const POSPage = ({ user, lines, setLines }) => {
                     </div>
                 </div>
                 
-                {/* Right Panel (unchanged) */}
                 <div className="w-full md:w-1/3 bg-white rounded-xl border border-gray-200 flex flex-col">
                     <div className="p-4 border-b">
                         <div className="font-semibold mb-2">Customer</div>
@@ -283,12 +265,10 @@ const POSPage = ({ user, lines, setLines }) => {
                 </div>
             </div>
 
-            {/* Modals */}
             <Modal isOpen={isPriceModalOpen} onClose={() => setIsPriceModalOpen(false)} title="Add Item to Sale">
                 {currentItem && <PriceQuantityModal item={currentItem} onConfirm={handleConfirmAddItem} onCancel={() => setIsPriceModalOpen(false)} />}
             </Modal>
 
-            {/* UPDATED: Select Customer Modal */}
             <Modal isOpen={isCustomerModalOpen} onClose={() => setIsCustomerModalOpen(false)} title="Select Customer">
                 <div className="space-y-4">
                     <Combobox
@@ -309,7 +289,6 @@ const POSPage = ({ user, lines, setLines }) => {
                 </div>
             </Modal>
 
-            {/* NEW: Add New Customer Modal */}
             <Modal isOpen={isNewCustomerModalOpen} onClose={() => setIsNewCustomerModalOpen(false)} title="Add New Customer">
                 <CustomerForm 
                     onSave={handleSaveNewCustomer}
@@ -323,7 +302,6 @@ const POSPage = ({ user, lines, setLines }) => {
                 total={total}
                 onConfirmPayment={handleConfirmPayment}
             />
-            {/* Hidden div for printing */}
             <div className="hidden">
                 <Receipt saleData={lastSale} settings={settings} />
             </div>
