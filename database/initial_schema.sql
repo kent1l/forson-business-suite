@@ -626,3 +626,35 @@ ALTER TABLE ONLY public.price_history ADD CONSTRAINT price_history_recorded_by_f
 ALTER TABLE ONLY public.price_history ADD CONSTRAINT price_history_supplier_id_fkey FOREIGN KEY (supplier_id) REFERENCES public.supplier(supplier_id) ON DELETE SET NULL;
 ALTER TABLE ONLY public.supplier ADD CONSTRAINT supplier_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.employee(employee_id) ON DELETE SET NULL;
 ALTER TABLE ONLY public.supplier ADD CONSTRAINT supplier_modified_by_fkey FOREIGN KEY (modified_by) REFERENCES public.employee(employee_id) ON DELETE SET NULL;
+
+--
+-- 👇 START OF SEED DATA SECTION
+--
+
+-- Populate the permission_level table with the required roles
+INSERT INTO public.permission_level (permission_level_id, level_name) VALUES
+(1, 'Clerk'),
+(2, 'Parts Man'),
+(3, 'Purchaser'),
+(5, 'Manager'),
+(10, 'Admin');
+
+-- Populate the settings table with default values
+INSERT INTO public.settings (setting_key, setting_value, description) VALUES
+('COMPANY_NAME', '', 'The official name of the company.'),
+('COMPANY_ADDRESS', '', 'The physical address of the company.'),
+('COMPANY_PHONE', '', 'The main contact phone number for the company.'),
+('COMPANY_EMAIL', '', 'The main contact email for the company.'),
+('COMPANY_WEBSITE', '', 'The official company website.'),
+('DEFAULT_CURRENCY_SYMBOL', '$', 'The currency symbol to be used on invoices and reports.'),
+('DEFAULT_PAYMENT_TERMS', 'Due upon receipt', 'The default payment terms displayed on new invoices.'),
+('INVOICE_FOOTER_MESSAGE', 'Thank you for your business!', 'A message to be displayed at the bottom of receipts and invoices.'),
+('PAYMENT_METHODS', 'Cash,Credit Card,Bank Transfer,On Account', 'A comma-separated list of accepted payment methods.');
+
+-- Create the default "Walk-in" customer for the POS system
+INSERT INTO public.customer (first_name, last_name, is_active) VALUES
+('Walk-in', 'Customer', true);
+
+--
+-- 👆 END OF SEED DATA SECTION
+--
