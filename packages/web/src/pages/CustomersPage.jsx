@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api'; // Use the configured api instance
 import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
@@ -25,7 +25,7 @@ const CustomersPage = () => {
         try {
             setError('');
             setLoading(true);
-            const response = await axios.get(`http://localhost:3001/api/customers?status=${statusFilter}`);
+            const response = await api.get(`/customers?status=${statusFilter}`);
             setCustomers(response.data);
         } catch (err) {
             setError('Failed to fetch customers.');
@@ -61,7 +61,7 @@ const CustomersPage = () => {
     };
 
     const confirmDelete = async (customerId) => {
-        const promise = axios.delete(`http://localhost:3001/api/customers/${customerId}`);
+        const promise = api.delete(`/customers/${customerId}`);
         toast.promise(promise, {
             loading: 'Deleting customer...',
             success: () => { fetchCustomers(); return 'Customer deleted!'; },
@@ -71,8 +71,8 @@ const CustomersPage = () => {
 
     const handleSave = async (customerData) => {
         const promise = currentCustomer
-            ? axios.put(`http://localhost:3001/api/customers/${currentCustomer.customer_id}`, customerData)
-            : axios.post('http://localhost:3001/api/customers', customerData);
+            ? api.put(`/customers/${currentCustomer.customer_id}`, customerData)
+            : api.post('/customers', customerData);
 
         toast.promise(promise, {
             loading: 'Saving customer...',

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api'; // Use the configured api instance
 import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
@@ -59,7 +59,7 @@ const ApplicationsPage = () => {
         try {
             setError('');
             setLoading(true);
-            const response = await axios.get('http://localhost:3001/api/applications');
+            const response = await api.get('/applications');
             setApplications(response.data);
         } catch (err) {
             setError('Failed to fetch applications.');
@@ -109,7 +109,7 @@ const ApplicationsPage = () => {
     };
 
     const confirmDelete = async (appId) => {
-        const promise = axios.delete(`http://localhost:3001/api/applications/${appId}`);
+        const promise = api.delete(`/applications/${appId}`);
         toast.promise(promise, {
             loading: 'Deleting application...',
             success: () => {
@@ -122,8 +122,8 @@ const ApplicationsPage = () => {
 
     const handleSave = async (appData) => {
         const promise = currentApp
-            ? axios.put(`http://localhost:3001/api/applications/${currentApp.application_id}`, appData)
-            : axios.post('http://localhost:3001/api/applications', appData);
+            ? api.put(`/applications/${currentApp.application_id}`, appData)
+            : api.post('/applications', appData);
 
         toast.promise(promise, {
             loading: 'Saving application...',

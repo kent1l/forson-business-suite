@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api'; // Use the configured api instance
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import { useSettings } from '../contexts/SettingsContext';
-import Combobox from '../components/ui/Combobox'; // Import the Combobox component
+import Combobox from '../components/ui/Combobox';
 
 const ReportCard = ({ title, value, icon, color, isCurrency = false }) => {
     const { settings } = useSettings();
@@ -48,7 +48,7 @@ const SalesReport = () => {
         if (format === 'json') setLoading(true);
 
         try {
-            const response = await axios.get('http://localhost:3001/api/reports/sales-summary', {
+            const response = await api.get('/reports/sales-summary', {
                 params: { ...dates, format },
                 responseType: format === 'csv' ? 'blob' : 'json',
             });
@@ -150,7 +150,7 @@ const InventoryValuationReport = () => {
     const fetchReport = async (format = 'json') => {
         if (format === 'json') setLoading(true);
         try {
-            const response = await axios.get('http://localhost:3001/api/reports/inventory-valuation', {
+            const response = await api.get('/reports/inventory-valuation', {
                 params: { format },
                 responseType: format === 'csv' ? 'blob' : 'json',
             });
@@ -248,7 +248,7 @@ const TopSellingReport = () => {
         if (format === 'json') setLoading(true);
 
         try {
-            const response = await axios.get('http://localhost:3001/api/reports/top-selling', {
+            const response = await api.get('/reports/top-selling', {
                 params: { ...dates, sortBy, format },
                 responseType: format === 'csv' ? 'blob' : 'json',
             });
@@ -341,7 +341,7 @@ const LowStockReport = () => {
     const fetchReport = async (format = 'json') => {
         if (format === 'json') setLoading(true);
         try {
-            const response = await axios.get('http://localhost:3001/api/reports/low-stock', {
+            const response = await api.get('/reports/low-stock', {
                 params: { format },
                 responseType: format === 'csv' ? 'blob' : 'json',
             });
@@ -423,7 +423,7 @@ const SalesByCustomerReport = () => {
     });
 
     useEffect(() => {
-        axios.get('http://localhost:3001/api/customers').then(res => setCustomers(res.data));
+        api.get('/customers').then(res => setCustomers(res.data));
     }, []);
 
     const customerOptions = customers.map(c => ({ value: c.customer_id, label: `${c.first_name} ${c.last_name}` }));
@@ -436,7 +436,7 @@ const SalesByCustomerReport = () => {
         if (!filters.startDate || !filters.endDate) return toast.error('Please select both a start and end date.');
         if (format === 'json') setLoading(true);
         try {
-            const response = await axios.get('http://localhost:3001/api/reports/sales-by-customer', {
+            const response = await api.get('/reports/sales-by-customer', {
                 params: { ...filters, format },
                 responseType: format === 'csv' ? 'blob' : 'json',
             });
@@ -525,7 +525,7 @@ const InventoryMovementReport = () => {
     });
 
     useEffect(() => {
-        axios.get('http://localhost:3001/api/parts?status=all').then(res => setParts(res.data));
+        api.get('/parts?status=all').then(res => setParts(res.data));
     }, []);
     
     const partOptions = parts.map(p => ({ value: p.part_id, label: p.display_name }));
@@ -538,7 +538,7 @@ const InventoryMovementReport = () => {
         if (!filters.startDate || !filters.endDate) return toast.error('Please select both a start and end date.');
         if (format === 'json') setLoading(true);
         try {
-            const response = await axios.get('http://localhost:3001/api/reports/inventory-movement', {
+            const response = await api.get('/reports/inventory-movement', {
                 params: { ...filters, format },
                 responseType: format === 'csv' ? 'blob' : 'json',
             });
@@ -636,8 +636,8 @@ const ProfitabilityReport = () => {
     });
 
     useEffect(() => {
-        axios.get('http://localhost:3001/api/brands').then(res => setBrands(res.data));
-        axios.get('http://localhost:3001/api/groups').then(res => setGroups(res.data));
+        api.get('/brands').then(res => setBrands(res.data));
+        api.get('/groups').then(res => setGroups(res.data));
     }, []);
     
     const brandOptions = brands.map(b => ({ value: b.brand_id, label: b.brand_name }));
@@ -651,7 +651,7 @@ const ProfitabilityReport = () => {
         if (!filters.startDate || !filters.endDate) return toast.error('Please select both a start and end date.');
         if (format === 'json') setLoading(true);
         try {
-            const response = await axios.get('http://localhost:3001/api/reports/profitability-by-product', {
+            const response = await api.get('/reports/profitability-by-product', {
                 params: { ...filters, format },
                 responseType: format === 'csv' ? 'blob' : 'json',
             });

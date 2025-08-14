@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api'; // Use the configured api instance
 import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
@@ -25,7 +25,7 @@ const SuppliersPage = () => {
         try {
             setError('');
             setLoading(true);
-            const response = await axios.get(`http://localhost:3001/api/suppliers?status=${statusFilter}`);
+            const response = await api.get(`/suppliers?status=${statusFilter}`);
             setSuppliers(response.data);
         } catch (err) {
             setError('Failed to fetch suppliers.');
@@ -61,7 +61,7 @@ const SuppliersPage = () => {
     };
     
     const confirmDelete = async (supplierId) => {
-        const promise = axios.delete(`http://localhost:3001/api/suppliers/${supplierId}`);
+        const promise = api.delete(`/suppliers/${supplierId}`);
         toast.promise(promise, {
             loading: 'Deleting supplier...',
             success: () => { fetchSuppliers(); return 'Supplier deleted!'; },
@@ -71,8 +71,8 @@ const SuppliersPage = () => {
 
     const handleSave = async (supplierData) => {
         const promise = currentSupplier
-            ? axios.put(`http://localhost:3001/api/suppliers/${currentSupplier.supplier_id}`, supplierData)
-            : axios.post('http://localhost:3001/api/suppliers', supplierData);
+            ? api.put(`/suppliers/${currentSupplier.supplier_id}`, supplierData)
+            : api.post('/suppliers', supplierData);
 
         toast.promise(promise, {
             loading: 'Saving supplier...',
