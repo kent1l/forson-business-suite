@@ -1,6 +1,6 @@
 name: Build and Push Docker Images
 
-# This action runs on every push to the 'main' branch
+# This action runs on every push to the 'master' branch
 on:
   push:
     branches: [ "master" ]
@@ -27,7 +27,7 @@ jobs:
         with:
           context: ./packages/api
           push: true
-          tags: kent1l/forson-backend:latest # Replace with your Docker Hub username
+          tags: kentonel/forson-backend:latest # Corrected username
 
       # 4. Builds the Docker image for the frontend and pushes it to Docker Hub
       - name: Build and push frontend image
@@ -35,4 +35,4 @@ jobs:
         with:
           context: ./packages/web
           push: true
-          tags: kent1l/forson-frontend:latest # Replace with your Docker Hub username
+          tags: kentonel/forson-frontend:latest # Corrected username
