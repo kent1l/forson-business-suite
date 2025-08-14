@@ -1,128 +1,138 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
+import api from '../api'; // Use the configured api instance
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import Modal from '../components/ui/Modal';
 import StockAdjustmentForm from '../components/forms/StockAdjustmentForm';
 import TransactionHistoryModal from '../components/ui/TransactionHistoryModal';
-import { useSettings } from '../contexts/SettingsContext'; // 1. Import the hook
+import SortableHeader from '../components/ui/SortableHeader';
 
 const InventoryPage = ({ user }) => {
-    const { settings } = useSettings(); // 2. Use the settings context
     const [inventory, setInventory] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
-    const [currentItem, setCurrentItem] = useState(null);
-    const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
+    const [isModalOpen, setIsModalOpen] = useState(false);
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+    const [selectedPart, setSelectedPart] = useState(null);
+    const [sortConfig, setSortConfig] = useState({ key: 'display_name', direction: 'ascending' });
 
     const fetchInventory = useCallback(async () => {
         try {
             setError('');
-            const response = await axios.get(`http://localhost:3001/api/inventory?search=${searchTerm}`);
+            setLoading(true);
+            const response = await api.get(`/inventory?search=${searchTerm}`);
             setInventory(response.data);
         } catch (err) {
-            setError('Failed to fetch inventory data.');
-            toast.error('Failed to fetch inventory data.');
+            setError('Failed to fetch inventory.');
         } finally {
             setLoading(false);
         }
     }, [searchTerm]);
 
     useEffect(() => {
-        setLoading(true);
         const debounceTimer = setTimeout(() => {
             fetchInventory();
-        }, 300);
+        }, 300); // Debounce search input
+
         return () => clearTimeout(debounceTimer);
-    }, [searchTerm, fetchInventory]);
+    }, [fetchInventory]);
 
-    const getStatusIndicator = (item) => {
-        const stock = Number(item.stock_on_hand);
-        const reorderPoint = Number(item.reorder_point);
-
-        if (stock <= 0) {
-            return <span className="inline-block w-3 h-3 bg-blue-500 rounded-full" title="Out of Stock"></span>;
-        }
-        if (stock > 0 && stock <= reorderPoint) {
-            return <span className="inline-block w-3 h-3 bg-yellow-500 rounded-full" title="Low Stock"></span>;
-        }
-        return <span className="inline-block w-3 h-3 bg-green-500 rounded-full" title="In Stock"></span>;
+    const handleOpenAdjustmentModal = (part) => {
+        setSelectedPart(part);
+        setIsModalOpen(true);
     };
-    
-    const handleViewHistory = (item) => {
-        setCurrentItem(item);
+
+    const handleOpenHistoryModal = (part) => {
+        setSelectedPart(part);
         setIsHistoryModalOpen(true);
     };
 
-    const handleAdjustStock = (item) => {
-        setCurrentItem(item);
-        setIsAdjustModalOpen(true);
-    };
+    const handleAdjustmentSave = async (adjustmentData) => {
+        const promise = api.post('/inventory/adjust', {
+            ...adjustmentData,
+            part_id: selectedPart.part_id,
+            employee_id: user.employee_id,
+        });
 
-    const handleSaveAdjustment = (payload) => {
-        const promise = axios.post('http://localhost:3001/api/inventory/adjust', payload);
         toast.promise(promise, {
-            loading: 'Adjusting stock...',
+            loading: 'Processing adjustment...',
             success: () => {
-                setIsAdjustModalOpen(false);
+                setIsModalOpen(false);
                 fetchInventory();
                 return 'Stock adjusted successfully!';
             },
-            error: 'Failed to adjust stock.'
+            error: 'Failed to adjust stock.',
         });
+    };
+    
+    const sortedInventory = React.useMemo(() => {
+        let sortableItems = [...inventory];
+        if (sortConfig !== null) {
+            sortableItems.sort((a, b) => {
+                if (a[sortConfig.key] < b[sortConfig.key]) {
+                    return sortConfig.direction === 'ascending' ? -1 : 1;
+                }
+                if (a[sortConfig.key] > b[sortConfig.key]) {
+                    return sortConfig.direction === 'ascending' ? 1 : -1;
+                }
+                return 0;
+            });
+        }
+        return sortableItems;
+    }, [inventory, sortConfig]);
+
+    const requestSort = (key) => {
+        let direction = 'ascending';
+        if (sortConfig.key === key && sortConfig.direction === 'ascending') {
+            direction = 'descending';
+        }
+        setSortConfig({ key, direction });
     };
 
     return (
         <div>
-            <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+            <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-semibold text-gray-800">Inventory Management</h1>
-                <div className="relative w-full sm:w-64">
-                     <Icon path={ICONS.search} className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                     <input 
+                <div className="relative w-full max-w-xs">
+                    <Icon path={ICONS.search} className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <input
                         type="text"
                         placeholder="Search inventory..."
                         value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
+                        onChange={e => setSearchTerm(e.target.value)}
                         className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg"
-                     />
+                    />
                 </div>
             </div>
+
             <div className="bg-white p-6 rounded-xl border border-gray-200">
                 {loading && <p>Loading inventory...</p>}
                 {error && <p className="text-red-500">{error}</p>}
                 {!loading && !error && (
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
-                            <thead className="border-b">
-                                <tr>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 w-12">Status</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-center">Stock on Hand</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total Value</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-center">Actions</th>
+                            <thead>
+                                <tr className="border-b">
+                                    <SortableHeader name="SKU" sortKey="internal_sku" sortConfig={sortConfig} requestSort={requestSort} />
+                                    <SortableHeader name="Item Name" sortKey="display_name" sortConfig={sortConfig} requestSort={requestSort} />
+                                    <SortableHeader name="Stock on Hand" sortKey="stock_on_hand" sortConfig={sortConfig} requestSort={requestSort} className="text-center" />
+                                    <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {inventory.map(item => (
+                                {sortedInventory.map(item => (
                                     <tr key={item.part_id} className="border-b hover:bg-gray-50">
-                                        <td className="p-3 text-center">{getStatusIndicator(item)}</td>
                                         <td className="p-3 text-sm font-mono">{item.internal_sku}</td>
                                         <td className="p-3 text-sm font-medium text-gray-800">{item.display_name}</td>
                                         <td className="p-3 text-sm text-center font-semibold">{Number(item.stock_on_hand).toLocaleString()}</td>
-                                        <td className="p-3 text-sm text-right font-mono">
-                                            {/* 3. Use the dynamic currency symbol */}
-                                            {settings?.DEFAULT_CURRENCY_SYMBOL}{(Number(item.stock_on_hand) * Number(item.last_cost)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                        </td>
-                                        <td className="p-3 text-center space-x-4">
-                                            <button onClick={() => handleAdjustStock(item)} className="text-gray-500 hover:text-blue-600" title="Adjust Stock">
-                                                <Icon path={ICONS.edit} className="h-5 w-5" />
+                                        <td className="p-3 text-sm text-right">
+                                            <button onClick={() => handleOpenAdjustmentModal(item)} className="text-blue-600 hover:text-blue-800 mr-4" title="Adjust Stock">
+                                                <Icon path={ICONS.adjust} className="h-5 w-5"/>
                                             </button>
-                                            <button onClick={() => handleViewHistory(item)} className="text-gray-500 hover:text-blue-600" title="View Transaction History">
-                                                <Icon path={ICONS.receipt} className="h-5 w-5" />
+                                            <button onClick={() => handleOpenHistoryModal(item)} className="text-gray-600 hover:text-gray-800" title="View History">
+                                                <Icon path={ICONS.history} className="h-5 w-5"/>
                                             </button>
                                         </td>
                                     </tr>
@@ -132,10 +142,20 @@ const InventoryPage = ({ user }) => {
                     </div>
                 )}
             </div>
-            <Modal isOpen={isAdjustModalOpen} onClose={() => setIsAdjustModalOpen(false)} title={`Adjust Stock for ${currentItem?.detail}`}>
-                <StockAdjustmentForm part={currentItem} user={user} onSave={handleSaveAdjustment} onCancel={() => setIsAdjustModalOpen(false)} />
+
+            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={`Adjust Stock for ${selectedPart?.display_name}`}>
+                <StockAdjustmentForm 
+                    part={selectedPart} 
+                    onSave={handleAdjustmentSave} 
+                    onCancel={() => setIsModalOpen(false)}
+                />
             </Modal>
-            <TransactionHistoryModal part={currentItem} isOpen={isHistoryModalOpen} onClose={() => setIsHistoryModalOpen(false)} />
+            
+            <TransactionHistoryModal 
+                isOpen={isHistoryModalOpen} 
+                onClose={() => setIsHistoryModalOpen(false)} 
+                part={selectedPart}
+            />
         </div>
     );
 };
