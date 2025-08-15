@@ -5,6 +5,7 @@ import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import BackupSettings from '../components/settings/BackupSettings';
+import DataUtilsSettings from '../components/settings/DataUtilsSettings'; // 1. Import the new component
 
 const CompanyInfoSettings = ({ settings, handleChange }) => (
     <div className="space-y-4">
@@ -50,7 +51,6 @@ const FinancialSettings = ({ settings, handleChange }) => (
     </div>
 );
 
-// MODIFIED: Component now accepts settings and handleChange props
 const TaxRateSettings = ({ settings, handleChange }) => {
     const [taxRates, setTaxRates] = useState([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -107,7 +107,6 @@ const TaxRateSettings = ({ settings, handleChange }) => {
 
     return (
         <div>
-            {/* --- MOVED: Checkbox for default tax inclusive setting is now here --- */}
             <div className="pb-4 mb-4 border-b">
                  <div className="flex items-center">
                     <input 
@@ -259,17 +258,19 @@ const SettingsPage = ({ user }) => {
                             <button type="button" onClick={() => setActiveTab('financial')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'financial' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Financial</button>
                             <button type="button" onClick={() => setActiveTab('tax_rates')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'tax_rates' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Tax Rates</button>
                             <button type="button" onClick={() => setActiveTab('backup')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'backup' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Backup & Restore</button>
+                            {/* 2. Add the new Data Utilities tab */}
+                            <button type="button" onClick={() => setActiveTab('data')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'data' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Data Utilities</button>
                         </nav>
                     </div>
 
                     {activeTab === 'company' && <CompanyInfoSettings settings={settings} handleChange={handleChange} />}
                     {activeTab === 'financial' && <FinancialSettings settings={settings} handleChange={handleChange} />}
-                    {/* MODIFIED: Pass props to TaxRateSettings */}
                     {activeTab === 'tax_rates' && <TaxRateSettings settings={settings} handleChange={handleChange} />}
                     {activeTab === 'backup' && <BackupSettings settings={settings} handleChange={handleChange} handleSave={handleSave} />}
+                    {/* 3. Render the new component when its tab is active */}
+                    {activeTab === 'data' && <DataUtilsSettings />}
 
-                    {/* MODIFIED: Show save button on tax_rates tab as well */}
-                    {['company', 'financial', 'tax_rates'].includes(activeTab) && (
+                    {['company', 'financial', 'tax_rates', 'backup'].includes(activeTab) && (
                         <div className="pt-4 flex justify-end mt-6 border-t">
                             <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
                                 Save Settings
