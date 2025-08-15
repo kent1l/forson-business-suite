@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import api from '../api'; // Use the configured api instance
+import api from '../api';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import Modal from '../components/ui/Modal';
 import StockAdjustmentForm from '../components/forms/StockAdjustmentForm';
 import TransactionHistoryModal from '../components/ui/TransactionHistoryModal';
-import SortableHeader from '../components/ui/SortableHeader';
 
 const InventoryPage = ({ user }) => {
     const [inventory, setInventory] = useState([]);
@@ -34,7 +33,7 @@ const InventoryPage = ({ user }) => {
     useEffect(() => {
         const debounceTimer = setTimeout(() => {
             fetchInventory();
-        }, 300); // Debounce search input
+        }, 300);
 
         return () => clearTimeout(debounceTimer);
     }, [fetchInventory]);
@@ -83,14 +82,6 @@ const InventoryPage = ({ user }) => {
         return sortableItems;
     }, [inventory, sortConfig]);
 
-    const requestSort = (key) => {
-        let direction = 'ascending';
-        if (sortConfig.key === key && sortConfig.direction === 'ascending') {
-            direction = 'descending';
-        }
-        setSortConfig({ key, direction });
-    };
-
     return (
         <div>
             <div className="flex justify-between items-center mb-6">
@@ -115,9 +106,9 @@ const InventoryPage = ({ user }) => {
                         <table className="w-full text-left">
                             <thead>
                                 <tr className="border-b">
-                                    <SortableHeader name="SKU" sortKey="internal_sku" sortConfig={sortConfig} requestSort={requestSort} />
-                                    <SortableHeader name="Item Name" sortKey="display_name" sortConfig={sortConfig} requestSort={requestSort} />
-                                    <SortableHeader name="Stock on Hand" sortKey="stock_on_hand" sortConfig={sortConfig} requestSort={requestSort} className="text-center" />
+                                    <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Item Name</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 text-center">Stock on Hand</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>
@@ -148,6 +139,7 @@ const InventoryPage = ({ user }) => {
                     part={selectedPart} 
                     onSave={handleAdjustmentSave} 
                     onCancel={() => setIsModalOpen(false)}
+                    user={user}
                 />
             </Modal>
             

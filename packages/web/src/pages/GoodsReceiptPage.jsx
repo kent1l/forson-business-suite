@@ -5,26 +5,34 @@ import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import Modal from '../components/ui/Modal';
 import SupplierForm from '../components/forms/SupplierForm';
+import PartForm from '../components/forms/PartForm';
 
 const GoodsReceiptPage = ({ user }) => {
     const [suppliers, setSuppliers] = useState([]);
     const [parts, setParts] = useState([]);
+    const [brands, setBrands] = useState([]);
+    const [groups, setGroups] = useState([]);
     const [lines, setLines] = useState([]);
     const [selectedSupplier, setSelectedSupplier] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
+    const [isNewPartModalOpen, setIsNewPartModalOpen] = useState(false);
 
     const fetchInitialData = async () => {
         try {
             setLoading(true);
-            const [suppliersRes, partsRes] = await Promise.all([
+            const [suppliersRes, partsRes, brandsRes, groupsRes] = await Promise.all([
                 api.get('/suppliers'),
-                api.get('/parts')
+                api.get('/parts'),
+                api.get('/brands'),
+                api.get('/groups')
             ]);
             setSuppliers(suppliersRes.data);
             setParts(partsRes.data);
+            setBrands(brandsRes.data);
+            setGroups(groupsRes.data);
         } catch (err) {
             toast.error("Failed to load initial data.");
         } finally {
@@ -58,6 +66,25 @@ const GoodsReceiptPage = ({ user }) => {
         });
     };
 
+    const handleSaveNewPart = (partData) => {
+        const payload = { ...partData, created_by: user.employee_id };
+        const promise = api.post('/parts', payload);
+
+        toast.promise(promise, {
+            loading: 'Saving new part...',
+            success: (response) => {
+                const newPart = response.data;
+                api.get('/parts?status=active').then(res => setParts(res.data));
+                
+                setIsNewPartModalOpen(false);
+                addPartToLines(newPart);
+                
+                return 'Part added and added to receipt!';
+            },
+            error: 'Failed to save part.'
+        });
+    };
+
     useEffect(() => {
         if (searchTerm.trim() === '') {
             setSearchResults([]);
@@ -77,7 +104,14 @@ const GoodsReceiptPage = ({ user }) => {
                 line.part_id === part.part_id ? { ...line, quantity: line.quantity + 1 } : line
             ));
         } else {
-            setLines([...lines, { ...part, part_id: part.part_id, quantity: 1, cost_price: part.last_cost || 0 }]);
+            // MODIFIED: Added last_sale_price to the new line item object
+            setLines([...lines, { 
+                ...part, 
+                part_id: part.part_id, 
+                quantity: 1, 
+                cost_price: part.last_cost || 0,
+                sale_price: part.last_sale_price || 0 
+            }]);
         }
         setSearchTerm('');
     };
@@ -102,10 +136,12 @@ const GoodsReceiptPage = ({ user }) => {
         const payload = {
             supplier_id: selectedSupplier,
             received_by: user.employee_id,
+            // MODIFIED: Include sale_price in the payload for each line
             lines: lines.map(line => ({
                 part_id: line.part_id,
                 quantity: line.quantity,
                 cost_price: line.cost_price,
+                sale_price: line.sale_price 
             })),
         };
 
@@ -139,27 +175,32 @@ const GoodsReceiptPage = ({ user }) => {
                     </div>
                 </div>
                 
-                <div className="relative">
+                <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Add Part</label>
-                    <div className="relative">
-                        <Icon path={ICONS.search} className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                        <input
-                            type="text"
-                            placeholder="Search by part name or SKU..."
-                            value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                            className="w-full px-3 py-2 pl-10 border border-gray-300 rounded-lg"
-                        />
+                    <div className="flex items-center space-x-2">
+                        <div className="relative flex-grow">
+                            <Icon path={ICONS.search} className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                            <input
+                                type="text"
+                                placeholder="Search by part name or SKU..."
+                                value={searchTerm}
+                                onChange={e => setSearchTerm(e.target.value)}
+                                className="w-full px-3 py-2 pl-10 border border-gray-300 rounded-lg"
+                            />
+                            {searchResults.length > 0 && (
+                                <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg">
+                                    {searchResults.map(part => (
+                                        <li key={part.part_id} onClick={() => addPartToLines(part)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer">
+                                            {part.display_name}
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                        <button onClick={() => setIsNewPartModalOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition whitespace-nowrap">
+                           New Part
+                        </button>
                     </div>
-                    {searchResults.length > 0 && (
-                        <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg">
-                            {searchResults.map(part => (
-                                <li key={part.part_id} onClick={() => addPartToLines(part)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer">
-                                    {part.display_name}
-                                </li>
-                            ))}
-                        </ul>
-                    )}
                 </div>
 
                 <div className="overflow-x-auto">
@@ -169,6 +210,8 @@ const GoodsReceiptPage = ({ user }) => {
                                 <th className="p-3 text-sm font-semibold text-gray-600">Part Detail</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 w-28">Quantity</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 w-32">Cost Price</th>
+                                {/* MODIFIED: Added Sale Price column header */}
+                                <th className="p-3 text-sm font-semibold text-gray-600 w-32">Sale Price</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 w-16 text-center"></th>
                             </tr>
                         </thead>
@@ -178,6 +221,8 @@ const GoodsReceiptPage = ({ user }) => {
                                     <td className="p-2 text-sm font-medium text-gray-800">{line.display_name}</td>
                                     <td className="p-2"><input type="number" value={line.quantity} onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)} className="w-full p-1 border rounded-md" /></td>
                                     <td className="p-2"><input type="number" value={line.cost_price} onChange={e => handleLineChange(line.part_id, 'cost_price', e.target.value)} className="w-full p-1 border rounded-md" /></td>
+                                    {/* MODIFIED: Added Sale Price input field */}
+                                    <td className="p-2"><input type="number" value={line.sale_price} onChange={e => handleLineChange(line.part_id, 'sale_price', e.target.value)} className="w-full p-1 border rounded-md" /></td>
                                     <td className="p-2 text-center"><button onClick={() => removeLine(line.part_id)} className="text-red-500 hover:text-red-700"><Icon path={ICONS.trash} className="h-5 w-5"/></button></td>
                                 </tr>
                             ))}
@@ -193,6 +238,15 @@ const GoodsReceiptPage = ({ user }) => {
             </div>
             <Modal isOpen={isSupplierModalOpen} onClose={() => setIsSupplierModalOpen(false)} title="Add New Supplier">
                 <SupplierForm onSave={handleNewSupplierSave} onCancel={() => setIsSupplierModalOpen(false)} />
+            </Modal>
+            <Modal isOpen={isNewPartModalOpen} onClose={() => setIsNewPartModalOpen(false)} title="Add New Part">
+                <PartForm
+                    brands={brands}
+                    groups={groups}
+                    onSave={handleSaveNewPart}
+                    onCancel={() => setIsNewPartModalOpen(false)}
+                    onBrandGroupAdded={fetchInitialData}
+                />
             </Modal>
         </div>
     );
