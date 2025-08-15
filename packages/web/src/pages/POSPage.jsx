@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
-import api from '../api'; // Use the configured api instance
+import api from '../api';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
@@ -11,17 +11,21 @@ import Combobox from '../components/ui/Combobox';
 import PaymentModal from '../components/ui/PaymentModal';
 import PriceQuantityModal from '../components/ui/PriceQuantityModal';
 import Receipt from '../components/ui/Receipt';
+import PartForm from '../components/forms/PartForm';
 
 const POSPage = ({ user, lines, setLines }) => {
     const { settings } = useSettings();
     const [searchTerm, setSearchTerm] = useState('');
     const [parts, setParts] = useState([]);
     const [customers, setCustomers] = useState([]);
+    const [brands, setBrands] = useState([]);
+    const [groups, setGroups] = useState([]);
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [isPriceModalOpen, setIsPriceModalOpen] = useState(false);
     const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
     const [isNewCustomerModalOpen, setIsNewCustomerModalOpen] = useState(false);
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+    const [isNewPartModalOpen, setIsNewPartModalOpen] = useState(false);
     const [currentItem, setCurrentItem] = useState(null);
     const [lastSale, setLastSale] = useState(null);
     const [highlightedIndex, setHighlightedIndex] = useState(-1);
@@ -37,20 +41,28 @@ const POSPage = ({ user, lines, setLines }) => {
         }
     };
 
-    useEffect(() => {
-        const fetchInitialData = async () => {
-            try {
-                const partsRes = await api.get('/parts?status=active');
-                setParts(partsRes.data);
-                const customersData = await fetchCustomers();
-                if (customersData) {
-                    const walkIn = customersData.find(c => c.first_name.toLowerCase() === 'walk-in');
-                    setSelectedCustomer(walkIn || null);
-                }
-            } catch (err) {
-                toast.error("Could not load initial data.");
+    const fetchInitialData = async () => {
+        try {
+            const [partsRes, brandsRes, groupsRes] = await Promise.all([
+                api.get('/parts?status=active'),
+                api.get('/brands'),
+                api.get('/groups')
+            ]);
+            setParts(partsRes.data);
+            setBrands(brandsRes.data);
+            setGroups(groupsRes.data);
+            
+            const customersData = await fetchCustomers();
+            if (customersData) {
+                const walkIn = customersData.find(c => c.first_name.toLowerCase() === 'walk-in');
+                setSelectedCustomer(walkIn || null);
             }
-        };
+        } catch (err) {
+            toast.error("Could not load initial data.");
+        }
+    };
+
+    useEffect(() => {
         fetchInitialData();
     }, []);
 
@@ -59,7 +71,7 @@ const POSPage = ({ user, lines, setLines }) => {
         label: `${c.first_name} ${c.last_name || ''}`.trim()
     })), [customers]);
 
-    const searchResults = searchTerm 
+    const searchResults = searchTerm
         ? parts.filter(p => p.display_name.toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 10)
         : [];
 
@@ -86,6 +98,25 @@ const POSPage = ({ user, lines, setLines }) => {
         searchInputRef.current?.focus();
     };
 
+    const handleSaveNewPart = (partData) => {
+        const payload = { ...partData, created_by: user.employee_id };
+        const promise = api.post('/parts', payload);
+
+        toast.promise(promise, {
+            loading: 'Saving new part...',
+            success: (response) => {
+                const newPart = response.data;
+                api.get('/parts?status=active').then(res => setParts(res.data));
+                
+                setIsNewPartModalOpen(false);
+                handleConfirmAddItem({ ...newPart, quantity: 1, sale_price: newPart.last_sale_price || 0 });
+                
+                return 'Part added and added to cart!';
+            },
+            error: 'Failed to save part.'
+        });
+    };
+
     const handleLineChange = (partId, field, value) => {
         const numericValue = parseFloat(value);
         setLines(lines.map(line =>
@@ -96,7 +127,7 @@ const POSPage = ({ user, lines, setLines }) => {
     const removeLine = (partId) => {
         setLines(lines.filter(line => line.part_id !== partId));
     };
-    
+
     const subtotal = lines.reduce((acc, line) => acc + (line.quantity * line.sale_price), 0);
     const tax = subtotal * (settings?.DEFAULT_TAX_RATE || 0);
     const total = subtotal + tax;
@@ -193,9 +224,9 @@ const POSPage = ({ user, lines, setLines }) => {
             loading: 'Saving customer...',
             success: async (response) => {
                 const newCustomer = response.data;
-                await fetchCustomers(); // Refresh the customer list
-                setSelectedCustomer(newCustomer); // Auto-select the new customer
-                setIsNewCustomerModalOpen(false); // Close the form modal
+                await fetchCustomers();
+                setSelectedCustomer(newCustomer);
+                setIsNewCustomerModalOpen(false);
                 return 'New customer added successfully!';
             },
             error: 'Failed to save customer.',
@@ -206,29 +237,34 @@ const POSPage = ({ user, lines, setLines }) => {
         <>
             <div className="flex flex-col md:flex-row h-full gap-6">
                 <div className="w-full md:w-2/3">
-                    <div className="relative">
-                        <Icon path={ICONS.search} className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                        <input
-                            ref={searchInputRef}
-                            type="text"
-                            placeholder="Scan barcode or search for a part..."
-                            value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg text-lg"
-                        />
-                         {searchResults.length > 0 && (
-                            <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg">
-                                {searchResults.map((part, index) => (
-                                    <li key={part.part_id} onClick={() => handleSelectPart(part)} className={`px-4 py-3 cursor-pointer ${index === highlightedIndex ? 'bg-blue-100' : 'hover:bg-blue-50'}`}>
-                                        {part.display_name}
-                                    </li>
-                                ))}
-                            </ul>
-                        )}
+                    <div className="flex items-center space-x-2">
+                        <div className="relative flex-grow">
+                            <Icon path={ICONS.search} className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                            <input
+                                ref={searchInputRef}
+                                type="text"
+                                placeholder="Scan barcode or search for a part..."
+                                value={searchTerm}
+                                onChange={e => setSearchTerm(e.target.value)}
+                                onKeyDown={handleKeyDown}
+                                className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg text-lg"
+                            />
+                            {searchResults.length > 0 && (
+                                <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg">
+                                    {searchResults.map((part, index) => (
+                                        <li key={part.part_id} onClick={() => handleSelectPart(part)} className={`px-4 py-3 cursor-pointer ${index === highlightedIndex ? 'bg-blue-100' : 'hover:bg-blue-50'}`}>
+                                            {part.display_name}
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                        <button onClick={() => setIsNewPartModalOpen(true)} className="bg-blue-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-700 transition whitespace-nowrap">
+                           New Part
+                        </button>
                     </div>
                 </div>
-                
+
                 <div className="w-full md:w-1/3 bg-white rounded-xl border border-gray-200 flex flex-col">
                     <div className="p-4 border-b">
                         <div className="font-semibold mb-2">Customer</div>
@@ -269,6 +305,16 @@ const POSPage = ({ user, lines, setLines }) => {
                 {currentItem && <PriceQuantityModal item={currentItem} onConfirm={handleConfirmAddItem} onCancel={() => setIsPriceModalOpen(false)} />}
             </Modal>
 
+            <Modal isOpen={isNewPartModalOpen} onClose={() => setIsNewPartModalOpen(false)} title="Add New Part">
+                <PartForm
+                    brands={brands}
+                    groups={groups}
+                    onSave={handleSaveNewPart}
+                    onCancel={() => setIsNewPartModalOpen(false)}
+                    onBrandGroupAdded={fetchInitialData}
+                />
+            </Modal>
+
             <Modal isOpen={isCustomerModalOpen} onClose={() => setIsCustomerModalOpen(false)} title="Select Customer">
                 <div className="space-y-4">
                     <Combobox
@@ -277,7 +323,7 @@ const POSPage = ({ user, lines, setLines }) => {
                         onChange={(value) => handleCustomerSelect(value)}
                         placeholder="Search for a customer..."
                     />
-                    <button 
+                    <button
                         onClick={() => {
                             setIsCustomerModalOpen(false);
                             setIsNewCustomerModalOpen(true);
@@ -290,13 +336,13 @@ const POSPage = ({ user, lines, setLines }) => {
             </Modal>
 
             <Modal isOpen={isNewCustomerModalOpen} onClose={() => setIsNewCustomerModalOpen(false)} title="Add New Customer">
-                <CustomerForm 
+                <CustomerForm
                     onSave={handleSaveNewCustomer}
                     onCancel={() => setIsNewCustomerModalOpen(false)}
                 />
             </Modal>
 
-            <PaymentModal 
+            <PaymentModal
                 isOpen={isPaymentModalOpen}
                 onClose={() => setIsPaymentModalOpen(false)}
                 total={total}

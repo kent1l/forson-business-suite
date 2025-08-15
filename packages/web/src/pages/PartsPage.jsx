@@ -4,296 +4,10 @@ import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
+import PartForm from '../components/forms/PartForm'; // Import the new form
 import PartNumberManager from './PartNumberManager';
 import PartApplicationManager from './PartApplicationManager';
 import FilterBar from '../components/ui/FilterBar';
-
-const BrandGroupForm = ({ type, onSave, onCancel }) => {
-    const [name, setName] = useState('');
-    const [code, setCode] = useState('');
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        const endpoint = type === 'Brand' ? '/brands' : '/groups';
-        const payload = type === 'Brand' ? { brand_name: name, brand_code: code } : { group_name: name, group_code: code };
-        
-        const promise = api.post(endpoint, payload);
-        toast.promise(promise, {
-            loading: `Adding ${type}...`,
-            success: (response) => {
-                onSave(response.data);
-                return `${type} added successfully!`;
-            },
-            error: `Failed to add ${type}.`
-        });
-    };
-
-    return (
-        <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{type} Name</label>
-                <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{type} Code (max 10 chars)</label>
-                <input type="text" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} maxLength="10" className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
-            </div>
-            <div className="mt-6 flex justify-end space-x-4">
-                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>
-            </div>
-        </form>
-    );
-};
-
-const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, isBulkEdit = false, selectedCount = 0 }) => {
-    const getInitialState = () => {
-        if (isBulkEdit) {
-            return {
-                brand_id: '', group_id: '',
-                reorder_point: '', warning_quantity: '', last_cost: '', last_sale_price: '', barcode: '', measurement_unit: '', tax_rate_id: '',
-                is_active: 'unchanged', is_price_change_allowed: 'unchanged', is_using_default_quantity: 'unchanged',
-                is_service: 'unchanged', low_stock_warning: 'unchanged'
-            };
-        }
-        return {
-            detail: '', brand_id: '', group_id: '', part_numbers_string: '',
-            reorder_point: 0, warning_quantity: 0, is_active: true,
-            last_cost: 0, last_sale_price: 0, barcode: '', measurement_unit: 'pcs', tax_rate_id: '',
-            is_price_change_allowed: true, is_using_default_quantity: true,
-            is_service: false, low_stock_warning: false
-        };
-    };
-
-    const [formData, setFormData] = useState(getInitialState());
-    const [taxRates, setTaxRates] = useState([]);
-    const [isBrandModalOpen, setIsBrandModalOpen] = useState(false);
-    const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
-    const [showAdvanced, setShowAdvanced] = useState(false);
-
-    useEffect(() => {
-        const fetchTaxRates = async () => {
-            try {
-                const response = await api.get('/tax-rates');
-                setTaxRates(response.data);
-            } catch (err) {
-                toast.error("Could not load tax rates.");
-            }
-        };
-        fetchTaxRates();
-    }, []);
-
-    useEffect(() => {
-        if (isBulkEdit) {
-            setFormData(getInitialState());
-            return;
-        }
-
-        if (part) { // Editing an existing part
-            setFormData({
-                detail: part.detail || '',
-                brand_id: part.brand_id || '',
-                group_id: part.group_id || '',
-                part_numbers_string: '',
-                reorder_point: part.reorder_point || 0,
-                warning_quantity: part.warning_quantity || 0,
-                is_active: part.is_active,
-                last_cost: part.last_cost || 0,
-                last_sale_price: part.last_sale_price || 0,
-                barcode: part.barcode || '',
-                measurement_unit: part.measurement_unit || 'pcs',
-                tax_rate_id: part.tax_rate_id || '',
-                is_price_change_allowed: part.is_price_change_allowed,
-                is_using_default_quantity: part.is_using_default_quantity,
-                is_service: part.is_service,
-                low_stock_warning: part.low_stock_warning,
-            });
-        } else { // Creating a new part
-            const initialState = getInitialState();
-            if (taxRates.length > 0) {
-                const defaultRate = taxRates.find(r => r.is_default);
-                if (defaultRate) {
-                    initialState.tax_rate_id = defaultRate.tax_rate_id;
-                }
-            }
-            setFormData(initialState);
-        }
-    }, [part, isBulkEdit, taxRates]);
-
-    const handleChange = (e) => {
-        const { name, value, type, checked } = e.target;
-        setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
-    };
-
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        if (isBulkEdit) {
-            const updates = {};
-            for (const key in formData) {
-                const value = formData[key];
-                if (value !== '' && value !== 'unchanged' && value !== null && value !== undefined) {
-                    if (key !== 'detail' && key !== 'part_numbers_string') {
-                        if (value === 'true') updates[key] = true;
-                        else if (value === 'false') updates[key] = false;
-                        else updates[key] = value;
-                    }
-                }
-            }
-            if (Object.keys(updates).length === 0) {
-                return toast.error('Please fill in at least one field to update.');
-            }
-            onSave(updates);
-        } else {
-            onSave(formData);
-        }
-    };
-    
-    const handleNewBrandGroup = (newItem, type) => {
-        onBrandGroupAdded();
-        if(type === 'Brand') {
-            setFormData(prev => ({...prev, brand_id: newItem.brand_id}));
-            setIsBrandModalOpen(false);
-        } else {
-            setFormData(prev => ({...prev, group_id: newItem.group_id}));
-            setIsGroupModalOpen(false);
-        }
-    };
-
-    const BooleanSelect = ({ name, label }) => (
-        <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-            <select name={name} value={formData[name]} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                <option value="unchanged">No Change</option>
-                <option value="true">Yes</option>
-                <option value="false">No</option>
-            </select>
-        </div>
-    );
-
-    return (
-        <>
-            <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto p-1">
-                {isBulkEdit && (
-                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
-                        You are editing <strong>{selectedCount}</strong> parts. Fill in a field to update it for all selected items. Leave fields blank to keep their original values.
-                    </div>
-                )}
-                
-                {!isBulkEdit && (
-                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Part Detail</label>
-                        <input type="text" name="detail" value={formData.detail} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
-                    </div>
-                )}
-
-                {!part && !isBulkEdit && (
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Part Numbers (optional)</label>
-                        <textarea name="part_numbers_string" value={formData.part_numbers_string} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows="2" placeholder="OEM123, MFG456; ALT789"></textarea>
-                    </div>
-                )}
-
-                <div className="flex items-end space-x-2">
-                    <div className="flex-grow">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
-                        <select name="brand_id" value={formData.brand_id} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required={!isBulkEdit}>
-                            <option value="">{isBulkEdit ? 'No Change' : 'Select a Brand'}</option>
-                            {brands.map(brand => <option key={brand.brand_id} value={brand.brand_id}>{brand.brand_name}</option>)}
-                        </select>
-                    </div>
-                    <button type="button" onClick={() => setIsBrandModalOpen(true)} className="px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm">New</button>
-                </div>
-
-                <div className="flex items-end space-x-2">
-                    <div className="flex-grow">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Group</label>
-                        <select name="group_id" value={formData.group_id} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required={!isBulkEdit}>
-                            <option value="">{isBulkEdit ? 'No Change' : 'Select a Group'}</option>
-                            {groups.map(group => <option key={group.group_id} value={group.group_id}>{group.group_name}</option>)}
-                        </select>
-                    </div>
-                    <button type="button" onClick={() => setIsGroupModalOpen(true)} className="px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm">New</button>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Last Cost</label>
-                        <input type="number" step="0.01" name="last_cost" value={formData.last_cost} onChange={handleChange} placeholder={isBulkEdit ? 'No Change' : '0.00'} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Last Sale Price</label>
-                        <input type="number" step="0.01" name="last_sale_price" value={formData.last_sale_price} onChange={handleChange} placeholder={isBulkEdit ? 'No Change' : '0.00'} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                    </div>
-                </div>
-
-                <div className="pt-4 border-t">
-                    <button type="button" onClick={() => setShowAdvanced(!showAdvanced)} className="text-sm font-medium text-blue-600 hover:text-blue-800">
-                        {showAdvanced ? 'Hide Advanced Options' : 'Show Advanced Options'}
-                    </button>
-                    <div className={`transition-all duration-300 ease-in-out overflow-hidden ${showAdvanced ? 'max-h-[500px] mt-4' : 'max-h-0'}`}>
-                        <div className="space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Barcode</label>
-                                    <input type="text" name="barcode" value={formData.barcode} onChange={handleChange} placeholder={isBulkEdit ? 'No Change' : ''} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
-                                    <input type="text" name="measurement_unit" value={formData.measurement_unit} onChange={handleChange} placeholder={isBulkEdit ? 'No Change' : 'pcs'} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Point</label>
-                                    <input type="number" name="reorder_point" value={formData.reorder_point} onChange={handleChange} placeholder={isBulkEdit ? 'No Change' : '0'} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Warning Qty</label>
-                                    <input type="number" name="warning_quantity" value={formData.warning_quantity} onChange={handleChange} placeholder={isBulkEdit ? 'No Change' : '0'} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Tax Rate</label>
-                                    <select name="tax_rate_id" value={formData.tax_rate_id} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                                        <option value="">{isBulkEdit ? 'No Change' : 'Select a Tax Rate'}</option>
-                                        {taxRates.map(rate => <option key={rate.tax_rate_id} value={rate.tax_rate_id}>{rate.rate_name} ({(rate.rate_percentage * 100).toFixed(2)}%)</option>)}
-                                    </select>
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t">
-                                {isBulkEdit ? (
-                                    <>
-                                        <BooleanSelect name="is_active" label="Active" />
-                                        <BooleanSelect name="is_service" label="Is Service" />
-                                        <BooleanSelect name="low_stock_warning" label="Low Stock Warning" />
-                                        <BooleanSelect name="is_price_change_allowed" label="Price Change Allowed" />
-                                        <BooleanSelect name="is_using_default_quantity" label="Use Default Qty" />
-                                    </>
-                                ) : (
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 col-span-2">
-                                        <div className="flex items-center"><input type="checkbox" name="is_active" checked={formData.is_active} onChange={handleChange} className="h-4 w-4" /><label className="ml-2 text-sm">Active</label></div>
-                                        <div className="flex items-center"><input type="checkbox" name="is_service" checked={formData.is_service} onChange={handleChange} className="h-4 w-4" /><label className="ml-2 text-sm">Is Service</label></div>
-                                        <div className="flex items-center"><input type="checkbox" name="low_stock_warning" checked={formData.low_stock_warning} onChange={handleChange} className="h-4 w-4" /><label className="ml-2 text-sm">Low Stock Warning</label></div>
-                                        <div className="flex items-center"><input type="checkbox" name="is_price_change_allowed" checked={formData.is_price_change_allowed} onChange={handleChange} className="h-4 w-4" /><label className="ml-2 text-sm">Price Change Allowed</label></div>
-                                        <div className="flex items-center"><input type="checkbox" name="is_using_default_quantity" checked={formData.is_using_default_quantity} onChange={handleChange} className="h-4 w-4" /><label className="ml-2 text-sm">Use Default Qty</label></div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="mt-6 flex justify-end space-x-4 pt-4 border-t">
-                    <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
-                    <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>
-                </div>
-            </form>
-            <Modal isOpen={isBrandModalOpen} onClose={() => setIsBrandModalOpen(false)} title="Add New Brand">
-                <BrandGroupForm type="Brand" onSave={(newBrand) => handleNewBrandGroup(newBrand, 'Brand')} onCancel={() => setIsBrandModalOpen(false)} />
-            </Modal>
-            <Modal isOpen={isGroupModalOpen} onClose={() => setIsGroupModalOpen(false)} title="Add New Group">
-                <BrandGroupForm type="Group" onSave={(newGroup) => handleNewBrandGroup(newGroup, 'Group')} onCancel={() => setIsGroupModalOpen(false)} />
-            </Modal>
-        </>
-    );
-};
 
 const PartsPage = ({ user }) => {
     const [parts, setParts] = useState([]);
@@ -333,20 +47,21 @@ const PartsPage = ({ user }) => {
         }
     }, [searchTerm, statusFilter]);
 
+    const fetchDropdownData = async () => {
+        try {
+            const [brandsRes, groupsRes] = await Promise.all([
+                api.get('/brands'),
+                api.get('/groups')
+            ]);
+            setBrands(brandsRes.data);
+            setGroups(groupsRes.data);
+        } catch (err) {
+            console.error(err);
+            setError('Failed to fetch initial data.');
+        }
+    };
+
     useEffect(() => {
-        const fetchDropdownData = async () => {
-            try {
-                const [brandsRes, groupsRes] = await Promise.all([
-                    api.get('/brands'),
-                    api.get('/groups')
-                ]);
-                setBrands(brandsRes.data);
-                setGroups(groupsRes.data);
-            } catch (err) {
-                console.error(err);
-                setError('Failed to fetch initial data.');
-            }
-        };
         fetchDropdownData();
     }, []);
 
@@ -407,8 +122,6 @@ const PartsPage = ({ user }) => {
                 updates: partData
             };
             
-            console.log('Sending bulk update payload:', JSON.stringify(payload, null, 2));
-
             const promise = api.put('/parts/bulk-update', payload);
             toast.promise(promise, {
                 loading: 'Applying bulk update...',
@@ -419,10 +132,7 @@ const PartsPage = ({ user }) => {
                     fetchData();
                     return 'Parts updated successfully!';
                 },
-                error: (err) => {
-                    console.error("Bulk update failed:", err.response?.data?.message || err.message);
-                    return err.response?.data?.message || 'Failed to update parts.';
-                }
+                error: (err) => err.response?.data?.message || 'Failed to update parts.'
             });
         } else {
             const payload = {
@@ -568,7 +278,7 @@ const PartsPage = ({ user }) => {
                     groups={groups} 
                     onSave={handleSave} 
                     onCancel={() => setIsFormModalOpen(false)}
-                    onBrandGroupAdded={fetchData}
+                    onBrandGroupAdded={fetchDropdownData}
                     isBulkEdit={isSelectMode}
                     selectedCount={selectedParts.size}
                 />
