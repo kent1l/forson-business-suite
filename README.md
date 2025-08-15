@@ -1,95 +1,255 @@
-# Forson Business Suite
+# 🏬 Forson Business Suite
+An integrated ERP/Point-of-Sale solution for auto parts businesses.
 
-A modern, full-stack inventory management and point-of-sale (POS) application designed to replace a legacy MS Access system. Built with a professional tech stack including React, Node.js, and PostgreSQL, and fully containerized with Docker for easy deployment.
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Docker Ready](https://img.shields.io/badge/docker-ready-blue.svg)
+![Status](https://img.shields.io/badge/status-in%20development-yellow.svg)
 
----
-
-## ✨ Key Features
-
-* **Secure Authentication:** Full user login system with JWT-based security and role-based access control (Admin, Manager, Clerk).
-* **Comprehensive Inventory Management:** Full CRUD (Create, Read, Update, Delete) functionality for parts, suppliers, customers, and vehicle applications.
-* **Intelligent SKU Generation:** Automatic, professional SKU creation (`GROUP-BRAND-SEQ`) for new parts.
-* **Advanced Part Management:** Manage multiple part numbers and vehicle applications (with year ranges) for each inventory item.
-* **Transactional Workflows:**
-    * **Goods Receipt:** A dedicated interface for receiving stock from suppliers, which automatically updates inventory levels.
-    * **Invoicing & POS:** A fast, modern Point of Sale interface for immediate sales and a detailed invoicing page for credit-based transactions.
-* **Dynamic Settings:** A secure, admin-only page to manage application-wide settings like company info, payment methods, and tax rates.
-* **Powerful Searching:**
-    * Live search bars on all main data pages.
-    * A dedicated "Power Search" page with multi-field filtering for deep inventory analysis.
-* **Professional Reporting:** A tabbed reporting dashboard with date filters and CSV export for:
-    * Sales Summary
-    * Inventory Valuation
-    * Top-Selling Products
-    * Low Stock Items
-    * Sales by Customer
-    * Full Inventory Movement (Audit Trail)
-    * Profitability by Product
-* **Modern UI/UX:** Built with a clean, responsive design that works on desktop and mobile, featuring toast notifications for a smooth user experience.
+**Quick Links:**
+[Overview](#overview) •
+[Quick Start](#-quick-start) •
+[Installation](#-installation--setup) •
+[Architecture](#-architecture-overview) •
+[Usage](#-usage) •
+[API Samples](#-sample-api-calls) •
+[Troubleshooting](#-troubleshooting) •
+[Deployment](#-deployment-recommendations) •
+[Contributing](#-contributing) •
+[License](#-license)
 
 ---
 
-## 🚀 Tech Stack
+## Overview
+Forson Business Suite is a comprehensive, containerized business management application designed specifically for the auto parts industry. Built with a modern tech stack—**React** on the frontend, **Node.js/Express** for the API, and a **PostgreSQL** database—the entire suite is orchestrated with **Docker** for easy setup and deployment. It provides essential features like role-based access control, automated SKU generation, a full-featured Point of Sale (POS) system, and powerful reporting capabilities to streamline operations.
 
-| Area       | Technology                               |
-| :--------- | :--------------------------------------- |
-| **Frontend** | React, Vite, Tailwind CSS, Axios, Recharts |
-| **Backend** | Node.js, Express.js                      |
-| **Database** | PostgreSQL                               |
-| **Deployment** | Docker, Nginx                            |
+### Key Selling Points
+- **Role-Based Authentication**: Secure access control for different user roles (e.g., Admin, Sales, Warehouse).
+- **Automated SKU Generation**: Standardized product codes (`GROUP-BRAND-SEQ`) for consistent inventory management.
+- **Integrated Point of Sale (POS)**: Fast, intuitive interface for processing sales and managing customer transactions.
+- **Comprehensive Reporting**: Generate insights with detailed reports on sales, inventory, and profitability.
 
 ---
 
-## 📦 Local Deployment (Docker)
+## ✨ Features
+- **Authentication**: Secure JWT (JSON Web Token) based authentication with role management.
+- **Inventory Management**: Full CRUD operations for parts, including stock adjustments and location tracking.
+- **Entity Management**: Manage suppliers, customers, and vehicle applications (what parts fit what cars).
+- **SKU Auto-Generation**: Automatically creates unique SKUs in the format `GROUP-BRAND-SEQUENTIAL_ID`.
+- **Sales Workflow**: Full goods receipt, invoicing, and Point of Sale (POS) modules.
+- **Power Search**: A unified search interface to quickly find parts, customers, or invoices.
+- **Reporting & Analytics**: In-depth reporting with CSV export functionality.
+- **Responsive UI**: Mobile-friendly interface built with React for access on any device.
 
-This project is fully containerized, making local setup incredibly simple.
+---
 
-### Prerequisites
+## 🏗️ Architecture Overview
+The application uses a classic three-tier architecture, which separates the presentation, application, and data layers. This makes the system scalable, maintainable, and secure.
 
-* [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running.
-* A `.env` file inside the `packages/api` directory with your database credentials and a `JWT_SECRET`.
+```mermaid
+graph TD
+    A[Client Browser] -- HTTPS --> B(Web Server / React UI);
+    B -- API Calls --> C(API Server / Node.js);
+    C -- SQL Queries --> D(PostgreSQL Database);
+    E(Backup Service) -- pg_dump --> D;
+```
 
-### Instructions
+- **Client**: A responsive React single-page application served via Nginx.
+- **API Server**: A stateless Node.js/Express server that handles business logic and communicates with the database.
+- **Database**: A PostgreSQL instance for all persistent data.
+- **Backup Service**: A simple cron-based service that runs `pg_dump` to create regular database backups. For production, a managed database with point-in-time recovery is highly recommended.
+
+---
+
+## 🚀 Quick Start
+Get the entire suite running locally in minutes with Docker.
 
 1.  **Clone the repository:**
     ```bash
-    git clone <your-repository-url>
+    git clone [https://github.com/kent1l/forson-business-suite.git](https://github.com/kent1l/forson-business-suite.git)
     cd forson-business-suite
     ```
 
-2.  **Build the Frontend:**
-    Navigate to the web package and create a production build.
-    ```bash
-    cd packages/web
-    npm install
-    npm run build
-    cd ../.. 
-    ```
+2.  **Repository Layout:**
+    The project is a monorepo containing the frontend, backend, and database schema:
+    - `packages/web`: The React frontend application.
+    - `packages/api`: The Node.js/Express backend API.
+    - `database`: Contains the `initial_schema.sql` file.
+    - `docker-compose.yml`: The master file for orchestrating all services.
 
-3.  **Run with Docker Compose:**
-    From the root of the project, run the following command. This will build and start the database, backend, and frontend containers.
+3.  **Build and Run with Docker Compose:**
+    This single command builds the images and starts all the services in detached mode.
     ```bash
     docker compose up -d --build
     ```
 
-4.  **Initialize the Database:**
-    The first time you run the application, you need to create the database schema.
-    ```bash
-    docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql
-    docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
-    ```
-
-5.  **Access the Application:**
-    The application is now running. You can access it in your browser at:
-    [**http://localhost:8080**](http://localhost:8080)
-
-    The first time you access the app, it will prompt you to create the initial administrator account.
+4.  **Access the Application:**
+    - **Frontend UI**: [http://localhost:8090](http://localhost:8090)
+    - **Backend API**: [http://localhost:3001](http://localhost:3001)
 
 ---
 
-## 📁 Project Structure
+## 🔧 Installation & Setup
 
-This project is a monorepo containing two main packages:
+### Prerequisites
+- [Docker](https://www.docker.com/get-started) and Docker Compose
+- [Git](https://git-scm.com/)
+- (Optional) [Node.js](https://nodejs.org/) & npm for local development without Docker.
 
-* **`packages/api`**: The Node.js/Express backend server and all related API logic.
-* **`packages/web`**: The React/Vite frontend application and all UI components.
+### Environment Variables
+The API server requires environment variables for configuration. Create a `.env` file inside `packages/api/`.
+
+**Important**: The `.env` file contains secrets and should **never** be committed to version control. The repository's `.gitignore` file is already configured to ignore it.
+
+**Example `packages/api/.env` file:**
+```env
+# PostgreSQL Connection String
+DATABASE_URL="postgresql://forson_user:your_strong_password@forson_db:5432/forson_business_suite"
+
+# API Server Port
+PORT=3001
+
+# JWT Secret for signing tokens (use a long, random string)
+JWT_SECRET="your_super_secret_jwt_key_here"
+
+# Node environment
+NODE_ENV=development
+```
+> **Security Note**: Ensure `your_strong_password` matches the `POSTGRES_PASSWORD` variable in `docker-compose.yml`.
+
+### (Optional) Local Frontend Build
+If you wish to build the frontend without Docker:
+```bash
+cd packages/web
+npm install
+npm run build
+```
+
+### Database Initialization
+After starting the containers for the first time, you need to initialize the database schema.
+
+1.  **Copy the schema file into the database container:**
+    ```bash
+    docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql
+    ```
+
+2.  **Execute the schema file using `psql`:**
+    ```bash
+    docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
+    ```
+
+**Alternative Method (Interactive Shell):**
+You can also get a shell inside the container and run `psql` manually.
+```bash
+# 1. Get a bash shell in the db container
+docker exec -it forson_db bash
+
+# 2. Once inside, connect to the database and run the script
+psql -U forson_user -d forson_business_suite -f /initial_schema.sql
+
+# 3. Exit the container
+exit
+```
+
+---
+
+## 💡 Usage
+
+Once the application is running and the database is initialized, navigate to [http://localhost:8090](http://localhost:8090) to begin. The default setup may require creating an initial admin user or running a seed script (see `database/` directory for future seeding scripts).
+
+### Sample API Calls
+You can interact with the API directly using `curl` or any API client.
+
+**GET all active suppliers:**
+```bash
+curl -X GET http://localhost:3001/api/suppliers?active=true
+```
+
+**GET a specific part by its ID (e.g., ID 123):**
+```bash
+curl -X GET http://localhost:3001/api/parts/123
+```
+
+**POST to create a new supplier:**
+```bash
+curl -X POST http://localhost:3001/api/suppliers \
+-H "Content-Type: application/json" \
+-d '{
+  "name": "Global Auto Parts Inc.",
+  "contact_person": "Jane Doe",
+  "email": "jane.doe@globalparts.com",
+  "phone": "123-456-7890"
+}'
+```
+
+---
+
+## 🛠️ Troubleshooting
+If you encounter issues, here are some initial steps to diagnose the problem.
+
+- **Check container status:**
+  ```bash
+  docker compose ps
+  # or
+  docker ps
+  ```
+
+- **View logs for a specific service (e.g., the API):**
+  ```bash
+  docker compose logs -f api
+  ```
+
+- **Common Issues:**
+  - **`injecting env (0)` in logs / API fails to start**: This usually means the `.env` file is missing from `packages/api/`. Make sure you've created it and that it's in the correct directory.
+  - **Database Connection Errors**:
+    - Verify the `DATABASE_URL` in `packages/api/.env` exactly matches the user, password, host (`forson_db`), and database name defined in `docker-compose.yml`.
+    - Ensure the database container (`forson_db`) is running and healthy by checking `docker compose ps`.
+
+---
+
+## ☁️ Deployment Recommendations
+For a production environment, consider the following enhancements:
+
+- **Managed Database**: Use a managed PostgreSQL service (like AWS RDS, Google Cloud SQL, or DigitalOcean Managed Databases) for automated backups, scaling, and reliability.
+- **Secret Management**: Store sensitive environment variables (like `DATABASE_URL` and `JWT_SECRET`) in a secure secret manager (e.g., AWS Secrets Manager, HashiCorp Vault).
+- **Orchestration**: For high availability and scaling, deploy the containers using an orchestrator like Kubernetes.
+- **Backup and Restore**: Regularly test your database backup and restore process to ensure data integrity.
+
+---
+
+## 📊 Reporting & Exports
+The suite includes a powerful reporting module to provide key business insights. Users can generate various reports and export the data to **CSV format** for further analysis in spreadsheet software.
+
+Available reports include:
+- Sales summaries (by period, customer, or employee)
+- Inventory valuation
+- Top-selling products
+- Low stock alerts
+- Full audit trail of inventory movements
+- Profitability analysis
+
+---
+
+## 🤝 Contributing
+We welcome contributions! Please follow this workflow to get started.
+
+1.  **Fork the repository.**
+2.  **Create a new branch** for your feature or bug fix. Use a descriptive name like `feat/add-new-report` or `fix/login-bug`.
+3.  Commit your changes and push them to your fork.
+4.  **Open a Pull Request (PR)** against the `main` branch of the original repository.
+5.  Provide a clear description of your changes in the PR.
+6.  For major changes, please **open an issue first** to discuss the proposed changes.
+
+**Guidelines:**
+- Adhere to the existing code style.
+- Ensure no secrets or `.env` files are included in your commits or PRs.
+
+---
+
+## 📜 License
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for full details.
+
+---
+
+<p align="center">
+  Thank you for checking out Forson Business Suite! If you find a bug or have a feature request, please <a href="https://github.com/kent1l/forson-business-suite/issues">open an issue</a>.
+</p>
