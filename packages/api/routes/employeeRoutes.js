@@ -32,11 +32,24 @@ router.post('/login', async (req, res) => {
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
+
+    // Fetch user permissions
+    const permissionsRes = await db.query(
+        `SELECT p.permission_key 
+         FROM permission p
+         JOIN role_permission rp ON p.permission_id = rp.permission_id
+         WHERE rp.permission_level_id = $1`,
+        [user.permission_level_id]
+    );
+    const permissions = permissionsRes.rows.map(p => p.permission_key);
+
     const { password_hash, password_salt, ...user_data } = user;
+    
     res.json({ 
         message: 'Login successful', 
         user: user_data,
-        token: generateToken(user_data) 
+        token: generateToken(user_data),
+        permissions: permissions // <-- NEW: Include permissions in the login response
     });
   } catch (err) {
     console.error(err.message);

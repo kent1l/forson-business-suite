@@ -5,6 +5,7 @@ import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import { useSettings } from '../contexts/SettingsContext';
 import Combobox from '../components/ui/Combobox';
+import { useAuth } from '../contexts/AuthContext'; // <-- NEW: Import useAuth
 
 const ReportCard = ({ title, value, icon, color, isCurrency = false }) => {
     const { settings } = useSettings();
@@ -741,7 +742,18 @@ const ProfitabilityReport = () => {
 };
 
 const ReportingPage = () => {
+    const { hasPermission } = useAuth(); // <-- NEW: Use the auth context
     const [activeTab, setActiveTab] = useState('sales');
+
+    // NEW: Protect the entire page
+    if (!hasPermission('reports:view')) {
+        return (
+            <div className="text-center p-8">
+                <h1 className="text-2xl font-bold text-red-600">Access Denied</h1>
+                <p className="text-gray-600 mt-2">You do not have permission to view this page.</p>
+            </div>
+        );
+    }
 
     return (
         <div>
@@ -759,6 +771,7 @@ const ReportingPage = () => {
             </div>
 
             <div>
+                {/* The individual report components will now only be rendered if the parent has permission */}
                 {activeTab === 'sales' && <SalesReport />}
                 {activeTab === 'valuation' && <InventoryValuationReport />}
                 {activeTab === 'top_selling' && <TopSellingReport />}

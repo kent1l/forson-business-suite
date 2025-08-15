@@ -1,26 +1,26 @@
 import React from 'react';
 import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
+import { useAuth } from '../../contexts/AuthContext'; // <-- NEW: Import useAuth
 
-const Sidebar = ({ user, onNavigate, currentPage, isOpen, setIsOpen }) => {
+const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
+    const { user, hasPermission } = useAuth(); // <-- NEW: Use the auth context
+
     const navItems = [
-        { name: 'Dashboard', icon: ICONS.dashboard, page: 'dashboard' },
-        { name: 'POS', icon: ICONS.pos, page: 'pos' }, // New POS Link
-        { name: 'Reporting', icon: ICONS.reporting, page: 'reporting' },
-        { name: 'Power Search', icon: ICONS.power_search, page: 'power_search' },
-        { name: 'Invoicing', icon: ICONS.invoice, page: 'invoicing' },
-        { name: 'Goods Receipt', icon: ICONS.receipt, page: 'goods_receipt' },
-        { name: 'Inventory', icon: ICONS.inventory, page: 'inventory' },
-        { name: 'Parts', icon: ICONS.parts, page: 'parts' },
-        { name: 'Suppliers', icon: ICONS.suppliers, page: 'suppliers' },
-        { name: 'Customers', icon: ICONS.customers, page: 'customers' },
-        { name: 'Applications', icon: ICONS.applications, page: 'applications' },
+        { name: 'Dashboard', icon: ICONS.dashboard, page: 'dashboard', permission: 'dashboard:view' },
+        { name: 'POS', icon: ICONS.pos, page: 'pos', permission: 'pos:use' },
+        { name: 'Reporting', icon: ICONS.reporting, page: 'reporting', permission: 'reports:view' },
+        { name: 'Power Search', icon: ICONS.power_search, page: 'power_search', permission: 'parts:view' }, // Assuming parts:view is sufficient
+        { name: 'Invoicing', icon: ICONS.invoice, page: 'invoicing', permission: 'invoicing:create' },
+        { name: 'Goods Receipt', icon: ICONS.receipt, page: 'goods_receipt', permission: 'goods_receipt:create' },
+        { name: 'Inventory', icon: ICONS.inventory, page: 'inventory', permission: 'inventory:view' },
+        { name: 'Parts', icon: ICONS.parts, page: 'parts', permission: 'parts:view' },
+        { name: 'Suppliers', icon: ICONS.suppliers, page: 'suppliers', permission: 'suppliers:view' },
+        { name: 'Customers', icon: ICONS.customers, page: 'customers', permission: 'customers:view' },
+        { name: 'Applications', icon: ICONS.applications, page: 'applications', permission: 'applications:view' },
+        { name: 'Employees', icon: ICONS.employees, page: 'employees', permission: 'employees:view' },
+        { name: 'Settings', icon: ICONS.settings, page: 'settings', permission: 'settings:view' },
     ];
-    
-    if (user && user.permission_level_id === 10) {
-        navItems.push({ name: 'Employees', icon: ICONS.employees, page: 'employees' });
-        navItems.push({ name: 'Settings', icon: ICONS.settings, page: 'settings' });
-    }
 
     return (
         <>
@@ -29,15 +29,17 @@ const Sidebar = ({ user, onNavigate, currentPage, isOpen, setIsOpen }) => {
                 <div className="h-16 flex items-center px-6 text-lg font-bold text-blue-600">Forson Suite</div>
                 <nav className="flex-1 px-4 py-4 space-y-1">
                     {navItems.map(item => (
-                        <a
-                            key={item.name}
-                            href="#"
-                            onClick={(e) => { e.preventDefault(); onNavigate(item.page); setIsOpen(false); }}
-                            className={`flex items-center px-3 py-2.5 rounded-lg transition-colors duration-200 text-sm font-medium ${currentPage === item.page ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}
-                        >
-                            <Icon path={item.icon} className="h-5 w-5" />
-                            <span className="ml-3">{item.name}</span>
-                        </a>
+                        hasPermission(item.permission) && ( // <-- NEW: Conditionally render based on permission
+                            <a
+                                key={item.name}
+                                href="#"
+                                onClick={(e) => { e.preventDefault(); onNavigate(item.page); setIsOpen(false); }}
+                                className={`flex items-center px-3 py-2.5 rounded-lg transition-colors duration-200 text-sm font-medium ${currentPage === item.page ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}
+                            >
+                                <Icon path={item.icon} className="h-5 w-5" />
+                                <span className="ml-3">{item.name}</span>
+                            </a>
+                        )
                     ))}
                 </nav>
             </div>

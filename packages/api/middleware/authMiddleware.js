@@ -1,7 +1,8 @@
 const jwt = require('jsonwebtoken');
+const db = require('../db'); // Import db to fetch permissions
 
-// Middleware to verify the token on incoming requests
-const protect = (req, res, next) => {
+// Middleware to verify the token and attach user with permissions
+const protect = async (req, res, next) => {
     let token;
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
         try {
@@ -11,8 +12,19 @@ const protect = (req, res, next) => {
             // Verify token
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-            // Attach user to the request (excluding password details)
-            req.user = decoded;
+            // Fetch user permissions from the database
+            const permissionsRes = await db.query(
+                `SELECT p.permission_key 
+                 FROM permission p
+                 JOIN role_permission rp ON p.permission_id = rp.permission_id
+                 WHERE rp.permission_level_id = $1`,
+                [decoded.permission_level_id]
+            );
+            
+            const permissions = permissionsRes.rows.map(p => p.permission_key);
+
+            // Attach user and their permissions to the request
+            req.user = { ...decoded, permissions };
             next();
         } catch (error) {
             console.error(error);
@@ -25,23 +37,24 @@ const protect = (req, res, next) => {
     }
 };
 
-// Middleware to check if the user is an Admin
+// NEW: Middleware generator to check for a specific permission
+const hasPermission = (requiredPermission) => {
+    return (req, res, next) => {
+        if (req.user && req.user.permissions && req.user.permissions.includes(requiredPermission)) {
+            next();
+        } else {
+            res.status(403).json({ message: 'Forbidden: You do not have the required permission.' });
+        }
+    };
+};
+
+// Kept for backwards compatibility or specific high-level checks if needed
 const isAdmin = (req, res, next) => {
     if (req.user && req.user.permission_level_id === 10) {
         next();
     } else {
-        res.status(403).json({ message: 'Not authorized as an admin' }); // 403 Forbidden
+        res.status(403).json({ message: 'Not authorized as an admin' });
     }
 };
 
-// NEW: Middleware to check if the user is a Manager or Admin
-const isManagerOrAdmin = (req, res, next) => {
-    if (req.user && req.user.permission_level_id >= 5) {
-        next();
-    } else {
-        res.status(403).json({ message: 'Not authorized for this action' });
-    }
-};
-
-
-module.exports = { protect, isAdmin, isManagerOrAdmin };
+module.exports = { protect, isAdmin, hasPermission };

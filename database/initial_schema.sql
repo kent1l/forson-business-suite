@@ -561,6 +561,23 @@ CREATE SEQUENCE public.tax_rate_tax_rate_id_seq
 ALTER SEQUENCE public.tax_rate_tax_rate_id_seq OWNED BY public.tax_rate.tax_rate_id;
 
 
+--
+-- NEW PERMISSION TABLES
+--
+CREATE TABLE public.permission (
+    permission_id serial PRIMARY KEY,
+    permission_key VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT,
+    category VARCHAR(50)
+);
+
+CREATE TABLE public.role_permission (
+    permission_level_id INTEGER NOT NULL REFERENCES public.permission_level(permission_level_id) ON DELETE CASCADE,
+    permission_id INTEGER NOT NULL REFERENCES public.permission(permission_id) ON DELETE CASCADE,
+    PRIMARY KEY (permission_level_id, permission_id)
+);
+
+
 -- Set default values for ID columns
 ALTER TABLE ONLY public.adjustment_reason ALTER COLUMN reason_id SET DEFAULT nextval('public.adjustment_reason_reason_id_seq'::regclass);
 ALTER TABLE ONLY public.application ALTER COLUMN application_id SET DEFAULT nextval('public.application_application_id_seq'::regclass);
@@ -660,8 +677,6 @@ ALTER TABLE ONLY public.supplier ADD CONSTRAINT supplier_modified_by_fkey FOREIG
 -- Populate the permission_level table with the required roles
 INSERT INTO public.permission_level (permission_level_id, level_name) VALUES
 (1, 'Clerk'),
-(2, 'Parts Man'),
-(3, 'Purchaser'),
 (5, 'Manager'),
 (10, 'Admin');
 
@@ -681,6 +696,33 @@ INSERT INTO public.settings (setting_key, setting_value, description) VALUES
 -- Create the default "Walk-in" customer for the POS system
 INSERT INTO public.customer (first_name, last_name, is_active) VALUES
 ('Walk-in', 'Customer', true);
+
+
+--
+-- SEED PERMISSIONS
+--
+INSERT INTO public.permission (permission_key, description, category) VALUES
+('dashboard:view', 'Can view the main dashboard', 'General'),
+('pos:use', 'Can use the Point of Sale system', 'Sales'),
+('invoicing:create', 'Can create new invoices', 'Sales'),
+('goods_receipt:create', 'Can create new goods receipts', 'Inventory'),
+('inventory:view', 'Can view inventory levels', 'Inventory'),
+('inventory:adjust', 'Can adjust stock quantities', 'Inventory'),
+('parts:view', 'Can view parts list', 'Parts'),
+('parts:create', 'Can create new parts', 'Parts'),
+('parts:edit', 'Can edit existing parts', 'Parts'),
+('parts:delete', 'Can delete parts', 'Parts'),
+('suppliers:view', 'Can view suppliers', 'Entities'),
+('suppliers:edit', 'Can create/edit suppliers', 'Entities'),
+('customers:view', 'Can view customers', 'Entities'),
+('customers:edit', 'Can create/edit customers', 'Entities'),
+('applications:view', 'Can view vehicle applications', 'Entities'),
+('applications:edit', 'Can create/edit vehicle applications', 'Entities'),
+('reports:view', 'Can view all reports', 'Reporting'),
+('employees:view', 'Can view employee list', 'Admin'),
+('employees:edit', 'Can create/edit employees', 'Admin'),
+('settings:view', 'Can view application settings', 'Admin'),
+('settings:edit', 'Can edit application settings', 'Admin');
 
 --
 -- 👆 END OF SEED DATA SECTION

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import api from '../api'; // Use the configured api instance
+import api from '../api';
 import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
+import { useAuth } from '../contexts/AuthContext'; // <-- NEW: Import useAuth
 
 const ApplicationForm = ({ application, onSave, onCancel }) => {
     const [formData, setFormData] = useState({ make: '', model: '', engine: '' });
@@ -49,6 +50,7 @@ const ApplicationForm = ({ application, onSave, onCancel }) => {
 };
 
 const ApplicationsPage = () => {
+    const { hasPermission } = useAuth(); // <-- NEW: Use the auth context
     const [applications, setApplications] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -140,9 +142,11 @@ const ApplicationsPage = () => {
         <div>
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-semibold text-gray-800">Vehicle Applications</h1>
-                <button onClick={handleAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
-                    Add Application
-                </button>
+                {hasPermission('applications:edit') && (
+                    <button onClick={handleAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
+                        Add Application
+                    </button>
+                )}
             </div>
             <div className="bg-white p-6 rounded-xl border border-gray-200">
                 {loading && <p>Loading applications...</p>}
@@ -165,8 +169,12 @@ const ApplicationsPage = () => {
                                         <td className="p-3 text-sm">{app.model}</td>
                                         <td className="p-3 text-sm">{app.engine}</td>
                                         <td className="p-3 text-sm text-right">
-                                            <button onClick={() => handleEdit(app)} className="text-blue-600 hover:text-blue-800 mr-4"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
-                                            <button onClick={() => handleDelete(app.application_id)} className="text-red-600 hover:text-red-800"><Icon path={ICONS.trash} className="h-5 w-5"/></button>
+                                            {hasPermission('applications:edit') && (
+                                                <>
+                                                    <button onClick={() => handleEdit(app)} className="text-blue-600 hover:text-blue-800 mr-4"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
+                                                    <button onClick={() => handleDelete(app.application_id)} className="text-red-600 hover:text-red-800"><Icon path={ICONS.trash} className="h-5 w-5"/></button>
+                                                </>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}

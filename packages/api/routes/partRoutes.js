@@ -1,11 +1,12 @@
 const express = require('express');
 const db = require('../db');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
-const { protect, isManagerOrAdmin } = require('../middleware/authMiddleware'); 
+// UPDATED: Import hasPermission and remove isManagerOrAdmin
+const { protect, hasPermission } = require('../middleware/authMiddleware'); 
 const router = express.Router();
 
 // GET all parts with status filter, search, and sorting
-router.get('/parts', async (req, res) => {
+router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
   const { status = 'active', search = '', sortBy = 'part_id', sortOrder = 'ASC' } = req.query;
   const searchTerm = `%${search}%`;
 
@@ -53,7 +54,7 @@ router.get('/parts', async (req, res) => {
 });
 
 // GET a single part by ID
-router.get('/parts/:id', async (req, res) => {
+router.get('/parts/:id', protect, hasPermission('parts:view'), async (req, res) => {
   const { id } = req.params;
   try {
     const query = `
@@ -87,7 +88,7 @@ router.get('/parts/:id', async (req, res) => {
 });
 
 // POST - Create a new part with all fields
-router.post('/parts', async (req, res) => {
+router.post('/parts', protect, hasPermission('parts:create'), async (req, res) => {
   const { 
     detail, brand_id, group_id, part_numbers_string,
     reorder_point, warning_quantity, is_active, last_cost, last_sale_price,
@@ -165,7 +166,8 @@ router.post('/parts', async (req, res) => {
   }
 });
 
-router.put('/parts/bulk-update', protect, isManagerOrAdmin, async (req, res) => {
+// UPDATED: Use hasPermission('parts:edit') instead of isManagerOrAdmin
+router.put('/parts/bulk-update', protect, hasPermission('parts:edit'), async (req, res) => {
     const { partIds, updates } = req.body;
 
     if (!Array.isArray(partIds) || partIds.length === 0) {
@@ -218,13 +220,13 @@ router.put('/parts/bulk-update', protect, isManagerOrAdmin, async (req, res) => 
 });
 
 // PUT - Update an existing part with all fields
-router.put('/parts/:id', async (req, res) => {
+router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) => {
     const { id } = req.params;
     const {
         detail, brand_id, group_id, reorder_point, 
         warning_quantity, is_active, last_cost, last_sale_price,
         barcode, measurement_unit, is_price_change_allowed, is_using_default_quantity,
-        is_service, low_stock_warning, modified_by, tax_rate_id, is_tax_inclusive_price // MODIFIED: Added is_tax_inclusive_price
+        is_service, low_stock_warning, modified_by, tax_rate_id, is_tax_inclusive_price
     } = req.body;
 
     if (!detail || !brand_id || !group_id) {
@@ -239,13 +241,13 @@ router.put('/parts/:id', async (req, res) => {
                 barcode = $9, measurement_unit = $10, is_price_change_allowed = $11, 
                 is_using_default_quantity = $12, is_service = $13, low_stock_warning = $14, 
                 modified_by = $15, date_modified = CURRENT_TIMESTAMP, tax_rate_id = $16,
-                is_tax_inclusive_price = $17 -- MODIFIED: Added field to SQL statement
+                is_tax_inclusive_price = $17
             WHERE part_id = $18 RETURNING *`,
             [
                 detail, brand_id, group_id, reorder_point, warning_quantity, is_active, 
                 last_cost, last_sale_price, barcode, measurement_unit, is_price_change_allowed, 
                 is_using_default_quantity, is_service, low_stock_warning, modified_by, tax_rate_id,
-                is_tax_inclusive_price, id // MODIFIED: Added value to parameters
+                is_tax_inclusive_price, id
             ]
         );
 
@@ -261,7 +263,7 @@ router.put('/parts/:id', async (req, res) => {
 });
 
 // DELETE - Delete a part
-router.delete('/parts/:id', async (req, res) => {
+router.delete('/parts/:id', protect, hasPermission('parts:delete'), async (req, res) => {
     const { id } = req.params;
     try {
         const deleteOp = await db.query('DELETE FROM part WHERE part_id = $1 RETURNING *', [id]);

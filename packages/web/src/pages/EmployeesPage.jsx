@@ -4,8 +4,10 @@ import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
-import FilterBar from '../components/ui/FilterBar'; // Import the new component
+import FilterBar from '../components/ui/FilterBar';
+import { useAuth } from '../contexts/AuthContext'; // <-- NEW: Import useAuth
 
+// EmployeeForm component remains the same...
 const EmployeeForm = ({ employee, onSave, onCancel }) => {
     const [formData, setFormData] = useState({
         first_name: '',
@@ -90,13 +92,15 @@ const EmployeeForm = ({ employee, onSave, onCancel }) => {
     );
 };
 
-const EmployeesPage = ({ user }) => {
+
+const EmployeesPage = () => {
+    const { hasPermission } = useAuth(); // <-- NEW: Use the auth context
     const [employees, setEmployees] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentEmployee, setCurrentEmployee] = useState(null);
-    const [statusFilter, setStatusFilter] = useState('active'); // State for the filter
+    const [statusFilter, setStatusFilter] = useState('active');
 
     const filterTabs = [
         { key: 'active', label: 'Active' },
@@ -104,25 +108,22 @@ const EmployeesPage = ({ user }) => {
         { key: 'all', label: 'All' },
     ];
 
-    const fetchEmployees = async () => {
-        try {
-            setLoading(true);
-            // Pass the statusFilter in the request params
-            const response = await api.get('/employees', { params: { status: statusFilter } });
-            setEmployees(response.data);
-        } catch (err) {
-            setError('Failed to fetch employees.');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    // Re-fetch data when the statusFilter changes
     useEffect(() => {
-        if (user.permission_level_id === 10) {
-            fetchEmployees();
-        }
-    }, [user.permission_level_id, statusFilter]);
+        const fetchEmployees = async () => {
+            if (hasPermission('employees:view')) {
+                try {
+                    setLoading(true);
+                    const response = await api.get('/employees', { params: { status: statusFilter } });
+                    setEmployees(response.data);
+                } catch (err) {
+                    setError('Failed to fetch employees.');
+                } finally {
+                    setLoading(false);
+                }
+            }
+        };
+        fetchEmployees();
+    }, [statusFilter, hasPermission]);
 
     const handleAdd = () => {
         setCurrentEmployee(null);
@@ -143,14 +144,16 @@ const EmployeesPage = ({ user }) => {
             loading: 'Saving employee...',
             success: () => {
                 setIsModalOpen(false);
-                fetchEmployees();
+                // Re-fetch after save
+                api.get('/employees', { params: { status: statusFilter } }).then(res => setEmployees(res.data));
                 return 'Employee saved successfully!';
             },
             error: (err) => err.response?.data?.message || 'Failed to save employee.',
         });
     };
     
-    if (user.permission_level_id !== 10) {
+    // NEW: Protect the entire page render
+    if (!hasPermission('employees:view')) {
         return (
             <div className="text-center p-8">
                 <h1 className="text-2xl font-bold text-red-600">Access Denied</h1>
@@ -163,12 +166,13 @@ const EmployeesPage = ({ user }) => {
         <div>
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-semibold text-gray-800">Employee Management</h1>
-                <button onClick={handleAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
-                    Add Employee
-                </button>
+                {hasPermission('employees:edit') && ( // <-- NEW: Protect the add button
+                    <button onClick={handleAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
+                        Add Employee
+                    </button>
+                )}
             </div>
 
-            {/* Use the new FilterBar component */}
             <FilterBar
                 tabs={filterTabs}
                 activeTab={statusFilter}
@@ -202,7 +206,9 @@ const EmployeesPage = ({ user }) => {
                                             </span>
                                         </td>
                                         <td className="p-3 text-sm text-right">
-                                            <button onClick={() => handleEdit(emp)} className="text-blue-600 hover:text-blue-800"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
+                                            {hasPermission('employees:edit') && ( // <-- NEW: Protect the edit button
+                                                <button onClick={() => handleEdit(emp)} className="text-blue-600 hover:text-blue-800"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}

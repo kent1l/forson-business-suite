@@ -6,8 +6,10 @@ import { ICONS } from '../constants';
 import Modal from '../components/ui/Modal';
 import StockAdjustmentForm from '../components/forms/StockAdjustmentForm';
 import TransactionHistoryModal from '../components/ui/TransactionHistoryModal';
+import { useAuth } from '../contexts/AuthContext'; // <-- NEW: Import useAuth
 
-const InventoryPage = ({ user }) => {
+const InventoryPage = () => {
+    const { user, hasPermission } = useAuth(); // <-- NEW: Use the auth context
     const [inventory, setInventory] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -119,9 +121,11 @@ const InventoryPage = ({ user }) => {
                                         <td className="p-3 text-sm font-medium text-gray-800">{item.display_name}</td>
                                         <td className="p-3 text-sm text-center font-semibold">{Number(item.stock_on_hand).toLocaleString()}</td>
                                         <td className="p-3 text-sm text-right">
-                                            <button onClick={() => handleOpenAdjustmentModal(item)} className="text-blue-600 hover:text-blue-800 mr-4" title="Adjust Stock">
-                                                <Icon path={ICONS.adjust} className="h-5 w-5"/>
-                                            </button>
+                                            {hasPermission('inventory:adjust') && (
+                                                <button onClick={() => handleOpenAdjustmentModal(item)} className="text-blue-600 hover:text-blue-800 mr-4" title="Adjust Stock">
+                                                    <Icon path={ICONS.adjust} className="h-5 w-5"/>
+                                                </button>
+                                            )}
                                             <button onClick={() => handleOpenHistoryModal(item)} className="text-gray-600 hover:text-gray-800" title="View History">
                                                 <Icon path={ICONS.history} className="h-5 w-5"/>
                                             </button>

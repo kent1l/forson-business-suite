@@ -4,12 +4,14 @@ import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
-import PartForm from '../components/forms/PartForm'; // Import the new form
+import PartForm from '../components/forms/PartForm';
 import PartNumberManager from './PartNumberManager';
 import PartApplicationManager from './PartApplicationManager';
 import FilterBar from '../components/ui/FilterBar';
+import { useAuth } from '../contexts/AuthContext'; // <-- NEW: Import useAuth
 
-const PartsPage = ({ user }) => {
+const PartsPage = () => {
+    const { user, hasPermission } = useAuth(); // <-- NEW: Use the auth context
     const [parts, setParts] = useState([]);
     const [brands, setBrands] = useState([]);
     const [groups, setGroups] = useState([]);
@@ -197,14 +199,16 @@ const PartsPage = ({ user }) => {
                             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg"
                          />
                     </div>
-                    {user.permission_level_id >= 5 && !isSelectMode && (
+                    {hasPermission('parts:edit') && !isSelectMode && (
                         <button onClick={() => setIsSelectMode(true)} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-semibold hover:bg-gray-300 transition whitespace-nowrap">
                             Bulk Actions
                         </button>
                     )}
-                    <button onClick={handleAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition whitespace-nowrap">
-                        Add Part
-                    </button>
+                    {hasPermission('parts:create') && (
+                        <button onClick={handleAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition whitespace-nowrap">
+                            Add Part
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -259,10 +263,16 @@ const PartsPage = ({ user }) => {
                                         <td className="p-3 text-sm font-medium text-gray-800 align-top">{part.display_name}</td>
                                         <td className="p-3 text-sm text-gray-600 align-top">{part.applications}</td>
                                         <td className="p-3 text-sm text-right space-x-4 align-top">
-                                            <button onClick={() => handleManageApps(part)} className="text-green-600 hover:text-green-800" title="Manage Part Applications"><Icon path={ICONS.link} className="h-5 w-5"/></button>
-                                            <button onClick={() => handleManageNumbers(part)} className="text-gray-600 hover:text-gray-800" title="Manage Part Numbers"><Icon path={ICONS.numbers} className="h-5 w-5"/></button>
-                                            <button onClick={() => handleEdit(part)} className="text-blue-600 hover:text-blue-800" title="Edit Part"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
-                                            <button onClick={() => handleDelete(part.part_id)} className="text-red-600 hover:text-red-800" title="Delete Part"><Icon path={ICONS.trash} className="h-5 w-5"/></button>
+                                            {hasPermission('parts:edit') && (
+                                                <>
+                                                    <button onClick={() => handleManageApps(part)} className="text-green-600 hover:text-green-800" title="Manage Part Applications"><Icon path={ICONS.link} className="h-5 w-5"/></button>
+                                                    <button onClick={() => handleManageNumbers(part)} className="text-gray-600 hover:text-gray-800" title="Manage Part Numbers"><Icon path={ICONS.numbers} className="h-5 w-5"/></button>
+                                                    <button onClick={() => handleEdit(part)} className="text-blue-600 hover:text-blue-800" title="Edit Part"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
+                                                </>
+                                            )}
+                                            {hasPermission('parts:delete') && (
+                                                <button onClick={() => handleDelete(part.part_id)} className="text-red-600 hover:text-red-800" title="Delete Part"><Icon path={ICONS.trash} className="h-5 w-5"/></button>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}

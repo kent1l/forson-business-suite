@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import api from '../api'; // Use the configured api instance
+import api from '../api';
 import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import SupplierForm from '../components/forms/SupplierForm';
 import FilterBar from '../components/ui/FilterBar';
+import { useAuth } from '../contexts/AuthContext'; // <-- NEW: Import useAuth
 
 const SuppliersPage = () => {
+    const { hasPermission } = useAuth(); // <-- NEW: Use the auth context
     const [suppliers, setSuppliers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -89,9 +91,11 @@ const SuppliersPage = () => {
         <div>
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-semibold text-gray-800">Suppliers</h1>
-                <button onClick={handleAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
-                    Add Supplier
-                </button>
+                {hasPermission('suppliers:edit') && (
+                    <button onClick={handleAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
+                        Add Supplier
+                    </button>
+                )}
             </div>
 
             <FilterBar 
@@ -127,8 +131,12 @@ const SuppliersPage = () => {
                                             </span>
                                         </td>
                                         <td className="p-3 text-sm text-right">
-                                            <button onClick={() => handleEdit(supplier)} className="text-blue-600 hover:text-blue-800 mr-4"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
-                                            <button onClick={() => handleDelete(supplier.supplier_id)} className="text-red-600 hover:text-red-800"><Icon path={ICONS.trash} className="h-5 w-5"/></button>
+                                            {hasPermission('suppliers:edit') && (
+                                                <>
+                                                    <button onClick={() => handleEdit(supplier)} className="text-blue-600 hover:text-blue-800 mr-4"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
+                                                    <button onClick={() => handleDelete(supplier.supplier_id)} className="text-red-600 hover:text-red-800"><Icon path={ICONS.trash} className="h-5 w-5"/></button>
+                                                </>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}

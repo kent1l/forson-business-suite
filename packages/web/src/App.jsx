@@ -1,97 +1,85 @@
 import React, { useState, useEffect } from 'react';
-import api from './api'; // Correctly import the configured api instance
+import api from './api';
 import { Toaster } from 'react-hot-toast';
 import LoginScreen from './pages/LoginScreen';
 import MainLayout from './components/layout/MainLayout';
 import SetupPage from './pages/SetupPage';
 import { SettingsProvider } from './contexts/SettingsContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 
-function App() {
-    const [user, setUser] = useState(null);
+function AppContent() {
+    const { user, isAuthenticated, login, logout } = useAuth();
     const [currentPage, setCurrentPage] = useState('dashboard');
-    const [needsSetup, setNeedsSetup] = useState(null); // null = loading, true = needs setup, false = setup complete
-    
-    // Proper POS state management at the App level
+    const [needsSetup, setNeedsSetup] = useState(null);
     const [posLines, setPosLines] = useState([]);
 
     const checkSetupStatus = async () => {
         try {
-            // Use the configured 'api' instance with a relative path
             const response = await api.get('/setup/status');
             setNeedsSetup(!response.data.isAdminCreated);
         } catch (error) {
             console.error("Failed to check setup status", error);
-            // Handle case where backend might be down
             setNeedsSetup(true); 
         }
     };
 
     useEffect(() => {
         checkSetupStatus();
-        const sessionData = localStorage.getItem('userSession');
-        if (sessionData) {
-            const parsedData = JSON.parse(sessionData);
-            setUser(parsedData.user);
-        }
-    }, []);
 
-    const handleLogin = (loginData) => {
-        const sessionData = {
-            user: loginData.user,
-            token: loginData.token
+        // NEW: Event listener to handle session expiry gracefully
+        const handleAuthError = () => {
+            logout();
         };
-        localStorage.setItem('userSession', JSON.stringify(sessionData));
-        setUser(loginData.user);
-    };
+
+        window.addEventListener('auth-error', handleAuthError);
+
+        // Cleanup the event listener when the component unmounts
+        return () => {
+            window.removeEventListener('auth-error', handleAuthError);
+        };
+    }, [logout]); // Add logout as a dependency
 
     const handleLogout = () => {
-        localStorage.removeItem('userSession');
-        setUser(null);
-        // Clear POS cart on logout for security/privacy
+        logout();
         setPosLines([]);
     };
 
-    // Clear POS cart when navigating away from POS (optional - for UX)
     const handleNavigate = (page) => {
-        // Optionally clear cart when leaving POS page
-        if (currentPage === 'pos' && page !== 'pos' && posLines.length > 0) {
-            // Could add a confirmation dialog here if needed
-            // For now, we'll preserve the cart across navigation
-        }
         setCurrentPage(page);
     };
 
-    // --- Render Logic ---
-
     if (needsSetup === null) {
-        return <div>Loading...</div>; // Show a loading screen while checking setup status
+        return <div>Loading...</div>;
     }
 
     if (needsSetup) {
         return <SetupPage onSetupComplete={checkSetupStatus} />;
     }
 
-    if (!user) {
-        return (
-            <>
-                <Toaster position="top-center" /> 
-                <LoginScreen onLogin={handleLogin} />
-            </>
-        );
+    if (!isAuthenticated) {
+        return <LoginScreen onLogin={login} />;
     }
 
     return (
-        <SettingsProvider>
-            <Toaster position="top-center" /> 
-            <MainLayout
-                user={user}
-                onLogout={handleLogout}
-                currentPage={currentPage}
-                onNavigate={handleNavigate}
-                posLines={posLines}
-                setPosLines={setPosLines}
-            />
-        </SettingsProvider>
+        <MainLayout
+            user={user}
+            onLogout={handleLogout}
+            currentPage={currentPage}
+            onNavigate={handleNavigate}
+            posLines={posLines}
+            setPosLines={setPosLines}
+        />
+    );
+}
+
+function App() {
+    return (
+        <AuthProvider>
+            <SettingsProvider>
+                <Toaster position="top-center" />
+                <AppContent />
+            </SettingsProvider>
+        </AuthProvider>
     );
 }
 
