@@ -92,7 +92,7 @@ router.post('/parts', async (req, res) => {
     detail, brand_id, group_id, part_numbers_string,
     reorder_point, warning_quantity, is_active, last_cost, last_sale_price,
     barcode, measurement_unit, is_price_change_allowed, is_using_default_quantity,
-    is_service, low_stock_warning, created_by, tax_rate_id // UPDATED
+    is_service, low_stock_warning, created_by, tax_rate_id, is_tax_inclusive_price
   } = req.body;
 
   if (!detail || !brand_id || !group_id) {
@@ -122,26 +122,24 @@ router.post('/parts', async (req, res) => {
     const formattedSeqNum = String(nextSeqNum).padStart(4, '0');
     const internalSku = `${skuPrefix}-${formattedSeqNum}`;
 
-    // Insert the new part with all fields
     const newPartQuery = `
         INSERT INTO part (
             detail, brand_id, group_id, internal_sku, reorder_point, 
             warning_quantity, is_active, last_cost, last_sale_price, barcode,
             measurement_unit, is_price_change_allowed, is_using_default_quantity,
-            is_service, low_stock_warning, created_by, tax_rate_id -- UPDATED
+            is_service, low_stock_warning, created_by, tax_rate_id, is_tax_inclusive_price
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) -- UPDATED
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
         RETURNING *;
     `;
     const newPart = await client.query(newPartQuery, [
         detail, brand_id, group_id, internalSku, reorder_point, 
         warning_quantity, is_active, last_cost, last_sale_price, barcode,
         measurement_unit, is_price_change_allowed, is_using_default_quantity,
-        is_service, low_stock_warning, created_by, tax_rate_id // UPDATED
+        is_service, low_stock_warning, created_by, tax_rate_id, is_tax_inclusive_price
     ]);
     const newPartData = newPart.rows[0];
 
-    // Process and insert part numbers
     if (part_numbers_string) {
         const numbers = part_numbers_string.split(/[,;]/).map(num => num.trim()).filter(Boolean);
         if (numbers.length > 0) {
@@ -167,11 +165,6 @@ router.post('/parts', async (req, res) => {
   }
 });
 
-// =================================================================
-//  --- FIX: BULK UPDATE ENDPOINT MOVED ---
-//  This route is now placed BEFORE the dynamic '/parts/:id' route
-//  to ensure it's matched correctly by Express.
-// =================================================================
 router.put('/parts/bulk-update', protect, isManagerOrAdmin, async (req, res) => {
     const { partIds, updates } = req.body;
 
@@ -197,7 +190,6 @@ router.put('/parts/bulk-update', protect, isManagerOrAdmin, async (req, res) => 
             }
         }
         
-        // Add modified_by and date_modified automatically
         setClauses.push(`modified_by = $${paramIndex++}`);
         queryParams.push(req.user.employee_id);
         setClauses.push(`date_modified = CURRENT_TIMESTAMP`);
@@ -232,7 +224,7 @@ router.put('/parts/:id', async (req, res) => {
         detail, brand_id, group_id, reorder_point, 
         warning_quantity, is_active, last_cost, last_sale_price,
         barcode, measurement_unit, is_price_change_allowed, is_using_default_quantity,
-        is_service, low_stock_warning, modified_by, tax_rate_id // UPDATED
+        is_service, low_stock_warning, modified_by, tax_rate_id, is_tax_inclusive_price // MODIFIED: Added is_tax_inclusive_price
     } = req.body;
 
     if (!detail || !brand_id || !group_id) {
@@ -246,12 +238,14 @@ router.put('/parts/:id', async (req, res) => {
                 warning_quantity = $5, is_active = $6, last_cost = $7, last_sale_price = $8, 
                 barcode = $9, measurement_unit = $10, is_price_change_allowed = $11, 
                 is_using_default_quantity = $12, is_service = $13, low_stock_warning = $14, 
-                modified_by = $15, date_modified = CURRENT_TIMESTAMP, tax_rate_id = $16 -- UPDATED
-            WHERE part_id = $17 RETURNING *`, // UPDATED
+                modified_by = $15, date_modified = CURRENT_TIMESTAMP, tax_rate_id = $16,
+                is_tax_inclusive_price = $17 -- MODIFIED: Added field to SQL statement
+            WHERE part_id = $18 RETURNING *`,
             [
                 detail, brand_id, group_id, reorder_point, warning_quantity, is_active, 
                 last_cost, last_sale_price, barcode, measurement_unit, is_price_change_allowed, 
-                is_using_default_quantity, is_service, low_stock_warning, modified_by, tax_rate_id, id // UPDATED
+                is_using_default_quantity, is_service, low_stock_warning, modified_by, tax_rate_id,
+                is_tax_inclusive_price, id // MODIFIED: Added value to parameters
             ]
         );
 

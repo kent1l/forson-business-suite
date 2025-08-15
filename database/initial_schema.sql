@@ -373,7 +373,7 @@ CREATE TABLE public.part (
     low_stock_warning boolean DEFAULT false,
     warning_quantity integer DEFAULT 0,
     measurement_unit character varying(20) DEFAULT 'pcs'::character varying,
-    tax_rate numeric(5,4) DEFAULT 0.00,
+    tax_rate_id integer,
     is_tax_inclusive_price boolean DEFAULT false,
     is_price_change_allowed boolean DEFAULT true,
     is_using_default_quantity boolean DEFAULT true,
@@ -538,6 +538,29 @@ CREATE SEQUENCE public.supplier_supplier_id_seq
 
 ALTER SEQUENCE public.supplier_supplier_id_seq OWNED BY public.supplier.supplier_id;
 
+--
+-- Name: tax_rate; Type: TABLE; Schema: public; Owner: postgres
+--
+CREATE TABLE public.tax_rate (
+    tax_rate_id integer NOT NULL,
+    rate_name character varying(50) NOT NULL,
+    rate_percentage numeric(8,6) NOT NULL,
+    is_default boolean DEFAULT false
+);
+
+ALTER TABLE public.tax_rate OWNER TO postgres;
+
+CREATE SEQUENCE public.tax_rate_tax_rate_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.tax_rate_tax_rate_id_seq OWNED BY public.tax_rate.tax_rate_id;
+
+
 -- Set default values for ID columns
 ALTER TABLE ONLY public.adjustment_reason ALTER COLUMN reason_id SET DEFAULT nextval('public.adjustment_reason_reason_id_seq'::regclass);
 ALTER TABLE ONLY public.application ALTER COLUMN application_id SET DEFAULT nextval('public.application_application_id_seq'::regclass);
@@ -558,6 +581,7 @@ ALTER TABLE ONLY public.part_number ALTER COLUMN part_number_id SET DEFAULT next
 ALTER TABLE ONLY public.part_number ALTER COLUMN display_order SET DEFAULT nextval('public.part_number_display_order_seq'::regclass);
 ALTER TABLE ONLY public.price_history ALTER COLUMN price_history_id SET DEFAULT nextval('public.price_history_price_history_id_seq'::regclass);
 ALTER TABLE ONLY public.supplier ALTER COLUMN supplier_id SET DEFAULT nextval('public.supplier_supplier_id_seq'::regclass);
+ALTER TABLE ONLY public.tax_rate ALTER COLUMN tax_rate_id SET DEFAULT nextval('public.tax_rate_tax_rate_id_seq'::regclass);
 
 -- Add Primary Keys and Constraints
 ALTER TABLE ONLY public.adjustment_reason ADD CONSTRAINT adjustment_reason_pkey PRIMARY KEY (reason_id);
@@ -596,6 +620,7 @@ ALTER TABLE ONLY public.price_history ADD CONSTRAINT price_history_pkey PRIMARY 
 ALTER TABLE ONLY public.settings ADD CONSTRAINT settings_pkey PRIMARY KEY (setting_key);
 ALTER TABLE ONLY public.supplier ADD CONSTRAINT supplier_pkey PRIMARY KEY (supplier_id);
 ALTER TABLE ONLY public.supplier ADD CONSTRAINT supplier_supplier_name_key UNIQUE (supplier_name);
+ALTER TABLE ONLY public.tax_rate ADD CONSTRAINT tax_rate_pkey PRIMARY KEY (tax_rate_id);
 
 -- Add Foreign Keys
 ALTER TABLE ONLY public.customer ADD CONSTRAINT customer_customer_type_id_fkey FOREIGN KEY (customer_type_id) REFERENCES public.customer_type(customer_type_id) ON DELETE SET NULL;
@@ -620,6 +645,7 @@ ALTER TABLE ONLY public.part ADD CONSTRAINT part_brand_id_fkey FOREIGN KEY (bran
 ALTER TABLE ONLY public.part ADD CONSTRAINT part_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.employee(employee_id) ON DELETE SET NULL;
 ALTER TABLE ONLY public.part ADD CONSTRAINT part_group_id_fkey FOREIGN KEY (group_id) REFERENCES public."group"(group_id) ON DELETE RESTRICT;
 ALTER TABLE ONLY public.part ADD CONSTRAINT part_modified_by_fkey FOREIGN KEY (modified_by) REFERENCES public.employee(employee_id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.part ADD CONSTRAINT part_tax_rate_id_fkey FOREIGN KEY (tax_rate_id) REFERENCES public.tax_rate(tax_rate_id) ON DELETE SET NULL;
 ALTER TABLE ONLY public.part_number ADD CONSTRAINT part_number_part_id_fkey FOREIGN KEY (part_id) REFERENCES public.part(part_id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.price_history ADD CONSTRAINT price_history_part_id_fkey FOREIGN KEY (part_id) REFERENCES public.part(part_id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.price_history ADD CONSTRAINT price_history_recorded_by_fkey FOREIGN KEY (recorded_by) REFERENCES public.employee(employee_id) ON DELETE SET NULL;
@@ -649,7 +675,8 @@ INSERT INTO public.settings (setting_key, setting_value, description) VALUES
 ('DEFAULT_CURRENCY_SYMBOL', '$', 'The currency symbol to be used on invoices and reports.'),
 ('DEFAULT_PAYMENT_TERMS', 'Due upon receipt', 'The default payment terms displayed on new invoices.'),
 ('INVOICE_FOOTER_MESSAGE', 'Thank you for your business!', 'A message to be displayed at the bottom of receipts and invoices.'),
-('PAYMENT_METHODS', 'Cash,Credit Card,Bank Transfer,On Account', 'A comma-separated list of accepted payment methods.');
+('PAYMENT_METHODS', 'Cash,Credit Card,Bank Transfer,On Account', 'A comma-separated list of accepted payment methods.'),
+('DEFAULT_IS_TAX_INCLUSIVE', 'false', 'Sets the default for whether new parts are tax inclusive by default.');
 
 -- Create the default "Walk-in" customer for the POS system
 INSERT INTO public.customer (first_name, last_name, is_active) VALUES

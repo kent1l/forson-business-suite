@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
-import BackupSettings from '../components/settings/BackupSettings'; // 1. Import the new component
+import BackupSettings from '../components/settings/BackupSettings';
 
 const CompanyInfoSettings = ({ settings, handleChange }) => (
     <div className="space-y-4">
@@ -50,7 +50,8 @@ const FinancialSettings = ({ settings, handleChange }) => (
     </div>
 );
 
-const TaxRateSettings = () => {
+// MODIFIED: Component now accepts settings and handleChange props
+const TaxRateSettings = ({ settings, handleChange }) => {
     const [taxRates, setTaxRates] = useState([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentRate, setCurrentRate] = useState(null);
@@ -106,6 +107,23 @@ const TaxRateSettings = () => {
 
     return (
         <div>
+            {/* --- MOVED: Checkbox for default tax inclusive setting is now here --- */}
+            <div className="pb-4 mb-4 border-b">
+                 <div className="flex items-center">
+                    <input 
+                        type="checkbox" 
+                        name="DEFAULT_IS_TAX_INCLUSIVE" 
+                        id="default_is_tax_inclusive"
+                        checked={settings.DEFAULT_IS_TAX_INCLUSIVE === 'true'} 
+                        onChange={handleChange} 
+                        className="h-4 w-4 text-blue-600 border-gray-300 rounded" 
+                    />
+                    <label htmlFor="default_is_tax_inclusive" className="ml-2 block text-sm text-gray-900">
+                        New parts default to "Price is Tax Inclusive"
+                    </label>
+                </div>
+            </div>
+
             <div className="flex justify-between items-center mb-4">
                 <p className="text-sm text-gray-600">Manage tax rates for your products.</p>
                 <button type="button" onClick={() => { setCurrentRate(null); setIsModalOpen(true); }} className="bg-blue-600 text-white px-3 py-1 rounded-lg text-sm font-semibold hover:bg-blue-700">Add Rate</button>
@@ -200,8 +218,11 @@ const SettingsPage = ({ user }) => {
     }, [user.permission_level_id]);
 
     const handleChange = (e) => {
-        const { name, value } = e.target;
-        setSettings(prev => ({ ...prev, [name]: value }));
+        const { name, value, type, checked } = e.target;
+        setSettings(prev => ({
+            ...prev,
+            [name]: type === 'checkbox' ? String(checked) : value
+        }));
     };
 
     const handleSave = async (e) => {
@@ -237,19 +258,18 @@ const SettingsPage = ({ user }) => {
                             <button type="button" onClick={() => setActiveTab('company')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'company' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Company Info</button>
                             <button type="button" onClick={() => setActiveTab('financial')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'financial' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Financial</button>
                             <button type="button" onClick={() => setActiveTab('tax_rates')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'tax_rates' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Tax Rates</button>
-                            {/* 2. Add the new Backup & Restore tab */}
                             <button type="button" onClick={() => setActiveTab('backup')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'backup' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Backup & Restore</button>
                         </nav>
                     </div>
 
                     {activeTab === 'company' && <CompanyInfoSettings settings={settings} handleChange={handleChange} />}
                     {activeTab === 'financial' && <FinancialSettings settings={settings} handleChange={handleChange} />}
-                    {activeTab === 'tax_rates' && <TaxRateSettings />}
-                    {/* 3. Render the new component when its tab is active */}
+                    {/* MODIFIED: Pass props to TaxRateSettings */}
+                    {activeTab === 'tax_rates' && <TaxRateSettings settings={settings} handleChange={handleChange} />}
                     {activeTab === 'backup' && <BackupSettings settings={settings} handleChange={handleChange} handleSave={handleSave} />}
 
-                    {/* 4. Only show the "Save All" button for tabs that need it */}
-                    {['company', 'financial'].includes(activeTab) && (
+                    {/* MODIFIED: Show save button on tax_rates tab as well */}
+                    {['company', 'financial', 'tax_rates'].includes(activeTab) && (
                         <div className="pt-4 flex justify-end mt-6 border-t">
                             <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
                                 Save Settings

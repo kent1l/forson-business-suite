@@ -2,9 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
-import Combobox from '../ui/Combobox'; // 1. Import the Combobox component
+import Combobox from '../ui/Combobox';
+import { useSettings } from '../../contexts/SettingsContext'; // 1. Import useSettings
 
-// BrandGroupForm remains the same as it's for the nested modal
 const BrandGroupForm = ({ type, onSave, onCancel }) => {
     const [name, setName] = useState('');
     const [code, setCode] = useState('');
@@ -44,13 +44,15 @@ const BrandGroupForm = ({ type, onSave, onCancel }) => {
 };
 
 const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, isBulkEdit = false, selectedCount = 0 }) => {
+    const { settings } = useSettings(); // 2. Get settings from context
+
     const getInitialState = () => {
         if (isBulkEdit) {
             return {
                 brand_id: '', group_id: '',
                 reorder_point: '', warning_quantity: '', last_cost: '', last_sale_price: '', barcode: '', measurement_unit: '', tax_rate_id: '',
                 is_active: 'unchanged', is_price_change_allowed: 'unchanged', is_using_default_quantity: 'unchanged',
-                is_service: 'unchanged', low_stock_warning: 'unchanged'
+                is_service: 'unchanged', low_stock_warning: 'unchanged', is_tax_inclusive_price: 'unchanged'
             };
         }
         return {
@@ -58,7 +60,9 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
             reorder_point: 0, warning_quantity: 0, is_active: true,
             last_cost: 0, last_sale_price: 0, barcode: '', measurement_unit: 'pcs', tax_rate_id: '',
             is_price_change_allowed: true, is_using_default_quantity: true,
-            is_service: false, low_stock_warning: false
+            is_service: false, low_stock_warning: false, 
+            // 3. Use the global setting for the initial value
+            is_tax_inclusive_price: settings?.DEFAULT_IS_TAX_INCLUSIVE === 'true'
         };
     };
 
@@ -68,7 +72,6 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
     const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
     const [showAdvanced, setShowAdvanced] = useState(false);
 
-    // 2. Memoize the options for the comboboxes
     const brandOptions = useMemo(() => brands.map(b => ({ value: b.brand_id, label: b.brand_name })), [brands]);
     const groupOptions = useMemo(() => groups.map(g => ({ value: g.group_id, label: g.group_name })), [groups]);
 
@@ -108,6 +111,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                 is_using_default_quantity: part.is_using_default_quantity,
                 is_service: part.is_service,
                 low_stock_warning: part.low_stock_warning,
+                is_tax_inclusive_price: part.is_tax_inclusive_price,
             });
         } else {
             const initialState = getInitialState();
@@ -119,39 +123,20 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
             }
             setFormData(initialState);
         }
-    }, [part, isBulkEdit, taxRates]);
+    }, [part, isBulkEdit, taxRates, settings]); // 4. Add settings to dependency array
 
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
         setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
     };
     
-    // 3. Create a specific handler for combobox changes
     const handleComboboxChange = (name, value) => {
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        if (isBulkEdit) {
-            const updates = {};
-            for (const key in formData) {
-                const value = formData[key];
-                if (value !== '' && value !== 'unchanged' && value !== null && value !== undefined) {
-                    if (key !== 'detail' && key !== 'part_numbers_string') {
-                        if (value === 'true') updates[key] = true;
-                        else if (value === 'false') updates[key] = false;
-                        else updates[key] = value;
-                    }
-                }
-            }
-            if (Object.keys(updates).length === 0) {
-                return toast.error('Please fill in at least one field to update.');
-            }
-            onSave(updates);
-        } else {
-            onSave(formData);
-        }
+        onSave(formData);
     };
     
     const handleNewBrandGroup = (newItem, type) => {
@@ -179,12 +164,6 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
     return (
         <>
             <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto p-1">
-                {isBulkEdit && (
-                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
-                        You are editing <strong>{selectedCount}</strong> parts. Fill in a field to update it for all selected items. Leave fields blank to keep their original values.
-                    </div>
-                )}
-                
                 {!isBulkEdit && (
                      <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Part Detail</label>
@@ -199,7 +178,6 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                     </div>
                 )}
 
-                {/* 4. Replace Brand select with Combobox */}
                 <div className="flex items-end space-x-2">
                     <div className="flex-grow">
                         <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
@@ -213,7 +191,6 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                     <button type="button" onClick={() => setIsBrandModalOpen(true)} className="px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm">New</button>
                 </div>
 
-                {/* 5. Replace Group select with Combobox */}
                 <div className="flex items-end space-x-2">
                     <div className="flex-grow">
                         <label className="block text-sm font-medium text-gray-700 mb-1">Group</label>
@@ -277,6 +254,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                                         <BooleanSelect name="low_stock_warning" label="Low Stock Warning" />
                                         <BooleanSelect name="is_price_change_allowed" label="Price Change Allowed" />
                                         <BooleanSelect name="is_using_default_quantity" label="Use Default Qty" />
+                                        <BooleanSelect name="is_tax_inclusive_price" label="Price is Tax Inclusive" />
                                     </>
                                 ) : (
                                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 col-span-2">
@@ -285,6 +263,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                                         <div className="flex items-center"><input type="checkbox" name="low_stock_warning" checked={formData.low_stock_warning} onChange={handleChange} className="h-4 w-4" /><label className="ml-2 text-sm">Low Stock Warning</label></div>
                                         <div className="flex items-center"><input type="checkbox" name="is_price_change_allowed" checked={formData.is_price_change_allowed} onChange={handleChange} className="h-4 w-4" /><label className="ml-2 text-sm">Price Change Allowed</label></div>
                                         <div className="flex items-center"><input type="checkbox" name="is_using_default_quantity" checked={formData.is_using_default_quantity} onChange={handleChange} className="h-4 w-4" /><label className="ml-2 text-sm">Use Default Qty</label></div>
+                                        <div className="flex items-center"><input type="checkbox" name="is_tax_inclusive_price" checked={formData.is_tax_inclusive_price} onChange={handleChange} className="h-4 w-4" /><label className="ml-2 text-sm">Price is Tax Inclusive</label></div>
                                     </div>
                                 )}
                             </div>

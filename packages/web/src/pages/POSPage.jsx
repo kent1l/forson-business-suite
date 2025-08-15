@@ -20,6 +20,7 @@ const POSPage = ({ user, lines, setLines }) => {
     const [customers, setCustomers] = useState([]);
     const [brands, setBrands] = useState([]);
     const [groups, setGroups] = useState([]);
+    const [taxRates, setTaxRates] = useState([]); // 1. State for tax rates
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [isPriceModalOpen, setIsPriceModalOpen] = useState(false);
     const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
@@ -43,14 +44,16 @@ const POSPage = ({ user, lines, setLines }) => {
 
     const fetchInitialData = async () => {
         try {
-            const [partsRes, brandsRes, groupsRes] = await Promise.all([
+            const [partsRes, brandsRes, groupsRes, taxRatesRes] = await Promise.all([ // 2. Fetch tax rates
                 api.get('/parts?status=active'),
                 api.get('/brands'),
-                api.get('/groups')
+                api.get('/groups'),
+                api.get('/tax-rates')
             ]);
             setParts(partsRes.data);
             setBrands(brandsRes.data);
             setGroups(groupsRes.data);
+            setTaxRates(taxRatesRes.data); // 2. Set tax rates state
             
             const customersData = await fetchCustomers();
             if (customersData) {
@@ -127,10 +130,37 @@ const POSPage = ({ user, lines, setLines }) => {
     const removeLine = (partId) => {
         setLines(lines.filter(line => line.part_id !== partId));
     };
+    
+    // 3. Use useMemo to calculate totals correctly and efficiently
+    const { subtotal, tax, total } = useMemo(() => {
+        const taxRatesMap = new Map(taxRates.map(rate => [rate.tax_rate_id, parseFloat(rate.rate_percentage)]));
+        const defaultTaxRate = taxRates.find(r => r.is_default)?.rate_percentage || 0;
 
-    const subtotal = lines.reduce((acc, line) => acc + (line.quantity * line.sale_price), 0);
-    const tax = subtotal * (settings?.DEFAULT_TAX_RATE || 0);
-    const total = subtotal + tax;
+        let calculatedSubtotal = 0;
+        let calculatedTax = 0;
+
+        lines.forEach(line => {
+            const lineSubtotal = line.quantity * line.sale_price;
+            calculatedSubtotal += lineSubtotal;
+
+            const ratePercentage = taxRatesMap.get(line.tax_rate_id) ?? defaultTaxRate;
+
+            if (line.is_tax_inclusive_price) {
+                // If price includes tax, extract the tax amount from the subtotal
+                const taxAmount = lineSubtotal - (lineSubtotal / (1 + ratePercentage));
+                calculatedTax += taxAmount;
+            } else {
+                // If price excludes tax, calculate tax on top of the subtotal
+                calculatedTax += lineSubtotal * ratePercentage;
+            }
+        });
+
+        return {
+            subtotal: calculatedSubtotal,
+            tax: calculatedTax,
+            total: calculatedSubtotal + calculatedTax,
+        };
+    }, [lines, taxRates]);
 
     const handleCheckout = () => {
         if (lines.length === 0) return toast.error("Please add items to the cart.");
