@@ -1,5 +1,6 @@
 const express = require('express');
 const db = require('../db');
+const { constructDisplayName } = require('../helpers/displayNameHelper'); // <-- NEW: Import helper
 const router = express.Router();
 
 // GET /api/inventory - Get current stock levels with search and status filter
@@ -15,23 +16,29 @@ router.get('/inventory', async (req, res) => {
     }
 
     try {
+        // UPDATED: The entire query is changed to correctly join tables and calculate values
         const query = `
             SELECT
                 p.part_id,
                 p.internal_sku,
                 p.detail,
-                p.last_cost,
+                p.wac_cost, -- Use wac_cost instead of last_cost
                 p.reorder_point,
                 p.warning_quantity,
                 b.brand_name,
                 g.group_name,
+                (
+                    SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) 
+                    FROM part_number pn 
+                    WHERE pn.part_id = p.part_id
+                ) AS part_numbers,
                 (
                     SELECT COALESCE(SUM(it.quantity), 0) 
                     FROM inventory_transaction it 
                     WHERE it.part_id = p.part_id
                 ) AS stock_on_hand,
                 (
-                    p.last_cost * (
+                    p.wac_cost * ( -- Use wac_cost for total value calculation
                         SELECT COALESCE(SUM(it.quantity), 0) 
                         FROM inventory_transaction it 
                         WHERE it.part_id = p.part_id
@@ -51,7 +58,14 @@ router.get('/inventory', async (req, res) => {
         `;
 
         const { rows } = await db.query(query, [searchTerm]);
-        res.json(rows);
+        
+        // NEW: Construct the display name for each item
+        const inventoryWithDisplayName = rows.map(item => ({
+            ...item,
+            display_name: constructDisplayName(item)
+        }));
+
+        res.json(inventoryWithDisplayName);
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');

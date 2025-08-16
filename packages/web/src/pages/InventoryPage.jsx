@@ -6,10 +6,12 @@ import { ICONS } from '../constants';
 import Modal from '../components/ui/Modal';
 import StockAdjustmentForm from '../components/forms/StockAdjustmentForm';
 import TransactionHistoryModal from '../components/ui/TransactionHistoryModal';
-import { useAuth } from '../contexts/AuthContext'; // <-- NEW: Import useAuth
+import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
 
 const InventoryPage = () => {
-    const { user, hasPermission } = useAuth(); // <-- NEW: Use the auth context
+    const { user, hasPermission } = useAuth();
+    const { settings } = useSettings();
     const [inventory, setInventory] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -111,6 +113,8 @@ const InventoryPage = () => {
                                     <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Item Name</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-center">Stock on Hand</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 text-right">WAC</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total Value</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>
@@ -120,6 +124,8 @@ const InventoryPage = () => {
                                         <td className="p-3 text-sm font-mono">{item.internal_sku}</td>
                                         <td className="p-3 text-sm font-medium text-gray-800">{item.display_name}</td>
                                         <td className="p-3 text-sm text-center font-semibold">{Number(item.stock_on_hand).toLocaleString()}</td>
+                                        <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '$'}{parseFloat(item.wac_cost).toFixed(2)}</td>
+                                        <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '$'}{parseFloat(item.total_value).toFixed(2)}</td>
                                         <td className="p-3 text-sm text-right">
                                             {hasPermission('inventory:adjust') && (
                                                 <button onClick={() => handleOpenAdjustmentModal(item)} className="text-blue-600 hover:text-blue-800 mr-4" title="Adjust Stock">

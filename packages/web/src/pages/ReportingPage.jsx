@@ -5,7 +5,7 @@ import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import { useSettings } from '../contexts/SettingsContext';
 import Combobox from '../components/ui/Combobox';
-import { useAuth } from '../contexts/AuthContext'; // <-- NEW: Import useAuth
+import { useAuth } from '../contexts/AuthContext';
 
 const ReportCard = ({ title, value, icon, color, isCurrency = false }) => {
     const { settings } = useSettings();
@@ -198,7 +198,7 @@ const InventoryValuationReport = () => {
                                     <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-center">Stock on Hand</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-right">Last Cost</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 text-right">WAC</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total Value</th>
                                 </tr>
                             </thead>
@@ -208,7 +208,7 @@ const InventoryValuationReport = () => {
                                         <td className="p-3 text-sm font-mono">{row.internal_sku}</td>
                                         <td className="p-3 text-sm">{row.display_name}</td>
                                         <td className="p-3 text-sm text-center font-semibold">{Number(row.stock_on_hand).toLocaleString()}</td>
-                                        <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.last_cost).toFixed(2)}</td>
+                                        <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.wac_cost).toFixed(2)}</td>
                                         <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.total_value).toFixed(2)}</td>
                                     </tr>
                                 ))}
@@ -742,10 +742,9 @@ const ProfitabilityReport = () => {
 };
 
 const ReportingPage = () => {
-    const { hasPermission } = useAuth(); // <-- NEW: Use the auth context
+    const { hasPermission } = useAuth();
     const [activeTab, setActiveTab] = useState('sales');
 
-    // NEW: Protect the entire page
     if (!hasPermission('reports:view')) {
         return (
             <div className="text-center p-8">
@@ -771,7 +770,6 @@ const ReportingPage = () => {
             </div>
 
             <div>
-                {/* The individual report components will now only be rendered if the parent has permission */}
                 {activeTab === 'sales' && <SalesReport />}
                 {activeTab === 'valuation' && <InventoryValuationReport />}
                 {activeTab === 'top_selling' && <TopSellingReport />}

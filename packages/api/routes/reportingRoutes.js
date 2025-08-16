@@ -4,7 +4,6 @@ const { Parser } = require('json2csv');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
 const router = express.Router();
 
-// ... (sales-summary, inventory-valuation, low-stock reports remain the same)
 // GET /api/reports/sales-summary
 router.get('/reports/sales-summary', async (req, res) => {
     const { startDate, endDate, format = 'json' } = req.query;
@@ -19,7 +18,7 @@ router.get('/reports/sales-summary', async (req, res) => {
                 (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = p.part_id) AS part_numbers,
                 il.quantity, il.sale_price,
                 (il.quantity * il.sale_price) AS line_total,
-                (il.quantity * p.last_cost) AS line_cost
+                (il.quantity * il.cost_at_sale) AS line_cost -- UPDATED: Use cost_at_sale
             FROM invoice i
             JOIN invoice_line il ON i.invoice_id = il.invoice_id
             JOIN part p ON il.part_id = p.part_id
@@ -31,11 +30,10 @@ router.get('/reports/sales-summary', async (req, res) => {
         const summaryQuery = `
             SELECT
                 COALESCE(SUM(il.quantity * il.sale_price), 0) AS total_sales,
-                COALESCE(SUM(il.quantity * p.last_cost), 0) AS total_cost,
+                COALESCE(SUM(il.quantity * il.cost_at_sale), 0) AS total_cost, -- UPDATED: Use cost_at_sale
                 COUNT(DISTINCT i.invoice_id) AS total_invoices
             FROM invoice i
             JOIN invoice_line il ON i.invoice_id = il.invoice_id
-            JOIN part p ON il.part_id = p.part_id
             WHERE i.invoice_date::date BETWEEN $1 AND $2;
         `;
 
@@ -65,7 +63,7 @@ router.get('/reports/sales-summary', async (req, res) => {
     }
 });
 
-// GET /api/reports/top-selling
+// GET /api/reports/top-selling - (No change needed here as it doesn't calculate profit)
 router.get('/reports/top-selling', async (req, res) => {
     const { startDate, endDate, sortBy = 'revenue', format = 'json' } = req.query;
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
@@ -120,14 +118,14 @@ router.get('/reports/inventory-valuation', async (req, res) => {
                     FROM part_number pn 
                     WHERE pn.part_id = p.part_id
                 ) AS part_numbers,
-                p.last_cost,
+                p.wac_cost, -- UPDATED: Use wac_cost
                 (
                     SELECT COALESCE(SUM(it.quantity), 0) 
                     FROM inventory_transaction it 
                     WHERE it.part_id = p.part_id
                 ) AS stock_on_hand,
                 (
-                    p.last_cost * (
+                    p.wac_cost * ( -- UPDATED: Use wac_cost
                         SELECT COALESCE(SUM(it.quantity), 0) 
                         FROM inventory_transaction it 
                         WHERE it.part_id = p.part_id
@@ -159,7 +157,7 @@ router.get('/reports/inventory-valuation', async (req, res) => {
     }
 });
 
-// GET /api/reports/low-stock
+// GET /api/reports/low-stock - (No change needed)
 router.get('/reports/low-stock', async (req, res) => {
     const { format = 'json' } = req.query;
     try {
@@ -205,7 +203,7 @@ router.get('/reports/low-stock', async (req, res) => {
 });
 
 
-// GET /api/reports/sales-by-customer with search
+// GET /api/reports/sales-by-customer - (No change needed)
 router.get('/reports/sales-by-customer', async (req, res) => {
     const { startDate, endDate, customerId, format = 'json' } = req.query;
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
@@ -247,7 +245,7 @@ router.get('/reports/sales-by-customer', async (req, res) => {
     }
 });
 
-// GET /api/reports/inventory-movement with filters
+// GET /api/reports/inventory-movement - (No change needed)
 router.get('/reports/inventory-movement', async (req, res) => {
     const { startDate, endDate, partId, format = 'json' } = req.query;
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
@@ -297,7 +295,7 @@ router.get('/reports/inventory-movement', async (req, res) => {
     }
 });
 
-// GET /api/reports/profitability-by-product with filters
+// GET /api/reports/profitability-by-product
 router.get('/reports/profitability-by-product', async (req, res) => {
     const { startDate, endDate, brandId, groupId, format = 'json' } = req.query;
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
@@ -324,8 +322,8 @@ router.get('/reports/profitability-by-product', async (req, res) => {
                 (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id) AS part_numbers,
                 SUM(il.quantity) AS total_quantity_sold,
                 SUM(il.quantity * il.sale_price) AS total_revenue,
-                SUM(il.quantity * p.last_cost) AS total_cost,
-                SUM(il.quantity * il.sale_price) - SUM(il.quantity * p.last_cost) AS total_profit
+                SUM(il.quantity * il.cost_at_sale) AS total_cost, -- UPDATED: Use cost_at_sale
+                SUM(il.quantity * il.sale_price) - SUM(il.quantity * il.cost_at_sale) AS total_profit -- UPDATED: Use cost_at_sale
             FROM invoice_line il
             JOIN part p ON il.part_id = p.part_id
             JOIN invoice i ON il.invoice_id = i.invoice_id

@@ -578,6 +578,69 @@ CREATE TABLE public.role_permission (
 );
 
 
+--
+-- WAC CALCULATION TRIGGER
+--
+CREATE OR REPLACE FUNCTION update_wac_on_goods_receipt()
+RETURNS TRIGGER AS $$
+DECLARE
+    current_stock NUMERIC;
+    current_wac NUMERIC;
+    new_quantity NUMERIC;
+    new_cost NUMERIC;
+    new_wac NUMERIC;
+BEGIN
+    -- Get the new quantity and cost from the inserted goods_receipt_line
+    new_quantity := NEW.quantity;
+    new_cost := NEW.cost_price;
+
+    -- Get the current stock on hand and WAC for the part
+    SELECT
+        COALESCE((SELECT SUM(quantity) FROM inventory_transaction WHERE part_id = NEW.part_id), 0),
+        COALESCE(p.wac_cost, 0)
+    INTO
+        current_stock,
+        current_wac
+    FROM part p
+    WHERE p.part_id = NEW.part_id;
+
+    -- Calculate the new Weighted Average Cost
+    -- WAC = ( (Old Stock * Old WAC) + (New Stock * New Cost) ) / (Old Stock + New Stock)
+    IF (current_stock + new_quantity) > 0 THEN
+        new_wac := ((current_stock * current_wac) + (new_quantity * new_cost)) / (current_stock + new_quantity);
+    ELSE
+        new_wac := new_cost; -- If there's no stock, the new cost is the WAC
+    END IF;
+
+    -- Update the part table with the new WAC and last_cost
+    UPDATE part
+    SET
+        wac_cost = new_wac,
+        last_cost = new_cost,
+        last_cost_date = CURRENT_TIMESTAMP
+    WHERE part_id = NEW.part_id;
+    
+    -- Also record this purchase in the price_history table for auditing
+    INSERT INTO price_history (part_id, supplier_id, cost_price, recorded_by, notes)
+    SELECT gr.supplier_id, NEW.cost_price, gr.received_by, 'Goods Receipt: ' || gr.grn_number
+    FROM goods_receipt gr
+    WHERE gr.grn_id = NEW.grn_id;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Drop the trigger if it already exists to avoid errors on re-run
+DROP TRIGGER IF EXISTS trg_update_wac ON public.goods_receipt_line;
+
+-- Create the trigger to execute the function after each new row is inserted
+CREATE TRIGGER trg_update_wac
+AFTER INSERT ON public.goods_receipt_line
+FOR EACH ROW
+EXECUTE FUNCTION update_wac_on_goods_receipt();
+
+
+
 -- Set default values for ID columns
 ALTER TABLE ONLY public.adjustment_reason ALTER COLUMN reason_id SET DEFAULT nextval('public.adjustment_reason_reason_id_seq'::regclass);
 ALTER TABLE ONLY public.application ALTER COLUMN application_id SET DEFAULT nextval('public.application_application_id_seq'::regclass);
