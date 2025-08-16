@@ -7,7 +7,7 @@ SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
-SELECT pg_catalog.set_config('search_path', '', false);
+SELECT pg_catalog.set_config('search_path', 'public', false);
 SET check_function_bodies = false;
 SET xmloption = content;
 SET client_min_messages = warning;
@@ -18,7 +18,7 @@ SET row_security = off;
 --
 
 CREATE TABLE public.permission_level (
-    permission_level_id integer PRIMARY KEY,
+    permission_level_id serial PRIMARY KEY,
     level_name character varying(50) NOT NULL UNIQUE
 );
 
@@ -193,6 +193,12 @@ CREATE TABLE public.document_sequence (
     PRIMARY KEY (prefix, period)
 );
 
+CREATE TABLE public.settings (
+    setting_key character varying(50) PRIMARY KEY,
+    setting_value text,
+    description text
+);
+
 CREATE TABLE public.permission (
     permission_id serial PRIMARY KEY,
     permission_key character varying(100) NOT NULL UNIQUE,
@@ -209,7 +215,7 @@ CREATE TABLE public.role_permission (
 --
 -- WAC CALCULATION TRIGGER
 --
-CREATE OR REPLACE FUNCTION update_wac_on_goods_receipt()
+CREATE OR REPLACE FUNCTION public.update_wac_on_goods_receipt()
 RETURNS TRIGGER AS $$
 DECLARE
     current_stock NUMERIC;
@@ -222,12 +228,12 @@ BEGIN
     new_cost := NEW.cost_price;
 
     SELECT
-        COALESCE((SELECT SUM(quantity) FROM inventory_transaction WHERE part_id = NEW.part_id), 0),
+        COALESCE((SELECT SUM(quantity) FROM public.inventory_transaction WHERE part_id = NEW.part_id), 0),
         COALESCE(p.wac_cost, 0)
     INTO
         current_stock,
         current_wac
-    FROM part p
+    FROM public.part p
     WHERE p.part_id = NEW.part_id;
 
     IF (current_stock + new_quantity) > 0 THEN
@@ -236,7 +242,7 @@ BEGIN
         new_wac := new_cost;
     END IF;
 
-    UPDATE part
+    UPDATE public.part
     SET
         wac_cost = new_wac,
         last_cost = new_cost,
@@ -252,7 +258,7 @@ DROP TRIGGER IF EXISTS trg_update_wac ON public.goods_receipt_line;
 CREATE TRIGGER trg_update_wac
 AFTER INSERT ON public.goods_receipt_line
 FOR EACH ROW
-EXECUTE FUNCTION update_wac_on_goods_receipt();
+EXECUTE FUNCTION public.update_wac_on_goods_receipt();
 
 --
 -- SEED DATA

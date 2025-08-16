@@ -60,7 +60,7 @@ services:
         sleep 86400;
       done"
     env_file:
-      - ./packages/api/.env.production
+      - ./packages/api/.env
 
 # Define a named volume to persist the PostgreSQL data
 volumes:
