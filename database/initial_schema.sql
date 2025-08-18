@@ -212,6 +212,27 @@ CREATE TABLE public.role_permission (
     PRIMARY KEY (permission_level_id, permission_id)
 );
 
+CREATE TABLE public.purchase_order (
+    po_id serial PRIMARY KEY,
+    po_number character varying(50) NOT NULL UNIQUE,
+    supplier_id integer NOT NULL REFERENCES public.supplier(supplier_id) ON DELETE RESTRICT,
+    employee_id integer NOT NULL REFERENCES public.employee(employee_id) ON DELETE RESTRICT,
+    order_date timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    expected_date timestamp with time zone,
+    total_amount numeric(12,2) NOT NULL,
+    status character varying(20) DEFAULT 'Pending'::character varying, -- e.g., Pending, Ordered, Partially Received, Received, Cancelled
+    notes text
+);
+
+CREATE TABLE public.purchase_order_line (
+    po_line_id serial PRIMARY KEY,
+    po_id integer NOT NULL REFERENCES public.purchase_order(po_id) ON DELETE CASCADE,
+    part_id integer NOT NULL REFERENCES public.part(part_id) ON DELETE RESTRICT,
+    quantity numeric(12,4) NOT NULL,
+    cost_price numeric(12,2) NOT NULL,
+    quantity_received numeric(12,4) DEFAULT 0
+);
+
 --
 -- WAC CALCULATION TRIGGER
 --
@@ -281,10 +302,11 @@ INSERT INTO public.permission (permission_key, description, category) VALUES
 ('suppliers:view', 'Can view suppliers', 'Entities'), ('suppliers:edit', 'Can create/edit suppliers', 'Entities'),
 ('customers:view', 'Can view customers', 'Entities'), ('customers:edit', 'Can create/edit customers', 'Entities'),
 ('applications:view', 'Can view vehicle applications', 'Entities'), ('applications:edit', 'Can create/edit vehicle applications', 'Entities'),
+('purchase_orders:view', 'Can view purchase orders', 'Purchasing'), ('purchase_orders:edit', 'Can create/edit purchase orders', 'Purchasing'),
 ('reports:view', 'Can view all reports', 'Reporting'), ('employees:view', 'Can view employee list', 'Admin'),
 ('employees:edit', 'Can create/edit employees', 'Admin'), ('settings:view', 'Can view application settings', 'Admin'),
 ('settings:edit', 'Can edit application settings', 'Admin');
 
 INSERT INTO public.role_permission (permission_level_id, permission_id) SELECT 1, p.permission_id FROM public.permission p WHERE p.permission_key IN ('dashboard:view', 'pos:use', 'invoicing:create', 'inventory:view', 'parts:view', 'suppliers:view', 'customers:view', 'applications:view');
-INSERT INTO public.role_permission (permission_level_id, permission_id) SELECT 5, p.permission_id FROM public.permission p WHERE p.permission_key IN ('dashboard:view', 'pos:use', 'invoicing:create', 'goods_receipt:create', 'inventory:view', 'inventory:adjust', 'parts:view', 'parts:create', 'parts:edit', 'parts:delete', 'suppliers:view', 'suppliers:edit', 'customers:view', 'customers:edit', 'applications:view', 'applications:edit', 'reports:view');
+INSERT INTO public.role_permission (permission_level_id, permission_id) SELECT 5, p.permission_id FROM public.permission p WHERE p.permission_key IN ('dashboard:view', 'pos:use', 'invoicing:create', 'goods_receipt:create', 'inventory:view', 'inventory:adjust', 'parts:view', 'parts:create', 'parts:edit', 'parts:delete', 'suppliers:view', 'suppliers:edit', 'customers:view', 'customers:edit', 'applications:view', 'applications:edit', 'reports:view', 'purchase_orders:view', 'purchase_orders:edit');
 INSERT INTO public.role_permission (permission_level_id, permission_id) SELECT 10, p.permission_id FROM public.permission p;

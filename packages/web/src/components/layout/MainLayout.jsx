@@ -14,6 +14,7 @@ import ReportingPage from '../../pages/ReportingPage';
 import EmployeesPage from '../../pages/EmployeesPage';
 import SettingsPage from '../../pages/SettingsPage';
 import POSPage from '../../pages/POSPage';
+import PurchaseOrderPage from '../../pages/PurchaseOrderPage';
 
 const MainLayout = ({ user, onLogout, onNavigate, currentPage, posLines, setPosLines }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -30,6 +31,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, posLines, setPosL
             case 'customers': return <CustomersPage user={user} />;
             case 'goods_receipt': return <GoodsReceiptPage user={user} />;
             case 'invoicing': return <InvoicingPage user={user} />;
+            case 'purchase_orders': return <PurchaseOrderPage />;
             case 'inventory': return <InventoryPage user={user} />;
             case 'employees': return <EmployeesPage user={user} />;
             case 'settings': return <SettingsPage user={user} />;

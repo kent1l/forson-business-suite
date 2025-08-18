@@ -13,6 +13,7 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
         { name: 'Power Search', icon: ICONS.power_search, page: 'power_search', permission: 'parts:view' }, // Assuming parts:view is sufficient
         { name: 'Invoicing', icon: ICONS.invoice, page: 'invoicing', permission: 'invoicing:create' },
         { name: 'Goods Receipt', icon: ICONS.receipt, page: 'goods_receipt', permission: 'goods_receipt:create' },
+        { name: 'Purchase Orders', icon: ICONS.purchase_order, page: 'purchase_orders', permission: 'purchase_orders:view' },
         { name: 'Inventory', icon: ICONS.inventory, page: 'inventory', permission: 'inventory:view' },
         { name: 'Parts', icon: ICONS.parts, page: 'parts', permission: 'parts:view' },
         { name: 'Suppliers', icon: ICONS.suppliers, page: 'suppliers', permission: 'suppliers:view' },
