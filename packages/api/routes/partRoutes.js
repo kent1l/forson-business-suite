@@ -1,8 +1,8 @@
 const express = require('express');
 const db = require('../db');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
-// UPDATED: Import hasPermission and remove isManagerOrAdmin
 const { protect, hasPermission } = require('../middleware/authMiddleware'); 
+const { syncPartWithMeili, removePartFromMeili } = require('../meilisearch');
 const router = express.Router();
 
 // GET all parts with status filter, search, and sorting
@@ -106,8 +106,8 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
     await client.query('BEGIN');
 
     // SKU Generation Logic
-    const brandRes = await client.query('SELECT brand_code FROM brand WHERE brand_id = $1', [brand_id]);
-    const groupRes = await client.query('SELECT group_code FROM "group" WHERE group_id = $1', [group_id]);
+    const brandRes = await client.query('SELECT brand_code, brand_name FROM brand WHERE brand_id = $1', [brand_id]);
+    const groupRes = await client.query('SELECT group_code, group_name FROM "group" WHERE group_id = $1', [group_id]);
     if (brandRes.rows.length === 0 || groupRes.rows.length === 0) { throw new Error('Invalid brand_id or group_id'); }
     const brandCode = brandRes.rows[0].brand_code;
     const groupCode = groupRes.rows[0].group_code;
@@ -155,6 +155,22 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
     }
 
     await client.query('COMMIT');
+    
+    // Sync with Meilisearch after successful commit
+    const partForMeili = {
+        ...newPartData,
+        brand_name: brandRes.rows[0].brand_name,
+        group_name: groupRes.rows[0].group_name,
+        part_numbers: part_numbers_string,
+        display_name: constructDisplayName({
+            ...newPartData,
+            brand_name: brandRes.rows[0].brand_name,
+            group_name: groupRes.rows[0].group_name,
+            part_numbers: part_numbers_string,
+        }),
+    };
+    syncPartWithMeili(partForMeili);
+
     res.status(201).json(newPartData);
 
   } catch (err) {
@@ -164,59 +180,6 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
   } finally {
     client.release();
   }
-});
-
-// UPDATED: Use hasPermission('parts:edit') instead of isManagerOrAdmin
-router.put('/parts/bulk-update', protect, hasPermission('parts:edit'), async (req, res) => {
-    const { partIds, updates } = req.body;
-
-    if (!Array.isArray(partIds) || partIds.length === 0) {
-        return res.status(400).json({ message: 'partIds must be a non-empty array.' });
-    }
-    if (typeof updates !== 'object' || Object.keys(updates).length === 0) {
-        return res.status(400).json({ message: 'Updates object cannot be empty.' });
-    }
-
-    const client = await db.getClient();
-    try {
-        await client.query('BEGIN');
-
-        const setClauses = [];
-        const queryParams = [];
-        let paramIndex = 1;
-
-        for (const key in updates) {
-            if (Object.hasOwnProperty.call(updates, key)) {
-                setClauses.push(`${key} = $${paramIndex++}`);
-                queryParams.push(updates[key]);
-            }
-        }
-        
-        setClauses.push(`modified_by = $${paramIndex++}`);
-        queryParams.push(req.user.employee_id);
-        setClauses.push(`date_modified = CURRENT_TIMESTAMP`);
-
-        queryParams.push(partIds);
-        
-        const query = `
-            UPDATE part 
-            SET ${setClauses.join(', ')}
-            WHERE part_id = ANY($${paramIndex})
-            RETURNING *;
-        `;
-
-        const { rows } = await client.query(query, queryParams);
-
-        await client.query('COMMIT');
-        res.json({ message: `${rows.length} parts updated successfully.` });
-
-    } catch (err) {
-        await client.query('ROLLBACK');
-        console.error('Bulk update transaction error:', err.message);
-        res.status(500).send('Server Error');
-    } finally {
-        client.release();
-    }
 });
 
 // PUT - Update an existing part with all fields
@@ -255,6 +218,23 @@ router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) 
             return res.status(404).json({ message: 'Part not found' });
         }
 
+        // Sync with Meilisearch after successful update
+        const fullPartQuery = `
+            SELECT p.*, b.brand_name, g.group_name,
+                   (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id) as part_numbers
+            FROM part p
+            LEFT JOIN brand b ON p.brand_id = b.brand_id
+            LEFT JOIN "group" g ON p.group_id = g.group_id
+            WHERE p.part_id = $1
+        `;
+        const fullPartRes = await db.query(fullPartQuery, [id]);
+        const partForMeili = {
+            ...fullPartRes.rows[0],
+            display_name: constructDisplayName(fullPartRes.rows[0]),
+        };
+        syncPartWithMeili(partForMeili);
+
+
         res.json(updatedPart.rows[0]);
     } catch (err) {
         console.error(err.message);
@@ -270,6 +250,10 @@ router.delete('/parts/:id', protect, hasPermission('parts:delete'), async (req, 
         if (deleteOp.rowCount === 0) {
             return res.status(404).json({ message: 'Part not found' });
         }
+
+        // Remove from Meilisearch
+        removePartFromMeili(id);
+        
         res.json({ message: 'Part deleted successfully' });
     } catch (err) {
         console.error(err.message);

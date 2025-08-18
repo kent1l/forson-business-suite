@@ -14,13 +14,26 @@ services:
     ports:
       - "5432:5432"
 
+  # --- NEW: Meilisearch Service ---
+  meilisearch:
+    image: getmeili/meilisearch:latest
+    container_name: forson_meilisearch
+    restart: always
+    environment:
+      - MEILI_MASTER_KEY=${MEILISEARCH_MASTER_KEY}
+    volumes:
+      - meili_data:/meili_data
+    ports:
+      - "7700:7700"
+
   # --- Backend API Service ---
   backend:
     container_name: forson_backend
     image: kentonel/forson-backend:latest 
     restart: always
     depends_on:
-      - db 
+      - db
+      - meilisearch # Added dependency
     ports:
       - "3001:3001"
     env_file:
@@ -36,7 +49,7 @@ services:
     ports:
       - "8090:80"
 
-  # --- NEW: Backup Service ---
+  # --- Backup Service ---
   backup:
     image: postgres:15-alpine # Use the same postgres image for pg_dump
     container_name: forson_backup
@@ -62,6 +75,7 @@ services:
     env_file:
       - ./packages/api/.env.production
 
-# Define a named volume to persist the PostgreSQL data
+# Define a named volume to persist the PostgreSQL data and Meilisearch data
 volumes:
   postgres_data:
+  meili_data:
