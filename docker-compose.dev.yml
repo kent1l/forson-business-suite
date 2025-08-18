@@ -10,9 +10,10 @@ services:
     volumes:
       - ./packages/api:/usr/src/app
       - /usr/src/app/node_modules
-    # 'env_file' is no longer needed here; Docker Compose automatically uses the root .env
     environment:
       - NODE_ENV=development
+    env_file:
+      - ./.env
     ports:
       - "3001:3001"
     depends_on:

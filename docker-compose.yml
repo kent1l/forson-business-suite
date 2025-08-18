@@ -36,7 +36,8 @@ services:
       - meilisearch # Added dependency
     ports:
       - "3001:3001"
-    # The env_file is no longer needed here, Docker Compose will use the root .env file
+    env_file:
+      - ./.env
 
   # --- Frontend Service ---
   frontend:
