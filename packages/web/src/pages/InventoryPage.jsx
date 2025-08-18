@@ -25,7 +25,8 @@ const InventoryPage = () => {
         try {
             setError('');
             setLoading(true);
-            const response = await api.get(`/inventory?search=${searchTerm}`);
+            // --- UPDATED: Call the correct inventory endpoint ---
+            const response = await api.get(`/inventory`, { params: { search: searchTerm } });
             setInventory(response.data);
         } catch (err) {
             setError('Failed to fetch inventory.');

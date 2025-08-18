@@ -1,28 +1,36 @@
 const express = require('express');
 const db = require('../db');
-const { constructDisplayName } = require('../helpers/displayNameHelper'); // <-- NEW: Import helper
+const { constructDisplayName } = require('../helpers/displayNameHelper');
+const { meiliClient } = require('../meilisearch'); // <-- 1. Import Meili client
 const router = express.Router();
 
-// GET /api/inventory - Get current stock levels with search and status filter
+// GET /api/inventory - Get current stock levels with search
 router.get('/inventory', async (req, res) => {
-    const { search = '', status = 'active' } = req.query;
-    const searchTerm = `%${search}%`;
-
-    let statusFilter = "AND p.is_active = TRUE";
-    if (status === 'inactive') {
-        statusFilter = "AND p.is_active = FALSE";
-    } else if (status === 'all') {
-        statusFilter = ""; // No status filter
-    }
+    const { search = '' } = req.query;
 
     try {
-        // UPDATED: The entire query is changed to correctly join tables and calculate values
+        // --- NEW: Hybrid Meilisearch + DB Query ---
+
+        // 1. Get a list of part IDs from Meilisearch
+        const index = meiliClient.index('parts');
+        const searchResults = await index.search(search, {
+            limit: 200, // Limit the number of results for performance
+            attributesToRetrieve: ['part_id'], // We only need the ID
+        });
+        const partIds = searchResults.hits.map(hit => hit.part_id);
+
+        // If Meilisearch returns no results, we can stop here.
+        if (partIds.length === 0) {
+            return res.json([]);
+        }
+
+        // 2. Use those IDs to get the full inventory data from PostgreSQL
         const query = `
             SELECT
                 p.part_id,
                 p.internal_sku,
                 p.detail,
-                p.wac_cost, -- Use wac_cost instead of last_cost
+                p.wac_cost,
                 p.reorder_point,
                 p.warning_quantity,
                 b.brand_name,
@@ -38,7 +46,7 @@ router.get('/inventory', async (req, res) => {
                     WHERE it.part_id = p.part_id
                 ) AS stock_on_hand,
                 (
-                    p.wac_cost * ( -- Use wac_cost for total value calculation
+                    p.wac_cost * (
                         SELECT COALESCE(SUM(it.quantity), 0) 
                         FROM inventory_transaction it 
                         WHERE it.part_id = p.part_id
@@ -47,19 +55,13 @@ router.get('/inventory', async (req, res) => {
             FROM part p
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
-            WHERE 
-                (p.detail ILIKE $1 OR
-                p.internal_sku ILIKE $1 OR
-                b.brand_name ILIKE $1 OR
-                g.group_name ILIKE $1)
-                ${statusFilter}
+            WHERE p.part_id = ANY($1::int[]) -- Use the IDs from Meilisearch
             GROUP BY p.part_id, b.brand_name, g.group_name
             ORDER BY p.detail ASC;
         `;
 
-        const { rows } = await db.query(query, [searchTerm]);
+        const { rows } = await db.query(query, [partIds]);
         
-        // NEW: Construct the display name for each item
         const inventoryWithDisplayName = rows.map(item => ({
             ...item,
             display_name: constructDisplayName(item)
@@ -72,7 +74,7 @@ router.get('/inventory', async (req, res) => {
     }
 });
 
-// GET /api/inventory/:partId/history
+// GET /api/inventory/:partId/history (This route remains unchanged)
 router.get('/inventory/:partId/history', async (req, res) => {
     const { partId } = req.params;
     try {
@@ -91,7 +93,7 @@ router.get('/inventory/:partId/history', async (req, res) => {
     }
 });
 
-// POST /api/inventory/adjust
+// POST /api/inventory/adjust (This route remains unchanged)
 router.post('/inventory/adjust', async (req, res) => {
     const { part_id, quantity, notes, employee_id } = req.body;
 

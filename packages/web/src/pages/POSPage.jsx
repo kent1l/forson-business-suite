@@ -16,11 +16,11 @@ import PartForm from '../components/forms/PartForm';
 const POSPage = ({ user, lines, setLines }) => {
     const { settings } = useSettings();
     const [searchTerm, setSearchTerm] = useState('');
-    const [parts, setParts] = useState([]);
+    const [searchResults, setSearchResults] = useState([]); // State for search results
     const [customers, setCustomers] = useState([]);
     const [brands, setBrands] = useState([]);
     const [groups, setGroups] = useState([]);
-    const [taxRates, setTaxRates] = useState([]); // 1. State for tax rates
+    const [taxRates, setTaxRates] = useState([]);
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [isPriceModalOpen, setIsPriceModalOpen] = useState(false);
     const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
@@ -31,6 +31,33 @@ const POSPage = ({ user, lines, setLines }) => {
     const [lastSale, setLastSale] = useState(null);
     const [highlightedIndex, setHighlightedIndex] = useState(-1);
     const searchInputRef = useRef(null);
+
+    // Debounced search effect
+    useEffect(() => {
+        if (searchTerm.trim() === '') {
+            setSearchResults([]);
+            return;
+        }
+
+        const fetchSearchResults = async () => {
+            try {
+                const response = await api.get('/power-search/parts', {
+                    params: { keyword: searchTerm }
+                });
+                setSearchResults(response.data);
+            } catch (error) {
+                console.error("Search failed:", error);
+                toast.error("Search failed.");
+            }
+        };
+
+        const debounceTimer = setTimeout(() => {
+            fetchSearchResults();
+        }, 300); // 300ms delay
+
+        return () => clearTimeout(debounceTimer);
+    }, [searchTerm]);
+
 
     const fetchCustomers = async () => {
         try {
@@ -44,16 +71,14 @@ const POSPage = ({ user, lines, setLines }) => {
 
     const fetchInitialData = async () => {
         try {
-            const [partsRes, brandsRes, groupsRes, taxRatesRes] = await Promise.all([ // 2. Fetch tax rates
-                api.get('/parts?status=active'),
+            const [brandsRes, groupsRes, taxRatesRes] = await Promise.all([
                 api.get('/brands'),
                 api.get('/groups'),
                 api.get('/tax-rates')
             ]);
-            setParts(partsRes.data);
             setBrands(brandsRes.data);
             setGroups(groupsRes.data);
-            setTaxRates(taxRatesRes.data); // 2. Set tax rates state
+            setTaxRates(taxRatesRes.data);
             
             const customersData = await fetchCustomers();
             if (customersData) {
@@ -74,14 +99,11 @@ const POSPage = ({ user, lines, setLines }) => {
         label: `${c.first_name} ${c.last_name || ''}`.trim()
     })), [customers]);
 
-    const searchResults = searchTerm
-        ? parts.filter(p => p.display_name.toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 10)
-        : [];
-
     const handleSelectPart = (part) => {
         setCurrentItem({ ...part, sale_price: part.last_sale_price || 0 });
         setIsPriceModalOpen(true);
         setSearchTerm('');
+        setSearchResults([]);
         setHighlightedIndex(-1);
     };
 
@@ -109,8 +131,6 @@ const POSPage = ({ user, lines, setLines }) => {
             loading: 'Saving new part...',
             success: (response) => {
                 const newPart = response.data;
-                api.get('/parts?status=active').then(res => setParts(res.data));
-                
                 setIsNewPartModalOpen(false);
                 handleConfirmAddItem({ ...newPart, quantity: 1, sale_price: newPart.last_sale_price || 0 });
                 
@@ -131,7 +151,6 @@ const POSPage = ({ user, lines, setLines }) => {
         setLines(lines.filter(line => line.part_id !== partId));
     };
     
-    // 3. Use useMemo to calculate totals correctly and efficiently
     const { subtotal, tax, total } = useMemo(() => {
         const taxRatesMap = new Map(taxRates.map(rate => [rate.tax_rate_id, parseFloat(rate.rate_percentage)]));
         const defaultTaxRate = taxRates.find(r => r.is_default)?.rate_percentage || 0;
@@ -146,11 +165,9 @@ const POSPage = ({ user, lines, setLines }) => {
             const ratePercentage = taxRatesMap.get(line.tax_rate_id) ?? defaultTaxRate;
 
             if (line.is_tax_inclusive_price) {
-                // If price includes tax, extract the tax amount from the subtotal
                 const taxAmount = lineSubtotal - (lineSubtotal / (1 + ratePercentage));
                 calculatedTax += taxAmount;
             } else {
-                // If price excludes tax, calculate tax on top of the subtotal
                 calculatedTax += lineSubtotal * ratePercentage;
             }
         });

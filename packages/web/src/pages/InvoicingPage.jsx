@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import api from '../api'; // Use the configured api instance
+import api from '../api';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
@@ -10,7 +10,6 @@ import { useSettings } from '../contexts/SettingsContext';
 const InvoicingPage = ({ user }) => {
     const { settings } = useSettings();
     const [customers, setCustomers] = useState([]);
-    const [parts, setParts] = useState([]);
     const [lines, setLines] = useState([]);
     const [selectedCustomer, setSelectedCustomer] = useState('');
     const [paymentMethod, setPaymentMethod] = useState('');
@@ -23,15 +22,32 @@ const InvoicingPage = ({ user }) => {
     const paymentMethods = settings?.PAYMENT_METHODS ? settings.PAYMENT_METHODS.split(',') : [];
 
     useEffect(() => {
+        if (searchTerm.trim() === '') {
+            setSearchResults([]);
+            return;
+        }
+
+        const fetchSearchResults = async () => {
+            try {
+                const response = await api.get('/power-search/parts', {
+                    params: { keyword: searchTerm }
+                });
+                setSearchResults(response.data);
+            } catch (error) {
+                toast.error("Search failed.");
+            }
+        };
+
+        const debounceTimer = setTimeout(fetchSearchResults, 300);
+        return () => clearTimeout(debounceTimer);
+    }, [searchTerm]);
+
+    useEffect(() => {
         const fetchInitialData = async () => {
             try {
                 setLoading(true);
-                const [customersRes, partsRes] = await Promise.all([
-                    api.get('/customers'),
-                    api.get('/parts')
-                ]);
+                const customersRes = await api.get('/customers');
                 setCustomers(customersRes.data);
-                setParts(partsRes.data);
             } catch (err) {
                 toast.error("Failed to load initial data.");
             } finally {
@@ -72,18 +88,6 @@ const InvoicingPage = ({ user }) => {
             error: 'Failed to save customer.',
         });
     };
-
-    useEffect(() => {
-        if (searchTerm.trim() === '') {
-            setSearchResults([]);
-            return;
-        }
-        setSearchResults(
-            parts.filter(p =>
-                p.display_name.toLowerCase().includes(searchTerm.toLowerCase())
-            ).slice(0, 5)
-        );
-    }, [searchTerm, parts]);
 
     const addPartToLines = (part) => {
         const existingLine = lines.find(line => line.part_id === part.part_id);

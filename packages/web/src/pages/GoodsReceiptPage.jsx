@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import api from '../api'; // Use the configured api instance
+import api from '../api';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
@@ -9,7 +9,6 @@ import PartForm from '../components/forms/PartForm';
 
 const GoodsReceiptPage = ({ user }) => {
     const [suppliers, setSuppliers] = useState([]);
-    const [parts, setParts] = useState([]);
     const [brands, setBrands] = useState([]);
     const [groups, setGroups] = useState([]);
     const [lines, setLines] = useState([]);
@@ -20,17 +19,36 @@ const GoodsReceiptPage = ({ user }) => {
     const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
     const [isNewPartModalOpen, setIsNewPartModalOpen] = useState(false);
 
+    useEffect(() => {
+        if (searchTerm.trim() === '') {
+            setSearchResults([]);
+            return;
+        }
+
+        const fetchSearchResults = async () => {
+            try {
+                const response = await api.get('/power-search/parts', {
+                    params: { keyword: searchTerm }
+                });
+                setSearchResults(response.data);
+            } catch (error) {
+                toast.error("Search failed.");
+            }
+        };
+
+        const debounceTimer = setTimeout(fetchSearchResults, 300);
+        return () => clearTimeout(debounceTimer);
+    }, [searchTerm]);
+
     const fetchInitialData = async () => {
         try {
             setLoading(true);
-            const [suppliersRes, partsRes, brandsRes, groupsRes] = await Promise.all([
+            const [suppliersRes, brandsRes, groupsRes] = await Promise.all([
                 api.get('/suppliers'),
-                api.get('/parts'),
                 api.get('/brands'),
                 api.get('/groups')
             ]);
             setSuppliers(suppliersRes.data);
-            setParts(partsRes.data);
             setBrands(brandsRes.data);
             setGroups(groupsRes.data);
         } catch (err) {
@@ -74,28 +92,13 @@ const GoodsReceiptPage = ({ user }) => {
             loading: 'Saving new part...',
             success: (response) => {
                 const newPart = response.data;
-                api.get('/parts?status=active').then(res => setParts(res.data));
-                
                 setIsNewPartModalOpen(false);
                 addPartToLines(newPart);
-                
                 return 'Part added and added to receipt!';
             },
             error: 'Failed to save part.'
         });
     };
-
-    useEffect(() => {
-        if (searchTerm.trim() === '') {
-            setSearchResults([]);
-            return;
-        }
-        setSearchResults(
-            parts.filter(p =>
-                p.display_name.toLowerCase().includes(searchTerm.toLowerCase())
-            ).slice(0, 5)
-        );
-    }, [searchTerm, parts]);
 
     const addPartToLines = (part) => {
         const existingLine = lines.find(line => line.part_id === part.part_id);
@@ -104,7 +107,6 @@ const GoodsReceiptPage = ({ user }) => {
                 line.part_id === part.part_id ? { ...line, quantity: line.quantity + 1 } : line
             ));
         } else {
-            // MODIFIED: Added last_sale_price to the new line item object
             setLines([...lines, { 
                 ...part, 
                 part_id: part.part_id, 
@@ -136,7 +138,6 @@ const GoodsReceiptPage = ({ user }) => {
         const payload = {
             supplier_id: selectedSupplier,
             received_by: user.employee_id,
-            // MODIFIED: Include sale_price in the payload for each line
             lines: lines.map(line => ({
                 part_id: line.part_id,
                 quantity: line.quantity,
@@ -210,7 +211,6 @@ const GoodsReceiptPage = ({ user }) => {
                                 <th className="p-3 text-sm font-semibold text-gray-600">Part Detail</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 w-28">Quantity</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 w-32">Cost Price</th>
-                                {/* MODIFIED: Added Sale Price column header */}
                                 <th className="p-3 text-sm font-semibold text-gray-600 w-32">Sale Price</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 w-16 text-center"></th>
                             </tr>
@@ -221,7 +221,6 @@ const GoodsReceiptPage = ({ user }) => {
                                     <td className="p-2 text-sm font-medium text-gray-800">{line.display_name}</td>
                                     <td className="p-2"><input type="number" value={line.quantity} onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)} className="w-full p-1 border rounded-md" /></td>
                                     <td className="p-2"><input type="number" value={line.cost_price} onChange={e => handleLineChange(line.part_id, 'cost_price', e.target.value)} className="w-full p-1 border rounded-md" /></td>
-                                    {/* MODIFIED: Added Sale Price input field */}
                                     <td className="p-2"><input type="number" value={line.sale_price} onChange={e => handleLineChange(line.part_id, 'sale_price', e.target.value)} className="w-full p-1 border rounded-md" /></td>
                                     <td className="p-2 text-center"><button onClick={() => removeLine(line.part_id)} className="text-red-500 hover:text-red-700"><Icon path={ICONS.trash} className="h-5 w-5"/></button></td>
                                 </tr>
