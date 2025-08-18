@@ -7,11 +7,38 @@ import SetupPage from './pages/SetupPage';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
+// AppContent remains the same, but it will now always have access to auth and settings
 function AppContent() {
     const { user, isAuthenticated, login, logout } = useAuth();
     const [currentPage, setCurrentPage] = useState('dashboard');
-    const [needsSetup, setNeedsSetup] = useState(null);
     const [posLines, setPosLines] = useState([]);
+
+    const handleLogout = () => {
+        logout();
+        setPosLines([]);
+    };
+
+    if (!isAuthenticated) {
+        return <LoginScreen onLogin={login} />;
+    }
+
+    return (
+        <SettingsProvider>
+            <MainLayout
+                user={user}
+                onLogout={handleLogout}
+                currentPage={currentPage}
+                onNavigate={setCurrentPage}
+                posLines={posLines}
+                setPosLines={setPosLines}
+            />
+        </SettingsProvider>
+    );
+}
+
+// The main App component will now handle the initial setup check
+function App() {
+    const [needsSetup, setNeedsSetup] = useState(null);
 
     const checkSetupStatus = async () => {
         try {
@@ -19,66 +46,30 @@ function AppContent() {
             setNeedsSetup(!response.data.isAdminCreated);
         } catch (error) {
             console.error("Failed to check setup status", error);
+            // Assume setup is needed if the check fails
             setNeedsSetup(true); 
         }
     };
 
     useEffect(() => {
         checkSetupStatus();
+    }, []);
 
-        // NEW: Event listener to handle session expiry gracefully
-        const handleAuthError = () => {
-            logout();
-        };
-
-        window.addEventListener('auth-error', handleAuthError);
-
-        // Cleanup the event listener when the component unmounts
-        return () => {
-            window.removeEventListener('auth-error', handleAuthError);
-        };
-    }, [logout]); // Add logout as a dependency
-
-    const handleLogout = () => {
-        logout();
-        setPosLines([]);
-    };
-
-    const handleNavigate = (page) => {
-        setCurrentPage(page);
-    };
-
+    // Display a loading indicator while checking the setup status
     if (needsSetup === null) {
-        return <div>Loading...</div>;
+        return <div>Loading configuration...</div>;
     }
 
+    // If setup is needed, render only the SetupPage
     if (needsSetup) {
         return <SetupPage onSetupComplete={checkSetupStatus} />;
     }
 
-    if (!isAuthenticated) {
-        return <LoginScreen onLogin={login} />;
-    }
-
-    return (
-        <MainLayout
-            user={user}
-            onLogout={handleLogout}
-            currentPage={currentPage}
-            onNavigate={handleNavigate}
-            posLines={posLines}
-            setPosLines={setPosLines}
-        />
-    );
-}
-
-function App() {
+    // If setup is complete, render the main application with AuthProvider
     return (
         <AuthProvider>
-            <SettingsProvider>
-                <Toaster position="top-center" />
-                <AppContent />
-            </SettingsProvider>
+            <Toaster position="top-center" />
+            <AppContent />
         </AuthProvider>
     );
 }

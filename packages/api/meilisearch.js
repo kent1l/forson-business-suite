@@ -5,12 +5,22 @@ const client = new MeiliSearch({
   apiKey: process.env.MEILISEARCH_MASTER_KEY,
 });
 
-const syncPartWithMeili = async (partData) => {
+/**
+ * Syncs one or more part documents with Meilisearch.
+ * @param {object|object[]} documents - A single part object or an array of part objects.
+ */
+const syncPartWithMeili = async (documents) => {
   try {
     const index = client.index('parts');
-    await index.addDocuments([partData], { primaryKey: 'part_id' });
+    // If 'documents' is not an array, wrap it in one. Otherwise, use it as is.
+    const documentsToAdd = Array.isArray(documents) ? documents : [documents];
+
+    if (documentsToAdd.length > 0) {
+      await index.addDocuments(documentsToAdd, { primaryKey: 'part_id' });
+    }
   } catch (error) {
-    console.error('Error syncing part with Meilisearch:', error);
+    // Log the full error from Meilisearch for better debugging
+    console.error('Error syncing part with Meilisearch:', error.message);
   }
 };
 
@@ -19,7 +29,7 @@ const removePartFromMeili = async (partId) => {
     const index = client.index('parts');
     await index.deleteDocument(partId);
   } catch (error) {
-    console.error('Error removing part from Meilisearch:', error);
+    console.error('Error removing part from Meilisearch:', error.message);
   }
 };
 

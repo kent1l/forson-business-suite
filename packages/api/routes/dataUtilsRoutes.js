@@ -4,7 +4,9 @@ const Papa = require('papaparse');
 const { Parser } = require('json2csv');
 const db = require('../db');
 const { protect, isAdmin } = require('../middleware/authMiddleware');
-const { generateUniqueCode } = require('../helpers/codeGenerator'); // 1. Import the new helper
+const { generateUniqueCode } = require('../helpers/codeGenerator');
+const { syncPartWithMeili } = require('../meilisearch');
+const { constructDisplayName } = require('../helpers/displayNameHelper');
 const router = express.Router();
 
 // Configure multer for in-memory file storage
@@ -91,6 +93,9 @@ router.post('/import/:entity', protect, isAdmin, upload.single('file'), async (r
         await client.query('BEGIN');
         const parsed = Papa.parse(csvData, { header: true, skipEmptyLines: true });
 
+        // A list to hold all parts to be synced after the transaction
+        const partsToSync = [];
+
         for (const [index, row] of parsed.data.entries()) {
             const rowNum = index + 2;
 
@@ -100,7 +105,6 @@ router.post('/import/:entity', protect, isAdmin, upload.single('file'), async (r
                 
                 let brandRes = await client.query('SELECT brand_id, brand_code FROM brand WHERE brand_name = $1', [brand_name]);
                 if (brandRes.rows.length === 0) {
-                    // 2. Use the imported helper function
                     const brandCode = await generateUniqueCode(client, brand_name, 'brand', 'brand_code');
                     brandRes = await client.query('INSERT INTO brand (brand_name, brand_code) VALUES ($1, $2) RETURNING brand_id, brand_code', [brand_name, brandCode]);
                     newBrands.add(`${brand_name} (${brandCode})`);
@@ -109,7 +113,6 @@ router.post('/import/:entity', protect, isAdmin, upload.single('file'), async (r
 
                 let groupRes = await client.query('SELECT group_id, group_code FROM "group" WHERE group_name = $1', [group_name]);
                 if (groupRes.rows.length === 0) {
-                    // 2. Use the imported helper function
                     const groupCode = await generateUniqueCode(client, group_name, 'group', 'group_code');
                     groupRes = await client.query('INSERT INTO "group" (group_name, group_code) VALUES ($1, $2) RETURNING group_id, group_code', [group_name, groupCode]);
                     newGroups.add(`${group_name} (${groupCode})`);
@@ -158,9 +161,26 @@ router.post('/import/:entity', protect, isAdmin, upload.single('file'), async (r
 
             if (newOrUpdatedRow.xmax === '0') createdCount++;
             else updatedCount++;
+
+            if (entity === 'parts') {
+                const brand = await client.query('SELECT brand_name FROM brand WHERE brand_id = $1', [newOrUpdatedRow.brand_id]);
+                const group = await client.query('SELECT group_name FROM "group" WHERE group_id = $1', [newOrUpdatedRow.group_id]);
+                const partForMeili = {
+                    ...newOrUpdatedRow,
+                    brand_name: brand.rows[0].brand_name,
+                    group_name: group.rows[0].group_name,
+                    part_numbers: row.part_numbers || '',
+                };
+                partForMeili.display_name = constructDisplayName(partForMeili);
+                partsToSync.push(partForMeili);
+            }
         }
 
         await client.query('COMMIT');
+
+        if (partsToSync.length > 0) {
+            syncPartWithMeili(partsToSync);
+        }
         
         let message = `Import successful. Created: ${createdCount}, Updated: ${updatedCount}.`;
         if (newBrands.size > 0) message += ` New Brands: ${[...newBrands].join(', ')}.`;
@@ -172,6 +192,43 @@ router.post('/import/:entity', protect, isAdmin, upload.single('file'), async (r
         await client.query('ROLLBACK');
         console.error(`Import error for ${entity}:`, error);
         res.status(500).json({ message: error.message || `Failed to import ${entity}. Check file format and data.` });
+    } finally {
+        client.release();
+    }
+});
+
+// GET /api/data/sync-parts-to-meili - One-time sync
+router.get('/sync-parts-to-meili', protect, isAdmin, async (req, res) => {
+    const client = await db.getClient();
+    try {
+        console.log('Starting one-time sync of all parts to Meilisearch...');
+        const query = `
+            SELECT p.*, b.brand_name, g.group_name,
+                   (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id) as part_numbers
+            FROM part p
+            LEFT JOIN brand b ON p.brand_id = b.brand_id
+            LEFT JOIN "group" g ON p.group_id = g.group_id
+        `;
+        const { rows } = await client.query(query);
+
+        if (rows.length === 0) {
+            return res.status(200).json({ message: 'No parts found in the database to sync.' });
+        }
+
+        const partsToSync = rows.map(part => ({
+            ...part,
+            display_name: constructDisplayName(part),
+        }));
+
+        // Sync with Meilisearch
+        await syncPartWithMeili(partsToSync);
+
+        console.log(`Successfully synced ${partsToSync.length} parts to Meilisearch.`);
+        res.status(200).json({ message: `Successfully synced ${partsToSync.length} parts.` });
+
+    } catch (error) {
+        console.error('Manual sync error:', error);
+        res.status(500).json({ message: 'Failed to sync parts.', error: error.message });
     } finally {
         client.release();
     }

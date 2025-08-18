@@ -1,17 +1,16 @@
+# In docker-compose.dev.yml
+
 services:
   backend:
     container_name: forson_backend_dev
     build:
       context: ./packages/api
       dockerfile: Dockerfile
-    command: npm start # Use the script that runs nodemon
+    command: npm start
     volumes:
-      # Mount your local code into the container
       - ./packages/api:/usr/src/app
-      # IMPORTANT: Use a volume to "mask" the host node_modules
       - /usr/src/app/node_modules
-    env_file:
-      - ./packages/api/.env # Use your local .env file
+    # 'env_file' is no longer needed here; Docker Compose automatically uses the root .env
     environment:
       - NODE_ENV=development
     ports:
@@ -23,20 +22,14 @@ services:
   frontend:
     container_name: forson_frontend_dev
     build:
+      # Use the new development Dockerfile
       context: ./packages/web
-      dockerfile: Dockerfile
-    command: npm run dev -- --host # Use the dev script
+      dockerfile: Dockerfile.dev
+    command: npm run dev -- --host
     volumes:
-      # Mount your local code into the container
       - ./packages/web:/app
-      # IMPORTANT: Use a volume to "mask" the host node_modules
       - /app/node_modules
     ports:
-      # Expose the Vite dev server port (default is 5173)
       - "5173:5173"
-      # Expose the Nginx port for previewing the build if needed
-      - "8090:80"
     depends_on:
       - backend
-
-  # You don't need to redefine db or meilisearch if they are in the base file

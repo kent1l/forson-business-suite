@@ -36,8 +36,7 @@ services:
       - meilisearch # Added dependency
     ports:
       - "3001:3001"
-    env_file:
-      - ./packages/api/.env.production 
+    # The env_file is no longer needed here, Docker Compose will use the root .env file
 
   # --- Frontend Service ---
   frontend:
@@ -57,23 +56,20 @@ services:
     depends_on:
       - db
     volumes:
-      - ./backups:/backups # Mount the local backups folder into the container
-      - ./backup:/docker-entrypoint-initdb.d # Mount the script directory
+      - ./backups:/backups
+      - ./backup:/docker-entrypoint-initdb.d
     environment:
       - DB_HOST=db
       - DB_NAME=${DB_NAME}
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
       - BACKUP_PATH=/backups
-      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-7} # Default to 7 days if not set
-    # This command runs the backup script every 24 hours (86400 seconds)
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-7}
     command: >
       bash -c "while true; do
         /docker-entrypoint-initdb.d/backup.sh;
         sleep 86400;
       done"
-    env_file:
-      - ./packages/api/.env.production
 
 # Define a named volume to persist the PostgreSQL data and Meilisearch data
 volumes:
