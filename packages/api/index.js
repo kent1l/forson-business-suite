@@ -1,62 +1,41 @@
-require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+require('dotenv').config();
 const db = require('./db');
-
-// Import ALL routes
-const setupRoutes = require('./routes/setupRoutes');
-const taxRateRoutes = require('./routes/taxRateRoutes');
-const supplierRoutes = require('./routes/supplierRoutes');
-const partRoutes = require('./routes/partRoutes');
-const employeeRoutes = require('./routes/employeeRoutes');
-const brandRoutes = require('./routes/brandRoutes');
-const groupRoutes = require('./routes/groupRoutes');
-const goodsReceiptRoutes = require('./routes/goodsReceiptRoutes');
-const invoiceRoutes = require('./routes/invoiceRoutes');
-const customerRoutes = require('./routes/customerRoutes');
-const partNumberRoutes = require('./routes/partNumberRoutes');
-const applicationRoutes = require('./routes/applicationRoutes');
-const partApplicationRoutes = require('./routes/partApplicationRoutes');
-const dashboardRoutes = require('./routes/dashboardRoutes');
-const powerSearchRoutes = require('./routes/powerSearchRoutes');
-const inventoryRoutes = require('./routes/inventoryRoutes');
-const reportingRoutes = require('./routes/reportingRoutes');
-const settingsRoutes = require('./routes/settingsRoutes');
-const backupRoutes = require('./routes/backupRoutes');
-const dataUtilsRoutes = require('./routes/dataUtilsRoutes');
-const permissionRoutes = require('./routes/permissionRoutes'); // <-- NEW: Import permission routes
+const { setupMeiliSearch } = require('./meilisearch-setup'); // <-- Import the new function
 
 const app = express();
-const PORT = process.env.PORT || 3001;
 
-// --- Middleware ---
 app.use(cors());
 app.use(express.json());
 
-// --- API Routes ---
-app.use('/api', setupRoutes);
+// --- Register all your API routes ---
+app.use('/api', require('./routes/partRoutes'));
+app.use('/api', require('./routes/supplierRoutes'));
+app.use('/api', require('./routes/customerRoutes'));
+app.use('/api', require('./routes/applicationRoutes'));
+app.use('/api', require('./routes/partNumberRoutes'));
+app.use('/api', require('./routes/partApplicationRoutes'));
+app.use('/api', require('./routes/brandRoutes'));
+app.use('/api', require('./routes/groupRoutes'));
+app.use('/api', require('./routes/inventoryRoutes'));
+app.use('/api', require('./routes/invoiceRoutes'));
+app.use('/api', require('./routes/goodsReceiptRoutes'));
+app.use('/api', require('./routes/powerSearchRoutes'));
+app.use('/api', require('./routes/reportingRoutes'));
+app.use('/api', require('./routes/settingsRoutes'));
+app.use('/api', require('./routes/dataUtilsRoutes'));
+app.use('/api', require('./routes/setupRoutes'));
+app.use('/api', require('./routes/employeeRoutes'));
+app.use('/api', require('./routes/permissionRoutes'));
+app.use('/api', require('./routes/taxRateRoutes'));
+app.use('/api', require('./routes/dashboardRoutes'));
+app.use('/api', require('./routes/backupRoutes'));
 
-app.use('/api', taxRateRoutes);
-app.use('/api', powerSearchRoutes);
-app.use('/api', dashboardRoutes);
-app.use('/api', partNumberRoutes);
-app.use('/api', partApplicationRoutes);
-app.use('/api', goodsReceiptRoutes);
-app.use('/api', invoiceRoutes);
-app.use('/api', customerRoutes);
-app.use('/api', applicationRoutes);
-app.use('/api', brandRoutes);
-app.use('/api', groupRoutes);
-app.use('/api', supplierRoutes);
-app.use('/api', employeeRoutes);
-app.use('/api', inventoryRoutes);
-app.use('/api', reportingRoutes);
-app.use('/api', settingsRoutes);
-app.use('/api/backups', backupRoutes);
-app.use('/api/data', dataUtilsRoutes);
-app.use('/api', permissionRoutes); // <-- NEW: Add permission routes
-app.use('/api', partRoutes); 
+const PORT = process.env.PORT || 3001;
 
-app.listen(PORT, () => {
+// Make the listen function async and call the setup function
+app.listen(PORT, async () => {
   console.log(`Server is running on port ${PORT}`);
+  await setupMeiliSearch();
 });

@@ -2,26 +2,41 @@ const express = require('express');
 const db = require('../db');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
 const { protect, hasPermission } = require('../middleware/authMiddleware'); 
-const { syncPartWithMeili, removePartFromMeili } = require('../meilisearch');
+const { syncPartWithMeili, removePartFromMeili, meiliClient } = require('../meilisearch'); // <-- Import meiliClient
 const router = express.Router();
 
-// GET all parts with status filter, search, and sorting
+// GET all parts with status filter, search, and sorting (NOW POWERED BY MEILISEARCH)
 router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
-  const { status = 'active', search = '', sortBy = 'part_id', sortOrder = 'ASC' } = req.query;
-  const searchTerm = `%${search}%`;
-
-  let statusFilter = "WHERE p.is_active = TRUE";
-  if (status === 'inactive') {
-    statusFilter = "WHERE p.is_active = FALSE";
-  } else if (status === 'all') {
-    statusFilter = "";
-  }
-  
-  const validSortColumns = ['part_id', 'internal_sku', 'display_name', 'brand_name', 'group_name'];
-  const safeSortBy = validSortColumns.includes(sortBy) ? sortBy : 'part_id';
-  const safeSortOrder = sortOrder.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+  const { status = 'active', search = '' } = req.query;
 
   try {
+    // 1. Get a list of relevant part IDs from Meilisearch
+    const index = meiliClient.index('parts');
+    const searchOptions = {
+      limit: 200, // Limit results for performance
+      attributesToRetrieve: ['part_id'], // We only need the ID from the search
+    };
+
+    const filter = [];
+    if (status === 'active') {
+      filter.push('is_active = true');
+    } else if (status === 'inactive') {
+      filter.push('is_active = false');
+    }
+    // 'all' status doesn't add a filter
+
+    if (filter.length > 0) {
+      searchOptions.filter = filter;
+    }
+
+    const searchResults = await index.search(search, searchOptions);
+    const partIds = searchResults.hits.map(hit => hit.part_id);
+
+    if (partIds.length === 0) {
+      return res.json([]);
+    }
+
+    // 2. Use those IDs to get the full, detailed data from PostgreSQL
     const query = `
       SELECT
         p.*,
@@ -31,15 +46,21 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
           SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) 
           FROM part_number pn 
           WHERE pn.part_id = p.part_id
-        ) AS part_numbers
+        ) AS part_numbers,
+        (
+          SELECT STRING_AGG(
+            CONCAT(a.make, ' ', a.model), '; '
+          )
+          FROM part_application pa
+          JOIN application a ON pa.application_id = a.application_id
+          WHERE pa.part_id = p.part_id
+        ) AS applications
       FROM part AS p
       LEFT JOIN brand AS b ON p.brand_id = b.brand_id
       LEFT JOIN "group" AS g ON p.group_id = g.group_id
-      ${statusFilter}
-      AND (p.detail ILIKE $1 OR p.internal_sku ILIKE $1)
-      ORDER BY ${safeSortBy} ${safeSortOrder};
+      WHERE p.part_id = ANY($1::int[])
     `;
-    const { rows } = await db.query(query, [searchTerm]);
+    const { rows } = await db.query(query, [partIds]);
     
     const partsWithDisplayName = rows.map(part => ({
         ...part,
@@ -52,6 +73,9 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
     res.status(500).send('Server Error');
   }
 });
+
+
+// --- OTHER ROUTES (GET single, POST, PUT, DELETE) remain the same ---
 
 // GET a single part by ID
 router.get('/parts/:id', protect, hasPermission('parts:view'), async (req, res) => {
@@ -156,7 +180,6 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
 
     await client.query('COMMIT');
     
-    // Sync with Meilisearch after successful commit
     const partForMeili = {
         ...newPartData,
         brand_name: brandRes.rows[0].brand_name,
@@ -180,6 +203,58 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
   } finally {
     client.release();
   }
+});
+
+router.put('/parts/bulk-update', protect, hasPermission('parts:edit'), async (req, res) => {
+    const { partIds, updates } = req.body;
+
+    if (!Array.isArray(partIds) || partIds.length === 0) {
+        return res.status(400).json({ message: 'partIds must be a non-empty array.' });
+    }
+    if (typeof updates !== 'object' || Object.keys(updates).length === 0) {
+        return res.status(400).json({ message: 'Updates object cannot be empty.' });
+    }
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+
+        const setClauses = [];
+        const queryParams = [];
+        let paramIndex = 1;
+
+        for (const key in updates) {
+            if (Object.hasOwnProperty.call(updates, key)) {
+                setClauses.push(`${key} = $${paramIndex++}`);
+                queryParams.push(updates[key]);
+            }
+        }
+        
+        setClauses.push(`modified_by = $${paramIndex++}`);
+        queryParams.push(req.user.employee_id);
+        setClauses.push(`date_modified = CURRENT_TIMESTAMP`);
+
+        queryParams.push(partIds);
+        
+        const query = `
+            UPDATE part 
+            SET ${setClauses.join(', ')}
+            WHERE part_id = ANY($${paramIndex})
+            RETURNING *;
+        `;
+
+        const { rows } = await client.query(query, queryParams);
+
+        await client.query('COMMIT');
+        res.json({ message: `${rows.length} parts updated successfully.` });
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Bulk update transaction error:', err.message);
+        res.status(500).send('Server Error');
+    } finally {
+        client.release();
+    }
 });
 
 // PUT - Update an existing part with all fields
