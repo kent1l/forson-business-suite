@@ -47,7 +47,7 @@ router.get('/export/:entity', protect, isAdmin, async (req, res) => {
             query = `
                 SELECT
                     p.internal_sku, p.detail, b.brand_name, g.group_name,
-                    (SELECT STRING_AGG(pn.part_number, '|') FROM part_number pn WHERE pn.part_id = p.part_id) as part_numbers,
+                    (SELECT STRING_AGG(pn.part_number, ';') FROM part_number pn WHERE pn.part_id = p.part_id) as part_numbers,
                     p.barcode, p.is_active, p.last_cost, p.last_sale_price, p.reorder_point, p.warning_quantity,
                     p.measurement_unit, p.is_tax_inclusive_price, p.is_price_change_allowed, p.is_using_default_quantity,
                     p.is_service, p.low_stock_warning
@@ -149,7 +149,7 @@ router.post('/import/:entity', protect, isAdmin, upload.single('file'), async (r
             const newOrUpdatedRow = result.rows[0];
 
             if (entity === 'parts' && row.part_numbers) {
-                const partNumbers = row.part_numbers.split('|').map(pn => pn.trim()).filter(Boolean);
+                const partNumbers = row.part_numbers.split(';').map(pn => pn.trim()).filter(Boolean);
                 await client.query('DELETE FROM part_number WHERE part_id = $1', [newOrUpdatedRow.part_id]);
                 for (const pn of partNumbers) {
                     await client.query('INSERT INTO part_number (part_id, part_number) VALUES ($1, $2)', [newOrUpdatedRow.part_id, pn]);

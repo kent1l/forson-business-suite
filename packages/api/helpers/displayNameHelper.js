@@ -6,11 +6,11 @@ const constructDisplayName = (part) => {
     const category = `${part.group_name || ''} (${part.brand_name || ''})`.replace('()', '').trim();
     if (category) displayNameParts.push(category);
 
-    // Part 2: Detail
-    if (part.detail) displayNameParts.push(part.detail);
-
-    // Part 3: Part Numbers
+    // Part 2: Part Numbers
     if (part.part_numbers) displayNameParts.push(part.part_numbers);
+
+    // Part 3: Detail
+    if (part.detail) displayNameParts.push(part.detail);
 
     return displayNameParts.join(' | ');
 };
