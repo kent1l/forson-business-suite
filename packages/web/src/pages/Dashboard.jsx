@@ -64,7 +64,7 @@ const Dashboard = () => {
                 />
                 <DashboardCard 
                     title="Low Stock Items" 
-                    value={stats.lowStockItems} 
+                    value={stats.lowStockItems.toLocaleString()} 
                     icon={ICONS.warning} 
                     color={{bg: 'bg-yellow-100', text: 'text-yellow-600'}} 
                     loading={loading}
