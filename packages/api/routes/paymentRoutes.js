@@ -3,33 +3,8 @@ const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const router = express.Router();
 
-// GET /api/customers/:id/unpaid-invoices - Get all unpaid or partially paid invoices for a customer
-router.get('/customers/:id/unpaid-invoices', protect, hasPermission('ar:view'), async (req, res) => {
-    const { id } = req.params;
-    try {
-        const query = `
-            SELECT 
-                i.invoice_id, 
-                i.invoice_number, 
-                i.invoice_date, 
-                i.total_amount,
-                COALESCE(SUM(ipa.amount_allocated), 0) as amount_paid,
-                (i.total_amount - COALESCE(SUM(ipa.amount_allocated), 0)) as balance_due
-            FROM invoice i
-            LEFT JOIN invoice_payment_allocation ipa ON i.invoice_id = ipa.invoice_id
-            WHERE i.customer_id = $1 AND i.status IN ('Unpaid', 'Partially Paid')
-            GROUP BY i.invoice_id
-            HAVING (i.total_amount - COALESCE(SUM(ipa.amount_allocated), 0)) > 0
-            ORDER BY i.invoice_date ASC;
-        `;
-        const { rows } = await db.query(query, [id]);
-        res.json(rows);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
-    }
-});
-
+// --- MOVED to customerRoutes.js ---
+// The endpoint for getting unpaid invoices has been moved to keep all customer-related routes together.
 
 // POST /api/payments - Receive a new customer payment and allocate it
 router.post('/payments', protect, hasPermission('ar:receive_payment'), async (req, res) => {
