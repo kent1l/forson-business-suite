@@ -159,8 +159,8 @@ CREATE TABLE IF NOT EXISTS public.invoice (
     employee_id integer NOT NULL REFERENCES public.employee(employee_id) ON DELETE RESTRICT,
     invoice_date timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     total_amount numeric(12,2) NOT NULL,
-    amount_paid numeric(12,2) DEFAULT 0.00, -- This will be deprecated but kept for now
-    status character varying(20) DEFAULT 'Unpaid'::character varying, -- Changed default
+    amount_paid numeric(12,2) DEFAULT 0.00,
+    status character varying(20) DEFAULT 'Unpaid'::character varying,
     terms TEXT
 );
 
@@ -260,6 +260,24 @@ CREATE TABLE IF NOT EXISTS public.draft_transaction (
     draft_data jsonb NOT NULL,
     last_updated timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (employee_id, transaction_type)
+);
+
+-- NEW: Tagging System Tables
+CREATE TABLE IF NOT EXISTS public.tag (
+    tag_id serial PRIMARY KEY,
+    tag_name character varying(50) NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS public.part_tag (
+    part_id integer NOT NULL REFERENCES public.part(part_id) ON DELETE CASCADE,
+    tag_id integer NOT NULL REFERENCES public.tag(tag_id) ON DELETE CASCADE,
+    PRIMARY KEY (part_id, tag_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.customer_tag (
+    customer_id integer NOT NULL REFERENCES public.customer(customer_id) ON DELETE CASCADE,
+    tag_id integer NOT NULL REFERENCES public.tag(tag_id) ON DELETE CASCADE,
+    PRIMARY KEY (customer_id, tag_id)
 );
 
 

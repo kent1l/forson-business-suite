@@ -34,6 +34,7 @@ app.use('/api', require('./routes/backupRoutes'));
 app.use('/api', require('./routes/purchaseOrderRoutes'));
 app.use('/api', require('./routes/draftRoutes'));
 app.use('/api', require('./routes/paymentRoutes'));
+app.use('/api', require('./routes/tagRoutes')); // <-- NEW
 
 
 const PORT = process.env.PORT || 3001;

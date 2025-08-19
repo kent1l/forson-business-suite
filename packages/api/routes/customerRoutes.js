@@ -1,7 +1,25 @@
 const express = require('express');
 const db = require('../db');
-const { protect, hasPermission } = require('../middleware/authMiddleware'); // Import middleware
+const { protect, hasPermission } = require('../middleware/authMiddleware');
 const router = express.Router();
+
+// Helper function to handle tag logic
+const manageTags = async (client, tags, customerId) => {
+    await client.query('DELETE FROM customer_tag WHERE customer_id = $1', [customerId]);
+    if (tags && tags.length > 0) {
+        for (const tagName of tags) {
+            let tagRes = await client.query('SELECT tag_id FROM tag WHERE tag_name = $1', [tagName.toLowerCase()]);
+            let tagId;
+            if (tagRes.rows.length === 0) {
+                tagRes = await client.query('INSERT INTO tag (tag_name) VALUES ($1) RETURNING tag_id', [tagName.toLowerCase()]);
+                tagId = tagRes.rows[0].tag_id;
+            } else {
+                tagId = tagRes.rows[0].tag_id;
+            }
+            await client.query('INSERT INTO customer_tag (customer_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [customerId, tagId]);
+        }
+    }
+};
 
 // GET all customers
 router.get('/customers', protect, hasPermission('customers:view'), async (req, res) => {
@@ -14,7 +32,27 @@ router.get('/customers', protect, hasPermission('customers:view'), async (req, r
     }
 });
 
-// GET /api/customers/with-balances - Get all customers with an outstanding balance
+// GET /api/customers/:id/tags - Get all tags for a specific customer
+router.get('/customers/:id/tags', protect, hasPermission('customers:view'), async (req, res) => {
+    const { id } = req.params;
+    try {
+        const query = `
+            SELECT t.tag_id, t.tag_name 
+            FROM tag t
+            JOIN customer_tag ct ON t.tag_id = ct.tag_id
+            WHERE ct.customer_id = $1
+            ORDER BY t.tag_name;
+        `;
+        const { rows } = await db.query(query, [id]);
+        res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+
+// GET /api/customers/with-balances
 router.get('/customers/with-balances', protect, hasPermission('ar:view'), async (req, res) => {
     try {
         const query = `
@@ -59,8 +97,7 @@ router.get('/customers/with-balances', protect, hasPermission('ar:view'), async 
     }
 });
 
-// --- MOVED FROM paymentRoutes.js ---
-// GET /api/customers/:id/unpaid-invoices - Get all unpaid or partially paid invoices for a customer
+// GET /api/customers/:id/unpaid-invoices
 router.get('/customers/:id/unpaid-invoices', protect, hasPermission('ar:view'), async (req, res) => {
     const { id } = req.params;
     try {
@@ -87,35 +124,50 @@ router.get('/customers/:id/unpaid-invoices', protect, hasPermission('ar:view'), 
     }
 });
 
-
 // POST a new customer
 router.post('/customers', protect, hasPermission('customers:edit'), async (req, res) => {
-    const { first_name, last_name, company_name, phone, email, address } = req.body;
+    const { tags, ...customerData } = req.body;
+    const client = await db.getClient();
     try {
-        const { rows } = await db.query(
+        await client.query('BEGIN');
+        const { rows } = await client.query(
             'INSERT INTO customer (first_name, last_name, company_name, phone, email, address) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-            [first_name, last_name, company_name, phone, email, address]
+            [customerData.first_name, customerData.last_name, customerData.company_name, customerData.phone, customerData.email, customerData.address]
         );
-        res.status(201).json(rows[0]);
+        const newCustomer = rows[0];
+        await manageTags(client, tags, newCustomer.customer_id);
+        await client.query('COMMIT');
+        res.status(201).json(newCustomer);
     } catch (err) {
+        await client.query('ROLLBACK');
         console.error(err.message);
         res.status(500).send('Server Error');
+    } finally {
+        client.release();
     }
 });
 
 // PUT to update a customer
 router.put('/customers/:id', protect, hasPermission('customers:edit'), async (req, res) => {
     const { id } = req.params;
-    const { first_name, last_name, company_name, phone, email, address, is_active } = req.body;
+    const { tags, ...customerData } = req.body;
+    const client = await db.getClient();
     try {
-        const { rows } = await db.query(
+        await client.query('BEGIN');
+        const { rows } = await client.query(
             'UPDATE customer SET first_name = $1, last_name = $2, company_name = $3, phone = $4, email = $5, address = $6, is_active = $7 WHERE customer_id = $8 RETURNING *',
-            [first_name, last_name, company_name, phone, email, address, is_active, id]
+            [customerData.first_name, customerData.last_name, customerData.company_name, customerData.phone, customerData.email, customerData.address, customerData.is_active, id]
         );
-        res.json(rows[0]);
+        const updatedCustomer = rows[0];
+        await manageTags(client, tags, updatedCustomer.customer_id);
+        await client.query('COMMIT');
+        res.json(updatedCustomer);
     } catch (err) {
+        await client.query('ROLLBACK');
         console.error(err.message);
         res.status(500).send('Server Error');
+    } finally {
+        client.release();
     }
 });
 
@@ -127,7 +179,6 @@ router.delete('/customers/:id', protect, hasPermission('customers:edit'), async 
         if (invoiceCheck.rows.length > 0) {
             return res.status(400).json({ message: 'Cannot delete customer. They have existing invoices.' });
         }
-
         const { rowCount } = await db.query('DELETE FROM customer WHERE customer_id = $1', [id]);
         if (rowCount === 0) {
             return res.status(404).json({ message: 'Customer not found.' });
@@ -138,6 +189,5 @@ router.delete('/customers/:id', protect, hasPermission('customers:edit'), async 
         res.status(500).send('Server Error');
     }
 });
-
 
 module.exports = router;

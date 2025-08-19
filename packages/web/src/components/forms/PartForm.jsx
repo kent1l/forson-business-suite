@@ -3,7 +3,8 @@ import api from '../../api';
 import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
 import Combobox from '../ui/Combobox';
-import { useSettings } from '../../contexts/SettingsContext'; // 1. Import useSettings
+import { useSettings } from '../../contexts/SettingsContext';
+import TagInput from '../ui/TagInput'; // <-- Import TagInput
 
 const BrandGroupForm = ({ type, onSave, onCancel }) => {
     const [name, setName] = useState('');
@@ -44,7 +45,8 @@ const BrandGroupForm = ({ type, onSave, onCancel }) => {
 };
 
 const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, isBulkEdit = false, selectedCount = 0 }) => {
-    const { settings } = useSettings(); // 2. Get settings from context
+    const { settings } = useSettings();
+    const [tags, setTags] = useState([]); // <-- State for tags
 
     const getInitialState = () => {
         if (isBulkEdit) {
@@ -61,7 +63,6 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
             last_cost: 0, last_sale_price: 0, barcode: '', measurement_unit: 'pcs', tax_rate_id: '',
             is_price_change_allowed: true, is_using_default_quantity: true,
             is_service: false, low_stock_warning: false, 
-            // 3. Use the global setting for the initial value
             is_tax_inclusive_price: settings?.DEFAULT_IS_TAX_INCLUSIVE === 'true'
         };
     };
@@ -113,6 +114,11 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                 low_stock_warning: part.low_stock_warning,
                 is_tax_inclusive_price: part.is_tax_inclusive_price,
             });
+            // Fetch existing tags for the part being edited
+            api.get(`/parts/${part.part_id}/tags`).then(res => {
+                setTags(res.data.map(t => t.tag_name));
+            }).catch(() => toast.error('Could not load part tags.'));
+
         } else {
             const initialState = getInitialState();
             if (taxRates.length > 0) {
@@ -122,8 +128,9 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                 }
             }
             setFormData(initialState);
+            setTags([]); // Clear tags for new part
         }
-    }, [part, isBulkEdit, taxRates, settings]); // 4. Add settings to dependency array
+    }, [part, isBulkEdit, taxRates, settings]);
 
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
@@ -136,7 +143,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        onSave(formData);
+        onSave({ ...formData, tags }); // <-- Include tags in the payload
     };
     
     const handleNewBrandGroup = (newItem, type) => {
@@ -165,7 +172,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
         <>
             <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto p-1">
                 {!isBulkEdit && (
-                     <div>
+                    <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Part Detail</label>
                         <input type="text" name="detail" value={formData.detail} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
                     </div>
@@ -203,6 +210,14 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                     </div>
                     <button type="button" onClick={() => setIsGroupModalOpen(true)} className="px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm">New</button>
                 </div>
+
+                {/* --- NEW: Tag Input Field (conditionally rendered) --- */}
+                {!isBulkEdit && (
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Tags</label>
+                        <TagInput value={tags} onChange={setTags} />
+                    </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-4">
                     <div>
