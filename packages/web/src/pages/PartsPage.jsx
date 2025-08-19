@@ -7,7 +7,7 @@ import Modal from '../components/ui/Modal';
 import PartForm from '../components/forms/PartForm';
 import FilterBar from '../components/ui/FilterBar';
 import SortableHeader from '../components/ui/SortableHeader';
-import TagPopover from '../components/ui/TagPopover'; // <-- Import the new component
+import TagPopover from '../components/ui/TagPopover';
 import { useAuth } from '../contexts/AuthContext';
 import PartNumberManager from './PartNumberManager';
 import PartApplicationManager from './PartApplicationManager';
@@ -24,7 +24,7 @@ const PartsPage = () => {
     const [currentPart, setCurrentPart] = useState(null);
     const [statusFilter, setStatusFilter] = useState('active');
     const [searchTerm, setSearchTerm] = useState('');
-    const [sortConfig, setSortConfig] = useState({ key: 'detail', direction: 'ascending' });
+    const [sortConfig, setSortConfig] = useState({ key: 'display_name', direction: 'ascending' });
     const [selectedParts, setSelectedParts] = useState([]);
     const [isBulkEditModalOpen, setIsBulkEditModalOpen] = useState(false);
 
@@ -164,10 +164,11 @@ const PartsPage = () => {
         let sortableItems = [...parts];
         if (sortConfig.key) {
             sortableItems.sort((a, b) => {
-                if (a[sortConfig.key] < b[sortConfig.key]) {
+                if (!a[sortConfig.key] || !b[sortConfig.key]) return 0;
+                if (a[sortConfig.key].toLowerCase() < b[sortConfig.key].toLowerCase()) {
                     return sortConfig.direction === 'ascending' ? -1 : 1;
                 }
-                if (a[sortConfig.key] > b[sortConfig.key]) {
+                if (a[sortConfig.key].toLowerCase() > b[sortConfig.key].toLowerCase()) {
                     return sortConfig.direction === 'ascending' ? 1 : -1;
                 }
                 return 0;
@@ -200,14 +201,26 @@ const PartsPage = () => {
                 </div>
             </div>
 
-            <FilterBar
-                tabs={filterTabs}
-                activeTab={statusFilter}
-                onTabClick={setStatusFilter}
-                searchTerm={searchTerm}
-                onSearchChange={(e) => setSearchTerm(e.target.value)}
-                searchPlaceholder="Search by detail, SKU, or part number..."
-            />
+            <div className="mb-4">
+                <div className="flex justify-between items-center">
+                    <FilterBar
+                        tabs={filterTabs}
+                        activeTab={statusFilter}
+                        onTabClick={setStatusFilter}
+                    />
+                    <div className="relative w-full max-w-xs">
+                         <Icon path={ICONS.search} className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                        <input
+                            type="text"
+                            placeholder="Search by detail, SKU, or part number..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg"
+                        />
+                    </div>
+                </div>
+            </div>
+
 
             <div className="bg-white p-6 rounded-xl border border-gray-200">
                 {loading ? <p>Loading...</p> : (
@@ -216,10 +229,9 @@ const PartsPage = () => {
                             <thead>
                                 <tr>
                                     <th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={selectedParts.length === sortedParts.length && sortedParts.length > 0} /></th>
-                                    <SortableHeader label="Detail" sortKey="display_name" sortConfig={sortConfig} onSort={setSortConfig} />
-                                    <SortableHeader label="SKU" sortKey="internal_sku" sortConfig={sortConfig} onSort={setSortConfig} />
-                                    <SortableHeader label="Brand" sortKey="brand_name" sortConfig={sortConfig} onSort={setSortConfig} />
-                                    <SortableHeader label="Group" sortKey="group_name" sortConfig={sortConfig} onSort={setSortConfig} />
+                                    <SortableHeader column="internal_sku" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({key, direction})}>SKU</SortableHeader>
+                                    <SortableHeader column="display_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({key, direction})}>Item</SortableHeader>
+                                    <SortableHeader column="applications" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({key, direction})}>Application</SortableHeader>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>
@@ -227,10 +239,9 @@ const PartsPage = () => {
                                 {sortedParts.map(part => (
                                     <tr key={part.part_id} className="border-b hover:bg-gray-50">
                                         <td className="p-3"><input type="checkbox" checked={selectedParts.includes(part.part_id)} onChange={() => handleSelectPart(part.part_id)} /></td>
-                                        <td className="p-3 text-sm font-medium">{part.display_name}</td>
                                         <td className="p-3 text-sm font-mono">{part.internal_sku}</td>
-                                        <td className="p-3 text-sm">{part.brand_name}</td>
-                                        <td className="p-3 text-sm">{part.group_name}</td>
+                                        <td className="p-3 text-sm font-medium">{part.display_name}</td>
+                                        <td className="p-3 text-sm">{part.applications}</td>
                                         <td className="p-3 text-sm text-right">
                                             <div className="flex justify-end items-center space-x-4">
                                                 {part.tags && <TagPopover tags={part.tags} />}

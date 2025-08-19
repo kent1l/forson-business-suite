@@ -34,7 +34,6 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
         if (status === 'active') filter.push('is_active = true');
         else if (status === 'inactive') filter.push('is_active = false');
 
-        // --- NEW: Add tag filtering for Meilisearch ---
         if (tags) {
             const tagList = tags.split(',').map(t => t.trim().toLowerCase());
             tagList.forEach(tag => {
@@ -52,7 +51,18 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
             SELECT
                 p.*, b.brand_name, g.group_name,
                 (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = p.part_id) AS part_numbers,
-                (SELECT STRING_AGG(CONCAT(a.make, ' ', a.model), '; ') FROM part_application pa JOIN application a ON pa.application_id = a.application_id WHERE pa.part_id = p.part_id) AS applications,
+                (SELECT STRING_AGG(
+                    CONCAT(
+                        a.make, ' ', a.model, COALESCE(CONCAT(' ', a.engine), ''),
+                        CASE
+                            WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL AND pa.year_start = pa.year_end THEN CONCAT(' [', pa.year_start, ']')
+                            WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL THEN CONCAT(' [', pa.year_start, '-', pa.year_end, ']')
+                            WHEN pa.year_start IS NOT NULL THEN CONCAT(' [', pa.year_start, '-]')
+                            WHEN pa.year_end IS NOT NULL THEN CONCAT(' [-', pa.year_end, ']')
+                            ELSE ''
+                        END
+                    ), '; '
+                ) FROM part_application pa JOIN application a ON pa.application_id = a.application_id WHERE pa.part_id = p.part_id) AS applications,
                 (SELECT STRING_AGG(t.tag_name, ', ') FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags
             FROM part AS p
             LEFT JOIN brand AS b ON p.brand_id = b.brand_id
@@ -164,7 +174,7 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
             group_name: groupRes.rows[0].group_name,
             part_numbers: part_numbers_string,
             display_name: constructDisplayName({ ...newPartData, brand_name: brandRes.rows[0].brand_name, group_name: groupRes.rows[0].group_name, part_numbers: part_numbers_string }),
-            tags: tags || [] // <-- Include tags for indexing
+            tags: tags || []
         };
         syncPartWithMeili(partForMeili);
         res.status(201).json(newPartData);
@@ -230,7 +240,7 @@ router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) 
         const partForMeili = {
             ...fullPartRes.rows[0],
             display_name: constructDisplayName(fullPartRes.rows[0]),
-            tags: tags || [] // <-- Include tags for indexing
+            tags: tags || []
         };
         syncPartWithMeili(partForMeili);
         res.json(updatedPart.rows[0]);
