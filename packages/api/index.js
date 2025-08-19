@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 const db = require('./db');
-const { setupMeiliSearch } = require('./meilisearch-setup'); // <-- Import the new function
+const { setupMeiliSearch } = require('./meilisearch-setup');
 
 const app = express();
 
@@ -24,7 +24,7 @@ app.use('/api', require('./routes/goodsReceiptRoutes'));
 app.use('/api', require('./routes/powerSearchRoutes'));
 app.use('/api', require('./routes/reportingRoutes'));
 app.use('/api', require('./routes/settingsRoutes'));
-app.use('/api', require('./routes/dataUtilsRoutes'));
+app.use('/api/data', require('./routes/dataUtilsRoutes')); // <-- CORRECTED LINE
 app.use('/api', require('./routes/setupRoutes'));
 app.use('/api', require('./routes/employeeRoutes'));
 app.use('/api', require('./routes/permissionRoutes'));
@@ -33,6 +33,7 @@ app.use('/api', require('./routes/dashboardRoutes'));
 app.use('/api', require('./routes/backupRoutes'));
 app.use('/api', require('./routes/purchaseOrderRoutes'));
 app.use('/api', require('./routes/draftRoutes'));
+
 
 const PORT = process.env.PORT || 3001;
 
