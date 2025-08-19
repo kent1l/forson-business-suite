@@ -4,24 +4,33 @@ const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const router = express.Router();
 
-// GET /api/purchase-orders - Get all purchase orders
+// GET /api/purchase-orders - Get all purchase orders with status filter
 router.get('/purchase-orders', protect, hasPermission('purchase_orders:view'), async (req, res) => {
+    const { status = 'Pending' } = req.query; // Default to Pending
+    let whereClause = '';
+    const queryParams = [];
+
+    if (status && status !== 'All') {
+        whereClause = 'WHERE po.status = $1';
+        queryParams.push(status);
+    }
+
     try {
         const query = `
             SELECT po.*, s.supplier_name, e.first_name, e.last_name
             FROM purchase_order po
             JOIN supplier s ON po.supplier_id = s.supplier_id
             JOIN employee e ON po.employee_id = e.employee_id
+            ${whereClause}
             ORDER BY po.order_date DESC
         `;
-        const { rows } = await db.query(query);
+        const { rows } = await db.query(query, queryParams);
         res.json(rows);
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
     }
 });
-
 
 // GET /api/purchase-orders/open - Get all purchase orders that are not fully received
 router.get('/purchase-orders/open', protect, hasPermission('purchase_orders:view'), async (req, res) => {
@@ -35,6 +44,33 @@ router.get('/purchase-orders/open', protect, hasPermission('purchase_orders:view
         `;
         const { rows } = await db.query(query);
         res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// --- NEW ---
+// GET /api/purchase-orders/:id/lines - Get all lines for a specific PO
+router.get('/purchase-orders/:id/lines', protect, hasPermission('purchase_orders:view'), async (req, res) => {
+    const { id } = req.params;
+    try {
+        const query = `
+            SELECT pol.*, p.internal_sku, p.detail, b.brand_name, g.group_name
+            FROM purchase_order_line pol
+            JOIN part p ON pol.part_id = p.part_id
+            LEFT JOIN brand b ON p.brand_id = b.brand_id
+            LEFT JOIN "group" g ON p.group_id = g.group_id
+            WHERE pol.po_id = $1
+            ORDER BY pol.po_line_id;
+        `;
+        const { rows } = await db.query(query, [id]);
+        // Construct display_name for frontend convenience
+        const linesWithDisplayName = rows.map(line => ({
+            ...line,
+            display_name: `${line.group_name || ''} (${line.brand_name || ''}) | ${line.detail}`
+        }));
+        res.json(linesWithDisplayName);
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
@@ -85,5 +121,120 @@ router.post('/purchase-orders', protect, hasPermission('purchase_orders:edit'), 
         client.release();
     }
 });
+
+// --- NEW ---
+// PUT /api/purchase-orders/:id - Update a purchase order
+router.put('/purchase-orders/:id', protect, hasPermission('purchase_orders:edit'), async (req, res) => {
+    const { id } = req.params;
+    const { supplier_id, expected_date, lines, notes } = req.body;
+
+    if (!supplier_id || !lines || !Array.isArray(lines) || lines.length === 0) {
+        return res.status(400).json({ message: 'Missing required fields.' });
+    }
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+
+        // Safety check: Only allow editing of 'Pending' POs
+        const statusCheck = await client.query('SELECT status FROM purchase_order WHERE po_id = $1', [id]);
+        if (statusCheck.rows.length === 0) {
+            return res.status(404).json({ message: 'Purchase Order not found.' });
+        }
+        if (statusCheck.rows[0].status !== 'Pending') {
+            return res.status(400).json({ message: `Cannot edit a PO with status "${statusCheck.rows[0].status}".` });
+        }
+
+        // Update PO header
+        const total_amount = lines.reduce((sum, line) => sum + (line.quantity * line.cost_price), 0);
+        await client.query(
+            'UPDATE purchase_order SET supplier_id = $1, expected_date = $2, total_amount = $3, notes = $4 WHERE po_id = $5',
+            [supplier_id, expected_date, total_amount, notes, id]
+        );
+
+        // Replace PO lines
+        await client.query('DELETE FROM purchase_order_line WHERE po_id = $1', [id]);
+        for (const line of lines) {
+            const { part_id, quantity, cost_price } = line;
+            await client.query(
+                'INSERT INTO purchase_order_line (po_id, part_id, quantity, cost_price) VALUES ($1, $2, $3, $4)',
+                [id, part_id, quantity, cost_price]
+            );
+        }
+
+        await client.query('COMMIT');
+        res.status(200).json({ message: 'Purchase Order updated successfully' });
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Transaction Error:', err.message);
+        res.status(500).json({ message: 'Server error during transaction.', error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+
+// --- NEW ---
+// PUT /api/purchase-orders/:id/status - Update a PO's status
+router.put('/purchase-orders/:id/status', protect, hasPermission('purchase_orders:edit'), async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!status || !['Ordered', 'Cancelled'].includes(status)) {
+        return res.status(400).json({ message: 'Invalid status provided.' });
+    }
+
+    try {
+        // Safety check: Only allow status changes from 'Pending'
+        const po = await db.query('SELECT status FROM purchase_order WHERE po_id = $1', [id]);
+        if (po.rows.length === 0) {
+            return res.status(404).json({ message: 'Purchase Order not found.' });
+        }
+        if (po.rows[0].status !== 'Pending') {
+            return res.status(400).json({ message: `Cannot change status from "${po.rows[0].status}".` });
+        }
+
+        const { rows } = await db.query(
+            'UPDATE purchase_order SET status = $1 WHERE po_id = $2 RETURNING *',
+            [status, id]
+        );
+        res.status(200).json(rows[0]);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+
+// DELETE /api/purchase-orders/:id - Delete a purchase order
+router.delete('/purchase-orders/:id', protect, hasPermission('purchase_orders:edit'), async (req, res) => {
+    const { id } = req.params;
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        // For safety, only allow deleting POs that are still 'Pending'
+        const check = await client.query('SELECT status FROM purchase_order WHERE po_id = $1', [id]);
+        if (check.rows.length === 0) {
+            return res.status(404).json({ message: 'Purchase Order not found.' });
+        }
+        if (check.rows[0].status !== 'Pending') {
+            return res.status(400).json({ message: `Cannot delete a PO with status "${check.rows[0].status}".` });
+        }
+
+        await client.query('DELETE FROM purchase_order_line WHERE po_id = $1', [id]);
+        await client.query('DELETE FROM purchase_order WHERE po_id = $1', [id]);
+        
+        await client.query('COMMIT');
+        res.status(200).json({ message: 'Purchase Order deleted successfully.' });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    } finally {
+        client.release();
+    }
+});
+
 
 module.exports = router;

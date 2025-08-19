@@ -83,11 +83,15 @@ const GoodsReceiptPage = ({ user }) => {
         setSelectedPO(po);
         setSelectedSupplier(po.supplier_id);
         
-        // Fetch PO lines
-        // Note: A dedicated endpoint for PO lines would be ideal, but for now we'll re-use the search
-        // In a real app, you'd have GET /api/purchase-orders/:id/lines
-        toast.error("Functionality to load PO lines is not yet implemented.");
-        // Placeholder for future implementation
+        try {
+            toast.loading('Loading PO items...');
+            const response = await api.get(`/purchase-orders/${poId}/lines`);
+            setLines(response.data);
+            toast.dismiss();
+        } catch (err) {
+            toast.dismiss();
+            toast.error('Failed to load PO items.');
+        }
     };
 
 

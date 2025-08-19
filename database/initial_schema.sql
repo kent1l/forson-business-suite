@@ -233,6 +233,17 @@ CREATE TABLE public.purchase_order_line (
     quantity_received numeric(12,4) DEFAULT 0
 );
 
+
+CREATE TABLE public.draft_transaction (
+    draft_id serial PRIMARY KEY,
+    employee_id integer NOT NULL REFERENCES public.employee(employee_id) ON DELETE CASCADE,
+    transaction_type character varying(20) NOT NULL, -- e.g., 'PO', 'INVOICE'
+    draft_data jsonb NOT NULL, -- Stores all form data, including lines
+    last_updated timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (employee_id, transaction_type)
+);
+
+
 --
 -- WAC CALCULATION TRIGGER
 --

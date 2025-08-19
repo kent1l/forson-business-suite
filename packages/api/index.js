@@ -32,6 +32,7 @@ app.use('/api', require('./routes/taxRateRoutes'));
 app.use('/api', require('./routes/dashboardRoutes'));
 app.use('/api', require('./routes/backupRoutes'));
 app.use('/api', require('./routes/purchaseOrderRoutes'));
+app.use('/api', require('./routes/draftRoutes'));
 
 const PORT = process.env.PORT || 3001;
 
