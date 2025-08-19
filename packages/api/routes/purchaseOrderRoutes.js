@@ -22,6 +22,26 @@ router.get('/purchase-orders', protect, hasPermission('purchase_orders:view'), a
     }
 });
 
+
+// GET /api/purchase-orders/open - Get all purchase orders that are not fully received
+router.get('/purchase-orders/open', protect, hasPermission('purchase_orders:view'), async (req, res) => {
+    try {
+        const query = `
+            SELECT po.*, s.supplier_name
+            FROM purchase_order po
+            JOIN supplier s ON po.supplier_id = s.supplier_id
+            WHERE po.status IN ('Pending', 'Ordered', 'Partially Received')
+            ORDER BY po.order_date DESC
+        `;
+        const { rows } = await db.query(query);
+        res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+
 // POST /api/purchase-orders - Create a new purchase order
 router.post('/purchase-orders', protect, hasPermission('purchase_orders:edit'), async (req, res) => {
     const { supplier_id, employee_id, expected_date, lines, notes } = req.body;

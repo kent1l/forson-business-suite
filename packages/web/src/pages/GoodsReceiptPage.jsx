@@ -18,6 +18,8 @@ const GoodsReceiptPage = ({ user }) => {
     const [loading, setLoading] = useState(true);
     const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
     const [isNewPartModalOpen, setIsNewPartModalOpen] = useState(false);
+    const [openPOs, setOpenPOs] = useState([]);
+    const [selectedPO, setSelectedPO] = useState('');
 
     useEffect(() => {
         if (searchTerm.trim() === '') {
@@ -43,14 +45,16 @@ const GoodsReceiptPage = ({ user }) => {
     const fetchInitialData = async () => {
         try {
             setLoading(true);
-            const [suppliersRes, brandsRes, groupsRes] = await Promise.all([
+            const [suppliersRes, brandsRes, groupsRes, openPOsRes] = await Promise.all([
                 api.get('/suppliers'),
                 api.get('/brands'),
-                api.get('/groups')
+                api.get('/groups'),
+                api.get('/purchase-orders/open')
             ]);
             setSuppliers(suppliersRes.data);
             setBrands(brandsRes.data);
             setGroups(groupsRes.data);
+            setOpenPOs(openPOsRes.data);
         } catch (err) {
             toast.error("Failed to load initial data.");
         } finally {
@@ -67,6 +71,25 @@ const GoodsReceiptPage = ({ user }) => {
     useEffect(() => {
         fetchInitialData();
     }, []);
+
+    const handleSelectPO = async (poId) => {
+        if (!poId) {
+            setSelectedPO('');
+            setSelectedSupplier('');
+            setLines([]);
+            return;
+        }
+        const po = openPOs.find(p => p.po_id === parseInt(poId));
+        setSelectedPO(po);
+        setSelectedSupplier(po.supplier_id);
+        
+        // Fetch PO lines
+        // Note: A dedicated endpoint for PO lines would be ideal, but for now we'll re-use the search
+        // In a real app, you'd have GET /api/purchase-orders/:id/lines
+        toast.error("Functionality to load PO lines is not yet implemented.");
+        // Placeholder for future implementation
+    };
+
 
     const handleNewSupplierSave = async (supplierData) => {
         const promise = api.post('/suppliers', supplierData);
@@ -142,8 +165,8 @@ const GoodsReceiptPage = ({ user }) => {
                 part_id: line.part_id,
                 quantity: line.quantity,
                 cost_price: line.cost_price,
-                sale_price: line.sale_price 
             })),
+            po_id: selectedPO ? selectedPO.po_id : null,
         };
 
         const promise = api.post('/goods-receipts', payload);
@@ -153,6 +176,8 @@ const GoodsReceiptPage = ({ user }) => {
             success: () => {
                 setLines([]);
                 setSelectedSupplier('');
+                setSelectedPO('');
+                fetchInitialData(); // Refresh PO list
                 return 'Goods receipt created successfully!';
             },
             error: 'Failed to create goods receipt.',
@@ -165,19 +190,28 @@ const GoodsReceiptPage = ({ user }) => {
         <div>
             <h1 className="text-2xl font-semibold text-gray-800 mb-6">New Goods Receipt</h1>
             <div className="bg-white p-6 rounded-xl border border-gray-200 space-y-6">
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
-                    <div className="flex items-center space-x-2">
-                        <select value={selectedSupplier} onChange={e => setSelectedSupplier(e.target.value)} className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-lg">
-                            <option value="">Select a Supplier</option>
-                            {suppliers.map(s => <option key={s.supplier_id} value={s.supplier_id}>{s.supplier_name}</option>)}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Receive Against Purchase Order (Optional)</label>
+                        <select value={selectedPO ? selectedPO.po_id : ''} onChange={e => handleSelectPO(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            <option value="">-- Select a PO --</option>
+                            {openPOs.map(po => <option key={po.po_id} value={po.po_id}>{po.po_number} - {po.supplier_name}</option>)}
                         </select>
-                        <button onClick={() => setIsSupplierModalOpen(true)} className="px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm">New</button>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
+                        <div className="flex items-center space-x-2">
+                            <select value={selectedSupplier} onChange={e => setSelectedSupplier(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" disabled={!!selectedPO}>
+                                <option value="">Select a Supplier</option>
+                                {suppliers.map(s => <option key={s.supplier_id} value={s.supplier_id}>{s.supplier_name}</option>)}
+                            </select>
+                            <button onClick={() => setIsSupplierModalOpen(true)} className="px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm" disabled={!!selectedPO}>New</button>
+                        </div>
                     </div>
                 </div>
                 
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Add Part</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Add Part Manually</label>
                     <div className="flex items-center space-x-2">
                         <div className="relative flex-grow">
                             <Icon path={ICONS.search} className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
@@ -187,6 +221,7 @@ const GoodsReceiptPage = ({ user }) => {
                                 value={searchTerm}
                                 onChange={e => setSearchTerm(e.target.value)}
                                 className="w-full px-3 py-2 pl-10 border border-gray-300 rounded-lg"
+                                disabled={!!selectedPO}
                             />
                             {searchResults.length > 0 && (
                                 <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg">
@@ -198,7 +233,7 @@ const GoodsReceiptPage = ({ user }) => {
                                 </ul>
                             )}
                         </div>
-                        <button onClick={() => setIsNewPartModalOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition whitespace-nowrap">
+                        <button onClick={() => setIsNewPartModalOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition whitespace-nowrap" disabled={!!selectedPO}>
                            New Part
                         </button>
                     </div>
@@ -211,7 +246,6 @@ const GoodsReceiptPage = ({ user }) => {
                                 <th className="p-3 text-sm font-semibold text-gray-600">Part Detail</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 w-28">Quantity</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 w-32">Cost Price</th>
-                                <th className="p-3 text-sm font-semibold text-gray-600 w-32">Sale Price</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 w-16 text-center"></th>
                             </tr>
                         </thead>
@@ -220,8 +254,7 @@ const GoodsReceiptPage = ({ user }) => {
                                 <tr key={line.part_id} className="border-b">
                                     <td className="p-2 text-sm font-medium text-gray-800">{line.display_name}</td>
                                     <td className="p-2"><input type="number" value={line.quantity} onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)} className="w-full p-1 border rounded-md" /></td>
-                                    <td className="p-2"><input type="number" value={line.cost_price} onChange={e => handleLineChange(line.part_id, 'cost_price', e.target.value)} className="w-full p-1 border rounded-md" /></td>
-                                    <td className="p-2"><input type="number" value={line.sale_price} onChange={e => handleLineChange(line.part_id, 'sale_price', e.target.value)} className="w-full p-1 border rounded-md" /></td>
+                                    <td className="p-2"><input type="number" step="0.01" value={line.cost_price} onChange={e => handleLineChange(line.part_id, 'cost_price', e.target.value)} className="w-full p-1 border rounded-md" /></td>
                                     <td className="p-2 text-center"><button onClick={() => removeLine(line.part_id)} className="text-red-500 hover:text-red-700"><Icon path={ICONS.trash} className="h-5 w-5"/></button></td>
                                 </tr>
                             ))}

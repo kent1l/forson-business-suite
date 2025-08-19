@@ -1,11 +1,12 @@
 const express = require('express');
 const db = require('../db');
-const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator'); // 1. Import the helper
+const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const router = express.Router();
 
 // POST /goods-receipts - Create a new Goods Receipt
 router.post('/goods-receipts', async (req, res) => {
-  const { supplier_id, received_by, lines } = req.body;
+  // NEW: Added po_id to destructuring
+  const { supplier_id, received_by, lines, po_id } = req.body;
 
   if (!supplier_id || !received_by || !lines || !Array.isArray(lines) || lines.length === 0) {
     return res.status(400).json({ message: 'Missing required fields.' });
@@ -16,7 +17,6 @@ router.post('/goods-receipts', async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // 2. Generate the new GRN number
     const grn_number = await getNextDocumentNumber(client, 'GRN');
 
     const goodsReceiptQuery = `
@@ -44,6 +44,34 @@ router.post('/goods-receipts', async (req, res) => {
         VALUES ($1, 'StockIn', $2, $3, $4, $5);
       `;
       await client.query(transactionQuery, [part_id, quantity, cost_price, grn_number, received_by]);
+      
+      // --- NEW: Update PO if linked ---
+      if (po_id) {
+        await client.query(
+            `UPDATE purchase_order_line SET quantity_received = quantity_received + $1 WHERE po_id = $2 AND part_id = $3`,
+            [quantity, po_id, part_id]
+        );
+      }
+    }
+
+    // --- NEW: Update PO status after all lines are processed ---
+    if (po_id) {
+        const poStatusQuery = `
+            SELECT 
+                SUM(quantity) as total_ordered,
+                SUM(quantity_received) as total_received
+            FROM purchase_order_line
+            WHERE po_id = $1;
+        `;
+        const statusRes = await client.query(poStatusQuery, [po_id]);
+        const { total_ordered, total_received } = statusRes.rows[0];
+
+        let newStatus = 'Partially Received';
+        if (parseFloat(total_received) >= parseFloat(total_ordered)) {
+            newStatus = 'Received';
+        }
+
+        await client.query(`UPDATE purchase_order SET status = $1 WHERE po_id = $2`, [newStatus, po_id]);
     }
 
     await client.query('COMMIT');
