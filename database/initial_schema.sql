@@ -262,7 +262,6 @@ CREATE TABLE IF NOT EXISTS public.draft_transaction (
     UNIQUE (employee_id, transaction_type)
 );
 
--- NEW: Tagging System Tables
 CREATE TABLE IF NOT EXISTS public.tag (
     tag_id serial PRIMARY KEY,
     tag_name character varying(50) NOT NULL UNIQUE
@@ -342,22 +341,70 @@ ON CONFLICT (setting_key) DO NOTHING;
 
 INSERT INTO public.customer (first_name, last_name, is_active) VALUES ('Walk-in', 'Customer', true) ON CONFLICT (email) DO NOTHING;
 
-INSERT INTO public.permission (permission_key, description, category) VALUES
-('dashboard:view', 'Can view the main dashboard', 'General'), ('pos:use', 'Can use the Point of Sale system', 'Sales'),
-('invoicing:create', 'Can create new invoices', 'Sales'), ('goods_receipt:create', 'Can create new goods receipts', 'Inventory'),
-('inventory:view', 'Can view inventory levels', 'Inventory'), ('inventory:adjust', 'Can adjust stock quantities', 'Inventory'),
-('parts:view', 'Can view parts list', 'Parts'), ('parts:create', 'Can create new parts', 'Parts'),
-('parts:edit', 'Can edit existing parts', 'Parts'), ('parts:delete', 'Can delete parts', 'Parts'),
-('suppliers:view', 'Can view suppliers', 'Entities'), ('suppliers:edit', 'Can create/edit suppliers', 'Entities'),
-('customers:view', 'Can view customers', 'Entities'), ('customers:edit', 'Can create/edit customers', 'Entities'),
-('applications:view', 'Can view vehicle applications', 'Entities'), ('applications:edit', 'Can create/edit vehicle applications', 'Entities'),
-('purchase_orders:view', 'Can view purchase orders', 'Purchasing'), ('purchase_orders:edit', 'Can create/edit purchase orders', 'Purchasing'),
-('reports:view', 'Can view all reports', 'Reporting'), ('employees:view', 'Can view employee list', 'Admin'),
-('employees:edit', 'Can create/edit employees', 'Admin'), ('settings:view', 'Can view application settings', 'Admin'),
-('settings:edit', 'Can edit application settings', 'Admin'),
-('ar:view', 'Can view Accounts Receivable', 'Financials'), ('ar:receive_payment', 'Can receive customer payments', 'Financials')
-ON CONFLICT (permission_key) DO NOTHING;
+-- NEW: Delete all existing permissions before re-inserting to ensure a clean state and updated categories.
+DELETE FROM public.permission;
 
-INSERT INTO public.role_permission (permission_level_id, permission_id) SELECT 1, p.permission_id FROM public.permission p WHERE p.permission_key IN ('dashboard:view', 'pos:use', 'invoicing:create', 'inventory:view', 'parts:view', 'suppliers:view', 'customers:view', 'applications:view') ON CONFLICT DO NOTHING;
-INSERT INTO public.role_permission (permission_level_id, permission_id) SELECT 5, p.permission_id FROM public.permission p WHERE p.permission_key IN ('dashboard:view', 'pos:use', 'invoicing:create', 'goods_receipt:create', 'inventory:view', 'inventory:adjust', 'parts:view', 'parts:create', 'parts:edit', 'parts:delete', 'suppliers:view', 'suppliers:edit', 'customers:view', 'customers:edit', 'applications:view', 'applications:edit', 'reports:view', 'purchase_orders:view', 'purchase_orders:edit', 'ar:view', 'ar:receive_payment') ON CONFLICT DO NOTHING;
-INSERT INTO public.role_permission (permission_level_id, permission_id) SELECT 10, p.permission_id FROM public.permission p ON CONFLICT DO NOTHING;
+INSERT INTO public.permission (permission_key, description, category) VALUES
+-- General
+('dashboard:view', 'View Dashboard', 'General'),
+('pos:use', 'Use Point of Sale', 'General'),
+-- Sales & A/R
+('invoicing:create', 'Create Invoices', 'Sales & A/R'),
+('ar:view', 'View Accounts Receivable', 'Sales & A/R'),
+('ar:receive_payment', 'Receive Customer Payments', 'Sales & A/R'),
+-- Inventory & Purchasing
+('inventory:view', 'View Inventory', 'Inventory & Purchasing'),
+('inventory:adjust', 'Adjust Stock Levels', 'Inventory & Purchasing'),
+('goods_receipt:create', 'Create Goods Receipts', 'Inventory & Purchasing'),
+('purchase_orders:view', 'View Purchase Orders', 'Inventory & Purchasing'),
+('purchase_orders:edit', 'Create/Edit Purchase Orders', 'Inventory & Purchasing'),
+-- Data Management
+('parts:view', 'View Parts', 'Data Management'),
+('parts:create', 'Create Parts', 'Data Management'),
+('parts:edit', 'Edit Parts', 'Data Management'),
+('parts:delete', 'Delete Parts', 'Data Management'),
+('suppliers:view', 'View Suppliers', 'Data Management'),
+('suppliers:edit', 'Create/Edit Suppliers', 'Data Management'),
+('customers:view', 'View Customers', 'Data Management'),
+('customers:edit', 'Create/Edit Customers', 'Data Management'),
+('applications:view', 'View Vehicle Applications', 'Data Management'),
+('applications:edit', 'Create/Edit Vehicle Applications', 'Data Management'),
+-- Administration
+('employees:view', 'View Employees', 'Administration'),
+('employees:edit', 'Create/Edit Employees', 'Administration'),
+('settings:view', 'View Settings', 'Administration'),
+('settings:edit', 'Edit Settings', 'Administration'),
+('reports:view', 'View Reports', 'Administration'),
+-- System Utilities
+('data-utils:export', 'Export Data (CSV)', 'System Utilities'),
+('data-utils:import', 'Import Data (CSV)', 'System Utilities'),
+('backups:view', 'View & Download Backups', 'System Utilities'),
+('backups:create', 'Create On-Demand Backups', 'System Utilities'),
+('backups:restore', 'Restore from Backup', 'System Utilities'),
+('backups:delete', 'Delete Backups', 'System Utilities')
+ON CONFLICT (permission_key) DO UPDATE SET description = EXCLUDED.description, category = EXCLUDED.category;
+
+-- NEW: Delete all existing role permissions before re-assigning.
+DELETE FROM public.role_permission;
+
+-- Clerk Permissions
+INSERT INTO public.role_permission (permission_level_id, permission_id) 
+SELECT 1, p.permission_id FROM public.permission p WHERE p.permission_key IN (
+    'dashboard:view', 'pos:use', 'invoicing:create', 'inventory:view', 
+    'parts:view', 'suppliers:view', 'customers:view', 'applications:view'
+) ON CONFLICT DO NOTHING;
+
+-- Manager Permissions
+INSERT INTO public.role_permission (permission_level_id, permission_id) 
+SELECT 5, p.permission_id FROM public.permission p WHERE p.permission_key IN (
+    'dashboard:view', 'pos:use', 'invoicing:create', 'goods_receipt:create', 
+    'inventory:view', 'inventory:adjust', 'parts:view', 'parts:create', 
+    'parts:edit', 'parts:delete', 'suppliers:view', 'suppliers:edit', 
+    'customers:view', 'customers:edit', 'applications:view', 'applications:edit', 
+    'reports:view', 'purchase_orders:view', 'purchase_orders:edit', 
+    'ar:view', 'ar:receive_payment'
+) ON CONFLICT DO NOTHING;
+
+-- Admin Permissions (all)
+INSERT INTO public.role_permission (permission_level_id, permission_id) 
+SELECT 10, p.permission_id FROM public.permission p ON CONFLICT DO NOTHING;

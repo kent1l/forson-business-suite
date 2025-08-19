@@ -115,13 +115,31 @@ const ImportCard = ({ entity, title }) => {
 
 
 const DataUtilsSettings = () => {
+    const [isSyncing, setIsSyncing] = useState(false);
+
+    const handleSync = () => {
+        setIsSyncing(true);
+        const promise = api.get('/data/sync-parts-to-meili');
+
+        toast.promise(promise, {
+            loading: 'Syncing all parts to search index...',
+            success: (res) => {
+                setIsSyncing(false);
+                return res.data.message || 'Sync completed successfully!';
+            },
+            error: (err) => {
+                setIsSyncing(false);
+                return err.response?.data?.message || 'Failed to sync parts.';
+            }
+        });
+    };
+
     return (
         <div className="space-y-8">
             <div>
                 <h3 className="text-lg font-medium text-gray-900">Export Data</h3>
                 <p className="text-sm text-gray-500 mt-1">Download your existing data as a CSV file or get a blank template for importing.</p>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-                    {/* MODIFIED: Updated the fields array to match the new backend CSV format */}
                     <ExportCard entity="parts" title="Parts" fields={['internal_sku', 'detail', 'brand_name', 'group_name', 'part_numbers', 'barcode', 'is_active', 'last_cost', 'last_sale_price', 'reorder_point', 'warning_quantity', 'measurement_unit', 'is_tax_inclusive_price', 'is_price_change_allowed', 'is_using_default_quantity', 'is_service', 'low_stock_warning']} />
                     <ExportCard entity="customers" title="Customers" fields={['first_name', 'last_name', 'company_name', 'phone', 'email', 'address', 'is_active']} />
                     <ExportCard entity="suppliers" title="Suppliers" fields={['supplier_name', 'contact_person', 'phone', 'email', 'address', 'is_active']} />
@@ -137,6 +155,20 @@ const DataUtilsSettings = () => {
                     <ImportCard entity="parts" title="Parts" />
                     <ImportCard entity="customers" title="Customers" />
                     <ImportCard entity="suppliers" title="Suppliers" />
+                </div>
+            </div>
+
+            <div>
+                <h3 className="text-lg font-medium text-gray-900">Search Index</h3>
+                <div className="p-4 border rounded-lg mt-4">
+                    <p className="text-sm text-gray-600 mb-3">If search results seem out of date, you can manually force a re-sync of all part data with the search index.</p>
+                    <button
+                        onClick={handleSync}
+                        disabled={isSyncing}
+                        className="bg-purple-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-700 transition disabled:bg-purple-300"
+                    >
+                        {isSyncing ? 'Syncing...' : 'Sync Parts to MeiliSearch'}
+                    </button>
                 </div>
             </div>
         </div>

@@ -93,7 +93,6 @@ router.post('/import/:entity', protect, isAdmin, upload.single('file'), async (r
         await client.query('BEGIN');
         const parsed = Papa.parse(csvData, { header: true, skipEmptyLines: true });
 
-        // A list to hold all parts to be synced after the transaction
         const partsToSync = [];
 
         for (const [index, row] of parsed.data.entries()) {
@@ -203,11 +202,16 @@ router.get('/sync-parts-to-meili', protect, isAdmin, async (req, res) => {
     try {
         console.log('Starting one-time sync of all parts to Meilisearch...');
         const query = `
-            SELECT p.*, b.brand_name, g.group_name,
-                   (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id) as part_numbers
-            FROM part p
-            LEFT JOIN brand b ON p.brand_id = b.brand_id
-            LEFT JOIN "group" g ON p.group_id = g.group_id
+            SELECT
+                p.*, b.brand_name, g.group_name,
+                (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id) as part_numbers,
+                (SELECT ARRAY_AGG(
+                    CONCAT(a.make, ' ', a.model, COALESCE(CONCAT(' ', a.engine), ''))
+                ) FROM part_application pa JOIN application a ON pa.application_id = a.application_id WHERE pa.part_id = p.part_id) AS applications_array,
+                (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags_array
+            FROM part AS p
+            LEFT JOIN brand AS b ON p.brand_id = b.brand_id
+            LEFT JOIN "group" AS g ON p.group_id = g.group_id
         `;
         const { rows } = await client.query(query);
 
@@ -218,6 +222,8 @@ router.get('/sync-parts-to-meili', protect, isAdmin, async (req, res) => {
         const partsToSync = rows.map(part => ({
             ...part,
             display_name: constructDisplayName(part),
+            applications: part.applications_array || [],
+            tags: part.tags_array || []
         }));
 
         // Sync with Meilisearch

@@ -5,6 +5,33 @@ const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { syncPartWithMeili, removePartFromMeili, meiliClient } = require('../meilisearch');
 const router = express.Router();
 
+// Helper function to get all data for a part for Meilisearch indexing
+const getPartDataForMeili = async (client, partId) => {
+    const query = `
+        SELECT
+            p.*, b.brand_name, g.group_name,
+            (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id) as part_numbers,
+            (SELECT ARRAY_AGG(
+                CONCAT(a.make, ' ', a.model, COALESCE(CONCAT(' ', a.engine), ''))
+            ) FROM part_application pa JOIN application a ON pa.application_id = a.application_id WHERE pa.part_id = p.part_id) AS applications_array,
+            (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags_array
+        FROM part AS p
+        LEFT JOIN brand AS b ON p.brand_id = b.brand_id
+        LEFT JOIN "group" AS g ON p.group_id = g.group_id
+        WHERE p.part_id = $1
+    `;
+    const res = await client.query(query, [partId]);
+    if (res.rows.length === 0) return null;
+
+    const part = res.rows[0];
+    return {
+        ...part,
+        display_name: constructDisplayName(part),
+        applications: part.applications_array || [],
+        tags: part.tags_array || []
+    };
+};
+
 // Helper function to handle tag logic
 const manageTags = async (client, tags, partId) => {
     await client.query('DELETE FROM part_tag WHERE part_id = $1', [partId]);
@@ -25,7 +52,7 @@ const manageTags = async (client, tags, partId) => {
 
 // GET all parts with status filter, search, and sorting (POWERED BY MEILISEARCH)
 router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
-    const { status = 'active', search = '', tags = '' } = req.query; // <-- Added tags to query params
+    const { status = 'active', search = '', tags = '' } = req.query;
     try {
         const index = meiliClient.index('parts');
         const searchOptions = { limit: 200, attributesToRetrieve: ['part_id'] };
@@ -168,15 +195,11 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
         await manageTags(client, tags, newPartData.part_id);
         await client.query('COMMIT');
         
-        const partForMeili = {
-            ...newPartData,
-            brand_name: brandRes.rows[0].brand_name,
-            group_name: groupRes.rows[0].group_name,
-            part_numbers: part_numbers_string,
-            display_name: constructDisplayName({ ...newPartData, brand_name: brandRes.rows[0].brand_name, group_name: groupRes.rows[0].group_name, part_numbers: part_numbers_string }),
-            tags: tags || []
-        };
-        syncPartWithMeili(partForMeili);
+        const partForMeili = await getPartDataForMeili(db, newPartData.part_id);
+        if (partForMeili) {
+            syncPartWithMeili(partForMeili);
+        }
+
         res.status(201).json(newPartData);
     } catch (err) {
         await client.query('ROLLBACK');
@@ -188,7 +211,10 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
 });
 
 router.put('/parts/bulk-update', protect, hasPermission('parts:edit'), async (req, res) => {
-    // ... existing code ...
+    // This is a placeholder for the bulk update logic.
+    // For a real implementation, you would loop through partIds and apply updates.
+    // After updating, you would need to re-sync each affected part with Meilisearch.
+    res.status(501).json({ message: 'Bulk update not implemented yet.' });
 });
 
 // PUT - Update an existing part with all fields
@@ -228,21 +254,11 @@ router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) 
         await manageTags(client, tags, id);
         await client.query('COMMIT');
 
-        const fullPartQuery = `
-            SELECT p.*, b.brand_name, g.group_name,
-                   (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id) as part_numbers
-            FROM part p
-            LEFT JOIN brand b ON p.brand_id = b.brand_id
-            LEFT JOIN "group" g ON p.group_id = g.group_id
-            WHERE p.part_id = $1
-        `;
-        const fullPartRes = await db.query(fullPartQuery, [id]);
-        const partForMeili = {
-            ...fullPartRes.rows[0],
-            display_name: constructDisplayName(fullPartRes.rows[0]),
-            tags: tags || []
-        };
-        syncPartWithMeili(partForMeili);
+        const partForMeili = await getPartDataForMeili(db, id);
+        if (partForMeili) {
+            syncPartWithMeili(partForMeili);
+        }
+        
         res.json(updatedPart.rows[0]);
     } catch (err) {
         await client.query('ROLLBACK');
