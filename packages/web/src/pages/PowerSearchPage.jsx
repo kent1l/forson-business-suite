@@ -78,6 +78,8 @@ const PowerSearchPage = () => {
                                     <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Display Name</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Applications</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Stock</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Sale Price</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -86,6 +88,8 @@ const PowerSearchPage = () => {
                                         <td className="p-3 text-sm font-mono align-top">{part.internal_sku}</td>
                                         <td className="p-3 text-sm font-medium text-gray-800 align-top">{part.display_name}</td>
                                         <td className="p-3 text-sm text-gray-600 align-top">{part.applications}</td>
+                                        <td className="p-3 text-sm text-gray-700 align-top">{typeof part.stock_on_hand !== 'undefined' ? Number(part.stock_on_hand).toFixed(2) : '-'}</td>
+                                        <td className="p-3 text-sm text-gray-800 font-semibold align-top">{part.last_sale_price ? (Number(part.last_sale_price).toFixed(2)) : '-'}</td>
                                     </tr>
                                 ))}
                                 {hasSearched && results.length === 0 && (
