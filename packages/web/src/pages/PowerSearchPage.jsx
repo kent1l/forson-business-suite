@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../api'; // Use the configured api instance
 import Icon from '../components/ui/Icon'; // Import the Icon component
 import { ICONS } from '../constants'; // Import the icon paths
+import Modal from '../components/ui/Modal';
 
 const PowerSearchPage = () => {
     const [results, setResults] = useState([]);
@@ -9,6 +10,22 @@ const PowerSearchPage = () => {
     const [error, setError] = useState('');
     const [keyword, setKeyword] = useState('');
     const [hasSearched, setHasSearched] = useState(false);
+    const [isDetailOpen, setIsDetailOpen] = useState(false);
+    const [detailLoading, setDetailLoading] = useState(false);
+    const [selectedPartDetail, setSelectedPartDetail] = useState(null);
+
+    const openPartDetail = async (partId) => {
+        try {
+            setDetailLoading(true);
+            const res = await api.get(`/parts/${partId}`);
+            setSelectedPartDetail(res.data);
+            setIsDetailOpen(true);
+        } catch (err) {
+            console.error('Failed to load part detail', err);
+        } finally {
+            setDetailLoading(false);
+        }
+    };
 
     useEffect(() => {
         // Do not search if the keyword is empty
@@ -84,7 +101,7 @@ const PowerSearchPage = () => {
                             </thead>
                             <tbody>
                                 {results.map(part => (
-                                    <tr key={part.part_id} className="border-b hover:bg-gray-50">
+                                    <tr key={part.part_id} className="border-b hover:bg-gray-50 cursor-pointer" onClick={() => openPartDetail(part.part_id)}>
                                         <td className="p-3 text-sm font-mono align-top">{part.internal_sku}</td>
                                         <td className="p-3 text-sm font-medium text-gray-800 align-top">{part.display_name}</td>
                                         <td className="p-3 text-sm text-gray-600 align-top">{part.applications}</td>
@@ -107,6 +124,36 @@ const PowerSearchPage = () => {
                     </div>
                 )}
             </div>
+
+            <Modal isOpen={isDetailOpen} onClose={() => setIsDetailOpen(false)} title={selectedPartDetail ? selectedPartDetail.display_name : 'Part Details'}>
+                {detailLoading && <p>Loading...</p>}
+                {!detailLoading && selectedPartDetail && (
+                    <div className="space-y-3">
+                        <div className="flex justify-between">
+                            <div>
+                                <div className="text-sm text-gray-500">SKU</div>
+                                <div className="font-mono font-semibold">{selectedPartDetail.internal_sku}</div>
+                            </div>
+                            <div>
+                                <div className="text-sm text-gray-500">Stock</div>
+                                <div className="font-semibold">{typeof selectedPartDetail.stock_on_hand !== 'undefined' ? Number(selectedPartDetail.stock_on_hand).toFixed(2) : '-'}</div>
+                            </div>
+                            <div>
+                                <div className="text-sm text-gray-500">Sale Price</div>
+                                <div className="font-semibold">{selectedPartDetail.last_sale_price ? Number(selectedPartDetail.last_sale_price).toFixed(2) : '-'}</div>
+                            </div>
+                        </div>
+                        <div>
+                            <div className="text-sm text-gray-500">Part Numbers</div>
+                            <div className="text-sm">{selectedPartDetail.part_numbers}</div>
+                        </div>
+                        <div>
+                            <div className="text-sm text-gray-500">Detail</div>
+                            <div className="text-sm">{selectedPartDetail.detail}</div>
+                        </div>
+                    </div>
+                )}
+            </Modal>
         </div>
     );
 };
