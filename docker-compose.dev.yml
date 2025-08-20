@@ -6,19 +6,23 @@ services:
     build:
       context: ./packages/api
       dockerfile: Dockerfile
-    command: npm start
+    command: sh -c "npm install --no-audit --no-fund && npm start"
     volumes:
       - ./packages/api:/usr/src/app
       - /usr/src/app/node_modules
-      - /backups:/backups
+      - ./backups:/backups
     # 'env_file' is no longer needed here; Docker Compose automatically uses the root .env
     environment:
       - NODE_ENV=development
+      - CHOKIDAR_USEPOLLING=true
+      - CHOKIDAR_INTERVAL=100
+      - NPM_CONFIG_LOGLEVEL=error
     ports:
       - "3001:3001"
     depends_on:
       - db
       - meilisearch
+    restart: unless-stopped
 
   frontend:
     container_name: forson_frontend_dev
@@ -26,11 +30,16 @@ services:
       # Use the new development Dockerfile
       context: ./packages/web
       dockerfile: Dockerfile.dev
-    command: npm run dev -- --host
+    command: sh -c "npm install --no-audit --no-fund && npm run dev -- --host 0.0.0.0"
     volumes:
       - ./packages/web:/app
       - /app/node_modules
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - CHOKIDAR_INTERVAL=100
+      - NPM_CONFIG_LOGLEVEL=error
     ports:
       - "5173:5173"
     depends_on:
       - backend
+    restart: unless-stopped

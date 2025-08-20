@@ -8,3 +8,5 @@ createRoot(document.getElementById('root')).render(
     <App />
   </StrictMode>,
 )
+
+// dev-hmr-check: updated at 2025-08-20T11:07:00Z
