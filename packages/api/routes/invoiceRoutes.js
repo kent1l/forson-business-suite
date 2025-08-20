@@ -107,7 +107,7 @@ router.get('/invoices/:id/lines-with-refunds', protect, hasPermission('invoicing
 
 // POST /invoices - Create a new invoice
 router.post('/invoices', async (req, res) => {
-    const { customer_id, employee_id, lines, amount_paid, terms } = req.body;
+    const { customer_id, employee_id, lines, amount_paid, payment_method, terms } = req.body;
 
     if (!customer_id || !employee_id || !lines || !Array.isArray(lines) || lines.length === 0) {
         return res.status(400).json({ message: 'Missing required fields.' });
@@ -118,17 +118,24 @@ router.post('/invoices', async (req, res) => {
         await client.query('BEGIN');
 
         const invoice_number = await getNextDocumentNumber(client, 'INV');
-        const total_amount = lines.reduce((sum, line) => sum + (line.quantity * line.sale_price) - (line.discount_amount || 0), 0);
 
-    // Normalize paid amount to a numeric value (strip currency characters if present)
-    const paid = parseFloat(String(amount_paid || '').replace(/[^0-9.-]+/g, '')) || 0;
-    let status;
-        if (paid >= total_amount) {
+        // Calculate total amount from lines (safely parse numeric fields)
+        const total_amount = lines.reduce((sum, line) => {
+            const qty = Number(line.quantity) || 0;
+            const sale = Number(line.sale_price) || 0;
+            const discount = Number(line.discount_amount) || 0;
+            return sum + (qty * sale) - discount;
+        }, 0);
+
+        // Securely parse amount_paid provided by client; default to 0
+        const paid = parseFloat(String(amount_paid || '').replace(/[^0-9.-]+/g, '')) || 0;
+
+        // Determine invoice status based on paid vs total_amount
+        let status = 'Unpaid';
+        if (paid >= total_amount && total_amount > 0) {
             status = 'Paid';
         } else if (paid > 0 && paid < total_amount) {
             status = 'Partially Paid';
-        } else {
-            status = 'Unpaid';
         }
 
         const invoiceQuery = `
@@ -136,7 +143,10 @@ router.post('/invoices', async (req, res) => {
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING invoice_id;
         `;
-    // Store numeric paid amount for consistency
+    // Debug: log computed financials to aid troubleshooting
+    console.log(`Creating invoice ${invoice_number} - total_amount=${total_amount}, amount_paid=${paid}, status=${status}`);
+
+    // Store numeric paid amount and computed status
     const invoiceResult = await client.query(invoiceQuery, [invoice_number, customer_id, employee_id, total_amount, paid, status, terms]);
         const newInvoiceId = invoiceResult.rows[0].invoice_id;
 
@@ -162,9 +172,10 @@ router.post('/invoices', async (req, res) => {
         if (paid > 0) {
             const paymentQuery = `
                 INSERT INTO customer_payment (customer_id, employee_id, amount, payment_method, reference_number)
-                VALUES ($1, $2, $3, 'Cash', $4) RETURNING payment_id;
+                VALUES ($1, $2, $3, $4, $5) RETURNING payment_id;
             `;
-            const paymentResult = await client.query(paymentQuery, [customer_id, employee_id, paid, invoice_number]);
+            const paymentMethodToUse = payment_method || 'Cash';
+            const paymentResult = await client.query(paymentQuery, [customer_id, employee_id, paid, paymentMethodToUse, invoice_number]);
             const newPaymentId = paymentResult.rows[0].payment_id;
 
             const allocationQuery = `

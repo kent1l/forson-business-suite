@@ -122,6 +122,7 @@ const InvoicingPage = ({ user }) => {
             customer_id: selectedCustomer,
             employee_id: user.employee_id,
             payment_method: paymentMethod,
+            amount_paid: subtotal,
             terms: terms,
             lines: lines.map(line => ({
                 part_id: line.part_id,

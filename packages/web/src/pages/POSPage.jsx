@@ -190,6 +190,7 @@ const POSPage = ({ user, lines, setLines }) => {
             customer_id: selectedCustomer.customer_id,
             employee_id: user.employee_id,
             payment_method: paymentMethod,
+            amount_paid: total,
             lines: lines.map(line => ({
                 part_id: line.part_id,
                 quantity: line.quantity,
