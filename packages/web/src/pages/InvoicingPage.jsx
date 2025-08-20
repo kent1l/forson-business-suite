@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api';
+import { parsePaymentTermsDays } from '../utils/terms';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
@@ -161,10 +162,7 @@ const InvoicingPage = ({ user }) => {
             payment_method: paymentMethod,
             amount_paid: subtotal,
             terms: terms,
-            payment_terms_days: (() => {
-                const m = String(terms || '').match(/(\d{1,4})/);
-                return m ? parseInt(m[1], 10) : null;
-            })(),
+            payment_terms_days: parsePaymentTermsDays(terms),
             lines: lines.map(line => ({
                 part_id: line.part_id,
                 quantity: line.quantity,
