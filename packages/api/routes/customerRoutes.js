@@ -8,14 +8,13 @@ const manageTags = async (client, tags, customerId) => {
     await client.query('DELETE FROM customer_tag WHERE customer_id = $1', [customerId]);
     if (tags && tags.length > 0) {
         for (const tagName of tags) {
-            let tagRes = await client.query('SELECT tag_id FROM tag WHERE tag_name = $1', [tagName.toLowerCase()]);
-            let tagId;
-            if (tagRes.rows.length === 0) {
-                tagRes = await client.query('INSERT INTO tag (tag_name) VALUES ($1) RETURNING tag_id', [tagName.toLowerCase()]);
-                tagId = tagRes.rows[0].tag_id;
-            } else {
-                tagId = tagRes.rows[0].tag_id;
-            }
+            await client.query(
+                'INSERT INTO tag (tag_name) VALUES ($1) ON CONFLICT (tag_name) DO NOTHING',
+                [tagName.toLowerCase()]
+            );
+            const tagRes = await client.query('SELECT tag_id FROM tag WHERE tag_name = $1', [tagName.toLowerCase()]);
+            const tagId = tagRes.rows[0].tag_id;
+            
             await client.query('INSERT INTO customer_tag (customer_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [customerId, tagId]);
         }
     }
@@ -23,8 +22,16 @@ const manageTags = async (client, tags, customerId) => {
 
 // GET all customers
 router.get('/customers', protect, hasPermission('customers:view'), async (req, res) => {
+    // Adding a filter for active/inactive/all customers
+    const { status = 'active' } = req.query;
+    let whereClause = "WHERE is_active = TRUE";
+    if (status === 'inactive') {
+      whereClause = "WHERE is_active = FALSE";
+    } else if (status === 'all') {
+      whereClause = "";
+    }
     try {
-        const { rows } = await db.query('SELECT * FROM customer ORDER BY first_name, last_name');
+        const { rows } = await db.query(`SELECT * FROM customer ${whereClause} ORDER BY first_name, last_name`);
         res.json(rows);
     } catch (err) {
         console.error(err.message);
@@ -37,7 +44,7 @@ router.get('/customers/:id/tags', protect, hasPermission('customers:view'), asyn
     const { id } = req.params;
     try {
         const query = `
-            SELECT t.tag_id, t.tag_name 
+            SELECT t.tag_id, t.tag_name
             FROM tag t
             JOIN customer_tag ct ON t.tag_id = ct.tag_id
             WHERE ct.customer_id = $1
@@ -102,10 +109,10 @@ router.get('/customers/:id/unpaid-invoices', protect, hasPermission('ar:view'), 
     const { id } = req.params;
     try {
         const query = `
-            SELECT 
-                i.invoice_id, 
-                i.invoice_number, 
-                i.invoice_date, 
+            SELECT
+                i.invoice_id,
+                i.invoice_number,
+                i.invoice_date,
                 i.total_amount,
                 COALESCE(SUM(ipa.amount_allocated), 0) as amount_paid,
                 (i.total_amount - COALESCE(SUM(ipa.amount_allocated), 0)) as balance_due
@@ -127,12 +134,14 @@ router.get('/customers/:id/unpaid-invoices', protect, hasPermission('ar:view'), 
 // POST a new customer
 router.post('/customers', protect, hasPermission('customers:edit'), async (req, res) => {
     const { tags, ...customerData } = req.body;
+    // Sanitize email: convert empty string to null
+    const emailOrNull = customerData.email && customerData.email.trim() !== '' ? customerData.email.trim() : null;
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
         const { rows } = await client.query(
-            'INSERT INTO customer (first_name, last_name, company_name, phone, email, address) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-            [customerData.first_name, customerData.last_name, customerData.company_name, customerData.phone, customerData.email, customerData.address]
+            'INSERT INTO customer (first_name, last_name, company_name, phone, email, address, is_active) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+            [customerData.first_name, customerData.last_name, customerData.company_name, customerData.phone, emailOrNull, customerData.address, customerData.is_active]
         );
         const newCustomer = rows[0];
         await manageTags(client, tags, newCustomer.customer_id);
@@ -151,12 +160,14 @@ router.post('/customers', protect, hasPermission('customers:edit'), async (req, 
 router.put('/customers/:id', protect, hasPermission('customers:edit'), async (req, res) => {
     const { id } = req.params;
     const { tags, ...customerData } = req.body;
+    // Sanitize email: convert empty string to null
+    const emailOrNull = customerData.email && customerData.email.trim() !== '' ? customerData.email.trim() : null;
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
         const { rows } = await client.query(
             'UPDATE customer SET first_name = $1, last_name = $2, company_name = $3, phone = $4, email = $5, address = $6, is_active = $7 WHERE customer_id = $8 RETURNING *',
-            [customerData.first_name, customerData.last_name, customerData.company_name, customerData.phone, customerData.email, customerData.address, customerData.is_active, id]
+            [customerData.first_name, customerData.last_name, customerData.company_name, customerData.phone, emailOrNull, customerData.address, customerData.is_active, id]
         );
         const updatedCustomer = rows[0];
         await manageTags(client, tags, updatedCustomer.customer_id);
