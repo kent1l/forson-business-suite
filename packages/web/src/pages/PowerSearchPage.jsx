@@ -129,7 +129,7 @@ const PowerSearchPage = () => {
                 {detailLoading && <p>Loading...</p>}
                 {!detailLoading && selectedPartDetail && (
                     <div className="space-y-3">
-                        <div className="flex justify-between">
+                        <div className="flex flex-wrap gap-6 justify-between">
                             <div>
                                 <div className="text-sm text-gray-500">SKU</div>
                                 <div className="font-mono font-semibold">{selectedPartDetail.internal_sku}</div>
@@ -141,6 +141,14 @@ const PowerSearchPage = () => {
                             <div>
                                 <div className="text-sm text-gray-500">Sale Price</div>
                                 <div className="font-semibold">{selectedPartDetail.last_sale_price ? Number(selectedPartDetail.last_sale_price).toFixed(2) : '-'}</div>
+                            </div>
+                            <div>
+                                <div className="text-sm text-gray-500">Last Cost</div>
+                                <div className="font-semibold">{selectedPartDetail.last_cost ? Number(selectedPartDetail.last_cost).toFixed(2) : '-'}</div>
+                            </div>
+                            <div>
+                                <div className="text-sm text-gray-500">WAC</div>
+                                <div className="font-semibold">{selectedPartDetail.wac_cost ? Number(selectedPartDetail.wac_cost).toFixed(2) : '-'}</div>
                             </div>
                         </div>
                         <div>
