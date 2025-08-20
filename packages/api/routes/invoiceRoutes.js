@@ -107,7 +107,7 @@ router.get('/invoices/:id/lines-with-refunds', protect, hasPermission('invoicing
 
 // POST /invoices - Create a new invoice
 router.post('/invoices', async (req, res) => {
-    const { customer_id, employee_id, lines, amount_paid, tendered_amount, payment_method, terms } = req.body;
+    const { customer_id, employee_id, lines, amount_paid, tendered_amount, payment_method, terms, payment_terms_days } = req.body;
 
     if (!customer_id || !employee_id || !lines || !Array.isArray(lines) || lines.length === 0) {
         return res.status(400).json({ message: 'Missing required fields.' });
@@ -138,16 +138,34 @@ router.post('/invoices', async (req, res) => {
             status = 'Partially Paid';
         }
 
+        // Determine canonical payment_terms_days: prefer explicit field, else try to parse from terms (e.g., "Net 30")
+        let canonicalDays = null;
+        if (typeof payment_terms_days === 'number' && !Number.isNaN(payment_terms_days)) {
+            canonicalDays = payment_terms_days;
+        } else if (terms) {
+            const m = String(terms).match(/(\d{1,4})/);
+            if (m) canonicalDays = parseInt(m[1], 10);
+        }
+
+        // Compute due_date based on canonicalDays if present
+        let dueDate = null;
+        if (canonicalDays && Number.isInteger(canonicalDays)) {
+            // use current timestamp as invoice_date basis
+            const now = new Date();
+            const due = new Date(now.getTime() + canonicalDays * 24 * 60 * 60 * 1000);
+            dueDate = due.toISOString(); // will be sent to pg as timestamptz
+        }
+
         const invoiceQuery = `
-            INSERT INTO invoice (invoice_number, customer_id, employee_id, total_amount, amount_paid, status, terms)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO invoice (invoice_number, customer_id, employee_id, total_amount, amount_paid, status, terms, payment_terms_days, due_date)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING invoice_id;
         `;
     // Debug: log computed financials to aid troubleshooting
-    console.log(`Creating invoice ${invoice_number} - total_amount=${total_amount}, amount_paid=${paid}, status=${status}`);
+    console.log(`Creating invoice ${invoice_number} - total_amount=${total_amount}, amount_paid=${paid}, status=${status}, payment_terms_days=${canonicalDays}, due_date=${dueDate}`);
 
     // Store numeric paid amount and computed status
-    const invoiceResult = await client.query(invoiceQuery, [invoice_number, customer_id, employee_id, total_amount, paid, status, terms]);
+    const invoiceResult = await client.query(invoiceQuery, [invoice_number, customer_id, employee_id, total_amount, paid, status, terms, canonicalDays, dueDate]);
         const newInvoiceId = invoiceResult.rows[0].invoice_id;
 
         for (const line of lines) {
@@ -189,7 +207,7 @@ router.post('/invoices', async (req, res) => {
 
 
         await client.query('COMMIT');
-    res.status(201).json({ message: 'Invoice created successfully', invoice_id: newInvoiceId, invoice_number, amount_paid: paid, tendered_amount: tendered_amount || null });
+    res.status(201).json({ message: 'Invoice created successfully', invoice_id: newInvoiceId, invoice_number, amount_paid: paid, tendered_amount: tendered_amount || null, payment_terms_days: canonicalDays, due_date: dueDate });
 
     } catch (err) {
         await client.query('ROLLBACK');

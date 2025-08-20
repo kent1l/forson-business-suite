@@ -130,6 +130,10 @@ const InvoicingPage = ({ user }) => {
             payment_method: paymentMethod,
             amount_paid: subtotal,
             terms: terms,
+            payment_terms_days: (() => {
+                const m = String(terms || '').match(/(\d{1,4})/);
+                return m ? parseInt(m[1], 10) : null;
+            })(),
             lines: lines.map(line => ({
                 part_id: line.part_id,
                 quantity: line.quantity,
