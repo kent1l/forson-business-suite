@@ -107,7 +107,7 @@ router.get('/invoices/:id/lines-with-refunds', protect, hasPermission('invoicing
 
 // POST /invoices - Create a new invoice
 router.post('/invoices', async (req, res) => {
-    const { customer_id, employee_id, lines, amount_paid, payment_method, terms } = req.body;
+    const { customer_id, employee_id, lines, amount_paid, tendered_amount, payment_method, terms } = req.body;
 
     if (!customer_id || !employee_id || !lines || !Array.isArray(lines) || lines.length === 0) {
         return res.status(400).json({ message: 'Missing required fields.' });
@@ -171,11 +171,13 @@ router.post('/invoices', async (req, res) => {
 
         if (paid > 0) {
             const paymentQuery = `
-                INSERT INTO customer_payment (customer_id, employee_id, amount, payment_method, reference_number)
-                VALUES ($1, $2, $3, $4, $5) RETURNING payment_id;
+                INSERT INTO customer_payment (customer_id, employee_id, amount, tendered_amount, payment_method, reference_number)
+                VALUES ($1, $2, $3, $4, $5, $6) RETURNING payment_id;
             `;
             const paymentMethodToUse = payment_method || 'Cash';
-            const paymentResult = await client.query(paymentQuery, [customer_id, employee_id, paid, paymentMethodToUse, invoice_number]);
+            // store tendered_amount if provided; default to NULL
+            const tenderVal = typeof tendered_amount !== 'undefined' && tendered_amount !== null ? tendered_amount : null;
+            const paymentResult = await client.query(paymentQuery, [customer_id, employee_id, paid, tenderVal, paymentMethodToUse, invoice_number]);
             const newPaymentId = paymentResult.rows[0].payment_id;
 
             const allocationQuery = `
@@ -187,7 +189,7 @@ router.post('/invoices', async (req, res) => {
 
 
         await client.query('COMMIT');
-        res.status(201).json({ message: 'Invoice created successfully', invoice_id: newInvoiceId, invoice_number });
+    res.status(201).json({ message: 'Invoice created successfully', invoice_id: newInvoiceId, invoice_number, amount_paid: paid, tendered_amount: tendered_amount || null });
 
     } catch (err) {
         await client.query('ROLLBACK');

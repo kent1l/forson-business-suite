@@ -65,33 +65,33 @@ const POSPage = ({ user, lines, setLines }) => {
             setCustomers(customersRes.data);
             return customersRes.data;
         } catch (err) {
+            console.error('fetchCustomers error', err);
             toast.error("Could not load customer data.");
         }
     };
 
-    const fetchInitialData = async () => {
-        try {
-            const [brandsRes, groupsRes, taxRatesRes] = await Promise.all([
-                api.get('/brands'),
-                api.get('/groups'),
-                api.get('/tax-rates')
-            ]);
-            setBrands(brandsRes.data);
-            setGroups(groupsRes.data);
-            setTaxRates(taxRatesRes.data);
-            
-            const customersData = await fetchCustomers();
-            if (customersData) {
-                const walkIn = customersData.find(c => c.first_name.toLowerCase() === 'walk-in');
-                setSelectedCustomer(walkIn || null);
-            }
-        } catch (err) {
-            toast.error("Could not load initial data.");
-        }
-    };
-
     useEffect(() => {
-        fetchInitialData();
+        (async () => {
+            try {
+                const [brandsRes, groupsRes, taxRatesRes] = await Promise.all([
+                    api.get('/brands'),
+                    api.get('/groups'),
+                    api.get('/tax-rates')
+                ]);
+                setBrands(brandsRes.data);
+                setGroups(groupsRes.data);
+                setTaxRates(taxRatesRes.data);
+                
+                const customersData = await fetchCustomers();
+                if (customersData) {
+                    const walkIn = customersData.find(c => c.first_name.toLowerCase() === 'walk-in');
+                    setSelectedCustomer(walkIn || null);
+                }
+            } catch (err) {
+                console.error('fetchInitialData error', err);
+                toast.error("Could not load initial data.");
+            }
+        })();
     }, []);
 
     const customerOptions = useMemo(() => customers.map(c => ({
@@ -140,6 +140,29 @@ const POSPage = ({ user, lines, setLines }) => {
         });
     };
 
+    // Provide a callable version used by child components when brands/groups change
+    const fetchInitialData = async () => {
+        try {
+            const [brandsRes, groupsRes, taxRatesRes] = await Promise.all([
+                api.get('/brands'),
+                api.get('/groups'),
+                api.get('/tax-rates')
+            ]);
+            setBrands(brandsRes.data);
+            setGroups(groupsRes.data);
+            setTaxRates(taxRatesRes.data);
+
+            const customersData = await fetchCustomers();
+            if (customersData) {
+                const walkIn = customersData.find(c => c.first_name.toLowerCase() === 'walk-in');
+                setSelectedCustomer(walkIn || null);
+            }
+        } catch (err) {
+            console.error('fetchInitialData error', err);
+            toast.error("Could not load initial data.");
+        }
+    };
+
     const handleLineChange = (partId, field, value) => {
         const numericValue = parseFloat(value);
         setLines(lines.map(line =>
@@ -185,12 +208,15 @@ const POSPage = ({ user, lines, setLines }) => {
         setIsPaymentModalOpen(true);
     };
 
-    const handleConfirmPayment = (paymentMethod) => {
+    const handleConfirmPayment = (paymentMethod, amountPaid, tenderedAmount) => {
+        // Enforce full payment on POS: always send amount_paid equal to the final total.
+        console.debug(`POS payment: method=${paymentMethod}, tendered=${tenderedAmount}, amountPaid=${amountPaid}, enforced=${total}`);
         const payload = {
             customer_id: selectedCustomer.customer_id,
             employee_id: user.employee_id,
             payment_method: paymentMethod,
-            amount_paid: total,
+            amount_paid: Number(total) || 0,
+            tendered_amount: typeof tenderedAmount !== 'undefined' && tenderedAmount !== null ? Number(tenderedAmount) : null,
             lines: lines.map(line => ({
                 part_id: line.part_id,
                 quantity: line.quantity,
