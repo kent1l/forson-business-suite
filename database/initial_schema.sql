@@ -180,6 +180,7 @@ CREATE TABLE IF NOT EXISTS public.customer_payment (
     employee_id integer NOT NULL REFERENCES public.employee(employee_id) ON DELETE RESTRICT,
     payment_date timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     amount numeric(12,2) NOT NULL,
+    tendered_amount numeric(12,2),
     payment_method character varying(50),
     reference_number character varying(100),
     notes text

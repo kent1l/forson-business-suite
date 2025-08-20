@@ -23,7 +23,15 @@ const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment }) => {
     const changeDue = (parseFloat(cashTendered) || 0) - total;
 
     const handleConfirm = () => {
-        onConfirmPayment(selectedMethod);
+        // Treat empty or zero cash tender as exact cash when confirming
+        if (selectedMethod.toLowerCase() === 'cash') {
+            const tender = parseFloat(cashTendered) || 0;
+            const amountPaid = tender <= 0 ? total : tender;
+            onConfirmPayment(selectedMethod, amountPaid, tender);
+        } else {
+            // Non-cash methods always pay the exact total
+            onConfirmPayment(selectedMethod, total, total);
+        }
     };
 
     return (
@@ -51,6 +59,15 @@ const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment }) => {
                                 type="number"
                                 value={cashTendered}
                                 onChange={(e) => setCashTendered(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        // If user pressed Enter with empty/zero tender, treat as exact cash
+                                        const tender = parseFloat(cashTendered) || 0;
+                                        const amountPaid = tender <= 0 ? total : tender;
+                                        onConfirmPayment(selectedMethod, amountPaid, tender);
+                                    }
+                                }}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-lg"
                                 placeholder="0.00"
                             />
