@@ -29,7 +29,7 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
         <>
             <div className={`fixed inset-0 bg-black bg-opacity-50 z-20 md:hidden ${isOpen ? 'block' : 'hidden'}`} onClick={() => setIsOpen(false)}></div>
             <div className={`fixed top-0 left-0 h-full bg-white border-r border-gray-200 flex flex-col z-30 w-64 md:w-60 md:relative md:translate-x-0 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                <div className="h-16 flex items-center px-6 text-lg font-bold text-blue-600">Forson Suite</div>
+                <div className="h-16 flex items-center px-6 text-lg font-bold text-blue-600">Forson Business Suite</div>
                 <nav className="flex-1 px-4 py-4 space-y-1">
                     {navItems.map(item => (
                         hasPermission(item.permission) && ( // <-- NEW: Conditionally render based on permission
