@@ -3,6 +3,7 @@ import api from '../api';
 import toast from 'react-hot-toast';
 import { useSettings } from '../contexts/SettingsContext';
 import DateRangeShortcuts from '../components/ui/DateRangeShortcuts';
+import InvoiceDetailsModal from '../components/refunds/InvoiceDetailsModal'; // Import the new modal
 
 const SalesHistoryPage = () => {
     const { settings } = useSettings();
@@ -12,6 +13,10 @@ const SalesHistoryPage = () => {
         startDate: new Date().toISOString().split('T')[0],
         endDate: new Date().toISOString().split('T')[0],
     });
+    
+    // State for the modal
+    const [selectedInvoice, setSelectedInvoice] = useState(null);
+    const [isModalOpen, setIsModalOpen] = useState(false);
 
     const fetchInvoices = async () => {
         setLoading(true);
@@ -31,6 +36,11 @@ const SalesHistoryPage = () => {
 
     const handleDateChange = (e) => {
         setDates(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    };
+
+    const handleRowClick = (invoice) => {
+        setSelectedInvoice(invoice);
+        setIsModalOpen(true);
     };
 
     return (
@@ -68,7 +78,11 @@ const SalesHistoryPage = () => {
                             </thead>
                             <tbody>
                                 {invoices.map(invoice => (
-                                    <tr key={invoice.invoice_id} className="border-b hover:bg-gray-50">
+                                    <tr 
+                                        key={invoice.invoice_id} 
+                                        className="border-b hover:bg-blue-50 cursor-pointer"
+                                        onClick={() => handleRowClick(invoice)}
+                                    >
                                         <td className="p-3 text-sm font-mono">{invoice.invoice_number}</td>
                                         <td className="p-3 text-sm">{new Date(invoice.invoice_date).toLocaleDateString()}</td>
                                         <td className="p-3 text-sm">{invoice.customer_first_name} {invoice.customer_last_name}</td>
@@ -81,6 +95,13 @@ const SalesHistoryPage = () => {
                     </div>
                 )}
             </div>
+            
+            <InvoiceDetailsModal 
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                invoice={selectedInvoice}
+                onActionSuccess={fetchInvoices}
+            />
         </div>
     );
 };
