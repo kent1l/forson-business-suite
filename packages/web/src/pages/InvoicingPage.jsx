@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api';
+import { parsePaymentTermsDays } from '../utils/terms';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
@@ -19,7 +20,19 @@ const InvoicingPage = ({ user }) => {
     const [loading, setLoading] = useState(true);
     const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
 
-    const paymentMethods = settings?.PAYMENT_METHODS ? settings.PAYMENT_METHODS.split(',') : [];
+    const paymentMethodsKey = settings?.PAYMENT_METHODS || '';
+    const paymentMethods = paymentMethodsKey ? paymentMethodsKey.split(',') : [];
+    const [fetchedTerms, setFetchedTerms] = useState(null);
+
+    const commonTermsFromSettingsKey = settings?.COMMON_PAYMENT_TERMS || '';
+    const commonTermsFromSettings = commonTermsFromSettingsKey ? commonTermsFromSettingsKey.split(',').map(t => {
+        const m = String(t).match(/(\d{1,4})/);
+        if (m) return String(parseInt(m[1], 10));
+        if (/due|upon/i.test(t)) return '0';
+        return String(t);
+    }) : ['0', '7', '15', '30'];
+
+    const commonTerms = fetchedTerms ? fetchedTerms.map(r => String(r.days_to_due)) : commonTermsFromSettings;
 
     useEffect(() => {
         if (searchTerm.trim() === '') {
@@ -33,8 +46,9 @@ const InvoicingPage = ({ user }) => {
                     params: { keyword: searchTerm }
                 });
                 setSearchResults(response.data);
-            } catch (error) {
-                toast.error("Search failed.");
+        } catch (error) {
+            console.error('Search error', error);
+            toast.error("Search failed.");
             }
         };
 
@@ -48,8 +62,9 @@ const InvoicingPage = ({ user }) => {
                 setLoading(true);
                 const customersRes = await api.get('/customers');
                 setCustomers(customersRes.data);
-            } catch (err) {
-                toast.error("Failed to load initial data.");
+        } catch (err) {
+            console.error('Failed to load initial data', err);
+            toast.error("Failed to load initial data.");
             } finally {
                 setLoading(false);
             }
@@ -60,12 +75,35 @@ const InvoicingPage = ({ user }) => {
 
     useEffect(() => {
         if (settings) {
-            setTerms(settings.DEFAULT_PAYMENT_TERMS || '');
-            if (paymentMethods.length > 0) {
-                setPaymentMethod(paymentMethods[0]);
+            const defaultRaw = settings.DEFAULT_PAYMENT_TERMS || '';
+            const m = String(defaultRaw).match(/(\d{1,4})/);
+            if (m) {
+                setTerms(String(parseInt(m[1], 10)));
+            } else if (/due|upon/i.test(defaultRaw)) {
+                setTerms('0');
+            } else {
+                setTerms(String(defaultRaw || ''));
+            }
+
+            if (paymentMethodsKey) {
+                const first = paymentMethodsKey.split(',')[0];
+                if (first) setPaymentMethod(first);
             }
         }
-    }, [settings]);
+    }, [settings, paymentMethodsKey]);
+
+    useEffect(() => {
+        const fetchTerms = async () => {
+            try {
+                const res = await api.get('/payment-terms');
+                setFetchedTerms(res.data || []);
+            } catch (err) {
+                // leave fetchedTerms as null to fallback to settings-based list
+                console.error('Failed to fetch payment terms from API', err.message);
+            }
+        };
+        fetchTerms();
+    }, []);
 
     const fetchCustomers = async () => {
         const response = await api.get('/customers');
@@ -124,6 +162,7 @@ const InvoicingPage = ({ user }) => {
             payment_method: paymentMethod,
             amount_paid: subtotal,
             terms: terms,
+            payment_terms_days: parsePaymentTermsDays(terms),
             lines: lines.map(line => ({
                 part_id: line.part_id,
                 quantity: line.quantity,
@@ -174,12 +213,24 @@ const InvoicingPage = ({ user }) => {
                 
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Payment Terms</label>
-                    <input 
-                        type="text"
-                        value={terms}
-                        onChange={e => setTerms(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    />
+                    <div className="flex items-center space-x-3">
+                        <select
+                            value={commonTerms.includes(terms) ? terms : 'custom'}
+                            onChange={e => setTerms(e.target.value)}
+                            className="px-3 py-2 border border-gray-300 rounded-lg"
+                        >
+                            {commonTerms.map(ct => <option key={ct} value={ct}>{ct}</option>)}
+                            <option value="custom">Custom...</option>
+                        </select>
+                        <input
+                            type="text"
+                            value={terms}
+                            onChange={e => setTerms(e.target.value)}
+                            onFocus={e => e.target.select()}
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+                            placeholder="Enter days (e.g. 30)"
+                        />
+                    </div>
                 </div>
                 
                 <div className="relative">
@@ -191,6 +242,7 @@ const InvoicingPage = ({ user }) => {
                             placeholder="Search by part name or SKU..."
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
+                            onFocus={e => e.target.select()}
                             className="w-full px-3 py-2 pl-10 border border-gray-300 rounded-lg"
                         />
                     </div>
@@ -219,8 +271,8 @@ const InvoicingPage = ({ user }) => {
                             {lines.map(line => (
                                 <tr key={line.part_id} className="border-b">
                                     <td className="p-2 text-sm font-medium text-gray-800">{line.display_name}</td>
-                                    <td className="p-2"><input type="number" value={line.quantity} onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)} className="w-full p-1 border rounded-md" /></td>
-                                    <td className="p-2"><input type="number" value={line.sale_price} onChange={e => handleLineChange(line.part_id, 'sale_price', e.target.value)} className="w-full p-1 border rounded-md" /></td>
+                                    <td className="p-2"><input type="number" value={line.quantity} onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)} onFocus={e => e.target.select()} className="w-full p-1 border rounded-md" /></td>
+                                    <td className="p-2"><input type="number" value={line.sale_price} onChange={e => handleLineChange(line.part_id, 'sale_price', e.target.value)} onFocus={e => e.target.select()} className="w-full p-1 border rounded-md" /></td>
                                     <td className="p-2 text-center"><button onClick={() => removeLine(line.part_id)} className="text-red-500 hover:text-red-700"><Icon path={ICONS.trash} className="h-5 w-5"/></button></td>
                                 </tr>
                             ))}

@@ -161,7 +161,9 @@ CREATE TABLE IF NOT EXISTS public.invoice (
     total_amount numeric(12,2) NOT NULL,
     amount_paid numeric(12,2) DEFAULT 0.00,
     status character varying(20) DEFAULT 'Unpaid'::character varying,
-    terms TEXT
+    terms TEXT,
+    payment_terms_days integer,
+    due_date timestamp with time zone
 );
 
 CREATE TABLE IF NOT EXISTS public.invoice_line (
