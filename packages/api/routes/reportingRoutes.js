@@ -18,7 +18,7 @@ router.get('/reports/sales-summary', async (req, res) => {
                 (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = p.part_id) AS part_numbers,
                 il.quantity, il.sale_price,
                 (il.quantity * il.sale_price) AS line_total,
-                (il.quantity * il.cost_at_sale) AS line_cost -- UPDATED: Use cost_at_sale
+                (il.quantity * il.cost_at_sale) AS line_cost
             FROM invoice i
             JOIN invoice_line il ON i.invoice_id = il.invoice_id
             JOIN part p ON il.part_id = p.part_id
@@ -27,14 +27,14 @@ router.get('/reports/sales-summary', async (req, res) => {
             WHERE i.invoice_date::date BETWEEN $1 AND $2
             ORDER BY i.invoice_date;
         `;
+        
         const summaryQuery = `
             SELECT
-                COALESCE(SUM(il.quantity * il.sale_price), 0) AS total_sales,
-                COALESCE(SUM(il.quantity * il.cost_at_sale), 0) AS total_cost, -- UPDATED: Use cost_at_sale
-                COUNT(DISTINCT i.invoice_id) AS total_invoices
-            FROM invoice i
-            JOIN invoice_line il ON i.invoice_id = il.invoice_id
-            WHERE i.invoice_date::date BETWEEN $1 AND $2;
+                (SELECT COALESCE(SUM(total_amount), 0) FROM invoice WHERE invoice_date::date BETWEEN $1 AND $2) AS gross_sales,
+                (SELECT COALESCE(SUM(total_amount), 0) FROM credit_note WHERE refund_date::date BETWEEN $1 AND $2) AS total_refunds,
+                (SELECT COALESCE(SUM(il.quantity * il.cost_at_sale), 0) FROM invoice_line il JOIN invoice i ON il.invoice_id = i.invoice_id WHERE i.invoice_date::date BETWEEN $1 AND $2) AS total_cost_of_goods_sold,
+                (SELECT COALESCE(SUM(cnl.quantity * p.wac_cost), 0) FROM credit_note_line cnl JOIN part p ON cnl.part_id = p.part_id JOIN credit_note cn ON cnl.cn_id = cn.cn_id WHERE cn.refund_date::date BETWEEN $1 AND $2) AS total_cost_of_goods_returned,
+                (SELECT COUNT(*) FROM invoice WHERE invoice_date::date BETWEEN $1 AND $2) AS total_invoices
         `;
 
         const [detailsRes, summaryRes] = await Promise.all([
@@ -43,10 +43,17 @@ router.get('/reports/sales-summary', async (req, res) => {
         ]);
 
         const details = detailsRes.rows.map(row => ({ ...row, display_name: constructDisplayName(row) }));
+        
         const summaryData = summaryRes.rows[0];
-        const totalSales = parseFloat(summaryData.total_sales);
-        const totalCost = parseFloat(summaryData.total_cost);
-        const summary = { totalSales, totalCost, profit: totalSales - totalCost, totalInvoices: parseInt(summaryData.total_invoices, 10) };
+        const netSales = parseFloat(summaryData.gross_sales) - parseFloat(summaryData.total_refunds);
+        const netCost = parseFloat(summaryData.total_cost_of_goods_sold) - parseFloat(summaryData.total_cost_of_goods_returned);
+        
+        const summary = { 
+            totalSales: netSales, 
+            totalCost: netCost, 
+            profit: netSales - netCost, 
+            totalInvoices: parseInt(summaryData.total_invoices, 10) 
+        };
 
         if (format === 'csv') {
             const json2csvParser = new Parser();
@@ -349,5 +356,33 @@ router.get('/reports/profitability-by-product', async (req, res) => {
     }
 });
 
+// NEW ENDPOINT: Get refunds report
+router.get('/reports/refunds', async (req, res) => {
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+        return res.status(400).json({ message: 'Start date and end date are required.' });
+    }
+    try {
+        const query = `
+            SELECT 
+                cn.cn_id,
+                cn.cn_number,
+                cn.refund_date,
+                cn.total_amount,
+                i.invoice_number,
+                c.first_name || ' ' || c.last_name as customer_name
+            FROM credit_note cn
+            JOIN invoice i ON cn.invoice_id = i.invoice_id
+            JOIN customer c ON i.customer_id = c.customer_id
+            WHERE cn.refund_date::date BETWEEN $1 AND $2
+            ORDER BY cn.refund_date DESC;
+        `;
+        const { rows } = await db.query(query, [startDate, endDate]);
+        res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
 
 module.exports = router;

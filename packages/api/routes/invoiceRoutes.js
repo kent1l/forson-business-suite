@@ -66,6 +66,44 @@ router.get('/invoices/:id/lines', protect, hasPermission('invoicing:create'), as
     }
 });
 
+// GET /api/invoices/:id/lines-with-refunds - Get line items with refund data for a specific invoice
+router.get('/invoices/:id/lines-with-refunds', protect, hasPermission('invoicing:create'), async (req, res) => {
+    const { id } = req.params;
+    try {
+        // Use a subquery to sum refunded quantities per invoice and part to avoid GROUP BY on il.*
+        const query = `
+            SELECT
+                il.*,
+                p.detail,
+                b.brand_name,
+                g.group_name,
+                (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id) as part_numbers,
+                COALESCE(rf.quantity_refunded, 0) AS quantity_refunded
+            FROM invoice_line il
+            JOIN part p ON il.part_id = p.part_id
+            LEFT JOIN brand b ON p.brand_id = b.brand_id
+            LEFT JOIN "group" g ON p.group_id = g.group_id
+            LEFT JOIN (
+                SELECT cnl.part_id, cn.invoice_id, SUM(cnl.quantity) AS quantity_refunded
+                FROM credit_note_line cnl
+                JOIN credit_note cn ON cnl.cn_id = cn.cn_id
+                GROUP BY cn.invoice_id, cnl.part_id
+            ) rf ON rf.part_id = il.part_id AND rf.invoice_id = il.invoice_id
+            WHERE il.invoice_id = $1
+            ORDER BY p.detail;
+        `;
+        const { rows } = await db.query(query, [id]);
+        // Construct display_name for each line
+        const linesWithDisplayName = rows.map(line => ({
+            ...line,
+            display_name: constructDisplayName(line)
+        }));
+        res.json(linesWithDisplayName);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
 
 // POST /invoices - Create a new invoice
 router.post('/invoices', async (req, res) => {
@@ -82,8 +120,9 @@ router.post('/invoices', async (req, res) => {
         const invoice_number = await getNextDocumentNumber(client, 'INV');
         const total_amount = lines.reduce((sum, line) => sum + (line.quantity * line.sale_price) - (line.discount_amount || 0), 0);
 
-        let status;
-        const paid = parseFloat(amount_paid) || 0;
+    // Normalize paid amount to a numeric value (strip currency characters if present)
+    const paid = parseFloat(String(amount_paid || '').replace(/[^0-9.-]+/g, '')) || 0;
+    let status;
         if (paid >= total_amount) {
             status = 'Paid';
         } else if (paid > 0 && paid < total_amount) {
@@ -97,7 +136,8 @@ router.post('/invoices', async (req, res) => {
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING invoice_id;
         `;
-        const invoiceResult = await client.query(invoiceQuery, [invoice_number, customer_id, employee_id, total_amount, amount_paid, status, terms]);
+    // Store numeric paid amount for consistency
+    const invoiceResult = await client.query(invoiceQuery, [invoice_number, customer_id, employee_id, total_amount, paid, status, terms]);
         const newInvoiceId = invoiceResult.rows[0].invoice_id;
 
         for (const line of lines) {

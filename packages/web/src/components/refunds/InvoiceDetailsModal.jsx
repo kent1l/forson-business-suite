@@ -15,7 +15,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
         if (isOpen && invoice) {
             setLoading(true);
             setShowRefundForm(false); // Reset on open
-            api.get(`/invoices/${invoice.invoice_id}/lines`)
+            api.get(`/invoices/${invoice.invoice_id}/lines-with-refunds`)
                 .then(res => setLines(res.data))
                 .catch(() => toast.error('Failed to load invoice details.'))
                 .finally(() => setLoading(false));

@@ -11,14 +11,14 @@ const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
 
     const handleCheckboxChange = (lineId, checked) => {
         const line = lines.find(l => l.invoice_line_id === lineId);
-        if (!line) return;
+        if (!line || (line.quantity - line.quantity_refunded) <= 0) return;
 
         setRefundLines(prev => {
             const newLines = { ...prev };
             if (checked) {
                 newLines[lineId] = {
                     ...line,
-                    quantity: line.quantity // Default to full quantity
+                    quantity: line.quantity - line.quantity_refunded // Default to max refundable quantity
                 };
             } else {
                 delete newLines[lineId];
@@ -29,7 +29,8 @@ const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
 
     const handleQuantityChange = (lineId, quantity) => {
         const originalLine = lines.find(l => l.invoice_line_id === lineId);
-        const newQuantity = Math.max(0, Math.min(originalLine.quantity, Number(quantity)));
+        const maxRefundable = originalLine.quantity - originalLine.quantity_refunded;
+        const newQuantity = Math.max(0, Math.min(maxRefundable, Number(quantity)));
 
         setRefundLines(prev => ({
             ...prev,
@@ -85,10 +86,11 @@ const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
                             checked={!!refundLines[line.invoice_line_id]}
                             onChange={(e) => handleCheckboxChange(line.invoice_line_id, e.target.checked)}
                             className="h-4 w-4 rounded"
+                            disabled={(line.quantity - line.quantity_refunded) <= 0}
                         />
                         <div className="flex-grow">
                             <p className="text-sm font-medium">{line.display_name}</p>
-                            <p className="text-xs text-gray-500">Sold: {line.quantity} @ {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(line.sale_price).toFixed(2)}</p>
+                            <p className="text-xs text-gray-500">Sold: {line.quantity}, Refunded: {line.quantity_refunded}, Available: {line.quantity - line.quantity_refunded}</p>
                         </div>
                         {refundLines[line.invoice_line_id] && (
                             <input
@@ -96,7 +98,7 @@ const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
                                 value={refundLines[line.invoice_line_id].quantity}
                                 onChange={(e) => handleQuantityChange(line.invoice_line_id, e.target.value)}
                                 className="w-20 px-2 py-1 border rounded-md text-sm"
-                                max={line.quantity}
+                                max={line.quantity - line.quantity_refunded}
                                 min="0"
                             />
                         )}

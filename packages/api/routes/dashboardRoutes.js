@@ -30,7 +30,7 @@ router.get('/dashboard/stats', async (req, res) => {
   }
 });
 
-// GET /dashboard/sales-chart - Data for the last 30 days sales chart
+// GET /dashboard/sales-chart - Data for the last 30 days sales chart (now calculates NET sales)
 router.get('/dashboard/sales-chart', async (req, res) => {
     try {
         const query = `
@@ -43,9 +43,12 @@ router.get('/dashboard/sales-chart', async (req, res) => {
             )
             SELECT
                 TO_CHAR(d.day, 'Mon DD') as date,
-                COALESCE(SUM(i.total_amount), 0) as "total_sales"
+                (
+                    COALESCE((SELECT SUM(total_amount) FROM invoice WHERE invoice_date::date = d.day), 0)
+                    -
+                    COALESCE((SELECT SUM(total_amount) FROM credit_note WHERE refund_date::date = d.day), 0)
+                ) as "total_sales"
             FROM all_days d
-            LEFT JOIN invoice i ON i.invoice_date::date = d.day
             GROUP BY d.day
             ORDER BY d.day;
         `;
