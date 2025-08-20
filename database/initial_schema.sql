@@ -279,6 +279,26 @@ CREATE TABLE IF NOT EXISTS public.customer_tag (
     PRIMARY KEY (customer_id, tag_id)
 );
 
+--
+-- NEW TABLES FOR REFUNDS (CREDIT NOTES)
+--
+CREATE TABLE IF NOT EXISTS public.credit_note (
+    cn_id serial PRIMARY KEY,
+    cn_number character varying(50) NOT NULL UNIQUE,
+    invoice_id integer NOT NULL REFERENCES public.invoice(invoice_id) ON DELETE RESTRICT,
+    employee_id integer NOT NULL REFERENCES public.employee(employee_id) ON DELETE RESTRICT,
+    refund_date timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    total_amount numeric(12,2) NOT NULL,
+    notes text
+);
+
+CREATE TABLE IF NOT EXISTS public.credit_note_line (
+    cn_line_id serial PRIMARY KEY,
+    cn_id integer NOT NULL REFERENCES public.credit_note(cn_id) ON DELETE CASCADE,
+    part_id integer NOT NULL REFERENCES public.part(part_id) ON DELETE RESTRICT,
+    quantity numeric(12,4) NOT NULL,
+    sale_price numeric(12,2) NOT NULL
+);
 
 --
 -- WAC CALCULATION TRIGGER
@@ -408,3 +428,7 @@ SELECT 5, p.permission_id FROM public.permission p WHERE p.permission_key IN (
 -- Admin Permissions (all)
 INSERT INTO public.role_permission (permission_level_id, permission_id) 
 SELECT 10, p.permission_id FROM public.permission p ON CONFLICT DO NOTHING;
+
+-- ADD CHECK CONSTRAINT TO INVOICE STATUS
+ALTER TABLE public.invoice
+ADD CONSTRAINT check_invoice_status CHECK (status IN ('Unpaid', 'Paid', 'Partially Paid', 'Partially Refunded', 'Fully Refunded', 'Cancelled'));

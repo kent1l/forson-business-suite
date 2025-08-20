@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
+const { constructDisplayName } = require('../helpers/displayNameHelper'); // Import the helper
 const router = express.Router();
 
 // GET /invoices - Get all invoices with date filtering
@@ -14,9 +15,9 @@ router.get('/invoices', protect, hasPermission('invoicing:create'), async (req, 
 
     try {
         const query = `
-            SELECT 
-                i.*, 
-                c.first_name as customer_first_name, 
+            SELECT
+                i.*,
+                c.first_name as customer_first_name,
                 c.last_name as customer_last_name,
                 e.first_name as employee_first_name,
                 e.last_name as employee_last_name
@@ -28,6 +29,76 @@ router.get('/invoices', protect, hasPermission('invoicing:create'), async (req, 
         `;
         const { rows } = await db.query(query, [startDate, endDate]);
         res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// GET /api/invoices/:id/lines - Get line items for a specific invoice
+router.get('/invoices/:id/lines', protect, hasPermission('invoicing:create'), async (req, res) => {
+    const { id } = req.params;
+    try {
+        const query = `
+            SELECT
+                il.*,
+                p.detail,
+                b.brand_name,
+                g.group_name,
+                (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id) as part_numbers
+            FROM invoice_line il
+            JOIN part p ON il.part_id = p.part_id
+            LEFT JOIN brand b ON p.brand_id = b.brand_id
+            LEFT JOIN "group" g ON p.group_id = g.group_id
+            WHERE il.invoice_id = $1
+            ORDER BY p.detail;
+        `;
+        const { rows } = await db.query(query, [id]);
+        // Construct display_name for each line
+        const linesWithDisplayName = rows.map(line => ({
+            ...line,
+            display_name: constructDisplayName(line)
+        }));
+        res.json(linesWithDisplayName);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// GET /api/invoices/:id/lines-with-refunds - Get line items with refund data for a specific invoice
+router.get('/invoices/:id/lines-with-refunds', protect, hasPermission('invoicing:create'), async (req, res) => {
+    const { id } = req.params;
+    try {
+        // Use a subquery to sum refunded quantities per invoice and part to avoid GROUP BY on il.*
+        const query = `
+            SELECT
+                il.*,
+                p.detail,
+                b.brand_name,
+                g.group_name,
+                (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id) as part_numbers,
+                COALESCE(rf.quantity_refunded, 0) AS quantity_refunded
+            FROM invoice_line il
+            JOIN part p ON il.part_id = p.part_id
+            LEFT JOIN brand b ON p.brand_id = b.brand_id
+            LEFT JOIN "group" g ON p.group_id = g.group_id
+            LEFT JOIN (
+                SELECT cnl.part_id, cn.invoice_id, SUM(cnl.quantity) AS quantity_refunded
+                FROM credit_note_line cnl
+                JOIN credit_note cn ON cnl.cn_id = cn.cn_id
+                GROUP BY cn.invoice_id, cnl.part_id
+            ) rf ON rf.part_id = il.part_id AND rf.invoice_id = il.invoice_id
+            WHERE il.invoice_id = $1
+            ORDER BY p.detail;
+        `;
+        const { rows } = await db.query(query, [id]);
+        // Construct display_name for each line
+        const linesWithDisplayName = rows.map(line => ({
+            ...line,
+            display_name: constructDisplayName(line)
+        }));
+        res.json(linesWithDisplayName);
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
@@ -48,10 +119,10 @@ router.post('/invoices', async (req, res) => {
 
         const invoice_number = await getNextDocumentNumber(client, 'INV');
         const total_amount = lines.reduce((sum, line) => sum + (line.quantity * line.sale_price) - (line.discount_amount || 0), 0);
-        
-        // --- FIX: Intelligently determine the status on the backend ---
-        let status;
-        const paid = parseFloat(amount_paid) || 0;
+
+    // Normalize paid amount to a numeric value (strip currency characters if present)
+    const paid = parseFloat(String(amount_paid || '').replace(/[^0-9.-]+/g, '')) || 0;
+    let status;
         if (paid >= total_amount) {
             status = 'Paid';
         } else if (paid > 0 && paid < total_amount) {
@@ -65,13 +136,13 @@ router.post('/invoices', async (req, res) => {
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING invoice_id;
         `;
-        const invoiceResult = await client.query(invoiceQuery, [invoice_number, customer_id, employee_id, total_amount, amount_paid, status, terms]);
+    // Store numeric paid amount for consistency
+    const invoiceResult = await client.query(invoiceQuery, [invoice_number, customer_id, employee_id, total_amount, paid, status, terms]);
         const newInvoiceId = invoiceResult.rows[0].invoice_id;
 
         for (const line of lines) {
             const { part_id, quantity, sale_price, discount_amount } = line;
-            
-            // Get the current WAC cost for the part
+
             const costResult = await client.query('SELECT wac_cost FROM part WHERE part_id = $1', [part_id]);
             const cost_at_sale = costResult.rows.length > 0 ? costResult.rows[0].wac_cost : 0;
 
@@ -81,15 +152,13 @@ router.post('/invoices', async (req, res) => {
             `;
             await client.query(lineQuery, [newInvoiceId, part_id, quantity, sale_price, cost_at_sale, discount_amount]);
 
-            // Create inventory transaction for the sale
             const transactionQuery = `
                 INSERT INTO inventory_transaction (part_id, trans_type, quantity, unit_cost, reference_no, employee_id)
                 VALUES ($1, 'StockOut', $2, $3, $4, $5);
             `;
             await client.query(transactionQuery, [part_id, -quantity, cost_at_sale, invoice_number, employee_id]);
         }
-        
-        // If a payment was made, create the payment and allocation records
+
         if (paid > 0) {
             const paymentQuery = `
                 INSERT INTO customer_payment (customer_id, employee_id, amount, payment_method, reference_number)

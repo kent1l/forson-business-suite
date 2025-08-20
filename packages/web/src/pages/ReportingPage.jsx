@@ -9,16 +9,18 @@ const LowStockReport = lazy(() => import('../components/reports/LowStockReport')
 const SalesByCustomerReport = lazy(() => import('../components/reports/SalesByCustomerReport'));
 const InventoryMovementReport = lazy(() => import('../components/reports/InventoryMovementReport'));
 const ProfitabilityReport = lazy(() => import('../components/reports/ProfitabilityReport'));
+const RefundsReport = lazy(() => import('../components/reports/RefundsReport')); // <-- Import new report
 
 // Map tab keys to their corresponding components and labels
 const reportTabs = [
-    { key: 'sales', label: 'Sales Summary', component: SalesReport },
+    { key: 'sales', label: 'Sales Summary (Net)', component: SalesReport },
+    { key: 'profitability', label: 'Profitability by Product (Net)', component: ProfitabilityReport },
+    { key: 'refunds', label: 'Refunds', component: RefundsReport }, // <-- Add new tab
     { key: 'valuation', label: 'Inventory Valuation', component: InventoryValuationReport },
     { key: 'top_selling', label: 'Top-Selling Products', component: TopSellingReport },
     { key: 'low_stock', label: 'Low Stock', component: LowStockReport },
-    { key: 'sales_by_customer', label: 'Sales by Customer', component: SalesByCustomerReport },
+    { key: 'sales_by_customer', label: 'Sales by Customer (Net)', component: SalesByCustomerReport },
     { key: 'inventory_movement', label: 'Inventory Movement', component: InventoryMovementReport },
-    { key: 'profitability', label: 'Profitability by Product', component: ProfitabilityReport },
 ];
 
 const ReportingPage = () => {
