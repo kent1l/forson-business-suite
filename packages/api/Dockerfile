@@ -1,20 +1,23 @@
 # Use an official Node.js runtime as a parent image
 FROM node:18-alpine
 
+# Install PostgreSQL client for pg_dump and psql commands
+RUN apk add --no-cache postgresql-client
+
 # Set the working directory in the container
 WORKDIR /usr/src/app
 
-# Copy package.json and package-lock.json to leverage Docker cache
+# Copy package.json and package-lock.json
 COPY package*.json ./
 
 # Install app dependencies
-RUN npm install
+RUN npm ci
 
-# Bundle app source
+# Copy the rest of the application's code
 COPY . .
 
-# Your app binds to port 3001, so expose it
+# The app binds to port 3001
 EXPOSE 3001
 
-# Define the command to run your app
-CMD [ "node", "index.js" ]
+# Command to run the application
+CMD [ "npm", "run", "start" ]
