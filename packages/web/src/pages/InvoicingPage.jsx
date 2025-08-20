@@ -21,8 +21,17 @@ const InvoicingPage = ({ user }) => {
 
     const paymentMethodsKey = settings?.PAYMENT_METHODS || '';
     const paymentMethods = paymentMethodsKey ? paymentMethodsKey.split(',') : [];
-    const commonTermsKey = settings?.COMMON_PAYMENT_TERMS || '';
-    const commonTerms = commonTermsKey ? commonTermsKey.split(',') : ['Due on receipt', 'Net 7', 'Net 15', 'Net 30'];
+    const [fetchedTerms, setFetchedTerms] = useState(null);
+
+    const commonTermsFromSettingsKey = settings?.COMMON_PAYMENT_TERMS || '';
+    const commonTermsFromSettings = commonTermsFromSettingsKey ? commonTermsFromSettingsKey.split(',').map(t => {
+        const m = String(t).match(/(\d{1,4})/);
+        if (m) return String(parseInt(m[1], 10));
+        if (/due|upon/i.test(t)) return '0';
+        return String(t);
+    }) : ['0', '7', '15', '30'];
+
+    const commonTerms = fetchedTerms ? fetchedTerms.map(r => String(r.days_to_due)) : commonTermsFromSettings;
 
     useEffect(() => {
         if (searchTerm.trim() === '') {
@@ -65,13 +74,35 @@ const InvoicingPage = ({ user }) => {
 
     useEffect(() => {
         if (settings) {
-            setTerms(settings.DEFAULT_PAYMENT_TERMS || '');
+            const defaultRaw = settings.DEFAULT_PAYMENT_TERMS || '';
+            const m = String(defaultRaw).match(/(\d{1,4})/);
+            if (m) {
+                setTerms(String(parseInt(m[1], 10)));
+            } else if (/due|upon/i.test(defaultRaw)) {
+                setTerms('0');
+            } else {
+                setTerms(String(defaultRaw || ''));
+            }
+
             if (paymentMethodsKey) {
                 const first = paymentMethodsKey.split(',')[0];
                 if (first) setPaymentMethod(first);
             }
         }
     }, [settings, paymentMethodsKey]);
+
+    useEffect(() => {
+        const fetchTerms = async () => {
+            try {
+                const res = await api.get('/payment-terms');
+                setFetchedTerms(res.data || []);
+            } catch (err) {
+                // leave fetchedTerms as null to fallback to settings-based list
+                console.error('Failed to fetch payment terms from API', err.message);
+            }
+        };
+        fetchTerms();
+    }, []);
 
     const fetchCustomers = async () => {
         const response = await api.get('/customers');
@@ -199,7 +230,7 @@ const InvoicingPage = ({ user }) => {
                             onChange={e => setTerms(e.target.value)}
                             onFocus={e => e.target.select()}
                             className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="Enter payment terms (e.g. Net 30)"
+                            placeholder="Enter days (e.g. 30)"
                         />
                     </div>
                 </div>

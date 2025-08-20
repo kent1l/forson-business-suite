@@ -24,6 +24,7 @@ app.use('/api', require('./routes/invoiceRoutes'));
 app.use('/api', require('./routes/paymentRoutes'));
 app.use('/api', require('./routes/draftRoutes'));
 app.use('/api', require('./routes/refundRoutes')); // <-- Add new refund route
+app.use('/api', require('./routes/paymentTermRoutes'));
 
 // Entity & Data Management Modules
 app.use('/api', require('./routes/supplierRoutes'));
