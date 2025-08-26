@@ -4,7 +4,31 @@ import PreviewComponent from './PreviewComponent';
 import { parsePaymentTermsDays } from '../../utils/terms';
 
 // Design system components (assumed available)
-import { Button, Select, Input, Spinner, Card, Icon } from '@company/design-system';
+// Lightweight local UI primitives to avoid external design-system dependency in dev
+const Button: React.FC<any> = ({ children, className = '', ...props }) => (
+    <button {...props} className={`px-3 py-1 rounded bg-blue-600 text-white text-sm ${className}`}>{children}</button>
+);
+
+const Select: React.FC<any> = ({ options = [], value, onChange, className = '' }) => (
+    <select value={value} onChange={(e) => onChange && onChange(e.target.value)} className={`border rounded px-2 py-1 ${className}`}>
+        {options.map((o:any) => (<option key={String(o.value)} value={o.value}>{o.label}</option>))}
+    </select>
+);
+
+const Input: React.FC<any> = (props) => (
+    // pass through props; className can be provided
+    <input {...props} className={`border rounded px-2 py-1 ${props.className || ''}`} />
+);
+
+const Spinner: React.FC<any> = () => (
+    <div className="inline-block text-sm text-gray-500">Loading...</div>
+);
+
+const Card: React.FC<any> = ({ children, className = '', ...props }) => (
+    <div {...props} className={`shadow-sm border rounded bg-white ${className}`}>
+        {children}
+    </div>
+);
 
 type DocumentType = 'GRN' | 'Sales' | 'Invoice' | 'PurchaseOrders';
 type DocumentStatus = 'Draft' | 'Final' | 'Cancelled' | 'Archived';
