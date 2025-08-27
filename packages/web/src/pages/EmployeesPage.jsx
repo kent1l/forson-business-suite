@@ -5,10 +5,9 @@ import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import FilterBar from '../components/ui/FilterBar';
-import { useAuth } from '../contexts/AuthContext'; // <-- NEW: Import useAuth
+import { useAuth } from '../contexts/AuthContext';
 
-// EmployeeForm component remains the same...
-const EmployeeForm = ({ employee, onSave, onCancel }) => {
+const EmployeeForm = ({ employee, onSave, onCancel, roles }) => { // <-- NEW: roles prop
     const [formData, setFormData] = useState({
         first_name: '',
         last_name: '',
@@ -28,7 +27,7 @@ const EmployeeForm = ({ employee, onSave, onCancel }) => {
                 position_title: employee.position_title || '',
                 permission_level_id: employee.permission_level_id || 1,
                 is_active: employee.is_active,
-                password: '' // Always clear password field for security
+                password: ''
             });
         } else {
             setFormData({
@@ -75,9 +74,12 @@ const EmployeeForm = ({ employee, onSave, onCancel }) => {
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Permission Level</label>
                 <select name="permission_level_id" value={formData.permission_level_id} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                    <option value={1}>Clerk</option>
-                    <option value={5}>Manager</option>
-                    <option value={10}>Admin</option>
+                    {/* NEW: Dynamic options from roles prop */}
+                    {roles.map(role => (
+                        <option key={role.permission_level_id} value={role.permission_level_id}>
+                            {role.level_name}
+                        </option>
+                    ))}
                 </select>
             </div>
             <div className="flex items-center">
@@ -94,8 +96,9 @@ const EmployeeForm = ({ employee, onSave, onCancel }) => {
 
 
 const EmployeesPage = () => {
-    const { hasPermission } = useAuth(); // <-- NEW: Use the auth context
+    const { hasPermission } = useAuth();
     const [employees, setEmployees] = useState([]);
+    const [roles, setRoles] = useState([]); // <-- NEW: State for roles
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -109,21 +112,28 @@ const EmployeesPage = () => {
     ];
 
     useEffect(() => {
-        const fetchEmployees = async () => {
+        const fetchData = async () => {
             if (hasPermission('employees:view')) {
                 try {
                     setLoading(true);
-                    const response = await api.get('/employees', { params: { status: statusFilter } });
-                    setEmployees(response.data);
+                    // Fetch both employees and roles
+                    const [employeesRes, rolesRes] = await Promise.all([
+                        api.get('/employees', { params: { status: statusFilter } }),
+                        api.get('/roles') // <-- NEW: Fetch roles
+                    ]);
+                    setEmployees(employeesRes.data);
+                    setRoles(rolesRes.data); // <-- NEW: Set roles state
                 } catch (err) {
-                    setError('Failed to fetch employees.');
+                    setError('Failed to fetch data.');
+                    toast.error('Failed to fetch data.');
                 } finally {
                     setLoading(false);
                 }
             }
         };
-        fetchEmployees();
+        fetchData();
     }, [statusFilter, hasPermission]);
+
 
     const handleAdd = () => {
         setCurrentEmployee(null);
@@ -144,7 +154,6 @@ const EmployeesPage = () => {
             loading: 'Saving employee...',
             success: () => {
                 setIsModalOpen(false);
-                // Re-fetch after save
                 api.get('/employees', { params: { status: statusFilter } }).then(res => setEmployees(res.data));
                 return 'Employee saved successfully!';
             },
@@ -152,7 +161,6 @@ const EmployeesPage = () => {
         });
     };
     
-    // NEW: Protect the entire page render
     if (!hasPermission('employees:view')) {
         return (
             <div className="text-center p-8">
@@ -166,7 +174,7 @@ const EmployeesPage = () => {
         <div>
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-semibold text-gray-800">Employee Management</h1>
-                {hasPermission('employees:edit') && ( // <-- NEW: Protect the add button
+                {hasPermission('employees:edit') && (
                     <button onClick={handleAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
                         Add Employee
                     </button>
@@ -206,7 +214,7 @@ const EmployeesPage = () => {
                                             </span>
                                         </td>
                                         <td className="p-3 text-sm text-right">
-                                            {hasPermission('employees:edit') && ( // <-- NEW: Protect the edit button
+                                            {hasPermission('employees:edit') && (
                                                 <button onClick={() => handleEdit(emp)} className="text-blue-600 hover:text-blue-800"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
                                             )}
                                         </td>
@@ -218,7 +226,12 @@ const EmployeesPage = () => {
                 )}
             </div>
             <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={currentEmployee ? 'Edit Employee' : 'Add New Employee'}>
-                <EmployeeForm employee={currentEmployee} onSave={handleSave} onCancel={() => setIsModalOpen(false)} />
+                <EmployeeForm 
+                    employee={currentEmployee} 
+                    onSave={handleSave} 
+                    onCancel={() => setIsModalOpen(false)} 
+                    roles={roles} // <-- Pass roles to the form
+                />
             </Modal>
         </div>
     );

@@ -1,18 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { DocumentGrid } from './DocumentGrid';
-import DocumentListItem from './DocumentListItem';
-import { PreviewPane } from './PreviewPane';
+import React, { useState } from 'react';
 import ToolbarV2 from './ToolbarV2';
+import { DocumentGrid } from './DocumentGrid';
+import { PreviewPane } from './PreviewPane';
 import { FilterSidebar } from './FilterSidebar';
 import useDocumentSearchV2 from './useDocumentSearchV2';
 import CommandPalette from './CommandPalette';
 import { DocumentMetadata } from './types';
 
-const DocumentBrowserV2: React.FC = () => {
-    const [selectedDoc, setSelectedDoc] = useState<DocumentMetadata | null>(null);
-    const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-    const [isFilterOpen, setIsFilterOpen] = useState(false);
-    const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+const DocumentBrowserV2 = () => {
+    const [selectedDocument, setSelectedDocument] = useState<DocumentMetadata | null>(null);
+    const [isPaletteOpen, setPaletteOpen] = useState(false);
+    const [currentView, setCurrentView] = useState<'grid' | 'list'>('grid');
+    const [isSidebarOpen, setSidebarOpen] = useState(true);
 
     const {
         documents,
@@ -22,68 +21,52 @@ const DocumentBrowserV2: React.FC = () => {
         filters,
         applyFilters,
         debouncedSetSearchQuery,
-        loadMore,
+        loadMore
     } = useDocumentSearchV2();
 
-    const handleSetFilters = (newFilters: any) => {
-        applyFilters(newFilters);
+    // Debugger message to see what the component receives from the hook
+    console.log('%c[DocumentBrowserV2] Rendering with props from hook:', 'color: orange;', {
+        documents,
+        loading,
+        error,
+        hasMore,
+    });
+
+    const handleSelectDocument = (doc: DocumentMetadata) => {
+        setSelectedDocument(doc);
     };
 
-    useEffect(() => {
-        const handleKeyDown = (event: KeyboardEvent) => {
-            const key = event.key.toLowerCase();
-            if ((event.metaKey || event.ctrlKey) && key === 'k') {
-                event.preventDefault();
-                setIsCommandPaletteOpen(true);
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, []);
-
+    const handleClosePreview = () => {
+        setSelectedDocument(null);
+    };
+    
     return (
-        <div className="flex h-screen bg-gray-50 font-sans text-gray-800 overflow-hidden">
-            {/* Filter Panel */}
-            {isFilterOpen && <FilterSidebar filters={filters} setFilters={handleSetFilters} />}
-
-            <main className="flex-1 flex flex-col">
+        <div className="flex h-full bg-gray-50">
+            <CommandPalette isOpen={isPaletteOpen} onClose={() => setPaletteOpen(false)} applyFilters={applyFilters} />
+            {isSidebarOpen && <FilterSidebar filters={filters} applyFilters={applyFilters} />}
+            <div className="flex-1 flex flex-col overflow-hidden">
                 <ToolbarV2
                     filters={filters}
-                    onSearchChange={debouncedSetSearchQuery}
-                    onViewChange={setViewMode}
-                    currentView={viewMode}
-                    onFilterToggle={() => setIsFilterOpen(!isFilterOpen)}
+                    onSearchChange={(query) => { debouncedSetSearchQuery(query); }}
+                    onViewChange={(view) => setCurrentView(view)}
+                    currentView={currentView}
+                    onFilterToggle={() => setSidebarOpen(s => !s)}
                 />
-
-                {viewMode === 'grid' ? (
+                <main className="flex-1 overflow-y-auto p-4">
                     <DocumentGrid
                         documents={documents}
+                        onSelectDoc={handleSelectDocument}
                         loading={loading}
-                        error={error}
                         hasMore={hasMore}
-                        onSelectDoc={setSelectedDoc}
                         onLoadMore={loadMore}
+                        error={error}
                     />
-                ) : (
-                    <div className="flex-1 p-4 overflow-y-auto">
-                        <div className="space-y-1">
-                            {documents.map(doc => (
-                                <DocumentListItem key={doc.id} doc={doc} onSelect={() => setSelectedDoc(doc)} />
-                            ))}
-                        </div>
-                         {loading && <div className="text-center py-4">Loading...</div>}
-                         {!loading && !hasMore && <div className="text-center py-4 text-gray-500">End of results.</div>}
-                    </div>
-                )}
-            </main>
-
-            {/* Preview Pane */}
-            <PreviewPane document={selectedDoc} onClose={() => setSelectedDoc(null)} />
-            <CommandPalette
-                isOpen={isCommandPaletteOpen}
-                onClose={() => setIsCommandPaletteOpen(false)}
-                applyFilters={applyFilters}
-            />
+                    {error && <div className="text-red-500 p-4">{error}</div>}
+                </main>
+            </div>
+            {selectedDocument && (
+                <PreviewPane document={selectedDocument} onClose={handleClosePreview} />
+            )}
         </div>
     );
 };

@@ -6,17 +6,17 @@ const DATE_PRESETS = [7, 30, 90, 365];
 
 interface FilterSidebarProps {
     filters: DocumentSearchFilters;
-    setFilters: React.Dispatch<React.SetStateAction<DocumentSearchFilters>>;
+    applyFilters: (newFilters: Partial<DocumentSearchFilters>) => void;
 }
 
-export const FilterSidebar: React.FC<FilterSidebarProps> = ({ filters, setFilters }) => {
+export const FilterSidebar: React.FC<FilterSidebarProps> = ({ filters, applyFilters }) => {
     // State for custom date inputs
     const [customFrom, setCustomFrom] = useState('');
     const [customTo, setCustomTo] = useState('');
 
     const handleCustomDateApply = () => {
         if (customFrom && customTo) {
-            setFilters(f => ({ ...f, datePreset: 'custom' as any, from: customFrom, to: customTo, page: 1 }));
+            applyFilters({ datePreset: 'custom' as any, from: customFrom, to: customTo });
         }
     };
     return (
@@ -29,7 +29,7 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({ filters, setFilter
                         {['All', ...DOCUMENT_TYPES].map(type => (
                             <button
                                 key={type}
-                                onClick={() => setFilters(f => ({ ...f, type: type as any, page: 1 }))}
+                                onClick={() => applyFilters({ type: type as any })}
                                 className={`w-full text-left px-3 py-1.5 rounded-md text-sm ${filters.type === type ? 'bg-blue-100 text-blue-700 font-semibold' : 'hover:bg-gray-100'}`}
                             >
                                 {type}
@@ -43,14 +43,14 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({ filters, setFilter
                         {DATE_PRESETS.map(days => (
                             <button
                                 key={days}
-                                onClick={() => setFilters(f => ({ ...f, datePreset: days as any, from: undefined, to: undefined, page: 1 }))}
+                                onClick={() => applyFilters({ datePreset: days as any, from: undefined, to: undefined })}
                                 className={`w-full text-left px-3 py-1.5 rounded-md text-sm ${filters.datePreset === days ? 'bg-blue-100 text-blue-700 font-semibold' : 'hover:bg-gray-100'}`}
                             >
                                 Last {days} days
                             </button>
                         ))}
                         <button
-                            onClick={() => setFilters(f => ({ ...f, datePreset: 'custom' as any, page: 1 }))}
+                            onClick={() => applyFilters({ datePreset: 'custom' as any })}
                             className={`w-full text-left px-3 py-1.5 rounded-md text-sm ${filters.datePreset === 'custom' ? 'bg-blue-100 text-blue-700 font-semibold' : 'hover:bg-gray-100'}`}
                         >
                             Custom Range
