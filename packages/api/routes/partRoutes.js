@@ -35,40 +35,41 @@ const getPartDataForMeili = async (client, partId) => {
 // Helper function to handle tag logic
 const manageTags = async (client, tags, partId) => {
     console.log('manageTags called with:', { tags, partId }); // Debugging log
+
+    // Delete existing tags for the part
     await client.query('DELETE FROM part_tag WHERE part_id = $1', [partId]);
+
     if (tags && tags.length > 0) {
-        for (const tagName of tags) {
-            const sanitizedTagName = tagName.trim().toLowerCase();
-            console.log('Processing tag:', sanitizedTagName); // Debugging log
-            let tagRes;
-            try {
-                tagRes = await client.query('SELECT tag_id FROM tag WHERE tag_name = $1', [sanitizedTagName]);
-            } catch (error) {
-                console.error('Error querying tag:', error);
-                continue;
-            }
+        const sanitizedTags = tags.map(tag => tag.trim().toLowerCase());
 
-            let tagId;
-            if (tagRes.rows.length === 0) {
-                console.log('Inserting new tag:', sanitizedTagName); // Debugging log
-                try {
-                    tagRes = await client.query('INSERT INTO tag (tag_name) VALUES ($1) RETURNING tag_id', [sanitizedTagName]);
-                    tagId = tagRes.rows[0].tag_id;
-                } catch (error) {
-                    console.error('Error inserting new tag:', error);
-                    continue;
-                }
-            } else {
-                tagId = tagRes.rows[0].tag_id;
-            }
+        // Fetch existing tags in a single query
+        const existingTagsRes = await client.query(
+            'SELECT tag_id, tag_name FROM tag WHERE tag_name = ANY($1)',
+            [sanitizedTags]
+        );
+        const existingTags = existingTagsRes.rows.reduce((map, row) => {
+            map[row.tag_name] = row.tag_id;
+            return map;
+        }, {});
 
-            console.log('Associating tag with part:', { partId, tagId }); // Debugging log
-            try {
-                await client.query('INSERT INTO part_tag (part_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [partId, tagId]);
-            } catch (error) {
-                console.error('Error associating tag with part:', error);
-            }
+        const newTags = sanitizedTags.filter(tag => !existingTags[tag]);
+
+        // Insert new tags in a single query
+        if (newTags.length > 0) {
+            const insertNewTagsRes = await client.query(
+                `INSERT INTO tag (tag_name) VALUES ${newTags.map((_, i) => `($${i + 1})`).join(', ')} RETURNING tag_id, tag_name`,
+                newTags
+            );
+            insertNewTagsRes.rows.forEach(row => {
+                existingTags[row.tag_name] = row.tag_id;
+            });
         }
+
+        // Associate tags with the part in a single query
+        const partTagValues = sanitizedTags.map(tag => `(${partId}, ${existingTags[tag]})`).join(', ');
+        await client.query(
+            `INSERT INTO part_tag (part_id, tag_id) VALUES ${partTagValues} ON CONFLICT DO NOTHING`
+        );
     }
 };
 
@@ -306,4 +307,4 @@ router.delete('/parts/:id', protect, hasPermission('parts:delete'), async (req, 
     }
 });
 
-module.exports = router;
+module.exports = { router, manageTags };
