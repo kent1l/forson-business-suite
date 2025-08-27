@@ -43,3 +43,27 @@ jobs:
         run: |
           cd packages/api && npm ci
           cd ../web && npm ci
+          
+      - name: Run ESLint
+        run: |
+          cd packages/api && npm run lint
+          cd ../web && npm run lint
+          
+      - name: Run tests
+        env:
+          NODE_ENV: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+          POSTGRES_HOST: localhost
+        run: |
+          cd packages/api && npm test
+          cd ../web && npm test
+          
+      - name: Upload test coverage
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-report
+          path: |
+            packages/api/coverage
+            packages/web/coverage
