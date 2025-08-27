@@ -34,18 +34,40 @@ const getPartDataForMeili = async (client, partId) => {
 
 // Helper function to handle tag logic
 const manageTags = async (client, tags, partId) => {
+    console.log('manageTags called with:', { tags, partId }); // Debugging log
     await client.query('DELETE FROM part_tag WHERE part_id = $1', [partId]);
     if (tags && tags.length > 0) {
         for (const tagName of tags) {
-            let tagRes = await client.query('SELECT tag_id FROM tag WHERE tag_name = $1', [tagName.toLowerCase()]);
+            const sanitizedTagName = tagName.trim().toLowerCase();
+            console.log('Processing tag:', sanitizedTagName); // Debugging log
+            let tagRes;
+            try {
+                tagRes = await client.query('SELECT tag_id FROM tag WHERE tag_name = $1', [sanitizedTagName]);
+            } catch (error) {
+                console.error('Error querying tag:', error);
+                continue;
+            }
+
             let tagId;
             if (tagRes.rows.length === 0) {
-                tagRes = await client.query('INSERT INTO tag (tag_name) VALUES ($1) RETURNING tag_id', [tagName.toLowerCase()]);
-                tagId = tagRes.rows[0].tag_id;
+                console.log('Inserting new tag:', sanitizedTagName); // Debugging log
+                try {
+                    tagRes = await client.query('INSERT INTO tag (tag_name) VALUES ($1) RETURNING tag_id', [sanitizedTagName]);
+                    tagId = tagRes.rows[0].tag_id;
+                } catch (error) {
+                    console.error('Error inserting new tag:', error);
+                    continue;
+                }
             } else {
                 tagId = tagRes.rows[0].tag_id;
             }
-            await client.query('INSERT INTO part_tag (part_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [partId, tagId]);
+
+            console.log('Associating tag with part:', { partId, tagId }); // Debugging log
+            try {
+                await client.query('INSERT INTO part_tag (part_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [partId, tagId]);
+            } catch (error) {
+                console.error('Error associating tag with part:', error);
+            }
         }
     }
 };
@@ -63,9 +85,8 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
 
         if (tags) {
             const tagList = tags.split(',').map(t => t.trim().toLowerCase());
-            tagList.forEach(tag => {
-                filter.push(`tags = '${tag}'`);
-            });
+            // Use array includes instead of direct string interpolation for safety
+            filter.push(`tags IN [${tagList.map(tag => `'${tag.replace(/'/g, "''")}'`).join(', ')}]`);
         }
 
         if (filter.length > 0) searchOptions.filter = filter.join(' AND ');
