@@ -354,7 +354,15 @@ EXECUTE FUNCTION public.update_wac_on_goods_receipt();
 --
 -- SEED DATA (Using 'ON CONFLICT DO NOTHING' for safety)
 --
-INSERT INTO public.permission_level (permission_level_id, level_name) VALUES (1, 'Clerk'), (5, 'Manager'), (10, 'Admin') ON CONFLICT (level_name) DO NOTHING;
+INSERT INTO public.permission_level (permission_level_id, level_name) VALUES
+    (1, 'Inventory Clerk'),
+    (2, 'Parts Man'),
+    (3, 'Purchaser'),
+    (4, 'Cashier'),
+    (5, 'Secretary'),
+    (7, 'Manager'),
+    (10, 'Admin')
+ON CONFLICT (level_name) DO NOTHING;
 
 INSERT INTO public.settings (setting_key, setting_value) VALUES
 ('COMPANY_NAME', ''), ('COMPANY_ADDRESS', ''), ('COMPANY_PHONE', ''), ('COMPANY_EMAIL', ''), ('COMPANY_WEBSITE', ''),
@@ -410,27 +418,16 @@ ON CONFLICT (permission_key) DO UPDATE SET description = EXCLUDED.description, c
 -- NEW: Delete all existing role permissions before re-assigning.
 DELETE FROM public.role_permission;
 
--- Clerk Permissions
-INSERT INTO public.role_permission (permission_level_id, permission_id) 
-SELECT 1, p.permission_id FROM public.permission p WHERE p.permission_key IN (
-    'dashboard:view', 'pos:use', 'invoicing:create', 'inventory:view', 
-    'parts:view', 'suppliers:view', 'customers:view', 'applications:view'
-) ON CONFLICT DO NOTHING;
-
--- Manager Permissions
-INSERT INTO public.role_permission (permission_level_id, permission_id) 
-SELECT 5, p.permission_id FROM public.permission p WHERE p.permission_key IN (
-    'dashboard:view', 'pos:use', 'invoicing:create', 'goods_receipt:create', 
-    'inventory:view', 'inventory:adjust', 'parts:view', 'parts:create', 
-    'parts:edit', 'parts:delete', 'suppliers:view', 'suppliers:edit', 
-    'customers:view', 'customers:edit', 'applications:view', 'applications:edit', 
-    'reports:view', 'purchase_orders:view', 'purchase_orders:edit', 
-    'ar:view', 'ar:receive_payment'
-) ON CONFLICT DO NOTHING;
-
--- Admin Permissions (all)
-INSERT INTO public.role_permission (permission_level_id, permission_id) 
-SELECT 10, p.permission_id FROM public.permission p ON CONFLICT DO NOTHING;
+-- Seed explicit default role_permission mappings (permission_level_id, permission_id)
+INSERT INTO public.role_permission (permission_level_id, permission_id) VALUES
+    (10,1),(10,2),(10,3),(10,4),(10,5),(10,6),(10,7),(10,8),(10,9),(10,10),(10,11),(10,12),(10,13),(10,14),(10,15),(10,16),(10,17),(10,18),(10,19),(10,20),(10,21),(10,22),(10,23),(10,24),(10,25),(10,26),(10,27),(10,28),(10,29),(10,30),(10,31),
+    (1,6),(1,7),(1,11),(1,12),(1,13),(1,14),(1,15),(1,16),(1,18),(1,19),(1,20),
+    (2,2),(2,6),
+    (3,1),(3,2),(3,4),(3,5),(3,6),(3,7),(3,8),(3,9),(3,10),(3,11),(3,12),(3,13),(3,14),(3,15),(3,16),(3,17),(3,18),(3,19),(3,20),(3,25),
+    (7,1),(7,2),(7,3),(7,4),(7,5),(7,6),(7,7),(7,8),(7,9),(7,10),(7,11),(7,12),(7,13),(7,14),(7,15),(7,16),(7,17),(7,18),(7,19),(7,20),(7,21),(7,22),(7,25),(7,27),(7,28),
+    (5,1),(5,2),(5,3),(5,4),(5,5),(5,6),(5,7),(5,8),(5,9),(5,10),(5,11),(5,12),(5,13),(5,14),(5,15),(5,16),(5,17),(5,18),(5,19),(5,20),(5,21),(5,22),(5,25),(5,26),(5,27),(5,29),
+    (4,1),(4,2),(4,3),(4,4),(4,5),(4,6),(4,7),(4,8),(4,9),(4,10),(4,11),(4,12),(4,13),(4,14),(4,15),(4,16),(4,17),(4,18),(4,19),(4,20),(4,21),(4,22),(4,25),(4,26),(4,27)
+ON CONFLICT DO NOTHING;
 
 -- ADD CHECK CONSTRAINT TO INVOICE STATUS
 ALTER TABLE public.invoice

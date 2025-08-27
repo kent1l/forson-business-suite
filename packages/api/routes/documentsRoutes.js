@@ -3,48 +3,36 @@ const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const router = express.Router();
 
-// GET /documents - list documents with pagination, filters, and search
+// GET /documents - list documents with simple pagination, filters and search
 router.get('/documents', protect, hasPermission('documents:view'), async (req, res) => {
-    let { page = 1, limit = 25, type, last_days, from, to, q, sort_by = 'date', sort_dir = 'desc' } = req.query;
-
+    let { page = 1, limit = 25, type, last_days, from, to, q, sort_by = 'created_at', sort_dir = 'desc' } = req.query;
+    // normalize sort_by values coming from the frontend
     const sortMap = {
         date: 'created_at',
-        referenceId: 'reference_id',
+        created_at: 'created_at',
         reference: 'reference_id',
-        type: 'document_type'
+        reference_id: 'reference_id',
+        type: 'document_type',
+        document_type: 'document_type'
     };
-    const sortByColumn = sortMap[String(sort_by)] || 'created_at';
-    const sortDir = String(sort_dir).toLowerCase() === 'asc' ? 'ASC' : 'DESC';
-
+    sort_by = sortMap[String(sort_by).toLowerCase()] || 'created_at';
+    sort_dir = String(sort_dir).toLowerCase() === 'asc' ? 'asc' : 'desc';
     const offset = (Number(page) - 1) * Number(limit);
     try {
         const params = [];
         let where = 'WHERE 1=1';
-
-        if (type && type !== 'All') { params.push(type); where += ` AND document_type = $${params.length}`; }
-        if (last_days && last_days !== 'custom') { params.push(last_days); where += ` AND created_at >= now() - ($${params.length}::int * interval '1 day')`; }
-        if (from && to) { params.push(from, to); where += ` AND created_at::date BETWEEN $${params.length - 1} AND $${params.length}`; }
+        if (type) { params.push(type); where += ` AND document_type = $${params.length}`; }
+        if (last_days) { params.push(last_days); where += ` AND created_at >= now() - ($${params.length}::int * interval '1 day')`; }
+        if (from && to) { params.push(from); params.push(to); where += ` AND created_at::date BETWEEN $${params.length-1} AND $${params.length}`; }
         if (q) { params.push('%' + q + '%'); where += ` AND (reference_id ILIKE $${params.length} OR metadata::text ILIKE $${params.length})`; }
 
-        // Updated SELECT statement with aliases and the 'status' column
-        const listQuery = `
-            SELECT
-                id,
-                document_type as "type",
-                reference_id as "referenceId",
-                status,
-                created_at as "date",
-                metadata
-            FROM documents
-            ${where}
-            ORDER BY ${sortByColumn} ${sortDir}
-            LIMIT $${params.length + 1} OFFSET $${params.length + 2}
-        `;
-        params.push(Number(limit), offset);
+    // ORDER BY fields are controlled by the sortMap above to avoid SQL injection
+    const listQuery = `SELECT id, document_type, reference_id, created_at, updated_at, metadata FROM documents ${where} ORDER BY ${sort_by} ${sort_dir} LIMIT $${params.length+1} OFFSET $${params.length+2}`;
+        params.push(Number(limit)); params.push(offset);
         const { rows } = await db.query(listQuery, params);
 
         const countQuery = `SELECT COUNT(*) FROM documents ${where}`;
-        const countRes = await db.query(countQuery, params.slice(0, params.length - 2));
+        const countRes = await db.query(countQuery, params.slice(0, params.length-2));
         const total = Number(countRes.rows[0].count || 0);
 
         res.json({ documents: rows, total });
