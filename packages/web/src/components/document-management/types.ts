@@ -12,12 +12,13 @@ export interface DocumentMetadata {
 
 export interface DocumentSearchFilters {
   type: DocumentType | 'All';
-  datePreset: number | 'custom';
-  from?: string;
-  to?: string;
   searchQuery: string;
   sortBy: 'date' | 'referenceId' | 'type';
   sortDir: 'asc' | 'desc';
   page: number;
   limit: number;
+  // Support for custom date ranges
+  datePreset?: number | 'custom';
+  from?: string;
+  to?: string;
 }
