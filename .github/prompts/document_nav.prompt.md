@@ -1,36 +1,84 @@
-Create a document explorer interface for viewing historical transaction documents (GRN, Sales, Invoice, Purchase Orders) with the following specifications:
+Create a Document Management Interface (DMI) with the following specifications, building upon the existing implementation:
 
-1. UI/UX Requirements:
-- Implement a modern, responsive grid/list layout
-- Use existing project design system and components
-- Follow established styling patterns and color schemes
-- Ensure consistent spacing and typography
-- Add clear visual hierarchy for document types
+Technical Requirements:
 
-2. Core Features:
-- Document filtering by type (GRN, Sales, INV, PO)
-- Date range selection
-- Search functionality for document numbers/references
-- Sort options (date, type, reference number)
-- Quick preview/detail view toggle
-- Pagination or infinite scroll for large datasets
+1. Frontend Implementation
+```typescript
+// Path: src/components/document-management/DocumentInterface.tsx
+interface DocumentInterfaceProps {
+    viewMode: 'grid' | 'list';
+    documentTypes: ['GRN', 'Sales', 'Invoice', 'PurchaseOrders'];
+    dateRangePresets: [7, 30, 90]; // days
+    itemsPerPage: [25, 50, 100];
+}
+```
 
-3. Navigation Structure:
-- Breadcrumb navigation showing current location
-- Left sidebar for document type categories
-- Main content area for document listing
-- Right panel for document preview/details
+- Implement responsive grid/list view using `@company/design-system` components
+- Configure document filters:
+  - Type: GRN, Sales, Invoice, Purchase Orders
+  - Date Range: Last 7/30/90 days with custom range option
+  - Search: document number, reference ID, metadata (full-text)
+- Enable sorting on columns: date, type, reference (ASC/DESC)
+- Implement pagination with lazy loading
+- Utilize `projectCache` mechanism for result caching
+- Handle loading/error states using design system components
 
-4. Document Display:
-- Show key metadata (date, type, reference, status)
-- Thumbnail/icon indicating document type
-- Clear CTAs for document actions (view, download, share)
-- Loading states and error handling
+2. Document Display & Interaction
+```typescript
+interface DocumentMetadata {
+    date: Date;
+    type: DocumentType;
+    referenceId: string;
+    status: DocumentStatus;
+    iconPath: string; // from icon-library
+}
+```
 
-5. Performance Considerations:
-- Implement lazy loading for document lists
-- Cache frequently accessed documents
-- Optimize image/preview loading
-- Handle large document sets efficiently
+- Display document cards/rows with metadata
+- Implement document actions:
+  - View: Open in `PreviewComponent`
+  - Download: Binary stream
+  - Share: Generate temporary URL
+- Enable keyboard navigation (Tab: focus, Enter: select, Esc: close)
 
-All implementations must follow existing project architecture patterns and coding standards.
+3. Layout Structure
+```
+/documents
+└── /:documentType
+    └── /:documentId
+```
+
+- Implement three-panel layout:
+  - Left: Collapsible filters (width: 250px)
+  - Center: Document list/grid
+  - Right: Document preview (width: 400px)
+
+4. Data Management & Database Migration
+```sql
+-- Path: migrations/document_metadata_v2.sql
+-- Update schema and add indices
+ALTER TABLE documents ADD COLUMN metadata JSONB;
+CREATE INDEX idx_documents_metadata ON documents USING GIN (metadata);
+```
+
+Execute migrations:
+```bash
+docker-compose exec db psql -U postgres -d documents -f /migrations/document_metadata_v2.sql
+```
+
+Performance Requirements:
+- Initial load time: < 2 seconds
+- Document preview rendering: < 500 milliseconds
+- Search query response: < 1 second
+- Memory usage limit: 256MB
+
+Reference Implementation:
+- Components: `src/components/document-management/*`
+- Services: `src/services/document/*`
+- Database: `initial_schema.sql`
+
+Integration Testing:
+- Validate CRUD operations via DocumentRepository
+- Verify cache hit rates with DocumentCacheService
+- Confirm performance metrics meet requirements
+- Test responsive behavior across breakpoints

@@ -1,4 +1,5 @@
-import React, { createContext, useState, useContext, useCallback } from 'react';
+/* eslint-disable react-refresh/only-export-components */
+import React, { createContext, useState, useContext, useCallback, useEffect } from 'react';
 
 const AuthContext = createContext();
 
@@ -32,11 +33,62 @@ export const AuthProvider = ({ children }) => {
     };
 
     // Wrap logout in useCallback so it can be used in useEffect dependency arrays
-    const logout = useCallback(() => {
+    // options: { reload: boolean } - reload can be used for forced auto-logout to ensure UI shows login
+    const logout = useCallback((options = {}) => {
         localStorage.removeItem('userSession');
         setUser(null);
         setPermissions([]);
+        if (options.reload) {
+            // small timeout to allow state updates to flush in other tabs
+            setTimeout(() => window.location.reload(), 50);
+        }
     }, []);
+
+    // Helper to check JWT expiry (returns true if expired)
+    const isTokenExpired = (token) => {
+        try {
+            const parts = token.split('.');
+            if (parts.length !== 3) return false;
+            const payload = JSON.parse(atob(parts[1]));
+            if (!payload.exp) return false;
+            return payload.exp < Math.floor(Date.now() / 1000);
+        } catch {
+            return false;
+        }
+    };
+
+    // Listen for global auth errors (dispatched by the api interceptor) and auto logout
+    useEffect(() => {
+        const handleAuthError = () => {
+            // forced logout for expired/invalid session: clear and reload to show login
+            logout({ reload: true });
+        };
+        window.addEventListener('auth-error', handleAuthError);
+        return () => window.removeEventListener('auth-error', handleAuthError);
+    }, [logout]);
+
+    // Sync logout across tabs and check token expiry on mount
+    useEffect(() => {
+        const handleStorage = (e) => {
+            if (e.key === 'userSession' && e.newValue === null) {
+                // Another tab logged out
+                setUser(null);
+                setPermissions([]);
+            }
+        };
+
+        try {
+            const sessionData = JSON.parse(localStorage.getItem('userSession'));
+            if (sessionData && sessionData.token && isTokenExpired(sessionData.token)) {
+                logout();
+            }
+        } catch {
+            // ignore parse errors
+        }
+
+        window.addEventListener('storage', handleStorage);
+        return () => window.removeEventListener('storage', handleStorage);
+    }, [logout]);
 
     const hasPermission = useCallback((requiredPermission) => {
         if (!Array.isArray(permissions)) {

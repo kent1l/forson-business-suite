@@ -1,8 +1,8 @@
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
-// Create a simple event emitter to notify the app of auth errors
-const authErrorEvent = new Event('auth-error');
+// Create a CustomEvent to notify the app of auth errors
+const authErrorEvent = (detail = {}) => new CustomEvent('auth-error', { detail });
 
 const api = axios.create({
     baseURL: '/api', 
@@ -29,7 +29,7 @@ api.interceptors.response.use(
             // Don't handle the logout here directly.
             // Instead, dispatch a global event that the React app can listen for.
             toast.error('Session expired. Please log in again.');
-            window.dispatchEvent(authErrorEvent);
+            window.dispatchEvent(authErrorEvent({ reason: 'unauthorized' }));
         }
         return Promise.reject(error);
     }
