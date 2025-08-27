@@ -216,6 +216,115 @@ For a production environment, consider the following enhancements:
 
 ---
 
+## 🧾 Deployment
+
+This project includes two common deployment workflows: a developer-friendly local workflow for development and a production workflow that relies on a registry and a server (or orchestration platform). Choose the one that matches your environment.
+
+### Development — Local (Docker Compose)
+
+Use this workflow when you're working on features locally or want a quick, reproducible environment.
+
+1. Ensure Docker and Docker Compose are installed.
+2. Copy or create environment files used by the services:
+
+```powershell
+# from project root
+cp .env.example packages/api/.env
+# Edit packages/api/.env with local credentials if needed
+```
+
+3. Build images and start services:
+
+```powershell
+# from project root
+docker compose up -d --build
+```
+
+4. Initialize the database (one-time):
+
+```powershell
+# copy schema into the running db container (example service name: forson_db)
+docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql
+docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
+```
+
+5. Check status & logs:
+
+```powershell
+docker compose ps
+docker compose logs -f api
+```
+
+6. Stop and remove containers when finished:
+
+```powershell
+docker compose down --volumes
+```
+
+Notes:
+- Use `docker compose up --build` to rebuild only when necessary.
+- Keep your `packages/api/.env` file out of source control.
+
+### Production — Server (Docker Compose + Registry)
+
+This workflow assumes you push images to a container registry (e.g., GitHub Container Registry `ghcr.io` or Docker Hub) from CI, then pull and run them on the server. The repository includes a `docker-compose.prod.yml` tailored for production settings.
+
+1. Build and push images (CI or local):
+
+```bash
+# Example: build and push to GHCR (CI will handle this automatically)
+docker build -t ghcr.io/<owner>/<repo>/api:$(git rev-parse --short HEAD) ./packages/api
+docker push ghcr.io/<owner>/<repo>/api:$(git rev-parse --short HEAD)
+
+docker build -t ghcr.io/<owner>/<repo>/web:$(git rev-parse --short HEAD) ./packages/web
+docker push ghcr.io/<owner>/<repo>/web:$(git rev-parse --short HEAD)
+```
+
+2. Prepare the server
+
+- Copy `docker-compose.prod.yml` to the server and create a `.env` file with production values or configure Docker secrets.
+- Ensure the server has Docker and Docker Compose installed and sufficient resources.
+
+3. Pull images and perform a zero-downtime update using Compose:
+
+```bash
+# on the server, in the compose folder
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d --remove-orphans
+```
+
+4. Database migrations & backups
+
+- Always take a backup before applying migrations:
+
+```bash
+# example backup command (adjust service name)
+docker exec -t forson_db pg_dump -U forson_user forson_business_suite | gzip > backup-$(date -Iseconds).sql.gz
+```
+
+- Apply migrations (depending on your migration strategy). You can run SQL scripts inside the DB container or run your migration tool from the API container.
+
+5. Rollback strategy
+
+- Keep the previous image tag available in the registry. To rollback:
+
+```bash
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d --no-deps --build api=ghcr.io/<owner>/<repo>/api:<previous-tag>
+```
+
+6. Useful server-side tips
+
+- Use a process like `systemd` to ensure `docker compose` stack is started on boot (create a `systemd` unit that runs `docker compose up -d`).
+- Use monitoring (Prometheus/Grafana) and log aggregation (ELK, Loki) for observability.
+- Use a secrets manager or Docker Secrets for sensitive values—avoid plain `.env` in production.
+
+---
+
+If you'd like, I can also add a small `deploy.sh` helper and a `systemd` unit example to the repo to simplify server-side deployments.
+
+---
+
 ## 📊 Reporting & Exports
 The suite includes a powerful reporting module to provide key business insights. Users can generate various reports and export the data to **CSV format** for further analysis in spreadsheet software.
 
