@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import toast from 'react-hot-toast';
+import { Combobox } from '@headlessui/react';
+// toast not used here
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import Modal from '../components/ui/Modal';
@@ -50,6 +51,15 @@ const PartApplicationManager = ({ part, onCancel }) => {
     const [makes, setMakes] = useState([]);
     const [models, setModels] = useState([]);
     const [engines, setEngines] = useState([]);
+    const [makeQuery, setMakeQuery] = useState('');
+    const [modelQuery, setModelQuery] = useState('');
+    const [engineQuery, setEngineQuery] = useState('');
+    const [selectedMake, setSelectedMake] = useState(null);
+    const [selectedModel, setSelectedModel] = useState(null);
+    const [selectedEngine, setSelectedEngine] = useState(null);
+    const [showMakeOptions, setShowMakeOptions] = useState(false);
+    const [showModelOptions, setShowModelOptions] = useState(false);
+    const [showEngineOptions, setShowEngineOptions] = useState(false);
     const [newLinkData, setNewLinkData] = useState({ 
         make_id: '', 
         model_id: '', 
@@ -60,24 +70,6 @@ const PartApplicationManager = ({ part, onCancel }) => {
     const [loading, setLoading] = useState(true);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [currentLink, setCurrentLink] = useState(null);
-
-    const fetchData = async () => {
-        if (part) {
-            setLoading(true);
-            try {
-                const [linkedRes, makesRes] = await Promise.all([
-                    axios.get(`http://localhost:3001/api/parts/${part.part_id}/applications`),
-                    axios.get('http://localhost:3001/api/makes')
-                ]);
-                setLinkedApps(linkedRes.data);
-                setMakes(makesRes.data);
-            } catch (error) {
-                console.error("Failed to fetch applications", error);
-            } finally {
-                setLoading(false);
-            }
-        }
-    };
 
     const fetchModels = async (makeId) => {
         try {
@@ -136,8 +128,43 @@ const PartApplicationManager = ({ part, onCancel }) => {
     };
 
     useEffect(() => {
-        fetchData();
+        const run = async () => {
+            if (part) {
+                setLoading(true);
+                try {
+                    const [linkedRes, makesRes] = await Promise.all([
+                        axios.get(`http://localhost:3001/api/parts/${part.part_id}/applications`),
+                        axios.get('http://localhost:3001/api/makes')
+                    ]);
+                    setLinkedApps(linkedRes.data);
+                    setMakes(makesRes.data);
+                } catch (error) {
+                    console.error("Failed to fetch applications", error);
+                } finally {
+                    setLoading(false);
+                }
+            }
+        };
+        run();
     }, [part]);
+
+    const refetchData = async () => {
+        if (part) {
+            setLoading(true);
+            try {
+                const [linkedRes, makesRes] = await Promise.all([
+                    axios.get(`http://localhost:3001/api/parts/${part.part_id}/applications`),
+                    axios.get('http://localhost:3001/api/makes')
+                ]);
+                setLinkedApps(linkedRes.data);
+                setMakes(makesRes.data);
+            } catch (error) {
+                console.error("Failed to fetch applications", error);
+            } finally {
+                setLoading(false);
+            }
+        }
+    };
 
     const handleLinkApp = async (e) => {
         e.preventDefault();
@@ -161,7 +188,7 @@ const PartApplicationManager = ({ part, onCancel }) => {
                 year_end: newLinkData.year_end || null
             });
 
-            fetchData();
+            await refetchData();
             setNewLinkData({ 
                 make_id: '', 
                 model_id: '', 
@@ -178,7 +205,7 @@ const PartApplicationManager = ({ part, onCancel }) => {
     const handleUnlinkApp = async (applicationId) => {
         try {
             await axios.delete(`http://localhost:3001/api/parts/${part.part_id}/applications/${applicationId}`);
-            fetchData();
+            await refetchData();
         } catch (err) {
             alert('Failed to unlink application.');
             console.error(err);
@@ -194,8 +221,9 @@ const PartApplicationManager = ({ part, onCancel }) => {
         try {
             await axios.put(`http://localhost:3001/api/part-applications/${partAppId}`, years);
             setIsEditModalOpen(false);
-            fetchData();
-        } catch (err) {
+            await refetchData();
+        } catch (error) {
+            console.error(error);
             alert('Failed to update year range.');
         }
     };
@@ -239,52 +267,91 @@ const PartApplicationManager = ({ part, onCancel }) => {
                 <div className="grid grid-cols-1 gap-2">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Make</label>
-                        <select
-                            value={newLinkData.make_id || ''}
-                            onChange={handleMakeChange}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            required
-                        >
-                            <option value="">Select Make</option>
-                            {makes.map(make => (
-                                <option key={make.make_id} value={make.make_id}>
-                                    {make.make_name}
-                                </option>
-                            ))}
-                        </select>
+                        <Combobox value={selectedMake} onChange={(val) => { setSelectedMake(val); if (val?.make_id) handleMakeChange({ target: { value: val.make_id } }); else handleMakeChange({ target: { value: '' }}); }} nullable>
+                            <div className="relative">
+                                <Combobox.Input
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                    displayValue={(m) => m?.make_name || ''}
+                                    onChange={(e) => { setMakeQuery(e.target.value); setSelectedMake(null); handleMakeChange({ target: { value: '' }}); }}
+                                    onFocus={() => setShowMakeOptions(true)}
+                                    onBlur={() => setTimeout(() => setShowMakeOptions(false), 150)}
+                                    required
+                                />
+                                {(showMakeOptions || makeQuery !== '') && (
+                                    <Combobox.Options className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-md max-h-48 overflow-auto">
+                                        {makes.filter(m => m.make_name.toLowerCase().includes(makeQuery.toLowerCase())).map(make => (
+                                            <Combobox.Option key={make.make_id} value={make} className={({ active }) => `cursor-pointer select-none p-2 ${active ? 'bg-blue-100' : ''}`}>
+                                                {make.make_name}
+                                            </Combobox.Option>
+                                        ))}
+                                        {makeQuery && !makes.some(m => m.make_name.toLowerCase() === makeQuery.toLowerCase()) && (
+                                            <Combobox.Option value={{ make_name: makeQuery }} className={({ active }) => `cursor-pointer select-none p-2 ${active ? 'bg-green-100' : ''}`}>
+                                                Create new "{makeQuery}"
+                                            </Combobox.Option>
+                                        )}
+                                    </Combobox.Options>
+                                )}
+                            </div>
+                        </Combobox>
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
-                        <select
-                            value={newLinkData.model_id || ''}
-                            onChange={handleModelChange}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            required
-                            disabled={!newLinkData.make_id}
-                        >
-                            <option value="">Select Model</option>
-                            {models.map(model => (
-                                <option key={model.model_id} value={model.model_id}>
-                                    {model.model_name}
-                                </option>
-                            ))}
-                        </select>
+                        <Combobox value={selectedModel} onChange={(val) => { setSelectedModel(val); if (val?.model_id) handleModelChange({ target: { value: val.model_id } }); else handleModelChange({ target: { value: '' }}); }} nullable>
+                            <div className="relative">
+                                <Combobox.Input
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                    displayValue={(m) => m?.model_name || ''}
+                                    onChange={(e) => { setModelQuery(e.target.value); setSelectedModel(null); handleModelChange({ target: { value: '' }}); }}
+                                    onFocus={() => setShowModelOptions(true)}
+                                    onBlur={() => setTimeout(() => setShowModelOptions(false), 150)}
+                                    required
+                                    disabled={!newLinkData.make_id}
+                                />
+                                {(showModelOptions || modelQuery !== '') && newLinkData.make_id && (
+                                    <Combobox.Options className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-md max-h-48 overflow-auto">
+                                        {models.filter(m => m.model_name.toLowerCase().includes(modelQuery.toLowerCase())).map(model => (
+                                            <Combobox.Option key={model.model_id} value={model} className={({ active }) => `cursor-pointer select-none p-2 ${active ? 'bg-blue-100' : ''}`}>
+                                                {model.model_name}
+                                            </Combobox.Option>
+                                        ))}
+                                        {modelQuery && !models.some(m => m.model_name.toLowerCase() === modelQuery.toLowerCase()) && (
+                                            <Combobox.Option value={{ model_name: modelQuery }} className={({ active }) => `cursor-pointer select-none p-2 ${active ? 'bg-green-100' : ''}`}>
+                                                Create new "{modelQuery}"
+                                            </Combobox.Option>
+                                        )}
+                                    </Combobox.Options>
+                                )}
+                            </div>
+                        </Combobox>
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Engine (Optional)</label>
-                        <select
-                            value={newLinkData.engine_id || ''}
-                            onChange={handleEngineChange}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            disabled={!newLinkData.model_id}
-                        >
-                            <option value="">Select Engine</option>
-                            {engines.map(engine => (
-                                <option key={engine.engine_id} value={engine.engine_id}>
-                                    {engine.engine_name}
-                                </option>
-                            ))}
-                        </select>
+                        <Combobox value={selectedEngine} onChange={(val) => { setSelectedEngine(val); if (val?.engine_id) handleEngineChange({ target: { value: val.engine_id } }); else handleEngineChange({ target: { value: '' }}); }} nullable>
+                            <div className="relative">
+                                <Combobox.Input
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                    displayValue={(e) => e?.engine_name || ''}
+                                    onChange={(e) => { setEngineQuery(e.target.value); setSelectedEngine(null); handleEngineChange({ target: { value: '' }}); }}
+                                    onFocus={() => setShowEngineOptions(true)}
+                                    onBlur={() => setTimeout(() => setShowEngineOptions(false), 150)}
+                                    disabled={!newLinkData.model_id}
+                                />
+                                {(showEngineOptions || engineQuery !== '') && newLinkData.model_id && (
+                                    <Combobox.Options className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-md max-h-48 overflow-auto">
+                                        {engines.filter(en => en.engine_name.toLowerCase().includes(engineQuery.toLowerCase())).map(engine => (
+                                            <Combobox.Option key={engine.engine_id} value={engine} className={({ active }) => `cursor-pointer select-none p-2 ${active ? 'bg-blue-100' : ''}`}>
+                                                {engine.engine_name}
+                                            </Combobox.Option>
+                                        ))}
+                                        {engineQuery && !engines.some(en => en.engine_name.toLowerCase() === engineQuery.toLowerCase()) && (
+                                            <Combobox.Option value={{ engine_name: engineQuery }} className={({ active }) => `cursor-pointer select-none p-2 ${active ? 'bg-green-100' : ''}`}>
+                                                Create new "{engineQuery}"
+                                            </Combobox.Option>
+                                        )}
+                                    </Combobox.Options>
+                                )}
+                            </div>
+                        </Combobox>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                         <div>

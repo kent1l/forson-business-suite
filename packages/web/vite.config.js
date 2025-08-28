@@ -16,11 +16,11 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-  // For local development (frontend served by Vite) proxy API requests to the
-  // backend running on localhost. When running inside Docker, the compose
-  // config uses service names (e.g. `backend`), but the Vite dev server runs
-  // on the host and should target localhost:3001.
-  target: 'http://localhost:3001',
+  // Proxy API requests to the backend. Use VITE_PROXY_TARGET to allow
+  // switching between host-local backend (http://localhost:3001) and the
+  // docker-compose service hostname (http://backend:3001) when running
+  // the frontend inside Docker.
+  target: process.env.VITE_PROXY_TARGET || 'http://localhost:3001',
         changeOrigin: true,
         secure: false,
       },
