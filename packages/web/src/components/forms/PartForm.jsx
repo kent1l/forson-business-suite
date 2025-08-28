@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
@@ -44,11 +44,11 @@ const BrandGroupForm = ({ type, onSave, onCancel }) => {
     );
 };
 
-const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, isBulkEdit = false, selectedCount = 0 }) => {
+const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, isBulkEdit = false }) => {
     const { settings } = useSettings();
     const [tags, setTags] = useState([]); // <-- State for tags
 
-    const getInitialState = () => {
+    const getInitialState = useCallback(() => {
         if (isBulkEdit) {
             return {
                 brand_id: '', group_id: '',
@@ -65,7 +65,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
             is_service: false, low_stock_warning: false, 
             is_tax_inclusive_price: settings?.DEFAULT_IS_TAX_INCLUSIVE === 'true'
         };
-    };
+    }, [isBulkEdit, settings]);
 
     const [formData, setFormData] = useState(getInitialState());
     const [taxRates, setTaxRates] = useState([]);
@@ -82,6 +82,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                 const response = await api.get('/tax-rates');
                 setTaxRates(response.data);
             } catch (err) {
+                console.error('Failed to fetch tax rates', err);
                 toast.error("Could not load tax rates.");
             }
         };
@@ -130,7 +131,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
             setFormData(initialState);
             setTags([]); // Clear tags for new part
         }
-    }, [part, isBulkEdit, taxRates, settings]);
+    }, [part, isBulkEdit, taxRates, settings, getInitialState]);
 
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
@@ -143,6 +144,17 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
 
     const handleSubmit = (e) => {
         e.preventDefault();
+        // Front-end validation: brand and group required when not bulk editing
+        if (!isBulkEdit) {
+            if (!formData.brand_id) {
+                toast.error('Please select a Brand.');
+                return;
+            }
+            if (!formData.group_id) {
+                toast.error('Please select a Group.');
+                return;
+            }
+        }
         onSave({ ...formData, tags }); // <-- Include tags in the payload
     };
     
@@ -171,13 +183,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
     return (
         <>
             <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto p-1">
-                {!isBulkEdit && (
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Part Detail</label>
-                        <input type="text" name="detail" value={formData.detail} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
-                    </div>
-                )}
-
+                {/* Part Numbers shown first when creating a new part */}
                 {!part && !isBulkEdit && (
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Part Numbers (optional)</label>
@@ -185,9 +191,10 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                     </div>
                 )}
 
+        {/* Brand selector + New */}
                 <div className="flex items-end space-x-2">
                     <div className="flex-grow">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Brand <span className="text-red-500">*</span></label>
                         <Combobox
                             options={brandOptions}
                             value={formData.brand_id}
@@ -198,10 +205,11 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                     <button type="button" onClick={() => setIsBrandModalOpen(true)} className="px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm">New</button>
                 </div>
 
+        {/* Group selector + New */}
                 <div className="flex items-end space-x-2">
                     <div className="flex-grow">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Group</label>
-                         <Combobox
+            <label className="block text-sm font-medium text-gray-700 mb-1">Group <span className="text-red-500">*</span></label>
+                        <Combobox
                             options={groupOptions}
                             value={formData.group_id}
                             onChange={(value) => handleComboboxChange('group_id', value)}
@@ -211,7 +219,15 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                     <button type="button" onClick={() => setIsGroupModalOpen(true)} className="px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm">New</button>
                 </div>
 
-                {/* --- NEW: Tag Input Field (conditionally rendered) --- */}
+                {/* Part Detail placed after Group */}
+                {!isBulkEdit && (
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Part Detail</label>
+                        <input type="text" name="detail" value={formData.detail} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                    </div>
+                )}
+
+                {/* Tags */}
                 {!isBulkEdit && (
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Tags</label>

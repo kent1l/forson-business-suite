@@ -182,8 +182,8 @@ router.get('/parts/:id/tags', protect, hasPermission('parts:view'), async (req, 
 // POST - Create a new part with all fields
 router.post('/parts', protect, hasPermission('parts:create'), async (req, res) => {
     const { tags, created_by, part_numbers_string, ...partData } = req.body;
-    if (!partData.detail || !partData.brand_id || !partData.group_id) {
-        return res.status(400).json({ message: 'Detail, brand, and group are required' });
+    if (!partData.brand_id || !partData.group_id) {
+        return res.status(400).json({ message: 'Brand and group are required' });
     }
     const client = await db.getClient();
     try {
@@ -253,8 +253,8 @@ router.put('/parts/bulk-update', protect, hasPermission('parts:edit'), async (re
 router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) => {
     const { id } = req.params;
     const { tags, modified_by, ...partData } = req.body;
-    if (!partData.detail || !partData.brand_id || !partData.group_id) {
-        return res.status(400).json({ message: 'Detail, brand, and group are required' });
+    if (!partData.brand_id || !partData.group_id) {
+        return res.status(400).json({ message: 'Brand and group are required' });
     }
     
     const client = await db.getClient();
