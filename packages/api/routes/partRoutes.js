@@ -11,9 +11,14 @@ const getPartDataForMeili = async (client, partId) => {
         SELECT
             p.*, b.brand_name, g.group_name,
             (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id) as part_numbers,
-            (SELECT ARRAY_AGG(
-                CONCAT(a.make, ' ', a.model, COALESCE(CONCAT(' ', a.engine), ''))
-            ) FROM part_application pa JOIN application a ON pa.application_id = a.application_id WHERE pa.part_id = p.part_id) AS applications_array,
+                        (SELECT ARRAY_AGG(
+                                CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''))
+                        ) FROM part_application pa
+                            JOIN application a ON pa.application_id = a.application_id
+                            LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
+                            LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
+                            LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
+                        WHERE pa.part_id = p.part_id) AS applications_array,
             (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags_array
         FROM part AS p
         LEFT JOIN brand AS b ON p.brand_id = b.brand_id
@@ -102,7 +107,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
                 (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = p.part_id) AS part_numbers,
                 (SELECT STRING_AGG(
                     CONCAT(
-                        a.make, ' ', a.model, COALESCE(CONCAT(' ', a.engine), ''),
+                        vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''),
                         CASE
                             WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL AND pa.year_start = pa.year_end THEN CONCAT(' [', pa.year_start, ']')
                             WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL THEN CONCAT(' [', pa.year_start, '-', pa.year_end, ']')
@@ -111,7 +116,12 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
                             ELSE ''
                         END
                     ), '; '
-                ) FROM part_application pa JOIN application a ON pa.application_id = a.application_id WHERE pa.part_id = p.part_id) AS applications,
+                ) FROM part_application pa
+                  JOIN application a ON pa.application_id = a.application_id
+                  LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
+                  LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
+                  LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
+                WHERE pa.part_id = p.part_id) AS applications,
                 (SELECT STRING_AGG(t.tag_name, ', ') FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags
             FROM part AS p
             LEFT JOIN brand AS b ON p.brand_id = b.brand_id

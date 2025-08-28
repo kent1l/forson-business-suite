@@ -7,39 +7,195 @@ import { ICONS } from '../constants';
 import { useAuth } from '../contexts/AuthContext'; // <-- NEW: Import useAuth
 
 const ApplicationForm = ({ application, onSave, onCancel }) => {
-    const [formData, setFormData] = useState({ make: '', model: '', engine: '' });
+    const [makes, setMakes] = useState([]);
+    const [models, setModels] = useState([]);
+    const [engines, setEngines] = useState([]);
+    const [formData, setFormData] = useState({ 
+        make_id: '', 
+        model_id: '', 
+        engine_id: '', 
+        make_name: '',
+        model_name: '',
+        engine_name: ''
+    });
+
+    useEffect(() => {
+        // Fetch all makes when component mounts
+        const fetchMakes = async () => {
+            try {
+                const response = await api.get('/makes');
+                setMakes(response.data);
+        } catch (error) {
+            console.error('Failed to fetch makes:', error);
+            }
+        };
+        fetchMakes();
+    }, []);
 
     useEffect(() => {
         if (application) {
-            setFormData(application);
-        } else {
-            setFormData({ make: '', model: '', engine: '' });
+            setFormData({
+                make_id: application.make_id,
+                model_id: application.model_id,
+                engine_id: application.engine_id,
+                make_name: application.make,
+                model_name: application.model,
+                engine_name: application.engine
+            });
+            // Fetch related data when editing
+            if (application.make_id) {
+                fetchModels(application.make_id);
+                if (application.model_id) {
+                    fetchEngines(application.model_id);
+                }
+            }
         }
     }, [application]);
 
-    const handleChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
+    const fetchModels = async (makeId) => {
+        try {
+            const response = await api.get(`/makes/${makeId}/models`);
+            setModels(response.data);
+        } catch (error) {
+            console.error('Failed to fetch models:', error);
+            setModels([]);
+        }
+    };
+
+    const fetchEngines = async (modelId) => {
+        try {
+            const response = await api.get(`/models/${modelId}/engines`);
+            setEngines(response.data);
+        } catch (error) {
+            console.error('Failed to fetch engines:', error);
+            setEngines([]);
+        }
+    };
+
+    // For combobox: if value matches an existing make name, resolve make_id; otherwise treat as a new make name
+    const handleMakeChange = async (e) => {
+        const val = e.target.value;
+        const matched = makes.find(m => m.make_name.toLowerCase() === val.toLowerCase());
+        if (matched) {
+            setFormData(prev => ({
+                ...prev,
+                make_id: String(matched.make_id),
+                make_name: matched.make_name,
+                model_id: '',
+                model_name: '',
+                engine_id: '',
+                engine_name: ''
+            }));
+            setModels([]);
+            setEngines([]);
+            await fetchModels(matched.make_id);
+        } else {
+            setFormData(prev => ({
+                ...prev,
+                make_id: '',
+                make_name: val,
+                model_id: '',
+                model_name: '',
+                engine_id: '',
+                engine_name: ''
+            }));
+            setModels([]);
+            setEngines([]);
+        }
+    };
+
+    const handleModelChange = async (e) => {
+        const val = e.target.value;
+        const matched = models.find(m => m.model_name.toLowerCase() === val.toLowerCase());
+        if (matched) {
+            setFormData(prev => ({
+                ...prev,
+                model_id: String(matched.model_id),
+                model_name: matched.model_name,
+                engine_id: '',
+                engine_name: ''
+            }));
+            setEngines([]);
+            await fetchEngines(matched.model_id);
+        } else {
+            setFormData(prev => ({
+                ...prev,
+                model_id: '',
+                model_name: val,
+                engine_id: '',
+                engine_name: ''
+            }));
+            setEngines([]);
+        }
+    };
+
+    const handleEngineChange = (e) => {
+        const val = e.target.value;
+        const matched = engines.find(en => en.engine_name.toLowerCase() === val.toLowerCase());
+        if (matched) {
+            setFormData(prev => ({ ...prev, engine_id: String(matched.engine_id), engine_name: matched.engine_name }));
+        } else {
+            setFormData(prev => ({ ...prev, engine_id: '', engine_name: val }));
+        }
     };
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        onSave(formData);
+
+        // Send both IDs (if we have them) and names (for creation if needed)
+        const payload = {
+            make_id: formData.make_id ? Number(formData.make_id) : undefined,
+            model_id: formData.model_id ? Number(formData.model_id) : undefined,
+            engine_id: formData.engine_id ? Number(formData.engine_id) : undefined,
+            make: formData.make_name,
+            model: formData.model_name,
+            engine: formData.engine_name || undefined
+        };
+
+        onSave(payload);
     };
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Make</label>
-                <input type="text" name="make" value={formData.make} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
+                <input
+                    list="make-list"
+                    value={formData.make_name}
+                    onChange={handleMakeChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    required
+                />
+                <datalist id="make-list">
+                    {makes.map(m => <option key={m.make_id} value={m.make_name} />)}
+                </datalist>
             </div>
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
-                <input type="text" name="model" value={formData.model} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
+                <input
+                    list="model-list"
+                    value={formData.model_name}
+                    onChange={handleModelChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    required
+                    disabled={!formData.make_name}
+                />
+                <datalist id="model-list">
+                    {models.map(m => <option key={m.model_id} value={m.model_name} />)}
+                </datalist>
             </div>
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Engine</label>
-                <input type="text" name="engine" value={formData.engine} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                <input
+                    list="engine-list"
+                    value={formData.engine_name}
+                    onChange={handleEngineChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    disabled={!formData.model_name}
+                />
+                <datalist id="engine-list">
+                    {engines.map(e => <option key={e.engine_id} value={e.engine_name} />)}
+                </datalist>
             </div>
             <div className="mt-6 flex justify-end space-x-4">
                 <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
@@ -63,7 +219,8 @@ const ApplicationsPage = () => {
             setLoading(true);
             const response = await api.get('/applications');
             setApplications(response.data);
-        } catch (err) {
+        } catch (error) {
+            console.error('Failed to fetch applications:', error);
             setError('Failed to fetch applications.');
         } finally {
             setLoading(false);
@@ -134,7 +291,7 @@ const ApplicationsPage = () => {
                 fetchApplications();
                 return 'Application saved successfully!';
             },
-            error: 'Failed to save application.',
+            error: (err) => err.response?.data?.message || 'Failed to save application.',
         });
     };
 

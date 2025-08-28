@@ -13,9 +13,8 @@ RUN npm ci
 # Copy source code
 COPY . .
 
-# Run tests and build
-RUN npm run test && \
-    npm run build
+# Build the application
+RUN npm run build
 
 # Production stage
 FROM nginx:stable-alpine

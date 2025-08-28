@@ -7,13 +7,15 @@ console.log('--- [DEBUG] Loading setupRoutes.js file ---');
 
 // GET /api/setup/status - Check if an admin account exists
 router.get('/setup/status', async (req, res) => {
-    console.log('[DEBUG] HIT: GET /api/setup/status'); // Log when the route is actually called
     try {
         const result = await db.query("SELECT EXISTS (SELECT 1 FROM employee WHERE permission_level_id = 10) as admin_exists;");
+        if (!result || !result.rows || result.rows.length === 0) {
+            return res.status(500).json({ error: 'Unexpected database response' });
+        }
         res.json({ isAdminCreated: result.rows[0].admin_exists });
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
+        console.error('setupRoutes: DB query failed', err && err.stack ? err.stack : err);
+        res.status(500).json({ error: 'Database query failed' });
     }
 });
 

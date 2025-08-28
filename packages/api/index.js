@@ -11,46 +11,80 @@ app.use(cors());
 app.use(express.json());
 
 // --- Register all API routes ---
+// --- Register all API routes ---
+
+// Helper to safely require and register routers
+function registerRoute(routePrefix, modulePath) {
+  try {
+    const mod = require(modulePath);
+
+    if (mod && mod.router) {
+      app.use(routePrefix, mod.router);
+    } else if (mod && mod.default) {
+      app.use(routePrefix, mod.default);
+    } else {
+      app.use(routePrefix, mod);
+    }
+  } catch (err) {
+    // Log registration failures; keep server running so other routes can mount
+    console.error(`Failed to register ${modulePath} on ${routePrefix}:`, err && err.stack ? err.stack : err);
+  }
+}
 
 // Core Modules
-app.use('/api', require('./routes/partRoutes'));
-app.use('/api', require('./routes/inventoryRoutes'));
-app.use('/api', require('./routes/purchaseOrderRoutes'));
-app.use('/api', require('./routes/goodsReceiptRoutes'));
+registerRoute('/api', './routes/partRoutes');
+registerRoute('/api', './routes/inventoryRoutes');
+registerRoute('/api', './routes/purchaseOrderRoutes');
+registerRoute('/api', './routes/goodsReceiptRoutes');
 
 // Sales & Customer Modules
-app.use('/api', require('./routes/customerRoutes'));
-app.use('/api', require('./routes/invoiceRoutes'));
-app.use('/api', require('./routes/paymentRoutes'));
-app.use('/api', require('./routes/draftRoutes'));
-app.use('/api', require('./routes/refundRoutes')); // <-- Add new refund route
-app.use('/api', require('./routes/paymentTermRoutes'));
+registerRoute('/api', './routes/customerRoutes');
+registerRoute('/api', './routes/invoiceRoutes');
+registerRoute('/api', './routes/paymentRoutes');
+registerRoute('/api', './routes/draftRoutes');
+registerRoute('/api', './routes/refundRoutes');
+registerRoute('/api', './routes/paymentTermRoutes');
 
 // Documents module (Document Management Interface)
-app.use('/api', require('./routes/documentsRoutes'));
+registerRoute('/api', './routes/documentsRoutes');
 
 // Entity & Data Management Modules
-app.use('/api', require('./routes/supplierRoutes'));
-app.use('/api', require('./routes/applicationRoutes'));
-app.use('/api', require('./routes/partNumberRoutes'));
-app.use('/api', require('./routes/partApplicationRoutes'));
-app.use('/api', require('./routes/brandRoutes'));
-app.use('/api', require('./routes/groupRoutes'));
-app.use('/api', require('./routes/tagRoutes'));
-app.use('/api', require('./routes/taxRateRoutes'));
+registerRoute('/api', './routes/supplierRoutes');
+registerRoute('/api', './routes/applicationRoutes');
+registerRoute('/api', './routes/partNumberRoutes');
+registerRoute('/api', './routes/partApplicationRoutes');
+registerRoute('/api', './routes/brandRoutes');
+registerRoute('/api', './routes/groupRoutes');
+registerRoute('/api', './routes/tagRoutes');
+registerRoute('/api', './routes/taxRateRoutes');
 
 // Admin & System Modules
-app.use('/api', require('./routes/employeeRoutes'));
-app.use('/api', require('./routes/permissionRoutes'));
-app.use('/api', require('./routes/dashboardRoutes'));
-app.use('/api', require('./routes/powerSearchRoutes'));
-app.use('/api', require('./routes/reportingRoutes'));
-app.use('/api', require('./routes/settingsRoutes'));
-app.use('/api/data', require('./routes/dataUtilsRoutes'));
-app.use('/api/backups', require('./routes/backupRoutes'));
+registerRoute('/api', './routes/employeeRoutes');
+registerRoute('/api', './routes/permissionRoutes');
+registerRoute('/api', './routes/dashboardRoutes');
+registerRoute('/api', './routes/powerSearchRoutes');
+registerRoute('/api', './routes/reportingRoutes');
+registerRoute('/api', './routes/settingsRoutes');
+registerRoute('/api/data', './routes/dataUtilsRoutes');
+registerRoute('/api/backups', './routes/backupRoutes');
 
 // Special Setup Route
-app.use('/api', require('./routes/setupRoutes'));
+registerRoute('/api', './routes/setupRoutes');
+
+// Basic 404 handler for unknown routes
+app.use((req, res) => res.status(404).json({ error: 'Not Found' }));
+
+// Minimal global error handler
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err && err.stack ? err.stack : err);
+  const status = err && err.status ? err.status : 500;
+  const payload = { error: err && err.message ? err.message : 'Server Error' };
+  if (process.env.NODE_ENV !== 'production') payload.stack = err && err.stack ? err.stack : null;
+  res.status(status).json(payload);
+});
+
+process.on('uncaughtException', (err) => console.error('Uncaught Exception:', err && err.stack ? err.stack : err));
+process.on('unhandledRejection', (reason) => console.error('Unhandled Rejection:', reason && reason.stack ? reason.stack : reason));
 
 
 const PORT = process.env.PORT || 3001;

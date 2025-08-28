@@ -47,8 +47,16 @@ const EditYearForm = ({ link, onSave, onCancel }) => {
 
 const PartApplicationManager = ({ part, onCancel }) => {
     const [linkedApps, setLinkedApps] = useState([]);
-    const [allApps, setAllApps] = useState([]);
-    const [newLinkData, setNewLinkData] = useState({ application_id: '', year_start: '', year_end: '' });
+    const [makes, setMakes] = useState([]);
+    const [models, setModels] = useState([]);
+    const [engines, setEngines] = useState([]);
+    const [newLinkData, setNewLinkData] = useState({ 
+        make_id: '', 
+        model_id: '', 
+        engine_id: '',
+        year_start: '', 
+        year_end: '' 
+    });
     const [loading, setLoading] = useState(true);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [currentLink, setCurrentLink] = useState(null);
@@ -57,18 +65,74 @@ const PartApplicationManager = ({ part, onCancel }) => {
         if (part) {
             setLoading(true);
             try {
-                const [linkedRes, allRes] = await Promise.all([
+                const [linkedRes, makesRes] = await Promise.all([
                     axios.get(`http://localhost:3001/api/parts/${part.part_id}/applications`),
-                    axios.get('http://localhost:3001/api/applications')
+                    axios.get('http://localhost:3001/api/makes')
                 ]);
                 setLinkedApps(linkedRes.data);
-                setAllApps(allRes.data);
-            } catch (err) {
-                console.error("Failed to fetch applications", err);
+                setMakes(makesRes.data);
+            } catch (error) {
+                console.error("Failed to fetch applications", error);
             } finally {
                 setLoading(false);
             }
         }
+    };
+
+    const fetchModels = async (makeId) => {
+        try {
+            const response = await axios.get(`http://localhost:3001/api/makes/${makeId}/models`);
+            setModels(response.data);
+        } catch (error) {
+            console.error('Failed to fetch models:', error);
+            setModels([]);
+        }
+    };
+
+    const fetchEngines = async (modelId) => {
+        try {
+            const response = await axios.get(`http://localhost:3001/api/models/${modelId}/engines`);
+            setEngines(response.data);
+        } catch (error) {
+            console.error('Failed to fetch engines:', error);
+            setEngines([]);
+        }
+    };
+
+    const handleMakeChange = async (e) => {
+        const makeId = e.target.value;
+        setNewLinkData(prev => ({ 
+            ...prev, 
+            make_id: makeId,
+            model_id: '',
+            engine_id: ''
+        }));
+        setModels([]);
+        setEngines([]);
+        if (makeId) {
+            await fetchModels(makeId);
+        }
+    };
+
+    const handleModelChange = async (e) => {
+        const modelId = e.target.value;
+        setNewLinkData(prev => ({ 
+            ...prev, 
+            model_id: modelId,
+            engine_id: ''
+        }));
+        setEngines([]);
+        if (modelId) {
+            await fetchEngines(modelId);
+        }
+    };
+
+    const handleEngineChange = (e) => {
+        const engineId = e.target.value;
+        setNewLinkData(prev => ({ 
+            ...prev, 
+            engine_id: engineId
+        }));
     };
 
     useEffect(() => {
@@ -77,15 +141,37 @@ const PartApplicationManager = ({ part, onCancel }) => {
 
     const handleLinkApp = async (e) => {
         e.preventDefault();
-        if (!newLinkData.application_id) return;
+        if (!newLinkData.make_id || !newLinkData.model_id) {
+            alert('Make and Model are required.');
+            return;
+        }
 
         try {
-            await axios.post(`http://localhost:3001/api/parts/${part.part_id}/applications`, newLinkData);
+            // First, get or create the application
+            const appResponse = await axios.post('http://localhost:3001/api/applications', {
+                make_id: newLinkData.make_id,
+                model_id: newLinkData.model_id,
+                engine_id: newLinkData.engine_id || null
+            });
+
+            // Then link it to the part
+            await axios.post(`http://localhost:3001/api/parts/${part.part_id}/applications`, {
+                application_id: appResponse.data.application_id,
+                year_start: newLinkData.year_start || null,
+                year_end: newLinkData.year_end || null
+            });
+
             fetchData();
-            setNewLinkData({ application_id: '', year_start: '', year_end: '' });
-        } catch (err) {
-            alert('Failed to link application.');
-            console.error(err);
+            setNewLinkData({ 
+                make_id: '', 
+                model_id: '', 
+                engine_id: '',
+                year_start: '', 
+                year_end: '' 
+            });
+        } catch (error) {
+            alert('Failed to link application: ' + (error.response?.data?.message || error.message));
+            console.error(error);
         }
     };
     
@@ -150,22 +236,81 @@ const PartApplicationManager = ({ part, onCancel }) => {
 
             <form onSubmit={handleLinkApp}>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Link New Application</label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <select
-                        value={newLinkData.application_id}
-                        onChange={(e) => setNewLinkData(prev => ({...prev, application_id: e.target.value}))}
-                        className="sm:col-span-3 w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    >
-                        <option value="">Select a vehicle...</option>
-                        {allApps.map(app => (
-                            <option key={app.application_id} value={app.application_id}>
-                                {app.make} {app.model} ({app.engine})
-                            </option>
-                        ))}
-                    </select>
-                     <input type="number" placeholder="Year Start" value={newLinkData.year_start} onChange={(e) => setNewLinkData(prev => ({...prev, year_start: e.target.value}))} className="px-3 py-2 border border-gray-300 rounded-lg" />
-                     <input type="number" placeholder="Year End" value={newLinkData.year_end} onChange={(e) => setNewLinkData(prev => ({...prev, year_end: e.target.value}))} className="px-3 py-2 border border-gray-300 rounded-lg" />
-                    <button type="submit" className="sm:col-span-3 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Link Application</button>
+                <div className="grid grid-cols-1 gap-2">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Make</label>
+                        <select
+                            value={newLinkData.make_id || ''}
+                            onChange={handleMakeChange}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            required
+                        >
+                            <option value="">Select Make</option>
+                            {makes.map(make => (
+                                <option key={make.make_id} value={make.make_id}>
+                                    {make.make_name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
+                        <select
+                            value={newLinkData.model_id || ''}
+                            onChange={handleModelChange}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            required
+                            disabled={!newLinkData.make_id}
+                        >
+                            <option value="">Select Model</option>
+                            {models.map(model => (
+                                <option key={model.model_id} value={model.model_id}>
+                                    {model.model_name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Engine (Optional)</label>
+                        <select
+                            value={newLinkData.engine_id || ''}
+                            onChange={handleEngineChange}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            disabled={!newLinkData.model_id}
+                        >
+                            <option value="">Select Engine</option>
+                            {engines.map(engine => (
+                                <option key={engine.engine_id} value={engine.engine_id}>
+                                    {engine.engine_name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Year Start</label>
+                            <input 
+                                type="number" 
+                                placeholder="e.g., 2010" 
+                                value={newLinkData.year_start || ''} 
+                                onChange={(e) => setNewLinkData(prev => ({...prev, year_start: e.target.value}))} 
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg" 
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Year End</label>
+                            <input 
+                                type="number" 
+                                placeholder="e.g., 2015" 
+                                value={newLinkData.year_end || ''} 
+                                onChange={(e) => setNewLinkData(prev => ({...prev, year_end: e.target.value}))} 
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg" 
+                            />
+                        </div>
+                    </div>
+                    <button type="submit" className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 mt-2">
+                        Link Application
+                    </button>
                 </div>
             </form>
              <div className="mt-6 flex justify-end">

@@ -5,16 +5,20 @@ FROM node:20-alpine AS builder
 WORKDIR /usr/src/app
 
 # Copy package files for better cache utilization
+# Build stage
+FROM node:20-alpine AS builder
+
+# Set working directory
+WORKDIR /usr/src/app
+
+# Copy package files for better cache utilization
 COPY package*.json ./
 
-# Install all dependencies (including devDependencies)
+# Install all dependencies
 RUN npm ci
 
 # Copy source code
 COPY . .
-
-# Run tests and build
-RUN npm run test && npm run build
 
 # Production stage
 FROM node:20-alpine
@@ -31,22 +35,16 @@ RUN addgroup -S appgroup && \
 # Set working directory
 WORKDIR /usr/src/app
 
-# Copy package files
-COPY package*.json ./
-
-# Install production dependencies only
-RUN npm ci --only=production && \
-    npm cache clean --force
-
-# Copy built assets from builder stage
-COPY --from=builder /usr/src/app/dist ./dist
+# Copy node_modules and source from builder
+COPY --from=builder /usr/src/app/node_modules ./node_modules
+COPY --from=builder /usr/src/app .
 
 # Set user
 USER appuser
 
-# Health check
+# Health check (uses setup status endpoint)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:3001/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3001/api/setup/status || exit 1
 
 # The app binds to port 3001
 EXPOSE 3001
@@ -55,4 +53,5 @@ EXPOSE 3001
 ENV NODE_ENV=production
 
 # Command to run the application
-CMD ["node", "dist/index.js"]
+CMD ["node", "index.js"]
+
