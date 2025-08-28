@@ -85,12 +85,55 @@ CREATE TABLE IF NOT EXISTS public.part (
     modified_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL
 );
 
+-- New: normalized vehicle tables for make, model, engine
+CREATE TABLE IF NOT EXISTS public.vehicle_make (
+    make_id serial PRIMARY KEY,
+    make_name character varying(100) NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS public.vehicle_model (
+    model_id serial PRIMARY KEY,
+    make_id integer NOT NULL REFERENCES public.vehicle_make(make_id) ON DELETE CASCADE,
+    model_name character varying(100) NOT NULL,
+    UNIQUE (make_id, model_name)
+);
+
+CREATE TABLE IF NOT EXISTS public.vehicle_engine (
+    engine_id serial PRIMARY KEY,
+    model_id integer NOT NULL REFERENCES public.vehicle_model(model_id) ON DELETE CASCADE,
+    engine_name character varying(100),
+    UNIQUE (model_id, engine_name)
+);
+
 CREATE TABLE IF NOT EXISTS public.application (
     application_id serial PRIMARY KEY,
-    make character varying(100) NOT NULL,
-    model character varying(100) NOT NULL,
-    engine character varying(100)
+    make_id integer REFERENCES public.vehicle_make(make_id) ON DELETE SET NULL,
+    model_id integer REFERENCES public.vehicle_model(model_id) ON DELETE SET NULL,
+    engine_id integer REFERENCES public.vehicle_engine(engine_id) ON DELETE SET NULL
 );
+
+-- Prevent duplicate application rows pointing to same make/model/engine
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints tc
+        WHERE tc.table_name = 'application' AND tc.constraint_type = 'UNIQUE' AND tc.constraint_name = 'unique_application_make_model_engine'
+    ) THEN
+        ALTER TABLE public.application
+        ADD CONSTRAINT unique_application_make_model_engine UNIQUE (make_id, model_id, engine_id);
+    END IF;
+END$$;
+
+-- Convenience view to expose application as strings for compatibility with existing queries
+CREATE OR REPLACE VIEW public.application_view AS
+SELECT a.application_id,
+       vmk.make_name AS make,
+       vmd.model_name AS model,
+       veng.engine_name AS engine
+FROM public.application a
+LEFT JOIN public.vehicle_make vmk ON a.make_id = vmk.make_id
+LEFT JOIN public.vehicle_model vmd ON a.model_id = vmd.model_id
+LEFT JOIN public.vehicle_engine veng ON a.engine_id = veng.engine_id;
 
 CREATE TABLE IF NOT EXISTS public.part_number (
     part_number_id serial PRIMARY KEY,

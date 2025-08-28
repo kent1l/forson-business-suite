@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'packages/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'packages/**'
+      - '.github/workflows/ci.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: |
+          cd packages/api && npm ci
+          cd ../web && npm ci
+          
+      - name: Run ESLint
+        run: |
+          cd packages/api && npm run lint
+          cd ../web && npm run lint
+          
+      - name: Run tests
+        env:
+          NODE_ENV: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+          POSTGRES_HOST: localhost
+        run: |
+          cd packages/api && npm test
+          cd ../web && npm test
+          
+      - name: Upload test coverage
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-report
+          path: |
+            packages/api/coverage
+            packages/web/coverage

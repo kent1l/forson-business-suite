@@ -1,0 +1,161 @@
+version: '3.8'
+
+x-logging: &default-logging
+  options:
+    max-size: "10m"
+    max-file: "3"
+  driver: json-file
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: forson_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: forson_business_suite
+      POSTGRES_USER: ${DB_USER}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"  # Only accessible locally
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    logging: *default-logging
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.3
+    container_name: forson_meilisearch
+    restart: unless-stopped
+    environment:
+      - MEILI_MASTER_KEY=${MEILISEARCH_MASTER_KEY}
+      - MEILI_NO_ANALYTICS=true
+      - MEILI_ENV=production
+    volumes:
+      - meili_data:/meili_data
+    ports:
+      - "127.0.0.1:7700:7700"  # Only accessible locally
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--spider", "http://localhost:7700/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    logging: *default-logging
+
+  backend:
+    image: ${DOCKER_REGISTRY:-kentonel}/forson-backend:${TAG:-latest}
+    container_name: forson_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+    env_file: .env
+    environment:
+      - JWT_SECRET=${JWT_SECRET}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      replicas: 2
+      update_config:
+        order: start-first
+        failure_action: rollback
+        delay: 10s
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    logging: *default-logging
+
+  frontend:
+    image: ${DOCKER_REGISTRY:-kentonel}/forson-frontend:${TAG:-latest}
+    container_name: forson_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      replicas: 2
+      update_config:
+        order: start-first
+        failure_action: rollback
+        delay: 10s
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 256M
+    logging: *default-logging
+
+  backup:
+    image: postgres:15-alpine
+    container_name: forson_backup
+    restart: unless-stopped
+    depends_on:
+      - db
+    volumes:
+      - backup_data:/backups
+      - ./backup:/docker-entrypoint-initdb.d:ro
+    environment:
+      - DB_HOST=db
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - BACKUP_PATH=/backups
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-7}
+    secrets:
+      - db_password
+    healthcheck:
+      test: ["CMD", "test", "-d", "/backups"]
+      interval: 1h
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 256M
+    logging: *default-logging
+
+volumes:
+  postgres_data:
+    name: forson_postgres_data
+  meili_data:
+    name: forson_meili_data
+  backup_data:
+    name: forson_backup_data
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+  meili_key:
+    file: ./secrets/meili_key.txt
+  jwt_secret:
+    file: ./secrets/jwt_secret.txt

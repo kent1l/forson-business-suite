@@ -11,9 +11,14 @@ const getPartDataForMeili = async (client, partId) => {
         SELECT
             p.*, b.brand_name, g.group_name,
             (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id) as part_numbers,
-            (SELECT ARRAY_AGG(
-                CONCAT(a.make, ' ', a.model, COALESCE(CONCAT(' ', a.engine), ''))
-            ) FROM part_application pa JOIN application a ON pa.application_id = a.application_id WHERE pa.part_id = p.part_id) AS applications_array,
+                        (SELECT ARRAY_AGG(
+                                CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''))
+                        ) FROM part_application pa
+                            JOIN application a ON pa.application_id = a.application_id
+                            LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
+                            LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
+                            LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
+                        WHERE pa.part_id = p.part_id) AS applications_array,
             (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags_array
         FROM part AS p
         LEFT JOIN brand AS b ON p.brand_id = b.brand_id
@@ -35,40 +40,41 @@ const getPartDataForMeili = async (client, partId) => {
 // Helper function to handle tag logic
 const manageTags = async (client, tags, partId) => {
     console.log('manageTags called with:', { tags, partId }); // Debugging log
+
+    // Delete existing tags for the part
     await client.query('DELETE FROM part_tag WHERE part_id = $1', [partId]);
+
     if (tags && tags.length > 0) {
-        for (const tagName of tags) {
-            const sanitizedTagName = tagName.trim().toLowerCase();
-            console.log('Processing tag:', sanitizedTagName); // Debugging log
-            let tagRes;
-            try {
-                tagRes = await client.query('SELECT tag_id FROM tag WHERE tag_name = $1', [sanitizedTagName]);
-            } catch (error) {
-                console.error('Error querying tag:', error);
-                continue;
-            }
+        const sanitizedTags = tags.map(tag => tag.trim().toLowerCase());
 
-            let tagId;
-            if (tagRes.rows.length === 0) {
-                console.log('Inserting new tag:', sanitizedTagName); // Debugging log
-                try {
-                    tagRes = await client.query('INSERT INTO tag (tag_name) VALUES ($1) RETURNING tag_id', [sanitizedTagName]);
-                    tagId = tagRes.rows[0].tag_id;
-                } catch (error) {
-                    console.error('Error inserting new tag:', error);
-                    continue;
-                }
-            } else {
-                tagId = tagRes.rows[0].tag_id;
-            }
+        // Fetch existing tags in a single query
+        const existingTagsRes = await client.query(
+            'SELECT tag_id, tag_name FROM tag WHERE tag_name = ANY($1)',
+            [sanitizedTags]
+        );
+        const existingTags = existingTagsRes.rows.reduce((map, row) => {
+            map[row.tag_name] = row.tag_id;
+            return map;
+        }, {});
 
-            console.log('Associating tag with part:', { partId, tagId }); // Debugging log
-            try {
-                await client.query('INSERT INTO part_tag (part_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [partId, tagId]);
-            } catch (error) {
-                console.error('Error associating tag with part:', error);
-            }
+        const newTags = sanitizedTags.filter(tag => !existingTags[tag]);
+
+        // Insert new tags in a single query
+        if (newTags.length > 0) {
+            const insertNewTagsRes = await client.query(
+                `INSERT INTO tag (tag_name) VALUES ${newTags.map((_, i) => `($${i + 1})`).join(', ')} RETURNING tag_id, tag_name`,
+                newTags
+            );
+            insertNewTagsRes.rows.forEach(row => {
+                existingTags[row.tag_name] = row.tag_id;
+            });
         }
+
+        // Associate tags with the part in a single query
+        const partTagValues = sanitizedTags.map(tag => `(${partId}, ${existingTags[tag]})`).join(', ');
+        await client.query(
+            `INSERT INTO part_tag (part_id, tag_id) VALUES ${partTagValues} ON CONFLICT DO NOTHING`
+        );
     }
 };
 
@@ -101,7 +107,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
                 (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = p.part_id) AS part_numbers,
                 (SELECT STRING_AGG(
                     CONCAT(
-                        a.make, ' ', a.model, COALESCE(CONCAT(' ', a.engine), ''),
+                        vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''),
                         CASE
                             WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL AND pa.year_start = pa.year_end THEN CONCAT(' [', pa.year_start, ']')
                             WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL THEN CONCAT(' [', pa.year_start, '-', pa.year_end, ']')
@@ -110,7 +116,12 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
                             ELSE ''
                         END
                     ), '; '
-                ) FROM part_application pa JOIN application a ON pa.application_id = a.application_id WHERE pa.part_id = p.part_id) AS applications,
+                ) FROM part_application pa
+                  JOIN application a ON pa.application_id = a.application_id
+                  LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
+                  LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
+                  LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
+                WHERE pa.part_id = p.part_id) AS applications,
                 (SELECT STRING_AGG(t.tag_name, ', ') FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags
             FROM part AS p
             LEFT JOIN brand AS b ON p.brand_id = b.brand_id
@@ -306,4 +317,4 @@ router.delete('/parts/:id', protect, hasPermission('parts:delete'), async (req, 
     }
 });
 
-module.exports = router;
+module.exports = { router, manageTags };

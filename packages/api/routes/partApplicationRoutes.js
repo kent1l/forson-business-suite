@@ -10,9 +10,38 @@ const getPartDataForMeili = async (client, partId) => {
         SELECT
             p.*, b.brand_name, g.group_name,
             (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id) as part_numbers,
-            (SELECT ARRAY_AGG(
-                CONCAT(a.make, ' ', a.model, COALESCE(CONCAT(' ', a.engine), ''))
-            ) FROM part_application pa JOIN application a ON pa.application_id = a.application_id WHERE pa.part_id = p.part_id) AS applications_array,
+                        (SELECT jsonb_agg(
+                            jsonb_build_object(
+                                'application_id', a.application_id,
+                                'make_id', a.make_id,
+                                'model_id', a.model_id,
+                                'engine_id', a.engine_id,
+                                'make', vmk.make_name,
+                                'model', vmd.model_name,
+                                'engine', veng.engine_name,
+                                'year_start', pa.year_start,
+                                'year_end', pa.year_end,
+                                'display', CONCAT(
+                                    vmk.make_name, ' ',
+                                    vmd.model_name,
+                                    CASE 
+                                        WHEN veng.engine_name IS NOT NULL THEN CONCAT(' ', veng.engine_name)
+                                        ELSE ''
+                                    END,
+                                    CASE
+                                        WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL THEN CONCAT(' (', pa.year_start, '-', pa.year_end, ')')
+                                        WHEN pa.year_start IS NOT NULL THEN CONCAT(' (', pa.year_start, ')')
+                                        WHEN pa.year_end IS NOT NULL THEN CONCAT(' (', pa.year_end, ')')
+                                        ELSE ''
+                                    END
+                                )
+                            )
+                        ) FROM part_application pa
+                            JOIN application a ON pa.application_id = a.application_id
+                            LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
+                            LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
+                            LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
+                        WHERE pa.part_id = p.part_id) AS applications_array,
             (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags_array
         FROM part AS p
         LEFT JOIN brand AS b ON p.brand_id = b.brand_id
@@ -35,19 +64,30 @@ const getPartDataForMeili = async (client, partId) => {
 // GET all applications for a specific part
 router.get('/parts/:partId/applications', async (req, res) => {
   const { partId } = req.params;
-  try {
-    const query = `
-        SELECT pa.*, a.make, a.model, a.engine
-        FROM part_application pa
-        JOIN application a ON pa.application_id = a.application_id
-        WHERE pa.part_id = $1;
-    `;
-    const { rows } = await db.query(query, [partId]);
-    res.json(rows);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server Error');
-  }
+    try {
+        const query = `
+            SELECT 
+                pa.*,
+                a.make_id,
+                a.model_id,
+                a.engine_id,
+                vmk.make_name AS make,
+                vmd.model_name AS model,
+                veng.engine_name AS engine
+            FROM part_application pa
+            JOIN application a ON pa.application_id = a.application_id
+            LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
+            LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
+            LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
+            WHERE pa.part_id = $1
+            ORDER BY vmk.make_name, vmd.model_name, veng.engine_name;
+        `;
+        const { rows } = await db.query(query, [partId]);
+        res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
 });
 
 // POST a new application link for a part

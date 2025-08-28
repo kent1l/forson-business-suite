@@ -4,9 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-  "test": "echo \"Error: no test specified\" && exit 1",
-  "start": "nodemon index.js",
-  "dev": "nodemon --legacy-watch index.js"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon index.js",
+    "dev": "nodemon --legacy-watch index.js"
   },
   "keywords": [],
   "author": "",
@@ -24,6 +24,7 @@
     "pg": "^8.16.3"
   },
   "devDependencies": {
+    "jest": "^30.1.0",
     "nodemon": "^3.1.10"
   }
 }

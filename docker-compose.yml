@@ -29,7 +29,10 @@ services:
   # --- Backend API Service ---
   backend:
     container_name: forson_backend
-    image: kentonel/forson-backend:latest 
+    build:
+      context: ./packages/api
+      dockerfile: Dockerfile
+    image: kentonel/forson-backend:latest
     restart: always
     depends_on:
       - db
@@ -42,6 +45,9 @@ services:
   # --- Frontend Service ---
   frontend:
     container_name: forson_frontend
+    build:
+      context: ./packages/web
+      dockerfile: Dockerfile
     image: kentonel/forson-frontend:latest
     restart: always
     depends_on:
