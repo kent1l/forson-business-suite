@@ -349,29 +349,29 @@ CREATE TABLE IF NOT EXISTS public.credit_note_line (
 --
 -- WAC CALCULATION TRIGGER
 --
-CREATE OR REPLACE FUNCTION public.update_wac_on_goods_receipt()
+CREATE OR REPLACE FUNCTION public.update_wac_on_inventory_transaction()
 RETURNS TRIGGER AS $$
 DECLARE
-    current_stock NUMERIC;
+    prev_stock NUMERIC;
     current_wac NUMERIC;
-    new_quantity NUMERIC;
-    new_cost NUMERIC;
+    new_quantity NUMERIC := NEW.quantity;
+    new_cost NUMERIC := COALESCE(NEW.unit_cost, 0);
     new_wac NUMERIC;
 BEGIN
-    new_quantity := NEW.quantity;
-    new_cost := NEW.cost_price;
+    -- Calculate previous stock excluding the newly inserted transaction
+    SELECT COALESCE(SUM(quantity), 0)
+    INTO prev_stock
+    FROM public.inventory_transaction
+    WHERE part_id = NEW.part_id
+      AND inv_trans_id <> NEW.inv_trans_id;
 
-    SELECT
-        COALESCE((SELECT SUM(quantity) FROM public.inventory_transaction WHERE part_id = NEW.part_id), 0),
-        COALESCE(p.wac_cost, 0)
-    INTO
-        current_stock,
-        current_wac
+    SELECT COALESCE(wac_cost, 0)
+    INTO current_wac
     FROM public.part p
     WHERE p.part_id = NEW.part_id;
 
-    IF (current_stock + new_quantity) > 0 THEN
-        new_wac := ((current_stock * current_wac) + (new_quantity * new_cost)) / (current_stock + new_quantity);
+    IF (prev_stock + new_quantity) > 0 THEN
+        new_wac := ((prev_stock * current_wac) + (new_quantity * new_cost)) / (prev_stock + new_quantity);
     ELSE
         new_wac := new_cost;
     END IF;
@@ -382,17 +382,20 @@ BEGIN
         last_cost = new_cost,
         last_cost_date = CURRENT_TIMESTAMP
     WHERE part_id = NEW.part_id;
-    
+
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
+-- Remove old trigger attached to goods_receipt_line if present
 DROP TRIGGER IF EXISTS trg_update_wac ON public.goods_receipt_line;
-
+-- Create trigger on inventory_transaction so WAC is calculated when StockIn rows are recorded
+DROP TRIGGER IF EXISTS trg_update_wac ON public.inventory_transaction;
 CREATE TRIGGER trg_update_wac
-AFTER INSERT ON public.goods_receipt_line
+AFTER INSERT ON public.inventory_transaction
 FOR EACH ROW
-EXECUTE FUNCTION public.update_wac_on_goods_receipt();
+WHEN (NEW.trans_type = 'StockIn')
+EXECUTE FUNCTION public.update_wac_on_inventory_transaction();
 
 --
 -- SEED DATA (Using 'ON CONFLICT DO NOTHING' for safety)
