@@ -5,13 +5,6 @@ FROM node:20-alpine AS builder
 WORKDIR /usr/src/app
 
 # Copy package files for better cache utilization
-# Build stage
-FROM node:20-alpine AS builder
-
-# Set working directory
-WORKDIR /usr/src/app
-
-# Copy package files for better cache utilization
 COPY package*.json ./
 
 # Install all dependencies
