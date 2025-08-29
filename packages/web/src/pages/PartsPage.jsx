@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
@@ -6,7 +6,6 @@ import { ICONS } from '../constants';
 import Modal from '../components/ui/Modal';
 import PartForm from '../components/forms/PartForm';
 import FilterBar from '../components/ui/FilterBar';
-import SortableHeader from '../components/ui/SortableHeader';
 import TagPopover from '../components/ui/TagPopover';
 import { useAuth } from '../contexts/AuthContext';
 import PartNumberManager from './PartNumberManager';
@@ -24,7 +23,6 @@ const PartsPage = () => {
     const [currentPart, setCurrentPart] = useState(null);
     const [statusFilter, setStatusFilter] = useState('active');
     const [searchTerm, setSearchTerm] = useState('');
-    const [sortConfig, setSortConfig] = useState({ key: 'display_name', direction: 'ascending' });
     const [selectedParts, setSelectedParts] = useState([]);
     const [isBulkEditModalOpen, setIsBulkEditModalOpen] = useState(false);
 
@@ -39,8 +37,8 @@ const PartsPage = () => {
             setParts(partsRes.data);
             setBrands(brandsRes.data);
             setGroups(groupsRes.data);
-        } catch (err) {
-            toast.error("Failed to load data.");
+        } catch (error) {
+            toast.error("Failed to load data: " + (error.response?.data?.message || error.message));
         } finally {
             setLoading(false);
         }
@@ -160,22 +158,8 @@ const PartsPage = () => {
         }
     };
 
-    const sortedParts = useMemo(() => {
-        let sortableItems = [...parts];
-        if (sortConfig.key) {
-            sortableItems.sort((a, b) => {
-                if (!a[sortConfig.key] || !b[sortConfig.key]) return 0;
-                if (a[sortConfig.key].toLowerCase() < b[sortConfig.key].toLowerCase()) {
-                    return sortConfig.direction === 'ascending' ? -1 : 1;
-                }
-                if (a[sortConfig.key].toLowerCase() > b[sortConfig.key].toLowerCase()) {
-                    return sortConfig.direction === 'ascending' ? 1 : -1;
-                }
-                return 0;
-            });
-        }
-        return sortableItems;
-    }, [parts, sortConfig]);
+    // Use parts directly to preserve MeiliSearch's relevance ranking
+    const sortedParts = parts;
 
     const filterTabs = [
         { key: 'active', label: 'Active' },
@@ -229,9 +213,9 @@ const PartsPage = () => {
                             <thead>
                                 <tr>
                                     <th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={selectedParts.length === sortedParts.length && sortedParts.length > 0} /></th>
-                                    <SortableHeader column="internal_sku" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({key, direction})}>SKU</SortableHeader>
-                                    <SortableHeader column="display_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({key, direction})}>Item</SortableHeader>
-                                    <SortableHeader column="applications" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({key, direction})}>Application</SortableHeader>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Application</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>

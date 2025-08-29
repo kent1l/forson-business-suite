@@ -33,6 +33,15 @@ const getPartDataForMeili = async (client, partId) => {
         ...part,
         display_name: constructDisplayName(part),
         applications: part.applications_array || [],
+        // Flatten applications into a single searchable string for Meilisearch
+        searchable_applications: (part.applications_array && Array.isArray(part.applications_array))
+            ? part.applications_array.map(app => {
+                // SQL returns a concatenated string like "Make Model Engine" for each application.
+                if (typeof app === 'string') return app;
+                // If for some reason the application is an object, concatenate known fields.
+                return `${app.make || ''} ${app.model || ''} ${app.engine || ''}`.trim();
+            }).join(', ')
+            : '' ,
         tags: part.tags_array || []
     };
 };
@@ -127,6 +136,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
             LEFT JOIN brand AS b ON p.brand_id = b.brand_id
             LEFT JOIN "group" AS g ON p.group_id = g.group_id
             WHERE p.part_id = ANY($1::int[])
+            ORDER BY array_position($1::int[], p.part_id)
         `;
         const { rows } = await db.query(query, [partIds]);
         const partsWithDisplayName = rows.map(part => ({ ...part, display_name: constructDisplayName(part) }));
@@ -317,4 +327,4 @@ router.delete('/parts/:id', protect, hasPermission('parts:delete'), async (req, 
     }
 });
 
-module.exports = { router, manageTags };
+module.exports = { router, manageTags, getPartDataForMeili };
