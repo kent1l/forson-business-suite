@@ -19,7 +19,7 @@ const InventoryPage = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
     const [selectedPart, setSelectedPart] = useState(null);
-    const [sortConfig, setSortConfig] = useState({ key: 'display_name', direction: 'ascending' });
+    // No client-side sort: preserve backend / MeiliSearch ordering
 
     const fetchInventory = useCallback(async () => {
         try {
@@ -28,8 +28,9 @@ const InventoryPage = () => {
             // --- UPDATED: Call the correct inventory endpoint ---
             const response = await api.get(`/inventory`, { params: { search: searchTerm } });
             setInventory(response.data);
-        } catch (err) {
-            setError('Failed to fetch inventory.');
+        } catch (error) {
+            console.error('Failed to fetch inventory', error);
+            setError('Failed to fetch inventory: ' + (error.response?.data?.message || error.message));
         } finally {
             setLoading(false);
         }
@@ -71,21 +72,8 @@ const InventoryPage = () => {
         });
     };
     
-    const sortedInventory = React.useMemo(() => {
-        let sortableItems = [...inventory];
-        if (sortConfig !== null) {
-            sortableItems.sort((a, b) => {
-                if (a[sortConfig.key] < b[sortConfig.key]) {
-                    return sortConfig.direction === 'ascending' ? -1 : 1;
-                }
-                if (a[sortConfig.key] > b[sortConfig.key]) {
-                    return sortConfig.direction === 'ascending' ? 1 : -1;
-                }
-                return 0;
-            });
-        }
-        return sortableItems;
-    }, [inventory, sortConfig]);
+    // Use inventory directly to preserve server-provided ranking (MeiliSearch)
+    const sortedInventory = inventory;
 
     return (
         <div>

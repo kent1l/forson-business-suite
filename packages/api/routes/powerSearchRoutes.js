@@ -16,11 +16,11 @@ router.get('/power-search/parts', async (req, res) => {
         };
 
         const searchResults = await index.search(keyword || '', searchOptions);
-        const partIds = searchResults.hits.map(h => h.part_id);
+        const partIds = searchResults.hits.map(h => h.part_id).filter(Boolean);
 
         if (partIds.length === 0) return res.json([]);
 
-        // Fetch stock and sale price and other display fields from DB
+        // Fetch stock and sale price and other display fields from DB while preserving MeiliSearch order
         const query = `
             SELECT
                 p.part_id,
@@ -40,15 +40,23 @@ router.get('/power-search/parts', async (req, res) => {
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
             WHERE p.part_id = ANY($1::int[])
-            ORDER BY p.detail ASC;
+            ORDER BY array_position($1::int[], p.part_id);
         `;
 
         const { rows } = await db.query(query, [partIds]);
-        const parts = rows.map(p => ({
-            ...p,
-            display_name: constructDisplayName(p),
-            applications: searchResults.hits.find(h => h.part_id === p.part_id)?.applications || null
-        }));
+
+        // Map returned rows back into MeiliSearch order just in case
+        const rowsById = rows.reduce((acc, r) => { acc[r.part_id] = r; return acc; }, {});
+        const parts = partIds.map(id => {
+            const p = rowsById[id] || null;
+            if (!p) return null;
+            return {
+                ...p,
+                display_name: constructDisplayName(p),
+                // safe access to applications from the MeiliSearch hit
+                applications: (searchResults.hits.find(h => h.part_id === id) || {}).applications || ''
+            };
+        }).filter(Boolean);
 
         res.json(parts);
     } catch (err) {

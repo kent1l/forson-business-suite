@@ -14,6 +14,9 @@ const PowerSearchPage = () => {
     const [detailLoading, setDetailLoading] = useState(false);
     const [selectedPartDetail, setSelectedPartDetail] = useState(null);
 
+    // The backend now handles MeiliSearch ordering. Use the results array directly.
+    const sortedResults = results;
+
     const openPartDetail = async (partId) => {
         try {
             setDetailLoading(true);
@@ -91,7 +94,7 @@ const PowerSearchPage = () => {
                      <div className="overflow-x-auto">
                         <table className="w-full text-left">
                             <thead className="border-b">
-                                <tr>
+                                <tr className="bg-gray-100 border-t border-b border-gray-300">
                                     <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Display Name</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Applications</th>
@@ -100,7 +103,7 @@ const PowerSearchPage = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {results.map(part => (
+                                {sortedResults.map(part => (
                                     <tr key={part.part_id} className="border-b hover:bg-gray-50 cursor-pointer" onClick={() => openPartDetail(part.part_id)}>
                                         <td className="p-3 text-sm font-mono align-top">{part.internal_sku}</td>
                                         <td className="p-3 text-sm font-medium text-gray-800 align-top">{part.display_name}</td>
@@ -109,7 +112,7 @@ const PowerSearchPage = () => {
                                         <td className="p-3 text-sm text-gray-800 font-semibold align-top">{part.last_sale_price ? (Number(part.last_sale_price).toFixed(2)) : '-'}</td>
                                     </tr>
                                 ))}
-                                {hasSearched && results.length === 0 && (
+                                {hasSearched && sortedResults.length === 0 && (
                                     <tr>
                                         <td colSpan="3" className="p-3 text-center text-gray-500">No results found for your query.</td>
                                     </tr>
