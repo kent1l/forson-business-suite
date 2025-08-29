@@ -136,6 +136,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
             LEFT JOIN brand AS b ON p.brand_id = b.brand_id
             LEFT JOIN "group" AS g ON p.group_id = g.group_id
             WHERE p.part_id = ANY($1::int[])
+            ORDER BY array_position($1::int[], p.part_id)
         `;
         const { rows } = await db.query(query, [partIds]);
         const partsWithDisplayName = rows.map(part => ({ ...part, display_name: constructDisplayName(part) }));

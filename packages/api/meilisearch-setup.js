@@ -13,6 +13,14 @@ const setupMeiliSearch = async () => {
     // Tell Meilisearch which fields we want to be able to search, filter and sort on.
     // This optimizes search performance and index size.
     await partsIndex.updateSettings({
+      rankingRules: [
+        'words',
+        'typo',
+        'proximity',
+        'attribute',
+        'sort',
+        'exactness'
+      ],
       searchableAttributes: [
         'display_name',
         'internal_sku',
@@ -20,9 +28,16 @@ const setupMeiliSearch = async () => {
         'group_name',
         'searchable_applications', // <-- ADDED: Flattened application data
         'part_numbers',
-        'applications',
         'tags'
       ],
+      stopWords: [
+        'a', 'an', 'and', 'the'
+      ],
+      synonyms: {
+        'ATF': ['automatic transmission fluid', 'automatic transmission oil'],
+        'PSF': ['power steering fluid', 'power steering oil'],
+        'Brake Fluid': ['Brake Oil']
+      },
       filterableAttributes: ['is_active', 'tags', 'applications'], // <-- ADDED: Allow filtering by application
       sortableAttributes: ['display_name', 'internal_sku', 'brand_name', 'group_name']
     });
