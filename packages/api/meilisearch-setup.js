@@ -11,12 +11,16 @@ const setupMeiliSearch = async () => {
     const partsIndex = meiliClient.index('parts');
     
     // Tell Meilisearch which fields we want to be able to search, filter and sort on.
+    // This optimizes search performance and index size.
     await partsIndex.updateSettings({
       searchableAttributes: [
         'display_name',
         'internal_sku',
+        'brand_name',
+        'group_name',
+        'searchable_applications', // <-- ADDED: Flattened application data
         'part_numbers',
-        'applications', // <-- ADDED: Make applications searchable
+        'applications',
         'tags'
       ],
       filterableAttributes: ['is_active', 'tags', 'applications'], // <-- ADDED: Allow filtering by application

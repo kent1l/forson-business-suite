@@ -11,6 +11,8 @@ const client = new MeiliSearch({
  */
 const syncPartWithMeili = async (documents) => {
   try {
+  // Debug log to inspect the exact payload being sent to Meilisearch
+  console.log('Syncing part with MeiliSearch:', JSON.stringify(documents, null, 2));
     const index = client.index('parts');
     // If 'documents' is not an array, wrap it in one. Otherwise, use it as is.
     const documentsToAdd = Array.isArray(documents) ? documents : [documents];
