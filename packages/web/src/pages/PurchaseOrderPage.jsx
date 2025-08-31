@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
@@ -8,6 +8,58 @@ import Modal from '../components/ui/Modal';
 import PurchaseOrderForm from '../components/forms/PurchaseOrderForm';
 import FilterBar from '../components/ui/FilterBar';
 
+const PurchaseOrderLines = ({ poId }) => {
+    const [lines, setLines] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchLines = async () => {
+            try {
+                const response = await api.get(`/purchase-orders/${poId}/lines`);
+                setLines(response.data);
+            } catch (error) {
+                toast.error("Could not fetch PO lines.");
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchLines();
+    }, [poId]);
+
+    if (loading) {
+        return <div className="p-4 bg-gray-50 text-center">Loading lines...</div>;
+    }
+
+    return (
+        <div className="p-4 bg-gray-100">
+            <h4 className="font-semibold text-sm text-gray-700 mb-2">Order Lines</h4>
+            <table className="w-full text-sm">
+                <thead>
+                    <tr className="border-b">
+                        <th className="text-left font-medium p-2">SKU</th>
+                        <th className="text-left font-medium p-2">Details</th>
+                        <th className="text-right font-medium p-2">Qty</th>
+                        <th className="text-right font-medium p-2">Cost</th>
+                        <th className="text-right font-medium p-2">Subtotal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {lines.map(line => (
+                        <tr key={line.po_line_id} className="border-b border-gray-200">
+                            <td className="p-2 font-mono">{line.internal_sku}</td>
+                            <td className="p-2">{line.display_name}</td>
+                            <td className="p-2 text-right">{line.quantity}</td>
+                            <td className="p-2 text-right font-mono">₱{parseFloat(line.cost_price).toFixed(2)}</td>
+                            <td className="p-2 text-right font-mono">₱{(line.quantity * line.cost_price).toFixed(2)}</td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
+};
+
+
 const PurchaseOrderPage = () => {
     const { user, hasPermission } = useAuth();
     const [purchaseOrders, setPurchaseOrders] = useState([]);
@@ -15,6 +67,7 @@ const PurchaseOrderPage = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentPO, setCurrentPO] = useState(null);
     const [statusFilter, setStatusFilter] = useState('Pending');
+    const [expandedRows, setExpandedRows] = useState(new Set());
 
     const filterTabs = [
         { key: 'Pending', label: 'Pending' },
@@ -25,7 +78,7 @@ const PurchaseOrderPage = () => {
         { key: 'All', label: 'All' },
     ];
 
-    const fetchPOs = async () => {
+    const fetchPOs = useCallback(async () => {
         if (hasPermission('purchase_orders:view')) {
             try {
                 setLoading(true);
@@ -37,15 +90,13 @@ const PurchaseOrderPage = () => {
                 setLoading(false);
             }
         }
-    };
+    }, [hasPermission, statusFilter]);
 
     useEffect(() => {
         fetchPOs();
-    }, [hasPermission, statusFilter]);
+    }, [fetchPOs]);
     
-    // --- NEW: Determine if the Actions column should be shown ---
     const showActionsColumn = useMemo(() => {
-        // Only show the column if the user has edit permissions and there's at least one pending PO in the current view.
         return hasPermission('purchase_orders:edit') && purchaseOrders.some(po => po.status === 'Pending');
     }, [purchaseOrders, hasPermission]);
 
@@ -117,6 +168,16 @@ const PurchaseOrderPage = () => {
         setIsModalOpen(true);
     };
 
+    const toggleRowExpansion = (poId) => {
+        const newExpandedRows = new Set(expandedRows);
+        if (newExpandedRows.has(poId)) {
+            newExpandedRows.delete(poId);
+        } else {
+            newExpandedRows.add(poId);
+        }
+        setExpandedRows(newExpandedRows);
+    };
+
     if (!hasPermission('purchase_orders:view')) {
         return (
             <div className="text-center p-8">
@@ -154,44 +215,59 @@ const PurchaseOrderPage = () => {
                                     <th className="p-3 text-sm font-semibold text-gray-600">Status</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Order Date</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 text-center">Details</th>
                                     {showActionsColumn && <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>}
                                 </tr>
                             </thead>
                             <tbody>
                                 {purchaseOrders.map(po => (
-                                    <tr key={po.po_id} className="border-b hover:bg-gray-50">
-                                        <td className="p-3 text-sm font-mono">{po.po_number}</td>
-                                        <td className="p-3 text-sm">{po.supplier_name}</td>
-                                        <td className="p-3 text-sm">
-                                            <span className={`px-2 py-1 text-xs font-semibold rounded-full 
-                                                ${po.status === 'Received' ? 'bg-green-100 text-green-800' : ''}
-                                                ${po.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' : ''}
-                                                ${po.status === 'Ordered' ? 'bg-blue-100 text-blue-800' : ''}
-                                                ${po.status === 'Partially Received' ? 'bg-purple-100 text-purple-800' : ''}
-                                                ${po.status === 'Cancelled' ? 'bg-gray-100 text-gray-800' : ''}
-                                            `}>
-                                                {po.status}
-                                            </span>
-                                        </td>
-                                        <td className="p-3 text-sm">{new Date(po.order_date).toLocaleDateString()}</td>
-                                        <td className="p-3 text-sm text-right font-mono">₱{parseFloat(po.total_amount).toFixed(2)}</td>
-                                        {showActionsColumn && (
-                                            <td className="p-3 text-sm text-right">
-                                                <div className="flex justify-end items-center space-x-4 h-full">
-                                                    {po.status === 'Pending' ? (
-                                                        <>
-                                                            <button onClick={() => handleUpdateStatus(po.po_id, 'Ordered')} title="Mark as Ordered" className="text-green-600 hover:text-green-800"><Icon path={ICONS.send} className="h-5 w-5" /></button>
-                                                            <button onClick={() => handleEdit(po)} title="Edit" className="text-blue-600 hover:text-blue-800"><Icon path={ICONS.edit} className="h-5 w-5" /></button>
-                                                            <button onClick={() => handleUpdateStatus(po.po_id, 'Cancelled')} title="Cancel PO" className="text-yellow-600 hover:text-yellow-800"><Icon path={ICONS.cancel} className="h-5 w-5" /></button>
-                                                            <button onClick={() => handleDelete(po.po_id)} title="Delete PO" className="text-red-600 hover:text-red-800"><Icon path={ICONS.trash} className="h-5 w-5" /></button>
-                                                        </>
-                                                    ) : (
-                                                        <span>-</span> 
-                                                    )}
-                                                </div>
+                                    <React.Fragment key={po.po_id}>
+                                        <tr className="border-b hover:bg-gray-50">
+                                            <td className="p-3 text-sm font-mono">{po.po_number}</td>
+                                            <td className="p-3 text-sm">{po.supplier_name}</td>
+                                            <td className="p-3 text-sm">
+                                                <span className={`px-2 py-1 text-xs font-semibold rounded-full 
+                                                    ${po.status === 'Received' ? 'bg-green-100 text-green-800' : ''}
+                                                    ${po.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' : ''}
+                                                    ${po.status === 'Ordered' ? 'bg-blue-100 text-blue-800' : ''}
+                                                    ${po.status === 'Partially Received' ? 'bg-purple-100 text-purple-800' : ''}
+                                                    ${po.status === 'Cancelled' ? 'bg-gray-100 text-gray-800' : ''}
+                                                `}>
+                                                    {po.status}
+                                                </span>
                                             </td>
+                                            <td className="p-3 text-sm">{new Date(po.order_date).toLocaleDateString()}</td>
+                                            <td className="p-3 text-sm text-right font-mono">₱{parseFloat(po.total_amount).toFixed(2)}</td>
+                                            <td className="p-3 text-sm text-center">
+                                                <button onClick={() => toggleRowExpansion(po.po_id)} className="text-gray-500 hover:text-gray-800">
+                                                    <Icon path={expandedRows.has(po.po_id) ? ICONS.chevronUp : ICONS.chevronDown} className="h-5 w-5" />
+                                                </button>
+                                            </td>
+                                            {showActionsColumn && (
+                                                <td className="p-3 text-sm text-right">
+                                                    <div className="flex justify-end items-center space-x-4 h-full">
+                                                        {po.status === 'Pending' ? (
+                                                            <>
+                                                                <button onClick={() => handleUpdateStatus(po.po_id, 'Ordered')} title="Mark as Ordered" className="text-green-600 hover:text-green-800"><Icon path={ICONS.send} className="h-5 w-5" /></button>
+                                                                <button onClick={() => handleEdit(po)} title="Edit" className="text-blue-600 hover:text-blue-800"><Icon path={ICONS.edit} className="h-5 w-5" /></button>
+                                                                <button onClick={() => handleUpdateStatus(po.po_id, 'Cancelled')} title="Cancel PO" className="text-yellow-600 hover:text-yellow-800"><Icon path={ICONS.cancel} className="h-5 w-5" /></button>
+                                                                <button onClick={() => handleDelete(po.po_id)} title="Delete PO" className="text-red-600 hover:text-red-800"><Icon path={ICONS.trash} className="h-5 w-5" /></button>
+                                                            </>
+                                                        ) : (
+                                                            <span>-</span> 
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            )}
+                                        </tr>
+                                        {expandedRows.has(po.po_id) && (
+                                            <tr key={`${po.po_id}-details`}>
+                                                <td colSpan={showActionsColumn ? 8 : 7}>
+                                                    <PurchaseOrderLines poId={po.po_id} />
+                                                </td>
+                                            </tr>
                                         )}
-                                    </tr>
+                                    </React.Fragment>
                                 ))}
                             </tbody>
                         </table>
