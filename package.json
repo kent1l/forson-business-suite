@@ -1,0 +1,10 @@
+{
+  "name": "forson-business-suite",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "lint": "npm --prefix packages/web run lint && npm --prefix packages/api run lint",
+    "lint:web": "npm --prefix packages/web run lint",
+    "lint:api": "npm --prefix packages/api run lint"
+  }
+}
