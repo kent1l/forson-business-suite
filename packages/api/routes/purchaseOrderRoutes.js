@@ -245,8 +245,8 @@ router.get('/purchase-orders/:id/pdf', protect, hasPermission('purchase_orders:v
     // Lazy import to avoid breaking entire router if module isn't installed yet
     const { generatePurchaseOrderPDF } = require('../helpers/pdf/purchaseOrderPdf');
         // 1. Fetch PO Header Data
-        const poHeaderQuery = `
-                SELECT po.*, s.supplier_name, s.address, s.contact_email, e.first_name || ' ' || e.last_name as employee_name
+    const poHeaderQuery = `
+        SELECT po.*, s.supplier_name, s.address, s.email AS contact_email, e.first_name || ' ' || e.last_name as employee_name
                 FROM purchase_order po
                 JOIN supplier s ON po.supplier_id = s.supplier_id
                 JOIN employee e ON po.employee_id = e.employee_id
