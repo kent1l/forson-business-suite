@@ -4,52 +4,161 @@
     <meta charset="utf-8" />
     <title>Purchase Order</title>
     <style>
-        body { font-family: Arial, sans-serif; font-size: 12px; color: #333; }
-        .container { padding: 20px; }
-    .company { margin-bottom: 12px; }
-    .company h2 { font-size: 18px; margin: 0 0 4px 0; }
-    .company p { margin: 2px 0; }
-        .header { text-align: center; margin-bottom: 20px; }
-        .header h1 { font-size: 24px; margin: 0; }
-        .header p { font-size: 14px; margin: 5px 0; }
-        .details { display: flex; justify-content: space-between; margin-bottom: 20px; }
-        .details .supplier, .details .po-info { width: 48%; }
-        .details h3 { border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-top: 0; }
-        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .text-right { text-align: right; }
-        .footer { margin-top: 30px; }
-    .footer .notes { width: 100%; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
+        :root {
+            --font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            --primary-color: #1a202c; /* A dark gray, almost black */
+            --secondary-color: #4a5568; /* A medium gray */
+            --border-color: #e2e8f0; /* A light gray for borders */
+            --background-color: #f7fafc; /* A very light gray for table headers */
+        }
+
+        body {
+            font-family: var(--font-family);
+            font-size: 12px;
+            color: var(--secondary-color);
+            background-color: #fff;
+            margin: 0;
+            padding: 0;
+        }
+
+        .container {
+            padding: 30px;
+            max-width: 800px;
+            margin: auto;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding-bottom: 20px;
+            border-bottom: 2px solid var(--border-color);
+            margin-bottom: 30px;
+        }
+        .company-details h1 {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--primary-color);
+            margin: 0 0 5px 0;
+        }
+        .company-details p {
+            margin: 0;
+            line-height: 1.5;
+        }
+        .po-title h1 {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--primary-color);
+            text-align: right;
+            margin: 0;
+        }
+        .po-title p {
+            text-align: right;
+            margin: 5px 0 0 0;
+        }
+
+        /* Details Section */
+        .details {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 30px;
+        }
+        .details-box {
+            width: 48%;
+        }
+        .details-box h3 {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--primary-color);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 8px;
+            margin: 0 0 10px 0;
+        }
+        .details-box p {
+            margin: 4px 0;
+        }
+
+        /* Table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: var(--background-color);
+            color: var(--primary-color);
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            border-bottom: 2px solid var(--border-color);
+        }
+        td {
+            border-bottom: 1px solid var(--border-color);
+        }
+        tbody tr:last-child td {
+            border-bottom: none;
+        }
+        .text-right {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 2px solid var(--border-color);
+        }
+        .footer h3 {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--primary-color);
+            margin: 0 0 10px 0;
+        }
+        .footer p {
+            font-style: italic;
+            line-height: 1.6;
+        }
     </style>
     
 </head>
 <body>
     <div class="container">
-        <div class="company">
-            <h2>{{company.name}}</h2>
-            <p>{{company.address}}</p>
-            <p>{{company.phone}} {{company.email}}</p>
-            <p>{{company.website}}</p>
-        </div>
-        <div class="header">
-            <h1>Purchase Order</h1>
-            <p>PO Number: {{po.po_number}}</p>
-        </div>
-        <div class="details">
-            <div class="supplier">
+        <header class="header">
+            <div class="company-details">
+                <h1>{{company.name}}</h1>
+                <p>{{company.address}}</p>
+                <p>{{company.phone}}</p>
+                <p>{{company.email}} | {{company.website}}</p>
+            </div>
+            <div class="po-title">
+                <h1>Purchase Order</h1>
+                <p>#{{po.po_number}}</p>
+            </div>
+        </header>
+
+        <section class="details">
+            <div class="details-box">
                 <h3>Supplier</h3>
                 <p><strong>{{po.supplier_name}}</strong></p>
                 <p>{{po.address}}</p>
                 <p>{{po.contact_email}}</p>
             </div>
-            <div class="po-info">
+            <div class="details-box" style="text-align: right;">
                 <h3>Details</h3>
                 <p><strong>Order Date:</strong> {{po.order_date}}</p>
                 <p><strong>Expected Date:</strong> {{po.expected_date}}</p>
                 <p><strong>Prepared By:</strong> {{po.employee_name}}</p>
             </div>
-        </div>
+        </section>
+
         <table>
             <thead>
                 <tr>
@@ -62,12 +171,11 @@
                 {{lines}}
             </tbody>
         </table>
-        <div class="footer">
-            <div class="notes">
-                <!-- Notes will be replaced by template engine -->
+
+        <footer class="footer">
+            <!-- Notes will be replaced by template engine -->
             {{notes}}
-            </div>
-        </div>
+        </footer>
     </div>
 </body>
 </html>
