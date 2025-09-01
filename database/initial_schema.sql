@@ -471,7 +471,7 @@ DELETE FROM public.role_permission;
 -- Seed role_permission using permission_key lookups to avoid relying on numeric IDs
 INSERT INTO public.role_permission (permission_level_id, permission_id)
 -- Admin (10): all permissions
-SELECT 10, p.permission_id FROM public.permission p WHERE p.permission_key IN (
+SELECT (SELECT permission_level_id FROM public.permission_level WHERE level_name = 'Admin'), p.permission_id FROM public.permission p WHERE p.permission_key IN (
     'dashboard:view','pos:use','invoicing:create','ar:view','ar:receive_payment',
     'inventory:view','inventory:adjust','goods_receipt:create','purchase_orders:view','purchase_orders:edit',
     'parts:view','parts:create','parts:edit','parts:delete','suppliers:view','suppliers:edit','customers:view','customers:edit',
@@ -480,39 +480,39 @@ SELECT 10, p.permission_id FROM public.permission p WHERE p.permission_key IN (
 )
 UNION ALL
 -- Inventory Clerk (1)
-SELECT 1, p.permission_id FROM public.permission p WHERE p.permission_key IN (
+SELECT (SELECT permission_level_id FROM public.permission_level WHERE level_name = 'Inventory Clerk'), p.permission_id FROM public.permission p WHERE p.permission_key IN (
     'inventory:view','inventory:adjust','parts:view','parts:create','parts:edit','parts:delete',
     'suppliers:view','suppliers:edit','customers:edit','applications:view','applications:edit'
 )
 UNION ALL
 -- Parts Man (2)
-SELECT 2, p.permission_id FROM public.permission p WHERE p.permission_key IN (
+SELECT (SELECT permission_level_id FROM public.permission_level WHERE level_name = 'Parts Man'), p.permission_id FROM public.permission p WHERE p.permission_key IN (
     'pos:use','inventory:view'
 )
 UNION ALL
 -- Purchaser (3)
-SELECT 3, p.permission_id FROM public.permission p WHERE p.permission_key IN (
+SELECT (SELECT permission_level_id FROM public.permission_level WHERE level_name = 'Purchaser'), p.permission_id FROM public.permission p WHERE p.permission_key IN (
     'dashboard:view','pos:use','ar:view','ar:receive_payment','inventory:view','inventory:adjust','goods_receipt:create',
     'purchase_orders:view','purchase_orders:edit','parts:view','parts:create','parts:edit','parts:delete','suppliers:view','suppliers:edit',
     'customers:view','customers:edit','applications:view','applications:edit','reports:view'
 )
 UNION ALL
 -- Manager (7)
-SELECT 7, p.permission_id FROM public.permission p WHERE p.permission_key IN (
+SELECT (SELECT permission_level_id FROM public.permission_level WHERE level_name = 'Manager'), p.permission_id FROM public.permission p WHERE p.permission_key IN (
     'dashboard:view','pos:use','invoicing:create','ar:view','ar:receive_payment','inventory:view','inventory:adjust','goods_receipt:create',
     'purchase_orders:view','purchase_orders:edit','parts:view','parts:create','parts:edit','parts:delete','suppliers:view','suppliers:edit',
     'customers:view','customers:edit','applications:view','applications:edit','employees:view','employees:edit','reports:view','data-utils:import','backups:view'
 )
 UNION ALL
 -- Secretary (5)
-SELECT 5, p.permission_id FROM public.permission p WHERE p.permission_key IN (
+SELECT (SELECT permission_level_id FROM public.permission_level WHERE level_name = 'Secretary'), p.permission_id FROM public.permission p WHERE p.permission_key IN (
     'dashboard:view','pos:use','invoicing:create','ar:view','ar:receive_payment','inventory:view','inventory:adjust','goods_receipt:create',
     'purchase_orders:view','purchase_orders:edit','parts:view','parts:create','parts:edit','parts:delete','suppliers:view','suppliers:edit',
     'customers:view','customers:edit','applications:view','applications:edit','employees:view','employees:edit','reports:view','data-utils:export','data-utils:import','backups:create'
 )
 UNION ALL
 -- Cashier (4)
-SELECT 4, p.permission_id FROM public.permission p WHERE p.permission_key IN (
+SELECT (SELECT permission_level_id FROM public.permission_level WHERE level_name = 'Cashier'), p.permission_id FROM public.permission p WHERE p.permission_key IN (
     'dashboard:view','pos:use','invoicing:create','ar:view','ar:receive_payment','inventory:view','inventory:adjust','goods_receipt:create',
     'purchase_orders:view','purchase_orders:edit','parts:view','parts:create','parts:edit','parts:delete','suppliers:view','suppliers:edit',
     'customers:view','customers:edit','applications:view','applications:edit','employees:view','employees:edit','reports:view','data-utils:export','data-utils:import'
