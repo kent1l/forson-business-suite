@@ -6,21 +6,18 @@ const router = express.Router();
 router.get('/applications', async (req, res) => {
     console.log('[DEBUG] Handling GET /applications request');
     try {
-        // First verify the view exists
-        const viewCheck = await db.query(`
+        // Ensure the view has the expected columns (including *_id). If not, drop and recreate.
+        const colCheck = await db.query(`
             SELECT EXISTS (
-                SELECT 1 
-                FROM information_schema.views 
-                WHERE table_schema = 'public' 
-                AND table_name = 'application_view'
-            );
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_schema = 'public' AND table_name = 'application_view' AND column_name = 'make_id'
+            ) AS has_make_id;
         `);
-        
-        if (!viewCheck.rows[0].exists) {
-            console.error('[DEBUG] application_view does not exist');
-            // Create the view if it doesn't exist
+        if (!colCheck.rows[0]?.has_make_id) {
+            console.log('[DEBUG] application_view missing *_id columns; recreating view');
+            await db.query('DROP VIEW IF EXISTS application_view');
             await db.query(`
-                CREATE OR REPLACE VIEW application_view AS
+                CREATE VIEW application_view AS
                 SELECT 
                     a.application_id,
                     a.make_id,

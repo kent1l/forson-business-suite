@@ -100,7 +100,9 @@ const ApplicationForm = ({ application, onSave, onCancel }) => {
 
     // Combobox handlers
     const handleMakeSelect = async (make) => {
-        if (make && make.make_id) {
+        if (!make) return;
+        // Existing make selected
+        if (make.make_id) {
             setSelectedMake(make);
             setFormData(prev => ({
                 ...prev,
@@ -114,6 +116,22 @@ const ApplicationForm = ({ application, onSave, onCancel }) => {
             setModels([]);
             setEngines([]);
             await fetchModels(make.make_id);
+            return;
+        }
+        // "Create new" make option (no id) or free-typed then selected
+        if (make.make_name) {
+            setSelectedMake({ make_name: make.make_name });
+            setFormData(prev => ({
+                ...prev,
+                make_id: '',
+                make_name: make.make_name,
+                model_id: '',
+                model_name: '',
+                engine_id: '',
+                engine_name: ''
+            }));
+            setModels([]);
+            setEngines([]);
         }
     };
 
@@ -134,7 +152,9 @@ const ApplicationForm = ({ application, onSave, onCancel }) => {
     };
 
     const handleModelSelect = async (model) => {
-        if (model && model.model_id) {
+        if (!model) return;
+        // Existing model selected
+        if (model.model_id) {
             setSelectedModel(model);
             setFormData(prev => ({
                 ...prev,
@@ -145,6 +165,19 @@ const ApplicationForm = ({ application, onSave, onCancel }) => {
             }));
             setEngines([]);
             await fetchEngines(model.model_id);
+            return;
+        }
+        // "Create new" model option (no id)
+        if (model.model_name) {
+            setSelectedModel({ model_name: model.model_name });
+            setFormData(prev => ({
+                ...prev,
+                model_id: '',
+                model_name: model.model_name,
+                engine_id: '',
+                engine_name: ''
+            }));
+            setEngines([]);
         }
     };
 
@@ -162,11 +195,21 @@ const ApplicationForm = ({ application, onSave, onCancel }) => {
     };
 
     const handleEngineSelect = (engine) => {
-        if (engine && engine.engine_id) {
+        if (!engine) return;
+        if (engine.engine_id) {
             setSelectedEngine(engine);
             setFormData(prev => ({
                 ...prev,
                 engine_id: String(engine.engine_id),
+                engine_name: engine.engine_name
+            }));
+            return;
+        }
+        if (engine.engine_name) {
+            setSelectedEngine({ engine_name: engine.engine_name });
+            setFormData(prev => ({
+                ...prev,
+                engine_id: '',
                 engine_name: engine.engine_name
             }));
         }
@@ -245,9 +288,9 @@ const ApplicationForm = ({ application, onSave, onCancel }) => {
                             onBlur={() => setTimeout(() => setShowModelOptions(false), 150)}
                             placeholder="Type or select model"
                             required
-                            disabled={!formData.make_id}
+                            disabled={!(formData.make_id || (formData.make_name && formData.make_name.trim() !== ''))}
                         />
-                        {(showModelOptions || modelQuery !== '') && formData.make_id && (
+                        {(showModelOptions || modelQuery !== '') && (formData.make_id || (formData.make_name && formData.make_name.trim() !== '')) && (
                             <Combobox.Options className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-md max-h-48 overflow-auto">
                                 {models
                                     .filter(m => m.model_name.toLowerCase().includes(modelQuery.toLowerCase()))
@@ -277,9 +320,9 @@ const ApplicationForm = ({ application, onSave, onCancel }) => {
                             onFocus={() => setShowEngineOptions(true)}
                             onBlur={() => setTimeout(() => setShowEngineOptions(false), 150)}
                             placeholder="Type or select engine"
-                            disabled={!formData.model_id}
+                            disabled={!(formData.model_id || (formData.model_name && formData.model_name.trim() !== ''))}
                         />
-                        {(showEngineOptions || engineQuery !== '') && formData.model_id && (
+                        {(showEngineOptions || engineQuery !== '') && (formData.model_id || (formData.model_name && formData.model_name.trim() !== '')) && (
                             <Combobox.Options className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-md max-h-48 overflow-auto">
                                 {engines
                                     .filter(en => en.engine_name.toLowerCase().includes(engineQuery.toLowerCase()))
