@@ -38,27 +38,40 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          # --- FIX: Point cache to the directories with package-lock.json ---
+          cache-dependency-path: |
+            packages/api/package-lock.json
+            packages/web/package-lock.json
           
-      - name: Install dependencies
-        run: |
-          cd packages/api && npm ci
-          cd ../web && npm ci
+      - name: Install API dependencies
+        run: npm ci
+        working-directory: packages/api
+
+      - name: Install Web dependencies
+        run: npm ci
+        working-directory: packages/web
           
-      - name: Run ESLint
-        run: |
-          cd packages/api && npm run lint
-          cd ../web && npm run lint
+      - name: Run API ESLint
+        run: npm run lint
+        working-directory: packages/api
+
+      - name: Run Web ESLint
+        run: npm run lint
+        working-directory: packages/web
           
-      - name: Run tests
+      - name: Run API tests
         env:
           NODE_ENV: test
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
           POSTGRES_DB: test
           POSTGRES_HOST: localhost
-        run: |
-          cd packages/api && npm test
-          cd ../web && npm test
+        run: npm test
+        working-directory: packages/api
+        
+      - name: Run Web tests
+        run: npm test
+        working-directory: packages/web
           
       - name: Upload test coverage
         uses: actions/upload-artifact@v4
