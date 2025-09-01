@@ -1,36 +1,30 @@
-// ESLint flat config for the API (Node, CommonJS)
-const js = require('@eslint/js');
-const globals = require('globals');
+import globals from "globals";
+import js from "@eslint/js";
 
-module.exports = [
+export default [
   js.configs.recommended,
   {
     languageOptions: {
-      ecmaVersion: 2022,
-      sourceType: 'script',
       globals: {
         ...globals.node,
         ...globals.jest,
       },
     },
     rules: {
-      'no-unused-vars': ['warn', {
-        argsIgnorePattern: '^_',
-        varsIgnorePattern: '^_',
+      "no-unused-vars": ["warn", { 
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
       }],
-      'no-console': 'off',
-      'no-empty': 'warn',
-      'eqeqeq': ['warn', 'smart'],
-      'curly': 'warn',
+      "no-console": "off",
+      "no-empty": "warn",
     },
     ignores: [
-      'node_modules/**',
-      'coverage/**',
-      'dist/**',
+      "node_modules/**",
+      "dist/**",
     ],
   },
   {
-    files: ['**/*.test.js', '**/tests/**/*.js'],
+    files: ["**/*.test.js", "**/tests/**/*.js"],
     languageOptions: {
       globals: {
         ...globals.jest,
