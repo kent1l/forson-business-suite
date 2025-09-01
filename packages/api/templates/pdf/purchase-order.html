@@ -6,6 +6,9 @@
     <style>
         body { font-family: Arial, sans-serif; font-size: 12px; color: #333; }
         .container { padding: 20px; }
+    .company { margin-bottom: 12px; }
+    .company h2 { font-size: 18px; margin: 0 0 4px 0; }
+    .company p { margin: 2px 0; }
         .header { text-align: center; margin-bottom: 20px; }
         .header h1 { font-size: 24px; margin: 0; }
         .header p { font-size: 14px; margin: 5px 0; }
@@ -17,14 +20,18 @@
         th { background-color: #f2f2f2; }
         .text-right { text-align: right; }
         .footer { margin-top: 30px; }
-        .footer .notes { width: 60%; }
-        .footer .totals { width: 35%; float: right; text-align: right; }
-        .footer .totals p { margin: 5px 0; }
+    .footer .notes { width: 100%; }
     </style>
     
 </head>
 <body>
     <div class="container">
+        <div class="company">
+            <h2>{{company.name}}</h2>
+            <p>{{company.address}}</p>
+            <p>{{company.phone}} {{company.email}}</p>
+            <p>{{company.website}}</p>
+        </div>
         <div class="header">
             <h1>Purchase Order</h1>
             <p>PO Number: {{po.po_number}}</p>
@@ -46,34 +53,19 @@
         <table>
             <thead>
                 <tr>
-                    <th>SKU</th>
-                    <th>Description</th>
+                    <th>Item</th>
                     <th class="text-right">Quantity</th>
-                    <th class="text-right">Unit Cost</th>
-                    <th class="text-right">Subtotal</th>
                 </tr>
             </thead>
             <tbody>
-                {{#each lines}}
-                <tr>
-                    <td>{{this.internal_sku}}</td>
-                    <td>{{this.display_name}}</td>
-                    <td class="text-right">{{this.quantity}}</td>
-                    <td class="text-right">₱{{this.cost_price_formatted}}</td>
-                    <td class="text-right">₱{{this.subtotal_formatted}}</td>
-                </tr>
-                {{/each}}
+                <!-- Lines will be replaced by template engine -->
+                {{lines}}
             </tbody>
         </table>
         <div class="footer">
-            <div class="totals">
-                <p><strong>Total Amount: ₱{{totalAmount}}</strong></p>
-            </div>
             <div class="notes">
-                {{#if po.notes}}
-                    <h3>Notes</h3>
-                    <p>{{po.notes}}</p>
-                {{/if}}
+                <!-- Notes will be replaced by template engine -->
+            {{notes}}
             </div>
         </div>
     </div>

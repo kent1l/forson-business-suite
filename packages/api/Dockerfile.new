@@ -7,8 +7,8 @@ WORKDIR /usr/src/app
 # Copy package files for better cache utilization
 COPY package*.json ./
 
-# Install all dependencies (use install to allow lock update during dev)
-RUN npm install --no-audit --no-fund
+# Install all dependencies
+RUN npm ci
 
 # Copy source code
 COPY . .
@@ -16,25 +16,17 @@ COPY . .
 # Production stage
 FROM node:20-alpine
 
-# Install PostgreSQL client, Chromium dependencies, and security updates
+# Install PostgreSQL client, PhantomJS dependencies, and security updates
 RUN apk update && \
     apk add --no-cache postgresql-client \
-    chromium \
-    nss \
+    # PhantomJS dependencies
+    fontconfig \
     freetype \
     freetype-dev \
-    harfbuzz \
-    ca-certificates \
     ttf-freefont \
-    font-noto \
-    font-noto-cjk \
-    nodejs \
+    bzip2 \
     && \
     apk upgrade --no-cache
-
-# Set environment variable for Puppeteer to use system Chromium
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 # Create non-root user
 RUN addgroup -S appgroup && \
@@ -48,12 +40,6 @@ COPY --from=builder /usr/src/app/node_modules ./node_modules
 COPY --from=builder /usr/src/app .
 
 # Set user
-USER root
-
-# Create node_modules directory with proper permissions
-RUN mkdir -p /usr/src/app/node_modules && \
-    chown -R appuser:appgroup /usr/src/app/node_modules
-
 USER appuser
 
 # Health check (uses setup status endpoint)

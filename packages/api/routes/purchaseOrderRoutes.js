@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
+const { constructDisplayName } = require('../helpers/displayNameHelper');
 const fs = require('fs');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const router = express.Router();
@@ -242,8 +243,17 @@ router.delete('/purchase-orders/:id', protect, hasPermission('purchase_orders:ed
 router.get('/purchase-orders/:id/pdf', protect, hasPermission('purchase_orders:view'), async (req, res) => {
     const { id } = req.params;
     try {
-    // Lazy import to avoid breaking entire router if module isn't installed yet
-    const { generatePurchaseOrderPDF } = require('../helpers/pdf/purchaseOrderPdf');
+        // Lazy import to avoid breaking entire router if module isn't installed yet
+        let generatePurchaseOrderPDF;
+        try {
+            ({ generatePurchaseOrderPDF } = require('../helpers/pdf/purchaseOrderPdf'));
+        } catch (e) {
+            if (e && (e.code === 'MODULE_NOT_FOUND' || `${e}`.includes('pdf-creator-node'))) {
+                return res.status(501).json({ message: 'PDF generation is not available on this server. Please install dependencies and restart backend.' });
+            }
+            throw e;
+        }
+        console.log(`[PO-PDF][route] Start generating PDF for PO ID=${id}`);
         // 1. Fetch PO Header Data
     const poHeaderQuery = `
         SELECT po.*, s.supplier_name, s.address, s.email AS contact_email, e.first_name || ' ' || e.last_name as employee_name
@@ -252,22 +262,58 @@ router.get('/purchase-orders/:id/pdf', protect, hasPermission('purchase_orders:v
                 JOIN employee e ON po.employee_id = e.employee_id
                 WHERE po.po_id = $1;`;
         const headerRes = await db.query(poHeaderQuery, [id]);
-        if (headerRes.rows.length === 0) return res.status(404).json({ message: 'Purchase Order not found.' });
+        if (headerRes.rows.length === 0) {
+            console.warn(`[PO-PDF][route] PO not found for id=${id}`);
+            return res.status(404).json({ message: 'Purchase Order not found.' });
+        }
         
         // 2. Fetch PO Lines Data
         const poLinesQuery = `
-                SELECT p.internal_sku, g.group_name || ' (' || b.brand_name || ') | ' || p.detail as display_name, pol.quantity, pol.cost_price
-                FROM purchase_order_line pol
-                JOIN part p ON pol.part_id = p.part_id
-                LEFT JOIN brand b ON p.brand_id = b.brand_id
-                LEFT JOIN "group" g ON p.group_id = g.group_id
-                WHERE pol.po_id = $1 ORDER BY pol.po_line_id;`;
+            SELECT 
+                pol.quantity,
+                p.part_id,
+                p.detail,
+                b.brand_name,
+                g.group_name,
+                (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order)
+                 FROM part_number pn WHERE pn.part_id = p.part_id) AS part_numbers
+            FROM purchase_order_line pol
+            JOIN part p ON pol.part_id = p.part_id
+            LEFT JOIN brand b ON p.brand_id = b.brand_id
+            LEFT JOIN "group" g ON p.group_id = g.group_id
+            WHERE pol.po_id = $1
+            ORDER BY pol.po_line_id;`;
         const linesRes = await db.query(poLinesQuery, [id]);
+        const linesForPdf = linesRes.rows.map((row) => ({
+            ...row,
+            display_name: constructDisplayName(row)
+        }));
 
-        // 3. Generate PDF using the helper
-        const pdfPath = await generatePurchaseOrderPDF(headerRes.rows[0], linesRes.rows);
+        // 3. Fetch company settings
+        const settingsRes = await db.query('SELECT setting_key, setting_value FROM settings WHERE setting_key IN ($1,$2,$3,$4,$5)', [
+            'COMPANY_NAME', 'COMPANY_ADDRESS', 'COMPANY_PHONE', 'COMPANY_EMAIL', 'COMPANY_WEBSITE'
+        ]);
+        const settings = settingsRes.rows.reduce((acc, { setting_key, setting_value }) => {
+            acc[setting_key] = setting_value || '';
+            return acc;
+        }, {});
+        const company = {
+            name: settings.COMPANY_NAME || '',
+            address: settings.COMPANY_ADDRESS || '',
+            phone: settings.COMPANY_PHONE || '',
+            email: settings.COMPANY_EMAIL || '',
+            website: settings.COMPANY_WEBSITE || ''
+        };
 
-        // 4. Send the file and schedule it for deletion
+        // 4. Generate PDF using the helper
+        console.log(`[PO-PDF][route] Lines fetched: ${linesForPdf.length}`);
+        if (linesForPdf[0]) {
+            console.log(`[PO-PDF][route] Sample item display_name: ${linesForPdf[0].display_name}`);
+        }
+        const pdfPath = await generatePurchaseOrderPDF(headerRes.rows[0], linesForPdf, { company });
+        console.log(`[PO-PDF][route] PDF created at ${pdfPath}`);
+
+    // 5. Send the file and schedule it for deletion
         res.sendFile(pdfPath, (err) => {
             if (err) console.error('Error sending PDF file:', err);
             fs.unlink(pdfPath, (unlinkErr) => {
@@ -275,8 +321,8 @@ router.get('/purchase-orders/:id/pdf', protect, hasPermission('purchase_orders:v
             });
         });
     } catch (err) {
-        console.error('PDF route error:', err.message);
-        res.status(500).send('Server Error');
+        console.error('[PO-PDF][route] PDF route error:', err && err.stack ? err.stack : err);
+        res.status(500).json({ message: 'Server Error generating PDF', error: String(err && err.message ? err.message : err) });
     }
 });
 

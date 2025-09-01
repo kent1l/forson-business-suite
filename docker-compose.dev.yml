@@ -1,29 +1,26 @@
 # In docker-compose.dev.yml
 
+name: forson-business-suite
 services:
   backend:
+    extends:
+      file: docker-compose.yml
+      service: backend
     container_name: forson_backend_dev
-    user: root
     build:
       context: ./packages/api
       dockerfile: Dockerfile
     command: sh -c "npm install --no-audit --no-fund && npm start"
     volumes:
       - ./packages/api:/usr/src/app
-      - /usr/src/app/node_modules
+      - backend_node_modules:/usr/src/app/node_modules
       - ./backups:/backups
-    # 'env_file' is no longer needed here; Docker Compose automatically uses the root .env
     environment:
       - NODE_ENV=development
       - CHOKIDAR_USEPOLLING=true
       - CHOKIDAR_INTERVAL=100
-      - NPM_CONFIG_LOGLEVEL=error
-    ports:
-      - "3001:3001"
-    depends_on:
-      - db
-      - meilisearch
-    restart: unless-stopped
+    env_file:
+      - .env
 
   frontend:
     container_name: forson_frontend_dev
@@ -45,3 +42,10 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+networks:
+  forson_business_suite:
+    external: true
+
+volumes:
+  backend_node_modules:
