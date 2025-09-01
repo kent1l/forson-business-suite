@@ -1,7 +1,6 @@
 const express = require('express');
 const db = require('../db');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
-const { generatePurchaseOrderPDF } = require('../helpers/pdf/purchaseOrderPdf');
 const fs = require('fs');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const router = express.Router();
@@ -243,6 +242,8 @@ router.delete('/purchase-orders/:id', protect, hasPermission('purchase_orders:ed
 router.get('/purchase-orders/:id/pdf', protect, hasPermission('purchase_orders:view'), async (req, res) => {
     const { id } = req.params;
     try {
+    // Lazy import to avoid breaking entire router if module isn't installed yet
+    const { generatePurchaseOrderPDF } = require('../helpers/pdf/purchaseOrderPdf');
         // 1. Fetch PO Header Data
         const poHeaderQuery = `
                 SELECT po.*, s.supplier_name, s.address, s.contact_email, e.first_name || ' ' || e.last_name as employee_name
