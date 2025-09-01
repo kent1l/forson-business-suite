@@ -124,11 +124,15 @@ BEGIN
     END IF;
 END$$;
 
--- Convenience view to expose application as strings for compatibility with existing queries
-CREATE OR REPLACE VIEW public.application_view AS
+-- Convenience view to expose application IDs and names
+DROP VIEW IF EXISTS public.application_view;
+CREATE VIEW public.application_view AS
 SELECT a.application_id,
+       a.make_id,
        vmk.make_name AS make,
+       a.model_id,
        vmd.model_name AS model,
+       a.engine_id,
        veng.engine_name AS engine
 FROM public.application a
 LEFT JOIN public.vehicle_make vmk ON a.make_id = vmk.make_id
@@ -464,17 +468,65 @@ ON CONFLICT (permission_key) DO UPDATE SET description = EXCLUDED.description, c
 -- NEW: Delete all existing role permissions before re-assigning.
 DELETE FROM public.role_permission;
 
--- Seed explicit default role_permission mappings (permission_level_id, permission_id)
-INSERT INTO public.role_permission (permission_level_id, permission_id) VALUES
-    (10,1),(10,2),(10,3),(10,4),(10,5),(10,6),(10,7),(10,8),(10,9),(10,10),(10,11),(10,12),(10,13),(10,14),(10,15),(10,16),(10,17),(10,18),(10,19),(10,20),(10,21),(10,22),(10,23),(10,24),(10,25),(10,26),(10,27),(10,28),(10,29),(10,30),(10,31),
-    (1,6),(1,7),(1,11),(1,12),(1,13),(1,14),(1,15),(1,16),(1,18),(1,19),(1,20),
-    (2,2),(2,6),
-    (3,1),(3,2),(3,4),(3,5),(3,6),(3,7),(3,8),(3,9),(3,10),(3,11),(3,12),(3,13),(3,14),(3,15),(3,16),(3,17),(3,18),(3,19),(3,20),(3,25),
-    (7,1),(7,2),(7,3),(7,4),(7,5),(7,6),(7,7),(7,8),(7,9),(7,10),(7,11),(7,12),(7,13),(7,14),(7,15),(7,16),(7,17),(7,18),(7,19),(7,20),(7,21),(7,22),(7,25),(7,27),(7,28),
-    (5,1),(5,2),(5,3),(5,4),(5,5),(5,6),(5,7),(5,8),(5,9),(5,10),(5,11),(5,12),(5,13),(5,14),(5,15),(5,16),(5,17),(5,18),(5,19),(5,20),(5,21),(5,22),(5,25),(5,26),(5,27),(5,29),
-    (4,1),(4,2),(4,3),(4,4),(4,5),(4,6),(4,7),(4,8),(4,9),(4,10),(4,11),(4,12),(4,13),(4,14),(4,15),(4,16),(4,17),(4,18),(4,19),(4,20),(4,21),(4,22),(4,25),(4,26),(4,27)
-ON CONFLICT DO NOTHING;
+-- Seed role_permission using permission_key lookups to avoid relying on numeric IDs
+INSERT INTO public.role_permission (permission_level_id, permission_id)
+-- Admin (10): all permissions
+SELECT 10, p.permission_id FROM public.permission p WHERE p.permission_key IN (
+    'dashboard:view','pos:use','invoicing:create','ar:view','ar:receive_payment',
+    'inventory:view','inventory:adjust','goods_receipt:create','purchase_orders:view','purchase_orders:edit',
+    'parts:view','parts:create','parts:edit','parts:delete','suppliers:view','suppliers:edit','customers:view','customers:edit',
+    'applications:view','applications:edit','employees:view','employees:edit','settings:view','settings:edit','reports:view',
+    'data-utils:export','data-utils:import','backups:view','backups:create','backups:restore','backups:delete'
+)
+UNION ALL
+-- Inventory Clerk (1)
+SELECT 1, p.permission_id FROM public.permission p WHERE p.permission_key IN (
+    'inventory:view','inventory:adjust','parts:view','parts:create','parts:edit','parts:delete',
+    'suppliers:view','suppliers:edit','customers:edit','applications:view','applications:edit'
+)
+UNION ALL
+-- Parts Man (2)
+SELECT 2, p.permission_id FROM public.permission p WHERE p.permission_key IN (
+    'pos:use','inventory:view'
+)
+UNION ALL
+-- Purchaser (3)
+SELECT 3, p.permission_id FROM public.permission p WHERE p.permission_key IN (
+    'dashboard:view','pos:use','ar:view','ar:receive_payment','inventory:view','inventory:adjust','goods_receipt:create',
+    'purchase_orders:view','purchase_orders:edit','parts:view','parts:create','parts:edit','parts:delete','suppliers:view','suppliers:edit',
+    'customers:view','customers:edit','applications:view','applications:edit','reports:view'
+)
+UNION ALL
+-- Manager (7)
+SELECT 7, p.permission_id FROM public.permission p WHERE p.permission_key IN (
+    'dashboard:view','pos:use','invoicing:create','ar:view','ar:receive_payment','inventory:view','inventory:adjust','goods_receipt:create',
+    'purchase_orders:view','purchase_orders:edit','parts:view','parts:create','parts:edit','parts:delete','suppliers:view','suppliers:edit',
+    'customers:view','customers:edit','applications:view','applications:edit','employees:view','employees:edit','reports:view','data-utils:import','backups:view'
+)
+UNION ALL
+-- Secretary (5)
+SELECT 5, p.permission_id FROM public.permission p WHERE p.permission_key IN (
+    'dashboard:view','pos:use','invoicing:create','ar:view','ar:receive_payment','inventory:view','inventory:adjust','goods_receipt:create',
+    'purchase_orders:view','purchase_orders:edit','parts:view','parts:create','parts:edit','parts:delete','suppliers:view','suppliers:edit',
+    'customers:view','customers:edit','applications:view','applications:edit','employees:view','employees:edit','reports:view','data-utils:export','data-utils:import','backups:create'
+)
+UNION ALL
+-- Cashier (4)
+SELECT 4, p.permission_id FROM public.permission p WHERE p.permission_key IN (
+    'dashboard:view','pos:use','invoicing:create','ar:view','ar:receive_payment','inventory:view','inventory:adjust','goods_receipt:create',
+    'purchase_orders:view','purchase_orders:edit','parts:view','parts:create','parts:edit','parts:delete','suppliers:view','suppliers:edit',
+    'customers:view','customers:edit','applications:view','applications:edit','employees:view','employees:edit','reports:view','data-utils:export','data-utils:import'
+);
 
 -- ADD CHECK CONSTRAINT TO INVOICE STATUS
-ALTER TABLE public.invoice
-ADD CONSTRAINT check_invoice_status CHECK (status IN ('Unpaid', 'Paid', 'Partially Paid', 'Partially Refunded', 'Fully Refunded', 'Cancelled'));
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'check_invoice_status' 
+          AND conrelid = 'public.invoice'::regclass
+    ) THEN
+        ALTER TABLE public.invoice
+        ADD CONSTRAINT check_invoice_status CHECK (status IN ('Unpaid', 'Paid', 'Partially Paid', 'Partially Refunded', 'Fully Refunded', 'Cancelled'));
+    END IF;
+END$$;
