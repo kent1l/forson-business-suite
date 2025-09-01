@@ -1,6 +1,8 @@
 const express = require('express');
 const db = require('../db');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
+const { generatePurchaseOrderPDF } = require('../helpers/pdf/purchaseOrderPdf');
+const fs = require('fs');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const router = express.Router();
 
@@ -233,6 +235,47 @@ router.delete('/purchase-orders/:id', protect, hasPermission('purchase_orders:ed
         res.status(500).send('Server Error');
     } finally {
         client.release();
+    }
+});
+
+
+// GET /api/purchase-orders/:id/pdf - Generate a PDF for a specific PO
+router.get('/purchase-orders/:id/pdf', protect, hasPermission('purchase_orders:view'), async (req, res) => {
+    const { id } = req.params;
+    try {
+        // 1. Fetch PO Header Data
+        const poHeaderQuery = `
+                SELECT po.*, s.supplier_name, s.address, s.contact_email, e.first_name || ' ' || e.last_name as employee_name
+                FROM purchase_order po
+                JOIN supplier s ON po.supplier_id = s.supplier_id
+                JOIN employee e ON po.employee_id = e.employee_id
+                WHERE po.po_id = $1;`;
+        const headerRes = await db.query(poHeaderQuery, [id]);
+        if (headerRes.rows.length === 0) return res.status(404).json({ message: 'Purchase Order not found.' });
+        
+        // 2. Fetch PO Lines Data
+        const poLinesQuery = `
+                SELECT p.internal_sku, g.group_name || ' (' || b.brand_name || ') | ' || p.detail as display_name, pol.quantity, pol.cost_price
+                FROM purchase_order_line pol
+                JOIN part p ON pol.part_id = p.part_id
+                LEFT JOIN brand b ON p.brand_id = b.brand_id
+                LEFT JOIN "group" g ON p.group_id = g.group_id
+                WHERE pol.po_id = $1 ORDER BY pol.po_line_id;`;
+        const linesRes = await db.query(poLinesQuery, [id]);
+
+        // 3. Generate PDF using the helper
+        const pdfPath = await generatePurchaseOrderPDF(headerRes.rows[0], linesRes.rows);
+
+        // 4. Send the file and schedule it for deletion
+        res.sendFile(pdfPath, (err) => {
+            if (err) console.error('Error sending PDF file:', err);
+            fs.unlink(pdfPath, (unlinkErr) => {
+                if (unlinkErr) console.error('Error deleting temp PDF file:', unlinkErr);
+            });
+        });
+    } catch (err) {
+        console.error('PDF route error:', err.message);
+        res.status(500).send('Server Error');
     }
 });
 

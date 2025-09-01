@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Purchase Order</title>
+    <style>
+        body { font-family: Arial, sans-serif; font-size: 12px; color: #333; }
+        .container { padding: 20px; }
+        .header { text-align: center; margin-bottom: 20px; }
+        .header h1 { font-size: 24px; margin: 0; }
+        .header p { font-size: 14px; margin: 5px 0; }
+        .details { display: flex; justify-content: space-between; margin-bottom: 20px; }
+        .details .supplier, .details .po-info { width: 48%; }
+        .details h3 { border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-top: 0; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .text-right { text-align: right; }
+        .footer { margin-top: 30px; }
+        .footer .notes { width: 60%; }
+        .footer .totals { width: 35%; float: right; text-align: right; }
+        .footer .totals p { margin: 5px 0; }
+    </style>
+    
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Purchase Order</h1>
+            <p>PO Number: {{po.po_number}}</p>
+        </div>
+        <div class="details">
+            <div class="supplier">
+                <h3>Supplier</h3>
+                <p><strong>{{po.supplier_name}}</strong></p>
+                <p>{{po.address}}</p>
+                <p>{{po.contact_email}}</p>
+            </div>
+            <div class="po-info">
+                <h3>Details</h3>
+                <p><strong>Order Date:</strong> {{po.order_date}}</p>
+                <p><strong>Expected Date:</strong> {{po.expected_date}}</p>
+                <p><strong>Prepared By:</strong> {{po.employee_name}}</p>
+            </div>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>SKU</th>
+                    <th>Description</th>
+                    <th class="text-right">Quantity</th>
+                    <th class="text-right">Unit Cost</th>
+                    <th class="text-right">Subtotal</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{#each lines}}
+                <tr>
+                    <td>{{this.internal_sku}}</td>
+                    <td>{{this.display_name}}</td>
+                    <td class="text-right">{{this.quantity}}</td>
+                    <td class="text-right">₱{{this.cost_price_formatted}}</td>
+                    <td class="text-right">₱{{this.subtotal_formatted}}</td>
+                </tr>
+                {{/each}}
+            </tbody>
+        </table>
+        <div class="footer">
+            <div class="totals">
+                <p><strong>Total Amount: ₱{{totalAmount}}</strong></p>
+            </div>
+            <div class="notes">
+                {{#if po.notes}}
+                    <h3>Notes</h3>
+                    <p>{{po.notes}}</p>
+                {{/if}}
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import Modal from '../components/ui/Modal';
 import PurchaseOrderForm from '../components/forms/PurchaseOrderForm';
 import FilterBar from '../components/ui/FilterBar';
+import { downloadFile } from '../utils/downloadFile';
 
 const PurchaseOrderLines = ({ poId }) => {
     const [lines, setLines] = useState([]);
@@ -17,7 +18,7 @@ const PurchaseOrderLines = ({ poId }) => {
             try {
                 const response = await api.get(`/purchase-orders/${poId}/lines`);
                 setLines(response.data);
-            } catch (error) {
+            } catch {
                 toast.error("Could not fetch PO lines.");
             } finally {
                 setLoading(false);
@@ -84,7 +85,7 @@ const PurchaseOrderPage = () => {
                 setLoading(true);
                 const response = await api.get('/purchase-orders', { params: { status: statusFilter } });
                 setPurchaseOrders(response.data);
-            } catch (err) {
+            } catch {
                 toast.error('Failed to fetch purchase orders.');
             } finally {
                 setLoading(false);
@@ -178,6 +179,11 @@ const PurchaseOrderPage = () => {
         setExpandedRows(newExpandedRows);
     };
 
+    // --- NEW: Download handler using the utility ---
+    const handleDownloadPDF = (po) => {
+        downloadFile(`/purchase-orders/${po.po_id}/pdf`, `PO-${po.po_number}.pdf`);
+    };
+
     if (!hasPermission('purchase_orders:view')) {
         return (
             <div className="text-center p-8">
@@ -216,6 +222,8 @@ const PurchaseOrderPage = () => {
                                     <th className="p-3 text-sm font-semibold text-gray-600">Order Date</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-center">Details</th>
+                                    {/* --- NEW: Download Column Header --- */}
+                                    <th className="p-3 text-sm font-semibold text-gray-600 text-center">Download</th>
                                     {showActionsColumn && <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>}
                                 </tr>
                             </thead>
@@ -243,6 +251,12 @@ const PurchaseOrderPage = () => {
                                                     <Icon path={expandedRows.has(po.po_id) ? ICONS.chevronUp : ICONS.chevronDown} className="h-5 w-5" />
                                                 </button>
                                             </td>
+                                            {/* --- NEW: Download Button Cell --- */}
+                                            <td className="p-3 text-sm text-center">
+                                                <button onClick={() => handleDownloadPDF(po)} title="Download PDF" className="text-gray-500 hover:text-gray-800">
+                                                    <Icon path={ICONS.download} className="h-5 w-5" />
+                                                </button>
+                                            </td>
                                             {showActionsColumn && (
                                                 <td className="p-3 text-sm text-right">
                                                     <div className="flex justify-end items-center space-x-4 h-full">
@@ -260,9 +274,10 @@ const PurchaseOrderPage = () => {
                                                 </td>
                                             )}
                                         </tr>
-                                        {expandedRows.has(po.po_id) && (
+                    {expandedRows.has(po.po_id) && (
                                             <tr key={`${po.po_id}-details`}>
-                                                <td colSpan={showActionsColumn ? 8 : 7}>
+                        {/* --- UPDATE: ColSpan value to account for new column --- */}
+                        <td colSpan={showActionsColumn ? 9 : 8}>
                                                     <PurchaseOrderLines poId={po.po_id} />
                                                 </td>
                                             </tr>
