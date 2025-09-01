@@ -5,6 +5,7 @@
 		"packages/*"
 	],
 	"scripts": {
-		"test": "npm run -w packages/api test"
+		"test": "npm run -w packages/api test",
+		"lint": "npm run -w packages/api lint"
 	}
 }

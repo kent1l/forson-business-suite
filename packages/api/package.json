@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
   "test": "jest --config jest.config.js",
+  "lint": "eslint .",
     "start": "nodemon index.js",
     "dev": "nodemon --legacy-watch index.js"
   },
