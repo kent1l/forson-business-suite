@@ -530,3 +530,32 @@ BEGIN
         ADD CONSTRAINT check_invoice_status CHECK (status IN ('Unpaid', 'Paid', 'Partially Paid', 'Partially Refunded', 'Fully Refunded', 'Cancelled'));
     END IF;
 END$$;
+
+-- Ensure parts that have stock but missing wac_cost get initialized from last_cost
+-- This is idempotent and safe to run on existing databases.
+DO $$
+BEGIN
+    -- Only run if there exist parts with stock_on_hand > 0 and wac_cost IS NULL or 0
+    IF EXISTS (
+        SELECT 1 FROM (
+            SELECT p.part_id, COALESCE(SUM(it.quantity),0) AS stock_on_hand
+            FROM public.part p
+            LEFT JOIN public.inventory_transaction it ON it.part_id = p.part_id
+            GROUP BY p.part_id
+        ) s WHERE s.stock_on_hand > 0
+        AND EXISTS (SELECT 1 FROM public.part p2 WHERE p2.part_id = s.part_id AND (p2.wac_cost IS NULL OR p2.wac_cost = 0) AND COALESCE(p2.last_cost,0) > 0)
+    ) THEN
+        UPDATE public.part p
+        SET wac_cost = COALESCE(p.last_cost, 0)
+        FROM (
+            SELECT p2.part_id, COALESCE(SUM(it.quantity),0) AS stock_on_hand
+            FROM public.part p2
+            LEFT JOIN public.inventory_transaction it ON it.part_id = p2.part_id
+            GROUP BY p2.part_id
+        ) s
+        WHERE p.part_id = s.part_id
+          AND s.stock_on_hand > 0
+          AND (p.wac_cost IS NULL OR p.wac_cost = 0)
+          AND COALESCE(p.last_cost,0) > 0;
+    END IF;
+END$$;

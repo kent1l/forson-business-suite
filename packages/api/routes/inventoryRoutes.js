@@ -17,7 +17,10 @@ router.get('/inventory', async (req, res) => {
             limit: 200, // Limit the number of results for performance
             attributesToRetrieve: ['part_id'], // We only need the ID
         });
-        const partIds = searchResults.hits.map(hit => hit.part_id);
+        // Ensure we send integer IDs to Postgres (Meili may return strings)
+        const partIds = searchResults.hits
+            .map(hit => parseInt(hit.part_id, 10))
+            .filter(id => !Number.isNaN(id));
 
         // If Meilisearch returns no results, we can stop here.
         if (partIds.length === 0) {
@@ -25,38 +28,35 @@ router.get('/inventory', async (req, res) => {
         }
 
         // 2. Use those IDs to get the full inventory data from PostgreSQL
+        // Compute stock_on_hand once in a CTE to avoid duplicate subqueries and
+        // coalesce wac_cost to 0 so total_value is deterministic.
         const query = `
+            WITH stock AS (
+                SELECT part_id, COALESCE(SUM(quantity), 0) AS stock_on_hand
+                FROM inventory_transaction
+                GROUP BY part_id
+            )
             SELECT
                 p.part_id,
                 p.internal_sku,
                 p.detail,
-                p.wac_cost,
+                COALESCE(p.wac_cost, 0) AS wac_cost,
                 p.reorder_point,
                 p.warning_quantity,
                 b.brand_name,
                 g.group_name,
                 (
-                    SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) 
-                    FROM part_number pn 
+                    SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order)
+                    FROM part_number pn
                     WHERE pn.part_id = p.part_id
                 ) AS part_numbers,
-                (
-                    SELECT COALESCE(SUM(it.quantity), 0) 
-                    FROM inventory_transaction it 
-                    WHERE it.part_id = p.part_id
-                ) AS stock_on_hand,
-                (
-                    p.wac_cost * (
-                        SELECT COALESCE(SUM(it.quantity), 0) 
-                        FROM inventory_transaction it 
-                        WHERE it.part_id = p.part_id
-                    )
-                ) AS total_value
+                COALESCE(s.stock_on_hand, 0) AS stock_on_hand,
+                (COALESCE(p.wac_cost, 0) * COALESCE(s.stock_on_hand, 0))::numeric(14,2) AS total_value
             FROM part p
+            LEFT JOIN stock s ON s.part_id = p.part_id
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
-            WHERE p.part_id = ANY($1::int[]) -- Use the IDs from Meilisearch
-            GROUP BY p.part_id, b.brand_name, g.group_name
+            WHERE p.part_id = ANY($1::int[])
             ORDER BY p.detail ASC;
         `;
 
