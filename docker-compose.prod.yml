@@ -100,6 +100,7 @@ services:
         echo 'Waiting for main database to be ready...'
         sleep 2
       done;
+      chmod +x /docker-entrypoint-initdb.d/backup.sh &&
       /docker-entrypoint-initdb.d/backup.sh
       "
     healthcheck:
