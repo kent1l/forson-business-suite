@@ -4,6 +4,7 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 const db = require('./db');
 const { setupMeiliSearch } = require('./meilisearch-setup');
+const { startMeiliListener } = require('./meili-listener');
 
 const app = express();
 
@@ -98,4 +99,6 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, async () => {
   console.log(`Server is running on port ${PORT}`);
   await setupMeiliSearch();
+  // Start the Postgres listener that keeps Meilisearch in sync
+  startMeiliListener();
 });

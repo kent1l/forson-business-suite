@@ -12,7 +12,8 @@ router.get('/power-search/parts', async (req, res) => {
         const index = meiliClient.index('parts');
         const searchOptions = {
             limit: 200, // increase limit to return more matches for UI
-            attributesToRetrieve: ['part_id']
+            // retrieve application-related fields from Meili so we can show fitment in the UI
+            attributesToRetrieve: ['part_id', 'applications', 'searchable_applications']
         };
 
         const searchResults = await index.search(keyword || '', searchOptions);
