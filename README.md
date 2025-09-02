@@ -268,7 +268,33 @@ docker exec -t forson_db pg_dump -U postgres forson_business_suite > "backups/ba
 
 ---
 
-## 📊 Reporting & Exports
+## �️ Database migrations (automated)
+
+Use the built-in migration runner to apply idempotent SQL migrations safely.
+
+- Apply (dev/local):
+```powershell
+npm --prefix packages/api run migrate -- --host localhost
+```
+
+- Status and verify:
+```powershell
+npm --prefix packages/api run migrate:status -- --host localhost
+npm --prefix packages/api run migrate:verify -- --host localhost
+```
+
+- Production (on the server where DB is bound to 127.0.0.1):
+```powershell
+npm --prefix packages/api run migrate -- --host 127.0.0.1
+```
+
+Notes
+- Non-destructive: migrations are idempotent and applied in order.
+- Drift detection: if a previously applied file changes, verify/repair before proceeding.
+
+---
+
+## �📊 Reporting & Exports
 The suite includes a powerful reporting module to provide key business insights. Users can generate various reports and export the data to **CSV format** for further analysis in spreadsheet software.
 
 Available reports include:

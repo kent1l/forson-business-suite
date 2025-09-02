@@ -87,3 +87,25 @@ Use these commands to simulate the production environment locally. This uses the
     ```bash
     docker compose logs -f backend
     ```
+
+---
+
+## 🗃️ 5. Database Migrations (Automated)
+
+Use the migration runner to apply pending migrations safely.
+
+- Apply (dev/local):
+```bash
+npm --prefix packages/api run migrate -- --host localhost
+```
+
+- Status and verify:
+```bash
+npm --prefix packages/api run migrate:status -- --host localhost
+npm --prefix packages/api run migrate:verify -- --host localhost
+```
+
+- Production (on the server):
+```bash
+npm --prefix packages/api run migrate -- --host 127.0.0.1
+```
