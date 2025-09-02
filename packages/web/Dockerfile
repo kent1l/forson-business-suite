@@ -41,8 +41,8 @@ RUN chown -R appuser:appgroup /usr/share/nginx/html && \
     touch /var/run/nginx.pid && \
     chown -R appuser:appgroup /var/run/nginx.pid
 
-# Switch to non-root user
-USER appuser
+# Run as root so Nginx can bind to port 80 inside the container
+USER root
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \

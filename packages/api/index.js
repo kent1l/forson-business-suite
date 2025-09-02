@@ -71,11 +71,16 @@ registerRoute('/api/backups', './routes/backupRoutes');
 // Special Setup Route
 registerRoute('/api', './routes/setupRoutes');
 
+// Lightweight health endpoint for uptime checks
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
+
 // Basic 404 handler for unknown routes
 app.use((req, res) => res.status(404).json({ error: 'Not Found' }));
 
 // Minimal global error handler
-app.use((err, req, res, next) => {
+app.use((err, req, res, _next) => {
   console.error('Unhandled error:', err && err.stack ? err.stack : err);
   const status = err && err.status ? err.status : 500;
   const payload = { error: err && err.message ? err.message : 'Server Error' };
