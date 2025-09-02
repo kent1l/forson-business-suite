@@ -34,6 +34,8 @@ Use these commands for local development. This setup provides hot-reloading for 
 
     ```bash
     docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql && docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
+    # then apply all migrations in order (recommended, PowerShell)
+    # Get-ChildItem .\database\migrations\*.sql | Sort-Object Name | ForEach-Object { docker cp $_.FullName forson_db:/m.sql; docker exec -u postgres forson_db psql -d forson_business_suite -f /m.sql }
     ```
 
 > **Access URLs**:
@@ -56,6 +58,8 @@ Use these commands to simulate the production environment locally. This uses the
 
     ```bash
     docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql && docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
+    # then apply all migrations in order (recommended, PowerShell)
+    # Get-ChildItem .\database\migrations\*.sql | Sort-Object Name | ForEach-Object { docker cp $_.FullName forson_db:/m.sql; docker exec -u postgres forson_db psql -d forson_business_suite -f /m.sql }
     ```
 
 > **Access URLs**:

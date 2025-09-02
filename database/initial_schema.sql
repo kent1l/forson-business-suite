@@ -1,6 +1,3 @@
---
--- PostgreSQL database schema (Idempotent & Safe for Existing Databases)
---
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -13,6 +10,9 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
+-- Extensions used by this schema (safe if already installed)
+CREATE EXTENSION IF NOT EXISTS pgcrypto; -- gen_random_uuid()
+CREATE EXTENSION IF NOT EXISTS pg_trgm;  -- optional trigram indexes for ILIKE searches
 --
 -- TABLES (Using 'IF NOT EXISTS' for safety)
 --
@@ -282,6 +282,14 @@ CREATE TABLE IF NOT EXISTS public.role_permission (
     PRIMARY KEY (permission_level_id, permission_id)
 );
 
+-- Payment terms lookup (used by /api/payment-terms)
+CREATE TABLE IF NOT EXISTS public.payment_term (
+    payment_term_id serial PRIMARY KEY,
+    term_name text NOT NULL,
+    days_to_due integer NOT NULL,
+    UNIQUE (days_to_due)
+);
+
 CREATE TABLE IF NOT EXISTS public.purchase_order (
     po_id serial PRIMARY KEY,
     po_number character varying(50) NOT NULL UNIQUE,
@@ -349,6 +357,69 @@ CREATE TABLE IF NOT EXISTS public.credit_note_line (
     quantity numeric(12,4) NOT NULL,
     sale_price numeric(12,2) NOT NULL
 );
+
+--
+-- DOCUMENT MANAGEMENT (used by documentsRoutes.js)
+--
+CREATE TABLE IF NOT EXISTS public.documents (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_type character varying(50),
+    reference_id character varying(100),
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    file_path text,
+    metadata jsonb
+);
+
+-- Indexes for documents listing and search
+CREATE INDEX IF NOT EXISTS idx_documents_created_at ON public.documents (created_at);
+CREATE INDEX IF NOT EXISTS idx_documents_doc_type ON public.documents (document_type);
+CREATE INDEX IF NOT EXISTS idx_documents_reference_id ON public.documents (reference_id);
+-- JSONB GIN index for metadata filters/text
+CREATE INDEX IF NOT EXISTS idx_documents_metadata ON public.documents USING GIN (metadata jsonb_path_ops);
+
+--
+-- INDEXES FOR COMMON FOREIGN KEYS AND QUERIES
+--
+-- Parts
+CREATE INDEX IF NOT EXISTS idx_part_brand_id ON public.part (brand_id);
+CREATE INDEX IF NOT EXISTS idx_part_group_id ON public.part (group_id);
+CREATE INDEX IF NOT EXISTS idx_part_tax_rate_id ON public.part (tax_rate_id);
+
+-- Vehicle hierarchy
+CREATE INDEX IF NOT EXISTS idx_vehicle_model_make_id ON public.vehicle_model (make_id);
+CREATE INDEX IF NOT EXISTS idx_vehicle_engine_model_id ON public.vehicle_engine (model_id);
+
+-- Applications
+CREATE INDEX IF NOT EXISTS idx_part_application_part_id ON public.part_application (part_id);
+CREATE INDEX IF NOT EXISTS idx_part_application_application_id ON public.part_application (application_id);
+
+-- Goods receipts
+CREATE INDEX IF NOT EXISTS idx_grn_line_grn_id ON public.goods_receipt_line (grn_id);
+CREATE INDEX IF NOT EXISTS idx_grn_line_part_id ON public.goods_receipt_line (part_id);
+
+-- Invoicing
+CREATE INDEX IF NOT EXISTS idx_invoice_customer_id ON public.invoice (customer_id);
+CREATE INDEX IF NOT EXISTS idx_invoice_employee_id ON public.invoice (employee_id);
+CREATE INDEX IF NOT EXISTS idx_invoice_line_invoice_id ON public.invoice_line (invoice_id);
+CREATE INDEX IF NOT EXISTS idx_invoice_line_part_id ON public.invoice_line (part_id);
+
+-- Payments
+CREATE INDEX IF NOT EXISTS idx_inv_alloc_invoice_id ON public.invoice_payment_allocation (invoice_id);
+CREATE INDEX IF NOT EXISTS idx_inv_alloc_payment_id ON public.invoice_payment_allocation (payment_id);
+
+-- Purchase orders
+CREATE INDEX IF NOT EXISTS idx_po_supplier_id ON public.purchase_order (supplier_id);
+CREATE INDEX IF NOT EXISTS idx_po_employee_id ON public.purchase_order (employee_id);
+CREATE INDEX IF NOT EXISTS idx_po_line_po_id ON public.purchase_order_line (po_id);
+CREATE INDEX IF NOT EXISTS idx_po_line_part_id ON public.purchase_order_line (part_id);
+
+-- Inventory transactions
+CREATE INDEX IF NOT EXISTS idx_inv_tx_part_id ON public.inventory_transaction (part_id);
+CREATE INDEX IF NOT EXISTS idx_inv_tx_part_date ON public.inventory_transaction (part_id, transaction_date);
+
+-- Part numbers
+CREATE INDEX IF NOT EXISTS idx_part_number_number ON public.part_number (part_number);
 
 --
 -- WAC CALCULATION TRIGGER
@@ -450,6 +521,10 @@ INSERT INTO public.permission (permission_key, description, category) VALUES
 ('customers:edit', 'Create/Edit Customers', 'Data Management'),
 ('applications:view', 'View Vehicle Applications', 'Data Management'),
 ('applications:edit', 'Create/Edit Vehicle Applications', 'Data Management'),
+-- Documents
+('documents:view', 'View documents', 'Data Management'),
+('documents:download', 'Download documents', 'Data Management'),
+('documents:share', 'Share documents', 'Data Management'),
 -- Administration
 ('employees:view', 'View Employees', 'Administration'),
 ('employees:edit', 'Create/Edit Employees', 'Administration'),
@@ -559,3 +634,11 @@ BEGIN
           AND COALESCE(p.last_cost,0) > 0;
     END IF;
 END$$;
+
+-- Seed: payment_term (common defaults)
+INSERT INTO public.payment_term (term_name, days_to_due) VALUES
+('Due on receipt', 0),
+('7 days', 7),
+('15 days', 15),
+('30 days', 30)
+ON CONFLICT (days_to_due) DO NOTHING;

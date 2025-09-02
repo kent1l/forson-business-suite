@@ -97,6 +97,9 @@ docker compose up -d --build
 # copy schema into the db container and execute it
 docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql
 docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
+# then apply all migrations (recommended)
+# PowerShell loop:
+# Get-ChildItem .\database\migrations\*.sql | Sort-Object Name | ForEach-Object { docker cp $_.FullName forson_db:/m.sql; docker exec -u postgres forson_db psql -d forson_business_suite -f /m.sql }
 ```
 
 5. Access
@@ -210,6 +213,8 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```powershell
 docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql
 docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
+# Apply migrations (recommended): copy and run each file in database/migrations in order
+# Get-ChildItem .\database\migrations\*.sql | Sort-Object Name | ForEach-Object { docker cp $_.FullName forson_db:/m.sql; docker exec -u postgres forson_db psql -d forson_business_suite -f /m.sql }
 ```
 
 - Stop and clean up:
@@ -243,6 +248,8 @@ docker compose -f docker-compose.prod.yml up -d --pull=always --remove-orphans
 ```powershell
 docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql
 docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
+# Apply migrations (recommended): copy and run each file in database/migrations in order
+# Get-ChildItem .\database\migrations\*.sql | Sort-Object Name | ForEach-Object { docker cp $_.FullName forson_db:/m.sql; docker exec -u postgres forson_db psql -d forson_business_suite -f /m.sql }
 ```
 
 4) Verify
