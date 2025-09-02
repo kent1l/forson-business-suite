@@ -64,11 +64,9 @@ services:
         condition: service_healthy
       meilisearch:
         condition: service_healthy
-    environment:
-      NODE_ENV: production
     env_file: .env
     environment:
-      - JWT_SECRET=${JWT_SECRET}
+      NODE_ENV: production
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--spider", "http://localhost:3001/health"]
       interval: 30s
