@@ -83,7 +83,10 @@ services:
       - db
     volumes:
       - backup_data:/backups
-      - ./backup:/docker-entrypoint-initdb.d:ro
+      - type: bind
+        source: ./backup
+        target: /scripts
+        read_only: true
     environment:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: backup_manager
@@ -100,8 +103,9 @@ services:
         echo 'Waiting for main database to be ready...'
         sleep 2
       done;
-      chmod +x /docker-entrypoint-initdb.d/backup.sh &&
-      /docker-entrypoint-initdb.d/backup.sh
+      cp /scripts/backup.sh /tmp/backup.sh &&
+      chmod +x /tmp/backup.sh &&
+      /tmp/backup.sh
       "
     healthcheck:
       test: ["CMD", "test", "-d", "/backups"]
