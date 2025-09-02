@@ -85,12 +85,23 @@ services:
       - backup_data:/backups
       - ./backup:/docker-entrypoint-initdb.d:ro
     environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: backup_manager
+      POSTGRES_USER: ${DB_USER}
       DB_HOST: db
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       BACKUP_PATH: /backups
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+    command: >
+      /bin/sh -c "
+      while ! pg_isready -h db -U ${DB_USER}; do
+        echo 'Waiting for main database to be ready...'
+        sleep 2
+      done;
+      /docker-entrypoint-initdb.d/backup.sh
+      "
     healthcheck:
       test: ["CMD", "test", "-d", "/backups"]
       interval: 1h
