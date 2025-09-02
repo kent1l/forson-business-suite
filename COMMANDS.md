@@ -51,15 +51,15 @@ Use these commands to simulate the production environment locally. This uses the
 1.  **Build and Start All Production Containers**:
 
     ```bash
-    docker compose -f docker-compose.yml up --build -d
+    docker compose -f docker-compose.prod.yml up -d --pull=always --remove-orphans
     ```
 
 2.  **Initialize the Database** (Run only the first time, after containers are running):
 
     ```bash
     docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql && docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
-    # then apply all migrations in order (recommended, PowerShell)
-    # Get-ChildItem .\database\migrations\*.sql | Sort-Object Name | ForEach-Object { docker cp $_.FullName forson_db:/m.sql; docker exec -u postgres forson_db psql -d forson_business_suite -f /m.sql }
+    # then apply all migrations in order (Linux/bash)
+    for f in $(ls database/migrations/*.sql | sort); do echo "Applying $f" && cat "$f" | docker compose exec -T db psql -U postgres -d forson_business_suite; done
     ```
 
 > **Access URLs**:
@@ -109,3 +109,7 @@ npm --prefix packages/api run migrate:verify -- --host localhost
 ```bash
 npm --prefix packages/api run migrate -- --host 127.0.0.1
 ```
+
+Notes:
+- Ensure production secrets exist before bringing up prod: `./secrets/db_password.txt`, `./secrets/jwt_secret.txt` (and optionally `./secrets/meili_key.txt`).
+- In production, set `MEILISEARCH_HOST=http://meilisearch:7700` in `.env` so the backend can reach the Meilisearch service.

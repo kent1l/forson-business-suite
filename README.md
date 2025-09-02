@@ -100,6 +100,8 @@ docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_sche
 # then apply all migrations (recommended)
 # PowerShell loop:
 # Get-ChildItem .\database\migrations\*.sql | Sort-Object Name | ForEach-Object { docker cp $_.FullName forson_db:/m.sql; docker exec -u postgres forson_db psql -d forson_business_suite -f /m.sql }
+# Or use the automated runner (Windows PowerShell):
+# npm --prefix packages/api run migrate -- --host localhost
 ```
 
 5. Access
@@ -215,6 +217,8 @@ docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql
 docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
 # Apply migrations (recommended): copy and run each file in database/migrations in order
 # Get-ChildItem .\database\migrations\*.sql | Sort-Object Name | ForEach-Object { docker cp $_.FullName forson_db:/m.sql; docker exec -u postgres forson_db psql -d forson_business_suite -f /m.sql }
+# Or use the automated runner on the server (DB is bound to 127.0.0.1):
+# npm --prefix packages/api run migrate -- --host 127.0.0.1
 ```
 
 - Stop and clean up:
@@ -238,6 +242,10 @@ JWT_SECRET=strong_jwt_secret
 DOCKER_REGISTRY=kentonel
 TAG=latest
 ```
+
+Notes:
+- In production, set `MEILISEARCH_HOST=http://meilisearch:7700` in `.env` so the backend can reach the Meilisearch service by its Docker DNS name.
+- Inside containers, `DB_HOST=db` is correct; do not use `localhost` for inter-service communication.
 
 2) Start or update stack
 ```powershell
