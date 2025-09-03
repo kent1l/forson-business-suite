@@ -223,7 +223,7 @@ sudo docker exec -u postgres forson_db psql -d forson_business_suite -f /initial
 
 Apply migrations.
 ```bash
-npm --prefix packages/api run migrate -- --host 127.0.0.1
+for f in $(ls database/migrations/*.sql | sort); do cat "$f" | sudo docker exec -i forson_db psql -U postgres -d forson_business_suite; done
 ```
 
 Verify services.
@@ -252,7 +252,7 @@ sudo docker compose -f docker-compose.prod.yml up -d --pull=always --remove-orph
 
 Apply migrations.
 ```bash
-npm --prefix packages/api run migrate -- --host 127.0.0.1
+for f in $(ls database/migrations/*.sql | sort); do cat "$f" | sudo docker exec -i forson_db psql -U postgres -d forson_business_suite; done
 ```
 
 Smoke test API.

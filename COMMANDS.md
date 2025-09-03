@@ -56,9 +56,9 @@ sudo docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql
 sudo docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
 ```
 
-Apply migrations.
+Apply migrations (Docker-only, no host Node/npm required).
 ```bash
-npm --prefix packages/api run migrate -- --host 127.0.0.1
+for f in $(ls database/migrations/*.sql | sort); do cat "$f" | sudo docker exec -i forson_db psql -U postgres -d forson_business_suite; done
 ```
 
 Check service status.
@@ -97,9 +97,9 @@ Redeploy the stack.
 sudo docker compose -f docker-compose.prod.yml up -d --pull=always --remove-orphans
 ```
 
-Run migrations.
+Run migrations (Docker-only, robust on Ubuntu/VM/Proxmox).
 ```bash
-npm --prefix packages/api run migrate -- --host 127.0.0.1
+for f in $(ls database/migrations/*.sql | sort); do cat "$f" | sudo docker exec -i forson_db psql -U postgres -d forson_business_suite; done
 ```
 
 Smoke test backend.
