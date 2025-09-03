@@ -60,52 +60,38 @@ graph TD
 
 ---
 
-## 🚀 Quick Start
-Spin up the full stack locally with Docker.
+## 🚀 Quick Start (Local Dev)
+Spin up the full stack locally with Docker for development.
 
-1. Clone the repository
-```powershell
+1) Clone the repository
+```bash
 git clone https://github.com/kent1l/forson-business-suite.git
 cd forson-business-suite
 ```
 
-2. Create a root .env (used by Docker Compose and the API)
-The backend reads discrete DB_* variables, not a single DATABASE_URL.
-```env
-# Database
-DB_HOST=db
-DB_PORT=5432
-DB_NAME=forson_business_suite
-DB_USER=postgres
-DB_PASSWORD=change_me
-
-# Meilisearch
-MEILISEARCH_MASTER_KEY=change_me_meili
-
-# API
-JWT_SECRET=change_me_jwt
+2) Create a root .env
+```bash
+cp .env.example .env
 ```
 
-3. Build and run (local)
-```powershell
-# from project root
-docker compose up -d --build
+3) Start dev stack with hot-reload
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
-4. Initialize the database (first time only)
-```powershell
-# copy schema into the db container and execute it
+4) Initialize the database (first run)
+```bash
 docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql
 docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
-# then apply all migrations (recommended)
-# PowerShell loop:
-# Get-ChildItem .\database\migrations\*.sql | Sort-Object Name | ForEach-Object { docker cp $_.FullName forson_db:/m.sql; docker exec -u postgres forson_db psql -d forson_business_suite -f /m.sql }
-# Or use the automated runner (Windows PowerShell):
-# npm --prefix packages/api run migrate -- --host localhost
 ```
 
-5. Access
-- Frontend: http://localhost:8090
+5) Apply SQL migrations (recommended)
+```bash
+npm --prefix packages/api run migrate -- --host localhost
+```
+
+6) Access
+- Frontend: http://localhost:8090 (or 5173 in dev override)
 - Backend:  http://localhost:3001
 
 ---
@@ -129,10 +115,11 @@ DB_USER=postgres
 DB_PASSWORD=change_me
 MEILISEARCH_MASTER_KEY=change_me_meili
 JWT_SECRET=change_me_jwt
+MEILISEARCH_HOST=http://meilisearch:7700
 ```
 Notes:
-- `docker-compose.yml` maps `POSTGRES_PASSWORD` from `DB_PASSWORD` and sets `POSTGRES_DB` to `forson_business_suite`.
-- The API loads the root `.env` via `packages/api/index.js`.
+- The backend reads discrete DB_* variables.
+- In containers, `DB_HOST=db` and `MEILISEARCH_HOST=http://meilisearch:7700` are correct.
 
 ### Database Initialization
 Run once on fresh installs.
@@ -196,87 +183,86 @@ docker compose logs -f backend
 
 ---
 
-## 🧾 Deployment
+## 🧾 Deployment (Simplified)
 
-Two workflows are supported: local development and production.
+Two workflows are supported: Development and Production.
 
-### Development (Docker Compose)
-- Start containers with build:
-```powershell
-docker compose up -d --build
-```
-
-- Hot-reload developer experience (overrides):
-```powershell
+### Development (Docker Compose, Linux/macOS)
+Start dev environment with hot reload.
+```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
-- Initialize DB on first run:
-```powershell
+Initialize database (first run only).
+```bash
 docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql
 docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
-# Apply migrations (recommended): copy and run each file in database/migrations in order
-# Get-ChildItem .\database\migrations\*.sql | Sort-Object Name | ForEach-Object { docker cp $_.FullName forson_db:/m.sql; docker exec -u postgres forson_db psql -d forson_business_suite -f /m.sql }
-# Or use the automated runner on the server (DB is bound to 127.0.0.1):
-# npm --prefix packages/api run migrate -- --host 127.0.0.1
 ```
 
-- Stop and clean up:
-```powershell
-docker compose down --volumes
+Apply migrations.
+```bash
+npm --prefix packages/api run migrate -- --host localhost
 ```
 
-### Production (Docker Compose)
-Use `docker-compose.prod.yml` on a server. Images default to `kentonel/*:latest`; override via `.env` keys `DOCKER_REGISTRY` and `TAG` if needed.
-
-1) Prepare environment on the server
-```env
-DB_HOST=db
-DB_PORT=5432
-DB_NAME=forson_business_suite
-DB_USER=postgres
-DB_PASSWORD=strong_prod_password
-MEILISEARCH_MASTER_KEY=strong_meili_key
-JWT_SECRET=strong_jwt_secret
-# Optional image overrides
-DOCKER_REGISTRY=kentonel
-TAG=latest
+### Production (Docker Compose, Linux server)
+Prepare .env with strong secrets.
+```bash
+cp .env.example .env
 ```
 
-Notes:
-- In production, set `MEILISEARCH_HOST=http://meilisearch:7700` in `.env` so the backend can reach the Meilisearch service by its Docker DNS name.
-- Inside containers, `DB_HOST=db` is correct; do not use `localhost` for inter-service communication.
-
-2) Start or update stack
-```powershell
-docker compose -f docker-compose.prod.yml up -d --pull=always --remove-orphans
+Start or update the stack.
+```bash
+sudo docker compose -f docker-compose.prod.yml up -d --pull=always --remove-orphans
 ```
 
-3) Initialize the database (first time only)
-```powershell
-docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql
-docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
-# Apply migrations (recommended): copy and run each file in database/migrations in order
-# Get-ChildItem .\database\migrations\*.sql | Sort-Object Name | ForEach-Object { docker cp $_.FullName forson_db:/m.sql; docker exec -u postgres forson_db psql -d forson_business_suite -f /m.sql }
+Initialize the database (first run only).
+```bash
+sudo docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql
+sudo docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
 ```
 
-4) Verify
-```powershell
-docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml logs -f backend
+Apply migrations.
+```bash
+npm --prefix packages/api run migrate -- --host 127.0.0.1
 ```
 
-5) Ad-hoc backup (PowerShell)
-```powershell
-# Plain SQL dump to backups/ folder on host
-if (!(Test-Path backups)) { New-Item -ItemType Directory -Path backups | Out-Null }
-$ts = Get-Date -Format "yyyy-MM-ddTHH-mm-ss"
-docker exec -t forson_db pg_dump -U postgres forson_business_suite > "backups/backup-$ts.sql"
+Verify services.
+```bash
+sudo docker compose -f docker-compose.prod.yml ps
+sudo docker compose -f docker-compose.prod.yml logs -f backend
+```
+
+### Update/Upgrade (Production)
+Backup database.
+```bash
+mkdir -p backups
+ts=$(date +"%Y-%m-%dT%H-%M-%S")
+sudo docker exec -t forson_db pg_dump -U postgres forson_business_suite > backups/backup-$ts.sql
+```
+
+Pull latest code or images.
+```bash
+git pull --ff-only
+```
+
+Redeploy stack with latest images.
+```bash
+sudo docker compose -f docker-compose.prod.yml up -d --pull=always --remove-orphans
+```
+
+Apply migrations.
+```bash
+npm --prefix packages/api run migrate -- --host 127.0.0.1
+```
+
+Smoke test API.
+```bash
+curl -s http://localhost:3001/api/setup/status || true
 ```
 
 ---
 
-## �️ Database migrations (automated)
+## 🧩 Database migrations (automated)
 
 Use the built-in migration runner to apply idempotent SQL migrations safely.
 
@@ -292,7 +278,7 @@ npm --prefix packages/api run migrate:verify -- --host localhost
 ```
 
 - Production (on the server where DB is bound to 127.0.0.1):
-```powershell
+```bash
 npm --prefix packages/api run migrate -- --host 127.0.0.1
 ```
 
@@ -302,7 +288,7 @@ Notes
 
 ---
 
-## �📊 Reporting & Exports
+## 📊 Reporting & Exports
 The suite includes a powerful reporting module to provide key business insights. Users can generate various reports and export the data to **CSV format** for further analysis in spreadsheet software.
 
 Available reports include:

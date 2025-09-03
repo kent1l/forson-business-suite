@@ -1,115 +1,132 @@
-# Forson Business Suite - Command Reference
+# Forson Business Suite - Commands
 
-This file contains the common CLI commands needed to set up and manage the application environments.
-
----
-
-## ✅ 1. One-Time Project Setup
-
-These commands only need to be run once when you first clone the project.
-
-1.  **Create the master environment file**.
-    *(Copy the example file to create your local configuration)*.
-
-    ```bash
-    cp .env.example .env
-    ```
-
-2.  **Edit the `.env` file**.
-    *(You MUST open the newly created `.env` file and replace the placeholder values with your actual secrets, especially `DB_PASSWORD` and `JWT_SECRET`)*.
+Simple, copy-paste-ready commands for development and production. Descriptions are outside the code blocks. Commands include sudo where appropriate.
 
 ---
 
-## 🚀 2. Development Environment
+## 1) One-Time Setup
 
-Use these commands for local development. This setup provides hot-reloading for both the frontend and backend.
-
-1.  **Build and Start All Development Containers**:
-
-    ```bash
-    docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d
-    ```
-
-2.  **Initialize the Database** (Run only the first time, after containers are running):
-
-    ```bash
-    docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql && docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
-    # then apply all migrations in order (recommended, PowerShell)
-    # Get-ChildItem .\database\migrations\*.sql | Sort-Object Name | ForEach-Object { docker cp $_.FullName forson_db:/m.sql; docker exec -u postgres forson_db psql -d forson_business_suite -f /m.sql }
-    ```
-
-> **Access URLs**:
-> * Frontend: `http://localhost:5173`
-> * Backend API: `http://localhost:3001`
+Create a working .env from the example file.
+```bash
+cp .env.example .env
+```
 
 ---
 
-## 🏭 3. Production Environment
+## 2) Development
 
-Use these commands to simulate the production environment locally. This uses the pre-built Docker images.
+Start dev stack with hot reload.
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+```
 
-1.  **Build and Start All Production Containers**:
+Initialize the database (first run only).
+```bash
+docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql
+docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
+```
 
-    ```bash
-    docker compose -f docker-compose.prod.yml up -d --pull=always --remove-orphans
-    ```
-
-2.  **Initialize the Database** (Run only the first time, after containers are running):
-
-    ```bash
-    docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql && docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
-    # then apply all migrations in order (Linux/bash)
-    for f in $(ls database/migrations/*.sql | sort); do echo "Applying $f" && cat "$f" | docker compose exec -T db psql -U postgres -d forson_business_suite; done
-    ```
-
-> **Access URLs**:
-> * Frontend: `http://localhost:8090`
-> * Backend API: `http://localhost:3001`
-
----
-
-## 🛠️ 4. Common Management Commands
-
-1.  **Stop All Containers**:
-
-    ```bash
-    docker compose down
-    ```
-
-2.  **View Logs for All Services**:
-
-    ```bash
-    docker compose logs -f
-    ```
-
-3.  **View Logs for a Specific Service** (e.g., the backend):
-
-    ```bash
-    docker compose logs -f backend
-    ```
-
----
-
-## 🗃️ 5. Database Migrations (Automated)
-
-Use the migration runner to apply pending migrations safely.
-
-- Apply (dev/local):
+Apply migrations.
 ```bash
 npm --prefix packages/api run migrate -- --host localhost
 ```
 
-- Status and verify:
+Open logs for backend.
 ```bash
-npm --prefix packages/api run migrate:status -- --host localhost
-npm --prefix packages/api run migrate:verify -- --host localhost
+docker compose logs -f backend
 ```
 
-- Production (on the server):
+Stop and remove dev containers.
+```bash
+docker compose down
+```
+
+---
+
+## 3) Production
+
+Start or update the production stack.
+```bash
+sudo docker compose -f docker-compose.prod.yml up -d --pull=always --remove-orphans
+```
+
+Initialize the database (first run only).
+```bash
+sudo docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql
+sudo docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
+```
+
+Apply migrations.
 ```bash
 npm --prefix packages/api run migrate -- --host 127.0.0.1
 ```
 
-Notes:
-- Ensure production secrets exist before bringing up prod: `./secrets/db_password.txt`, `./secrets/jwt_secret.txt` (and optionally `./secrets/meili_key.txt`).
-- In production, set `MEILISEARCH_HOST=http://meilisearch:7700` in `.env` so the backend can reach the Meilisearch service.
+Check service status.
+```bash
+sudo docker compose -f docker-compose.prod.yml ps
+```
+
+Tail backend logs.
+```bash
+sudo docker compose -f docker-compose.prod.yml logs -f backend
+```
+
+Stop and remove production containers.
+```bash
+sudo docker compose -f docker-compose.prod.yml down
+```
+
+---
+
+## 4) Update/Upgrade (Production)
+
+Back up the database.
+```bash
+mkdir -p backups
+ts=$(date +"%Y-%m-%dT%H-%M-%S")
+sudo docker exec -t forson_db pg_dump -U postgres forson_business_suite > backups/backup-$ts.sql
+```
+
+Pull latest code.
+```bash
+git pull --ff-only
+```
+
+Redeploy the stack.
+```bash
+sudo docker compose -f docker-compose.prod.yml up -d --pull=always --remove-orphans
+```
+
+Run migrations.
+```bash
+npm --prefix packages/api run migrate -- --host 127.0.0.1
+```
+
+Smoke test backend.
+```bash
+curl -s http://localhost:3001/api/setup/status || true
+```
+
+---
+
+## 5) Useful Admin
+
+List containers.
+```bash
+sudo docker ps
+```
+
+Inspect a service's logs.
+```bash
+sudo docker compose -f docker-compose.prod.yml logs -f backend
+```
+
+Open a shell in the backend container.
+```bash
+sudo docker exec -it forson_backend sh
+```
+
+Open a psql session in the db container.
+```bash
+sudo docker exec -it forson_db psql -U postgres -d forson_business_suite
+```
