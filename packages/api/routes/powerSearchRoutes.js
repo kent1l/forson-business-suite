@@ -12,8 +12,11 @@ router.get('/power-search/parts', async (req, res) => {
         const index = meiliClient.index('parts');
         const searchOptions = {
             limit: 200, // increase limit to return more matches for UI
-            // retrieve application-related fields from Meili so we can show fitment in the UI
-            attributesToRetrieve: ['part_id', 'applications', 'searchable_applications']
+            attributesToRetrieve: [
+                'part_id',
+                'applications',     // Array of full application objects with display field
+                'searchable_applications' // Flattened text for searching
+            ]
         };
 
         const searchResults = await index.search(keyword || '', searchOptions);
@@ -46,20 +49,33 @@ router.get('/power-search/parts', async (req, res) => {
 
         const { rows } = await db.query(query, [partIds]);
 
-        // Map returned rows back into MeiliSearch order just in case
-        const rowsById = rows.reduce((acc, r) => { acc[r.part_id] = r; return acc; }, {});
-        const parts = partIds.map(id => {
-            const p = rowsById[id] || null;
-            if (!p) return null;
-            return {
-                ...p,
-                display_name: constructDisplayName(p),
-                // safe access to applications from the MeiliSearch hit
-                applications: (searchResults.hits.find(h => h.part_id === id) || {}).applications || ''
-            };
-        }).filter(Boolean);
+                // Map returned rows back into MeiliSearch order just in case
+                const rowsById = rows.reduce((acc, r) => { acc[r.part_id] = r; return acc; }, {});
+                const parts = partIds.map(id => {
+                    const p = rowsById[id] || null;
+                    if (!p) return null;
 
-        res.json(parts);
+                    // Get the MeiliSearch hit for this part
+                    const hit = searchResults.hits.find(h => h.part_id === id) || {};
+                    
+                    const appArray = hit.applications || hit.applications_array || [];
+                    const formattedApps = appArray.map(app => ({
+                        display: typeof app === 'object' ? (
+                            app.display || 
+                            `${app.make || ''} ${app.model || ''} ${app.engine || ''}`.trim() + 
+                            (app.year_start || app.year_end ? 
+                                ` (${[app.year_start, app.year_end].filter(Boolean).join('-')})` : 
+                                ''
+                            )
+                        ) : app.toString()
+                    })).filter(app => app.display && app.display.trim());
+
+                    return {
+                        ...p,
+                        display_name: constructDisplayName(p),
+                        applications: formattedApps
+                    };
+                }).filter(Boolean);        res.json(parts);
     } catch (err) {
         console.error('Meilisearch Error:', err.message);
         res.status(500).send('Server Error during search.');
