@@ -171,13 +171,6 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
     return (
         <>
             <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto p-1">
-                {!isBulkEdit && (
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Part Detail</label>
-                        <input type="text" name="detail" value={formData.detail} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
-                    </div>
-                )}
-
                 {!part && !isBulkEdit && (
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Part Numbers (optional)</label>
@@ -210,6 +203,13 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                     </div>
                     <button type="button" onClick={() => setIsGroupModalOpen(true)} className="px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm">New</button>
                 </div>
+
+                {!isBulkEdit && (
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Part Detail</label>
+                        <input type="text" name="detail" value={formData.detail} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                    </div>
+                )}
 
                 {/* --- NEW: Tag Input Field (conditionally rendered) --- */}
                 {!isBulkEdit && (
