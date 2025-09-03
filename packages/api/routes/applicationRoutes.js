@@ -164,17 +164,31 @@ router.post('/applications', async (req, res) => {
             finalEngineId = engineRes.rows[0].engine_id;
         }
 
-        // Step 4: Create the application entry with the IDs
-        console.log('[DEBUG][POST /applications] final IDs:', { finalMakeId, finalModelId, finalEngineId });
-        const insertApp = await client.query(
-            'INSERT INTO application (make_id, model_id, engine_id) VALUES ($1, $2, $3) ON CONFLICT (make_id, model_id, engine_id) DO UPDATE SET engine_id = $3 RETURNING application_id',
+        // Step 4: Check if this combination already exists
+        console.log('[DEBUG][POST /applications] checking for existing combination');
+        const existingApp = await client.query(
+            'SELECT application_id FROM application WHERE make_id = $1 AND model_id = $2 AND COALESCE(engine_id, 0) = COALESCE($3, 0)',
             [finalMakeId, finalModelId, finalEngineId]
         );
-        console.log('[DEBUG][POST /applications] insertApp result:', insertApp.rows);
+
+        let appId;
+        if (existingApp.rows.length > 0) {
+            console.log('[DEBUG][POST /applications] combination already exists');
+            appId = existingApp.rows[0].application_id;
+        } else {
+            // Create the application entry with the IDs only if it doesn't exist
+            console.log('[DEBUG][POST /applications] final IDs:', { finalMakeId, finalModelId, finalEngineId });
+            const insertApp = await client.query(
+                'INSERT INTO application (make_id, model_id, engine_id) VALUES ($1, $2, $3) RETURNING application_id',
+                [finalMakeId, finalModelId, finalEngineId]
+            );
+            console.log('[DEBUG][POST /applications] insertApp result:', insertApp.rows);
+            appId = insertApp.rows[0].application_id;
+        }
 
         await client.query('COMMIT');
 
-        // Return the created application with resolved names
+        // Return the application with resolved names
         const ret = await client.query(`
             SELECT 
                 a.application_id,
@@ -189,7 +203,7 @@ router.post('/applications', async (req, res) => {
             LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
             LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
             WHERE a.application_id = $1
-        `, [insertApp.rows[0].application_id]);
+        `, [appId]);
 
         res.status(201).json(ret.rows[0]);
     } catch (err) {
@@ -278,7 +292,17 @@ router.put('/applications/:id', async (req, res) => {
             finalEngineId = engineRes.rows[0].engine_id;
         }
 
-        // Update the application
+        // Check if this combination already exists (excluding the current application)
+        const existingApp = await client.query(
+            'SELECT application_id FROM application WHERE make_id = $1 AND model_id = $2 AND COALESCE(engine_id, 0) = COALESCE($3, 0) AND application_id != $4',
+            [finalMakeId, finalModelId, finalEngineId, id]
+        );
+
+        if (existingApp.rows.length > 0) {
+            throw new Error('This vehicle application combination already exists');
+        }
+
+        // Update the application only if no duplicate exists
         await client.query(
             'UPDATE application SET make_id = $1, model_id = $2, engine_id = $3 WHERE application_id = $4',
             [finalMakeId, finalModelId, finalEngineId, id]

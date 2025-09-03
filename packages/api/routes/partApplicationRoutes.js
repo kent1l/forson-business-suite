@@ -7,46 +7,62 @@ const router = express.Router();
 // Helper function to get all data for a part for Meilisearch indexing
 const getPartDataForMeili = async (client, partId) => {
     const query = `
+        WITH app_data AS (
+            SELECT
+                pa.part_id,
+                jsonb_agg(
+                    jsonb_build_object(
+                        'application_id', a.application_id,
+                        'make_id', a.make_id,
+                        'model_id', a.model_id,
+                        'engine_id', a.engine_id,
+                        'make', vmk.make_name,
+                        'model', vmd.model_name,
+                        'engine', veng.engine_name,
+                        'year_start', pa.year_start,
+                        'year_end', pa.year_end,
+                        'display', CONCAT(
+                            vmk.make_name,
+                            CASE WHEN vmd.model_name IS NOT NULL THEN CONCAT(' ', vmd.model_name) ELSE '' END,
+                            CASE WHEN veng.engine_name IS NOT NULL THEN CONCAT(' ', veng.engine_name) ELSE '' END,
+                            CASE
+                                WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL THEN CONCAT(' (', pa.year_start, '-', pa.year_end, ')')
+                                WHEN pa.year_start IS NOT NULL THEN CONCAT(' (', pa.year_start, ')')
+                                WHEN pa.year_end IS NOT NULL THEN CONCAT(' (', pa.year_end, ')')
+                                ELSE ''
+                            END
+                        )
+                    )
+                ) AS applications,
+                string_agg(
+                    CONCAT(
+                        vmk.make_name,
+                        CASE WHEN vmd.model_name IS NOT NULL THEN CONCAT(' ', vmd.model_name) ELSE '' END,
+                        CASE WHEN veng.engine_name IS NOT NULL THEN CONCAT(' ', veng.engine_name) ELSE '' END
+                    ),
+                    '; '
+                ) AS searchable_applications
+            FROM part_application pa
+            JOIN application a ON pa.application_id = a.application_id
+            LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
+            LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
+            LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
+            WHERE pa.part_id = $1
+            GROUP BY pa.part_id
+        )
         SELECT
-            p.*, b.brand_name, g.group_name,
-            (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id) as part_numbers,
-                        (SELECT jsonb_agg(
-                            jsonb_build_object(
-                                'application_id', a.application_id,
-                                'make_id', a.make_id,
-                                'model_id', a.model_id,
-                                'engine_id', a.engine_id,
-                                'make', vmk.make_name,
-                                'model', vmd.model_name,
-                                'engine', veng.engine_name,
-                                'year_start', pa.year_start,
-                                'year_end', pa.year_end,
-                                'display', CONCAT(
-                                    vmk.make_name, ' ',
-                                    vmd.model_name,
-                                    CASE 
-                                        WHEN veng.engine_name IS NOT NULL THEN CONCAT(' ', veng.engine_name)
-                                        ELSE ''
-                                    END,
-                                    CASE
-                                        WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL THEN CONCAT(' (', pa.year_start, '-', pa.year_end, ')')
-                                        WHEN pa.year_start IS NOT NULL THEN CONCAT(' (', pa.year_start, ')')
-                                        WHEN pa.year_end IS NOT NULL THEN CONCAT(' (', pa.year_end, ')')
-                                        ELSE ''
-                                    END
-                                )
-                            )
-                        ) FROM part_application pa
-                            JOIN application a ON pa.application_id = a.application_id
-                            LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
-                            LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
-                            LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
-                        WHERE pa.part_id = p.part_id) AS applications_array,
-            (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags_array
-        FROM part AS p
-        LEFT JOIN brand AS b ON p.brand_id = b.brand_id
-        LEFT JOIN "group" AS g ON p.group_id = g.group_id
-        WHERE p.part_id = $1
+            p.*,
+            b.brand_name,
+            g.group_name,
+            (SELECT string_agg(part_number, '; ') FROM part_number WHERE part_id = p.part_id) as part_numbers,
+            app_data.applications as applications_array,
+            app_data.searchable_applications,
+            (SELECT array_agg(tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags_array
+        FROM part p
+        LEFT JOIN brand b ON p.brand_id = b.brand_id
+        LEFT JOIN "group" g ON p.group_id = g.group_id
+        LEFT JOIN app_data ON app_data.part_id = p.part_id
+        WHERE p.part_id = $1;
     `;
     const res = await client.query(query, [partId]);
     if (res.rows.length === 0) return null;
@@ -56,6 +72,7 @@ const getPartDataForMeili = async (client, partId) => {
         ...part,
         display_name: constructDisplayName(part),
         applications: part.applications_array || [],
+        searchable_applications: part.searchable_applications || '',
         tags: part.tags_array || []
     };
 };
@@ -173,6 +190,39 @@ router.delete('/parts/:partId/applications/:appId', async (req, res) => {
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
+    }
+});
+
+// POST /reindex/parts - Reindex all parts in Meilisearch
+router.post('/reindex/parts', async (req, res) => {
+    try {
+        const allPartsQuery = `
+            SELECT DISTINCT p.part_id 
+            FROM part p
+            LEFT JOIN part_application pa ON p.part_id = pa.part_id
+        `;
+        const { rows } = await db.query(allPartsQuery);
+        
+        // Process parts in batches
+        const batchSize = 50;
+        let indexed = 0;
+        
+        for (let i = 0; i < rows.length; i += batchSize) {
+            const batch = rows.slice(i, i + batchSize);
+            const partDataPromises = batch.map(row => getPartDataForMeili(db, row.part_id));
+            const partDataBatch = await Promise.all(partDataPromises);
+            const validPartData = partDataBatch.filter(Boolean);
+            
+            if (validPartData.length > 0) {
+                await syncPartWithMeili(validPartData);
+                indexed += validPartData.length;
+            }
+        }
+        
+        res.json({ indexed });
+    } catch (err) {
+        console.error('Parts reindex failed:', err.message);
+        res.status(500).json({ error: 'Reindex failed' });
     }
 });
 
