@@ -5,6 +5,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 const db = require('./db');
 const { setupMeiliSearch } = require('./meilisearch-setup');
 const { startMeiliListener } = require('./meili-listener');
+const { startMeiliApplicationsListener } = require('./meili-app-listener');
 
 const app = express();
 
@@ -64,6 +65,7 @@ registerRoute('/api', './routes/employeeRoutes');
 registerRoute('/api', './routes/permissionRoutes');
 registerRoute('/api', './routes/dashboardRoutes');
 registerRoute('/api', './routes/powerSearchRoutes');
+registerRoute('/api', './routes/applicationSearchRoutes');
 registerRoute('/api', './routes/reportingRoutes');
 registerRoute('/api', './routes/settingsRoutes');
 registerRoute('/api/data', './routes/dataUtilsRoutes');
@@ -101,4 +103,5 @@ app.listen(PORT, async () => {
   await setupMeiliSearch();
   // Start the Postgres listener that keeps Meilisearch in sync
   startMeiliListener();
+  startMeiliApplicationsListener();
 });

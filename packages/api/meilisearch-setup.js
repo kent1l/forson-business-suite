@@ -8,7 +8,8 @@ const setupMeiliSearch = async () => {
   try {
     console.log('Configuring Meilisearch indexes...');
     
-    const partsIndex = meiliClient.index('parts');
+  const partsIndex = meiliClient.index('parts');
+  const applicationsIndex = meiliClient.index('applications');
     
     // Tell Meilisearch which fields we want to be able to search, filter and sort on.
     // This optimizes search performance and index size.
@@ -40,6 +41,14 @@ const setupMeiliSearch = async () => {
       },
       filterableAttributes: ['is_active', 'tags', 'applications'], // <-- ADDED: Allow filtering by application
       sortableAttributes: ['display_name', 'internal_sku', 'brand_name', 'group_name']
+    });
+
+    // Applications index settings
+    await applicationsIndex.updateSettings({
+      rankingRules: ['words','typo','proximity','attribute','exactness'],
+      searchableAttributes: ['make','model','engine','label'],
+      filterableAttributes: ['make_id','model_id','engine_id'],
+      sortableAttributes: ['make','model','engine']
     });
 
     console.log('Meilisearch configuration complete.');

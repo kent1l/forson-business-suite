@@ -37,6 +37,8 @@ BEGIN
   FOR r IN SELECT part_id FROM part_application WHERE application_id = COALESCE(NEW.application_id, OLD.application_id) LOOP
     PERFORM notify_meili_upsert_for_part(r.part_id);
   END LOOP;
+  -- Also notify applications index to refresh this application doc
+  PERFORM pg_notify('meili_app_sync', json_build_object('action', CASE WHEN TG_OP = 'DELETE' THEN 'delete' ELSE 'upsert' END, 'application_id', COALESCE(NEW.application_id, OLD.application_id))::text);
   RETURN COALESCE(NEW, OLD);
 END;
 $$ LANGUAGE plpgsql;
