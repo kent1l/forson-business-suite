@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 import { useSettings } from '../contexts/SettingsContext';
@@ -88,6 +88,7 @@ const SalesHistoryPage = () => {
                             <thead className="border-b">
                                 <tr>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Invoice #</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Physical Receipt No.</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Date</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Customer</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Status</th>
@@ -102,6 +103,7 @@ const SalesHistoryPage = () => {
                                         onClick={() => handleRowClick(invoice)}
                                     >
                                         <td className="p-3 text-sm font-mono">{invoice.invoice_number}</td>
+                                        <td className="p-3 text-sm font-mono text-gray-700">{invoice.physical_receipt_no || '-'}</td>
                                         <td className="p-3 text-sm">{new Date(invoice.invoice_date).toLocaleDateString()}</td>
                                         <td className="p-3 text-sm">{invoice.customer_first_name} {invoice.customer_last_name}</td>
                                         <td className="p-3 text-sm">
