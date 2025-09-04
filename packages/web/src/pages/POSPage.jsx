@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import SearchBar from '../components/SearchBar';
+import useTypeahead from '../hooks/useTypeahead';
 import { useSettings } from '../contexts/SettingsContext';
 import Modal from '../components/ui/Modal';
 import CustomerForm from '../components/forms/CustomerForm';
@@ -30,8 +31,8 @@ const POSPage = ({ user, lines, setLines }) => {
     const [isNewPartModalOpen, setIsNewPartModalOpen] = useState(false);
     const [currentItem, setCurrentItem] = useState(null);
     const [lastSale, setLastSale] = useState(null);
-    const [highlightedIndex, setHighlightedIndex] = useState(-1);
     const searchInputRef = useRef(null);
+    const { getInputProps, getItemProps, reset } = useTypeahead({ items: searchResults, onSelect: (item) => { handleSelectPart(item); }, inputId: 'pos-search-input', listboxId: 'pos-search-results' });
 
     // Debounced search effect
     useEffect(() => {
@@ -105,7 +106,7 @@ const POSPage = ({ user, lines, setLines }) => {
         setIsPriceModalOpen(true);
         setSearchTerm('');
         setSearchResults([]);
-        setHighlightedIndex(-1);
+    reset();
     };
 
     const handleConfirmAddItem = (confirmedItem) => {
@@ -270,22 +271,7 @@ const POSPage = ({ user, lines, setLines }) => {
         };
     };
 
-    const handleKeyDown = (e) => {
-        if (searchResults.length > 0) {
-            if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                setHighlightedIndex(prev => (prev + 1) % searchResults.length);
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                setHighlightedIndex(prev => (prev - 1 + searchResults.length) % searchResults.length);
-            } else if (e.key === 'Enter') {
-                e.preventDefault();
-                if (highlightedIndex > -1) {
-                    handleSelectPart(searchResults[highlightedIndex]);
-                }
-            }
-        }
-    };
+    // useTypeahead handles keyboard navigation and selection for the search input
     
     const handleCustomerSelect = (customerId) => {
         const customer = customers.find(c => c.customer_id === customerId);
@@ -315,21 +301,25 @@ const POSPage = ({ user, lines, setLines }) => {
                     <div className="flex items-center space-x-2">
                         <div className="relative flex-grow">
                             <SearchBar
+                                {...getInputProps()}
                                 value={searchTerm}
                                 onChange={setSearchTerm}
-                                onClear={() => { setSearchTerm(''); setSearchResults([]); setHighlightedIndex(-1); }}
+                                onClear={() => { setSearchTerm(''); setSearchResults([]); reset(); }}
                                 placeholder="Scan barcode or search for a part..."
                                 disabled={false}
                                 className=""
                                 ref={searchInputRef}
                             />
                             {searchResults.length > 0 && (
-                                <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg search-results">
-                                    {searchResults.map((part, index) => (
-                                        <li key={part.part_id} onClick={() => handleSelectPart(part)} className={`px-4 py-3 cursor-pointer ${index === highlightedIndex ? 'bg-blue-100' : 'hover:bg-blue-50'}`}>
-                                            {part.display_name}
-                                        </li>
-                                    ))}
+                                <ul id="pos-search-results" className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg search-results" role="listbox">
+                                    {searchResults.map((part, index) => {
+                                        const itemProps = getItemProps(index);
+                                        return (
+                                            <li key={part.part_id} {...itemProps} className={`px-4 py-3 cursor-pointer ${itemProps['aria-selected'] ? 'bg-blue-100' : 'hover:bg-blue-50'}`}>
+                                                {part.display_name}
+                                            </li>
+                                        );
+                                    })}
                                 </ul>
                             )}
                         </div>

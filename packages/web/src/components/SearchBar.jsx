@@ -15,7 +15,9 @@ const SearchBar = forwardRef(({
     onClear = () => {},
     placeholder = 'Search...',
     disabled = false,
-    className = ''
+    className = '',
+    // forward any additional input props like onKeyDown, id, aria-*
+    ...rest
 }, ref) => {
     const showClear = value && value.length > 0 && !disabled;
 
@@ -34,6 +36,7 @@ const SearchBar = forwardRef(({
                 placeholder={placeholder}
                 disabled={disabled}
                 className="w-full px-3 py-2 pl-10 pr-10 border border-gray-300 rounded-lg"
+                {...rest}
             />
 
             <button

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import useTypeahead from '../hooks/useTypeahead';
 import api from '../api';
 import toast from 'react-hot-toast';
 import SearchBar from '../components/SearchBar';
@@ -16,6 +17,10 @@ const GoodsReceiptPage = ({ user }) => {
     const [selectedSupplier, setSelectedSupplier] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState([]);
+    const resultsId = 'goods-receipt-search-results';
+    const inputId = 'goods-receipt-search-input';
+
+    const { getInputProps, getItemProps, reset } = useTypeahead({ items: searchResults, onSelect: (item) => { addPartToLines(item); setSearchResults([]); }, inputId, listboxId: resultsId });
     const [loading, setLoading] = useState(true);
     const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
     const [isNewPartModalOpen, setIsNewPartModalOpen] = useState(false);
@@ -57,7 +62,7 @@ const GoodsReceiptPage = ({ user }) => {
             setGroups(groupsRes.data);
             // Only keep POs that are in the 'Ordered' status for the Goods Receipt selector
             setOpenPOs((openPOsRes.data || []).filter(p => p.status === 'Ordered'));
-    } catch {
+        } catch {
             toast.error("Failed to load initial data.");
         } finally {
             setLoading(false);
@@ -227,19 +232,27 @@ const GoodsReceiptPage = ({ user }) => {
                     <div className="flex items-center space-x-2">
                         <div className="relative flex-grow">
                             <SearchBar
+                                {...getInputProps()}
                                 value={searchTerm}
                                 onChange={setSearchTerm}
-                                onClear={() => setSearchTerm('')}
+                                onClear={() => { setSearchTerm(''); reset(); }}
                                 placeholder="Search by part name or SKU..."
                                 disabled={!!selectedPO}
                             />
                             {searchResults.length > 0 && (
-                                <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg search-results">
-                                    {searchResults.map(part => (
-                                        <li key={part.part_id} onClick={() => addPartToLines(part)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer">
-                                            {part.display_name}
-                                        </li>
-                                    ))}
+                                <ul id={resultsId} role="listbox" className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg search-results">
+                                    {searchResults.map((part, idx) => {
+                                        const itemProps = getItemProps(idx);
+                                        return (
+                                            <li
+                                                key={part.part_id}
+                                                {...itemProps}
+                                                className={`px-4 py-2 cursor-pointer ${itemProps['aria-selected'] ? 'bg-blue-100' : 'hover:bg-blue-50'}`}
+                                            >
+                                                {part.display_name}
+                                            </li>
+                                        );
+                                    })}
                                 </ul>
                             )}
                         </div>
