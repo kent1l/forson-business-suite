@@ -28,21 +28,22 @@ router.post('/goods-receipts', async (req, res) => {
     const newGrnId = receiptResult.rows[0].grn_id;
 
     for (const line of lines) {
-      const { part_id, quantity, cost_price } = line;
+      const { part_id, quantity, cost_price, sale_price } = line;
       if (!part_id || !quantity || !cost_price) {
         throw new Error('Each line item must have part_id, quantity, and cost_price.');
       }
 
       const lineQuery = `
-        INSERT INTO goods_receipt_line (grn_id, part_id, quantity, cost_price)
-        VALUES ($1, $2, $3, $4);
+        INSERT INTO goods_receipt_line (grn_id, part_id, quantity, cost_price, sale_price)
+        VALUES ($1, $2, $3, $4, $5);
       `;
-      await client.query(lineQuery, [newGrnId, part_id, quantity, cost_price]);
+      await client.query(lineQuery, [newGrnId, part_id, quantity, cost_price, sale_price ?? null]);
 
       const transactionQuery = `
         INSERT INTO inventory_transaction (part_id, trans_type, quantity, unit_cost, reference_no, employee_id)
         VALUES ($1, 'StockIn', $2, $3, $4, $5);
       `;
+      // Note: sale_price is not used in inventory valuation; keep it separate from unit_cost
       await client.query(transactionQuery, [part_id, quantity, cost_price, grn_number, received_by]);
       
       // --- NEW: Update PO if linked ---

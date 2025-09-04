@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
@@ -33,7 +33,7 @@ const GoodsReceiptPage = ({ user }) => {
                     params: { keyword: searchTerm }
                 });
                 setSearchResults(response.data);
-            } catch (error) {
+            } catch {
                 toast.error("Search failed.");
             }
         };
@@ -55,7 +55,7 @@ const GoodsReceiptPage = ({ user }) => {
             setBrands(brandsRes.data);
             setGroups(groupsRes.data);
             setOpenPOs(openPOsRes.data);
-        } catch (err) {
+    } catch {
             toast.error("Failed to load initial data.");
         } finally {
             setLoading(false);
@@ -86,9 +86,14 @@ const GoodsReceiptPage = ({ user }) => {
         try {
             toast.loading('Loading PO items...');
             const response = await api.get(`/purchase-orders/${poId}/lines`);
-            setLines(response.data);
+            // Ensure sale_price exists on each line; default to part's last_sale_price if present
+            const linesWithSale = response.data.map(l => ({
+                ...l,
+                sale_price: typeof l.sale_price !== 'undefined' ? l.sale_price : (l.last_sale_price || 0)
+            }));
+            setLines(linesWithSale);
             toast.dismiss();
-        } catch (err) {
+        } catch {
             toast.dismiss();
             toast.error('Failed to load PO items.');
         }
@@ -169,6 +174,7 @@ const GoodsReceiptPage = ({ user }) => {
                 part_id: line.part_id,
                 quantity: line.quantity,
                 cost_price: line.cost_price,
+                sale_price: line.sale_price,
             })),
             po_id: selectedPO ? selectedPO.po_id : null,
         };

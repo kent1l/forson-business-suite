@@ -184,7 +184,8 @@ CREATE TABLE IF NOT EXISTS public.goods_receipt_line (
     grn_id integer NOT NULL REFERENCES public.goods_receipt(grn_id) ON DELETE CASCADE,
     part_id integer NOT NULL REFERENCES public.part(part_id) ON DELETE RESTRICT,
     quantity numeric(12,4) NOT NULL,
-    cost_price numeric(12,2) NOT NULL
+    cost_price numeric(12,2) NOT NULL,
+    sale_price numeric(12,2)
 );
 
 CREATE TABLE IF NOT EXISTS public.customer (
