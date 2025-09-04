@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 import { useSettings } from '../contexts/SettingsContext';
 import DateRangeShortcuts from '../components/ui/DateRangeShortcuts';
 import InvoiceDetailsModal from '../components/refunds/InvoiceDetailsModal';
+import SortableHeader from '../components/ui/SortableHeader';
 
 // Helper function to get badge styles based on status
 const getStatusBadge = (status) => {
@@ -28,6 +29,7 @@ const SalesHistoryPage = () => {
     const { settings } = useSettings();
     const [invoices, setInvoices] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [sortConfig, setSortConfig] = useState({ key: 'invoice_date', direction: 'DESC' });
     const [dates, setDates] = useState({
         startDate: new Date().toISOString().split('T')[0],
         endDate: new Date().toISOString().split('T')[0],
@@ -41,7 +43,7 @@ const SalesHistoryPage = () => {
         try {
             const response = await api.get('/invoices', { params: dates });
             setInvoices(response.data);
-        } catch (err) {
+        } catch {
             toast.error('Failed to fetch sales history.');
         } finally {
             setLoading(false);
@@ -50,6 +52,7 @@ const SalesHistoryPage = () => {
 
     useEffect(() => {
         fetchInvoices();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dates]);
 
     const handleDateChange = (e) => {
@@ -60,6 +63,43 @@ const SalesHistoryPage = () => {
         setSelectedInvoice(invoice);
         setIsModalOpen(true);
     };
+
+    const handleSort = (key, direction) => setSortConfig({ key, direction });
+
+    const sortedInvoices = useMemo(() => {
+        const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+        const data = [...invoices];
+        const { key, direction } = sortConfig;
+        const factor = direction === 'ASC' ? 1 : -1;
+
+        const asCustomer = (inv) => `${inv.customer_first_name || ''} ${inv.customer_last_name || ''}`.trim();
+
+        data.sort((a, b) => {
+            let av; let bv;
+            switch (key) {
+                case 'invoice_number':
+                    av = a.invoice_number; bv = b.invoice_number; break;
+                case 'physical_receipt_no':
+                    av = a.physical_receipt_no; bv = b.physical_receipt_no; break;
+                case 'invoice_date':
+                    av = new Date(a.invoice_date).getTime();
+                    bv = new Date(b.invoice_date).getTime();
+                    return factor * ((av || 0) - (bv || 0));
+                case 'customer':
+                    av = asCustomer(a); bv = asCustomer(b); break;
+                case 'status':
+                    av = a.status; bv = b.status; break;
+                case 'total_amount':
+                    av = parseFloat(a.total_amount) || 0;
+                    bv = parseFloat(b.total_amount) || 0;
+                    return factor * (av - bv);
+                default:
+                    av = ''; bv = '';
+            }
+            return factor * collator.compare(String(av || ''), String(bv || ''));
+        });
+        return data;
+    }, [invoices, sortConfig]);
 
     return (
         <div>
@@ -87,16 +127,18 @@ const SalesHistoryPage = () => {
                         <table className="w-full text-left">
                             <thead className="border-b">
                                 <tr>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Invoice #</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Physical Receipt No.</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Date</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Customer</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Status</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total</th>
+                                    <SortableHeader column="invoice_number" sortConfig={sortConfig} onSort={handleSort}>Invoice #</SortableHeader>
+                                    <SortableHeader column="physical_receipt_no" sortConfig={sortConfig} onSort={handleSort}>Physical Receipt No.</SortableHeader>
+                                    <SortableHeader column="invoice_date" sortConfig={sortConfig} onSort={handleSort}>Date</SortableHeader>
+                                    <SortableHeader column="customer" sortConfig={sortConfig} onSort={handleSort}>Customer</SortableHeader>
+                                    <SortableHeader column="status" sortConfig={sortConfig} onSort={handleSort}>Status</SortableHeader>
+                                    <SortableHeader column="total_amount" sortConfig={sortConfig} onSort={handleSort}>
+                                        <div className="w-full text-right">Total</div>
+                                    </SortableHeader>
                                 </tr>
                             </thead>
                             <tbody>
-                                {invoices.map(invoice => (
+                                {sortedInvoices.map(invoice => (
                                     <tr 
                                         key={invoice.invoice_id} 
                                         className="border-b hover:bg-blue-50 cursor-pointer"
