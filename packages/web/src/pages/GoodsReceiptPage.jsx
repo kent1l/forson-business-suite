@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
+import SearchBar from '../components/SearchBar';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import Modal from '../components/ui/Modal';
@@ -225,13 +226,11 @@ const GoodsReceiptPage = ({ user }) => {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Add Part Manually</label>
                     <div className="flex items-center space-x-2">
                         <div className="relative flex-grow">
-                            <Icon path={ICONS.search} className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                            <input
-                                type="text"
-                                placeholder="Search by part name or SKU..."
+                            <SearchBar
                                 value={searchTerm}
-                                onChange={e => setSearchTerm(e.target.value)}
-                                className="w-full px-3 py-2 pl-10 border border-gray-300 rounded-lg"
+                                onChange={setSearchTerm}
+                                onClear={() => setSearchTerm('')}
+                                placeholder="Search by part name or SKU..."
                                 disabled={!!selectedPO}
                             />
                             {searchResults.length > 0 && (
