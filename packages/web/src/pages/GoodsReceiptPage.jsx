@@ -250,6 +250,7 @@ const GoodsReceiptPage = ({ user }) => {
                                 <th className="p-3 text-sm font-semibold text-gray-600">Part Detail</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 w-28">Quantity</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 w-32">Cost Price</th>
+                                <th className="p-3 text-sm font-semibold text-gray-600 w-32">Sale Price</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 w-16 text-center"></th>
                             </tr>
                         </thead>
@@ -258,8 +259,9 @@ const GoodsReceiptPage = ({ user }) => {
                                 <tr key={line.part_id} className="border-b">
                                     <td className="p-2 text-sm font-medium text-gray-800">{line.display_name}</td>
                                     <td className="p-2"><input type="number" value={line.quantity} onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)} className="w-full p-1 border rounded-md" /></td>
-                                    <td className="p-2"><input type="number" step="0.01" value={line.cost_price} onChange={e => handleLineChange(line.part_id, 'cost_price', e.target.value)} className="w-full p-1 border rounded-md" /></td>
-                                    <td className="p-2 text-center"><button onClick={() => removeLine(line.part_id)} className="text-red-500 hover:text-red-700"><Icon path={ICONS.trash} className="h-5 w-5"/></button></td>
+                                        <td className="p-2"><input type="number" step="0.01" value={line.cost_price} onChange={e => handleLineChange(line.part_id, 'cost_price', e.target.value)} onFocus={e => e.target.select()} className="w-full p-1 border rounded-md" /></td>
+                                        <td className="p-2"><input type="number" step="0.01" value={line.sale_price} onChange={e => handleLineChange(line.part_id, 'sale_price', e.target.value)} onFocus={e => e.target.select()} className="w-full p-1 border rounded-md" /></td>
+                                        <td className="p-2 text-center"><button onClick={() => removeLine(line.part_id)} className="text-red-500 hover:text-red-700"><Icon path={ICONS.trash} className="h-5 w-5"/></button></td>
                                 </tr>
                             ))}
                         </tbody>
