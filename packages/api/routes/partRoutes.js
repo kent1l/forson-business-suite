@@ -239,9 +239,12 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
         
         const partForMeili = await getPartDataForMeili(db, newPartData.part_id);
         if (partForMeili) {
+            // Sync to search and return enriched payload including display_name
             syncPartWithMeili(partForMeili);
+            return res.status(201).json(partForMeili);
         }
 
+        // Fallback to raw row if enrichment fails
         res.status(201).json(newPartData);
     } catch (err) {
         await client.query('ROLLBACK');
@@ -299,8 +302,10 @@ router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) 
         const partForMeili = await getPartDataForMeili(db, id);
         if (partForMeili) {
             syncPartWithMeili(partForMeili);
+            return res.json(partForMeili);
         }
         
+        // Fallback to raw row if enrichment fails
         res.json(updatedPart.rows[0]);
     } catch (err) {
         await client.query('ROLLBACK');
