@@ -234,7 +234,7 @@ const GoodsReceiptPage = ({ user }) => {
                                 disabled={!!selectedPO}
                             />
                             {searchResults.length > 0 && (
-                                <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg">
+                                <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg search-results">
                                     {searchResults.map(part => (
                                         <li key={part.part_id} onClick={() => addPartToLines(part)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer">
                                             {part.display_name}
