@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
 import api from '../api';
 import toast from 'react-hot-toast';
@@ -210,7 +210,7 @@ const POSPage = ({ user, lines, setLines }) => {
         setIsPaymentModalOpen(true);
     };
 
-    const handleConfirmPayment = (paymentMethod, amountPaid, tenderedAmount) => {
+    const handleConfirmPayment = (paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo) => {
         // Enforce full payment on POS: always send amount_paid equal to the final total.
         console.debug(`POS payment: method=${paymentMethod}, tendered=${tenderedAmount}, amountPaid=${amountPaid}, enforced=${total}`);
         const payload = {
@@ -219,6 +219,7 @@ const POSPage = ({ user, lines, setLines }) => {
             payment_method: paymentMethod,
             amount_paid: Number(total) || 0,
             tendered_amount: typeof tenderedAmount !== 'undefined' && tenderedAmount !== null ? Number(tenderedAmount) : null,
+            physical_receipt_no: (physicalReceiptNo || '').trim() || null,
             lines: lines.map(line => ({
                 part_id: line.part_id,
                 quantity: line.quantity,
@@ -230,7 +231,7 @@ const POSPage = ({ user, lines, setLines }) => {
             loading: 'Processing sale...',
             success: (response) => {
                 const newInvoiceNumber = response.data.invoice_number;
-                const saleDataForReceipt = { lines, total, subtotal, tax, invoice_number: newInvoiceNumber };
+                const saleDataForReceipt = { lines, total, subtotal, tax, invoice_number: newInvoiceNumber, physical_receipt_no: (physicalReceiptNo || '').trim() || null };
                 setLastSale(saleDataForReceipt);
                 setLines([]);
                 const walkIn = customers.find(c => c.first_name.toLowerCase() === 'walk-in');
@@ -255,7 +256,12 @@ const POSPage = ({ user, lines, setLines }) => {
                 );
                 return 'Sale completed successfully!';
             },
-            error: 'Failed to process sale.',
+            error: (err) => {
+                if (err?.response?.status === 409) {
+                    return err.response.data?.message || 'Physical Receipt No already exists.';
+                }
+                return 'Failed to process sale.';
+            },
         });
     };
     

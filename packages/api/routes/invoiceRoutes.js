@@ -107,7 +107,7 @@ router.get('/invoices/:id/lines-with-refunds', protect, hasPermission('invoicing
 
 // POST /invoices - Create a new invoice
 router.post('/invoices', async (req, res) => {
-    const { customer_id, employee_id, lines, amount_paid, tendered_amount, payment_method, terms, payment_terms_days } = req.body;
+    const { customer_id, employee_id, lines, amount_paid, tendered_amount, payment_method, terms, payment_terms_days, physical_receipt_no } = req.body;
 
     if (!customer_id || !employee_id || !lines || !Array.isArray(lines) || lines.length === 0) {
         return res.status(400).json({ message: 'Missing required fields.' });
@@ -156,16 +156,23 @@ router.post('/invoices', async (req, res) => {
             dueDate = due.toISOString(); // will be sent to pg as timestamptz
         }
 
+        // Normalize physical receipt number: trim and treat empty as null
+        let prn = null;
+        if (typeof physical_receipt_no === 'string') {
+            const t = physical_receipt_no.trim();
+            prn = t.length > 0 ? t : null;
+        }
+
         const invoiceQuery = `
-            INSERT INTO invoice (invoice_number, customer_id, employee_id, total_amount, amount_paid, status, terms, payment_terms_days, due_date)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            INSERT INTO invoice (invoice_number, customer_id, employee_id, total_amount, amount_paid, status, terms, payment_terms_days, due_date, physical_receipt_no)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING invoice_id;
         `;
     // Debug: log computed financials to aid troubleshooting
     console.log(`Creating invoice ${invoice_number} - total_amount=${total_amount}, amount_paid=${paid}, status=${status}, payment_terms_days=${canonicalDays}, due_date=${dueDate}`);
 
     // Store numeric paid amount and computed status
-    const invoiceResult = await client.query(invoiceQuery, [invoice_number, customer_id, employee_id, total_amount, paid, status, terms, canonicalDays, dueDate]);
+    const invoiceResult = await client.query(invoiceQuery, [invoice_number, customer_id, employee_id, total_amount, paid, status, terms, canonicalDays, dueDate, prn]);
         const newInvoiceId = invoiceResult.rows[0].invoice_id;
 
         for (const line of lines) {
@@ -211,6 +218,10 @@ router.post('/invoices', async (req, res) => {
 
     } catch (err) {
         await client.query('ROLLBACK');
+        // Unique violation for physical_receipt_no
+        if (err && err.code === '23505' && /physical_receipt_no/i.test(err.detail || '')) {
+            return res.status(409).json({ message: 'Physical Receipt No already exists. Please use a unique number.' });
+        }
         console.error('Transaction Error:', err.message);
         res.status(500).json({ message: 'Server error during transaction.', error: err.message });
     } finally {

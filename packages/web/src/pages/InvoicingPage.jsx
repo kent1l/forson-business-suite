@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import api from '../api';
 import { parsePaymentTermsDays } from '../utils/terms';
 import toast from 'react-hot-toast';
@@ -15,6 +15,7 @@ const InvoicingPage = ({ user }) => {
     const [lines, setLines] = useState([]);
     const [selectedCustomer, setSelectedCustomer] = useState('');
     const [paymentMethod, setPaymentMethod] = useState('');
+    const [physicalReceiptNo, setPhysicalReceiptNo] = useState('');
     const [terms, setTerms] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState([]);
@@ -167,6 +168,7 @@ const InvoicingPage = ({ user }) => {
             amount_paid: amount_paid,
             terms: terms,
             payment_terms_days: parsePaymentTermsDays(terms),
+            physical_receipt_no: (physicalReceiptNo || '').trim() || null,
             lines: lines.map(line => ({
                 part_id: line.part_id,
                 quantity: line.quantity,
@@ -182,9 +184,15 @@ const InvoicingPage = ({ user }) => {
                 setLines([]);
                 setSelectedCustomer('');
                 setTerms(settings.DEFAULT_PAYMENT_TERMS || '');
+                setPhysicalReceiptNo('');
                 return 'Invoice created successfully!';
             },
-            error: 'Failed to create invoice.',
+            error: (err) => {
+                if (err?.response?.status === 409) {
+                    return err.response.data?.message || 'Physical Receipt No already exists.';
+                }
+                return 'Failed to create invoice.';
+            },
         });
     };
 
@@ -212,6 +220,22 @@ const InvoicingPage = ({ user }) => {
                         <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
                             {paymentMethods.map(method => <option key={method} value={method}>{method}</option>)}
                         </select>
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <div className="flex items-center justify-between mb-1">
+                            <label className="block text-sm font-medium text-gray-700">Physical Receipt No.</label>
+                        </div>
+                        <input
+                            type="text"
+                            value={physicalReceiptNo}
+                            onChange={(e) => setPhysicalReceiptNo(e.target.value)}
+                            maxLength={50}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            placeholder={settings?.RECEIPT_NO_HELP_TEXT || 'Enter pre-printed receipt number'}
+                        />
+                        <p className="mt-1 text-xs text-gray-500">Optional. Leave blank if not applicable.</p>
                     </div>
                 </div>
                 

@@ -3,7 +3,7 @@ import React from 'react';
 const Receipt = React.forwardRef(({ saleData, settings }, ref) => {
     if (!saleData) return null;
 
-    const { lines, total, subtotal, tax, invoice_number } = saleData;
+    const { lines, total, subtotal, tax, invoice_number, physical_receipt_no } = saleData;
 
     return (
         <div ref={ref} className="p-4 font-mono text-xs text-black bg-white">
@@ -15,6 +15,7 @@ const Receipt = React.forwardRef(({ saleData, settings }, ref) => {
             <div className="my-4 border-t border-dashed border-black"></div>
             <div>
                 <p>Invoice #: {invoice_number}</p>
+                {physical_receipt_no ? <p>Physical Receipt No: {physical_receipt_no}</p> : null}
                 <p>Date: {new Date().toLocaleString()}</p>
             </div>
             <div className="my-4 border-t border-dashed border-black"></div>
