@@ -54,7 +54,8 @@ const GoodsReceiptPage = ({ user }) => {
             setSuppliers(suppliersRes.data);
             setBrands(brandsRes.data);
             setGroups(groupsRes.data);
-            setOpenPOs(openPOsRes.data);
+            // Only keep POs that are in the 'Ordered' status for the Goods Receipt selector
+            setOpenPOs((openPOsRes.data || []).filter(p => p.status === 'Ordered'));
     } catch {
             toast.error("Failed to load initial data.");
         } finally {
