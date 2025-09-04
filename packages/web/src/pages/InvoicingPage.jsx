@@ -4,6 +4,7 @@ import { parsePaymentTermsDays } from '../utils/terms';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
+import SearchBar from '../components/SearchBar';
 import Modal from '../components/ui/Modal';
 import CustomerForm from '../components/forms/CustomerForm';
 import { useSettings } from '../contexts/SettingsContext';
@@ -236,18 +237,15 @@ const InvoicingPage = ({ user }) => {
                 <div className="relative">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Add Part</label>
                     <div className="relative">
-                        <Icon path={ICONS.search} className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                        <input
-                            type="text"
-                            placeholder="Search by part name or SKU..."
+                        <SearchBar
                             value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                            onFocus={e => e.target.select()}
-                            className="w-full px-3 py-2 pl-10 border border-gray-300 rounded-lg"
+                            onChange={setSearchTerm}
+                            onClear={() => setSearchTerm('')}
+                            placeholder="Search by part name or SKU..."
                         />
                     </div>
                     {searchResults.length > 0 && (
-                        <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg">
+                        <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg search-results">
                             {searchResults.map(part => (
                                 <li key={part.part_id} onClick={() => addPartToLines(part)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer">
                                     {part.display_name}

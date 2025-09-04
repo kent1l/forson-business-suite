@@ -1,6 +1,7 @@
 import React from 'react';
 import { DocumentSearchFilters } from './types';
 import { IconSearch, IconGrid, IconList, IconFilter } from './Icons';
+import SearchBar from '../SearchBar';
 
 interface ToolbarProps {
     filters: DocumentSearchFilters;
@@ -13,15 +14,12 @@ interface ToolbarProps {
 export const ToolbarV2: React.FC<ToolbarProps> = ({ filters, onSearchChange, onViewChange, currentView, onFilterToggle }) => (
     <div className="flex-shrink-0 bg-white border-b px-4 py-3 flex items-center justify-between">
         <div className="relative w-full max-w-sm">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <IconSearch className="h-5 w-5 text-gray-400" />
-            </div>
-            <input
-                type="text"
+            <SearchBar
+                value={filters.searchQuery}
+                onChange={(v) => onSearchChange(v)}
+                onClear={() => onSearchChange('')}
                 placeholder="Search..."
-                defaultValue={filters.searchQuery}
-                onChange={e => onSearchChange(e.target.value)}
-                className="w-full bg-gray-100 border-transparent rounded-md pl-10 pr-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full bg-gray-100 border-transparent rounded-md pl-10 pr-4 py-2"
             />
         </div>
         <div className="flex items-center space-x-2">

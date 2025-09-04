@@ -190,15 +190,14 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
             </div>
             <div className="relative">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Add Part</label>
-                <input
-                    type="text"
-                    placeholder="Search for parts to add..."
+                <SearchBar
                     value={searchTerm}
-                    onChange={e => setSearchTerm(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    onChange={setSearchTerm}
+                    onClear={() => setSearchTerm('')}
+                    placeholder="Search for parts to add..."
                 />
                 {searchResults.length > 0 && (
-                    <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg max-h-48 overflow-y-auto">
+                    <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg search-results">
                         {searchResults.map(part => (
                             <li key={part.part_id} onClick={() => addPartToLines(part)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm">
                                 {part.display_name}

@@ -4,6 +4,7 @@ import api from '../api';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
+import SearchBar from '../components/SearchBar';
 import { useSettings } from '../contexts/SettingsContext';
 import Modal from '../components/ui/Modal';
 import CustomerForm from '../components/forms/CustomerForm';
@@ -313,18 +314,17 @@ const POSPage = ({ user, lines, setLines }) => {
                 <div className="w-full md:w-2/3">
                     <div className="flex items-center space-x-2">
                         <div className="relative flex-grow">
-                            <Icon path={ICONS.search} className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                            <input
-                                ref={searchInputRef}
-                                type="text"
-                                placeholder="Scan barcode or search for a part..."
+                            <SearchBar
                                 value={searchTerm}
-                                onChange={e => setSearchTerm(e.target.value)}
-                                onKeyDown={handleKeyDown}
-                                className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg text-lg"
+                                onChange={setSearchTerm}
+                                onClear={() => { setSearchTerm(''); setSearchResults([]); setHighlightedIndex(-1); }}
+                                placeholder="Scan barcode or search for a part..."
+                                disabled={false}
+                                className=""
+                                ref={searchInputRef}
                             />
                             {searchResults.length > 0 && (
-                                <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg">
+                                <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg search-results">
                                     {searchResults.map((part, index) => (
                                         <li key={part.part_id} onClick={() => handleSelectPart(part)} className={`px-4 py-3 cursor-pointer ${index === highlightedIndex ? 'bg-blue-100' : 'hover:bg-blue-50'}`}>
                                             {part.display_name}

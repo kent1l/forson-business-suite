@@ -3,6 +3,7 @@ import api from '../api';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
+import SearchBar from '../components/SearchBar';
 import Modal from '../components/ui/Modal';
 import StockAdjustmentForm from '../components/forms/StockAdjustmentForm';
 import TransactionHistoryModal from '../components/ui/TransactionHistoryModal';
@@ -80,13 +81,11 @@ const InventoryPage = () => {
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-semibold text-gray-800">Inventory Management</h1>
                 <div className="relative w-full max-w-xs">
-                    <Icon path={ICONS.search} className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                    <input
-                        type="text"
-                        placeholder="Search inventory..."
+                    <SearchBar
                         value={searchTerm}
-                        onChange={e => setSearchTerm(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg"
+                        onChange={setSearchTerm}
+                        onClear={() => setSearchTerm('')}
+                        placeholder="Search inventory..."
                     />
                 </div>
             </div>
