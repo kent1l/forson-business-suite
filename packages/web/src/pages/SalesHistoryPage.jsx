@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 import { useSettings } from '../contexts/SettingsContext';
@@ -34,6 +34,9 @@ const SalesHistoryPage = () => {
         startDate: new Date().toISOString().split('T')[0],
         endDate: new Date().toISOString().split('T')[0],
     });
+    const [query, setQuery] = useState('');
+    const [debouncedQuery, setDebouncedQuery] = useState('');
+    const debounceRef = useRef(null);
     
     const [selectedInvoice, setSelectedInvoice] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -41,7 +44,7 @@ const SalesHistoryPage = () => {
     const fetchInvoices = async () => {
         setLoading(true);
         try {
-            const response = await api.get('/invoices', { params: dates });
+            const response = await api.get('/invoices', { params: { ...dates, q: debouncedQuery || undefined } });
             setInvoices(response.data);
         } catch {
             toast.error('Failed to fetch sales history.');
@@ -53,7 +56,16 @@ const SalesHistoryPage = () => {
     useEffect(() => {
         fetchInvoices();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dates]);
+    }, [dates, debouncedQuery]);
+
+    // Debounce the search input
+    useEffect(() => {
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        debounceRef.current = setTimeout(() => {
+            setDebouncedQuery(query.trim());
+        }, 300);
+        return () => debounceRef.current && clearTimeout(debounceRef.current);
+    }, [query]);
 
     const handleDateChange = (e) => {
         setDates(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -106,7 +118,7 @@ const SalesHistoryPage = () => {
             <h1 className="text-2xl font-semibold text-gray-800 mb-6">Sales History</h1>
 
             <div className="bg-white p-6 rounded-xl border border-gray-200 mb-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
                         <input type="date" name="startDate" value={dates.startDate} onChange={handleDateChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
@@ -114,6 +126,16 @@ const SalesHistoryPage = () => {
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
                         <input type="date" name="endDate" value={dates.endDate} onChange={handleDateChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                    </div>
+                    <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
+                        <input
+                            type="text"
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            placeholder="Search invoice #, physical receipt no., customer, or item..."
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        />
                     </div>
                     <div className="md:col-span-3">
                        <DateRangeShortcuts onSelect={setDates} />

@@ -5,15 +5,51 @@ const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { constructDisplayName } = require('../helpers/displayNameHelper'); // Import the helper
 const router = express.Router();
 
-// GET /invoices - Get all invoices with date filtering
+// GET /invoices - Get all invoices with date filtering and optional search
 router.get('/invoices', protect, hasPermission('invoicing:create'), async (req, res) => {
-    const { startDate, endDate } = req.query;
+    const { startDate, endDate, q } = req.query;
 
     if (!startDate || !endDate) {
         return res.status(400).json({ message: 'Start date and end date are required.' });
     }
 
     try {
+        const params = [startDate, endDate];
+        const whereClauses = [
+            'i.invoice_date::date BETWEEN $1 AND $2'
+        ];
+
+        // Optional q filter: match invoice number, physical receipt no, customer name, or line item display fields
+        let searchParamIndex = null;
+        if (typeof q === 'string' && q.trim().length > 0) {
+            searchParamIndex = params.length + 1; // next $ index
+            params.push(`%${q.trim()}%`);
+            whereClauses.push(`(
+                i.invoice_number ILIKE $${searchParamIndex}
+                OR i.physical_receipt_no ILIKE $${searchParamIndex}
+                OR c.first_name ILIKE $${searchParamIndex}
+                OR c.last_name ILIKE $${searchParamIndex}
+                OR (c.first_name || ' ' || c.last_name) ILIKE $${searchParamIndex}
+                OR EXISTS (
+                    SELECT 1
+                    FROM invoice_line il2
+                    JOIN part p2 ON il2.part_id = p2.part_id
+                    LEFT JOIN brand b2 ON p2.brand_id = b2.brand_id
+                    LEFT JOIN "group" g2 ON p2.group_id = g2.group_id
+                    WHERE il2.invoice_id = i.invoice_id
+                      AND (
+                        p2.detail ILIKE $${searchParamIndex}
+                        OR b2.brand_name ILIKE $${searchParamIndex}
+                        OR g2.group_name ILIKE $${searchParamIndex}
+                        OR EXISTS (
+                            SELECT 1 FROM part_number pn2
+                            WHERE pn2.part_id = p2.part_id AND pn2.part_number ILIKE $${searchParamIndex}
+                        )
+                      )
+                )
+            )`);
+        }
+
         const query = `
             SELECT
                 i.*,
@@ -24,10 +60,10 @@ router.get('/invoices', protect, hasPermission('invoicing:create'), async (req, 
             FROM invoice i
             JOIN customer c ON i.customer_id = c.customer_id
             JOIN employee e ON i.employee_id = e.employee_id
-            WHERE i.invoice_date::date BETWEEN $1 AND $2
+            WHERE ${whereClauses.join(' AND ')}
             ORDER BY i.invoice_date DESC;
         `;
-        const { rows } = await db.query(query, [startDate, endDate]);
+        const { rows } = await db.query(query, params);
         res.json(rows);
     } catch (err) {
         console.error(err.message);
