@@ -1,19 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import { useState, useEffect, useCallback } from 'react';
+import api from '../api';
 import toast from 'react-hot-toast';
-import Icon from '../components/ui/Icon';
-import { ICONS } from '../constants';
 
 const PartNumberManager = ({ part, onSave, onCancel }) => {
     const [numbers, setNumbers] = useState([]);
     const [newNumbersString, setNewNumbersString] = useState('');
     const [loading, setLoading] = useState(true);
 
-    const fetchNumbers = async () => {
+    const fetchNumbers = useCallback(async () => {
         if (part) {
             setLoading(true);
             try {
-                const response = await axios.get(`http://localhost:3001/api/parts/${part.part_id}/numbers`);
+                const response = await api.get(`/parts/${part.part_id}/numbers`);
                 setNumbers(response.data);
             } catch (err) {
                 console.error("Failed to fetch part numbers", err);
@@ -22,17 +20,17 @@ const PartNumberManager = ({ part, onSave, onCancel }) => {
                 setLoading(false);
             }
         }
-    };
+    }, [part]);
 
     useEffect(() => {
         fetchNumbers();
-    }, [part]);
+    }, [fetchNumbers]);
 
     const handleAddNumbers = async (e) => {
         e.preventDefault();
         if (!newNumbersString.trim()) return;
 
-        const promise = axios.post(`http://localhost:3001/api/parts/${part.part_id}/numbers`, {
+    const promise = api.post(`/parts/${part.part_id}/numbers`, {
             numbersString: newNumbersString,
         });
 
@@ -57,7 +55,7 @@ const PartNumberManager = ({ part, onSave, onCancel }) => {
 
     const handleSaveOrder = async () => {
         const orderedIds = numbers.map(num => num.part_number_id);
-        const promise = axios.put(`http://localhost:3001/api/parts/${part.part_id}/numbers/reorder`, { orderedIds });
+    const promise = api.put(`/parts/${part.part_id}/numbers/reorder`, { orderedIds });
 
         toast.promise(promise, {
             loading: 'Saving order...',
