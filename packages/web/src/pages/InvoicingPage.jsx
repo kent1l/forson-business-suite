@@ -157,11 +157,14 @@ const InvoicingPage = ({ user }) => {
             return;
         }
 
+        // Set amount_paid based on payment method
+        const amount_paid = paymentMethod.toLowerCase() === 'cash' ? subtotal : 0;
+
         const payload = {
             customer_id: selectedCustomer,
             employee_id: user.employee_id,
             payment_method: paymentMethod,
-            amount_paid: subtotal,
+            amount_paid: amount_paid,
             terms: terms,
             payment_terms_days: parsePaymentTermsDays(terms),
             lines: lines.map(line => ({
