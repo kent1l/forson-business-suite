@@ -110,7 +110,7 @@ const PowerSearchPage = () => {
                                         <td className="p-3 text-sm text-gray-600 align-top">
                             {part.applications ? (
                                 <div className="whitespace-pre-line">
-                                    {formatApplicationText(part.applications, { separator: '\n' })}
+                                    {formatApplicationText(part.applications, { style: 'multilineFull' })}
                                 </div>
                             ) : ''}
                         </td>
