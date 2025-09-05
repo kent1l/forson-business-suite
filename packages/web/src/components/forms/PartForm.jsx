@@ -6,6 +6,7 @@ import Combobox from '../ui/Combobox';
 import { useSettings } from '../../contexts/SettingsContext';
 import TagInput from '../ui/TagInput'; // <-- Import TagInput
 import ApplicationSearchCombobox from '../applications/ApplicationSearchCombobox';
+import PartApplicationManager from '../../pages/PartApplicationManager';
 
 const BrandGroupForm = ({ type, onSave, onCancel }) => {
     const [name, setName] = useState('');
@@ -53,17 +54,22 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
     // helper to display an application label
     const labelForApp = (app) => [app?.make, app?.model, app?.engine].filter(Boolean).join(' ');
 
+    const [isAppManagerOpen, setIsAppManagerOpen] = useState(false);
+
     // fetch existing linked applications for the part when editing
-    useEffect(() => {
+    const fetchSelectedApps = useCallback(async () => {
         if (isBulkEdit) { setSelectedApps([]); return; }
-        if (part) {
-            api.get(`/parts/${part.part_id}/applications`).then(res => {
-                setSelectedApps(Array.isArray(res.data) ? res.data : []);
-            }).catch(() => toast.error('Could not load part applications.'));
-        } else {
-            setSelectedApps([]);
+        if (!part) { setSelectedApps([]); return; }
+        try {
+            const res = await api.get(`/parts/${part.part_id}/applications`);
+            setSelectedApps(Array.isArray(res.data) ? res.data : []);
+        } catch (error) {
+            console.error(error);
+            toast.error('Could not load part applications.');
         }
     }, [part, isBulkEdit]);
+
+    useEffect(() => { fetchSelectedApps(); }, [fetchSelectedApps]);
 
     const addApplication = (app) => {
         if (!app || !app.application_id) return;
@@ -250,17 +256,25 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                             <div className="flex-grow">
                                 <ApplicationSearchCombobox value={null} onChange={(app) => addApplication(app)} placeholder="Search make model engine…" />
                             </div>
-                        </div>
-                        <div className="mt-2 space-y-2">
-                            {selectedApps.map(app => (
-                                <div key={app.application_id} className="flex items-center justify-between bg-gray-50 border rounded px-3 py-2">
-                                    <div className="text-sm text-gray-700">{labelForApp(app)}</div>
-                                    <button type="button" onClick={() => removeApplication(app.application_id)} className="text-xs text-red-600 hover:underline">Remove</button>
-                                </div>
-                            ))}
-                            {selectedApps.length === 0 && (
-                                <div className="text-sm text-gray-500">No linked applications</div>
+                            {part && (
+                                <button type="button" onClick={() => setIsAppManagerOpen(true)} className="px-2 py-1 border rounded text-sm text-gray-700 hover:bg-gray-100">Manage</button>
                             )}
+                        </div>
+                        <div className="mt-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                                {selectedApps.slice(0, 6).map(app => (
+                                    <div key={app.application_id} className="inline-flex items-center space-x-2 bg-gray-50 border rounded-full px-3 py-1 text-xs">
+                                        <span className="truncate max-w-[16rem]">{labelForApp(app)}</span>
+                                        <button type="button" onClick={() => removeApplication(app.application_id)} className="text-gray-400 hover:text-red-600 ml-1">×</button>
+                                    </div>
+                                ))}
+                                {selectedApps.length > 6 && (
+                                    <div className="inline-flex items-center text-xs text-gray-500">+{selectedApps.length - 6} more</div>
+                                )}
+                                {selectedApps.length === 0 && (
+                                    <div className="text-sm text-gray-500">No linked applications</div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 )}
@@ -349,6 +363,9 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
             </Modal>
             <Modal isOpen={isGroupModalOpen} onClose={() => setIsGroupModalOpen(false)} title="Add New Group">
                 <BrandGroupForm type="Group" onSave={(newGroup) => handleNewBrandGroup(newGroup, 'Group')} onCancel={() => setIsGroupModalOpen(false)} />
+            </Modal>
+            <Modal isOpen={isAppManagerOpen} onClose={() => { setIsAppManagerOpen(false); fetchSelectedApps(); }} title={`Manage Applications for: ${part?.detail || part?.display_name || ''}`}>
+                <PartApplicationManager part={part} onCancel={() => { setIsAppManagerOpen(false); fetchSelectedApps(); }} />
             </Modal>
         </>
     );
