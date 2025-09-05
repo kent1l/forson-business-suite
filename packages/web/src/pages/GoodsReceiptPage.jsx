@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import useTypeahead from '../hooks/useTypeahead';
 import api from '../api';
 import toast from 'react-hot-toast';
@@ -8,6 +8,7 @@ import { ICONS } from '../constants';
 import Modal from '../components/ui/Modal';
 import SupplierForm from '../components/forms/SupplierForm';
 import PartForm from '../components/forms/PartForm';
+import useDraft from '../hooks/useDraft';
 
 const GoodsReceiptPage = ({ user }) => {
     const [suppliers, setSuppliers] = useState([]);
@@ -26,6 +27,11 @@ const GoodsReceiptPage = ({ user }) => {
     const [isNewPartModalOpen, setIsNewPartModalOpen] = useState(false);
     const [openPOs, setOpenPOs] = useState([]);
     const [selectedPO, setSelectedPO] = useState('');
+
+    // Reusable draft hook
+    const draftData = useMemo(() => ({ selectedSupplier, lines, selectedPO }), [selectedSupplier, lines, selectedPO]);
+    const isEmpty = useMemo(() => (d) => (!d?.selectedSupplier && (!d?.lines || d.lines.length === 0) && !d?.selectedPO), []);
+    const { status: draftStatus, lastSavedAt, draft, loaded: draftLoaded, clearDraft } = useDraft('goods-receipt', { data: draftData, isEmpty, debounceMs: 750 });
 
     useEffect(() => {
         if (searchTerm.trim() === '') {
@@ -78,6 +84,17 @@ const GoodsReceiptPage = ({ user }) => {
     useEffect(() => {
         fetchInitialData();
     }, []);
+
+    // When draft loads, hydrate local state once
+    useEffect(() => {
+        if (!draftLoaded) return;
+        if (draft) {
+            if (draft.selectedSupplier) setSelectedSupplier(draft.selectedSupplier);
+            if (draft.lines) setLines(draft.lines);
+            if (draft.selectedPO) setSelectedPO(draft.selectedPO);
+            toast('Loaded your saved draft.', { icon: '📄' });
+        }
+    }, [draftLoaded, draft]);
 
     const handleSelectPO = async (poId) => {
         if (!poId) {
@@ -188,13 +205,14 @@ const GoodsReceiptPage = ({ user }) => {
 
         const promise = api.post('/goods-receipts', payload);
 
-        toast.promise(promise, {
+    toast.promise(promise, {
             loading: 'Posting transaction...',
             success: () => {
                 setLines([]);
                 setSelectedSupplier('');
                 setSelectedPO('');
                 fetchInitialData(); // Refresh PO list
+        clearDraft();
                 return 'Goods receipt created successfully!';
             },
             error: 'Failed to create goods receipt.',
@@ -207,6 +225,14 @@ const GoodsReceiptPage = ({ user }) => {
         <div>
             <h1 className="text-2xl font-semibold text-gray-800 mb-6">New Goods Receipt</h1>
             <div className="bg-white p-6 rounded-xl border border-gray-200 space-y-6">
+                {/* Draft saved indicator */}
+                <div className="flex items-center justify-end text-xs text-gray-500">
+                    {draftStatus === 'saving' && <span>Saving draft…</span>}
+                    {draftStatus === 'saved' && (
+                        <span>Draft saved{lastSavedAt ? ` at ${lastSavedAt.toLocaleTimeString()}` : ''}</span>
+                    )}
+                    {draftStatus === 'error' && <span className="text-red-600">Draft save failed</span>}
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Receive Against Purchase Order (Optional)</label>

@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import api from '../../api'; // <-- CORRECTED PATH
 import toast from 'react-hot-toast';
 import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
 import Combobox from '../ui/Combobox';
 import SearchBar from '../SearchBar';
+import useDraft from '../../hooks/useDraft';
 
 const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
     const [suppliers, setSuppliers] = useState([]);
@@ -16,7 +17,10 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
     });
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState([]);
-    const hasLoadedDraft = useRef(false);
+    // Draft via reusable hook
+    const poDraftData = useMemo(() => formData, [formData]);
+    const poIsEmpty = useMemo(() => (d) => (!d?.selectedSupplier && (!d?.lines || d.lines.length === 0)), []);
+    const { status: poDraftStatus, lastSavedAt: poLastSavedAt, draft: poDraft, loaded: poDraftLoaded, clearDraft: clearPODraft } = useDraft('po', { data: poDraftData, isEmpty: poIsEmpty, debounceMs: 750 });
 
     // --- Load initial data ---
     useEffect(() => {
@@ -32,45 +36,20 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                     expectedDate: existingPO.expected_date ? existingPO.expected_date.split('T')[0] : ''
                 });
             });
-        } else {
-            // If creating, attempt to load a saved draft
-            if (hasLoadedDraft.current) return;
-            hasLoadedDraft.current = true;
-            api.get('/drafts/po').then(res => {
-                if (res.data) {
-                    setFormData(res.data);
-                    toast('Loaded your saved draft.', { icon: '📄' });
-                }
-            }).catch(err => {
-                if (err.response && err.response.status !== 404) {
-                    toast.error("Could not load saved draft.");
-                }
-            });
         }
     }, [existingPO]);
 
     // --- Debounced auto-save logic ---
-    const saveDraft = useCallback(async (data) => {
-        try {
-            await api.post('/drafts/po', data);
-        } catch (error) {
-            console.error("Failed to save draft", error);
-        }
-    }, []);
-
+    // When PO draft loads (create mode), hydrate once
     useEffect(() => {
-        if (existingPO) return; // Don't auto-save when in edit mode
-
-        if (!formData.selectedSupplier && formData.lines.length === 0) {
-            return;
+        if (existingPO) return;
+        if (!poDraftLoaded) return;
+        if (poDraft) {
+            setFormData(poDraft);
+            toast('Loaded your saved draft.', { icon: '📄' });
         }
-        const handler = setTimeout(() => {
-            saveDraft(formData);
-        }, 750);
-        return () => {
-            clearTimeout(handler);
-        };
-    }, [formData, saveDraft, existingPO]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [poDraftLoaded]);
 
 
     // --- Part search logic ---
@@ -126,13 +105,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
     };
 
     const clearDraftAndCancel = async () => {
-        if (!existingPO) {
-            try {
-                await api.delete('/drafts/po');
-            } catch (error) {
-                console.error("Could not clear draft, but proceeding with cancel.", error);
-            }
-        }
+    if (!existingPO) await clearPODraft();
         onCancel();
     };
 
@@ -151,13 +124,9 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
         
         const promise = onSave(payload); 
         
-        promise.then(() => {
+        promise.then(async () => {
             if (!existingPO) {
-                try {
-                    api.delete('/drafts/po');
-                } catch (error) {
-                    console.error("PO created, but failed to clear draft.", error);
-                }
+                await clearPODraft();
             }
         }).catch(() => {
             // Error is handled by the parent component's toast.promise
@@ -168,6 +137,14 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Draft saved indicator */}
+            <div className="flex items-center justify-end text-xs text-gray-500">
+                {poDraftStatus === 'saving' && <span>Saving draft…</span>}
+                {poDraftStatus === 'saved' && (
+                    <span>Draft saved{poLastSavedAt ? ` at ${poLastSavedAt.toLocaleTimeString()}` : ''}</span>
+                )}
+                {poDraftStatus === 'error' && <span className="text-red-600">Draft save failed</span>}
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
