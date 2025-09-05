@@ -4,6 +4,7 @@ import api from '../api';
 import toast from 'react-hot-toast';
 import SearchBar from '../components/SearchBar';
 import Icon from '../components/ui/Icon';
+import Combobox from '../components/ui/Combobox';
 import { ICONS } from '../constants';
 import Modal from '../components/ui/Modal';
 import SupplierForm from '../components/forms/SupplierForm';
@@ -232,6 +233,15 @@ const GoodsReceiptPage = ({ user }) => {
                         <span>Draft saved{lastSavedAt ? ` at ${lastSavedAt.toLocaleTimeString()}` : ''}</span>
                     )}
                     {draftStatus === 'error' && <span className="text-red-600">Draft save failed</span>}
+                        {(draftStatus === 'saved' || draftStatus === 'saving' || draft) && (
+                            <button
+                                type="button"
+                                onClick={async () => { await clearDraft(); toast.success('Draft cleared'); }}
+                                className="text-sm text-gray-600 hover:text-gray-800 ml-3"
+                            >
+                                Clear Draft
+                            </button>
+                        )}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
@@ -244,10 +254,15 @@ const GoodsReceiptPage = ({ user }) => {
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
                         <div className="flex items-center space-x-2">
-                            <select value={selectedSupplier} onChange={e => setSelectedSupplier(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" disabled={!!selectedPO}>
-                                <option value="">Select a Supplier</option>
-                                {suppliers.map(s => <option key={s.supplier_id} value={s.supplier_id}>{s.supplier_name}</option>)}
-                            </select>
+                            <div className="flex-grow">
+                                <Combobox
+                                    options={suppliers.map(s => ({ value: s.supplier_id, label: s.supplier_name }))}
+                                    value={selectedSupplier}
+                                    onChange={val => setSelectedSupplier(val)}
+                                    placeholder="Select a Supplier"
+                                    disabled={!!selectedPO}
+                                />
+                            </div>
                             <button onClick={() => setIsSupplierModalOpen(true)} className="px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm" disabled={!!selectedPO}>New</button>
                         </div>
                     </div>
