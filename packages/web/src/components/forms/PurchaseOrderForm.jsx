@@ -6,6 +6,7 @@ import { ICONS } from '../../constants';
 import Combobox from '../ui/Combobox';
 import SearchBar from '../SearchBar';
 import useDraft from '../../hooks/useDraft';
+import { formatApplicationText } from '../../helpers/applicationTextHelper';
 
 const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
     const [suppliers, setSuppliers] = useState([]);
@@ -66,22 +67,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
         return () => clearTimeout(timer);
     }, [searchTerm]);
 
-    const renderApplicationsText = (apps) => {
-        if (!apps) return null;
-        if (typeof apps === 'string') return apps;
-        if (Array.isArray(apps)) {
-            return apps.map(a => {
-                if (!a) return '';
-                if (typeof a === 'string') return a;
-                if (typeof a === 'object') return a.display || [a.make, a.model, a.engine].filter(Boolean).join(' ');
-                return String(a);
-            }).filter(Boolean).join(', ');
-        }
-        if (typeof apps === 'object') {
-            return apps.display || [apps.make, apps.model, apps.engine].filter(Boolean).join(' ');
-        }
-        return String(apps);
-    };
+    // Application text formatting is now handled by the helper
 
     const supplierOptions = useMemo(() => suppliers.map(s => ({ value: s.supplier_id, label: s.supplier_name })), [suppliers]);
 
@@ -197,7 +183,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                             <li key={part.part_id} onClick={() => addPartToLines(part)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm">
                                 <div className="flex items-baseline space-x-2">
                                     <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
-                                    {part.applications && <div className="text-xs text-gray-500 truncate">{renderApplicationsText(part.applications)}</div>}
+                                    {part.applications && <div className="text-xs text-gray-500 truncate">{formatApplicationText(part.applications, { truncate: true, maxLength: 80 })}</div>}
                                 </div>
                             </li>
                         ))}
