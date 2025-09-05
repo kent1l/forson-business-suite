@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
 import Combobox from '../ui/Combobox';
 import { useSettings } from '../../contexts/SettingsContext';
 import TagInput from '../ui/TagInput'; // <-- Import TagInput
+import ApplicationSearchCombobox from '../applications/ApplicationSearchCombobox';
 
 const BrandGroupForm = ({ type, onSave, onCancel }) => {
     const [name, setName] = useState('');
@@ -44,11 +45,37 @@ const BrandGroupForm = ({ type, onSave, onCancel }) => {
     );
 };
 
-const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, isBulkEdit = false, selectedCount = 0 }) => {
+const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, isBulkEdit = false, selectedCount: _selectedCount = 0 }) => {
     const { settings } = useSettings();
     const [tags, setTags] = useState([]); // <-- State for tags
+    const [selectedApps, setSelectedApps] = useState([]); // <-- State for linked applications
 
-    const getInitialState = () => {
+    // helper to display an application label
+    const labelForApp = (app) => [app?.make, app?.model, app?.engine].filter(Boolean).join(' ');
+
+    // fetch existing linked applications for the part when editing
+    useEffect(() => {
+        if (isBulkEdit) { setSelectedApps([]); return; }
+        if (part) {
+            api.get(`/parts/${part.part_id}/applications`).then(res => {
+                setSelectedApps(Array.isArray(res.data) ? res.data : []);
+            }).catch(() => toast.error('Could not load part applications.'));
+        } else {
+            setSelectedApps([]);
+        }
+    }, [part, isBulkEdit]);
+
+    const addApplication = (app) => {
+        if (!app || !app.application_id) return;
+        setSelectedApps(prev => {
+            if (prev.find(a => a.application_id === app.application_id)) return prev;
+            return [...prev, app];
+        });
+    };
+
+    const removeApplication = (id) => setSelectedApps(prev => prev.filter(a => a.application_id !== id));
+
+    const getInitialState = useCallback(() => {
         if (isBulkEdit) {
             return {
                 brand_id: '', group_id: '',
@@ -65,7 +92,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
             is_service: false, low_stock_warning: false, 
             is_tax_inclusive_price: settings?.DEFAULT_IS_TAX_INCLUSIVE === 'true'
         };
-    };
+    }, [isBulkEdit, settings]);
 
     const [formData, setFormData] = useState(getInitialState());
     const [taxRates, setTaxRates] = useState([]);
@@ -81,7 +108,8 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
             try {
                 const response = await api.get('/tax-rates');
                 setTaxRates(response.data);
-            } catch (err) {
+            } catch (error) {
+                console.error(error);
                 toast.error("Could not load tax rates.");
             }
         };
@@ -117,7 +145,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
             // Fetch existing tags for the part being edited
             api.get(`/parts/${part.part_id}/tags`).then(res => {
                 setTags(res.data.map(t => t.tag_name));
-            }).catch(() => toast.error('Could not load part tags.'));
+            }).catch((error) => { console.error(error); toast.error('Could not load part tags.') });
 
         } else {
             const initialState = getInitialState();
@@ -130,7 +158,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
             setFormData(initialState);
             setTags([]); // Clear tags for new part
         }
-    }, [part, isBulkEdit, taxRates, settings]);
+    }, [part, isBulkEdit, taxRates, settings, getInitialState]);
 
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
@@ -143,7 +171,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        onSave({ ...formData, tags }); // <-- Include tags in the payload
+        onSave({ ...formData, tags, applications: selectedApps }); // include linked applications
     };
     
     const handleNewBrandGroup = (newItem, type) => {
@@ -157,16 +185,19 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
         }
     };
 
-    const BooleanSelect = ({ name, label }) => (
-        <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-            <select name={name} value={formData[name]} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                <option value="unchanged">No Change</option>
-                <option value="true">Yes</option>
-                <option value="false">No</option>
-            </select>
-        </div>
-    );
+    // BooleanSelect used for bulk edit dropdowns
+    function BooleanSelect({ name, label }) {
+        return (
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+                <select name={name} value={formData[name]} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                    <option value="unchanged">No Change</option>
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                </select>
+            </div>
+        );
+    }
 
     return (
         <>
@@ -211,7 +242,29 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                     </div>
                 )}
 
-                {/* --- NEW: Tag Input Field (conditionally rendered) --- */}
+                {/* --- NEW: Application linker (search + add) --- */}
+                {!isBulkEdit && (
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Applications</label>
+                        <div className="flex items-center space-x-2">
+                            <div className="flex-grow">
+                                <ApplicationSearchCombobox value={null} onChange={(app) => addApplication(app)} placeholder="Search make model engine…" />
+                            </div>
+                        </div>
+                        <div className="mt-2 space-y-2">
+                            {selectedApps.map(app => (
+                                <div key={app.application_id} className="flex items-center justify-between bg-gray-50 border rounded px-3 py-2">
+                                    <div className="text-sm text-gray-700">{labelForApp(app)}</div>
+                                    <button type="button" onClick={() => removeApplication(app.application_id)} className="text-xs text-red-600 hover:underline">Remove</button>
+                                </div>
+                            ))}
+                            {selectedApps.length === 0 && (
+                                <div className="text-sm text-gray-500">No linked applications</div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
                 {!isBulkEdit && (
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Tags</label>
