@@ -204,7 +204,7 @@ const InvoicingPage = ({ user }) => {
         <div>
             <h1 className="text-2xl font-semibold text-gray-800 mb-6">New Invoice</h1>
             <div className="bg-white p-6 rounded-xl border border-gray-200 space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
                         <div className="flex items-center space-x-2">
@@ -221,8 +221,6 @@ const InvoicingPage = ({ user }) => {
                             {paymentMethods.map(method => <option key={method} value={method}>{method}</option>)}
                         </select>
                     </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <div className="flex items-center justify-between mb-1">
                             <label className="block text-sm font-medium text-gray-700">Physical Receipt No.</label>
