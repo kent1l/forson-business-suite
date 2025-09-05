@@ -2,6 +2,27 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 
+// A simple spinner component for loading states
+const Spinner = () => (
+    <div className="flex justify-center items-center h-24">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-700"></div>
+    </div>
+);
+
+// Up/Down Chevron Icons for reordering
+const MoveUpIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" />
+    </svg>
+);
+
+const MoveDownIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+    </svg>
+);
+
+
 const PartNumberManager = ({ part, onSave, onCancel }) => {
     const [numbers, setNumbers] = useState([]);
     const [newNumbersString, setNewNumbersString] = useState('');
@@ -39,7 +60,7 @@ const PartNumberManager = ({ part, onSave, onCancel }) => {
             success: (response) => {
                 setNumbers(response.data);
                 setNewNumbersString('');
-                onSave();
+                onSave(); // Refresh the parent component's data
                 return 'Numbers added successfully!';
             },
             error: 'Failed to add numbers.'
@@ -60,7 +81,7 @@ const PartNumberManager = ({ part, onSave, onCancel }) => {
         toast.promise(promise, {
             loading: 'Saving order...',
             success: () => {
-                onSave();
+                onSave(); // Refresh the parent component's data
                 return 'Order saved successfully!';
             },
             error: 'Failed to save order.'
@@ -68,70 +89,83 @@ const PartNumberManager = ({ part, onSave, onCancel }) => {
     };
 
     return (
-        <div className="p-4 space-y-4">
-            <div className="text-xs text-gray-500">Total numbers: {numbers.length}</div>
-            {loading ? (
-                <div className="text-sm text-gray-500">Loading numbers...</div>
-            ) : (
-                <div className="bg-gray-50 p-3 rounded-md max-h-56 min-h-24 overflow-y-auto">
-                    {numbers.length > 0 ? (
-                        numbers.map((num, index) => (
-                            <div key={num.part_number_id} className="flex justify-between items-center py-2 text-sm border-b last:border-b-0">
-                                <span className="font-mono">{num.part_number}</span>
-                                <div className="flex gap-1">
-                                    <button
-                                        type="button"
-                                        title="Move up"
-                                        aria-label={`Move ${num.part_number} up`}
-                                        onClick={() => moveNumber(index, -1)}
-                                        disabled={index === 0}
-                                        className="p-1 rounded hover:bg-gray-100 disabled:opacity-40"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-                                            <path fillRule="evenodd" d="M3.22 12.78a.75.75 0 0 1 0-1.06l6-6a.75.75 0 0 1 1.06 0l6 6a.75.75 0 1 1-1.06 1.06L10 7.56l-5.72 5.72a.75.75 0 0 1-1.06 0Z" clipRule="evenodd" />
-                                        </svg>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        title="Move down"
-                                        aria-label={`Move ${num.part_number} down`}
-                                        onClick={() => moveNumber(index, 1)}
-                                        disabled={index === numbers.length - 1}
-                                        className="p-1 rounded hover:bg-gray-100 disabled:opacity-40"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-                                            <path fillRule="evenodd" d="M16.78 7.22a.75.75 0 0 1 0 1.06l-6 6a.75.75 0 0 1-1.06 0l-6-6A.75.75 0 0 1 4.72 7.22L10 12.5l5.28-5.28a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
-                                        </svg>
-                                    </button>
-                                </div>
-                            </div>
-                        ))
+        // Use a more spacious and consistent padding and vertical gap
+        <div className="p-6 flex flex-col gap-6 bg-white">
+            {/* Section for displaying existing numbers */}
+            <div>
+                <h3 className="text-sm font-medium text-slate-800 mb-1">Existing Numbers ({numbers.length})</h3>
+                <div className="border rounded-lg bg-slate-50 max-h-60 overflow-y-auto">
+                    {loading ? (
+                        <Spinner />
                     ) : (
-                        <p className="text-sm text-gray-500">No part numbers added yet.</p>
+                        <ul className="divide-y divide-slate-200">
+                            {numbers.length > 0 ? (
+                                numbers.map((num, index) => (
+                                    <li key={num.part_number_id} className="flex justify-between items-center p-3 text-sm group hover:bg-slate-100 transition-colors">
+                                        <span className="font-mono text-slate-700">{num.part_number}</span>
+                                        {/* Reorder controls, more subtle and appear on group hover */}
+                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button
+                                                type="button"
+                                                title="Move up"
+                                                aria-label={`Move ${num.part_number} up`}
+                                                onClick={() => moveNumber(index, -1)}
+                                                disabled={index === 0}
+                                                className="p-1 rounded text-slate-500 hover:bg-slate-200 hover:text-slate-700 disabled:opacity-30 disabled:hover:bg-transparent"
+                                            >
+                                                <MoveUpIcon />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                title="Move down"
+                                                aria-label={`Move ${num.part_number} down`}
+                                                onClick={() => moveNumber(index, 1)}
+                                                disabled={index === numbers.length - 1}
+                                                className="p-1 rounded text-slate-500 hover:bg-slate-200 hover:text-slate-700 disabled:opacity-30 disabled:hover:bg-transparent"
+                                            >
+                                               <MoveDownIcon />
+                                            </button>
+                                        </div>
+                                    </li>
+                                ))
+                            ) : (
+                                <p className="p-8 text-center text-sm text-slate-500">No part numbers found.</p>
+                            )}
+                        </ul>
                     )}
                 </div>
-            )}
+            </div>
 
-            <form onSubmit={handleAddNumbers} className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">Add New Numbers</label>
-                <p className="text-xs text-gray-500">Enter one or more part numbers, separated by commas or semicolons.</p>
+            {/* Form for adding new numbers */}
+            <form onSubmit={handleAddNumbers} className="space-y-3">
+                 <div>
+                    <label htmlFor="new-numbers-input" className="block text-sm font-medium text-slate-800">Add New Numbers</label>
+                    <p className="text-xs text-slate-500 mt-1">Enter numbers separated by commas, semicolons, or new lines.</p>
+                </div>
                 <textarea
+                    id="new-numbers-input"
                     value={newNumbersString}
                     onChange={(e) => setNewNumbersString(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
                     rows="3"
-                    placeholder="OEM123, MFG456; ALT789"
+                    placeholder="e.g., OEM123, MFG456; ALT789"
                 />
                 <div className="flex justify-end">
-                    <button type="submit" className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">Add Numbers</button>
+                    <button 
+                      type="submit" 
+                      className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                    >
+                      Add Numbers
+                    </button>
                 </div>
             </form>
 
-            <div className="flex justify-between items-center pt-4 border-t">
+            {/* Modal footer with action buttons */}
+            <div className="flex justify-end items-center gap-4 pt-4 border-t border-slate-200">
                 <button
                     type="button"
                     onClick={onCancel}
-                    className="px-4 py-2 bg-gray-200 text-gray-800 text-sm rounded-lg hover:bg-gray-300"
+                    className="py-2 px-4 text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                 >
                     Cancel
                 </button>
@@ -139,7 +173,7 @@ const PartNumberManager = ({ part, onSave, onCancel }) => {
                     type="button"
                     onClick={handleSaveOrder}
                     disabled={numbers.length < 2}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-40"
+                    className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     Save Order
                 </button>
