@@ -285,14 +285,15 @@ const GoodsReceiptPage = ({ user }) => {
                                     {searchResults.map((part, idx) => {
                                         const itemProps = getItemProps(idx);
                                         return (
-                                            <li
-                                                key={part.part_id}
-                                                {...itemProps}
-                                                className={`px-4 py-2 cursor-pointer ${itemProps['aria-selected'] ? 'bg-blue-100' : 'hover:bg-blue-50'}`}
-                                            >
-                                                {part.display_name}
-                                            </li>
-                                        );
+                                                <li
+                                                    key={part.part_id}
+                                                    {...itemProps}
+                                                    className={`px-4 py-2 cursor-pointer ${itemProps['aria-selected'] ? 'bg-blue-100' : 'hover:bg-blue-50'}`}
+                                                >
+                                                    <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
+                                                    {part.applications && <div className="text-xs text-gray-500 mt-1 truncate">{part.applications}</div>}
+                                                </li>
+                                            );
                                     })}
                                 </ul>
                             )}

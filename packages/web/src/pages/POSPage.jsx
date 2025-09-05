@@ -285,6 +285,23 @@ const POSPage = ({ user, lines, setLines }) => {
         setIsCustomerModalOpen(false);
     };
 
+    const renderApplicationsText = (apps) => {
+        if (!apps) return null;
+        if (typeof apps === 'string') return apps;
+        if (Array.isArray(apps)) {
+            return apps.map(a => {
+                if (!a) return '';
+                if (typeof a === 'string') return a;
+                if (typeof a === 'object') return a.display || [a.make, a.model, a.engine].filter(Boolean).join(' ');
+                return String(a);
+            }).filter(Boolean).join(', ');
+        }
+        if (typeof apps === 'object') {
+            return apps.display || [apps.make, apps.model, apps.engine].filter(Boolean).join(' ');
+        }
+        return String(apps);
+    };
+
     const handleSaveNewCustomer = (customerData) => {
         const promise = api.post('/customers', customerData);
         toast.promise(promise, {
@@ -321,10 +338,11 @@ const POSPage = ({ user, lines, setLines }) => {
                                     {searchResults.map((part, index) => {
                                         const itemProps = getItemProps(index);
                                         return (
-                                            <li key={part.part_id} {...itemProps} className={`px-4 py-3 cursor-pointer ${itemProps['aria-selected'] ? 'bg-blue-100' : 'hover:bg-blue-50'}`}>
-                                                {part.display_name}
-                                            </li>
-                                        );
+                                                <li key={part.part_id} {...itemProps} className={`px-4 py-3 cursor-pointer ${itemProps['aria-selected'] ? 'bg-blue-100' : 'hover:bg-blue-50'}`}>
+                                                    <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
+                                                        {part.applications && <div className="text-xs text-gray-500 mt-1 truncate">{renderApplicationsText(part.applications)}</div>}
+                                                </li>
+                                            );
                                     })}
                                 </ul>
                             )}

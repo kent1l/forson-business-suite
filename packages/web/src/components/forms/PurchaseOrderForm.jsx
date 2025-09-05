@@ -178,7 +178,8 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                     <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg search-results">
                         {searchResults.map(part => (
                             <li key={part.part_id} onClick={() => addPartToLines(part)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm">
-                                {part.display_name}
+                                <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
+                                {part.applications && <div className="text-xs text-gray-500 mt-1 truncate">{part.applications}</div>}
                             </li>
                         ))}
                     </ul>
