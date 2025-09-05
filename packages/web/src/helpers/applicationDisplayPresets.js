@@ -9,7 +9,7 @@ export const APPLICATION_DISPLAY_PRESETS = {
     separator: ', ',
     includeYears: true,
     includeEngine: true,
-    collapseDuplicateEngines: true,
+  mergeModelsByMake: true,
     truncateChars: 80,
   },
   tableCell: {
@@ -17,7 +17,7 @@ export const APPLICATION_DISPLAY_PRESETS = {
     truncateChars: 60,
     includeYears: false,
     includeEngine: true,
-    collapseDuplicateEngines: true,
+  mergeModelsByMake: true,
   },
   multilineFull: {
     multiline: true,
@@ -25,6 +25,7 @@ export const APPLICATION_DISPLAY_PRESETS = {
     truncateMode: 'none',
     includeYears: true,
     includeEngine: true,
+  mergeModelsByMake: false,
   },
   compact: {
     truncateMode: 'logical',
@@ -33,6 +34,7 @@ export const APPLICATION_DISPLAY_PRESETS = {
     includeYears: false,
     includeEngine: true,
     truncateChars: 40,
+  mergeModelsByMake: true,
   },
 };
 
