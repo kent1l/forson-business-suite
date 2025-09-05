@@ -49,7 +49,7 @@ router.get('/export/:entity', protect, isAdmin, async (req, res) => {
             query = `
                 SELECT
                     p.internal_sku, p.detail, b.brand_name, g.group_name,
-                    (SELECT STRING_AGG(pn.part_number, ';') FROM part_number pn WHERE pn.part_id = p.part_id) as part_numbers,
+                    (SELECT STRING_AGG(pn.part_number, ';') FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) as part_numbers,
                     p.barcode, p.is_active, p.last_cost, p.last_sale_price, p.reorder_point, p.warning_quantity,
                     p.measurement_unit, p.is_tax_inclusive_price, p.is_price_change_allowed, p.is_using_default_quantity,
                     p.is_service, p.low_stock_warning
@@ -204,7 +204,7 @@ router.get('/sync-parts-to-meili', protect, isAdmin, async (req, res) => {
         const query = `
             SELECT
                 p.*, b.brand_name, g.group_name,
-                (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id) as part_numbers,
+                (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) as part_numbers,
                                 (SELECT ARRAY_AGG(
                                         CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''))
                                 ) FROM part_application pa

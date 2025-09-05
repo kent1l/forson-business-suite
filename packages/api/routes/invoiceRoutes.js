@@ -81,7 +81,7 @@ router.get('/invoices/:id/lines', protect, hasPermission('invoicing:create'), as
                 p.detail,
                 b.brand_name,
                 g.group_name,
-                (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id) as part_numbers
+                (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) as part_numbers
             FROM invoice_line il
             JOIN part p ON il.part_id = p.part_id
             LEFT JOIN brand b ON p.brand_id = b.brand_id
@@ -113,7 +113,7 @@ router.get('/invoices/:id/lines-with-refunds', protect, hasPermission('invoicing
                 p.detail,
                 b.brand_name,
                 g.group_name,
-                (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id) as part_numbers,
+                (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) as part_numbers,
                 COALESCE(rf.quantity_refunded, 0) AS quantity_refunded
             FROM invoice_line il
             JOIN part p ON il.part_id = p.part_id

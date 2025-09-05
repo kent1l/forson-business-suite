@@ -36,7 +36,7 @@ const startMeiliListener = async () => {
                     b.brand_name,
                     g.group_name,
                     p.is_active,
-                    (SELECT COALESCE(json_agg(pn.part_number), '[]'::json) FROM part_number pn WHERE pn.part_id = p.part_id) AS part_numbers,
+                    (SELECT COALESCE(json_agg(pn.part_number), '[]'::json) FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('./helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers,
                     (SELECT COALESCE(json_agg(t.tag_name), '[]'::json) FROM part_tag pt JOIN tag t ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags,
                     (SELECT COALESCE(json_agg(pa.application_id), '[]'::json) FROM part_application pa WHERE pa.part_id = p.part_id) AS applications,
                     (SELECT COALESCE(json_agg(concat_ws(' ', COALESCE(av.make,''), COALESCE(av.model,''), COALESCE(av.engine,''))), '[]'::json)

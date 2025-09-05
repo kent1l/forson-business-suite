@@ -15,7 +15,7 @@ router.get('/reports/sales-summary', async (req, res) => {
             SELECT 
                 i.invoice_date, i.invoice_number, p.detail,
                 g.group_name, b.brand_name,
-                (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = p.part_id) AS part_numbers,
+                (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers,
                 il.quantity, il.sale_price,
                 (il.quantity * il.sale_price) AS line_total,
                 (il.quantity * il.cost_at_sale) AS line_cost
@@ -81,7 +81,7 @@ router.get('/reports/top-selling', async (req, res) => {
             SELECT
                 p.part_id, p.internal_sku, p.detail,
                 b.brand_name, g.group_name,
-                (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = p.part_id) AS part_numbers,
+                (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers,
                 SUM(il.quantity) AS total_quantity_sold,
                 SUM(il.quantity * il.sale_price) AS total_revenue
             FROM invoice_line il
@@ -273,7 +273,7 @@ router.get('/reports/inventory-movement', async (req, res) => {
                 p.detail,
                 b.brand_name,
                 g.group_name,
-                (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id) AS part_numbers,
+                (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers,
                 it.trans_type,
                 it.quantity,
                 it.reference_no,
@@ -326,7 +326,7 @@ router.get('/reports/profitability-by-product', async (req, res) => {
                 p.detail,
                 b.brand_name,
                 g.group_name,
-                (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id) AS part_numbers,
+                (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers,
                 SUM(il.quantity) AS total_quantity_sold,
                 SUM(il.quantity * il.sale_price) AS total_revenue,
                 SUM(il.quantity * il.cost_at_sale) AS total_cost, -- UPDATED: Use cost_at_sale

@@ -1,12 +1,16 @@
 const express = require('express');
 const db = require('../db');
 const router = express.Router();
+const { protect, hasPermission } = require('../middleware/authMiddleware');
+const { syncPartWithMeili } = require('../meilisearch');
+const { getPartDataForMeili } = require('./partRoutes');
+const { activeAliasCondition, softDeleteSupported } = require('../helpers/partNumberSoftDelete');
 
-// GET all numbers for a specific part, ordered correctly
-router.get('/parts/:partId/numbers', async (req, res) => {
+// GET all numbers for a specific part, ordered correctly (exclude soft-deleted)
+router.get('/parts/:partId/numbers', protect, hasPermission('parts:view'), async (req, res) => {
   const { partId } = req.params;
   try {
-    const { rows } = await db.query('SELECT * FROM part_number WHERE part_id = $1 ORDER BY display_order', [partId]);
+  const { rows } = await db.query(`SELECT * FROM part_number WHERE part_id = $1 AND ${activeAliasCondition('part_number')} ORDER BY display_order`, [partId]);
     res.json(rows);
   } catch (err) {
     console.error(err.message);
@@ -15,7 +19,7 @@ router.get('/parts/:partId/numbers', async (req, res) => {
 });
 
 // POST new numbers for a specific part
-router.post('/parts/:partId/numbers', async (req, res) => {
+router.post('/parts/:partId/numbers', protect, hasPermission('parts:edit'), async (req, res) => {
   const { partId } = req.params;
   const { numbersString } = req.body;
 
@@ -37,14 +41,14 @@ router.post('/parts/:partId/numbers', async (req, res) => {
       const query = `
         INSERT INTO part_number (part_id, part_number)
         VALUES ($1, $2)
-        ON CONFLICT (part_id, part_number) DO NOTHING;
+        ON CONFLICT DO NOTHING; -- uniqueness handled by partial index (active only)
       `;
       await client.query(query, [partId, number]);
     }
 
     await client.query('COMMIT');
     
-    const updatedNumbers = await client.query('SELECT * FROM part_number WHERE part_id = $1 ORDER BY display_order', [partId]);
+  const updatedNumbers = await client.query(`SELECT * FROM part_number WHERE part_id = $1 AND ${activeAliasCondition('part_number')} ORDER BY display_order`, [partId]);
     res.status(201).json(updatedNumbers.rows);
 
   } catch (err) {
@@ -57,7 +61,7 @@ router.post('/parts/:partId/numbers', async (req, res) => {
 });
 
 // PUT - Reorder part numbers
-router.put('/parts/:partId/numbers/reorder', async (req, res) => {
+router.put('/parts/:partId/numbers/reorder', protect, hasPermission('parts:edit'), async (req, res) => {
     const { orderedIds } = req.body; // Expect an array of part_number_id in the new order
 
     if (!Array.isArray(orderedIds)) {
@@ -69,11 +73,11 @@ router.put('/parts/:partId/numbers/reorder', async (req, res) => {
         await client.query('BEGIN');
 
         // Update the display_order for each ID based on its position in the array
-        for (let i = 0; i < orderedIds.length; i++) {
-            const id = orderedIds[i];
-            const order = i + 1; // display_order starts at 1
-            await client.query('UPDATE part_number SET display_order = $1 WHERE part_number_id = $2', [order, id]);
-        }
+    for (let i = 0; i < orderedIds.length; i++) {
+      const id = orderedIds[i];
+      const order = i + 1; // display_order starts at 1
+            await client.query(`UPDATE part_number SET display_order = $1 WHERE part_number_id = $2 AND ${activeAliasCondition('part_number')}`, [order, id]);
+    }
 
         await client.query('COMMIT');
         res.json({ message: 'Order updated successfully.' });
@@ -87,3 +91,61 @@ router.put('/parts/:partId/numbers/reorder', async (req, res) => {
 });
 
 module.exports = router;
+
+// DELETE - Soft delete a part number (alias) ensuring at least one remains
+router.delete('/parts/:partId/numbers/:numberId', protect, hasPermission('parts:edit'), async (req, res) => {
+  const { partId, numberId } = req.params;
+
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+
+    // Fetch the target alias (active only)
+    const targetRes = await client.query(
+      `SELECT part_number_id FROM part_number WHERE part_number_id = $1 AND part_id = $2 AND ${activeAliasCondition('part_number')} FOR UPDATE`,
+      [numberId, partId]
+    );
+    if (targetRes.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Part number not found' });
+    }
+
+    // Count active aliases for the part
+    const countRes = await client.query(
+      `SELECT COUNT(*)::int AS cnt FROM part_number WHERE part_id = $1 AND ${activeAliasCondition('part_number')}`,
+      [partId]
+    );
+    if (countRes.rows[0].cnt <= 1) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: 'At least one part number must remain.' });
+    }
+
+    // Soft delete
+    if (softDeleteSupported()) {
+      await client.query(
+        'UPDATE part_number SET deleted_at = NOW() WHERE part_number_id = $1',
+        [numberId]
+      );
+    } else {
+      // Fallback: hard delete if migration not yet run
+      await client.query('DELETE FROM part_number WHERE part_number_id = $1', [numberId]);
+    }
+
+    await client.query('COMMIT');
+
+    // Reindex part in Meilisearch (best effort; non-blocking errors)
+    try {
+      const partData = await getPartDataForMeili(db, partId);
+      if (partData) syncPartWithMeili(partData);
+    } catch (e) {
+      console.error('Meili reindex after part number delete failed', e);
+    }
+    return res.status(204).send();
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err.message);
+    return res.status(500).send('Server Error');
+  } finally {
+    client.release();
+  }
+});

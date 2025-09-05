@@ -3,6 +3,7 @@ const db = require('../db');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { syncPartWithMeili, removePartFromMeili, meiliClient } = require('../meilisearch');
+const { activeAliasCondition } = require('../helpers/partNumberSoftDelete');
 const router = express.Router();
 
 // Helper function to get all data for a part for Meilisearch indexing
@@ -10,7 +11,7 @@ const getPartDataForMeili = async (client, partId) => {
     const query = `
         SELECT
             p.*, b.brand_name, g.group_name,
-            (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id) as part_numbers,
+            (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${activeAliasCondition('pn')}) as part_numbers,
                         (SELECT ARRAY_AGG(
                                 CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''))
                         ) FROM part_application pa
@@ -113,7 +114,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
         const query = `
             SELECT
                 p.*, b.brand_name, g.group_name,
-                (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = p.part_id) AS part_numbers,
+                (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = p.part_id AND ${activeAliasCondition('pn')}) AS part_numbers,
                 (SELECT STRING_AGG(
                     CONCAT(
                         vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''),
@@ -154,7 +155,7 @@ router.get('/parts/:id', protect, hasPermission('parts:view'), async (req, res) 
         const query = `
             SELECT
                 p.*, b.brand_name, g.group_name,
-                (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = p.part_id) AS part_numbers
+                (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = p.part_id AND ${activeAliasCondition('pn')}) AS part_numbers
             FROM part AS p
             LEFT JOIN brand AS b ON p.brand_id = b.brand_id
             LEFT JOIN "group" AS g ON p.group_id = g.group_id

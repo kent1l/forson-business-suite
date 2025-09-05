@@ -2,11 +2,12 @@ const express = require('express');
 const db = require('../db');
 const { meiliClient } = require('../meilisearch');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
+const { activeAliasCondition } = require('../helpers/partNumberSoftDelete');
 const router = express.Router();
 
 // GET /api/power-search/parts - Advanced multi-filter search using Meilisearch
 router.get('/power-search/parts', async (req, res) => {
-    const { keyword, brand, group, application, year } = req.query;
+    const { keyword } = req.query; // Other filters (brand, group, application, year) reserved for future enhancement
 
     try {
         const index = meiliClient.index('parts');
@@ -36,7 +37,7 @@ router.get('/power-search/parts', async (req, res) => {
                 g.group_name,
                 (
                     SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order)
-                    FROM part_number pn WHERE pn.part_id = p.part_id
+                    FROM part_number pn WHERE pn.part_id = p.part_id AND ${activeAliasCondition('pn')}
                 ) AS part_numbers,
                 (
                     SELECT COALESCE(SUM(it.quantity), 0) FROM inventory_transaction it WHERE it.part_id = p.part_id

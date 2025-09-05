@@ -276,7 +276,7 @@ router.get('/purchase-orders/:id/pdf', protect, hasPermission('purchase_orders:v
                 b.brand_name,
                 g.group_name,
                 (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order)
-                 FROM part_number pn WHERE pn.part_id = p.part_id) AS part_numbers
+                 FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers
             FROM purchase_order_line pol
             JOIN part p ON pol.part_id = p.part_id
             LEFT JOIN brand b ON p.brand_id = b.brand_id
