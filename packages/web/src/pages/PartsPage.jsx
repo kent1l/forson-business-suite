@@ -251,7 +251,7 @@ const PartsPage = () => {
             <Modal isOpen={isBulkEditModalOpen} onClose={() => setIsBulkEditModalOpen(false)} title={`Bulk Edit ${selectedParts.length} Parts`}>
                 <PartForm isBulkEdit={true} brands={brands} groups={groups} onSave={handleBulkSave} onCancel={() => setIsBulkEditModalOpen(false)} onBrandGroupAdded={fetchInitialData} />
             </Modal>
-             <Modal isOpen={isNumberModalOpen} onClose={() => setIsNumberModalOpen(false)} title={`Manage Numbers for: ${currentPart?.detail}`}>
+             <Modal isOpen={isNumberModalOpen} onClose={() => setIsNumberModalOpen(false)} title={`Manage Numbers for: ${currentPart?.internal_sku || currentPart?.display_name || currentPart?.detail || ''}`}>
                 <PartNumberManager part={currentPart} onSave={fetchInitialData} onCancel={() => setIsNumberModalOpen(false)} />
             </Modal>
             <Modal isOpen={isAppModalOpen} onClose={() => setIsAppModalOpen(false)} title={`Manage Applications for: ${currentPart?.detail}`}>
