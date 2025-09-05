@@ -339,8 +339,10 @@ const POSPage = ({ user, lines, setLines }) => {
                                         const itemProps = getItemProps(index);
                                         return (
                                                 <li key={part.part_id} {...itemProps} className={`px-4 py-3 cursor-pointer ${itemProps['aria-selected'] ? 'bg-blue-100' : 'hover:bg-blue-50'}`}>
-                                                    <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
-                                                        {part.applications && <div className="text-xs text-gray-500 mt-1 truncate">{renderApplicationsText(part.applications)}</div>}
+                                                    <div className="flex items-baseline space-x-2">
+                                                        <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
+                                                        {part.applications && <div className="text-xs text-gray-500 truncate">{renderApplicationsText(part.applications)}</div>}
+                                                    </div>
                                                 </li>
                                             );
                                     })}
