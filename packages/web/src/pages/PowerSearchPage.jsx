@@ -4,6 +4,7 @@ import Icon from '../components/ui/Icon'; // Import the Icon component
 import { ICONS } from '../constants'; // Import the icon paths
 import SearchBar from '../components/SearchBar';
 import Modal from '../components/ui/Modal';
+import { formatApplicationText } from '../helpers/applicationTextHelper';
 
 const PowerSearchPage = () => {
     const [results, setResults] = useState([]);
@@ -107,11 +108,11 @@ const PowerSearchPage = () => {
                                         <td className="p-3 text-sm font-mono align-top">{part.internal_sku}</td>
                                         <td className="p-3 text-sm font-medium text-gray-800 align-top">{part.display_name}</td>
                                         <td className="p-3 text-sm text-gray-600 align-top">
-                            {Array.isArray(part.applications) ? part.applications.map((app, i) => (
-                                <div key={i} className="mb-1">
-                                    {typeof app === 'string' ? app : app.display}
+                            {part.applications ? (
+                                <div className="whitespace-pre-line">
+                                    {formatApplicationText(part.applications, { separator: '\n' })}
                                 </div>
-                            )) : ''}
+                            ) : ''}
                         </td>
                                         <td className="p-3 text-sm text-gray-700 align-top">{typeof part.stock_on_hand !== 'undefined' ? Number(part.stock_on_hand).toFixed(2) : '-'}</td>
                                         <td className="p-3 text-sm text-gray-800 font-semibold align-top">{part.last_sale_price ? (Number(part.last_sale_price).toFixed(2)) : '-'}</td>

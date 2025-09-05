@@ -8,6 +8,7 @@ import SearchBar from '../components/SearchBar';
 import Modal from '../components/ui/Modal';
 import CustomerForm from '../components/forms/CustomerForm';
 import { useSettings } from '../contexts/SettingsContext';
+import { formatApplicationText } from '../helpers/applicationTextHelper';
 
 const InvoicingPage = ({ user }) => {
     const { settings } = useSettings();
@@ -273,7 +274,10 @@ const InvoicingPage = ({ user }) => {
                         <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg search-results">
                             {searchResults.map(part => (
                                 <li key={part.part_id} onClick={() => addPartToLines(part)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer">
-                                    {part.display_name}
+                                    <div className="flex items-baseline space-x-2">
+                                        <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
+                                        {part.applications && <div className="text-xs text-gray-500 truncate">{formatApplicationText(part.applications, { truncate: true, maxLength: 80 })}</div>}
+                                    </div>
                                 </li>
                             ))}
                         </ul>

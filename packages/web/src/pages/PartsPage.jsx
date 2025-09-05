@@ -11,6 +11,7 @@ import TagPopover from '../components/ui/TagPopover';
 import { useAuth } from '../contexts/AuthContext';
 import PartNumberManager from './PartNumberManager';
 import PartApplicationManager from './PartApplicationManager';
+import { formatApplicationText } from '../helpers/applicationTextHelper';
 
 const PartsPage = () => {
     const { user, hasPermission } = useAuth();
@@ -224,7 +225,7 @@ const PartsPage = () => {
                                         <td className="p-3"><input type="checkbox" checked={selectedParts.includes(part.part_id)} onChange={() => handleSelectPart(part.part_id)} /></td>
                                         <td className="p-3 text-sm font-mono">{part.internal_sku}</td>
                                         <td className="p-3 text-sm font-medium">{part.display_name}</td>
-                                        <td className="p-3 text-sm">{part.applications}</td>
+                                        <td className="p-3 text-sm">{formatApplicationText(part.applications)}</td>
                                         <td className="p-3 text-sm text-right">
                                             <div className="flex justify-end items-center space-x-4">
                                                 {part.tags && <TagPopover tags={part.tags} />}
