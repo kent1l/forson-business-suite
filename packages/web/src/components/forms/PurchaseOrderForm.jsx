@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import api from '../../api'; // <-- CORRECTED PATH
 import toast from 'react-hot-toast';
 import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
 import Combobox from '../ui/Combobox';
+import SearchBar from '../SearchBar';
 
 const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
     const [suppliers, setSuppliers] = useState([]);
