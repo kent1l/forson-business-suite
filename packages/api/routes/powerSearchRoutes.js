@@ -11,11 +11,12 @@ router.get('/power-search/parts', async (req, res) => {
     try {
         const index = meiliClient.index('parts');
         const searchOptions = {
-            limit: 200, // increase limit to return more matches for UI
+            limit: 200,
             attributesToRetrieve: [
                 'part_id',
-                'applications',     // Array of full application objects with display field
-                'searchable_applications' // Flattened text for searching
+                'applications',            // may be array of strings or objects depending on indexer
+                'applications_array',      // legacy / alternate field name
+                'searchable_applications'
             ]
         };
 
@@ -58,17 +59,55 @@ router.get('/power-search/parts', async (req, res) => {
                     // Get the MeiliSearch hit for this part
                     const hit = searchResults.hits.find(h => h.part_id === id) || {};
                     
-                    const appArray = hit.applications || hit.applications_array || [];
-                    const formattedApps = appArray.map(app => ({
-                        display: typeof app === 'object' ? (
-                            app.display || 
-                            `${app.make || ''} ${app.model || ''} ${app.engine || ''}`.trim() + 
-                            (app.year_start || app.year_end ? 
-                                ` (${[app.year_start, app.year_end].filter(Boolean).join('-')})` : 
-                                ''
-                            )
-                        ) : app.toString()
-                    })).filter(app => app.display && app.display.trim());
+                    const rawApps = hit.applications || hit.applications_array || [];
+
+                    // Normalize rawApps into an array of primitive/objects
+                    let normalized = [];
+                    if (Array.isArray(rawApps)) {
+                        normalized = rawApps;
+                    } else if (typeof rawApps === 'string') {
+                        // Support legacy comma-separated id strings like "7, 3"
+                        if (rawApps.includes(',')) {
+                            normalized = rawApps.split(',').map(s => s.trim()).filter(Boolean);
+                        } else if (rawApps.trim()) {
+                            normalized = [rawApps.trim()];
+                        }
+                    } else if (rawApps) {
+                        // Single object? wrap it
+                        normalized = [rawApps];
+                    }
+
+                    const formattedApps = normalized.flatMap(a => {
+                        if (!a) return [];
+                        // Numeric ID coming from index (number)
+                        if (typeof a === 'number') {
+                            return [{ application_id: a, _source: 'id' }];
+                        }
+                        // Numeric string ID
+                        if (typeof a === 'string') {
+                            const trimmed = a.trim();
+                            if (!trimmed) return [];
+                            if (/^\d+$/.test(trimmed)) {
+                                return [{ application_id: parseInt(trimmed, 10), _source: 'id-string' }];
+                            }
+                            // Plain text application already formatted
+                            return [{ display: trimmed, _source: 'string' }];
+                        }
+                        if (typeof a === 'object') {
+                            // If object only has application_id keep minimal so frontend enrichment can resolve full text
+                            if (a.application_id && !(a.make || a.model || a.engine || a.display)) {
+                                return [{ application_id: a.application_id, _source: 'id-object' }];
+                            }
+                            const base = `${a.make || ''} ${a.model || ''} ${a.engine || ''}`.trim();
+                            const yrs = (a.year_start || a.year_end)
+                                ? ` (${[a.year_start, a.year_end].filter(Boolean).join('-')})`
+                                : '';
+                            const display = (a.display || (base + yrs).trim()).trim();
+                            if (!display) return [];
+                            return [{ display, ...a, _source: 'object' }];
+                        }
+                        return [];
+                    });
 
                     return {
                         ...p,

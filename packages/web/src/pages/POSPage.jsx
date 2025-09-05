@@ -11,6 +11,7 @@ import Modal from '../components/ui/Modal';
 import CustomerForm from '../components/forms/CustomerForm';
 import Combobox from '../components/ui/Combobox';
 import { formatApplicationText } from '../helpers/applicationTextHelper';
+import { enrichPartsArray } from '../helpers/applicationCache';
 import PaymentModal from '../components/ui/PaymentModal';
 import PriceQuantityModal from '../components/ui/PriceQuantityModal';
 import Receipt from '../components/ui/Receipt';
@@ -47,7 +48,12 @@ const POSPage = ({ user, lines, setLines }) => {
                 const response = await api.get('/power-search/parts', {
                     params: { keyword: searchTerm }
                 });
-                setSearchResults(response.data);
+                // Debug: log raw hits for applications field
+                console.debug('[POS] raw search results', response.data.map(r => ({part_id: r.part_id, apps: r.applications})));
+                // Enrich applications (convert id arrays to objects) so the application text helper shows readable text
+                const enriched = await enrichPartsArray(response.data || []);
+                console.debug('[POS] enriched results', enriched.map(r => ({part_id: r.part_id, apps: r.applications})));
+                setSearchResults(enriched);
             } catch (error) {
                 console.error("Search failed:", error);
                 toast.error("Search failed.");

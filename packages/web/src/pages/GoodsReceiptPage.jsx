@@ -11,6 +11,7 @@ import SupplierForm from '../components/forms/SupplierForm';
 import PartForm from '../components/forms/PartForm';
 import useDraft from '../hooks/useDraft';
 import { formatApplicationText } from '../helpers/applicationTextHelper';
+import { enrichPartsArray } from '../helpers/applicationCache';
 
 const GoodsReceiptPage = ({ user }) => {
     const [suppliers, setSuppliers] = useState([]);
@@ -46,7 +47,8 @@ const GoodsReceiptPage = ({ user }) => {
                 const response = await api.get('/power-search/parts', {
                     params: { keyword: searchTerm }
                 });
-                setSearchResults(response.data);
+                const enriched = await enrichPartsArray(response.data || []);
+                setSearchResults(enriched);
             } catch {
                 toast.error("Search failed.");
             }

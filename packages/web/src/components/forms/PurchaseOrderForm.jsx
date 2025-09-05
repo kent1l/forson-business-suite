@@ -7,6 +7,7 @@ import Combobox from '../ui/Combobox';
 import SearchBar from '../SearchBar';
 import useDraft from '../../hooks/useDraft';
 import { formatApplicationText } from '../../helpers/applicationTextHelper';
+import { enrichPartsArray } from '../../helpers/applicationCache';
 
 const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
     const [suppliers, setSuppliers] = useState([]);
@@ -61,7 +62,8 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
         }
         const fetchParts = async () => {
             const res = await api.get('/power-search/parts', { params: { keyword: searchTerm } });
-            setSearchResults(res.data);
+            const enriched = await enrichPartsArray(res.data || []);
+            setSearchResults(enriched);
         };
         const timer = setTimeout(fetchParts, 300);
         return () => clearTimeout(timer);

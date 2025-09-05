@@ -3,17 +3,46 @@
  * @param {Object} application - The application object
  * @returns {string} Formatted application text
  */
+import { getApplication } from './applicationCache';
+
 const formatSingleApplication = (application) => {
     if (!application) return '';
-    if (typeof application === 'string') return application;
+
+    // If it's a numeric id (number) try to resolve via cache
+    if (typeof application === 'number') {
+        const resolved = getApplication(application);
+        if (resolved) return formatSingleApplication(resolved);
+        return String(application);
+    }
+
+    // If it's a numeric string e.g. "7" try to resolve via cache
+    if (typeof application === 'string') {
+        const trimmed = application.trim();
+        if (/^\d+$/.test(trimmed)) {
+            const resolved = getApplication(parseInt(trimmed, 10));
+            if (resolved) return formatSingleApplication(resolved);
+            return trimmed;
+        }
+        return application;
+    }
+
     if (typeof application === 'object') {
         // If there's a pre-formatted display property, use it
         if (application.display) return application.display;
-        
+
+        // If it only has application_id (from backend normalization), return id string (will be enriched later if cache loaded)
+        if (application.application_id && !(application.make || application.model || application.engine)) {
+            const resolved = getApplication(application.application_id);
+            if (resolved) return formatSingleApplication(resolved);
+            return String(application.application_id);
+        }
+
         // Otherwise, construct from make, model, engine
-        return [application.make, application.model, application.engine]
-            .filter(Boolean) // Remove falsy values
-            .join(' ');
+        const combined = [application.make, application.model, application.engine]
+            .filter(Boolean)
+            .join(' ')
+            .trim();
+        return combined || '';
     }
     return String(application);
 };
