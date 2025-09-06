@@ -46,11 +46,11 @@ const setupMeiliSearch = async () => {
     // Applications index settings with enhanced search capabilities
     await applicationsIndex.updateSettings({
       rankingRules: [
-        'typo',       // Prioritize typo tolerance
+        'exactness',   // Finally exact matches
         'words',      // Then number of matching words
+        'typo',       // Prioritize typo tolerance
         'proximity',  // Then word proximity
         'attribute',  // Then attribute importance
-        'exactness'   // Finally exact matches
       ],
       searchableAttributes: [
         'label',      // Primary search field (combined make+model+engine)
