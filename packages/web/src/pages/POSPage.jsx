@@ -21,14 +21,18 @@ import useSavedSales from '../hooks/useSavedSales';
 import SavedSalesPanel from '../components/pos/SavedSalesPanel';
 
 // Simplified grid with only Save Sale + View Saved (no other future buttons yet)
-const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved }) => {
+const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave }) => {
     return (
         <div className="mt-4 w-full">
             <div className="grid grid-cols-5 grid-rows-2 auto-rows-[9rem] gap-3">
                 <div className="col-span-1 row-start-2">
                     <div
-                        className={`flex flex-col w-full h-full rounded-lg border shadow-sm transition-all duration-150 ${lines.length ? 'bg-white hover:bg-slate-50 hover:shadow-md' : 'bg-slate-50'} ${lines.length ? 'cursor-pointer border-blue-300' : 'cursor-not-allowed border-slate-200'}`}
-                        onClick={() => lines.length && handleSaveSale()}
+                        className={`flex flex-col w-full h-full rounded-lg border shadow-sm transition-all duration-150
+                            ${canSave ? 'bg-white hover:bg-slate-50 hover:shadow-md cursor-pointer border-blue-300' : 'bg-slate-50 cursor-not-allowed border-slate-200 opacity-60'}
+                        `}
+                        onClick={() => canSave && handleSaveSale()}
+                        aria-disabled={!canSave}
+                        role="button"
                     >
                         <div className="flex-1 flex flex-col items-center justify-center px-2 pt-2 text-center relative">
                             {savedCount > 0 && (
@@ -81,6 +85,7 @@ const POSPage = ({ user, lines, setLines }) => {
     const [currentItem, setCurrentItem] = useState(null);
     const [showSaved, setShowSaved] = useState(false);
     const [lastSale, setLastSale] = useState(null);
+    const [lastSavedSignature, setLastSavedSignature] = useState(null); // Track last saved cart state to prevent duplicate save
     const searchInputRef = useRef(null);
     const { getInputProps, getItemProps, reset } = useTypeahead({ items: searchResults, onSelect: (item) => { handleSelectPart(item); }, inputId: 'pos-search-input', listboxId: 'pos-search-results' });
 
@@ -360,8 +365,20 @@ const POSPage = ({ user, lines, setLines }) => {
         });
     };
 
+    // Build a stable signature of the cart (items sorted by part_id). Includes customer (can matter for context).
+    const cartSignature = useMemo(() => {
+        if (!lines.length) return null;
+        const items = [...lines]
+            .map(l => ({ id: l.part_id, q: l.quantity, p: l.sale_price }))
+            .sort((a, b) => (a.id > b.id ? 1 : -1));
+        return JSON.stringify({ items, c: selectedCustomer?.customer_id || null });
+    }, [lines, selectedCustomer?.customer_id]);
+
+    const canSave = !!lines.length && cartSignature !== lastSavedSignature;
+
     const handleSaveSale = useCallback(() => {
         if (!lines.length) { toast.error('No items to save.'); return; }
+        if (!canSave) { toast.error('Already saved. Make a change before saving again.'); return; }
         const cartSnapshot = {
             items: lines.map(l => ({
                 part_id: l.part_id,
@@ -373,21 +390,24 @@ const POSPage = ({ user, lines, setLines }) => {
             totals: { subtotal, tax, grandTotal: total }
         };
         const entry = saveSale(cartSnapshot);
-        if (entry) toast.success('Sale saved.');
-    }, [lines, selectedCustomer?.customer_id, subtotal, tax, total, saveSale]);
+        if (entry) {
+            setLastSavedSignature(cartSignature);
+            toast.success('Sale saved.');
+        }
+    }, [canSave, lines, selectedCustomer?.customer_id, subtotal, tax, total, saveSale, cartSignature]);
 
     // Keyboard shortcut (Ctrl+S / Cmd+S) to save sale
     useEffect(() => {
-        const onKey = (e) => {
+    const onKey = (e) => {
             const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
             if ((isMac ? e.metaKey : e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
                 e.preventDefault();
-                handleSaveSale();
+        if (canSave) handleSaveSale();
             }
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
-    }, [handleSaveSale]);
+    }, [handleSaveSale, canSave]);
 
     const handleRestoreSaved = (id) => {
         const entry = getSaved(id);
@@ -449,6 +469,7 @@ const POSPage = ({ user, lines, setLines }) => {
                         savedCount={savedCount}
                         handleSaveSale={handleSaveSale}
                         setShowSaved={setShowSaved}
+                        canSave={canSave}
                     />
                 </div>
                 <div className="w-full md:w-1/3 bg-white rounded-xl border border-gray-200 flex flex-col">
