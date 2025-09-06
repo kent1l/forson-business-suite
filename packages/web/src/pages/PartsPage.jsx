@@ -266,7 +266,7 @@ const PartsPage = () => {
              <Modal isOpen={isNumberModalOpen} onClose={() => setIsNumberModalOpen(false)} title={`Manage Numbers for: ${currentPart?.internal_sku || currentPart?.display_name || currentPart?.detail || ''}`}>
                 <PartNumberManager part={currentPart} onSave={fetchInitialData} onCancel={() => setIsNumberModalOpen(false)} />
             </Modal>
-            <Modal isOpen={isAppModalOpen} onClose={() => setIsAppModalOpen(false)} title={`Manage Applications for: ${currentPart?.detail}`}>
+            <Modal isOpen={isAppModalOpen} onClose={() => setIsAppModalOpen(false)} title={`Manage Applications for: ${currentPart?.part_numbers || currentPart?.internal_sku || currentPart?.detail || ''}`}>
                 <PartApplicationManager part={currentPart} onCancel={() => setIsAppModalOpen(false)} />
             </Modal>
         </div>
