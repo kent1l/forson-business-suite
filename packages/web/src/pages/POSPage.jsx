@@ -1,5 +1,5 @@
 /* eslint-disable no-unused-vars */
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
 import api from '../api';
 import toast from 'react-hot-toast';
@@ -19,6 +19,50 @@ import Receipt from '../components/ui/Receipt';
 import PartForm from '../components/forms/PartForm';
 import useSavedSales from '../hooks/useSavedSales';
 import SavedSalesPanel from '../components/pos/SavedSalesPanel';
+
+// Simplified grid with only Save Sale + View Saved (no other future buttons yet)
+const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved }) => {
+    return (
+        <div className="mt-4 w-full">
+            <div className="grid grid-cols-5 grid-rows-2 auto-rows-[9rem] gap-3">
+                <div className="col-span-1 row-start-2">
+                    <div
+                        className={`flex flex-col w-full h-full rounded-lg border shadow-sm transition-all duration-150 ${lines.length ? 'bg-white hover:bg-slate-50 hover:shadow-md' : 'bg-slate-50'} ${lines.length ? 'cursor-pointer border-blue-300' : 'cursor-not-allowed border-slate-200'}`}
+                        onClick={() => lines.length && handleSaveSale()}
+                    >
+                        <div className="flex-1 flex flex-col items-center justify-center px-2 pt-2 text-center relative">
+                            {savedCount > 0 && (
+                                <span className="absolute top-1.5 right-1.5 bg-indigo-600 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none">{savedCount}</span>
+                            )}
+                            <div className={`${lines.length ? 'text-indigo-600' : 'text-slate-300'} mb-1`}>
+                                <Icon path={ICONS.bookmark} className="h-10 w-10" />
+                            </div>
+                            <span className="font-semibold text-sm">Save Sale</span>
+                            <span className="text-[11px] text-slate-500">For later</span>
+                            <span className="mt-1 text-[9px] font-mono uppercase tracking-wide text-slate-400">Ctrl+S</span>
+                        </div>
+                        <div className="h-8 w-full flex items-stretch">
+                            {savedCount > 0 ? (
+                                <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); setShowSaved(true); }}
+                                    className="flex-1 border-t border-slate-200 text-[11px] font-medium text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 flex items-center justify-center rounded-b-lg"
+                                >
+                                    <Icon path={ICONS.bookmark} className="h-3.5 w-3.5 mr-1" /> View Saved ({savedCount})
+                                </button>
+                            ) : (
+                                <div className="flex-1 border-t border-transparent rounded-b-lg" />
+                            )}
+                        </div>
+                    </div>
+                </div>
+                {Array.from({ length: 5*2 - 1 }).map((_, i) => (
+                    <div key={i} className="rounded-lg border border-dashed border-gray-200" />
+                ))}
+            </div>
+        </div>
+    );
+};
 
 const POSPage = ({ user, lines, setLines }) => {
     const { settings } = useSettings();
@@ -316,8 +360,8 @@ const POSPage = ({ user, lines, setLines }) => {
         });
     };
 
-    const handleSaveSale = () => {
-        if (!lines.length) return toast.error('No items to save.');
+    const handleSaveSale = useCallback(() => {
+        if (!lines.length) { toast.error('No items to save.'); return; }
         const cartSnapshot = {
             items: lines.map(l => ({
                 part_id: l.part_id,
@@ -329,10 +373,21 @@ const POSPage = ({ user, lines, setLines }) => {
             totals: { subtotal, tax, grandTotal: total }
         };
         const entry = saveSale(cartSnapshot);
-        if (entry) {
-            toast.success('Sale saved.');
-        }
-    };
+        if (entry) toast.success('Sale saved.');
+    }, [lines, selectedCustomer?.customer_id, subtotal, tax, total, saveSale]);
+
+    // Keyboard shortcut (Ctrl+S / Cmd+S) to save sale
+    useEffect(() => {
+        const onKey = (e) => {
+            const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+            if ((isMac ? e.metaKey : e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+                e.preventDefault();
+                handleSaveSale();
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [handleSaveSale]);
 
     const handleRestoreSaved = (id) => {
         const entry = getSaved(id);
@@ -353,48 +408,10 @@ const POSPage = ({ user, lines, setLines }) => {
         toast.success('Sale restored.');
     };
 
-    const centerContent = showSaved ? (
-        <div className="w-full h-full bg-white rounded-xl border border-gray-200 flex flex-col">
-            <div className="p-3 flex items-center justify-between border-b">
-                <div className="font-semibold text-sm flex items-center space-x-2">
-                    <Icon path={ICONS.bookmark} className="h-5 w-5" />
-                    <span>Saved Sales ({savedCount})</span>
-                </div>
-                <button onClick={() => setShowSaved(false)} className="text-sm text-blue-600 hover:text-blue-800 font-medium">Back</button>
-            </div>
-            <div className="flex-1">
-                <SavedSalesPanel saved={saved} onRestore={handleRestoreSaved} onDelete={removeSaved} currency={settings?.DEFAULT_CURRENCY_SYMBOL || '₱'} />
-            </div>
-        </div>
-    ) : (
-        <div className="flex flex-col items-center justify-center h-full p-6 bg-white rounded-xl border border-dashed border-gray-300">
-            <button
-                onClick={handleSaveSale}
-                disabled={!lines.length}
-                className={`flex flex-col items-center justify-center w-40 h-40 rounded-lg border text-center transition ${lines.length ? 'bg-blue-50 hover:bg-blue-100 border-blue-300 text-blue-700' : 'bg-gray-50 border-gray-300 text-gray-400 cursor-not-allowed'}`}
-            >
-                <div className="relative">
-                    <Icon path={ICONS.bookmark} className="h-12 w-12 mb-2" />
-                    {savedCount > 0 && (
-                        <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs font-semibold px-2 py-0.5 rounded-full">{savedCount}</span>
-                    )}
-                </div>
-                <span className="font-semibold text-sm">Save Sale</span>
-                <span className="text-[11px] text-gray-500 mt-1">Save current cart for later</span>
-            </button>
-            {savedCount > 0 && (
-                <button onClick={() => setShowSaved(true)} className="mt-6 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center space-x-1">
-                    <Icon path={ICONS.bookmark} className="h-4 w-4" />
-                    <span>View Saved ({savedCount})</span>
-                </button>
-            )}
-        </div>
-    );
-
     return (
         <>
             <div className="flex flex-col md:flex-row h-full gap-6">
-                <div className="w-full md:w-2/5">
+                <div className="w-full md:w-2/3 flex flex-col">
                     <div className="flex items-center space-x-2">
                         <div className="relative flex-grow">
                             <SearchBar
@@ -427,12 +444,14 @@ const POSPage = ({ user, lines, setLines }) => {
                            New Part
                         </button>
                     </div>
+                    <ButtonsGrid
+                        lines={lines}
+                        savedCount={savedCount}
+                        handleSaveSale={handleSaveSale}
+                        setShowSaved={setShowSaved}
+                    />
                 </div>
-
-                <div className="hidden md:block w-full md:w-1/5">
-                    {centerContent}
-                </div>
-                <div className="w-full md:w-2/5 bg-white rounded-xl border border-gray-200 flex flex-col">
+                <div className="w-full md:w-1/3 bg-white rounded-xl border border-gray-200 flex flex-col">
                     <div className="p-4 border-b">
                         <div className="font-semibold mb-2">Customer</div>
                         <div className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
@@ -515,11 +534,15 @@ const POSPage = ({ user, lines, setLines }) => {
                 total={total}
                 onConfirmPayment={handleConfirmPayment}
             />
-            {/* Saved sales panel for small screens (stacked below) */}
-            <div className="md:hidden mt-4">{centerContent}</div>
+            {/* Saved Sales Modal */}
             <div className="hidden">
                 <Receipt saleData={lastSale} settings={settings} />
             </div>
+            <Modal isOpen={showSaved} onClose={() => setShowSaved(false)} title={`Saved Sales (${savedCount})`}>
+                <div className="max-h-[60vh] overflow-y-auto">
+                    <SavedSalesPanel saved={saved} onRestore={handleRestoreSaved} onDelete={removeSaved} currency={settings?.DEFAULT_CURRENCY_SYMBOL || '₱'} />
+                </div>
+            </Modal>
         </>
     );
 };
