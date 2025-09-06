@@ -132,19 +132,33 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        if (!formData.selectedSupplier || formData.lines.length === 0) {
-            return toast.error('Please select a supplier and add at least one part.');
+        // Require at least one line. Supplier will default to the existing "N/A" supplier if not selected.
+        if (formData.lines.length === 0) {
+            return toast.error('Please add at least one part to the purchase order.');
         }
+
+        // If no supplier selected, try to find the placeholder supplier named "N/A" (case-insensitive).
+        let supplierId = formData.selectedSupplier;
+        if (!supplierId) {
+            const na = suppliers.find(s => s.supplier_name && s.supplier_name.trim().toLowerCase() === 'n/a');
+            if (na) {
+                supplierId = na.supplier_id;
+                toast('No supplier selected — using placeholder "N/A" supplier.', { icon: 'ℹ️' });
+            } else {
+                return toast.error('Please select a supplier or create an "N/A" supplier.');
+            }
+        }
+
         const payload = {
-            supplier_id: formData.selectedSupplier,
+            supplier_id: supplierId,
             employee_id: user.employee_id,
             expected_date: formData.expectedDate || null,
             notes: formData.notes,
             lines: formData.lines.map(({ part_id, quantity, cost_price }) => ({ part_id, quantity, cost_price }))
         };
-        
-        const promise = onSave(payload); 
-        
+
+        const promise = onSave(payload);
+
         promise.then(async () => {
             if (!existingPO) {
                 await clearPODraft();
