@@ -367,13 +367,14 @@ const POSPage = ({ user, lines, setLines }) => {
     const handleConfirmPayment = (paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo) => {
         // Enforce full payment on POS: always send amount_paid equal to the final total.
         console.debug(`POS payment: method=${paymentMethod}, tendered=${tenderedAmount}, amountPaid=${amountPaid}, enforced=${total}`);
+        const normalizedPRN = normalizePhysicalReceipt(physicalReceiptInput || physicalReceiptNo || '');
         const payload = {
             customer_id: selectedCustomer.customer_id,
             employee_id: user.employee_id,
             payment_method: paymentMethod,
             amount_paid: Number(total) || 0,
             tendered_amount: typeof tenderedAmount !== 'undefined' && tenderedAmount !== null ? Number(tenderedAmount) : null,
-            physical_receipt_no: (physicalReceiptInput || physicalReceiptNo || '').trim() || null,
+            physical_receipt_no: normalizedPRN || null,
             lines: lines.map(line => ({
                 part_id: line.part_id,
                 quantity: line.quantity,
@@ -385,7 +386,7 @@ const POSPage = ({ user, lines, setLines }) => {
             loading: 'Processing sale...',
             success: (response) => {
                 const newInvoiceNumber = response.data.invoice_number;
-                const saleDataForReceipt = { lines, total, subtotal, tax, invoice_number: newInvoiceNumber, physical_receipt_no: (physicalReceiptNo || '').trim() || null };
+                const saleDataForReceipt = { lines, total, subtotal, tax, invoice_number: newInvoiceNumber, physical_receipt_no: normalizedPRN || null };
                 setLastSale(saleDataForReceipt);
                 setLines([]);
                 const walkIn = customers.find(c => c.first_name.toLowerCase() === 'walk-in');
@@ -464,6 +465,25 @@ const POSPage = ({ user, lines, setLines }) => {
             .sort((a, b) => (a.id > b.id ? 1 : -1));
         return JSON.stringify({ items, c: selectedCustomer?.customer_id || null });
     }, [lines, selectedCustomer?.customer_id]);
+
+    // Normalize physical receipt input to format: LL-XXXX (uppercase, dash separator)
+    const normalizePhysicalReceipt = (value) => {
+        if (!value) return '';
+        // Remove surrounding whitespace
+        let v = String(value).trim().toUpperCase();
+        // Replace any non-alphanumeric separator with a dash, collapse multiple separators
+        // Accept inputs like 'SI 1234', 'si-1234', 'SI/1234', 'SI1234' -> normalize to 'SI-1234'
+        // Extract leading letters and trailing digits
+        const match = v.match(/^([A-Z]{1,3})\W*0*([0-9]{1,})$/i);
+        if (match) {
+            const letters = match[1];
+            const digits = match[2];
+            return `${letters}-${digits}`;
+        }
+        // Fallback: replace any sequences of non-alphanum with a single dash
+        v = v.replace(/[^A-Z0-9]+/g, '-');
+        return v;
+    };
 
     const canSave = !!lines.length && cartSignature !== lastSavedSignature;
 
@@ -572,7 +592,7 @@ const POSPage = ({ user, lines, setLines }) => {
                         <div className="flex items-center space-x-3">
                             <div className="font-semibold whitespace-nowrap">Physical Receipt No:</div>
                             <div className="flex-1 p-2 bg-gray-50 rounded-lg">
-                                <input value={physicalReceiptInput} onChange={(e) => setPhysicalReceiptInput(e.target.value)} placeholder="Enter receipt no" className="w-full px-3 py-2 border rounded-md text-sm" />
+                                <input value={physicalReceiptInput} onChange={(e) => setPhysicalReceiptInput(e.target.value)} onBlur={() => setPhysicalReceiptInput(normalizePhysicalReceipt(physicalReceiptInput))} placeholder="Enter receipt no" className="w-full px-3 py-2 border rounded-md text-sm" />
                             </div>
                         </div>
                     </div>
