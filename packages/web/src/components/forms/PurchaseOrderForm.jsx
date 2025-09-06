@@ -224,8 +224,16 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                         {formData.lines.map(line => (
                             <tr key={line.part_id} className="border-b">
                                 <td className="p-2">{line.display_name}</td>
-                                <td className="p-2 w-24"><input type="number" value={line.quantity} onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)} className="w-full p-1 border rounded-md" /></td>
-                                <td className="p-2 w-28"><input type="number" step="0.01" value={line.cost_price} onChange={e => handleLineChange(line.part_id, 'cost_price', e.target.value)} className="w-full p-1 border rounded-md" /></td>
+                                <td className="p-2 w-20">
+                                    <input
+                                        type="number"
+                                        value={line.quantity}
+                                        onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)}
+                                        onFocus={e => e.target.select()}
+                                        onMouseUp={e => e.preventDefault()}
+                                        className="w-full p-1 border rounded-md text-center"
+                                    />
+                                </td>
                                 <td className="p-2 w-12 text-center"><button type="button" onClick={() => removeLine(line.part_id)} className="text-red-500 hover:text-red-700"><Icon path={ICONS.trash} className="h-4 w-4" /></button></td>
                             </tr>
                         ))}
