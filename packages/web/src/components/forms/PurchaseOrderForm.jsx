@@ -5,6 +5,8 @@ import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
 import Combobox from '../ui/Combobox';
 import SearchBar from '../SearchBar';
+import Modal from '../ui/Modal';
+import PartForm from './PartForm';
 import useDraft from '../../hooks/useDraft';
 import { formatApplicationText } from '../../helpers/applicationTextHelper';
 import { enrichPartsArray } from '../../helpers/applicationCache';
@@ -19,6 +21,9 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
     });
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState([]);
+    const [isNewPartOpen, setIsNewPartOpen] = useState(false);
+    const [brands, setBrands] = useState([]);
+    const [groups, setGroups] = useState([]);
     // Draft via reusable hook
     const poDraftData = useMemo(() => formData, [formData]);
     const poIsEmpty = useMemo(() => (d) => (!d?.selectedSupplier && (!d?.lines || d.lines.length === 0)), []);
@@ -27,6 +32,17 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
     // --- Load initial data ---
     useEffect(() => {
         api.get('/suppliers?status=active').then(res => setSuppliers(res.data));
+        // fetch brands and groups for the New Part modal
+        const fetchBrandsAndGroups = async () => {
+            try {
+                const [b, g] = await Promise.all([api.get('/brands'), api.get('/groups')]);
+                setBrands(Array.isArray(b.data) ? b.data : []);
+                setGroups(Array.isArray(g.data) ? g.data : []);
+            } catch (err) {
+                console.error('Could not load brands/groups', err);
+            }
+        };
+        fetchBrandsAndGroups();
 
         if (existingPO) {
             // If editing, load data from the existing PO
@@ -173,12 +189,19 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
             </div>
             <div className="relative">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Add Part</label>
-                <SearchBar
-                    value={searchTerm}
-                    onChange={setSearchTerm}
-                    onClear={() => setSearchTerm('')}
-                    placeholder="Search for parts to add..."
-                />
+                <div className="flex items-center space-x-2">
+                    <div className="flex-grow">
+                        <SearchBar
+                            value={searchTerm}
+                            onChange={setSearchTerm}
+                            onClear={() => setSearchTerm('')}
+                            placeholder="Search for parts to add..."
+                        />
+                    </div>
+                    <div>
+                        <button type="button" onClick={() => setIsNewPartOpen(true)} className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm">New Part</button>
+                    </div>
+                </div>
                 {searchResults.length > 0 && (
                     <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg search-results">
                         {searchResults.map(part => (
@@ -192,6 +215,47 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                     </ul>
                 )}
             </div>
+
+            {/* New Part modal */}
+            <Modal isOpen={isNewPartOpen} onClose={() => setIsNewPartOpen(false)} title="Add New Part">
+                <PartForm
+                    part={null}
+                    brands={brands}
+                    groups={groups}
+                    onSave={(payload) => {
+                        // create the part and add to lines on success
+                        const promise = api.post('/parts', payload);
+                        toast.promise(promise, {
+                            loading: 'Creating part...',
+                            success: (res) => {
+                                const newPart = res.data;
+                                // ensure minimal fields and add to lines
+                                addPartToLines({
+                                    part_id: newPart.part_id,
+                                    display_name: newPart.display_name || newPart.detail || (newPart.brand_name ? `${newPart.brand_name} ${newPart.detail}` : ''),
+                                    last_cost: newPart.last_cost || 0,
+                                    ...newPart
+                                });
+                                setIsNewPartOpen(false);
+                                return 'Part created and added to PO';
+                            },
+                            error: 'Failed to create part.'
+                        });
+                        return promise;
+                    }}
+                    onCancel={() => setIsNewPartOpen(false)}
+                    onBrandGroupAdded={async () => {
+                        // refresh brands/groups if a new one was created inside the PartForm
+                        try {
+                            const [b, g] = await Promise.all([api.get('/brands'), api.get('/groups')]);
+                            setBrands(Array.isArray(b.data) ? b.data : []);
+                            setGroups(Array.isArray(g.data) ? g.data : []);
+                        } catch (err) {
+                            console.error('Could not refresh brands/groups', err);
+                        }
+                    }}
+                />
+            </Modal>
             <div className="max-h-64 overflow-y-auto border rounded-lg">
                 <table className="w-full text-left text-sm">
                     <tbody>
