@@ -20,49 +20,83 @@ import PartForm from '../components/forms/PartForm';
 import useSavedSales from '../hooks/useSavedSales';
 import SavedSalesPanel from '../components/pos/SavedSalesPanel';
 
-// Simplified grid with only Save Sale + View Saved (no other future buttons yet)
-const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave }) => {
+// Grid with Save Sale + View Saved + Void Transaction
+const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave, handleVoid, canVoid }) => {
+    const totalCells = 10; // 5 cols x 2 rows
+    const cells = Array.from({ length: totalCells });
+
     return (
         <div className="mt-4 w-full">
             <div className="grid grid-cols-5 grid-rows-2 auto-rows-[9rem] gap-3">
-                <div className="col-span-1 row-start-2">
-                    <div
-                        className={`flex flex-col w-full h-full rounded-lg border shadow-sm transition-all duration-150
-                            ${canSave ? 'bg-white hover:bg-slate-50 hover:shadow-md cursor-pointer border-blue-300' : 'bg-slate-50 cursor-not-allowed border-slate-200'}
-                        `}
-                        onClick={() => canSave && handleSaveSale()}
-                        aria-disabled={!canSave}
-                        role="button"
-                    >
-                        <div className={`flex-1 flex flex-col items-center justify-center px-2 pt-2 text-center relative ${!canSave ? 'opacity-55' : ''}`}>
-                            {savedCount > 0 && (
-                                <span className="absolute top-1.5 right-1.5 bg-indigo-600 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none">{savedCount}</span>
-                            )}
-                            <div className={`${lines.length ? 'text-indigo-600' : 'text-slate-300'} mb-1`}>
-                                <Icon path={ICONS.bookmark} className="h-10 w-10" />
-                            </div>
-                            <span className="font-semibold text-sm">Save Sale</span>
-                            <span className="text-[11px] text-slate-500">For later</span>
-                            <span className="mt-1 text-[9px] font-mono uppercase tracking-wide text-slate-400">Ctrl+S</span>
-                        </div>
-                        <div className="h-8 w-full flex items-stretch">
-                            {savedCount > 0 ? (
-                                <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); setShowSaved(true); }}
-                                    className="flex-1 border-t border-slate-200 text-[11px] font-medium text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 flex items-center justify-center rounded-b-lg"
+                {cells.map((_, i) => {
+                    // bottom-left cell index = 5 (0-based)
+                    if (i === 5) {
+                        return (
+                            <div key={i} className="col-span-1 row-start-2">
+                                <div
+                                    className={`flex flex-col w-full h-full rounded-lg border shadow-sm transition-all duration-150 ${canSave ? 'bg-white hover:bg-slate-50 hover:shadow-md cursor-pointer border-blue-300' : 'bg-slate-50 cursor-not-allowed border-slate-200'}`}
+                                    onClick={() => canSave && handleSaveSale()}
+                                    aria-disabled={!canSave}
+                                    role="button"
                                 >
-                                    <Icon path={ICONS.bookmark} className="h-3.5 w-3.5 mr-1" /> View Saved ({savedCount})
-                                </button>
-                            ) : (
-                                <div className="flex-1 border-t border-transparent rounded-b-lg" />
-                            )}
-                        </div>
-                    </div>
-                </div>
-                {Array.from({ length: 5*2 - 1 }).map((_, i) => (
-                    <div key={i} className="rounded-lg border border-dashed border-gray-200" />
-                ))}
+                                    <div className={`flex-1 relative px-2 py-2 flex flex-col items-center justify-center text-center overflow-hidden ${!canSave ? 'opacity-55' : ''}`}>
+                                        {savedCount > 0 && (
+                                            <span className="absolute top-1.5 right-1.5 bg-indigo-600 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none">{savedCount}</span>
+                                        )}
+                                        <div className={`flex flex-col items-center transition-transform duration-300 ease-out ${savedCount > 0 ? '-translate-y-2' : 'translate-y-0'}`}>
+                                            <div className={`${lines.length ? 'text-indigo-600' : 'text-slate-300'} mb-1`}>
+                                                <Icon path={ICONS.bookmark} className="h-10 w-10" />
+                                            </div>
+                                            <span className="font-semibold text-sm">Save Sale</span>
+                                            <span className="text-[11px] text-slate-500">For later</span>
+                                            <span className="mt-1 text-[9px] font-mono uppercase tracking-wide text-slate-400">Ctrl+S</span>
+                                        </div>
+                                    </div>
+                                    <div className="h-8 w-full flex items-stretch">
+                                        {savedCount > 0 ? (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => { e.stopPropagation(); setShowSaved(true); }}
+                                                className="flex-1 border-t border-slate-200 text-[11px] font-medium text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 flex items-center justify-center rounded-b-lg transition-colors"
+                                            >
+                                                <Icon path={ICONS.bookmark} className="h-3.5 w-3.5 mr-1" /> View Saved ({savedCount})
+                                            </button>
+                                        ) : (
+                                            <div className="flex-1 border-t border-transparent rounded-b-lg" />
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    }
+
+                    // bottom row, second column (index 6) -> Void Transaction
+                    if (i === 6) {
+                        return (
+                            <div key={i} className="col-span-1 row-start-2">
+                                <div
+                                    className={`flex flex-col w-full h-full rounded-lg border shadow-sm transition-all duration-150 ${canVoid ? 'bg-white hover:bg-slate-50 hover:shadow-md cursor-pointer border-red-300' : 'bg-slate-50 border-slate-200 opacity-60'}`}
+                                    onClick={() => canVoid && handleVoid()}
+                                    aria-disabled={!canVoid}
+                                    role="button"
+                                >
+                                    <div className={`flex-1 flex flex-col items-center justify-center px-2 text-center relative ${!canVoid ? 'opacity-55' : ''}`}>
+                                        <div className={`${canVoid ? 'text-red-600' : 'text-slate-300'} mb-1`}>
+                                            <Icon path={ICONS.close} className="h-9 w-9" />
+                                        </div>
+                                        <span className="font-semibold text-sm">Void Transaction</span>
+                                        <span className="text-[11px] text-slate-500">Clear cart</span>
+                                    </div>
+                                    <div className="h-8 w-full flex items-stretch">
+                                        <div className="flex-1 border-t border-transparent rounded-b-lg flex items-center justify-center text-[11px] text-red-600 font-medium">&nbsp;</div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    }
+
+                    return <div key={i} className="rounded-lg border border-dashed border-gray-200" />;
+                })}
             </div>
         </div>
     );
@@ -204,6 +238,31 @@ const POSPage = ({ user, lines, setLines }) => {
             error: 'Failed to save part.'
         });
     };
+
+    // Void transaction: confirm and clear cart, with undo option
+    const handleVoid = useCallback(() => {
+        if (!lines.length) return;
+        if (!window.confirm('Void current transaction? This will clear the cart.')) return;
+        const previousLines = [...lines];
+        const previousCustomer = selectedCustomer;
+        setLines([]);
+        setSelectedCustomer(customers.find(c => c.first_name.toLowerCase() === 'walk-in') || null);
+        toast((t) => (
+            <div className="flex items-center">
+                <span className="mr-3">Transaction voided.</span>
+                <button
+                    onClick={() => {
+                        setLines(previousLines);
+                        setSelectedCustomer(previousCustomer);
+                        toast.dismiss(t.id);
+                    }}
+                    className="px-2 py-1 bg-gray-100 rounded text-sm"
+                >
+                    Undo
+                </button>
+            </div>
+        ), { duration: 8000 });
+    }, [lines, customers, selectedCustomer, setLines]);
 
     // Provide a callable version used by child components when brands/groups change
     const fetchInitialData = async () => {
@@ -470,6 +529,8 @@ const POSPage = ({ user, lines, setLines }) => {
                         handleSaveSale={handleSaveSale}
                         setShowSaved={setShowSaved}
                         canSave={canSave}
+                        handleVoid={handleVoid}
+                        canVoid={lines.length > 0}
                     />
                 </div>
                 <div className="w-full md:w-1/3 bg-white rounded-xl border border-gray-200 flex flex-col">
