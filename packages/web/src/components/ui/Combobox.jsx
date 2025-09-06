@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 
-const Combobox = ({ options, value, onChange, placeholder }) => {
+const Combobox = ({ options, value, onChange, placeholder, allowCreate = false, onCreate }) => {
     const [inputValue, setInputValue] = useState('');
     const [isOpen, setIsOpen] = useState(false);
 
@@ -14,6 +14,8 @@ const Combobox = ({ options, value, onChange, placeholder }) => {
     const selectedLabel = useMemo(() => {
         return options.find(opt => opt.value === value)?.label || '';
     }, [value, options]);
+
+    const exactMatch = options.some(option => option.label.toLowerCase() === inputValue.trim().toLowerCase());
 
     return (
         <div className="relative">
@@ -46,6 +48,19 @@ const Combobox = ({ options, value, onChange, placeholder }) => {
                     ))}
                     {filteredOptions.length === 0 && (
                         <li className="px-4 py-2 text-gray-500">No options found</li>
+                    )}
+
+                    {allowCreate && inputValue.trim() !== '' && !exactMatch && (
+                        <li
+                            className="px-4 py-2 hover:bg-green-50 cursor-pointer text-green-600"
+                            onMouseDown={() => {
+                                onCreate && onCreate(inputValue.trim());
+                                setInputValue('');
+                                setIsOpen(false);
+                            }}
+                        >
+                            Create "{inputValue.trim()}"
+                        </li>
                     )}
                 </ul>
             )}
