@@ -157,6 +157,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
     const total = useMemo(() => formData.lines.reduce((sum, line) => sum + (line.quantity * line.cost_price), 0), [formData.lines]);
 
     return (
+        <>
         <form onSubmit={handleSubmit} className="space-y-4">
             {/* Draft saved indicator */}
             <div className="flex items-center justify-end text-xs text-gray-500">
@@ -216,46 +217,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                 )}
             </div>
 
-            {/* New Part modal */}
-            <Modal isOpen={isNewPartOpen} onClose={() => setIsNewPartOpen(false)} title="Add New Part">
-                <PartForm
-                    part={null}
-                    brands={brands}
-                    groups={groups}
-                    onSave={(payload) => {
-                        // create the part and add to lines on success
-                        const promise = api.post('/parts', payload);
-                        toast.promise(promise, {
-                            loading: 'Creating part...',
-                            success: (res) => {
-                                const newPart = res.data;
-                                // ensure minimal fields and add to lines
-                                addPartToLines({
-                                    part_id: newPart.part_id,
-                                    display_name: newPart.display_name || newPart.detail || (newPart.brand_name ? `${newPart.brand_name} ${newPart.detail}` : ''),
-                                    last_cost: newPart.last_cost || 0,
-                                    ...newPart
-                                });
-                                setIsNewPartOpen(false);
-                                return 'Part created and added to PO';
-                            },
-                            error: 'Failed to create part.'
-                        });
-                        return promise;
-                    }}
-                    onCancel={() => setIsNewPartOpen(false)}
-                    onBrandGroupAdded={async () => {
-                        // refresh brands/groups if a new one was created inside the PartForm
-                        try {
-                            const [b, g] = await Promise.all([api.get('/brands'), api.get('/groups')]);
-                            setBrands(Array.isArray(b.data) ? b.data : []);
-                            setGroups(Array.isArray(g.data) ? g.data : []);
-                        } catch (err) {
-                            console.error('Could not refresh brands/groups', err);
-                        }
-                    }}
-                />
-            </Modal>
+            {/* New Part modal is rendered outside the form to avoid nested forms */}
             <div className="max-h-64 overflow-y-auto border rounded-lg">
                 <table className="w-full text-left text-sm">
                     <tbody>
@@ -280,6 +242,48 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                 <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">{existingPO ? 'Update Purchase Order' : 'Create Purchase Order'}</button>
             </div>
         </form>
+
+        {/* New Part modal (outside outer form) */}
+        <Modal isOpen={isNewPartOpen} onClose={() => setIsNewPartOpen(false)} title="Add New Part">
+            <PartForm
+                part={null}
+                brands={brands}
+                groups={groups}
+                onSave={(payload) => {
+                    // create the part and add to lines on success
+                    const promise = api.post('/parts', payload);
+                    toast.promise(promise, {
+                        loading: 'Creating part...',
+                        success: (res) => {
+                            const newPart = res.data;
+                            // ensure minimal fields and add to lines
+                            addPartToLines({
+                                part_id: newPart.part_id,
+                                display_name: newPart.display_name || newPart.detail || (newPart.brand_name ? `${newPart.brand_name} ${newPart.detail}` : ''),
+                                last_cost: newPart.last_cost || 0,
+                                ...newPart
+                            });
+                            setIsNewPartOpen(false);
+                            return 'Part created and added to PO';
+                        },
+                        error: 'Failed to create part.'
+                    });
+                    return promise;
+                }}
+                onCancel={() => setIsNewPartOpen(false)}
+                onBrandGroupAdded={async () => {
+                    // refresh brands/groups if a new one was created inside the PartForm
+                    try {
+                        const [b, g] = await Promise.all([api.get('/brands'), api.get('/groups')]);
+                        setBrands(Array.isArray(b.data) ? b.data : []);
+                        setGroups(Array.isArray(g.data) ? g.data : []);
+                    } catch (err) {
+                        console.error('Could not refresh brands/groups', err);
+                    }
+                }}
+            />
+        </Modal>
+        </>
     );
 };
 
