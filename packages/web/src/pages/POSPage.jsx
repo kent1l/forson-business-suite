@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import { useState, useEffect, useRef, useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
 import api from '../api';
@@ -16,6 +17,8 @@ import PaymentModal from '../components/ui/PaymentModal';
 import PriceQuantityModal from '../components/ui/PriceQuantityModal';
 import Receipt from '../components/ui/Receipt';
 import PartForm from '../components/forms/PartForm';
+import useSavedSales from '../hooks/useSavedSales';
+import SavedSalesPanel from '../components/pos/SavedSalesPanel';
 
 const POSPage = ({ user, lines, setLines }) => {
     const { settings } = useSettings();
@@ -32,9 +35,13 @@ const POSPage = ({ user, lines, setLines }) => {
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
     const [isNewPartModalOpen, setIsNewPartModalOpen] = useState(false);
     const [currentItem, setCurrentItem] = useState(null);
+    const [showSaved, setShowSaved] = useState(false);
     const [lastSale, setLastSale] = useState(null);
     const searchInputRef = useRef(null);
     const { getInputProps, getItemProps, reset } = useTypeahead({ items: searchResults, onSelect: (item) => { handleSelectPart(item); }, inputId: 'pos-search-input', listboxId: 'pos-search-results' });
+
+    // Saved sales hook (user-specific)
+    const { saved, count: savedCount, saveSale, remove: removeSaved, get: getSaved } = useSavedSales({ userId: user?.employee_id, max: 10 });
 
     // Debounced search effect
     useEffect(() => {
@@ -309,10 +316,85 @@ const POSPage = ({ user, lines, setLines }) => {
         });
     };
 
+    const handleSaveSale = () => {
+        if (!lines.length) return toast.error('No items to save.');
+        const cartSnapshot = {
+            items: lines.map(l => ({
+                part_id: l.part_id,
+                display_name: l.display_name,
+                quantity: l.quantity,
+                sale_price: l.sale_price
+            })),
+            customerId: selectedCustomer?.customer_id || null,
+            totals: { subtotal, tax, grandTotal: total }
+        };
+        const entry = saveSale(cartSnapshot);
+        if (entry) {
+            toast.success('Sale saved.');
+        }
+    };
+
+    const handleRestoreSaved = (id) => {
+        const entry = getSaved(id);
+        if (!entry) return;
+        if (lines.length && !window.confirm('Current cart will be replaced. Continue?')) return;
+        const { cart } = entry;
+        const restoredLines = (cart.items || []).map(i => ({
+            part_id: i.part_id,
+            display_name: i.display_name,
+            quantity: i.quantity,
+            sale_price: i.sale_price
+        }));
+        setLines(restoredLines);
+        const customer = customers.find(c => c.customer_id === cart.customerId);
+        if (customer) setSelectedCustomer(customer);
+        removeSaved(id); // consume on restore (approved default)
+        setShowSaved(false);
+        toast.success('Sale restored.');
+    };
+
+    const centerContent = showSaved ? (
+        <div className="w-full h-full bg-white rounded-xl border border-gray-200 flex flex-col">
+            <div className="p-3 flex items-center justify-between border-b">
+                <div className="font-semibold text-sm flex items-center space-x-2">
+                    <Icon path={ICONS.bookmark} className="h-5 w-5" />
+                    <span>Saved Sales ({savedCount})</span>
+                </div>
+                <button onClick={() => setShowSaved(false)} className="text-sm text-blue-600 hover:text-blue-800 font-medium">Back</button>
+            </div>
+            <div className="flex-1">
+                <SavedSalesPanel saved={saved} onRestore={handleRestoreSaved} onDelete={removeSaved} currency={settings?.DEFAULT_CURRENCY_SYMBOL || '₱'} />
+            </div>
+        </div>
+    ) : (
+        <div className="flex flex-col items-center justify-center h-full p-6 bg-white rounded-xl border border-dashed border-gray-300">
+            <button
+                onClick={handleSaveSale}
+                disabled={!lines.length}
+                className={`flex flex-col items-center justify-center w-40 h-40 rounded-lg border text-center transition ${lines.length ? 'bg-blue-50 hover:bg-blue-100 border-blue-300 text-blue-700' : 'bg-gray-50 border-gray-300 text-gray-400 cursor-not-allowed'}`}
+            >
+                <div className="relative">
+                    <Icon path={ICONS.bookmark} className="h-12 w-12 mb-2" />
+                    {savedCount > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs font-semibold px-2 py-0.5 rounded-full">{savedCount}</span>
+                    )}
+                </div>
+                <span className="font-semibold text-sm">Save Sale</span>
+                <span className="text-[11px] text-gray-500 mt-1">Save current cart for later</span>
+            </button>
+            {savedCount > 0 && (
+                <button onClick={() => setShowSaved(true)} className="mt-6 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center space-x-1">
+                    <Icon path={ICONS.bookmark} className="h-4 w-4" />
+                    <span>View Saved ({savedCount})</span>
+                </button>
+            )}
+        </div>
+    );
+
     return (
         <>
             <div className="flex flex-col md:flex-row h-full gap-6">
-                <div className="w-full md:w-2/3">
+                <div className="w-full md:w-2/5">
                     <div className="flex items-center space-x-2">
                         <div className="relative flex-grow">
                             <SearchBar
@@ -347,7 +429,10 @@ const POSPage = ({ user, lines, setLines }) => {
                     </div>
                 </div>
 
-                <div className="w-full md:w-1/3 bg-white rounded-xl border border-gray-200 flex flex-col">
+                <div className="hidden md:block w-full md:w-1/5">
+                    {centerContent}
+                </div>
+                <div className="w-full md:w-2/5 bg-white rounded-xl border border-gray-200 flex flex-col">
                     <div className="p-4 border-b">
                         <div className="font-semibold mb-2">Customer</div>
                         <div className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
@@ -430,6 +515,8 @@ const POSPage = ({ user, lines, setLines }) => {
                 total={total}
                 onConfirmPayment={handleConfirmPayment}
             />
+            {/* Saved sales panel for small screens (stacked below) */}
+            <div className="md:hidden mt-4">{centerContent}</div>
             <div className="hidden">
                 <Receipt saleData={lastSale} settings={settings} />
             </div>

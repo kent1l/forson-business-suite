@@ -39,3 +39,6 @@ export const ICONS = {
   chevronUp: "M5 15l7-7 7 7",
   download: "M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
  };
+
+// Added bookmark icon (used in POS saved sales feature)
+ICONS.bookmark = "M17 20l-5-5-5 5V5a2 2 0 012-2h6a2 2 0 012 2z";
