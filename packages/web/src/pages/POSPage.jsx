@@ -28,13 +28,13 @@ const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave 
                 <div className="col-span-1 row-start-2">
                     <div
                         className={`flex flex-col w-full h-full rounded-lg border shadow-sm transition-all duration-150
-                            ${canSave ? 'bg-white hover:bg-slate-50 hover:shadow-md cursor-pointer border-blue-300' : 'bg-slate-50 cursor-not-allowed border-slate-200 opacity-60'}
+                            ${canSave ? 'bg-white hover:bg-slate-50 hover:shadow-md cursor-pointer border-blue-300' : 'bg-slate-50 cursor-not-allowed border-slate-200'}
                         `}
                         onClick={() => canSave && handleSaveSale()}
                         aria-disabled={!canSave}
                         role="button"
                     >
-                        <div className="flex-1 flex flex-col items-center justify-center px-2 pt-2 text-center relative">
+                        <div className={`flex-1 flex flex-col items-center justify-center px-2 pt-2 text-center relative ${!canSave ? 'opacity-55' : ''}`}>
                             {savedCount > 0 && (
                                 <span className="absolute top-1.5 right-1.5 bg-indigo-600 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none">{savedCount}</span>
                             )}
