@@ -21,7 +21,7 @@ import useSavedSales from '../hooks/useSavedSales';
 import SavedSalesPanel from '../components/pos/SavedSalesPanel';
 
 // Grid with Save Sale + View Saved + Void Transaction
-const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave, handleVoid, canVoid }) => {
+const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave, handleVoid, canVoid, openCustomer, selectedCustomer }) => {
     const totalCells = 10; // 5 cols x 2 rows
     const cells = Array.from({ length: totalCells });
 
@@ -29,6 +29,28 @@ const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave,
         <div className="mt-4 w-full">
             <div className="grid grid-cols-5 grid-rows-2 auto-rows-[9rem] gap-3">
                 {cells.map((_, i) => {
+                    // top-left cell (index 0) -> Customer button
+                    if (i === 0) {
+                        return (
+                            <div key={i} className="col-span-1">
+                                <div
+                                    className={`flex flex-col w-full h-full rounded-lg border shadow-sm transition-all duration-150 bg-white hover:bg-slate-50 hover:shadow-md cursor-pointer border-gray-200`}
+                                    onClick={() => openCustomer && openCustomer()}
+                                    role="button"
+                                >
+                                    <div className="flex-1 flex flex-col items-center justify-center px-2 text-center">
+                                        <div className="mb-1 text-slate-600"><Icon path={ICONS.customers} className="h-8 w-8" /></div>
+                                        <span className="font-semibold text-sm truncate max-w-full">{selectedCustomer ? `${selectedCustomer.first_name} ${selectedCustomer.last_name || ''}` : 'Customer'}</span>
+                                        <span className="text-[11px] text-slate-500">{selectedCustomer ? 'Change' : 'Select customer'}</span>
+                                    </div>
+                                    <div className="h-8 w-full flex items-stretch">
+                                        <div className="flex-1 border-t border-transparent rounded-b-lg" />
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    }
+
                     // bottom-left cell index = 5 (0-based)
                     if (i === 5) {
                         return (
@@ -104,6 +126,7 @@ const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave,
 
 const POSPage = ({ user, lines, setLines }) => {
     const { settings } = useSettings();
+    const [physicalReceiptInput, setPhysicalReceiptInput] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState([]); // State for search results
     const [customers, setCustomers] = useState([]);
@@ -350,7 +373,7 @@ const POSPage = ({ user, lines, setLines }) => {
             payment_method: paymentMethod,
             amount_paid: Number(total) || 0,
             tendered_amount: typeof tenderedAmount !== 'undefined' && tenderedAmount !== null ? Number(tenderedAmount) : null,
-            physical_receipt_no: (physicalReceiptNo || '').trim() || null,
+            physical_receipt_no: (physicalReceiptInput || physicalReceiptNo || '').trim() || null,
             lines: lines.map(line => ({
                 part_id: line.part_id,
                 quantity: line.quantity,
@@ -540,16 +563,17 @@ const POSPage = ({ user, lines, setLines }) => {
                         canSave={canSave}
                         handleVoid={openVoidConfirm}
                         canVoid={lines.length > 0}
+                        openCustomer={() => setIsCustomerModalOpen(true)}
+                        selectedCustomer={selectedCustomer}
                     />
                 </div>
                 <div className="w-full md:w-1/3 bg-white rounded-xl border border-gray-200 flex flex-col">
                     <div className="p-4 border-b">
-                        <div className="font-semibold mb-2">Customer</div>
-                        <div className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-                           <span className="text-sm font-medium">{selectedCustomer?.first_name} {selectedCustomer?.last_name}</span>
-                           <button onClick={() => setIsCustomerModalOpen(true)} className="text-sm text-blue-600 hover:text-blue-800 font-semibold">
-                               Change
-                           </button>
+                        <div className="flex items-center space-x-3">
+                            <div className="font-semibold whitespace-nowrap">Physical Receipt No:</div>
+                            <div className="flex-1 p-2 bg-gray-50 rounded-lg">
+                                <input value={physicalReceiptInput} onChange={(e) => setPhysicalReceiptInput(e.target.value)} placeholder="Enter receipt no" className="w-full px-3 py-2 border rounded-md text-sm" />
+                            </div>
                         </div>
                     </div>
                     <div className="flex-1 p-4 overflow-y-auto">
@@ -624,6 +648,7 @@ const POSPage = ({ user, lines, setLines }) => {
                 onClose={() => setIsPaymentModalOpen(false)}
                 total={total}
                 onConfirmPayment={handleConfirmPayment}
+                physicalReceipt={physicalReceiptInput}
             />
             {/* Void confirmation modal (centered, styled like system) */}
             <Modal isOpen={isVoidConfirmOpen} onClose={() => setIsVoidConfirmOpen(false)} title="Confirm Void" centered>
