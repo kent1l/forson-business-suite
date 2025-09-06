@@ -33,8 +33,10 @@ const generatePurchaseOrderPDF = async (poData, linesData, options = {}) => {
 
     // Format notes section
     const notesHtml = po.notes ? `
-        <h3>Notes</h3>
-        <p>${po.notes}</p>
+        <div class="notes">
+            <h3 class="notes-title">Notes</h3>
+            <p class="notes-content">${po.notes}</p>
+        </div>
     ` : '';
 
     // Replace template variables
