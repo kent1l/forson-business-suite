@@ -40,7 +40,17 @@ const SalesHistoryPage = () => {
     
     const [selectedInvoice, setSelectedInvoice] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [summaryCollapsed, setSummaryCollapsed] = useState(false);
+    // Persisted collapsed state (default: hidden)
+    const [summaryCollapsed, setSummaryCollapsed] = useState(() => {
+        try {
+            const v = localStorage.getItem('salesSummaryCollapsed');
+            return v === null ? true : v === 'true';
+        } catch {
+            return true;
+        }
+    });
+    const summaryRef = useRef(null);
+    const [maxHeight, setMaxHeight] = useState('0px');
 
     // Derived sales statistics for the selected date range
     const stats = useMemo(() => {
@@ -84,6 +94,48 @@ const SalesHistoryPage = () => {
             topCustomerTotal
         };
     }, [invoices]);
+
+    // Keep maxHeight in sync to animate expand/collapse
+    useEffect(() => {
+        if (!summaryRef.current) return;
+        const el = summaryRef.current;
+
+        if (summaryCollapsed) {
+            // collapse
+            // set to current height first to ensure transition works, then to 0
+            try {
+                setMaxHeight(`${el.scrollHeight}px`);
+                // allow layout to settle
+                requestAnimationFrame(() => setMaxHeight('0px'));
+            } catch {
+                setMaxHeight('0px');
+            }
+        } else {
+            // expand
+            try {
+                setMaxHeight(`${el.scrollHeight}px`);
+            } catch {
+                setMaxHeight('none');
+            }
+        }
+        // update when stats change so expanded height adapts
+    }, [summaryCollapsed, stats]);
+
+    // After expand animation completes, set maxHeight to 'none' so content can grow naturally
+    useEffect(() => {
+        const el = summaryRef.current;
+        if (!el) return;
+        const onTransitionEnd = (e) => {
+            if (e.propertyName !== 'max-height') return;
+            if (!summaryCollapsed) {
+                // expansion finished
+                setMaxHeight('none');
+            }
+        };
+        el.addEventListener('transitionend', onTransitionEnd);
+        return () => el.removeEventListener('transitionend', onTransitionEnd);
+    }, [summaryCollapsed]);
+
 
     const fetchInvoices = async () => {
         setLoading(true);
@@ -193,7 +245,13 @@ const SalesHistoryPage = () => {
                     <h2 className="text-lg font-medium text-gray-700">Summary</h2>
                     <button
                         type="button"
-                        onClick={() => setSummaryCollapsed(s => !s)}
+                        onClick={() => {
+                            setSummaryCollapsed(s => {
+                                const next = !s;
+                                try { localStorage.setItem('salesSummaryCollapsed', String(next)); } catch { /* ignore localStorage errors */ }
+                                return next;
+                            });
+                        }}
                         className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-800"
                         aria-expanded={!summaryCollapsed}
                     >
@@ -203,9 +261,30 @@ const SalesHistoryPage = () => {
                         </svg>
                     </button>
                 </div>
+                {/* Compact view shows when collapsed */}
+                <div className={`mt-3 flex items-center space-x-4 ${summaryCollapsed ? '' : 'hidden'}`}>
+                    <div className="flex-1 p-2 bg-white rounded-lg border border-gray-100 shadow-sm">
+                        <div className="text-xs text-gray-500">Total Sales</div>
+                        <div className="text-sm font-semibold text-gray-800">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    </div>
+                    <div className="flex-1 p-2 bg-white rounded-lg border border-gray-100 shadow-sm">
+                        <div className="text-xs text-gray-500">Invoices</div>
+                        <div className="text-sm font-semibold text-gray-800">{stats.count}</div>
+                    </div>
+                    <div className="flex-1 p-2 bg-white rounded-lg border border-gray-100 shadow-sm">
+                        <div className="text-xs text-gray-500">Avg</div>
+                        <div className="text-sm font-semibold text-gray-800">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.avg.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    </div>
+                </div>
 
-                {!summaryCollapsed ? (
-                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                {/* Expanded view (animated) */}
+                <div
+                    ref={summaryRef}
+                    className="mt-4 overflow-hidden"
+                    style={{ maxHeight, transition: 'max-height 300ms ease' }}
+                    aria-hidden={summaryCollapsed}
+                >
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                         <div className="p-4 bg-gradient-to-br from-white to-gray-50 rounded-lg border border-gray-100 shadow-sm">
                             <div className="text-sm text-gray-500">Total Sales</div>
                             <div className="mt-2 flex items-baseline justify-between">
@@ -255,22 +334,7 @@ const SalesHistoryPage = () => {
                             <div className="text-xs text-gray-500 mt-1">Estimated refunded amount (based on statuses)</div>
                         </div>
                     </div>
-                ) : (
-                    <div className="mt-3 flex items-center space-x-4">
-                        <div className="flex-1 p-2 bg-white rounded-lg border border-gray-100 shadow-sm">
-                            <div className="text-xs text-gray-500">Total Sales</div>
-                            <div className="text-sm font-semibold text-gray-800">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                        </div>
-                        <div className="flex-1 p-2 bg-white rounded-lg border border-gray-100 shadow-sm">
-                            <div className="text-xs text-gray-500">Invoices</div>
-                            <div className="text-sm font-semibold text-gray-800">{stats.count}</div>
-                        </div>
-                        <div className="flex-1 p-2 bg-white rounded-lg border border-gray-100 shadow-sm">
-                            <div className="text-xs text-gray-500">Avg</div>
-                            <div className="text-sm font-semibold text-gray-800">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.avg.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                        </div>
-                    </div>
-                )}
+                </div>
             </div>
 
             <div className="bg-white p-6 rounded-xl border border-gray-200">
