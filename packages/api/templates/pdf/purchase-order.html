@@ -146,7 +146,12 @@
 
         .col-quantity {
             width: 120px;
-            text-align: center;
+            text-align: right;
+        }
+
+        /* When server pre-renders quantity cells it may add a 'text-right' class; ensure it's aligned */
+        td.text-right {
+            text-align: right;
         }
 
         /* Notes */
@@ -201,12 +206,7 @@
                 </tr>
             </thead>
             <tbody>
-                {{#each lines}}
-                <tr>
-                    <td>{{this.item_description}}</td>
-                    <td class="col-quantity">{{this.quantity}}</td>
-                </tr>
-                {{/each}}
+                {{{lines}}}
             </tbody>
         </table>
 
