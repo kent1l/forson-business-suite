@@ -307,54 +307,109 @@ const SalesHistoryPage = () => {
                     aria-hidden={summaryCollapsed}
                 >
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                        <div className="p-4 bg-gradient-to-br from-white to-gray-50 rounded-lg border border-gray-100 shadow-sm">
-                            <div className="text-sm text-gray-500">Total Sales</div>
-                            <div className="mt-2 flex items-baseline justify-between">
-                                <div className="text-2xl font-semibold text-gray-800">
-                                    {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </div>
-                                <svg className="w-6 h-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 17l6-6 4 4 8-8"></path></svg>
-                            </div>
-                            <div className="text-xs text-gray-500 mt-1">From {dates.startDate} to {dates.endDate}</div>
-                        </div>
+                        {
+                            // Build an array of card descriptors so we can stagger animations
+                            [
+                                {
+                                    key: 'totalSales',
+                                    className: 'bg-gradient-to-br from-white to-gray-50',
+                                    content: (
+                                        <>
+                                            <div className="text-sm text-gray-500">Total Sales</div>
+                                            <div className="mt-2 flex items-baseline justify-between">
+                                                <div className="text-2xl font-semibold text-gray-800">
+                                                    {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                </div>
+                                                <svg className="w-6 h-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 17l6-6 4 4 8-8"></path></svg>
+                                            </div>
+                                            <div className="text-xs text-gray-500 mt-1">From {dates.startDate} to {dates.endDate}</div>
+                                        </>
+                                    )
+                                },
+                                {
+                                    key: 'invoices',
+                                    content: (
+                                        <>
+                                            <div className="text-sm text-gray-500">Invoices</div>
+                                            <div className="mt-2 text-2xl font-semibold text-gray-800">{stats.count}</div>
+                                            <div className="text-xs text-gray-500 mt-1">Total number of invoices in range</div>
+                                        </>
+                                    )
+                                },
+                                {
+                                    key: 'avg',
+                                    content: (
+                                        <>
+                                            <div className="text-sm text-gray-500">Average Sale</div>
+                                            <div className="mt-2 text-2xl font-semibold text-gray-800">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.avg.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                            <div className="text-xs text-gray-500 mt-1">Average invoice value</div>
+                                        </>
+                                    )
+                                },
+                                {
+                                    key: 'topCustomer',
+                                    content: (
+                                        <>
+                                            <div className="text-sm text-gray-500">Top Customer</div>
+                                            <div className="mt-2 text-lg font-semibold text-gray-800">{stats.topCustomer}</div>
+                                            <div className="text-xs text-gray-500 mt-1">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.topCustomerTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                        </>
+                                    )
+                                },
+                                {
+                                    key: 'paidUnpaid',
+                                    className: 'md:col-span-2',
+                                    content: (
+                                        <>
+                                            <div className="text-sm text-gray-500">Paid / Unpaid</div>
+                                            <div className="mt-2 flex items-center space-x-4">
+                                                <div className="flex-1">
+                                                    <div className="text-xs text-gray-500">Paid</div>
+                                                    <div className="text-lg font-semibold text-green-600">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.paid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                                </div>
+                                                <div className="flex-1">
+                                                    <div className="text-xs text-gray-500">Unpaid</div>
+                                                    <div className="text-lg font-semibold text-red-600">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.unpaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                                </div>
+                                            </div>
+                                        </>
+                                    )
+                                },
+                                {
+                                    key: 'refunds',
+                                    className: 'md:col-span-2',
+                                    content: (
+                                        <>
+                                            <div className="text-sm text-gray-500">Refunds</div>
+                                            <div className="mt-2 text-lg font-semibold text-yellow-600">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.refunded.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                            <div className="text-xs text-gray-500 mt-1">Estimated refunded amount (based on statuses)</div>
+                                        </>
+                                    )
+                                }
+                            ].map((card, idx) => {
+                                // stagger only on expand
+                                const delayMs = summaryCollapsed ? 0 : idx * 60;
+                                const transformCollapsed = 'translateY(6px) scale(0.995)';
+                                const transformExpanded = 'translateY(0) scale(1)';
+                                const style = {
+                                    transform: summaryCollapsed ? transformCollapsed : transformExpanded,
+                                    opacity: summaryCollapsed ? 0 : 1,
+                                    transition: 'transform 320ms cubic-bezier(.2,.9,.2,1), opacity 240ms ease',
+                                    transitionDelay: `${delayMs}ms`
+                                };
 
-                        <div className="p-4 bg-white rounded-lg border border-gray-100 shadow-sm">
-                            <div className="text-sm text-gray-500">Invoices</div>
-                            <div className="mt-2 text-2xl font-semibold text-gray-800">{stats.count}</div>
-                            <div className="text-xs text-gray-500 mt-1">Total number of invoices in range</div>
-                        </div>
+                                // If a card descriptor includes an md:col-span-2 class name, preserve it on the wrapper
+                                const wrapperColSpan = card.className && card.className.includes('md:col-span-2') ? 'md:col-span-2' : '';
 
-                        <div className="p-4 bg-white rounded-lg border border-gray-100 shadow-sm">
-                            <div className="text-sm text-gray-500">Average Sale</div>
-                            <div className="mt-2 text-2xl font-semibold text-gray-800">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.avg.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                            <div className="text-xs text-gray-500 mt-1">Average invoice value</div>
-                        </div>
-
-                        <div className="p-4 bg-white rounded-lg border border-gray-100 shadow-sm">
-                            <div className="text-sm text-gray-500">Top Customer</div>
-                            <div className="mt-2 text-lg font-semibold text-gray-800">{stats.topCustomer}</div>
-                            <div className="text-xs text-gray-500 mt-1">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.topCustomerTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                        </div>
-
-                        <div className="p-4 bg-white rounded-lg border border-gray-100 shadow-sm md:col-span-2">
-                            <div className="text-sm text-gray-500">Paid / Unpaid</div>
-                            <div className="mt-2 flex items-center space-x-4">
-                                <div className="flex-1">
-                                    <div className="text-xs text-gray-500">Paid</div>
-                                    <div className="text-lg font-semibold text-green-600">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.paid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                </div>
-                                <div className="flex-1">
-                                    <div className="text-xs text-gray-500">Unpaid</div>
-                                    <div className="text-lg font-semibold text-red-600">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.unpaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="p-4 bg-white rounded-lg border border-gray-100 shadow-sm md:col-span-2">
-                            <div className="text-sm text-gray-500">Refunds</div>
-                            <div className="mt-2 text-lg font-semibold text-yellow-600">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.refunded.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                            <div className="text-xs text-gray-500 mt-1">Estimated refunded amount (based on statuses)</div>
-                        </div>
+                                return (
+                                    <div key={card.key} className={wrapperColSpan} style={style}>
+                                        <div className={`p-4 ${card.className || 'bg-white'} rounded-lg border border-gray-100 shadow-sm`}>
+                                            {card.content}
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        }
                     </div>
                 </div>
             </div>
