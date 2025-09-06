@@ -239,14 +239,23 @@ const POSPage = ({ user, lines, setLines }) => {
         });
     };
 
-    // Void transaction: confirm and clear cart, with undo option
-    const handleVoid = useCallback(() => {
+    // Void transaction: uses styled modal confirmation and supports undo
+    const [isVoidConfirmOpen, setIsVoidConfirmOpen] = useState(false);
+    const voidPrevRef = useRef({ lines: [], customer: null });
+
+    const openVoidConfirm = useCallback(() => {
         if (!lines.length) return;
-        if (!window.confirm('Void current transaction? This will clear the cart.')) return;
-        const previousLines = [...lines];
-        const previousCustomer = selectedCustomer;
+        // store current state for undo
+        voidPrevRef.current = { lines: [...lines], customer: selectedCustomer };
+        setIsVoidConfirmOpen(true);
+    }, [lines, selectedCustomer]);
+
+    const performVoid = useCallback(() => {
+        const previousLines = voidPrevRef.current.lines || [];
+        const previousCustomer = voidPrevRef.current.customer || null;
         setLines([]);
         setSelectedCustomer(customers.find(c => c.first_name.toLowerCase() === 'walk-in') || null);
+        setIsVoidConfirmOpen(false);
         toast((t) => (
             <div className="flex items-center">
                 <span className="mr-3">Transaction voided.</span>
@@ -262,7 +271,7 @@ const POSPage = ({ user, lines, setLines }) => {
                 </button>
             </div>
         ), { duration: 8000 });
-    }, [lines, customers, selectedCustomer, setLines]);
+    }, [customers, setLines]);
 
     // Provide a callable version used by child components when brands/groups change
     const fetchInitialData = async () => {
@@ -529,7 +538,7 @@ const POSPage = ({ user, lines, setLines }) => {
                         handleSaveSale={handleSaveSale}
                         setShowSaved={setShowSaved}
                         canSave={canSave}
-                        handleVoid={handleVoid}
+                        handleVoid={openVoidConfirm}
                         canVoid={lines.length > 0}
                     />
                 </div>
@@ -616,6 +625,16 @@ const POSPage = ({ user, lines, setLines }) => {
                 total={total}
                 onConfirmPayment={handleConfirmPayment}
             />
+            {/* Void confirmation modal (centered, styled like system) */}
+            <Modal isOpen={isVoidConfirmOpen} onClose={() => setIsVoidConfirmOpen(false)} title="Confirm Void" centered>
+                <div className="py-4">
+                    <p className="text-sm text-slate-700">Void current transaction? This will clear the cart.</p>
+                    <div className="mt-6 flex justify-end space-x-3">
+                        <button onClick={() => setIsVoidConfirmOpen(false)} className="px-4 py-2 bg-gray-100 rounded-md">Cancel</button>
+                        <button onClick={performVoid} className="px-4 py-2 bg-red-600 text-white rounded-md">Void Transaction</button>
+                    </div>
+                </div>
+            </Modal>
             {/* Saved Sales Modal */}
             <div className="hidden">
                 <Receipt saleData={lastSale} settings={settings} />
