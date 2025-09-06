@@ -100,21 +100,43 @@ const SalesHistoryPage = () => {
         if (!summaryRef.current) return;
         const el = summaryRef.current;
 
+        // Ensure we have a sensible transition defined
+        el.style.transition = 'max-height 300ms ease, opacity 200ms ease';
+
         if (summaryCollapsed) {
-            // collapse
-            // set to current height first to ensure transition works, then to 0
+            // COLLAPSING: make sure the element has a measured max-height first,
+            // force a reflow, then set max-height to 0 and fade out opacity.
             try {
-                setMaxHeight(`${el.scrollHeight}px`);
-                // allow layout to settle
-                requestAnimationFrame(() => setMaxHeight('0px'));
+                // If the element was left with 'none', measure its scrollHeight
+                const startHeight = el.scrollHeight || el.offsetHeight || 0;
+                el.style.maxHeight = `${startHeight}px`;
+                el.style.opacity = '1';
+                // Force reflow so the browser registers the starting height
+                el.offsetHeight;
+                // Now animate to collapsed
+                el.style.opacity = '0';
+                el.style.maxHeight = '0px';
+                setMaxHeight('0px');
             } catch {
+                el.style.maxHeight = '0px';
+                el.style.opacity = '0';
                 setMaxHeight('0px');
             }
         } else {
-            // expand
+            // EXPANDING: set opacity to 1 and animate max-height to measured value
             try {
-                setMaxHeight(`${el.scrollHeight}px`);
+                const target = `${el.scrollHeight}px`;
+                el.style.opacity = '0';
+                // ensure starting point is 0 so the transition plays
+                el.style.maxHeight = '0px';
+                // force reflow
+                el.offsetHeight;
+                el.style.opacity = '1';
+                el.style.maxHeight = target;
+                setMaxHeight(target);
             } catch {
+                el.style.maxHeight = 'none';
+                el.style.opacity = '1';
                 setMaxHeight('none');
             }
         }
