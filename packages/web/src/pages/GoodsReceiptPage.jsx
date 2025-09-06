@@ -119,6 +119,7 @@ const GoodsReceiptPage = ({ user }) => {
             // Ensure sale_price exists on each line; default to part's last_sale_price if present
             const linesWithSale = response.data.map(l => ({
                 ...l,
+                cost_price: typeof l.cost_price !== 'undefined' ? l.cost_price : (l.last_cost || 0),
                 sale_price: typeof l.sale_price !== 'undefined' ? l.sale_price : (l.last_sale_price || 0)
             }));
             setLines(linesWithSale);
@@ -173,8 +174,8 @@ const GoodsReceiptPage = ({ user }) => {
                 ...part, 
                 part_id: part.part_id, 
                 quantity: 1, 
-                cost_price: part.last_cost || 0,
-                sale_price: part.last_sale_price || 0 
+                cost_price: typeof part.last_cost !== 'undefined' ? part.last_cost : 0,
+                sale_price: typeof part.last_sale_price !== 'undefined' ? part.last_sale_price : 0 
             }]);
         }
         setSearchTerm('');
@@ -326,7 +327,7 @@ const GoodsReceiptPage = ({ user }) => {
                             {lines.map(line => (
                                 <tr key={line.part_id} className="border-b">
                                     <td className="p-2 text-sm font-medium text-gray-800">{line.display_name}</td>
-                                    <td className="p-2"><input type="number" value={line.quantity} onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)} className="w-full p-1 border rounded-md" /></td>
+                                    <td className="p-2"><input type="number" value={line.quantity} onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)} onFocus={e => e.target.select()} className="w-full p-1 border rounded-md" /></td>
                                         <td className="p-2"><input type="number" step="0.01" value={line.cost_price} onChange={e => handleLineChange(line.part_id, 'cost_price', e.target.value)} onFocus={e => e.target.select()} className="w-full p-1 border rounded-md" /></td>
                                         <td className="p-2"><input type="number" step="0.01" value={line.sale_price} onChange={e => handleLineChange(line.part_id, 'sale_price', e.target.value)} onFocus={e => e.target.select()} className="w-full p-1 border rounded-md" /></td>
                                         <td className="p-2 text-center"><button onClick={() => removeLine(line.part_id)} className="text-red-500 hover:text-red-700"><Icon path={ICONS.trash} className="h-5 w-5"/></button></td>

@@ -33,6 +33,7 @@ router.get('/power-search/parts', async (req, res) => {
                 p.internal_sku,
                 p.detail,
                 p.last_sale_price,
+                p.last_cost,
                 b.brand_name,
                 g.group_name,
                 (

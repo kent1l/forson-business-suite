@@ -58,7 +58,7 @@ router.get('/purchase-orders/:id/lines', protect, hasPermission('purchase_orders
     const { id } = req.params;
     try {
         const query = `
-            SELECT pol.*, p.internal_sku, p.detail, p.last_sale_price AS last_sale_price, b.brand_name, g.group_name
+            SELECT pol.*, p.internal_sku, p.detail, p.last_sale_price AS last_sale_price, p.last_cost AS last_cost, b.brand_name, g.group_name
             FROM purchase_order_line pol
             JOIN part p ON pol.part_id = p.part_id
             LEFT JOIN brand b ON p.brand_id = b.brand_id
