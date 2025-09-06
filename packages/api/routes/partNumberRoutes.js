@@ -38,12 +38,24 @@ router.post('/parts/:partId/numbers', protect, hasPermission('parts:edit'), asyn
     await client.query('BEGIN');
 
     for (const number of numbers) {
-      const query = `
+      // Guarded insert that checks for an active alias first. This is compatible with
+      // partial unique indexes (soft-delete) and avoids relying on ON CONFLICT when a
+      // matching unique constraint isn't present in the database.
+      const guardedInsert = `
+        WITH input_value AS (
+            SELECT CAST($2 AS character varying(100)) AS part_number
+        )
         INSERT INTO part_number (part_id, part_number)
-        VALUES ($1, $2)
-        ON CONFLICT DO NOTHING; -- uniqueness handled by partial index (active only)
+        SELECT $1, input_value.part_number
+        FROM input_value
+        WHERE NOT EXISTS (
+          SELECT 1 FROM part_number 
+          WHERE part_id = $1 
+          AND part_number = input_value.part_number
+          AND ${activeAliasCondition('part_number')}
+        )
       `;
-      await client.query(query, [partId, number]);
+      await client.query(guardedInsert, [partId, number]);
     }
 
     await client.query('COMMIT');

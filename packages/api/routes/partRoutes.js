@@ -49,7 +49,11 @@ const getPartDataForMeili = async (client, partId) => {
 
 // Helper function to handle tag logic
 const manageTags = async (client, tags, partId) => {
-    console.log('manageTags called with:', { tags, partId }); // Debugging log
+    console.log('[DEBUG] manageTags - Starting with:', { tags, partId });
+    if (!Array.isArray(tags)) {
+        console.log('[DEBUG] manageTags - Tags is not an array:', tags);
+        return; // Skip tag processing if tags is not an array
+    }
 
     // Delete existing tags for the part
     await client.query('DELETE FROM part_tag WHERE part_id = $1', [partId]);
@@ -80,11 +84,20 @@ const manageTags = async (client, tags, partId) => {
             });
         }
 
-        // Associate tags with the part in a single query
-        const partTagValues = sanitizedTags.map(tag => `(${partId}, ${existingTags[tag]})`).join(', ');
-        await client.query(
-            `INSERT INTO part_tag (part_id, tag_id) VALUES ${partTagValues} ON CONFLICT DO NOTHING`
-        );
+        // Associate tags with the part using guarded, parameterized inserts.
+        // This avoids relying on ON CONFLICT and prevents SQL injection by using parameters.
+        for (const tag of sanitizedTags) {
+            const tagId = existingTags[tag];
+            if (!tagId) continue;
+            const insertPartTag = `
+                INSERT INTO part_tag (part_id, tag_id)
+                SELECT $1, $2
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM part_tag WHERE part_id = $1 AND tag_id = $2
+                )
+            `;
+            await client.query(insertPartTag, [partId, tagId]);
+        }
     }
 };
 
@@ -191,17 +204,27 @@ router.get('/parts/:id/tags', protect, hasPermission('parts:view'), async (req, 
 });
 
 router.post('/parts', protect, hasPermission('parts:create'), async (req, res) => {
+    console.log('[DEBUG] POST /parts - Request body:', req.body);
     const { tags, created_by, part_numbers_string, ...partData } = req.body;
     // detail is optional; only brand and group are required
     if (!partData.brand_id || !partData.group_id) {
+        console.log('[DEBUG] POST /parts - Missing brand_id or group_id');
         return res.status(400).json({ message: 'Brand and group are required' });
     }
+    console.log('[DEBUG] POST /parts - Getting DB client');
     const client = await db.getClient();
     try {
+        console.log('[DEBUG] POST /parts - Starting transaction');
         await client.query('BEGIN');
+        console.log('[DEBUG] POST /parts - Fetching brand:', partData.brand_id);
         const brandRes = await client.query('SELECT brand_code, brand_name FROM brand WHERE brand_id = $1', [partData.brand_id]);
+        console.log('[DEBUG] POST /parts - Fetching group:', partData.group_id);
         const groupRes = await client.query('SELECT group_code, group_name FROM "group" WHERE group_id = $1', [partData.group_id]);
-        if (brandRes.rows.length === 0 || groupRes.rows.length === 0) throw new Error('Invalid brand or group ID');
+        console.log('[DEBUG] POST /parts - Brand result:', brandRes.rows, 'Group result:', groupRes.rows);
+        if (brandRes.rows.length === 0 || groupRes.rows.length === 0) {
+            console.log('[DEBUG] POST /parts - Invalid brand or group');
+            throw new Error('Invalid brand or group ID');
+        }
         
         const skuPrefix = `${groupRes.rows[0].group_code}-${brandRes.rows[0].brand_code}`;
         let nextSeqNum = 1;
@@ -231,7 +254,26 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
         if (part_numbers_string) {
             const numbers = part_numbers_string.split(/[,;]/).map(num => num.trim()).filter(Boolean);
             for (const number of numbers) {
-                await client.query('INSERT INTO part_number (part_id, part_number) VALUES ($1, $2) ON CONFLICT (part_id, part_number) DO NOTHING', [newPartData.part_id, number]);
+                // Use guarded INSERT ... SELECT ... WHERE NOT EXISTS so code works even when
+                // the DB uses a partial unique index (soft-delete) or the unique constraint
+                // is not present. This avoids the Postgres "no unique constraint matching
+                // the ON CONFLICT specification" error.
+                const insertPartNumberQuery = `
+                    WITH input_value AS (
+                        SELECT CAST($2 AS character varying(100)) AS part_number
+                    )
+                    INSERT INTO part_number (part_id, part_number)
+                    SELECT $1, input_value.part_number
+                    FROM input_value
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM part_number 
+                        WHERE part_id = $1 
+                        AND part_number = input_value.part_number
+                        AND ${activeAliasCondition('part_number')}
+                    )
+                `;
+                console.log('[DEBUG] Inserting part number:', { partId: newPartData.part_id, number });
+                await client.query(insertPartNumberQuery, [newPartData.part_id, number]);
             }
         }
         
@@ -248,10 +290,17 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
         // Fallback to raw row if enrichment fails
         res.status(201).json(newPartData);
     } catch (err) {
+        console.log('[DEBUG] POST /parts - Error occurred:', err);
+        console.log('[DEBUG] POST /parts - Error stack:', err.stack);
         await client.query('ROLLBACK');
         console.error(err.message);
-        res.status(500).send('Server Error');
+        res.status(500).json({ 
+            message: 'Server Error',
+            error: err.message,
+            stack: process.env.NODE_ENV !== 'production' ? err.stack : undefined
+        });
     } finally {
+        console.log('[DEBUG] POST /parts - Releasing client');
         client.release();
     }
 });

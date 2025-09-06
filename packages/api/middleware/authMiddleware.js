@@ -27,7 +27,8 @@ const protect = async (req, res, next) => {
             req.user = { ...decoded, permissions };
             next();
         } catch (error) {
-            console.error(error);
+            // Log detailed JWT error for debugging (do not leak tokens in production logs)
+            console.error('JWT verification failed:', error && error.message ? error.message : error);
             res.status(401).json({ message: 'Not authorized, token failed' });
         }
     }
