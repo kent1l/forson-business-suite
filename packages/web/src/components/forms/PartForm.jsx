@@ -20,13 +20,14 @@ const BrandGroupForm = ({ type, onSave, onCancel, initialName = '' }) => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         const endpoint = type === 'Brand' ? '/brands' : '/groups';
-        // For Brand we no longer send brand_code and let the server generate it.
-        const payload = type === 'Brand' ? { brand_name: name } : { group_name: name, group_code: code };
+        // Let the server generate the code for both Brand and Group
+        const payload = type === 'Brand' ? { brand_name: name } : { group_name: name };
         try {
             setSaving(true);
             const { data } = await api.post(endpoint, payload);
             // If server returned the generated code, show/update it locally
             if (type === 'Brand' && data?.brand_code) setCode(data.brand_code);
+            if (type === 'Group' && data?.group_code) setCode(data.group_code);
             // reset the name so next open is fresh
             setName('');
             onSave(data);
@@ -46,11 +47,7 @@ const BrandGroupForm = ({ type, onSave, onCancel, initialName = '' }) => {
             </div>
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">{type} Code (max 10 chars)</label>
-                {type === 'Brand' ? (
-                    <input type="text" value={code} readOnly className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500" placeholder="Will be generated" />
-                ) : (
-                    <input type="text" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} maxLength="10" className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
-                )}
+                <input type="text" value={code} readOnly className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500" placeholder="Will be generated" />
             </div>
             <div className="mt-6 flex justify-end space-x-4">
                 <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
@@ -122,7 +119,8 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
     const [showAdvanced, setShowAdvanced] = useState(false);
 
     const brandOptions = useMemo(() => brands.map(b => ({ value: b.brand_id, label: b.brand_name, code: b.brand_code })), [brands]);
-    const groupOptions = useMemo(() => groups.map(g => ({ value: g.group_id, label: g.group_name })), [groups]);
+    const groupOptions = useMemo(() => groups.map(g => ({ value: g.group_id, label: g.group_name, code: g.group_code })), [groups]);
+    const [initialGroupName, setInitialGroupName] = useState('');
 
     useEffect(() => {
         const fetchTaxRates = async () => {
@@ -261,9 +259,15 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                             value={formData.group_id}
                             onChange={(value) => handleComboboxChange('group_id', value)}
                             placeholder={isBulkEdit ? 'No Change' : 'Select a Group'}
+                            allowCreate={true}
+                            onCreate={(typedName) => { setInitialGroupName(typedName); setIsGroupModalOpen(true); }}
                         />
                     </div>
-                    <button type="button" onClick={() => setIsGroupModalOpen(true)} className="px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm">New</button>
+                    {/* Read-only lighter group code display */}
+                    <div className="ml-2">
+                        <label className="block text-xs text-gray-500 mb-1">Code</label>
+                        <input type="text" readOnly value={(groupOptions.find(g => g.value === formData.group_id)?.code) || ''} className="px-2 py-1 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm w-28" />
+                    </div>
                 </div>
 
                 {!isBulkEdit && (
@@ -387,8 +391,8 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
             <Modal isOpen={isBrandModalOpen} onClose={() => { setIsBrandModalOpen(false); setInitialBrandName(''); }} title="Add New Brand">
                 <BrandGroupForm type="Brand" onSave={(newBrand) => handleNewBrandGroup(newBrand, 'Brand')} onCancel={() => { setIsBrandModalOpen(false); setInitialBrandName(''); }} initialName={initialBrandName} />
             </Modal>
-            <Modal isOpen={isGroupModalOpen} onClose={() => setIsGroupModalOpen(false)} title="Add New Group">
-                <BrandGroupForm type="Group" onSave={(newGroup) => handleNewBrandGroup(newGroup, 'Group')} onCancel={() => setIsGroupModalOpen(false)} />
+            <Modal isOpen={isGroupModalOpen} onClose={() => { setIsGroupModalOpen(false); setInitialGroupName(''); }} title="Add New Group">
+                <BrandGroupForm type="Group" onSave={(newGroup) => handleNewBrandGroup(newGroup, 'Group')} onCancel={() => { setIsGroupModalOpen(false); setInitialGroupName(''); }} initialName={initialGroupName} />
             </Modal>
             <Modal isOpen={isAppManagerOpen} onClose={() => { setIsAppManagerOpen(false); fetchSelectedApps(); }} title={`Manage Applications for: ${part?.detail || part?.display_name || ''}`}>
                 <PartApplicationManager part={part} onCancel={() => { setIsAppManagerOpen(false); fetchSelectedApps(); }} />
