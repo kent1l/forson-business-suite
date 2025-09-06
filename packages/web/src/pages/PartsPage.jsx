@@ -57,14 +57,25 @@ const PartsPage = () => {
         const promise = currentPart
             ? api.put(`/parts/${currentPart.part_id}`, { ...partData, modified_by: user.employee_id })
             : api.post('/parts', { ...partData, created_by: user.employee_id });
-
         toast.promise(promise, {
             loading: `${currentPart ? 'Updating' : 'Creating'} part...`,
-            success: () => {
+            success: (res) => {
+                // Refresh list
+                fetchInitialData();
+
+                if (!currentPart) {
+                    // Created new part: open the Applications manager for the new part
+                    const newPart = res?.data || res;
+                    setIsFormModalOpen(false);
+                    setCurrentPart(newPart);
+                    setIsAppModalOpen(true);
+                    return 'Part created successfully!';
+                }
+
+                // Updated existing part
                 setIsFormModalOpen(false);
                 setCurrentPart(null);
-                fetchInitialData();
-                return `Part ${currentPart ? 'updated' : 'created'} successfully!`;
+                return 'Part updated successfully!';
             },
             error: (err) => err.response?.data?.message || `Failed to ${currentPart ? 'update' : 'create'} part.`
         });

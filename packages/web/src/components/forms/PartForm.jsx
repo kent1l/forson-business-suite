@@ -249,12 +249,13 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                 )}
 
                 {/* --- NEW: Application linker (search + add) --- */}
-                {!isBulkEdit && (
+                {/* Show applications only when editing an existing part (hide for New Part) */}
+                {!isBulkEdit && part && (
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Applications</label>
                         <div className="flex items-center space-x-2">
                             <div className="flex-grow">
-                                <ApplicationSearchCombobox value={null} onChange={(app) => addApplication(app)} placeholder="Search make model engine…" />
+                                <ApplicationSearchCombobox value={null} onChange={(app) => addApplication(app)} placeholder="Search make model engine" />
                             </div>
                             {part && (
                                 <button type="button" onClick={() => setIsAppManagerOpen(true)} className="px-2 py-1 border rounded text-sm text-gray-700 hover:bg-gray-100">Manage</button>
@@ -265,7 +266,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                                 {selectedApps.slice(0, 6).map(app => (
                                     <div key={app.application_id} className="inline-flex items-center space-x-2 bg-gray-50 border rounded-full px-3 py-1 text-xs">
                                         <span className="truncate max-w-[16rem]">{labelForApp(app)}</span>
-                                        <button type="button" onClick={() => removeApplication(app.application_id)} className="text-gray-400 hover:text-red-600 ml-1">×</button>
+                                        <button type="button" onClick={() => removeApplication(app.application_id)} className="text-gray-400 hover:text-red-600 ml-1">\u00d7</button>
                                     </div>
                                 ))}
                                 {selectedApps.length > 6 && (
