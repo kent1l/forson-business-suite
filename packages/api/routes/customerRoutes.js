@@ -68,14 +68,19 @@ router.get('/customers/with-balances', protect, hasPermission('ar:view'), async 
                 c.first_name,
                 c.last_name,
                 c.company_name,
-                COALESCE(SUM(i.total_amount), 0) as total_invoiced,
-                COALESCE(SUM(ipa.amount_allocated), 0) as total_paid,
-                (COALESCE(SUM(i.total_amount), 0) - COALESCE(SUM(ipa.amount_allocated), 0)) as balance_due
+                (SELECT COALESCE(SUM(i.total_amount),0) FROM invoice i WHERE i.customer_id = c.customer_id) AS total_invoiced,
+                (SELECT COALESCE(SUM(ipa.amount_allocated),0) FROM invoice_payment_allocation ipa JOIN invoice i2 ON ipa.invoice_id = i2.invoice_id WHERE i2.customer_id = c.customer_id) AS total_paid,
+                (
+                    (SELECT COALESCE(SUM(i.total_amount),0) FROM invoice i WHERE i.customer_id = c.customer_id)
+                    -
+                    (SELECT COALESCE(SUM(ipa.amount_allocated),0) FROM invoice_payment_allocation ipa JOIN invoice i2 ON ipa.invoice_id = i2.invoice_id WHERE i2.customer_id = c.customer_id)
+                ) AS balance_due
             FROM customer c
-            LEFT JOIN invoice i ON c.customer_id = i.customer_id
-            LEFT JOIN invoice_payment_allocation ipa ON i.invoice_id = ipa.invoice_id
-            GROUP BY c.customer_id, c.first_name, c.last_name, c.company_name
-            HAVING (COALESCE(SUM(i.total_amount), 0) - COALESCE(SUM(ipa.amount_allocated), 0)) > 0
+            WHERE (
+                    (SELECT COALESCE(SUM(i.total_amount),0) FROM invoice i WHERE i.customer_id = c.customer_id)
+                    -
+                    (SELECT COALESCE(SUM(ipa.amount_allocated),0) FROM invoice_payment_allocation ipa JOIN invoice i2 ON ipa.invoice_id = i2.invoice_id WHERE i2.customer_id = c.customer_id)
+                  ) > 0
             ORDER BY c.first_name, c.last_name;
         `;
         const { rows } = await db.query(query);

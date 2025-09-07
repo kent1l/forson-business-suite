@@ -73,7 +73,7 @@ const AccountsReceivablePage = () => {
                                             {customer.company_name || `${customer.first_name} ${customer.last_name}`}
                                         </td>
                                         <td className="p-3 text-sm text-right font-mono">
-                                            ₱{parseFloat(customer.balance_due).toFixed(2)}
+                                            ₱{(Number.isFinite(Number(customer.balance_due)) ? Number(customer.balance_due) : 0).toFixed(2)}
                                         </td>
                                         <td className="p-3 text-sm text-right">
                                             {hasPermission('ar:receive_payment') && (
