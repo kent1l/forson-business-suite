@@ -224,7 +224,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                 {!part && !isBulkEdit && (
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Part Numbers (optional)</label>
-                        <textarea name="part_numbers_string" value={formData.part_numbers_string} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows="2" placeholder="OEM123, MFG456; ALT789"></textarea>
+                        <textarea name="part_numbers_string" value={formData.part_numbers_string} onChange={handleChange} onFocus={(e) => e.target.select()} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows="2" placeholder="OEM123, MFG456; ALT789"></textarea>
                     </div>
                 )}
 
@@ -285,7 +285,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                 {!isBulkEdit && (
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Part Detail</label>
-                        <input type="text" name="detail" value={formData.detail} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <input type="text" name="detail" value={formData.detail} onChange={handleChange} onFocus={(e) => e.target.select()} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                     </div>
                 )}
 
@@ -376,19 +376,19 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Barcode</label>
-                                    <input type="text" name="barcode" value={formData.barcode} onChange={handleChange} placeholder={isBulkEdit ? 'No Change' : ''} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                                    <input type="text" name="barcode" value={formData.barcode} onChange={handleChange} onFocus={(e) => e.target.select()} placeholder={isBulkEdit ? 'No Change' : ''} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
-                                    <input type="text" name="measurement_unit" value={formData.measurement_unit} onChange={handleChange} placeholder={isBulkEdit ? 'No Change' : 'pcs'} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                                    <input type="text" name="measurement_unit" value={formData.measurement_unit} onChange={handleChange} onFocus={(e) => e.target.select()} placeholder={isBulkEdit ? 'No Change' : 'pcs'} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Point</label>
-                                    <input type="number" name="reorder_point" value={formData.reorder_point} onChange={handleChange} placeholder={isBulkEdit ? 'No Change' : '1'} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                                    <input type="number" name="reorder_point" value={formData.reorder_point} onChange={handleChange} onFocus={(e) => e.target.select()} placeholder={isBulkEdit ? 'No Change' : '1'} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Warning Qty</label>
-                                    <input type="number" name="warning_quantity" value={formData.warning_quantity} onChange={handleChange} placeholder={isBulkEdit ? 'No Change' : '1'} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                                    <input type="number" name="warning_quantity" value={formData.warning_quantity} onChange={handleChange} onFocus={(e) => e.target.select()} placeholder={isBulkEdit ? 'No Change' : '1'} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Tax Rate</label>
