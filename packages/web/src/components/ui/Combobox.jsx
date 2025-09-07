@@ -69,6 +69,17 @@ const Combobox = ({ options, value, onChange, placeholder, allowCreate = false, 
                     handleCreate();
                 }
                 break;
+            case 'Tab':
+                // If there's a highlighted option, select it before tabbing away
+                if (highlightedIndex >= 0) {
+                    if (highlightedIndex < filteredOptions.length) {
+                        handleSelect(filteredOptions[highlightedIndex]);
+                    } else if (allowCreate && inputValue.trim() !== '' && !exactMatch) {
+                        handleCreate();
+                    }
+                }
+                // Don't prevent default - allow normal tab navigation
+                break;
             case 'Escape':
                 e.preventDefault();
                 setIsOpen(false);
