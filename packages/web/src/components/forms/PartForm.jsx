@@ -103,11 +103,11 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
         }
         return {
             detail: '', brand_id: '', group_id: '', part_numbers_string: '',
-            reorder_point: 0, warning_quantity: 0, is_active: true,
+            reorder_point: 1, warning_quantity: 1, is_active: true,
             last_cost: 0, last_sale_price: 0, barcode: '', measurement_unit: 'pcs', tax_rate_id: '',
             is_price_change_allowed: true, is_using_default_quantity: true,
-            is_service: false, low_stock_warning: false, 
-            is_tax_inclusive_price: settings?.DEFAULT_IS_TAX_INCLUSIVE === 'true'
+            is_service: false, low_stock_warning: true, 
+            is_tax_inclusive_price: settings?.DEFAULT_IS_TAX_INCLUSIVE !== 'false' // Default to true unless explicitly set to false
         };
     }, [isBulkEdit, settings]);
 
@@ -384,11 +384,11 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Point</label>
-                                    <input type="number" name="reorder_point" value={formData.reorder_point} onChange={handleChange} placeholder={isBulkEdit ? 'No Change' : '0'} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                                    <input type="number" name="reorder_point" value={formData.reorder_point} onChange={handleChange} placeholder={isBulkEdit ? 'No Change' : '1'} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Warning Qty</label>
-                                    <input type="number" name="warning_quantity" value={formData.warning_quantity} onChange={handleChange} placeholder={isBulkEdit ? 'No Change' : '0'} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                                    <input type="number" name="warning_quantity" value={formData.warning_quantity} onChange={handleChange} placeholder={isBulkEdit ? 'No Change' : '1'} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Tax Rate</label>
