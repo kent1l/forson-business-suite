@@ -331,11 +331,39 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                 <div className="grid grid-cols-2 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Last Cost</label>
-                        <input type="number" step="0.01" name="last_cost" value={formData.last_cost} onChange={handleChange} placeholder={isBulkEdit ? 'No Change' : '0.00'} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <input
+                            type="text"
+                            name="last_cost"
+                            value={formData.last_cost}
+                            onChange={(e) => {
+                                const value = e.target.value;
+                                // Allow empty string, numbers, and decimal numbers
+                                if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                                    handleChange(e);
+                                }
+                            }}
+                            onFocus={(e) => e.target.select()}
+                            placeholder={isBulkEdit ? 'No Change' : '0.00'}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Last Sale Price</label>
-                        <input type="number" step="0.01" name="last_sale_price" value={formData.last_sale_price} onChange={handleChange} placeholder={isBulkEdit ? 'No Change' : '0.00'} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <input
+                            type="text"
+                            name="last_sale_price"
+                            value={formData.last_sale_price}
+                            onChange={(e) => {
+                                const value = e.target.value;
+                                // Allow empty string, numbers, and decimal numbers
+                                if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                                    handleChange(e);
+                                }
+                            }}
+                            onFocus={(e) => e.target.select()}
+                            placeholder={isBulkEdit ? 'No Change' : '0.00'}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        />
                     </div>
                 </div>
 
