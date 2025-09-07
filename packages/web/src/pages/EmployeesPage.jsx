@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
@@ -17,6 +17,33 @@ const EmployeeForm = ({ employee, onSave, onCancel, roles }) => { // <-- NEW: ro
         is_active: true,
         password: ''
     });
+
+    const initialFormData = useMemo(() => {
+        if (employee) {
+            return {
+                first_name: employee.first_name || '',
+                last_name: employee.last_name || '',
+                username: employee.username || '',
+                position_title: employee.position_title || '',
+                permission_level_id: employee.permission_level_id || 1,
+                is_active: employee.is_active,
+                password: ''
+            };
+        } else {
+            return {
+                first_name: '', last_name: '', username: '',
+                position_title: '', permission_level_id: 1, is_active: true, password: ''
+            };
+        }
+    }, [employee]);
+
+    const isFormDirty = useMemo(() => {
+        return JSON.stringify(formData) !== JSON.stringify(initialFormData);
+    }, [formData, initialFormData]);
+
+    const isFormElement = (element) => {
+        return element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.tagName === 'SELECT');
+    };
 
     useEffect(() => {
         if (employee) {
@@ -42,10 +69,30 @@ const EmployeeForm = ({ employee, onSave, onCancel, roles }) => { // <-- NEW: ro
         setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
     };
 
-    const handleSubmit = (e) => {
-        e.preventDefault();
+    const handleSubmit = useCallback((e) => {
+        if (e) e.preventDefault();
         onSave(formData);
-    };
+    }, [formData, onSave]);
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.target && isFormElement(e.target)) return;
+
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                handleSubmit();
+            } else if (e.key === 'Escape') {
+                if (isFormDirty) {
+                    const confirmCancel = window.confirm('You have unsaved changes. Are you sure you want to cancel?');
+                    if (!confirmCancel) return;
+                }
+                onCancel();
+            }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [handleSubmit, onCancel, isFormDirty]);
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -123,7 +170,7 @@ const EmployeesPage = () => {
                     ]);
                     setEmployees(employeesRes.data);
                     setRoles(rolesRes.data); // <-- NEW: Set roles state
-                } catch (err) {
+                } catch {
                     setError('Failed to fetch data.');
                     toast.error('Failed to fetch data.');
                 } finally {

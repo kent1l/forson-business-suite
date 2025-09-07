@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Combobox } from '@headlessui/react';
 import api from '../api';
 import toast from 'react-hot-toast';
@@ -28,6 +28,36 @@ const ApplicationForm = ({ application, onSave, onCancel }) => {
         model_name: '',
         engine_name: ''
     });
+
+    const initialFormData = useMemo(() => {
+        if (application) {
+            return {
+                make_id: application.make_id || '',
+                model_id: application.model_id || '',
+                engine_id: application.engine_id || '',
+                make_name: application.make || '',
+                model_name: application.model || '',
+                engine_name: application.engine || ''
+            };
+        } else {
+            return { 
+                make_id: '', 
+                model_id: '', 
+                engine_id: '', 
+                make_name: '',
+                model_name: '',
+                engine_name: ''
+            };
+        }
+    }, [application]);
+
+    const isFormDirty = useMemo(() => {
+        return JSON.stringify(formData) !== JSON.stringify(initialFormData);
+    }, [formData, initialFormData]);
+
+    const isFormElement = (element) => {
+        return element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.tagName === 'SELECT');
+    };
 
     useEffect(() => {
         // Fetch all makes when component mounts
@@ -225,8 +255,8 @@ const ApplicationForm = ({ application, onSave, onCancel }) => {
         }));
     };
 
-    const handleSubmit = (e) => {
-        e.preventDefault();
+    const handleSubmit = useCallback((e) => {
+        if (e) e.preventDefault();
 
         // Send both IDs (if we have them) and names (for creation if needed)
         const payload = {
@@ -239,7 +269,27 @@ const ApplicationForm = ({ application, onSave, onCancel }) => {
         };
 
         onSave(payload);
-    };
+    }, [formData, onSave]);
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.target && isFormElement(e.target)) return;
+
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                handleSubmit();
+            } else if (e.key === 'Escape') {
+                if (isFormDirty) {
+                    const confirmCancel = window.confirm('You have unsaved changes. Are you sure you want to cancel?');
+                    if (!confirmCancel) return;
+                }
+                onCancel();
+            }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [handleSubmit, onCancel, isFormDirty]);
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">

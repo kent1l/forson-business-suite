@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../api';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
@@ -8,6 +8,25 @@ import NewApplicationModal from '../components/applications/NewApplicationModal'
 
 const EditYearForm = ({ link, onSave, onCancel }) => {
     const [years, setYears] = useState({ year_start: '', year_end: '' });
+
+    const initialFormData = useMemo(() => {
+        if (link) {
+            return {
+                year_start: link.year_start || '',
+                year_end: link.year_end || ''
+            };
+        } else {
+            return { year_start: '', year_end: '' };
+        }
+    }, [link]);
+
+    const isFormDirty = useMemo(() => {
+        return JSON.stringify(years) !== JSON.stringify(initialFormData);
+    }, [years, initialFormData]);
+
+    const isFormElement = (element) => {
+        return element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.tagName === 'SELECT');
+    };
 
     useEffect(() => {
         if (link) {
@@ -23,10 +42,30 @@ const EditYearForm = ({ link, onSave, onCancel }) => {
         setYears(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleSubmit = (e) => {
-        e.preventDefault();
+    const handleSubmit = useCallback((e) => {
+        if (e) e.preventDefault();
         onSave(link.part_app_id, years);
-    };
+    }, [link, years, onSave]);
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.target && isFormElement(e.target)) return;
+
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                handleSubmit();
+            } else if (e.key === 'Escape') {
+                if (isFormDirty) {
+                    const confirmCancel = window.confirm('You have unsaved changes. Are you sure you want to cancel?');
+                    if (!confirmCancel) return;
+                }
+                onCancel();
+            }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [handleSubmit, onCancel, isFormDirty]);
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">

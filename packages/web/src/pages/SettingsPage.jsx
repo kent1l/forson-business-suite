@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
@@ -157,6 +157,22 @@ const TaxRateSettings = ({ settings, handleChange }) => {
 const TaxRateForm = ({ rate, onSave, onCancel }) => {
     const [formData, setFormData] = useState({ rate_name: '', rate_percentage: '' });
 
+    const initialFormData = useMemo(() => {
+        if (rate) {
+            return { rate_name: rate.rate_name, rate_percentage: rate.rate_percentage };
+        } else {
+            return { rate_name: '', rate_percentage: '' };
+        }
+    }, [rate]);
+
+    const isFormDirty = useMemo(() => {
+        return JSON.stringify(formData) !== JSON.stringify(initialFormData);
+    }, [formData, initialFormData]);
+
+    const isFormElement = (element) => {
+        return element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.tagName === 'SELECT');
+    };
+
     useEffect(() => {
         if (rate) {
             setFormData({ rate_name: rate.rate_name, rate_percentage: rate.rate_percentage });
@@ -170,10 +186,30 @@ const TaxRateForm = ({ rate, onSave, onCancel }) => {
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleSubmit = (e) => {
-        e.preventDefault();
+    const handleSubmit = useCallback((e) => {
+        if (e) e.preventDefault();
         onSave(formData);
-    };
+    }, [formData, onSave]);
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.target && isFormElement(e.target)) return;
+
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                handleSubmit();
+            } else if (e.key === 'Escape') {
+                if (isFormDirty) {
+                    const confirmCancel = window.confirm('You have unsaved changes. Are you sure you want to cancel?');
+                    if (!confirmCancel) return;
+                }
+                onCancel();
+            }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [handleSubmit, onCancel, isFormDirty]);
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -205,7 +241,7 @@ const SettingsPage = ({ user }) => {
                 setLoading(true);
                 const response = await api.get('/settings');
                 setSettings(response.data);
-            } catch (err) {
+            } catch {
                 toast.error('Failed to load settings.');
             } finally {
                 setLoading(false);

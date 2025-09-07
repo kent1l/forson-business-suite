@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'react-hot-toast';
 import api from '../../api';
 import TagInput from '../ui/TagInput'; // Corrected Path
@@ -14,6 +14,31 @@ const CustomerForm = ({ customer, onSave, onCancel }) => {
         is_active: true,
     });
     const [tags, setTags] = useState([]);
+
+    const initialFormData = useMemo(() => ({
+        first_name: customer?.first_name || '',
+        last_name: customer?.last_name || '',
+        company_name: customer?.company_name || '',
+        phone: customer?.phone || '',
+        email: customer?.email || '',
+        address: customer?.address || '',
+        is_active: customer?.is_active ?? true,
+    }), [customer]);
+
+    const isFormDirty = useMemo(() => {
+        const keys = Object.keys(formData);
+        for (let key of keys) {
+            if (formData[key] !== initialFormData[key]) return true;
+        }
+        if (JSON.stringify(tags) !== JSON.stringify([])) return true;
+        return false;
+    }, [formData, initialFormData, tags]);
+
+    const isFormElement = (el) => {
+        if (!el) return false;
+        const tag = el.tagName;
+        return /INPUT|TEXTAREA|SELECT/.test(tag) || el.isContentEditable;
+    };
 
     useEffect(() => {
         if (customer) {
@@ -41,11 +66,41 @@ const CustomerForm = ({ customer, onSave, onCancel }) => {
         }));
     };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = useCallback((e) => {
         e.preventDefault();
         const payload = { ...formData, tags };
         onSave(payload);
-    };
+    }, [formData, tags, onSave]);
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            // Save: Ctrl/Cmd + S
+            const savePressed = (navigator.platform.includes('Mac') ? e.metaKey : e.ctrlKey) && e.key.toLowerCase() === 's';
+            if (savePressed) {
+                e.preventDefault();
+                handleSubmit(e);
+                return;
+            }
+
+            // If another component already consumed the event, don't act
+            if (e.defaultPrevented) return;
+
+            // Cancel: only if focus is not inside an input-like element
+            if (e.key === 'Escape') {
+                if (isFormElement(document.activeElement)) {
+                    return;
+                }
+                // If form is dirty, confirm
+                if (isFormDirty) {
+                    if (!confirm('Discard changes?')) return;
+                }
+                onCancel();
+            }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [handleSubmit, onCancel, isFormDirty]);
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
