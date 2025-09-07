@@ -4,9 +4,11 @@ import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
 import RefundForm from './RefundForm';
 import { useSettings } from '../../contexts/SettingsContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
     const { settings } = useSettings();
+    const { user } = useAuth();
     const [lines, setLines] = useState([]);
     const [loading, setLoading] = useState(false);
     const [showRefundForm, setShowRefundForm] = useState(false);
@@ -25,6 +27,19 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
     const handleRefundSuccess = () => {
         onClose(); // Close the modal
         onActionSuccess(); // Trigger a refresh on the parent page
+    };
+
+    const handleDelete = async () => {
+        if (!invoice) return;
+        if (!window.confirm(`Delete Invoice #${invoice.invoice_number}? This cannot be undone and will restore stock quantities.`)) return;
+        try {
+            await api.delete(`/invoices/${invoice.invoice_id}`);
+            toast.success('Invoice deleted');
+            onClose();
+            onActionSuccess();
+        } catch (err) {
+            toast.error(err?.response?.data?.message || 'Failed to delete invoice');
+        }
     };
 
 
@@ -52,13 +67,23 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                     </div>
                     
                     {!showRefundForm && (
-                        <div className="pt-4 flex justify-end">
-                            <button
-                                onClick={() => setShowRefundForm(true)}
-                                className="bg-red-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-red-700"
-                            >
-                                Process Refund
-                            </button>
+                        <div className="pt-4 flex justify-between items-center gap-3">
+                            {user?.permission_level_id === 10 && (
+                                <button
+                                    onClick={handleDelete}
+                                    className="bg-white border border-red-300 text-red-600 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-red-50"
+                                >
+                                    Delete Invoice
+                                </button>
+                            )}
+                            <div className="flex-1 text-right">
+                                <button
+                                    onClick={() => setShowRefundForm(true)}
+                                    className="bg-red-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-red-700"
+                                >
+                                    Process Refund
+                                </button>
+                            </div>
                         </div>
                     )}
 

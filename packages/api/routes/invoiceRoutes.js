@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
-const { protect, hasPermission } = require('../middleware/authMiddleware');
+const { protect, hasPermission, isAdmin } = require('../middleware/authMiddleware');
 const { constructDisplayName } = require('../helpers/displayNameHelper'); // Import the helper
 const router = express.Router();
 
@@ -274,3 +274,50 @@ router.post('/invoices', async (req, res) => {
 });
 
 module.exports = router;
+// DELETE /api/invoices/:id - Admin only hard delete with stock reversal
+router.delete('/invoices/:id', protect, isAdmin, async (req, res) => {
+    const { id } = req.params;
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+
+        // Fetch invoice header & lines first
+        const { rows: invoiceRows } = await client.query('SELECT invoice_number FROM invoice WHERE invoice_id = $1', [id]);
+        if (invoiceRows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: 'Invoice not found' });
+        }
+        const invoiceNumber = invoiceRows[0].invoice_number;
+
+        const { rows: lines } = await client.query(`
+            SELECT il.invoice_line_id, il.part_id, il.quantity, il.cost_at_sale
+            FROM invoice_line il
+            WHERE il.invoice_id = $1
+        `, [id]);
+
+        // Reversal strategy: add back stock using StockIn so WAC recalculates using original cost_at_sale
+        for (const line of lines) {
+            // quantity on invoice is negative stock movement, so we add back positive quantity
+            await client.query(`
+                INSERT INTO inventory_transaction (part_id, trans_type, quantity, unit_cost, reference_no, employee_id, notes)
+                VALUES ($1, 'StockIn', $2, $3, $4, $5, $6);
+            `, [line.part_id, line.quantity, line.cost_at_sale, invoiceNumber, req.user.employee_id || null, 'SYSTEM REVERSAL: Invoice deleted']);
+        }
+
+        // Delete allocations first (cascades would remove via invoice cascade but be explicit for clarity)
+        await client.query('DELETE FROM invoice_payment_allocation WHERE invoice_id = $1', [id]);
+        // Delete credit notes referencing this invoice (ON DELETE RESTRICT in schema, so must remove manually)
+        await client.query('DELETE FROM credit_note WHERE invoice_id = $1', [id]);
+        // Delete invoice (cascade removes invoice_line)
+        await client.query('DELETE FROM invoice WHERE invoice_id = $1', [id]);
+
+        await client.query('COMMIT');
+        res.json({ message: 'Invoice deleted and stock reversed.' });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Delete invoice error:', err.message);
+        res.status(500).json({ message: 'Server error deleting invoice', error: err.message });
+    } finally {
+        client.release();
+    }
+});
