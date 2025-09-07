@@ -247,7 +247,13 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                     {/* Read-only lighter brand code display */}
                     <div className="ml-2">
                         <label className="block text-xs text-gray-500 mb-1">Code</label>
-                        <input type="text" readOnly value={(brandOptions.find(b => b.value === formData.brand_id)?.code) || ''} className="px-2 py-1 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm w-28" />
+                        <input 
+                            type="text" 
+                            readOnly 
+                            tabIndex="-1"
+                            value={(brandOptions.find(b => b.value === formData.brand_id)?.code) || ''} 
+                            className="px-2 py-1 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm w-28 pointer-events-none" 
+                        />
                     </div>
                 </div>
 
@@ -266,7 +272,13 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                     {/* Read-only lighter group code display */}
                     <div className="ml-2">
                         <label className="block text-xs text-gray-500 mb-1">Code</label>
-                        <input type="text" readOnly value={(groupOptions.find(g => g.value === formData.group_id)?.code) || ''} className="px-2 py-1 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm w-28" />
+                        <input 
+                            type="text" 
+                            readOnly 
+                            tabIndex="-1"
+                            value={(groupOptions.find(g => g.value === formData.group_id)?.code) || ''} 
+                            className="px-2 py-1 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm w-28 pointer-events-none" 
+                        />
                     </div>
                 </div>
 
