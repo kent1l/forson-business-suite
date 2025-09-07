@@ -122,6 +122,24 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
     const groupOptions = useMemo(() => groups.map(g => ({ value: g.group_id, label: g.group_name, code: g.group_code })), [groups]);
     const [initialGroupName, setInitialGroupName] = useState('');
 
+    const initialFormData = useMemo(() => getInitialState(), [getInitialState]);
+
+    const isFormDirty = useMemo(() => {
+        const keys = Object.keys(formData);
+        for (let key of keys) {
+            if (formData[key] !== initialFormData[key]) return true;
+        }
+        if (JSON.stringify(tags) !== JSON.stringify([])) return true;
+        if (selectedApps.length > 0) return true;
+        return false;
+    }, [formData, initialFormData, tags, selectedApps]);
+
+    const isFormElement = (el) => {
+        if (!el) return false;
+        const tag = el.tagName;
+        return /INPUT|TEXTAREA|SELECT/.test(tag) || el.isContentEditable;
+    };
+
     const handleSubmit = useCallback((e) => {
         e.preventDefault();
         onSave({ ...formData, tags, applications: selectedApps }); // include linked applications
@@ -138,17 +156,33 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
 
     useEffect(() => {
         const handleKeyDown = (e) => {
-            if (e.ctrlKey && e.key === 's') {
+            // Save: Ctrl/Cmd + S
+            const savePressed = (navigator.platform.includes('Mac') ? e.metaKey : e.ctrlKey) && e.key.toLowerCase() === 's';
+            if (savePressed) {
                 e.preventDefault();
                 handleSubmit(e);
-            } else if (e.key === 'Escape') {
+                return;
+            }
+
+            // If another component already consumed the event, don't act
+            if (e.defaultPrevented) return;
+
+            // Cancel: only if focus is not inside an input-like element
+            if (e.key === 'Escape') {
+                if (isFormElement(document.activeElement)) {
+                    return;
+                }
+                // If form is dirty, confirm
+                if (isFormDirty) {
+                    if (!confirm('Discard changes?')) return;
+                }
                 onCancel();
             }
         };
 
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [handleSubmit, onCancel]);
+    }, [handleSubmit, onCancel, isFormDirty]);
 
     useEffect(() => {
         const fetchTaxRates = async () => {
