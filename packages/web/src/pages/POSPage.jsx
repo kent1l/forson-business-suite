@@ -278,6 +278,7 @@ const POSPage = ({ user, lines, setLines }) => {
         const previousCustomer = voidPrevRef.current.customer || null;
         setLines([]);
         setSelectedCustomer(customers.find(c => c.first_name.toLowerCase() === 'walk-in') || null);
+        setPhysicalReceiptInput('');
         setIsVoidConfirmOpen(false);
         toast((t) => (
             <div className="flex items-center">
@@ -391,6 +392,7 @@ const POSPage = ({ user, lines, setLines }) => {
                 setLines([]);
                 const walkIn = customers.find(c => c.first_name.toLowerCase() === 'walk-in');
                 setSelectedCustomer(walkIn || null);
+                setPhysicalReceiptInput('');
                 setIsPaymentModalOpen(false);
                 
                 toast.success(
