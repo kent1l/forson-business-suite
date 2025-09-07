@@ -327,18 +327,22 @@ const SalesHistoryPage = () => {
                     </button>
                 </div>
                 {/* Compact view shows when collapsed */}
-                <div className={`mt-3 flex items-center space-x-4 ${summaryCollapsed ? '' : 'hidden'}`}>
-                    <div className="flex-1 p-2 bg-white rounded-lg border border-gray-100 shadow-sm" title="Net Sales = Gross - Refunds (excludes Cancelled)">
-                        <div className="text-xs text-gray-500">Net Sales</div>
-                        <div className="text-sm font-semibold text-gray-800">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.netSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div className={`mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 ${summaryCollapsed ? '' : 'hidden'}`}>
+                    <div className="p-2 bg-white rounded-lg border border-gray-100 shadow-sm" title="Net Sales = Gross - Refunds (excludes Cancelled)">
+                        <div className="text-[11px] text-gray-500">Net Sales</div>
+                        <div className="text-sm font-semibold text-gray-800 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.netSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
-                    <div className="flex-1 p-2 bg-white rounded-lg border border-gray-100 shadow-sm" title="Collection Rate = Collected / Net Sales">
-                        <div className="text-xs text-gray-500">Collection Rate</div>
+                    <div className="p-2 bg-white rounded-lg border border-gray-100 shadow-sm" title="Amount Collected (capped at Net)">
+                        <div className="text-[11px] text-gray-500">Collected</div>
+                        <div className="text-sm font-semibold text-green-600 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.amountCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    </div>
+                    <div className="p-2 bg-white rounded-lg border border-gray-100 shadow-sm" title="Collection Rate = Collected / Net Sales">
+                        <div className="text-[11px] text-gray-500">Collection Rate</div>
                         <div className="text-sm font-semibold text-gray-800">{(stats.collectionRate * 100).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%</div>
                     </div>
-                    <div className="flex-1 p-2 bg-white rounded-lg border border-gray-100 shadow-sm" title="Outstanding A/R = Sum of balances due">
-                        <div className="text-xs text-gray-500">A/R Outstanding</div>
-                        <div className="text-sm font-semibold text-gray-800">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.arOutstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    <div className="p-2 bg-white rounded-lg border border-gray-100 shadow-sm" title="Outstanding A/R = Sum of balances due">
+                        <div className="text-[11px] text-gray-500">A/R Outstanding</div>
+                        <div className="text-sm font-semibold text-red-600 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.arOutstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
                 </div>
 
