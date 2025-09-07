@@ -28,6 +28,7 @@ const getStatusBadge = (status) => {
 const SalesHistoryPage = () => {
     const { settings } = useSettings();
     const [invoices, setInvoices] = useState([]);
+    const [payments, setPayments] = useState([]); // Phase 1 payments for cash metrics
     const [loading, setLoading] = useState(false);
     const [sortConfig, setSortConfig] = useState({ key: 'invoice_date', direction: 'DESC' });
     const [dates, setDates] = useState({
@@ -52,7 +53,7 @@ const SalesHistoryPage = () => {
     const summaryRef = useRef(null);
     const [maxHeight, setMaxHeight] = useState('0px');
 
-    // Pure computation of enhanced stats leveraging refunded_amount, net_amount, balance_due
+    // Pure computation of enhanced stats leveraging refunded_amount, net_amount, balance_due + Phase 1 cash metrics
     const stats = useMemo(() => {
         if (!Array.isArray(invoices) || invoices.length === 0) {
             return {
@@ -68,7 +69,10 @@ const SalesHistoryPage = () => {
                 topCustomer: '-',
                 topCustomerNet: 0,
                 topCustomerShare: 0,
-                refundRate: 0
+                refundRate: 0,
+                cashCollectedNet: 0,
+                nonCashCollected: 0,
+                cashMix: 0
             };
         }
 
@@ -121,6 +125,24 @@ const SalesHistoryPage = () => {
         }
         const topCustomerShare = netSales > 0 ? topCustomerNet / netSales : 0;
 
+        // Phase 1: derive basic cash vs non-cash from payments (heuristic by payment_method)
+        const cashMethodNames = ['Cash']; // extend if more cash aliases exist
+        let cashCollected = 0; let nonCashCollected = 0; let changeReturned = 0;
+        for (const p of payments) {
+            const amt = currencySafeNumber(p.amount);
+            const tendered = currencySafeNumber(p.tendered_amount);
+            const change = tendered > amt ? (tendered - amt) : 0;
+            if (cashMethodNames.includes(p.payment_method)) {
+                cashCollected += amt;
+                changeReturned += change;
+            } else {
+                nonCashCollected += amt;
+            }
+        }
+        const cashCollectedNet = Math.max(cashCollected - changeReturned, 0);
+        const totalCollectedForMix = cashCollected + nonCashCollected;
+        const cashMix = totalCollectedForMix > 0 ? cashCollected / totalCollectedForMix : 0;
+
         return {
             grossSales,
             netSales,
@@ -134,9 +156,12 @@ const SalesHistoryPage = () => {
             topCustomer,
             topCustomerNet,
             topCustomerShare,
-            refundRate
+            refundRate,
+            cashCollectedNet,
+            nonCashCollected,
+            cashMix
         };
-    }, [invoices]);
+    }, [invoices, payments]);
 
     // Keep maxHeight in sync to animate expand/collapse
     useEffect(() => {
@@ -214,8 +239,18 @@ const SalesHistoryPage = () => {
         }
     };
 
+    const fetchPayments = async () => {
+        try {
+            const resp = await api.get('/payments', { params: { ...dates } });
+            setPayments(resp.data);
+        } catch {
+            // optional toast suppressed
+        }
+    };
+
     useEffect(() => {
         fetchInvoices();
+        fetchPayments();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dates, debouncedQuery]);
 
@@ -435,6 +470,20 @@ const SalesHistoryPage = () => {
                                                 <div>
                                                     <div className="text-xs text-gray-500">Rate</div>
                                                     <div className="font-semibold text-gray-800 text-sm">{(stats.collectionRate*100).toLocaleString(undefined,{maximumFractionDigits:1})}%</div>
+                                                </div>
+                                            </div>
+                                            <div className="mt-3 grid grid-cols-3 gap-3 text-center text-[11px]">
+                                                <div>
+                                                    <div className="text-gray-500">Cash Net</div>
+                                                    <div className="font-medium text-gray-800">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.cashCollectedNet.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-gray-500">Non-Cash</div>
+                                                    <div className="font-medium text-gray-800">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.nonCashCollected.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-gray-500">Cash Mix</div>
+                                                    <div className="font-medium text-gray-800">{(stats.cashMix*100).toLocaleString(undefined,{maximumFractionDigits:1})}%</div>
                                                 </div>
                                             </div>
                                         </>

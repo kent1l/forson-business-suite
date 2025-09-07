@@ -75,3 +75,23 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
 
 
 module.exports = router;
+
+// GET /api/payments - list payments within date range (Phase 1 cash stats support)
+router.get('/payments', protect, hasPermission('ar:view'), async (req, res) => {
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+        return res.status(400).json({ message: 'Start date and end date are required.' });
+    }
+    try {
+        const query = `
+            SELECT payment_id, customer_id, employee_id, payment_date, amount, tendered_amount, payment_method, reference_number
+            FROM customer_payment
+            WHERE payment_date::date BETWEEN $1 AND $2
+            ORDER BY payment_date ASC;`;
+        const { rows } = await db.query(query, [startDate, endDate]);
+        res.json(rows);
+    } catch (err) {
+        console.error('Error fetching payments:', err.message);
+        res.status(500).json({ message: 'Server error fetching payments.' });
+    }
+});
