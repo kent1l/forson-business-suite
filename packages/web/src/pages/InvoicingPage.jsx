@@ -91,8 +91,14 @@ const InvoicingPage = ({ user }) => {
             }
 
             if (paymentMethodsKey) {
-                const first = paymentMethodsKey.split(',')[0];
-                if (first) setPaymentMethod(first);
+                const methods = paymentMethodsKey.split(',');
+                const creditCard = methods.find(m => m.toLowerCase().includes('credit'));
+                if (creditCard) {
+                    setPaymentMethod(creditCard);
+                } else {
+                    const first = methods[0];
+                    if (first) setPaymentMethod(first);
+                }
             }
         }
     }, [settings, paymentMethodsKey]);
@@ -158,6 +164,11 @@ const InvoicingPage = ({ user }) => {
     const handlePostInvoice = async () => {
         if (!selectedCustomer || lines.length === 0 || !paymentMethod) {
             toast.error('Please select a customer, payment method, and add at least one item.');
+            return;
+        }
+
+        if (paymentMethod.toLowerCase() === 'credit card' && (!physicalReceiptNo || physicalReceiptNo.trim() === '')) {
+            toast.error('Physical Receipt No is required for credit card payments.');
             return;
         }
 
@@ -235,8 +246,9 @@ const InvoicingPage = ({ user }) => {
                             maxLength={50}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                             placeholder={settings?.RECEIPT_NO_HELP_TEXT || 'Enter pre-printed receipt number'}
+                            required={paymentMethod.toLowerCase() === 'credit card'}
                         />
-                        <p className="mt-1 text-xs text-gray-500">Optional. Leave blank if not applicable.</p>
+                        <p className="mt-1 text-xs text-gray-500">{paymentMethod.toLowerCase() === 'credit card' ? 'Required for credit card payments.' : 'Optional. Leave blank if not applicable.'}</p>
                     </div>
                 </div>
                 
