@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
@@ -11,6 +11,29 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
     const [reference, setReference] = useState('');
     const [notes, setNotes] = useState('');
     const [allocations, setAllocations] = useState({});
+
+    const initialFormData = useMemo(() => ({
+        paymentAmount: 0,
+        paymentMethod: 'Cash',
+        reference: '',
+        notes: '',
+        allocations: {}
+    }), []);
+
+    const isFormDirty = useMemo(() => {
+        const currentData = {
+            paymentAmount,
+            paymentMethod,
+            reference,
+            notes,
+            allocations
+        };
+        return JSON.stringify(currentData) !== JSON.stringify(initialFormData);
+    }, [paymentAmount, paymentMethod, reference, notes, allocations, initialFormData]);
+
+    const isFormElement = (element) => {
+        return element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.tagName === 'SELECT');
+    };
 
     useEffect(() => {
         if (customer) {
@@ -46,8 +69,8 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
         return Object.values(allocations).reduce((sum, val) => sum + (parseFloat(val) || 0), 0);
     }, [allocations]);
 
-    const handleSubmit = (e) => {
-        e.preventDefault();
+    const handleSubmit = useCallback((e) => {
+        if (e) e.preventDefault();
         if (totalAllocated > paymentAmount) {
             return toast.error('Total allocated cannot exceed the payment amount.');
         }
@@ -76,7 +99,27 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
             },
             error: 'Failed to process payment.'
         });
-    };
+    }, [totalAllocated, paymentAmount, customer.customer_id, paymentMethod, reference, notes, allocations, onSave]);
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.target && isFormElement(e.target)) return;
+
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                handleSubmit();
+            } else if (e.key === 'Escape') {
+                if (isFormDirty) {
+                    const confirmCancel = window.confirm('You have unsaved changes. Are you sure you want to cancel?');
+                    if (!confirmCancel) return;
+                }
+                onCancel();
+            }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [handleSubmit, onCancel, isFormDirty]);
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">

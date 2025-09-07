@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../../api'; // <-- CORRECTED PATH
 import toast from 'react-hot-toast';
 import Icon from '../ui/Icon';
@@ -28,6 +28,32 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
     const poDraftData = useMemo(() => formData, [formData]);
     const poIsEmpty = useMemo(() => (d) => (!d?.selectedSupplier && (!d?.lines || d.lines.length === 0)), []);
     const { status: poDraftStatus, lastSavedAt: poLastSavedAt, draft: poDraft, loaded: poDraftLoaded, clearDraft: clearPODraft } = useDraft('po', { data: poDraftData, isEmpty: poIsEmpty, debounceMs: 750 });
+
+    const initialFormData = useMemo(() => {
+        if (existingPO) {
+            return {
+                lines: existingPO.lines || [],
+                selectedSupplier: existingPO.supplier_id || '',
+                notes: existingPO.notes || '',
+                expectedDate: existingPO.expected_date ? existingPO.expected_date.split('T')[0] : ''
+            };
+        } else {
+            return {
+                lines: [],
+                selectedSupplier: '',
+                notes: '',
+                expectedDate: ''
+            };
+        }
+    }, [existingPO]);
+
+    const isFormDirty = useMemo(() => {
+        return JSON.stringify(formData) !== JSON.stringify(initialFormData);
+    }, [formData, initialFormData]);
+
+    const isFormElement = (element) => {
+        return element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.tagName === 'SELECT');
+    };
 
     // --- Load initial data ---
     useEffect(() => {
@@ -125,13 +151,13 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
         setFormData(prev => ({ ...prev, selectedSupplier: supplierId }));
     };
 
-    const clearDraftAndCancel = async () => {
-    if (!existingPO) await clearPODraft();
+    const clearDraftAndCancel = useCallback(async () => {
+        if (!existingPO) await clearPODraft();
         onCancel();
-    };
+    }, [existingPO, clearPODraft, onCancel]);
 
-    const handleSubmit = (e) => {
-        e.preventDefault();
+    const handleSubmit = useCallback((e) => {
+        if (e) e.preventDefault();
         // Require at least one line. Supplier will default to the existing "N/A" supplier if not selected.
         if (formData.lines.length === 0) {
             return toast.error('Please add at least one part to the purchase order.');
@@ -166,7 +192,27 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
         }).catch(() => {
             // Error is handled by the parent component's toast.promise
         });
-    };
+    }, [formData, suppliers, user.employee_id, onSave, existingPO, clearPODraft]);
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.target && isFormElement(e.target)) return;
+
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                handleSubmit();
+            } else if (e.key === 'Escape') {
+                if (isFormDirty) {
+                    const confirmCancel = window.confirm('You have unsaved changes. Are you sure you want to cancel?');
+                    if (!confirmCancel) return;
+                }
+                clearDraftAndCancel();
+            }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [handleSubmit, clearDraftAndCancel, isFormDirty]);
 
     const total = useMemo(() => formData.lines.reduce((sum, line) => sum + (line.quantity * line.cost_price), 0), [formData.lines]);
 

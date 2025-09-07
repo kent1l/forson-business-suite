@@ -1,12 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import toast from 'react-hot-toast';
 
 const StockAdjustmentForm = ({ part, user, onSave, onCancel }) => {
     const [quantity, setQuantity] = useState('');
     const [notes, setNotes] = useState('');
 
-    const handleSubmit = (e) => {
-        e.preventDefault();
+    const initialFormData = useMemo(() => ({
+        quantity: '',
+        notes: ''
+    }), []);
+
+    const isFormDirty = useMemo(() => {
+        const currentData = { quantity, notes };
+        return JSON.stringify(currentData) !== JSON.stringify(initialFormData);
+    }, [quantity, notes, initialFormData]);
+
+    const isFormElement = (element) => {
+        return element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.tagName === 'SELECT');
+    };
+
+    const handleSubmit = useCallback((e) => {
+        if (e) e.preventDefault();
         const numericQuantity = parseFloat(quantity);
         if (isNaN(numericQuantity) || numericQuantity === 0) {
             return toast.error('Please enter a valid, non-zero quantity.');
@@ -19,7 +33,27 @@ const StockAdjustmentForm = ({ part, user, onSave, onCancel }) => {
             employee_id: user.employee_id,
         };
         onSave(payload);
-    };
+    }, [quantity, notes, part.part_id, user.employee_id, onSave]);
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.target && isFormElement(e.target)) return;
+
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                handleSubmit();
+            } else if (e.key === 'Escape') {
+                if (isFormDirty) {
+                    const confirmCancel = window.confirm('You have unsaved changes. Are you sure you want to cancel?');
+                    if (!confirmCancel) return;
+                }
+                onCancel();
+            }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [handleSubmit, onCancel, isFormDirty]);
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
