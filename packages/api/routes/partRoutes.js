@@ -114,7 +114,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
             limit: 200, 
             attributesToRetrieve: ['part_id'],
             // Prioritize exact normalized matches, then fall back to fuzzy search
-            attributesToSearchIn: ['normalized_internal_sku', 'normalized_part_numbers', 'internal_sku', 'part_numbers', 'display_name', 'brand_name', 'group_name', 'searchable_applications', 'tags']
+            attributesToSearchOn: ['normalized_internal_sku', 'normalized_part_numbers', 'internal_sku', 'part_numbers', 'display_name', 'brand_name', 'group_name', 'searchable_applications', 'tags']
         };
         const filter = [];
 
