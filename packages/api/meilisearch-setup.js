@@ -1,4 +1,6 @@
 const { meiliClient } = require('./meilisearch');
+const path = require('path');
+const fs = require('fs');
 
 /**
  * Configures the Meilisearch indexes with the necessary settings.
@@ -10,6 +12,38 @@ const setupMeiliSearch = async () => {
     
     const partsIndex = meiliClient.index('parts');
     const applicationsIndex = meiliClient.index('applications');
+    // Load synonyms from a JSON file (groups of equivalent terms).
+    const synonymsPath = path.join(__dirname, 'config', 'meili-synonyms.json');
+    let synonymsGroups = [];
+    try {
+      if (fs.existsSync(synonymsPath)) {
+        synonymsGroups = require(synonymsPath);
+      } else {
+        console.warn('Meili synonyms file not found at', synonymsPath);
+      }
+    } catch (err) {
+      console.error('Failed to load Meili synonyms file:', err && err.message ? err.message : err);
+      synonymsGroups = [];
+    }
+
+    // Expand groups into a symmetric mapping required by Meilisearch
+    const buildSymmetricSynonyms = (groups) => {
+      const map = {};
+      if (!Array.isArray(groups)) return map;
+      for (const group of groups) {
+        if (!Array.isArray(group)) continue;
+        const normalized = group.map(s => (typeof s === 'string' ? s.trim() : '')).filter(Boolean);
+        for (const term of normalized) {
+          const others = normalized.filter(t => t !== term);
+          if (!map[term]) map[term] = [];
+          // Avoid duplicates
+          for (const o of others) if (!map[term].includes(o)) map[term].push(o);
+        }
+      }
+      return map;
+    };
+
+    const symmetricSynonyms = buildSymmetricSynonyms(synonymsGroups);
     
     // Tell Meilisearch which fields we want to be able to search, filter and sort on.
     // This optimizes search performance and index size.
@@ -34,7 +68,8 @@ const setupMeiliSearch = async () => {
       stopWords: [
         'a', 'an', 'and', 'the'
       ],
-      synonyms: {
+      // Load synonyms from file if provided, falling back to inline set for backwards compatibility
+      synonyms: Object.keys(symmetricSynonyms).length > 0 ? symmetricSynonyms : {
         'ATF': ['automatic transmission fluid', 'automatic transmission oil'],
         'PSF': ['power steering fluid', 'power steering oil'],
         'Brake Fluid': ['Brake Oil']

@@ -1,0 +1,11 @@
+[
+  ["ATF", "automatic transmission fluid", "automatic transmission oil"],
+  ["PSF", "power steering fluid", "power steering oil"],
+  ["Brake Fluid", "Brake Oil"],
+  ["toyota", "toyata", "toyotta", "toyta"],
+  ["diesel", "deisel", "desel"],
+  ["manual", "manuel", "man"],
+  ["automatic", "auto", "at"],
+  ["transmission", "trans", "tranny"],
+  ["engine", "eng", "motor"]
+]
