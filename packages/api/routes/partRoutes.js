@@ -4,6 +4,7 @@ const { constructDisplayName } = require('../helpers/displayNameHelper');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { syncPartWithMeili, removePartFromMeili, meiliClient } = require('../meilisearch');
 const { activeAliasCondition } = require('../helpers/partNumberSoftDelete');
+const { normalizePartData } = require('../helpers/normalizePart');
 const router = express.Router();
 
 // Helper function to get all data for a part for Meilisearch indexing
@@ -30,6 +31,7 @@ const getPartDataForMeili = async (client, partId) => {
     if (res.rows.length === 0) return null;
 
     const part = res.rows[0];
+    const normalizedFields = normalizePartData(part);
     return {
         ...part,
         display_name: constructDisplayName(part),
@@ -42,8 +44,10 @@ const getPartDataForMeili = async (client, partId) => {
                 // If for some reason the application is an object, concatenate known fields.
                 return `${app.make || ''} ${app.model || ''} ${app.engine || ''}`.trim();
             }).join(', ')
-            : '' ,
-        tags: part.tags_array || []
+            : '',
+        tags: part.tags_array || [],
+        normalized_internal_sku: normalizedFields.normalized_internal_sku,
+        normalized_part_numbers: normalizedFields.normalized_part_numbers
     };
 };
 
@@ -106,7 +110,12 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
     const { status = 'active', search = '', tags = '' } = req.query;
     try {
         const index = meiliClient.index('parts');
-        const searchOptions = { limit: 200, attributesToRetrieve: ['part_id'] };
+        const searchOptions = { 
+            limit: 200, 
+            attributesToRetrieve: ['part_id'],
+            // Prioritize exact normalized matches, then fall back to fuzzy search
+            attributesToSearchIn: ['normalized_internal_sku', 'normalized_part_numbers', 'internal_sku', 'part_numbers', 'display_name', 'brand_name', 'group_name', 'searchable_applications', 'tags']
+        };
         const filter = [];
 
         if (status === 'active') filter.push('is_active = true');

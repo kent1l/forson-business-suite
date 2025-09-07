@@ -59,10 +59,12 @@ const setupMeiliSearch = async () => {
       searchableAttributes: [
         'display_name',
         'internal_sku',
+        'normalized_internal_sku',
         'brand_name',
         'group_name',
         'searchable_applications',
         'part_numbers',
+        'normalized_part_numbers',
         'tags'
       ],
       stopWords: [
