@@ -12,6 +12,7 @@ import PartForm from '../components/forms/PartForm';
 import useDraft from '../hooks/useDraft';
 import { formatApplicationText } from '../helpers/applicationTextHelper';
 import { enrichPartsArray } from '../helpers/applicationCache';
+import PartApplicationManager from './PartApplicationManager';
 
 const GoodsReceiptPage = ({ user }) => {
     const [suppliers, setSuppliers] = useState([]);
@@ -28,6 +29,8 @@ const GoodsReceiptPage = ({ user }) => {
     const [loading, setLoading] = useState(true);
     const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
     const [isNewPartModalOpen, setIsNewPartModalOpen] = useState(false);
+    const [isAppModalOpen, setIsAppModalOpen] = useState(false);
+    const [currentPart, setCurrentPart] = useState(null);
     const [openPOs, setOpenPOs] = useState([]);
     const [selectedPO, setSelectedPO] = useState('');
 
@@ -156,11 +159,20 @@ const GoodsReceiptPage = ({ user }) => {
             success: (response) => {
                 const newPart = response.data;
                 setIsNewPartModalOpen(false);
-                addPartToLines(newPart);
-                return 'Part added and added to receipt!';
+                setCurrentPart(newPart);
+                setIsAppModalOpen(true);
+                return 'Part created! Please link applications.';
             },
             error: 'Failed to save part.'
         });
+    };
+
+    const handleAppManagerClose = () => {
+        setIsAppModalOpen(false);
+        if (currentPart) {
+            addPartToLines(currentPart);
+            setCurrentPart(null);
+        }
     };
 
     const addPartToLines = (part) => {
@@ -354,6 +366,9 @@ const GoodsReceiptPage = ({ user }) => {
                     onCancel={() => setIsNewPartModalOpen(false)}
                     onBrandGroupAdded={fetchInitialData}
                 />
+            </Modal>
+            <Modal isOpen={isAppModalOpen} onClose={handleAppManagerClose} title={`Manage Applications for: ${currentPart?.internal_sku || currentPart?.display_name || currentPart?.detail || ''}`}>
+                <PartApplicationManager part={currentPart} onCancel={handleAppManagerClose} />
             </Modal>
         </div>
     );
