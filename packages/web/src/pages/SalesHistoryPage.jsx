@@ -52,46 +52,89 @@ const SalesHistoryPage = () => {
     const summaryRef = useRef(null);
     const [maxHeight, setMaxHeight] = useState('0px');
 
-    // Derived sales statistics for the selected date range
+    // Pure computation of enhanced stats leveraging refunded_amount, net_amount, balance_due
     const stats = useMemo(() => {
-        const totalSales = invoices.reduce((s, inv) => s + (parseFloat(inv.total_amount) || 0), 0);
-        const count = invoices.length;
-        const avg = count ? totalSales / count : 0;
+        if (!Array.isArray(invoices) || invoices.length === 0) {
+            return {
+                grossSales: 0,
+                netSales: 0,
+                refunds: 0,
+                invoicesIssued: 0,
+                netActiveInvoices: 0,
+                avgNetInvoice: 0,
+                amountCollected: 0,
+                collectionRate: 0,
+                arOutstanding: 0,
+                topCustomer: '-',
+                topCustomerNet: 0,
+                topCustomerShare: 0,
+                refundRate: 0
+            };
+        }
 
-        const totalsByStatus = invoices.reduce((acc, inv) => {
-            const amt = parseFloat(inv.total_amount) || 0;
-            const st = inv.status || 'Unknown';
-            acc[st] = (acc[st] || 0) + amt;
-            return acc;
-        }, {});
+        const currencySafeNumber = (v) => {
+            const n = parseFloat(v);
+            return Number.isFinite(n) ? n : 0;
+        };
 
-        // Best customer by total
-        const byCustomer = invoices.reduce((acc, inv) => {
-            const name = `${inv.customer_first_name || ''} ${inv.customer_last_name || ''}`.trim() || 'Unknown';
-            acc[name] = (acc[name] || 0) + (parseFloat(inv.total_amount) || 0);
-            return acc;
-        }, {});
-        let topCustomer = null;
-        let topCustomerTotal = 0;
-        Object.entries(byCustomer).forEach(([name, tot]) => {
-            if (tot > topCustomerTotal) {
-                topCustomer = name; topCustomerTotal = tot;
-            }
-        });
+        // Exclude Cancelled invoices from revenue metrics if such status exists
+        const active = invoices.filter(inv => inv.status !== 'Cancelled');
 
-        const paid = (totalsByStatus['Paid'] || 0) + (totalsByStatus['Partially Paid'] || 0);
-        const unpaid = totalsByStatus['Unpaid'] || 0;
-        const refunded = (totalsByStatus['Partially Refunded'] || 0) + (totalsByStatus['Fully Refunded'] || 0) || 0;
+        let grossSales = 0;
+        let refunds = 0;
+        let netSales = 0;
+        let amountCollected = 0;
+        let arOutstanding = 0;
+
+        const customerNetMap = {};
+        let netActiveInvoices = 0;
+
+        for (const inv of active) {
+            const total = currencySafeNumber(inv.total_amount);
+            const refundedAmt = currencySafeNumber(inv.refunded_amount);
+            // net_amount provided by backend (already clamped) fallback compute if missing
+            const net = currencySafeNumber(inv.net_amount !== undefined ? inv.net_amount : Math.max(total - refundedAmt, 0));
+            const collected = Math.min(currencySafeNumber(inv.amount_paid), net); // cap collection at net
+            const balance = currencySafeNumber(inv.balance_due !== undefined ? inv.balance_due : Math.max(net - collected, 0));
+
+            grossSales += total;
+            refunds += refundedAmt;
+            netSales += net;
+            amountCollected += collected;
+            arOutstanding += balance;
+            if (net > 0) netActiveInvoices += 1;
+
+            const customerName = `${inv.customer_first_name || ''} ${inv.customer_last_name || ''}`.trim() || 'Unknown';
+            customerNetMap[customerName] = (customerNetMap[customerName] || 0) + net;
+        }
+
+        const invoicesIssued = active.length;
+        const avgNetInvoice = netActiveInvoices > 0 ? netSales / netActiveInvoices : 0;
+        const collectionRate = netSales > 0 ? Math.min(amountCollected / netSales, 1) : 0;
+        const refundRate = grossSales > 0 ? Math.min(refunds / grossSales, 1) : 0;
+
+        // Determine top customer by net contribution
+        let topCustomer = '-';
+        let topCustomerNet = 0;
+        for (const [cust, val] of Object.entries(customerNetMap)) {
+            if (val > topCustomerNet) { topCustomer = cust; topCustomerNet = val; }
+        }
+        const topCustomerShare = netSales > 0 ? topCustomerNet / netSales : 0;
 
         return {
-            totalSales,
-            count,
-            avg,
-            paid,
-            unpaid,
-            refunded,
-            topCustomer: topCustomer || '-',
-            topCustomerTotal
+            grossSales,
+            netSales,
+            refunds,
+            invoicesIssued,
+            netActiveInvoices,
+            avgNetInvoice,
+            amountCollected,
+            collectionRate,
+            arOutstanding,
+            topCustomer,
+            topCustomerNet,
+            topCustomerShare,
+            refundRate
         };
     }, [invoices]);
 
@@ -285,17 +328,17 @@ const SalesHistoryPage = () => {
                 </div>
                 {/* Compact view shows when collapsed */}
                 <div className={`mt-3 flex items-center space-x-4 ${summaryCollapsed ? '' : 'hidden'}`}>
-                    <div className="flex-1 p-2 bg-white rounded-lg border border-gray-100 shadow-sm">
-                        <div className="text-xs text-gray-500">Total Sales</div>
-                        <div className="text-sm font-semibold text-gray-800">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    <div className="flex-1 p-2 bg-white rounded-lg border border-gray-100 shadow-sm" title="Net Sales = Gross - Refunds (excludes Cancelled)">
+                        <div className="text-xs text-gray-500">Net Sales</div>
+                        <div className="text-sm font-semibold text-gray-800">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.netSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
-                    <div className="flex-1 p-2 bg-white rounded-lg border border-gray-100 shadow-sm">
-                        <div className="text-xs text-gray-500">Invoices</div>
-                        <div className="text-sm font-semibold text-gray-800">{stats.count}</div>
+                    <div className="flex-1 p-2 bg-white rounded-lg border border-gray-100 shadow-sm" title="Collection Rate = Collected / Net Sales">
+                        <div className="text-xs text-gray-500">Collection Rate</div>
+                        <div className="text-sm font-semibold text-gray-800">{(stats.collectionRate * 100).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%</div>
                     </div>
-                    <div className="flex-1 p-2 bg-white rounded-lg border border-gray-100 shadow-sm">
-                        <div className="text-xs text-gray-500">Avg</div>
-                        <div className="text-sm font-semibold text-gray-800">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.avg.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    <div className="flex-1 p-2 bg-white rounded-lg border border-gray-100 shadow-sm" title="Outstanding A/R = Sum of balances due">
+                        <div className="text-xs text-gray-500">A/R Outstanding</div>
+                        <div className="text-sm font-semibold text-gray-800">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.arOutstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
                 </div>
 
@@ -311,18 +354,32 @@ const SalesHistoryPage = () => {
                             // Build an array of card descriptors so we can stagger animations
                             [
                                 {
-                                    key: 'totalSales',
-                                    className: 'bg-gradient-to-br from-white to-gray-50',
+                                    key: 'revenueGroup',
+                                    className: 'bg-gradient-to-br from-white to-gray-50 md:col-span-2',
                                     content: (
                                         <>
-                                            <div className="text-sm text-gray-500">Total Sales</div>
-                                            <div className="mt-2 flex items-baseline justify-between">
-                                                <div className="text-2xl font-semibold text-gray-800">
-                                                    {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                </div>
-                                                <svg className="w-6 h-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 17l6-6 4 4 8-8"></path></svg>
+                                            <div className="text-sm text-gray-500 flex items-center justify-between">
+                                                <span>Revenue</span>
+                                                <span className="text-[10px] uppercase tracking-wide text-gray-400">Gross / Refunds / Net</span>
                                             </div>
-                                            <div className="text-xs text-gray-500 mt-1">From {dates.startDate} to {dates.endDate}</div>
+                                            <div className="mt-2 grid grid-cols-3 gap-3 text-center">
+                                                <div>
+                                                    <div className="text-xs text-gray-500">Gross</div>
+                                                    <div className="font-semibold text-gray-800 text-sm">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.grossSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-xs text-gray-500">Refunds</div>
+                                                    <div className="font-semibold text-yellow-600 text-sm">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.refunds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-xs text-gray-500">Net</div>
+                                                    <div className="font-semibold text-green-600 text-sm">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.netSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                                </div>
+                                            </div>
+                                            <div className="text-[11px] text-gray-500 mt-2 flex justify-between">
+                                                <span>Refund Rate {(stats.refundRate * 100).toLocaleString(undefined,{maximumFractionDigits:1})}%</span>
+                                                <span>Range {dates.startDate} → {dates.endDate}</span>
+                                            </div>
                                         </>
                                     )
                                 },
@@ -330,9 +387,9 @@ const SalesHistoryPage = () => {
                                     key: 'invoices',
                                     content: (
                                         <>
-                                            <div className="text-sm text-gray-500">Invoices</div>
-                                            <div className="mt-2 text-2xl font-semibold text-gray-800">{stats.count}</div>
-                                            <div className="text-xs text-gray-500 mt-1">Total number of invoices in range</div>
+                                            <div className="text-sm text-gray-500">Invoices Issued</div>
+                                            <div className="mt-2 text-2xl font-semibold text-gray-800">{stats.invoicesIssued}</div>
+                                            <div className="text-xs text-gray-500 mt-1">Excludes Cancelled</div>
                                         </>
                                     )
                                 },
@@ -340,9 +397,9 @@ const SalesHistoryPage = () => {
                                     key: 'avg',
                                     content: (
                                         <>
-                                            <div className="text-sm text-gray-500">Average Sale</div>
-                                            <div className="mt-2 text-2xl font-semibold text-gray-800">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.avg.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                            <div className="text-xs text-gray-500 mt-1">Average invoice value</div>
+                                            <div className="text-sm text-gray-500">Avg Net Invoice</div>
+                                            <div className="mt-2 text-2xl font-semibold text-gray-800">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.avgNetInvoice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                            <div className="text-xs text-gray-500 mt-1">Net Sales / Net Active</div>
                                         </>
                                     )
                                 },
@@ -352,37 +409,41 @@ const SalesHistoryPage = () => {
                                         <>
                                             <div className="text-sm text-gray-500">Top Customer</div>
                                             <div className="mt-2 text-lg font-semibold text-gray-800">{stats.topCustomer}</div>
-                                            <div className="text-xs text-gray-500 mt-1">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.topCustomerTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                            <div className="text-xs text-gray-500 mt-1">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.topCustomerNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({(stats.topCustomerShare*100).toLocaleString(undefined,{maximumFractionDigits:1})}%)</div>
                                         </>
                                     )
                                 },
                                 {
-                                    key: 'paidUnpaid',
+                                    key: 'collections',
                                     className: 'md:col-span-2',
                                     content: (
                                         <>
-                                            <div className="text-sm text-gray-500">Paid / Unpaid</div>
-                                            <div className="mt-2 flex items-center space-x-4">
-                                                <div className="flex-1">
-                                                    <div className="text-xs text-gray-500">Paid</div>
-                                                    <div className="text-lg font-semibold text-green-600">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.paid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                            <div className="text-sm text-gray-500">Collections</div>
+                                            <div className="mt-2 grid grid-cols-3 gap-3 text-center">
+                                                <div>
+                                                    <div className="text-xs text-gray-500">Collected</div>
+                                                    <div className="font-semibold text-green-600 text-sm">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.amountCollected.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
                                                 </div>
-                                                <div className="flex-1">
-                                                    <div className="text-xs text-gray-500">Unpaid</div>
-                                                    <div className="text-lg font-semibold text-red-600">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.unpaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                                <div>
+                                                    <div className="text-xs text-gray-500">A/R</div>
+                                                    <div className="font-semibold text-red-600 text-sm">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.arOutstanding.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-xs text-gray-500">Rate</div>
+                                                    <div className="font-semibold text-gray-800 text-sm">{(stats.collectionRate*100).toLocaleString(undefined,{maximumFractionDigits:1})}%</div>
                                                 </div>
                                             </div>
                                         </>
                                     )
                                 },
                                 {
-                                    key: 'refunds',
+                                    key: 'netActive',
                                     className: 'md:col-span-2',
                                     content: (
                                         <>
-                                            <div className="text-sm text-gray-500">Refunds</div>
-                                            <div className="mt-2 text-lg font-semibold text-yellow-600">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.refunded.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                            <div className="text-xs text-gray-500 mt-1">Estimated refunded amount (based on statuses)</div>
+                                            <div className="text-sm text-gray-500">Net Active Invoices</div>
+                                            <div className="mt-2 text-lg font-semibold text-gray-800">{stats.netActiveInvoices}</div>
+                                            <div className="text-xs text-gray-500 mt-1">Invoices with Net &gt; 0</div>
                                         </>
                                     )
                                 }

@@ -56,10 +56,18 @@ router.get('/invoices', protect, hasPermission('invoicing:create'), async (req, 
                 c.first_name as customer_first_name,
                 c.last_name as customer_last_name,
                 e.first_name as employee_first_name,
-                e.last_name as employee_last_name
+                e.last_name as employee_last_name,
+                r.refunded_amount,
+                GREATEST(i.total_amount - r.refunded_amount, 0) AS net_amount,
+                GREATEST((i.total_amount - r.refunded_amount) - i.amount_paid, 0) AS balance_due
             FROM invoice i
             JOIN customer c ON i.customer_id = c.customer_id
             JOIN employee e ON i.employee_id = e.employee_id
+            LEFT JOIN LATERAL (
+                SELECT COALESCE(SUM(cn.total_amount),0) AS refunded_amount
+                FROM credit_note cn
+                WHERE cn.invoice_id = i.invoice_id
+            ) r ON TRUE
             WHERE ${whereClauses.join(' AND ')}
             ORDER BY i.invoice_date DESC;
         `;
