@@ -6,8 +6,9 @@ const { activeAliasCondition } = require('../helpers/partNumberSoftDelete');
 const router = express.Router();
 
 // GET /api/power-search/parts - Advanced multi-filter search using Meilisearch
+// Default behavior: only return active parts unless `status=all` or `status=inactive` is passed.
 router.get('/power-search/parts', async (req, res) => {
-    const { keyword } = req.query; // Other filters (brand, group, application, year) reserved for future enhancement
+    const { keyword, status = 'active' } = req.query; // Other filters (brand, group, application, year) reserved for future enhancement
 
     try {
         const index = meiliClient.index('parts');
@@ -15,11 +16,18 @@ router.get('/power-search/parts', async (req, res) => {
             limit: 200,
             attributesToRetrieve: [
                 'part_id',
+                'is_active',
                 'applications',            // may be array of strings or objects depending on indexer
                 'applications_array',      // legacy / alternate field name
                 'searchable_applications'
             ]
         };
+
+        // Apply status filter to Meilisearch query so inactive parts aren't returned by default
+        const filter = [];
+        if (status === 'active') filter.push('is_active = true');
+        else if (status === 'inactive') filter.push('is_active = false');
+        if (filter.length > 0) searchOptions.filter = filter.join(' AND ');
 
         const searchResults = await index.search(keyword || '', searchOptions);
         const partIds = searchResults.hits.map(h => h.part_id).filter(Boolean);
