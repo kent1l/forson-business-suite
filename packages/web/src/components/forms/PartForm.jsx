@@ -122,6 +122,34 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
     const groupOptions = useMemo(() => groups.map(g => ({ value: g.group_id, label: g.group_name, code: g.group_code })), [groups]);
     const [initialGroupName, setInitialGroupName] = useState('');
 
+    const handleSubmit = useCallback((e) => {
+        e.preventDefault();
+        onSave({ ...formData, tags, applications: selectedApps }); // include linked applications
+    }, [formData, tags, selectedApps, onSave]);
+
+    const handleChange = (e) => {
+        const { name, value, type, checked } = e.target;
+        setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
+    };
+    
+    const handleComboboxChange = (name, value) => {
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.ctrlKey && e.key === 's') {
+                e.preventDefault();
+                handleSubmit(e);
+            } else if (e.key === 'Escape') {
+                onCancel();
+            }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [handleSubmit, onCancel]);
+
     useEffect(() => {
         const fetchTaxRates = async () => {
             try {
@@ -134,64 +162,6 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
         };
         fetchTaxRates();
     }, []);
-
-    useEffect(() => {
-        if (isBulkEdit) {
-            setFormData(getInitialState());
-            return;
-        }
-
-        if (part) {
-            setFormData({
-                detail: part.detail || '',
-                brand_id: part.brand_id || '',
-                group_id: part.group_id || '',
-                part_numbers_string: '',
-                reorder_point: part.reorder_point || 0,
-                warning_quantity: part.warning_quantity || 0,
-                is_active: part.is_active,
-                last_cost: part.last_cost || 0,
-                last_sale_price: part.last_sale_price || 0,
-                barcode: part.barcode || '',
-                measurement_unit: part.measurement_unit || 'pcs',
-                tax_rate_id: part.tax_rate_id || '',
-                is_price_change_allowed: part.is_price_change_allowed,
-                is_using_default_quantity: part.is_using_default_quantity,
-                is_service: part.is_service,
-                low_stock_warning: part.low_stock_warning,
-                is_tax_inclusive_price: part.is_tax_inclusive_price,
-            });
-            // Fetch existing tags for the part being edited
-            api.get(`/parts/${part.part_id}/tags`).then(res => {
-                setTags(res.data.map(t => t.tag_name));
-            }).catch((error) => { console.error(error); toast.error('Could not load part tags.') });
-
-        } else {
-            const initialState = getInitialState();
-            if (taxRates.length > 0) {
-                const defaultRate = taxRates.find(r => r.is_default);
-                if (defaultRate) {
-                    initialState.tax_rate_id = defaultRate.tax_rate_id;
-                }
-            }
-            setFormData(initialState);
-            setTags([]); // Clear tags for new part
-        }
-    }, [part, isBulkEdit, taxRates, settings, getInitialState]);
-
-    const handleChange = (e) => {
-        const { name, value, type, checked } = e.target;
-        setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
-    };
-    
-    const handleComboboxChange = (name, value) => {
-        setFormData(prev => ({ ...prev, [name]: value }));
-    };
-
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        onSave({ ...formData, tags, applications: selectedApps }); // include linked applications
-    };
     
     const handleNewBrandGroup = (newItem, type) => {
         onBrandGroupAdded();
