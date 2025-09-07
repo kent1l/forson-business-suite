@@ -143,6 +143,8 @@ const POSPage = ({ user, lines, setLines }) => {
     const [showSaved, setShowSaved] = useState(false);
     const [lastSale, setLastSale] = useState(null);
     const [lastSavedSignature, setLastSavedSignature] = useState(null); // Track last saved cart state to prevent duplicate save
+    const [isReceiptConfirmOpen, setIsReceiptConfirmOpen] = useState(false);
+    const [pendingPaymentData, setPendingPaymentData] = useState(null);
     const searchInputRef = useRef(null);
     const { getInputProps, getItemProps, reset } = useTypeahead({ items: searchResults, onSelect: (item) => { handleSelectPart(item); }, inputId: 'pos-search-input', listboxId: 'pos-search-results' });
 
@@ -366,6 +368,20 @@ const POSPage = ({ user, lines, setLines }) => {
     };
 
     const handleConfirmPayment = (paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo) => {
+        // Check if physical receipt number is empty
+        const normalizedPRN = normalizePhysicalReceipt(physicalReceiptInput || physicalReceiptNo || '');
+        if (!normalizedPRN) {
+            // Store payment data for later use
+            setPendingPaymentData({ paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo });
+            setIsReceiptConfirmOpen(true);
+            return;
+        }
+        
+        // If receipt number is provided, proceed with payment
+        processPayment(paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo);
+    };
+
+    const processPayment = (paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo) => {
         // Enforce full payment on POS: always send amount_paid equal to the final total.
         console.debug(`POS payment: method=${paymentMethod}, tendered=${tenderedAmount}, amountPaid=${amountPaid}, enforced=${total}`);
         const normalizedPRN = normalizePhysicalReceipt(physicalReceiptInput || physicalReceiptNo || '');
@@ -420,6 +436,21 @@ const POSPage = ({ user, lines, setLines }) => {
                 return 'Failed to process sale.';
             },
         });
+    };
+    
+    const handleConfirmReceiptDialog = () => {
+        if (pendingPaymentData) {
+            const { paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo } = pendingPaymentData;
+            setIsReceiptConfirmOpen(false);
+            setPendingPaymentData(null);
+            processPayment(paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo);
+        }
+    };
+
+    const handleCancelReceiptDialog = () => {
+        setIsReceiptConfirmOpen(false);
+        setPendingPaymentData(null);
+        setIsPaymentModalOpen(false);
     };
     
     const handlePrintReceipt = (saleData) => {
@@ -684,6 +715,45 @@ const POSPage = ({ user, lines, setLines }) => {
                     <div className="mt-6 flex justify-end space-x-3">
                         <button onClick={() => setIsVoidConfirmOpen(false)} className="px-4 py-2 bg-gray-100 rounded-md">Cancel</button>
                         <button onClick={performVoid} className="px-4 py-2 bg-red-600 text-white rounded-md">Void Transaction</button>
+                    </div>
+                </div>
+            </Modal>
+            {/* Physical Receipt Confirmation Modal (simplified modern style) */}
+            <Modal
+                isOpen={isReceiptConfirmOpen}
+                onClose={handleCancelReceiptDialog}
+                title="Proceed Without Physical Receipt?"
+                centered
+                maxWidth="max-w-sm"
+            >
+                <div className="space-y-5" role="dialog" aria-describedby="receipt-missing-desc">
+                    <div className="flex items-start gap-4">
+                        <div className="h-10 w-10 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center">
+                            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M12 9v4" />
+                                <path d="M12 17h.01" />
+                                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+                            </svg>
+                        </div>
+                        <p id="receipt-missing-desc" className="text-sm text-slate-600 leading-relaxed">
+                            You can finish this sale now and optionally add a physical receipt number later. Continue?
+                        </p>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                        <button
+                            type="button"
+                            onClick={handleCancelReceiptDialog}
+                            className="px-3 py-2 text-sm font-medium rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-400"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleConfirmReceiptDialog}
+                            className="px-3 py-2 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500"
+                        >
+                            Proceed
+                        </button>
                     </div>
                 </div>
             </Modal>
