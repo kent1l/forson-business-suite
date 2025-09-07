@@ -561,9 +561,14 @@ const POSPage = ({ user, lines, setLines }) => {
                                         const itemProps = getItemProps(index);
                                         return (
                                                 <li key={part.part_id} {...itemProps} className={`px-4 py-3 cursor-pointer ${itemProps['aria-selected'] ? 'bg-blue-100' : 'hover:bg-blue-50'}`}>
-                                                    <div className="flex items-baseline space-x-2">
-                                                        <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
-                                                        {part.applications && <div className="text-xs text-gray-500 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
+                                                    <div className="flex items-baseline justify-between">
+                                                        <div className="flex items-baseline space-x-2 flex-1 min-w-0">
+                                                            <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
+                                                            {part.applications && <div className="text-xs text-gray-500 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
+                                                        </div>
+                                                        <div className="text-sm font-semibold text-gray-700 ml-2">
+                                                            {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
+                                                        </div>
                                                     </div>
                                                 </li>
                                             );
