@@ -29,6 +29,7 @@ const SalesHistoryPage = () => {
     const { settings } = useSettings();
     const [invoices, setInvoices] = useState([]);
     const [payments, setPayments] = useState([]); // Phase 1 payments for cash metrics
+    const [refundsApprox, setRefundsApprox] = useState(0); // TEMP approximate refunds treated as cash out
     const [loading, setLoading] = useState(false);
     const [sortConfig, setSortConfig] = useState({ key: 'invoice_date', direction: 'DESC' });
     const [dates, setDates] = useState({
@@ -72,7 +73,8 @@ const SalesHistoryPage = () => {
                 refundRate: 0,
                 cashCollectedNet: 0,
                 nonCashCollected: 0,
-                cashMix: 0
+                cashMix: 0,
+                approxNetCashAfterRefunds: 0
             };
         }
 
@@ -143,7 +145,9 @@ const SalesHistoryPage = () => {
         const totalCollectedForMix = cashCollected + nonCashCollected;
         const cashMix = totalCollectedForMix > 0 ? cashCollected / totalCollectedForMix : 0;
 
-        return {
+    const approxNetCashAfterRefunds = Math.max(cashCollectedNet - refundsApprox, 0); // cannot go negative for display
+
+    return {
             grossSales,
             netSales,
             refunds,
@@ -159,9 +163,10 @@ const SalesHistoryPage = () => {
             refundRate,
             cashCollectedNet,
             nonCashCollected,
-            cashMix
+        cashMix,
+        approxNetCashAfterRefunds
         };
-    }, [invoices, payments]);
+    }, [invoices, payments, refundsApprox]);
 
     // Keep maxHeight in sync to animate expand/collapse
     useEffect(() => {
@@ -248,9 +253,19 @@ const SalesHistoryPage = () => {
         }
     };
 
+    const fetchRefundsApprox = async () => {
+        try {
+            const resp = await api.get('/payments/refunds-approx', { params: { ...dates } });
+            setRefundsApprox(parseFloat(resp.data.total_refunds) || 0);
+        } catch {
+            setRefundsApprox(0);
+        }
+    };
+
     useEffect(() => {
         fetchInvoices();
-        fetchPayments();
+    fetchPayments();
+    fetchRefundsApprox();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dates, debouncedQuery]);
 
@@ -362,7 +377,7 @@ const SalesHistoryPage = () => {
                     </button>
                 </div>
                 {/* Compact view shows when collapsed */}
-                <div className={`mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 ${summaryCollapsed ? '' : 'hidden'}`}>
+                <div className={`mt-3 grid grid-cols-2 sm:grid-cols-5 gap-3 ${summaryCollapsed ? '' : 'hidden'}`}>
                     <div className="p-2 bg-white rounded-lg border border-gray-100 shadow-sm" title="Net Sales = Gross - Refunds (excludes Cancelled)">
                         <div className="text-[11px] text-gray-500">Net Sales</div>
                         <div className="text-sm font-semibold text-gray-800 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.netSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
@@ -370,6 +385,10 @@ const SalesHistoryPage = () => {
                     <div className="p-2 bg-white rounded-lg border border-gray-100 shadow-sm" title="Amount Collected (capped at Net)">
                         <div className="text-[11px] text-gray-500">Collected</div>
                         <div className="text-sm font-semibold text-green-600 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.amountCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    </div>
+                    <div className="p-2 bg-white rounded-lg border border-gray-100 shadow-sm" title="Approx Net Cash = Cash Net - Credit Notes (assumes all refunds were cash)">
+                        <div className="text-[11px] text-gray-500">Approx Net Cash (After Refunds)</div>
+                        <div className="text-sm font-semibold text-gray-800 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.approxNetCashAfterRefunds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
                     <div className="p-2 bg-white rounded-lg border border-gray-100 shadow-sm" title="Collection Rate = Collected / Net Sales">
                         <div className="text-[11px] text-gray-500">Collection Rate</div>
@@ -485,6 +504,10 @@ const SalesHistoryPage = () => {
                                                     <div className="text-gray-500">Cash Mix</div>
                                                     <div className="font-medium text-gray-800">{(stats.cashMix*100).toLocaleString(undefined,{maximumFractionDigits:1})}%</div>
                                                 </div>
+                                            </div>
+                                            <div className="mt-3 text-center text-[11px] text-gray-500">
+                                                <span className="inline-block px-2 py-1 bg-yellow-50 border border-yellow-200 rounded">Approx Net Cash After Refunds: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.approxNetCashAfterRefunds.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} *</span>
+                                                <div className="mt-1 text-[10px] text-gray-400">* Assumes all refunds were cash; will be refined when refund methods are tracked.</div>
                                             </div>
                                         </>
                                     )

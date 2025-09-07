@@ -95,3 +95,21 @@ router.get('/payments', protect, hasPermission('ar:view'), async (req, res) => {
         res.status(500).json({ message: 'Server error fetching payments.' });
     }
 });
+
+// TEMP: GET /api/payments/refunds-approx - credit note totals in date range (for approximate net cash)
+router.get('/payments/refunds-approx', protect, hasPermission('ar:view'), async (req, res) => {
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+        return res.status(400).json({ message: 'Start date and end date are required.' });
+    }
+    try {
+        const q = `SELECT COALESCE(SUM(total_amount),0) AS total_refunds
+                   FROM credit_note
+                   WHERE refund_date::date BETWEEN $1 AND $2;`;
+        const { rows } = await db.query(q, [startDate, endDate]);
+        res.json({ total_refunds: rows[0].total_refunds });
+    } catch (err) {
+        console.error('Error fetching refund approximation:', err.message);
+        res.status(500).json({ message: 'Server error fetching refund approximation.' });
+    }
+});
