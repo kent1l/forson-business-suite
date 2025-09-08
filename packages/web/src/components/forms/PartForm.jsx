@@ -59,7 +59,7 @@ const BrandGroupForm = ({ type, onSave, onCancel, initialName = '' }) => {
 
 const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, isBulkEdit = false, selectedCount: _selectedCount = 0 }) => {
     const { settings } = useSettings();
-    const [tags, setTags] = useState([]); // <-- State for tags
+    const [tags, setTags] = useState(part?.tags || []); // <-- State for tags
     const [selectedApps, setSelectedApps] = useState([]); // <-- State for linked applications
 
     // helper to display an application label
@@ -82,6 +82,10 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
 
     useEffect(() => { fetchSelectedApps(); }, [fetchSelectedApps]);
 
+    useEffect(() => {
+        setTags(part?.tags || []);
+    }, [part]);
+
     const addApplication = (app) => {
         if (!app || !app.application_id) return;
         setSelectedApps(prev => {
@@ -101,6 +105,27 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                 is_service: 'unchanged', low_stock_warning: 'unchanged', is_tax_inclusive_price: 'unchanged'
             };
         }
+        if (part) {
+            return {
+                detail: part.detail || '',
+                brand_id: part.brand_id || '',
+                group_id: part.group_id || '',
+                part_numbers_string: '',
+                reorder_point: part.reorder_point || 1,
+                warning_quantity: part.warning_quantity || 1,
+                is_active: part.is_active ?? true,
+                last_cost: part.last_cost || 0,
+                last_sale_price: part.last_sale_price || 0,
+                barcode: part.barcode || '',
+                measurement_unit: part.measurement_unit || 'pcs',
+                tax_rate_id: part.tax_rate_id || '',
+                is_price_change_allowed: part.is_price_change_allowed ?? true,
+                is_using_default_quantity: part.is_using_default_quantity ?? true,
+                is_service: part.is_service ?? false,
+                low_stock_warning: part.low_stock_warning ?? true,
+                is_tax_inclusive_price: part.is_tax_inclusive_price ?? (settings?.DEFAULT_IS_TAX_INCLUSIVE !== 'false')
+            };
+        }
         return {
             detail: '', brand_id: '', group_id: '', part_numbers_string: '',
             reorder_point: 1, warning_quantity: 1, is_active: true,
@@ -109,9 +134,13 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
             is_service: false, low_stock_warning: true, 
             is_tax_inclusive_price: settings?.DEFAULT_IS_TAX_INCLUSIVE !== 'false' // Default to true unless explicitly set to false
         };
-    }, [isBulkEdit, settings]);
+    }, [isBulkEdit, settings, part]);
 
     const [formData, setFormData] = useState(getInitialState());
+
+    useEffect(() => {
+        setFormData(getInitialState());
+    }, [getInitialState]);
     const [taxRates, setTaxRates] = useState([]);
     const [isBrandModalOpen, setIsBrandModalOpen] = useState(false);
     const [initialBrandName, setInitialBrandName] = useState('');
@@ -123,6 +152,8 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
     const [initialGroupName, setInitialGroupName] = useState('');
 
     const initialFormData = useMemo(() => getInitialState(), [getInitialState]);
+
+    const initialTags = useMemo(() => part?.tags || [], [part]);
 
     const isFormDirty = useMemo(() => {
         const keys = Object.keys(formData);
