@@ -27,7 +27,7 @@ const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave,
 
     return (
         <div className="mt-4 w-full">
-            <div className="grid grid-cols-5 grid-rows-2 auto-rows-[9rem] gap-3">
+            <div className="grid grid-cols-3 sm:grid-cols-5 grid-rows-2 auto-rows-[10rem] sm:auto-rows-[9rem] gap-4 sm:gap-3">
                 {cells.map((_, i) => {
                     // top-left cell (index 0) -> Customer button
                     if (i === 0) {
@@ -631,58 +631,59 @@ const POSPage = ({ user, lines, setLines }) => {
 
     return (
         <>
-            <div className="flex flex-col md:flex-row h-full gap-6">
-                <div className="w-full md:w-2/3 flex flex-col">
-                    <div className="flex items-center space-x-2">
-                        <div className="relative flex-grow">
-                            <SearchBar
-                                {...getInputProps()}
-                                value={searchTerm}
-                                onChange={setSearchTerm}
-                                onClear={() => { setSearchTerm(''); setSearchResults([]); reset(); }}
-                                placeholder="Scan or search (Ctrl+F)..."
-                                disabled={false}
-                                className=""
-                                ref={searchInputRef}
-                            />
-                            {searchResults.length > 0 && (
-                                <ul id="pos-search-results" className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg search-results" role="listbox">
-                                    {searchResults.map((part, index) => {
-                                        const itemProps = getItemProps(index);
-                                        return (
-                                                <li key={part.part_id} {...itemProps} className={`px-4 py-3 cursor-pointer ${itemProps['aria-selected'] ? 'bg-blue-100' : 'hover:bg-blue-50'}`}>
-                                                    <div className="flex items-baseline justify-between">
-                                                        <div className="flex items-baseline space-x-2 flex-1 min-w-0">
-                                                            <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
-                                                            {part.applications && <div className="text-xs text-gray-500 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
-                                                        </div>
-                                                        <div className="text-sm font-semibold text-gray-700 ml-2">
-                                                            {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
-                                                        </div>
+            <div className="flex flex-col h-full gap-6">
+                <div className="flex items-center space-x-2">
+                    <div className="relative flex-grow">
+                        <SearchBar
+                            {...getInputProps()}
+                            value={searchTerm}
+                            onChange={setSearchTerm}
+                            onClear={() => { setSearchTerm(''); setSearchResults([]); reset(); }}
+                            placeholder="Scan or search (Ctrl+F)..."
+                            disabled={false}
+                            className=""
+                            ref={searchInputRef}
+                        />
+                        {searchResults.length > 0 && (
+                            <ul id="pos-search-results" className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg search-results" role="listbox">
+                                {searchResults.map((part, index) => {
+                                    const itemProps = getItemProps(index);
+                                    return (
+                                            <li key={part.part_id} {...itemProps} className={`px-4 py-3 cursor-pointer ${itemProps['aria-selected'] ? 'bg-blue-100' : 'hover:bg-blue-50'}`}>
+                                                <div className="flex items-baseline justify-between">
+                                                    <div className="flex items-baseline space-x-2 flex-1 min-w-0">
+                                                        <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
+                                                        {part.applications && <div className="text-xs text-gray-500 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
                                                     </div>
-                                                </li>
-                                            );
-                                    })}
-                                </ul>
-                            )}
-                        </div>
-                        <button onClick={() => setIsNewPartModalOpen(true)} className="bg-blue-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-700 transition whitespace-nowrap">
-                           New Part
-                        </button>
+                                                    <div className="text-sm font-semibold text-gray-700 ml-2">
+                                                        {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
+                                                    </div>
+                                                </div>
+                                            </li>
+                                        );
+                                })}
+                            </ul>
+                        )}
                     </div>
-                    <ButtonsGrid
-                        lines={lines}
-                        savedCount={savedCount}
-                        handleSaveSale={handleSaveSale}
-                        setShowSaved={setShowSaved}
-                        canSave={canSave}
-                        handleVoid={openVoidConfirm}
-                        canVoid={lines.length > 0}
-                        openCustomer={() => setIsCustomerModalOpen(true)}
-                        selectedCustomer={selectedCustomer}
-                    />
+                    <button onClick={() => setIsNewPartModalOpen(true)} className="bg-blue-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-700 transition whitespace-nowrap">
+                       New Part
+                    </button>
                 </div>
-                <div className="w-full md:w-1/3 bg-white rounded-xl border border-gray-200 flex flex-col">
+                <div className="flex flex-col md:flex-row flex-1 gap-6">
+                    <div className="w-full md:w-2/3 flex flex-col order-2 md:order-1">
+                        <ButtonsGrid
+                            lines={lines}
+                            savedCount={savedCount}
+                            handleSaveSale={handleSaveSale}
+                            setShowSaved={setShowSaved}
+                            canSave={canSave}
+                            handleVoid={openVoidConfirm}
+                            canVoid={lines.length > 0}
+                            openCustomer={() => setIsCustomerModalOpen(true)}
+                            selectedCustomer={selectedCustomer}
+                        />
+                    </div>
+                    <div className="w-full md:w-1/3 bg-white rounded-xl border border-gray-200 flex flex-col order-1 md:order-2">
                     <div className="p-4 border-b">
                         <div className="flex items-center space-x-3">
                             <div className="font-semibold whitespace-nowrap">Physical Receipt No:</div>
@@ -715,6 +716,7 @@ const POSPage = ({ user, lines, setLines }) => {
                         <button onClick={handleCheckout} className="w-full mt-4 bg-green-600 text-white py-3 rounded-lg font-semibold text-lg hover:bg-green-700 transition">Checkout (Ctrl+Enter)</button>
                     </div>
                 </div>
+            </div>
             </div>
 
             <Modal isOpen={isPriceModalOpen} onClose={() => setIsPriceModalOpen(false)} title="Add Item to Sale">
