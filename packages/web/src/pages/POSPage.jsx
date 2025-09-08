@@ -568,6 +568,19 @@ const POSPage = ({ user, lines, setLines }) => {
         return () => window.removeEventListener('keydown', onKey);
     }, [lines, selectedCustomer, handleCheckout]);
 
+    // Keyboard shortcut (Ctrl+F / Cmd+F) to focus search bar
+    useEffect(() => {
+        const onKey = (e) => {
+            const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+            if ((isMac ? e.metaKey : e.ctrlKey) && (e.key === 'f' || e.key === 'F')) {
+                e.preventDefault();
+                searchInputRef.current?.focus();
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, []);
+
     const handleRestoreSaved = (id) => {
         const entry = getSaved(id);
         if (!entry) return;
