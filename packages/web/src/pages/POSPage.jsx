@@ -146,6 +146,7 @@ const POSPage = ({ user, lines, setLines }) => {
     const [isReceiptConfirmOpen, setIsReceiptConfirmOpen] = useState(false);
     const [pendingPaymentData, setPendingPaymentData] = useState(null);
     const searchInputRef = useRef(null);
+    const physicalReceiptRef = useRef(null);
     const { getInputProps, getItemProps, reset } = useTypeahead({ items: searchResults, onSelect: (item) => { handleSelectPart(item); }, inputId: 'pos-search-input', listboxId: 'pos-search-results' });
 
     // Saved sales hook (user-specific)
@@ -581,6 +582,33 @@ const POSPage = ({ user, lines, setLines }) => {
         return () => window.removeEventListener('keydown', onKey);
     }, []);
 
+    // Keyboard shortcut (Ctrl+P / Cmd+P) to focus physical receipt input
+    useEffect(() => {
+        const onKey = (e) => {
+            const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+            if ((isMac ? e.metaKey : e.ctrlKey) && (e.key === 'p' || e.key === 'P')) {
+                e.preventDefault();
+                physicalReceiptRef.current?.focus();
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, []);
+
+    // Keyboard shortcut (F9) to void transaction
+    useEffect(() => {
+        const onKey = (e) => {
+            if (e.key === 'F9') {
+                e.preventDefault();
+                if (lines.length > 0) {
+                    openVoidConfirm();
+                }
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [lines.length, openVoidConfirm]);
+
     const handleRestoreSaved = (id) => {
         const entry = getSaved(id);
         if (!entry) return;
@@ -658,7 +686,7 @@ const POSPage = ({ user, lines, setLines }) => {
                         <div className="flex items-center space-x-3">
                             <div className="font-semibold whitespace-nowrap">Physical Receipt No:</div>
                             <div className="flex-1 p-2 bg-gray-50 rounded-lg">
-                                <input value={physicalReceiptInput} onChange={(e) => setPhysicalReceiptInput(e.target.value)} onBlur={() => setPhysicalReceiptInput(normalizePhysicalReceipt(physicalReceiptInput))} placeholder="Enter receipt no" className="w-full px-3 py-2 border rounded-md text-sm" />
+                                <input ref={physicalReceiptRef} value={physicalReceiptInput} onChange={(e) => setPhysicalReceiptInput(e.target.value)} onBlur={() => setPhysicalReceiptInput(normalizePhysicalReceipt(physicalReceiptInput))} placeholder="Enter receipt no" className="w-full px-3 py-2 border rounded-md text-sm" />
                             </div>
                         </div>
                     </div>
