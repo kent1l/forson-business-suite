@@ -25,6 +25,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
     const [brands, setBrands] = useState([]);
     const [groups, setGroups] = useState([]);
     const searchBarRef = useRef(null);
+    const isScrollingRef = useRef(false);
     // Draft via reusable hook
     const poDraftData = useMemo(() => formData, [formData]);
     const poIsEmpty = useMemo(() => (d) => (!d?.selectedSupplier && (!d?.lines || d.lines.length === 0)), []);
@@ -115,6 +116,27 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
         const timer = setTimeout(fetchParts, 300);
         return () => clearTimeout(timer);
     }, [searchTerm]);
+
+    // --- Handle search results visibility and page scroll lock ---
+    useEffect(() => {
+        if (searchResults.length > 0) {
+            // Lock page scroll
+            document.body.style.overflow = 'hidden';
+            // Add click outside listener to hide results
+            const handleClickOutside = (e) => {
+                if (searchBarRef.current && !searchBarRef.current.contains(e.target)) {
+                    setSearchResults([]);
+                }
+            };
+            document.addEventListener('click', handleClickOutside);
+            return () => {
+                document.removeEventListener('click', handleClickOutside);
+                document.body.style.overflow = '';
+            };
+        } else {
+            document.body.style.overflow = '';
+        }
+    }, [searchResults]);
 
     // Application text formatting is now handled by the helper
 
@@ -269,7 +291,22 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                     </div>
                 </div>
                 {searchResults.length > 0 && (
-                    <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto search-results">
+                    <ul 
+                        className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto search-results"
+                        onTouchStart={(e) => {
+                            isScrollingRef.current = true;
+                            e.stopPropagation();
+                        }}
+                        onTouchMove={(e) => {
+                            if (isScrollingRef.current && e.currentTarget.scrollHeight > e.currentTarget.clientHeight) {
+                                e.preventDefault();
+                            }
+                            e.stopPropagation();
+                        }}
+                        onTouchEnd={() => {
+                            isScrollingRef.current = false;
+                        }}
+                    >
                         {searchResults.map(part => (
                             <li key={part.part_id} onClick={() => addPartToLines(part)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm">
                                 <div className="flex items-baseline space-x-2">

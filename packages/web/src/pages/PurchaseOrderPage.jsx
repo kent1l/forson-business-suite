@@ -4,8 +4,8 @@ import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
-import Modal from '../components/ui/Modal';
-import PurchaseOrderForm from '../components/forms/PurchaseOrderForm';
+// Modal removed in favor of dedicated full-page editor
+import PurchaseOrderEditorPage from './PurchaseOrderEditorPage';
 import FilterBar from '../components/ui/FilterBar';
 import { downloadFile } from '../utils/downloadFile';
 
@@ -65,8 +65,9 @@ const PurchaseOrderPage = () => {
     const { user, hasPermission } = useAuth();
     const [purchaseOrders, setPurchaseOrders] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [currentPO, setCurrentPO] = useState(null);
+    // full-page editor state
+    const [editingPO, setEditingPO] = useState(null); // null = create new when in edit mode
+    const [isEditing, setIsEditing] = useState(false);
     const [statusFilter, setStatusFilter] = useState('Pending');
     const [expandedRows, setExpandedRows] = useState(new Set());
 
@@ -102,24 +103,11 @@ const PurchaseOrderPage = () => {
     }, [purchaseOrders, hasPermission]);
 
 
-    const handleSave = (poData) => {
-        const promise = currentPO
-            ? api.put(`/purchase-orders/${currentPO.po_id}`, poData)
-            : api.post('/purchase-orders', poData);
-
-        toast.promise(promise, {
-            loading: currentPO ? 'Updating Purchase Order...' : 'Creating Purchase Order...',
-            success: () => {
-                setIsModalOpen(false);
-                setCurrentPO(null);
-                fetchPOs();
-                return `Purchase Order ${currentPO ? 'updated' : 'created'} successfully!`;
-            },
-            error: (err) => err.response?.data?.message || `Failed to ${currentPO ? 'update' : 'create'} PO.`
-        });
-        
-        return promise;
-    };
+    const exitEditor = useCallback(() => {
+        setIsEditing(false);
+        setEditingPO(null);
+        fetchPOs();
+    }, [fetchPOs]);
 
     const handleDelete = (poId) => {
         toast((t) => (
@@ -160,13 +148,13 @@ const PurchaseOrderPage = () => {
     };
 
     const handleAddNew = () => {
-        setCurrentPO(null);
-        setIsModalOpen(true);
+        setEditingPO(null);
+        setIsEditing(true);
     };
 
     const handleEdit = (po) => {
-        setCurrentPO(po);
-        setIsModalOpen(true);
+        setEditingPO(po);
+        setIsEditing(true);
     };
 
     const toggleRowExpansion = (poId) => {
@@ -193,8 +181,18 @@ const PurchaseOrderPage = () => {
         );
     }
 
+    if (isEditing) {
+        return (
+            <PurchaseOrderEditorPage
+                user={user}
+                existingPO={editingPO}
+                onDone={exitEditor}
+            />
+        );
+    }
+
     return (
-        <div>
+        <div key="po-list">
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-semibold text-gray-800">Purchase Orders</h1>
                 {hasPermission('purchase_orders:edit') && (
@@ -229,7 +227,7 @@ const PurchaseOrderPage = () => {
                             </thead>
                             <tbody>
                                 {purchaseOrders.map(po => (
-                                    <React.Fragment key={po.po_id}>
+                                        <React.Fragment key={po.po_id}>
                                         <tr className="border-b hover:bg-gray-50">
                                             <td className="p-3 text-sm font-mono">{po.po_number}</td>
                                             <td className="p-3 text-sm">{po.supplier_name}</td>
@@ -290,9 +288,6 @@ const PurchaseOrderPage = () => {
                 )}
             </div>
 
-            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={currentPO ? 'Edit Purchase Order' : 'New Purchase Order'} maxWidth="max-w-4xl">
-                <PurchaseOrderForm user={user} onSave={handleSave} onCancel={() => setIsModalOpen(false)} existingPO={currentPO} />
-            </Modal>
         </div>
     );
 };
