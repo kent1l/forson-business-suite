@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import api from '../../api'; // <-- CORRECTED PATH
 import toast from 'react-hot-toast';
 import Icon from '../ui/Icon';
@@ -24,6 +24,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
     const [isNewPartOpen, setIsNewPartOpen] = useState(false);
     const [brands, setBrands] = useState([]);
     const [groups, setGroups] = useState([]);
+    const searchBarRef = useRef(null);
     // Draft via reusable hook
     const poDraftData = useMemo(() => formData, [formData]);
     const poIsEmpty = useMemo(() => (d) => (!d?.selectedSupplier && (!d?.lines || d.lines.length === 0)), []);
@@ -106,6 +107,10 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
             const res = await api.get('/power-search/parts', { params: { keyword: searchTerm } });
             const enriched = await enrichPartsArray(res.data || []);
             setSearchResults(enriched);
+            // Auto-scroll to search bar on mobile/touch devices
+            if (enriched.length > 0 && searchBarRef.current) {
+                searchBarRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
         };
         const timer = setTimeout(fetchParts, 300);
         return () => clearTimeout(timer);
@@ -248,7 +253,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                     />
                 </div>
             </div>
-            <div className="relative">
+            <div className="relative" ref={searchBarRef}>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Add Part</label>
                 <div className="flex items-center space-x-2">
                     <div className="flex-grow">
