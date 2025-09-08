@@ -9,6 +9,7 @@ services:
     environment:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: forson_business_suite
+      TZ: Asia/Manila
     volumes:
       - postgres_data:/var/lib/postgresql/data 
     ports:
