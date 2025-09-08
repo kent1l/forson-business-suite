@@ -108,6 +108,7 @@ const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave,
                                         </div>
                                         <span className="font-semibold text-sm">Void Transaction</span>
                                         <span className="text-[11px] text-slate-500">Clear cart</span>
+                                        <span className="mt-1 text-[9px] font-mono uppercase tracking-wide text-slate-400">F9</span>
                                     </div>
                                     <div className="h-8 w-full flex items-stretch">
                                         <div className="flex-1 border-t border-transparent rounded-b-lg flex items-center justify-center text-[11px] text-red-600 font-medium">&nbsp;</div>
@@ -639,7 +640,7 @@ const POSPage = ({ user, lines, setLines }) => {
                                 value={searchTerm}
                                 onChange={setSearchTerm}
                                 onClear={() => { setSearchTerm(''); setSearchResults([]); reset(); }}
-                                placeholder="Scan barcode or search for a part..."
+                                placeholder="Scan or search (Ctrl+F)..."
                                 disabled={false}
                                 className=""
                                 ref={searchInputRef}
@@ -686,7 +687,7 @@ const POSPage = ({ user, lines, setLines }) => {
                         <div className="flex items-center space-x-3">
                             <div className="font-semibold whitespace-nowrap">Physical Receipt No:</div>
                             <div className="flex-1 p-2 bg-gray-50 rounded-lg">
-                                <input ref={physicalReceiptRef} value={physicalReceiptInput} onChange={(e) => setPhysicalReceiptInput(e.target.value)} onBlur={() => setPhysicalReceiptInput(normalizePhysicalReceipt(physicalReceiptInput))} placeholder="Enter receipt no" className="w-full px-3 py-2 border rounded-md text-sm" />
+                                <input ref={physicalReceiptRef} value={physicalReceiptInput} onChange={(e) => setPhysicalReceiptInput(e.target.value)} onBlur={() => setPhysicalReceiptInput(normalizePhysicalReceipt(physicalReceiptInput))} placeholder="Enter receipt no (Ctrl+P)" className="w-full px-3 py-2 border rounded-md text-sm" />
                             </div>
                         </div>
                     </div>
@@ -711,7 +712,7 @@ const POSPage = ({ user, lines, setLines }) => {
                         <div className="flex justify-between text-sm"><span>Subtotal</span><span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{subtotal.toFixed(2)}</span></div>
                         <div className="flex justify-between text-sm"><span>Tax</span><span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{tax.toFixed(2)}</span></div>
                         <div className="flex justify-between font-bold text-lg"><span>Total</span><span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{total.toFixed(2)}</span></div>
-                        <button onClick={handleCheckout} className="w-full mt-4 bg-green-600 text-white py-3 rounded-lg font-semibold text-lg hover:bg-green-700 transition">Checkout</button>
+                        <button onClick={handleCheckout} className="w-full mt-4 bg-green-600 text-white py-3 rounded-lg font-semibold text-lg hover:bg-green-700 transition">Checkout (Ctrl+Enter)</button>
                     </div>
                 </div>
             </div>
