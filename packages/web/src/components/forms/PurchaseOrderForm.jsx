@@ -10,7 +10,6 @@ import PartForm from './PartForm';
 import useDraft from '../../hooks/useDraft';
 import { formatApplicationText } from '../../helpers/applicationTextHelper';
 import { enrichPartsArray } from '../../helpers/applicationCache';
-import QuantityInput from '../ui/QuantityInput';
 
 const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
     const [suppliers, setSuppliers] = useState([]);
@@ -131,17 +130,10 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
     };
 
     const handleLineChange = (partId, field, value) => {
-        const newLines = formData.lines.map(line => {
-            if (line.part_id === partId) {
-                const numericValue = parseFloat(value);
-                // Ensure quantity is at least 1
-                if (field === 'quantity' && numericValue < 1) {
-                    return { ...line, [field]: 1 };
-                }
-                return { ...line, [field]: isNaN(numericValue) ? '' : numericValue };
-            }
-            return line;
-        });
+        const numericValue = parseFloat(value) || 0;
+        const newLines = formData.lines.map(line =>
+            line.part_id === partId ? { ...line, [field]: numericValue } : line
+        );
         setFormData(prev => ({ ...prev, lines: newLines }));
     };
 
@@ -285,57 +277,37 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                 )}
             </div>
 
-            {/* PO Lines - Responsive Table/Card View */}
-            <div className="space-y-2 md:border md:rounded-lg md:max-h-72 md:overflow-y-auto">
-                {/* Header for desktop */}
-                <div className="hidden md:grid md:grid-cols-[1fr_auto_auto] md:gap-x-4 md:p-2 md:border-b bg-gray-50 rounded-t-lg sticky top-0">
-                    <div className="font-semibold text-sm text-gray-600">Part</div>
-                    <div className="font-semibold text-sm text-gray-600 text-center">Quantity</div>
-                    <div className="font-semibold text-sm text-gray-600"></div>
-                </div>
-
-                {formData.lines.length === 0 && (
-                    <div className="text-center text-gray-500 py-8">No parts added yet.</div>
-                )}
-
-                {/* Lines */}
-                {formData.lines.map(line => (
-                    <div key={line.part_id} className="p-3 border rounded-lg md:border-none md:p-0 md:rounded-none md:grid md:grid-cols-[1fr_auto_auto] md:gap-x-4 md:items-center md:px-2 md:py-3 hover:bg-gray-50">
-                        {/* Part Name */}
-                        <div className="font-medium text-gray-800 mb-2 md:mb-0">{line.display_name}</div>
-
-                        {/* Quantity */}
-                        <div className="flex justify-between items-center mb-3 md:mb-0 md:block">
-                            <label className="md:hidden text-sm text-gray-600">Quantity:</label>
-                            <QuantityInput
-                                value={line.quantity}
-                                onChange={value => handleLineChange(line.part_id, 'quantity', value)}
-                            />
-                        </div>
-
-                        {/* Remove Button */}
-                        <div className="flex justify-end md:justify-center">
-                            <button type="button" onClick={() => removeLine(line.part_id)} className="text-red-500 hover:text-red-700 p-2 rounded-md hover:bg-red-100">
-                                <Icon path={ICONS.trash} className="h-5 w-5" />
-                            </button>
-                        </div>
-                    </div>
-                ))}
+            {/* New Part modal is rendered outside the form to avoid nested forms */}
+            <div className="max-h-64 overflow-y-auto border rounded-lg">
+                <table className="w-full text-left text-sm">
+                    <tbody>
+                        {formData.lines.map(line => (
+                            <tr key={line.part_id} className="border-b">
+                                <td className="p-2">{line.display_name}</td>
+                                <td className="p-2 w-20">
+                                    <input
+                                        type="number"
+                                        value={line.quantity}
+                                        onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)}
+                                        onFocus={e => e.target.select()}
+                                        onMouseUp={e => e.preventDefault()}
+                                        className="w-full p-1 border rounded-md text-center"
+                                    />
+                                </td>
+                                <td className="p-2 w-12 text-center"><button type="button" onClick={() => removeLine(line.part_id)} className="text-red-500 hover:text-red-700"><Icon path={ICONS.trash} className="h-4 w-4" /></button></td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
             </div>
-
-            {/* Total */}
-            <div className="text-right font-bold text-lg pr-2">Total: ₱{total.toFixed(2)}</div>
-
-            {/* Notes */}
+            <div className="text-right font-bold">Total: ₱{total.toFixed(2)}</div>
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
                 <textarea name="notes" value={formData.notes} onChange={handleFormChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows="2"></textarea>
             </div>
-
-            {/* Action Buttons - Sticky Footer on Mobile */}
-            <div className="mt-6 flex justify-end space-x-4 md:static fixed bottom-0 left-0 right-0 bg-white p-4 border-t md:border-t-0 md:p-0 md:bg-transparent">
-                <button type="button" onClick={clearDraftAndCancel} className="flex-1 md:flex-none px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
-                <button type="submit" className="flex-1 md:flex-none px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">{existingPO ? 'Update Purchase Order' : 'Create Purchase Order'}</button>
+            <div className="mt-6 flex justify-end space-x-4">
+                <button type="button" onClick={clearDraftAndCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">{existingPO ? 'Update Purchase Order' : 'Create Purchase Order'}</button>
             </div>
         </form>
 

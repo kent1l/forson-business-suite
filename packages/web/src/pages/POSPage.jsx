@@ -361,11 +361,11 @@ const POSPage = ({ user, lines, setLines }) => {
         };
     }, [lines, taxRates]);
 
-    const handleCheckout = () => {
+    const handleCheckout = useCallback(() => {
         if (lines.length === 0) return toast.error("Please add items to the cart.");
         if (!selectedCustomer) return toast.error("Please select a customer.");
         setIsPaymentModalOpen(true);
-    };
+    }, [lines.length, selectedCustomer]);
 
     const handleConfirmPayment = (paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo) => {
         // Check if physical receipt number is empty
@@ -552,6 +552,21 @@ const POSPage = ({ user, lines, setLines }) => {
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
     }, [handleSaveSale, canSave]);
+
+    // Keyboard shortcut (Ctrl+Enter / Cmd+Enter) to checkout
+    useEffect(() => {
+        const onKey = (e) => {
+            const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+            if ((isMac ? e.metaKey : e.ctrlKey) && e.key === 'Enter') {
+                e.preventDefault();
+                if (lines.length > 0 && selectedCustomer) {
+                    handleCheckout();
+                }
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [lines, selectedCustomer, handleCheckout]);
 
     const handleRestoreSaved = (id) => {
         const entry = getSaved(id);
