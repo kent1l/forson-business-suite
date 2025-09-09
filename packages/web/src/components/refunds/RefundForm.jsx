@@ -89,8 +89,8 @@ const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
                             disabled={(line.quantity - line.quantity_refunded) <= 0}
                         />
                         <div className="flex-grow">
-                            <p className="text-sm font-medium">{line.display_name}</p>
-                            <p className="text-xs text-gray-500">Sold: {line.quantity}, Refunded: {line.quantity_refunded}, Available: {line.quantity - line.quantity_refunded}</p>
+                            <p className={`text-sm font-medium ${ (line.quantity - line.quantity_refunded) <= 0 ? 'text-red-600' : '' }`}>{line.display_name}</p>
+                            <p className={`text-xs text-gray-500 ${ (line.quantity - line.quantity_refunded) <= 0 ? 'text-red-600' : '' }`}>Sold: {line.quantity}, Refunded: {line.quantity_refunded}, Available: {line.quantity - line.quantity_refunded}</p>
                         </div>
                         {refundLines[line.invoice_line_id] && (
                             <input
