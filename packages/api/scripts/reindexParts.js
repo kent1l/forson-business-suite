@@ -1,3 +1,12 @@
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
+
+// Override for local development
+if (process.env.NODE_ENV !== 'production') {
+  process.env.DB_HOST = 'localhost';
+  process.env.MEILISEARCH_HOST = 'http://localhost:7700';
+}
+
 const db = require('../db');
 const { syncPartWithMeili } = require('../meilisearch');
 
