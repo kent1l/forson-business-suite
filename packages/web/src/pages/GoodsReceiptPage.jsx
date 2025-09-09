@@ -250,7 +250,13 @@ const GoodsReceiptPage = ({ user }) => {
                         {(draftStatus === 'saved' || draftStatus === 'saving' || draft) && (
                             <button
                                 type="button"
-                                onClick={async () => { await clearDraft(); toast.success('Draft cleared'); }}
+                                onClick={async () => { 
+                                    await clearDraft(); 
+                                    setSelectedSupplier(''); 
+                                    setLines([]); 
+                                    setSelectedPO(''); 
+                                    toast.success('Draft cleared'); 
+                                }}
                                 className="text-sm text-gray-600 hover:text-gray-800 ml-3"
                             >
                                 Clear Draft
