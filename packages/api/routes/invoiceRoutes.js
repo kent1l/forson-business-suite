@@ -16,7 +16,7 @@ router.get('/invoices', protect, hasPermission('invoicing:create'), async (req, 
     try {
         const params = [startDate, endDate];
         const whereClauses = [
-            'i.invoice_date::date BETWEEN $1 AND $2'
+            '(i.invoice_date AT TIME ZONE \'Asia/Manila\')::date BETWEEN $1 AND $2'
         ];
 
         // Optional q filter: match invoice number, physical receipt no, customer name, or line item display fields

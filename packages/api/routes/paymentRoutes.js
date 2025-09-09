@@ -86,7 +86,7 @@ router.get('/payments', protect, hasPermission('ar:view'), async (req, res) => {
         const query = `
             SELECT payment_id, customer_id, employee_id, payment_date, amount, tendered_amount, payment_method, reference_number
             FROM customer_payment
-            WHERE payment_date::date BETWEEN $1 AND $2
+            WHERE (payment_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
             ORDER BY payment_date ASC;`;
         const { rows } = await db.query(query, [startDate, endDate]);
         res.json(rows);
@@ -105,7 +105,7 @@ router.get('/payments/refunds-approx', protect, hasPermission('ar:view'), async 
     try {
         const q = `SELECT COALESCE(SUM(total_amount),0) AS total_refunds
                    FROM credit_note
-                   WHERE refund_date::date BETWEEN $1 AND $2;`;
+                   WHERE (refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2;`;
         const { rows } = await db.query(q, [startDate, endDate]);
         res.json({ total_refunds: rows[0].total_refunds });
     } catch (err) {
