@@ -159,9 +159,8 @@ const GoodsReceiptPage = ({ user }) => {
             success: (response) => {
                 const newPart = response.data;
                 setIsNewPartModalOpen(false);
-                setCurrentPart(newPart);
-                setIsAppModalOpen(true);
-                return 'Part created! Please link applications.';
+                addPartToLines(newPart);
+                return 'Part created successfully!';
             },
             error: 'Failed to save part.'
         });
@@ -169,10 +168,7 @@ const GoodsReceiptPage = ({ user }) => {
 
     const handleAppManagerClose = () => {
         setIsAppModalOpen(false);
-        if (currentPart) {
-            addPartToLines(currentPart);
-            setCurrentPart(null);
-        }
+        setCurrentPart(null);
     };
 
     const addPartToLines = (part) => {
@@ -338,11 +334,56 @@ const GoodsReceiptPage = ({ user }) => {
                         <tbody>
                             {lines.map(line => (
                                 <tr key={line.part_id} className="border-b">
-                                    <td className="p-2 text-sm font-medium text-gray-800">{line.display_name}</td>
-                                    <td className="p-2"><input type="number" value={line.quantity} onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)} onFocus={e => e.target.select()} className="w-full p-1 border rounded-md" /></td>
-                                        <td className="p-2"><input type="number" step="0.01" value={line.cost_price} onChange={e => handleLineChange(line.part_id, 'cost_price', e.target.value)} onFocus={e => e.target.select()} className="w-full p-1 border rounded-md" /></td>
-                                        <td className="p-2"><input type="number" step="0.01" value={line.sale_price} onChange={e => handleLineChange(line.part_id, 'sale_price', e.target.value)} onFocus={e => e.target.select()} className="w-full p-1 border rounded-md" /></td>
-                                        <td className="p-2 text-center"><button onClick={() => removeLine(line.part_id)} className="text-red-500 hover:text-red-700"><Icon path={ICONS.trash} className="h-5 w-5"/></button></td>
+                                    <td className="p-2 align-middle">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <div className="min-w-0 flex-1 truncate text-sm font-medium text-gray-800">{line.display_name}</div>
+                                            <button
+                                                onClick={() => { setCurrentPart(line); setIsAppModalOpen(true); }}
+                                                className="inline-flex items-center justify-center h-8 w-8 text-green-600 hover:text-green-800 rounded hover:bg-green-50"
+                                                title="Manage Applications"
+                                            >
+                                                <Icon path={ICONS.link} className="h-4 w-4"/>
+                                            </button>
+                                        </div>
+                                    </td>
+                                    <td className="p-2 align-middle text-center">
+                                        <input
+                                            type="number"
+                                            value={line.quantity}
+                                            onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)}
+                                            onFocus={e => e.target.select()}
+                                            className="w-full h-9 px-2 border rounded-md text-sm"
+                                        />
+                                    </td>
+                                    <td className="p-2 align-middle text-center">
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            value={line.cost_price}
+                                            onChange={e => handleLineChange(line.part_id, 'cost_price', e.target.value)}
+                                            onFocus={e => e.target.select()}
+                                            className="w-full h-9 px-2 border rounded-md text-sm"
+                                        />
+                                    </td>
+                                    <td className="p-2 align-middle text-center">
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            value={line.sale_price}
+                                            onChange={e => handleLineChange(line.part_id, 'sale_price', e.target.value)}
+                                            onFocus={e => e.target.select()}
+                                            className="w-full h-9 px-2 border rounded-md text-sm"
+                                        />
+                                    </td>
+                                    <td className="p-2 align-middle text-center">
+                                        <button
+                                            onClick={() => removeLine(line.part_id)}
+                                            className="inline-flex items-center justify-center h-8 w-8 text-red-500 hover:text-red-700 rounded hover:bg-red-50"
+                                            title="Remove"
+                                        >
+                                            <Icon path={ICONS.trash} className="h-4 w-4"/>
+                                        </button>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
