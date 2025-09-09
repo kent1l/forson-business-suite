@@ -24,17 +24,17 @@ router.get('/reports/sales-summary', async (req, res) => {
             JOIN part p ON il.part_id = p.part_id
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
-            WHERE i.invoice_date::date BETWEEN $1 AND $2
+            WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
             ORDER BY i.invoice_date;
         `;
         
         const summaryQuery = `
             SELECT
-                (SELECT COALESCE(SUM(total_amount), 0) FROM invoice WHERE invoice_date::date BETWEEN $1 AND $2) AS gross_sales,
-                (SELECT COALESCE(SUM(total_amount), 0) FROM credit_note WHERE refund_date::date BETWEEN $1 AND $2) AS total_refunds,
-                (SELECT COALESCE(SUM(il.quantity * il.cost_at_sale), 0) FROM invoice_line il JOIN invoice i ON il.invoice_id = i.invoice_id WHERE i.invoice_date::date BETWEEN $1 AND $2) AS total_cost_of_goods_sold,
-                (SELECT COALESCE(SUM(cnl.quantity * p.wac_cost), 0) FROM credit_note_line cnl JOIN part p ON cnl.part_id = p.part_id JOIN credit_note cn ON cnl.cn_id = cn.cn_id WHERE cn.refund_date::date BETWEEN $1 AND $2) AS total_cost_of_goods_returned,
-                (SELECT COUNT(*) FROM invoice WHERE invoice_date::date BETWEEN $1 AND $2) AS total_invoices
+                (SELECT COALESCE(SUM(total_amount), 0) FROM invoice WHERE (invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2) AS gross_sales,
+                (SELECT COALESCE(SUM(total_amount), 0) FROM credit_note WHERE (refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2) AS total_refunds,
+                (SELECT COALESCE(SUM(il.quantity * il.cost_at_sale), 0) FROM invoice_line il JOIN invoice i ON il.invoice_id = i.invoice_id WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2) AS total_cost_of_goods_sold,
+                (SELECT COALESCE(SUM(cnl.quantity * p.wac_cost), 0) FROM credit_note_line cnl JOIN part p ON cnl.part_id = p.part_id JOIN credit_note cn ON cnl.cn_id = cn.cn_id WHERE (cn.refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2) AS total_cost_of_goods_returned,
+                (SELECT COUNT(*) FROM invoice WHERE (invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2) AS total_invoices
         `;
 
         const [detailsRes, summaryRes] = await Promise.all([
@@ -89,7 +89,7 @@ router.get('/reports/top-selling', async (req, res) => {
             JOIN invoice i ON il.invoice_id = i.invoice_id
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
-            WHERE i.invoice_date::date BETWEEN $1 AND $2
+            WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
             GROUP BY p.part_id, b.brand_name, g.group_name
             ORDER BY ${orderByClause}
             LIMIT 100;
@@ -215,7 +215,7 @@ router.get('/reports/sales-by-customer', async (req, res) => {
     const { startDate, endDate, customerId, format = 'json' } = req.query;
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
 
-    let whereClauses = ["i.invoice_date::date BETWEEN $1 AND $2"];
+    let whereClauses = ["(i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2"];
     let queryParams = [startDate, endDate];
 
     if (customerId) {
@@ -257,7 +257,7 @@ router.get('/reports/inventory-movement', async (req, res) => {
     const { startDate, endDate, partId, format = 'json' } = req.query;
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
 
-    let whereClauses = ["it.transaction_date::date BETWEEN $1 AND $2"];
+    let whereClauses = ["(it.transaction_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2"];
     let queryParams = [startDate, endDate];
 
     if (partId) {
@@ -307,7 +307,7 @@ router.get('/reports/profitability-by-product', async (req, res) => {
     const { startDate, endDate, brandId, groupId, format = 'json' } = req.query;
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
     
-    let whereClauses = ["i.invoice_date::date BETWEEN $1 AND $2"];
+    let whereClauses = ["(i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2"];
     let queryParams = [startDate, endDate];
 
     if (brandId) {
@@ -374,7 +374,7 @@ router.get('/reports/refunds', async (req, res) => {
             FROM credit_note cn
             JOIN invoice i ON cn.invoice_id = i.invoice_id
             JOIN customer c ON i.customer_id = c.customer_id
-            WHERE cn.refund_date::date BETWEEN $1 AND $2
+            WHERE (cn.refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
             ORDER BY cn.refund_date DESC;
         `;
         const { rows } = await db.query(query, [startDate, endDate]);
