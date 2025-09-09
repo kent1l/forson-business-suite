@@ -29,12 +29,14 @@ RUN apk update && \
     font-noto \
     font-noto-cjk \
     nodejs \
+    tzdata \
     && \
     apk upgrade --no-cache
 
 # Set environment variable for Puppeteer to use system Chromium
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
+    TZ=Asia/Manila
 
 # Create non-root user
 RUN addgroup -S appgroup && \

@@ -13,6 +13,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: forson_business_suite
       POSTGRES_USER: ${DB_USER}
+      TZ: Asia/Manila
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:

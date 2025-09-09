@@ -13,6 +13,9 @@ RUN npm ci
 # Copy source code
 COPY . .
 
+# Ensure date-fns and date-fns-tz are installed
+RUN npm install date-fns@^4.1.0 date-fns-tz@^3.2.0
+
 # Build the application
 RUN npm run build
 
