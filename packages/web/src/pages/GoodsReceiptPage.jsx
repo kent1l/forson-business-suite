@@ -342,7 +342,7 @@ const GoodsReceiptPage = ({ user }) => {
                                                 className="inline-flex items-center justify-center h-8 w-8 text-green-600 hover:text-green-800 rounded hover:bg-green-50"
                                                 title="Manage Applications"
                                             >
-                                                <Icon path={ICONS.link} className="h-4 w-4"/>
+                                                <Icon path={ICONS.link} className="h-5 w-5"/>
                                             </button>
                                         </div>
                                     </td>
@@ -381,7 +381,7 @@ const GoodsReceiptPage = ({ user }) => {
                                             className="inline-flex items-center justify-center h-8 w-8 text-red-500 hover:text-red-700 rounded hover:bg-red-50"
                                             title="Remove"
                                         >
-                                            <Icon path={ICONS.trash} className="h-4 w-4"/>
+                                            <Icon path={ICONS.trash} className="h-5 w-5"/>
                                         </button>
                                     </td>
                                 </tr>
