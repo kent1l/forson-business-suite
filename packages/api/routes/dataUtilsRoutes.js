@@ -6,6 +6,8 @@ const db = require('../db');
 const { protect, isAdmin } = require('../middleware/authMiddleware');
 const { generateUniqueCode } = require('../helpers/codeGenerator');
 const { syncPartWithMeili } = require('../meilisearch');
+const { setupMeiliSearch } = require('../meilisearch-setup');
+const { getPartDataForMeili } = require('./partRoutes');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
 const router = express.Router();
 
@@ -246,3 +248,76 @@ router.get('/sync-parts-to-meili', protect, isAdmin, async (req, res) => {
 });
 
 module.exports = router;
+
+// --- NEW: Repair search index (apply settings + full reindex) ---
+// POST /api/data/repair-search-index?mode=dry|full
+// Modes:
+// - dry: Check connectivity, count parts, verify permissions (no changes).
+// - full: Apply Meili settings and fully reindex parts.
+router.post('/repair-search-index', protect, isAdmin, async (req, res) => {
+    const { mode = 'full' } = req.query;
+    if (!['dry', 'full'].includes(mode)) {
+        return res.status(400).json({ message: 'Invalid mode. Use mode=dry or mode=full.' });
+    }
+
+    try {
+        console.log(`[RepairSearch] Starting mode=${mode}...`);
+
+        // Always check part count
+        const idsRes = await db.query('SELECT COUNT(*) as count FROM part');
+        const partCount = parseInt(idsRes.rows[0].count, 10);
+        console.log(`[RepairSearch] Found ${partCount} parts.`);
+
+        if (mode === 'dry') {
+            // Dry-run: just return info without changes
+            return res.status(200).json({
+                message: `Dry-run complete. Found ${partCount} parts. No changes made.`,
+                partCount,
+                mode: 'dry'
+            });
+        }
+
+        // Full mode: apply settings and reindex
+        console.log('[RepairSearch] Applying Meilisearch settings...');
+        await setupMeiliSearch();
+
+        console.log('[RepairSearch] Fetching all part IDs for reindex...');
+        const idsQueryRes = await db.query('SELECT part_id FROM part ORDER BY part_id ASC');
+        const ids = idsQueryRes.rows.map(r => r.part_id);
+        if (ids.length === 0) {
+            return res.status(200).json({ message: 'No parts found. Meilisearch settings applied.' });
+        }
+
+        let success = 0; let skipped = 0; let failed = 0;
+        const batchSize = 500;
+        let batch = [];
+
+        console.log(`[RepairSearch] Reindexing ${ids.length} parts in batches of ${batchSize}...`);
+        for (const id of ids) {
+            try {
+                const doc = await getPartDataForMeili(db, id);
+                if (doc) { batch.push(doc); success++; } else { skipped++; }
+            } catch (e) {
+                failed++;
+                console.error(`[RepairSearch] Failed to build document for part ${id}:`, e && e.message ? e.message : e);
+            }
+
+            if (batch.length >= batchSize) {
+                await syncPartWithMeili(batch);
+                batch = [];
+            }
+        }
+        if (batch.length > 0) {
+            await syncPartWithMeili(batch);
+        }
+
+        console.log(`[RepairSearch] Reindex complete. success=${success} skipped=${skipped} failed=${failed}`);
+        return res.status(200).json({
+            message: `Search index repaired. Reindexed ${success} parts. Skipped ${skipped}. Failed ${failed}.`,
+            reindexed: success, skipped, failed, partCount, mode: 'full'
+        });
+    } catch (error) {
+        console.error('[RepairSearch] Fatal error:', error);
+        return res.status(500).json({ message: 'Failed to repair search index.', error: error && error.message ? error.message : String(error) });
+    }
+});

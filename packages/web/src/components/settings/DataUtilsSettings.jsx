@@ -1,10 +1,10 @@
-import React, { useState, useRef } from 'react';
+/* eslint-disable no-unused-vars */
+import { useState, useRef } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
-import Icon from '../ui/Icon';
-import { ICONS } from '../../constants';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
+import Modal from '../ui/Modal';
 
 const ExportCard = ({ entity, title, fields }) => {
     const handleExport = async () => {
@@ -118,22 +118,30 @@ const ImportCard = ({ entity, title }) => {
 
 const DataUtilsSettings = () => {
     const [isSyncing, setIsSyncing] = useState(false);
+    const [showConfirmModal, setShowConfirmModal] = useState(false);
+    const [selectedMode, setSelectedMode] = useState('full');
 
     const handleSync = () => {
         setIsSyncing(true);
-        const promise = api.get('/data/sync-parts-to-meili');
+        const promise = api.post(`/data/repair-search-index?mode=${selectedMode}`);
 
         toast.promise(promise, {
-            loading: 'Syncing all parts to search index...',
+            loading: selectedMode === 'dry' ? 'Running dry-run check...' : 'Repairing search index (apply settings + sync parts)...',
             success: (res) => {
                 setIsSyncing(false);
-                return res.data.message || 'Sync completed successfully!';
+                setShowConfirmModal(false);
+                return res.data.message || 'Operation completed successfully!';
             },
             error: (err) => {
                 setIsSyncing(false);
-                return err.response?.data?.message || 'Failed to sync parts.';
+                setShowConfirmModal(false);
+                return err.response?.data?.message || 'Failed to repair search index.';
             }
         });
+    };
+
+    const handleConfirm = () => {
+        handleSync();
     };
 
     return (
@@ -163,16 +171,60 @@ const DataUtilsSettings = () => {
             <div>
                 <h3 className="text-lg font-medium text-gray-900">Search Index</h3>
                 <div className="p-4 border rounded-lg mt-4">
-                    <p className="text-sm text-gray-600 mb-3">If search results seem out of date, you can manually force a re-sync of all part data with the search index.</p>
+                    <p className="text-sm text-gray-600 mb-3">Fix search issues by applying index settings and re-syncing all parts to Meilisearch.</p>
                     <button
-                        onClick={handleSync}
+                        onClick={() => setShowConfirmModal(true)}
                         disabled={isSyncing}
                         className="bg-purple-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-700 transition disabled:bg-purple-300"
                     >
-                        {isSyncing ? 'Syncing...' : 'Sync Parts to MeiliSearch'}
+                        {isSyncing ? 'Processing...' : 'Repair Search Index'}
                     </button>
                 </div>
             </div>
+
+            <Modal isOpen={showConfirmModal} onClose={() => setShowConfirmModal(false)} title="Confirm Search Index Repair">
+                <div className="space-y-4">
+                    <p className="text-sm text-gray-600">
+                        This will repair the search index by applying settings and re-syncing parts. Choose the mode:
+                    </p>
+                    <div className="space-y-2">
+                        <label className="flex items-center">
+                            <input
+                                type="radio"
+                                value="dry"
+                                checked={selectedMode === 'dry'}
+                                onChange={(e) => setSelectedMode(e.target.value)}
+                                className="mr-2"
+                            />
+                            <span className="text-sm">Dry-run: Check connectivity and count parts (no changes)</span>
+                        </label>
+                        <label className="flex items-center">
+                            <input
+                                type="radio"
+                                value="full"
+                                checked={selectedMode === 'full'}
+                                onChange={(e) => setSelectedMode(e.target.value)}
+                                className="mr-2"
+                            />
+                            <span className="text-sm">Full repair: Apply settings and reindex all parts</span>
+                        </label>
+                    </div>
+                    <div className="flex justify-end space-x-4 mt-6">
+                        <button
+                            onClick={() => setShowConfirmModal(false)}
+                            className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={handleConfirm}
+                            className="px-4 py-2 bg-purple-600 text-white rounded-lg"
+                        >
+                            {selectedMode === 'dry' ? 'Run Dry-run' : 'Start Repair'}
+                        </button>
+                    </div>
+                </div>
+            </Modal>
         </div>
     );
 };
