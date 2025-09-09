@@ -6,6 +6,11 @@ import RefundForm from './RefundForm';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useAuth } from '../../contexts/AuthContext';
 
+// Avoid linter warnings for unused imports in JSX
+void React;
+void Modal;
+void RefundForm;
+
 const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
     const { settings } = useSettings();
     const { user } = useAuth();
@@ -27,6 +32,12 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
     const handleRefundSuccess = () => {
         onClose(); // Close the modal
         onActionSuccess(); // Trigger a refresh on the parent page
+        // Notify other parts of the app that invoices changed
+        try {
+            window.dispatchEvent(new CustomEvent('invoices:changed'));
+        } catch {
+            // ignore if window not available
+        }
     };
 
     const handleDelete = async () => {
@@ -37,6 +48,12 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
             toast.success('Invoice deleted');
             onClose();
             onActionSuccess();
+            // Notify other parts of the app that invoices changed
+            try {
+                window.dispatchEvent(new CustomEvent('invoices:changed'));
+            } catch {
+                // ignore if window not available
+            }
         } catch (err) {
             toast.error(err?.response?.data?.message || 'Failed to delete invoice');
         }

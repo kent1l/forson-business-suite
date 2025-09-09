@@ -5,6 +5,12 @@ import { useSettings } from '../contexts/SettingsContext';
 import DateRangeShortcuts from '../components/ui/DateRangeShortcuts';
 import InvoiceDetailsModal from '../components/refunds/InvoiceDetailsModal';
 import SortableHeader from '../components/ui/SortableHeader';
+
+// Some static analyzers occasionally report unused JSX imports; reference them here harmlessly
+// to avoid false-positive lint errors.
+void DateRangeShortcuts;
+void InvoiceDetailsModal;
+void SortableHeader;
 import { format, parseISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
@@ -107,23 +113,27 @@ const SalesHistoryPage = () => {
             // net_amount provided by backend (already clamped) fallback compute if missing
             const net = currencySafeNumber(inv.net_amount !== undefined ? inv.net_amount : Math.max(total - refundedAmt, 0));
             const collected = Math.min(currencySafeNumber(inv.amount_paid), net); // cap collection at net
-            const balance = currencySafeNumber(inv.balance_due !== undefined ? inv.balance_due : Math.max(net - collected, 0));
+            // balance_due may be negative if overpaid; always clamp to >= 0
+            const balanceRaw = inv.balance_due !== undefined
+                ? currencySafeNumber(inv.balance_due)
+                : (net - collected);
+            const balance = Math.max(balanceRaw, 0);
 
-            grossSales += total;
-            refunds += refundedAmt;
-            netSales += net;
-            amountCollected += collected;
-            arOutstanding += balance;
-            if (net > 0) netActiveInvoices += 1;
+            grossSales += total; // Formula: Sum of total_amount for all active invoices
+            refunds += refundedAmt; // Formula: Sum of refunded_amount for all active invoices
+            netSales += net; // Formula: Sum of net_amount (total - refunds, clamped >=0) for all active invoices
+            amountCollected += collected; // Formula: Sum of min(amount_paid, net) to cap at net value
+            arOutstanding += balance; // Formula: Sum of max(balance_due, 0) to prevent negative A/R
+            if (net > 0) netActiveInvoices += 1; // Count invoices with positive net for averaging
 
             const customerName = `${inv.customer_first_name || ''} ${inv.customer_last_name || ''}`.trim() || 'Unknown';
-            customerNetMap[customerName] = (customerNetMap[customerName] || 0) + net;
+            customerNetMap[customerName] = (customerNetMap[customerName] || 0) + net; // Track net sales per customer
         }
 
-        const invoicesIssued = active.length;
-        const avgNetInvoice = netActiveInvoices > 0 ? netSales / netActiveInvoices : 0;
-        const collectionRate = netSales > 0 ? Math.min(amountCollected / netSales, 1) : 0;
-        const refundRate = grossSales > 0 ? Math.min(refunds / grossSales, 1) : 0;
+        const invoicesIssued = active.length; // Formula: Total count of active invoices
+        const avgNetInvoice = netActiveInvoices > 0 ? netSales / netActiveInvoices : 0; // Formula: Net Sales / Net Active Invoices (average net per invoice)
+        const collectionRate = netSales > 0 ? Math.min(amountCollected / netSales, 1) : 0; // Formula: Amount Collected / Net Sales (capped at 100%)
+        const refundRate = grossSales > 0 ? Math.min(refunds / grossSales, 1) : 0; // Formula: Refunds / Gross Sales (capped at 100%)
 
         // Determine top customer by net contribution
         let topCustomer = '-';
@@ -131,29 +141,44 @@ const SalesHistoryPage = () => {
         for (const [cust, val] of Object.entries(customerNetMap)) {
             if (val > topCustomerNet) { topCustomer = cust; topCustomerNet = val; }
         }
-        const topCustomerShare = netSales > 0 ? topCustomerNet / netSales : 0;
+        const topCustomerShare = netSales > 0 ? topCustomerNet / netSales : 0; // Formula: Top Customer Net / Net Sales
 
         // Phase 1: derive basic cash vs non-cash from payments (heuristic by payment_method)
-        const cashMethodNames = ['Cash']; // extend if more cash aliases exist
+        const cashMethodNames = ['cash']; // compare case-insensitively; extend if more cash aliases exist
+
+        // Treat deleted invoices as non-existent: skip payments that were created by an invoice that no longer exists.
+        // Heuristic:
+        // - Payments created during invoice posting use reference_number = invoice_number (e.g., INV000123)
+        // - If a payment's reference_number looks like an invoice number and is NOT present in current invoices,
+        //   we exclude it from cash/non-cash aggregates.
+        const currentInvoiceNumbers = new Set(active.map(inv => inv.invoice_number));
+
         let cashCollected = 0; let nonCashCollected = 0; let changeReturned = 0;
         for (const p of payments) {
+            const ref = (p.reference_number || '').toString().trim();
+            const looksLikeInvoiceNo = /^INV/i.test(ref);
+            if (looksLikeInvoiceNo && !currentInvoiceNumbers.has(ref)) {
+                // This is likely the initial payment for a deleted invoice — ignore it.
+                continue;
+            }
             const amt = currencySafeNumber(p.amount);
             const tendered = currencySafeNumber(p.tendered_amount);
-            const change = tendered > amt ? (tendered - amt) : 0;
-            if (cashMethodNames.includes(p.payment_method)) {
-                cashCollected += amt;
-                changeReturned += change;
+            const change = tendered > amt ? (tendered - amt) : 0; // Formula: Change = tendered - amount if tendered > amount
+            const method = (p.payment_method || '').toString().trim().toLowerCase();
+            if (cashMethodNames.includes(method)) {
+                cashCollected += amt; // Sum cash payments
+                changeReturned += change; // Sum change returned for cash
             } else {
-                nonCashCollected += amt;
+                nonCashCollected += amt; // Sum non-cash payments
             }
         }
-        const cashCollectedNet = Math.max(cashCollected - changeReturned, 0);
-        const totalCollectedForMix = cashCollected + nonCashCollected;
-        const cashMix = totalCollectedForMix > 0 ? cashCollected / totalCollectedForMix : 0;
+        const cashCollectedNet = Math.max(cashCollected - changeReturned, 0); // Formula: Cash Collected - Change Returned (clamped >=0)
+        const totalCollectedForMix = cashCollected + nonCashCollected; // Total collected for mix calculation
+        const cashMix = totalCollectedForMix > 0 ? cashCollected / totalCollectedForMix : 0; // Formula: Cash Collected / Total Collected
 
-    const approxNetCashAfterRefunds = Math.max(cashCollectedNet - refundsApprox, 0); // cannot go negative for display
+        const approxNetCashAfterRefunds = Math.max(cashCollectedNet - refundsApprox, 0); // Formula: Cash Net - Approximate Refunds (clamped >=0)
 
-    return {
+        return {
             grossSales,
             netSales,
             refunds,
@@ -169,8 +194,8 @@ const SalesHistoryPage = () => {
             refundRate,
             cashCollectedNet,
             nonCashCollected,
-        cashMix,
-        approxNetCashAfterRefunds
+            cashMix,
+            approxNetCashAfterRefunds
         };
     }, [invoices, payments, refundsApprox]);
 
@@ -238,35 +263,60 @@ const SalesHistoryPage = () => {
     }, [summaryCollapsed]);
 
 
-    const fetchInvoices = async () => {
-        setLoading(true);
-        try {
-            const response = await api.get('/invoices', { params: { ...dates, q: debouncedQuery || undefined } });
-            setInvoices(response.data);
-        } catch {
-            toast.error('Failed to fetch sales history.');
-        } finally {
-            setLoading(false);
-        }
-    };
+    const fetchInvoices = useMemo(() => {
+        return async () => {
+            setLoading(true);
+            try {
+                const response = await api.get('/invoices', { params: { ...dates, q: debouncedQuery || undefined } });
+                setInvoices(response.data);
+            } catch {
+                toast.error('Failed to fetch sales history.');
+            } finally {
+                setLoading(false);
+            }
+        };
+    }, [dates, debouncedQuery]);
 
-    const fetchPayments = async () => {
-        try {
-            const resp = await api.get('/payments', { params: { ...dates } });
-            setPayments(resp.data);
-        } catch {
-            // optional toast suppressed
-        }
-    };
+    const fetchPayments = useMemo(() => {
+        return async () => {
+            try {
+                const resp = await api.get('/payments', { params: { ...dates } });
+                setPayments(resp.data);
+            } catch {
+                // optional toast suppressed
+            }
+        };
+    }, [dates]);
 
-    const fetchRefundsApprox = async () => {
-        try {
-            const resp = await api.get('/payments/refunds-approx', { params: { ...dates } });
-            setRefundsApprox(parseFloat(resp.data.total_refunds) || 0);
-        } catch {
-            setRefundsApprox(0);
-        }
-    };
+    const fetchRefundsApprox = useMemo(() => {
+        return async () => {
+            try {
+                const resp = await api.get('/payments/refunds-approx', { params: { ...dates } });
+                setRefundsApprox(parseFloat(resp.data.total_refunds) || 0);
+            } catch {
+                setRefundsApprox(0);
+            }
+        };
+    }, [dates]);
+
+    // A convenience full refresh used after actions that affect multiple datasets
+    const fullRefresh = useMemo(() => {
+        return async () => {
+            // run the three refreshes in parallel where sensible
+            await Promise.allSettled([fetchInvoices(), fetchPayments(), fetchRefundsApprox()]);
+        };
+    }, [fetchInvoices, fetchPayments, fetchRefundsApprox]);
+
+    // Listen for external invoice changes so this page can react (e.g., deletions from other pages)
+    useEffect(() => {
+        const handler = () => {
+            // avoid double fetching if we're already mid-refresh
+            if (loading) return;
+            fullRefresh().catch(() => {});
+        };
+        window.addEventListener('invoices:changed', handler);
+        return () => window.removeEventListener('invoices:changed', handler);
+    }, [fullRefresh, loading]);
 
     useEffect(() => {
         fetchInvoices();
@@ -571,7 +621,7 @@ const SalesHistoryPage = () => {
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
                 invoice={selectedInvoice}
-                onActionSuccess={fetchInvoices}
+                onActionSuccess={fullRefresh}
             />
         </div>
     );
