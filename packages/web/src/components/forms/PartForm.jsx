@@ -59,7 +59,7 @@ const BrandGroupForm = ({ type, onSave, onCancel, initialName = '' }) => {
 
 const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, isBulkEdit = false, selectedCount: _selectedCount = 0 }) => {
     const { settings } = useSettings();
-    const [tags, setTags] = useState(part?.tags || []); // <-- State for tags
+    const [tags, setTags] = useState([]); // <-- State for tags
     const [selectedApps, setSelectedApps] = useState([]); // <-- State for linked applications
 
     // helper to display an application label
@@ -81,10 +81,6 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
     }, [part, isBulkEdit]);
 
     useEffect(() => { fetchSelectedApps(); }, [fetchSelectedApps]);
-
-    useEffect(() => {
-        setTags(part?.tags || []);
-    }, [part]);
 
     const addApplication = (app) => {
         if (!app || !app.application_id) return;
@@ -138,9 +134,6 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
 
     const [formData, setFormData] = useState(getInitialState());
 
-    useEffect(() => {
-        setFormData(getInitialState());
-    }, [getInitialState]);
     const [taxRates, setTaxRates] = useState([]);
     const [isBrandModalOpen, setIsBrandModalOpen] = useState(false);
     const [initialBrandName, setInitialBrandName] = useState('');
@@ -153,17 +146,35 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
 
     const initialFormData = useMemo(() => getInitialState(), [getInitialState]);
 
-    const initialTags = useMemo(() => part?.tags || [], [part]);
+    useEffect(() => {
+        setFormData(getInitialState());
+    }, [getInitialState]);
+
+    const initialTags = useMemo(() => {
+        let tags = [];
+        if (part?.tags) {
+            if (Array.isArray(part.tags)) {
+                tags = part.tags;
+            } else if (typeof part.tags === 'string') {
+                tags = part.tags.split(',').map(t => t.trim()).filter(t => t);
+            }
+        }
+        return tags;
+    }, [part]);
+
+    useEffect(() => {
+        setTags(initialTags);
+    }, [initialTags]);
 
     const isFormDirty = useMemo(() => {
         const keys = Object.keys(formData);
         for (let key of keys) {
             if (formData[key] !== initialFormData[key]) return true;
         }
-        if (JSON.stringify(tags) !== JSON.stringify([])) return true;
+        if (JSON.stringify(tags) !== JSON.stringify(initialTags)) return true;
         if (selectedApps.length > 0) return true;
         return false;
-    }, [formData, initialFormData, tags, selectedApps]);
+    }, [formData, initialFormData, tags, initialTags, selectedApps]);
 
     const isFormElement = (el) => {
         if (!el) return false;
