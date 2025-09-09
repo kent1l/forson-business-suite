@@ -1,30 +1,36 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import { useSettings } from '../../contexts/SettingsContext';
 import DateRangeShortcuts from '../ui/DateRangeShortcuts';
+import { format, parseISO } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
 
 const RefundsReport = () => {
     const { settings } = useSettings();
     const [reportData, setReportData] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [dates, setDates] = useState({
-        startDate: new Date().toISOString().split('T')[0],
-        endDate: new Date().toISOString().split('T')[0],
+    const [dates, setDates] = useState(() => {
+        const now = toZonedTime(new Date(), 'Asia/Manila');
+        const dateStr = format(now, 'yyyy-MM-dd');
+        return {
+            startDate: dateStr,
+            endDate: dateStr,
+        };
     });
 
-    const fetchReport = async () => {
+    const fetchReport = useCallback(async () => {
         setLoading(true);
         try {
             // Note: This endpoint will be created in the backend reportingRoutes.js
             const response = await api.get('/reports/refunds', { params: dates });
             setReportData(response.data);
-        } catch (err) {
+        } catch {
             toast.error('Failed to generate refunds report.');
         } finally {
             setLoading(false);
         }
-    };
+    }, [dates]);
 
     const handleDateChange = (e) => {
         setDates(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -33,7 +39,7 @@ const RefundsReport = () => {
     // Fetch report when dates change
     useEffect(() => {
         fetchReport();
-    }, [dates]);
+    }, [fetchReport]);
 
     return (
         <>
@@ -70,7 +76,7 @@ const RefundsReport = () => {
                                     <tr key={row.cn_id} className="border-b hover:bg-gray-50">
                                         <td className="p-3 text-sm font-mono">{row.cn_number}</td>
                                         <td className="p-3 text-sm font-mono">{row.invoice_number}</td>
-                                        <td className="p-3 text-sm">{new Date(row.refund_date).toLocaleDateString()}</td>
+                                        <td className="p-3 text-sm">{format(toZonedTime(parseISO(row.refund_date), 'Asia/Manila'), 'MM/dd/yyyy')}</td>
                                         <td className="p-3 text-sm">{row.customer_name}</td>
                                         <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.total_amount).toFixed(2)}</td>
                                     </tr>

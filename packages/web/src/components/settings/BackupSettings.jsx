@@ -3,6 +3,8 @@ import api from '../../api';
 import toast from 'react-hot-toast';
 import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
+import { format, parseISO } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
 
 const BackupSettings = ({ settings, handleChange, handleSave }) => {
     const [backups, setBackups] = useState([]);
@@ -144,7 +146,7 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
                                 backups.map((backup) => (
                                     <tr key={backup.filename}>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-800">{backup.filename}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(backup.createdAt).toLocaleString()}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{format(toZonedTime(parseISO(backup.createdAt), 'Asia/Manila'), 'MM/dd/yyyy hh:mm a')}</td>
                                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-4">
                                             <button onClick={() => handleRestore(backup.filename)} className="text-green-600 hover:text-green-900">Restore</button>
                                             <button onClick={() => handleDelete(backup.filename)} className="text-red-600 hover:text-red-900">Delete</button>

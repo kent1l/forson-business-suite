@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
+import { formatISO } from 'date-fns';
 
 // LocalStorage key prefix
 const KEY_PREFIX = 'pos:savedSales:';
@@ -51,7 +52,7 @@ export default function useSavedSales({ userId, max = MAX_SAVES_DEFAULT }) {
     const entry = {
       id,
       userId,
-      createdAt: new Date().toISOString(),
+      createdAt: formatISO(new Date()),
       label,
       cart: cartSnapshot
     };

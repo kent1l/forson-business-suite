@@ -7,6 +7,9 @@ const { setupMeiliSearch } = require('./meilisearch-setup');
 const { startMeiliListener } = require('./meili-listener');
 const { startMeiliApplicationsListener } = require('./meili-app-listener');
 
+// Set default timezone to Philippine Time
+process.env.TZ = 'Asia/Manila';
+
 const app = express();
 
 app.use(cors());

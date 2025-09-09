@@ -2,15 +2,21 @@ import React, { useState, useEffect } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import Combobox from '../ui/Combobox';
+import { format, parseISO } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
 
 const InventoryMovementReport = () => {
     const [reportData, setReportData] = useState([]);
     const [parts, setParts] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [filters, setFilters] = useState({
-        startDate: new Date().toISOString().split('T')[0],
-        endDate: new Date().toISOString().split('T')[0],
-        partId: ''
+    const [filters, setFilters] = useState(() => {
+        const now = toZonedTime(new Date(), 'Asia/Manila');
+        const dateStr = format(now, 'yyyy-MM-dd');
+        return {
+            startDate: dateStr,
+            endDate: dateStr,
+            partId: ''
+        };
     });
 
     useEffect(() => {
@@ -43,7 +49,7 @@ const InventoryMovementReport = () => {
             } else {
                 setReportData(response.data);
             }
-        } catch (err) {
+        } catch {
             toast.error('Failed to generate report.');
         } finally {
             if (format === 'json') setLoading(false);
@@ -94,7 +100,7 @@ const InventoryMovementReport = () => {
                             <tbody>
                                 {reportData.map((row, index) => (
                                     <tr key={index} className="border-b hover:bg-gray-50">
-                                        <td className="p-3 text-sm whitespace-nowrap">{new Date(row.transaction_date).toLocaleString()}</td>
+                                        <td className="p-3 text-sm whitespace-nowrap">{format(toZonedTime(parseISO(row.transaction_date), 'Asia/Manila'), 'MM/dd/yyyy hh:mm a')}</td>
                                         <td className="p-3 text-sm font-medium text-gray-800">{row.display_name}</td>
                                         <td className="p-3 text-sm">{row.trans_type}</td>
                                         <td className={`p-3 text-sm text-center font-semibold ${row.quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>{row.quantity > 0 ? `+${row.quantity}`: row.quantity}</td>

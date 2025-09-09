@@ -2,6 +2,16 @@
 
 name: forson-business-suite
 services:
+  db:
+    extends:
+      file: docker-compose.yml
+      service: db
+      
+  meilisearch:
+    extends:
+      file: docker-compose.yml
+      service: meilisearch
+
   backend:
     extends:
       file: docker-compose.yml
@@ -49,3 +59,5 @@ networks:
 
 volumes:
   backend_node_modules:
+  postgres_data:
+  meili_data:

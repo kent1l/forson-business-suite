@@ -1,4 +1,6 @@
 import React from 'react';
+import { format } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
 
 const Receipt = React.forwardRef(({ saleData, settings }, ref) => {
     if (!saleData) return null;
@@ -16,7 +18,7 @@ const Receipt = React.forwardRef(({ saleData, settings }, ref) => {
             <div>
                 <p>Invoice #: {invoice_number}</p>
                 {physical_receipt_no ? <p>Physical Receipt No: {physical_receipt_no}</p> : null}
-                <p>Date: {new Date().toLocaleString()}</p>
+                <p>Date: {format(toZonedTime(new Date(), 'Asia/Manila'), 'MM/dd/yyyy hh:mm a')}</p>
             </div>
             <div className="my-4 border-t border-dashed border-black"></div>
             <table className="w-full">

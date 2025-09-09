@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import api from '../../api';
 import Modal from './Modal';
+import { format, parseISO } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
 
 const TransactionHistoryModal = ({ part, isOpen, onClose }) => {
     const [history, setHistory] = useState([]);
@@ -41,7 +43,7 @@ const TransactionHistoryModal = ({ part, isOpen, onClose }) => {
                         <tbody>
                             {history.map(tx => (
                                 <tr key={tx.inv_trans_id} className="border-b">
-                                    <td className="p-2 whitespace-nowrap">{new Date(tx.transaction_date).toLocaleString()}</td>
+                                    <td className="p-2 whitespace-nowrap">{format(toZonedTime(parseISO(tx.transaction_date), 'Asia/Manila'), 'MM/dd/yyyy hh:mm a')}</td>
                                     <td className="p-2">{tx.trans_type}</td>
                                     <td className={`p-2 text-center font-semibold ${tx.quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>
                                         {tx.quantity > 0 ? `+${tx.quantity}` : tx.quantity}

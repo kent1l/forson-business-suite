@@ -8,6 +8,8 @@ import { useAuth } from '../contexts/AuthContext';
 import PurchaseOrderEditorPage from './PurchaseOrderEditorPage';
 import FilterBar from '../components/ui/FilterBar';
 import { downloadFile } from '../utils/downloadFile';
+import { format, parseISO } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
 
 const PurchaseOrderLines = ({ poId }) => {
     const [lines, setLines] = useState([]);
@@ -242,7 +244,7 @@ const PurchaseOrderPage = () => {
                                                     {po.status}
                                                 </span>
                                             </td>
-                                            <td className="p-3 text-sm">{new Date(po.order_date).toLocaleDateString()}</td>
+                                            <td className="p-3 text-sm">{format(toZonedTime(parseISO(po.order_date), 'Asia/Manila'), 'MM/dd/yyyy')}</td>
                                             <td className="p-3 text-sm text-right font-mono">₱{parseFloat(po.total_amount).toFixed(2)}</td>
                                             <td className="p-3 text-sm text-center">
                                                 <button onClick={() => toggleRowExpansion(po.po_id)} className="text-gray-500 hover:text-gray-800">

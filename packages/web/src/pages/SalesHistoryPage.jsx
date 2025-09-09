@@ -5,6 +5,8 @@ import { useSettings } from '../contexts/SettingsContext';
 import DateRangeShortcuts from '../components/ui/DateRangeShortcuts';
 import InvoiceDetailsModal from '../components/refunds/InvoiceDetailsModal';
 import SortableHeader from '../components/ui/SortableHeader';
+import { format, parseISO } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
 
 // Helper function to get badge styles based on status
 const getStatusBadge = (status) => {
@@ -32,9 +34,13 @@ const SalesHistoryPage = () => {
     const [refundsApprox, setRefundsApprox] = useState(0); // TEMP approximate refunds treated as cash out
     const [loading, setLoading] = useState(false);
     const [sortConfig, setSortConfig] = useState({ key: 'invoice_date', direction: 'DESC' });
-    const [dates, setDates] = useState({
-        startDate: new Date().toISOString().split('T')[0],
-        endDate: new Date().toISOString().split('T')[0],
+    const [dates, setDates] = useState(() => {
+        const now = toZonedTime(new Date(), 'Asia/Manila');
+        const dateStr = format(now, 'yyyy-MM-dd');
+        return {
+            startDate: dateStr,
+            endDate: dateStr,
+        };
     });
     const [query, setQuery] = useState('');
     const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -305,8 +311,8 @@ const SalesHistoryPage = () => {
                 case 'physical_receipt_no':
                     av = a.physical_receipt_no; bv = b.physical_receipt_no; break;
                 case 'invoice_date':
-                    av = new Date(a.invoice_date).getTime();
-                    bv = new Date(b.invoice_date).getTime();
+                    av = parseISO(a.invoice_date).getTime();
+                    bv = parseISO(b.invoice_date).getTime();
                     return factor * ((av || 0) - (bv || 0));
                 case 'customer':
                     av = asCustomer(a); bv = asCustomer(b); break;
@@ -545,7 +551,7 @@ const SalesHistoryPage = () => {
                                     >
                                         <td className="p-3 text-sm font-mono">{invoice.invoice_number}</td>
                                         <td className="p-3 text-sm font-mono text-gray-700">{invoice.physical_receipt_no || '-'}</td>
-                                        <td className="p-3 text-sm">{new Date(invoice.invoice_date).toLocaleDateString()}</td>
+                                        <td className="p-3 text-sm">{format(toZonedTime(parseISO(invoice.invoice_date), 'Asia/Manila'), 'MM/dd/yyyy')}</td>
                                         <td className="p-3 text-sm">{invoice.customer_first_name} {invoice.customer_last_name}</td>
                                         <td className="p-3 text-sm">
                                             <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(invoice.status)}`}>

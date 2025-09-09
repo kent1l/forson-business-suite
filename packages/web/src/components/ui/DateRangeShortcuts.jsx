@@ -1,8 +1,11 @@
 import React from 'react';
+import { format, addDays, subDays, startOfMonth, endOfMonth, subMonths } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
 
 const DateRangeShortcuts = ({ onSelect }) => {
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
+    const now = new Date();
+    const today = toZonedTime(now, 'Asia/Manila');
+    const todayStr = format(today, 'yyyy-MM-dd');
 
     const shortcuts = [
         {
@@ -12,41 +15,39 @@ const DateRangeShortcuts = ({ onSelect }) => {
         {
             label: 'Yesterday',
             getRange: () => {
-                const yesterday = new Date(today);
-                yesterday.setDate(today.getDate() - 1);
-                const yesterdayStr = yesterday.toISOString().split('T')[0];
+                const yesterday = subDays(today, 1);
+                const yesterdayStr = format(yesterday, 'yyyy-MM-dd');
                 return { startDate: yesterdayStr, endDate: yesterdayStr };
             }
         },
         {
             label: 'Last 7 Days',
             getRange: () => {
-                const pastDate = new Date(today);
-                pastDate.setDate(today.getDate() - 6);
-                return { startDate: pastDate.toISOString().split('T')[0], endDate: todayStr };
+                const pastDate = subDays(today, 6);
+                return { startDate: format(pastDate, 'yyyy-MM-dd'), endDate: todayStr };
             }
         },
         {
             label: 'Last 30 Days',
             getRange: () => {
-                const pastDate = new Date(today);
-                pastDate.setDate(today.getDate() - 29);
-                return { startDate: pastDate.toISOString().split('T')[0], endDate: todayStr };
+                const pastDate = subDays(today, 29);
+                return { startDate: format(pastDate, 'yyyy-MM-dd'), endDate: todayStr };
             }
         },
         {
             label: 'This Month',
             getRange: () => {
-                const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-                return { startDate: firstDay.toISOString().split('T')[0], endDate: todayStr };
+                const firstDay = startOfMonth(today);
+                return { startDate: format(firstDay, 'yyyy-MM-dd'), endDate: todayStr };
             }
         },
         {
             label: 'Last Month',
             getRange: () => {
-                const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-                const lastDay = new Date(today.getFullYear(), today.getMonth(), 0);
-                return { startDate: lastMonth.toISOString().split('T')[0], endDate: lastDay.toISOString().split('T')[0] };
+                const lastMonth = subMonths(today, 1);
+                const firstDay = startOfMonth(lastMonth);
+                const lastDay = endOfMonth(lastMonth);
+                return { startDate: format(firstDay, 'yyyy-MM-dd'), endDate: format(lastDay, 'yyyy-MM-dd') };
             }
         }
     ];

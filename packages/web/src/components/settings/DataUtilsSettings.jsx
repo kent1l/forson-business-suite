@@ -3,6 +3,8 @@ import api from '../../api';
 import toast from 'react-hot-toast';
 import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
+import { format } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
 
 const ExportCard = ({ entity, title, fields }) => {
     const handleExport = async () => {
@@ -13,7 +15,7 @@ const ExportCard = ({ entity, title, fields }) => {
             const url = window.URL.createObjectURL(new Blob([response.data]));
             const link = document.createElement('a');
             link.href = url;
-            link.setAttribute('download', `${entity}-export-${new Date().toISOString().split('T')[0]}.csv`);
+            link.setAttribute('download', `${entity}-export-${format(toZonedTime(new Date(), 'Asia/Manila'), 'yyyy-MM-dd')}.csv`);
             document.body.appendChild(link);
             link.click();
             link.remove();

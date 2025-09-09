@@ -3,6 +3,8 @@ import api from '../../api';
 import toast from 'react-hot-toast';
 import { useSettings } from '../../contexts/SettingsContext';
 import Combobox from '../ui/Combobox';
+import { format } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
 
 const ProfitabilityReport = () => {
     const { settings } = useSettings();
@@ -10,11 +12,15 @@ const ProfitabilityReport = () => {
     const [brands, setBrands] = useState([]);
     const [groups, setGroups] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [filters, setFilters] = useState({
-        startDate: new Date().toISOString().split('T')[0],
-        endDate: new Date().toISOString().split('T')[0],
-        brandId: '',
-        groupId: ''
+    const [filters, setFilters] = useState(() => {
+        const now = toZonedTime(new Date(), 'Asia/Manila');
+        const dateStr = format(now, 'yyyy-MM-dd');
+        return {
+            startDate: dateStr,
+            endDate: dateStr,
+            brandId: '',
+            groupId: ''
+        };
     });
 
     useEffect(() => {
@@ -49,7 +55,7 @@ const ProfitabilityReport = () => {
             } else {
                 setReportData(response.data);
             }
-        } catch (err) {
+        } catch {
             toast.error('Failed to generate report.');
         } finally {
             if (format === 'json') setLoading(false);

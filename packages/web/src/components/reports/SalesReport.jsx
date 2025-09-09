@@ -1,18 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import { useSettings } from '../../contexts/SettingsContext';
 import { ICONS } from '../../constants';
 import ReportCard from './ReportCard';
+import { format, parseISO } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
 
 const SalesReport = () => {
     const { settings } = useSettings();
     const [reportData, setReportData] = useState([]);
     const [summary, setSummary] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [dates, setDates] = useState({
-        startDate: new Date().toISOString().split('T')[0],
-        endDate: new Date().toISOString().split('T')[0],
+    const [dates, setDates] = useState(() => {
+        const now = toZonedTime(new Date(), 'Asia/Manila');
+        const dateStr = format(now, 'yyyy-MM-dd');
+        return {
+            startDate: dateStr,
+            endDate: dateStr,
+        };
     });
 
     const handleDateChange = (e) => {
@@ -20,7 +26,7 @@ const SalesReport = () => {
         setDates(prev => ({ ...prev, [name]: value }));
     };
 
-    const fetchReport = async (format = 'json') => {
+    const fetchReport = useCallback(async (format = 'json') => {
         if (!dates.startDate || !dates.endDate) {
             return toast.error('Please select both a start and end date.');
         }
@@ -46,16 +52,16 @@ const SalesReport = () => {
                 setReportData(response.data.details);
                 setSummary(response.data.summary);
             }
-        } catch (err) {
+        } catch {
             toast.error('Failed to generate report.');
         } finally {
             if (format === 'json') setLoading(false);
         }
-    };
+    }, [dates]);
 
     useEffect(() => {
         fetchReport();
-    }, []);
+    }, [fetchReport]);
 
     return (
         <>
@@ -103,7 +109,7 @@ const SalesReport = () => {
                         <tbody>
                             {reportData.map((row, index) => (
                                 <tr key={index} className="border-b hover:bg-gray-50">
-                                    <td className="p-3 text-sm">{new Date(row.invoice_date).toLocaleDateString()}</td>
+                                    <td className="p-3 text-sm">{format(toZonedTime(parseISO(row.invoice_date), 'Asia/Manila'), 'MM/dd/yyyy')}</td>
                                     <td className="p-3 text-sm font-mono">{row.invoice_number}</td>
                                     <td className="p-3 text-sm">{row.display_name}</td>
                                     <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.line_total).toFixed(2)}</td>

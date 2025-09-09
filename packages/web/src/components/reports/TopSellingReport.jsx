@@ -1,13 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
+import { format } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
 
 const TopSellingReport = () => {
     const [reportData, setReportData] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [dates, setDates] = useState({
-        startDate: new Date().toISOString().split('T')[0],
-        endDate: new Date().toISOString().split('T')[0],
+    const [dates, setDates] = useState(() => {
+        const now = toZonedTime(new Date(), 'Asia/Manila');
+        const dateStr = format(now, 'yyyy-MM-dd');
+        return {
+            startDate: dateStr,
+            endDate: dateStr,
+        };
     });
     const [sortBy, setSortBy] = useState('revenue');
 
@@ -41,7 +47,7 @@ const TopSellingReport = () => {
             } else {
                 setReportData(response.data);
             }
-        } catch (err) {
+        } catch {
             toast.error('Failed to generate report.');
         } finally {
             if (format === 'json') setLoading(false);
