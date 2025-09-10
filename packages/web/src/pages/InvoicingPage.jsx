@@ -7,6 +7,7 @@ import { ICONS } from '../constants';
 import SearchBar from '../components/SearchBar';
 import Modal from '../components/ui/Modal';
 import CustomerForm from '../components/forms/CustomerForm';
+import PartForm from '../components/forms/PartForm';
 import { useSettings } from '../contexts/SettingsContext';
 import { formatApplicationText } from '../helpers/applicationTextHelper';
 import { enrichPartsArray } from '../helpers/applicationCache';
@@ -23,6 +24,9 @@ const InvoicingPage = ({ user }) => {
     const [searchResults, setSearchResults] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+    const [isNewPartModalOpen, setIsNewPartModalOpen] = useState(false);
+    const [brands, setBrands] = useState([]);
+    const [groups, setGroups] = useState([]);
 
     const paymentMethodsKey = settings?.PAYMENT_METHODS || '';
     const paymentMethods = paymentMethodsKey ? paymentMethodsKey.split(',') : [];
@@ -65,8 +69,14 @@ const InvoicingPage = ({ user }) => {
         const fetchInitialData = async () => {
             try {
                 setLoading(true);
-                const customersRes = await api.get('/customers');
-                setCustomers(customersRes.data);
+                const [customersRes, brandsRes, groupsRes] = await Promise.all([
+                    api.get('/customers'),
+                    api.get('/brands'),
+                    api.get('/groups')
+                ]);
+                setCustomers(Array.isArray(customersRes.data) ? customersRes.data : []);
+                setBrands(Array.isArray(brandsRes.data) ? brandsRes.data : []);
+                setGroups(Array.isArray(groupsRes.data) ? groupsRes.data : []);
         } catch (err) {
             console.error('Failed to load initial data', err);
             toast.error("Failed to load initial data.");
@@ -148,6 +158,23 @@ const InvoicingPage = ({ user }) => {
             setLines([...lines, { ...part, part_id: part.part_id, quantity: 1, sale_price: part.last_sale_price || 0 }]);
         }
         setSearchTerm('');
+    };
+
+    const handleSaveNewPart = (partData) => {
+        const payload = { ...partData, created_by: user.employee_id, tags: ['old_new'] };
+        const promise = api.post('/parts', payload);
+
+        toast.promise(promise, {
+            loading: 'Saving new part...',
+            success: (response) => {
+                const newPart = response.data;
+                setIsNewPartModalOpen(false);
+                addPartToLines({ ...newPart, quantity: 1, sale_price: newPart.last_sale_price || 0 });
+                
+                return 'Part added and added to cart!';
+            },
+            error: 'Failed to save part.'
+        });
     };
 
     const handleLineChange = (partId, field, value) => {
@@ -276,13 +303,18 @@ const InvoicingPage = ({ user }) => {
                 
                 <div className="relative">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Add Part</label>
-                    <div className="relative">
-                        <SearchBar
-                            value={searchTerm}
-                            onChange={setSearchTerm}
-                            onClear={() => setSearchTerm('')}
-                            placeholder="Search by part name or SKU..."
-                        />
+                    <div className="flex items-center space-x-2">
+                        <div className="relative flex-grow">
+                            <SearchBar
+                                value={searchTerm}
+                                onChange={setSearchTerm}
+                                onClear={() => setSearchTerm('')}
+                                placeholder="Search by part name or SKU..."
+                            />
+                        </div>
+                        <button onClick={() => setIsNewPartModalOpen(true)} className="bg-blue-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-700 transition whitespace-nowrap">
+                            New Part
+                        </button>
                     </div>
                     {searchResults.length > 0 && (
                         <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg search-results">
@@ -338,6 +370,14 @@ const InvoicingPage = ({ user }) => {
             </div>
             <Modal isOpen={isCustomerModalOpen} onClose={() => setIsCustomerModalOpen(false)} title="Add New Customer">
                 <CustomerForm onSave={handleNewCustomerSave} onCancel={() => setIsCustomerModalOpen(false)} />
+            </Modal>
+            <Modal isOpen={isNewPartModalOpen} onClose={() => setIsNewPartModalOpen(false)} title="Add New Part">
+                <PartForm
+                    brands={brands}
+                    groups={groups}
+                    onSave={handleSaveNewPart}
+                    onCancel={() => setIsNewPartModalOpen(false)}
+                />
             </Modal>
         </div>
     );

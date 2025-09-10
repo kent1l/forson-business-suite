@@ -250,7 +250,7 @@ const POSPage = ({ user, lines, setLines }) => {
     };
 
     const handleSaveNewPart = (partData) => {
-        const payload = { ...partData, created_by: user.employee_id };
+        const payload = { ...partData, created_by: user.employee_id, tags: ['old_new'] };
         const promise = api.post('/parts', payload);
 
         toast.promise(promise, {
