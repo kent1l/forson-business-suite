@@ -4,8 +4,12 @@ import toast from 'react-hot-toast';
 import SearchBar from '../components/SearchBar';
 import SortableHeader from '../components/ui/SortableHeader';
 import Modal from '../components/ui/Modal';
+import Icon from '../components/ui/Icon';
+import { ICONS } from '../constants';
+import { useAuth } from '../contexts/AuthContext';
 
 const GoodsReceiptHistoryPage = ({ user: _user }) => {
+    const { hasPermission } = useAuth();
     const [grns, setGrns] = useState([]);
     const [loading, setLoading] = useState(true);
     const [query, setQuery] = useState('');
@@ -15,6 +19,10 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
     const [selectedGrn, setSelectedGrn] = useState(null);
     const [grnLines, setGrnLines] = useState([]);
     const [modalLoading, setModalLoading] = useState(false);
+    const [isEditMode, setIsEditMode] = useState(false);
+    const [editedLines, setEditedLines] = useState([]);
+    const [suppliers, setSuppliers] = useState([]);
+    const [selectedSupplier, setSelectedSupplier] = useState('');
 
     const fetchGrns = useCallback(async () => {
         try {
@@ -54,9 +62,12 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
     const handleRowClick = async (grn) => {
         setSelectedGrn(grn);
         setModalLoading(true);
+        setIsEditMode(false);
         try {
             const response = await api.get(`/goods-receipts/${grn.grn_id}/lines`);
             setGrnLines(response.data);
+            setEditedLines(response.data.map(line => ({ ...line })));
+            setSelectedSupplier(grn.supplier_id);
         } catch (error) {
             console.error('Error fetching GRN lines:', error);
             toast.error('Failed to load GRN details');
@@ -68,7 +79,65 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
     const closeModal = () => {
         setSelectedGrn(null);
         setGrnLines([]);
+        setIsEditMode(false);
+        setEditedLines([]);
     };
+
+    const handleEditClick = async () => {
+        if (!isEditMode) {
+            // Enter edit mode - fetch suppliers if not already loaded
+            if (suppliers.length === 0) {
+                try {
+                    const response = await api.get('/suppliers');
+                    setSuppliers(response.data);
+                } catch (error) {
+                    console.error('Error fetching suppliers:', error);
+                    toast.error('Failed to load suppliers for editing');
+                    return;
+                }
+            }
+            setIsEditMode(true);
+        } else {
+            // Save changes
+            await handleSaveChanges();
+        }
+    };
+
+    const handleSaveChanges = async () => {
+        try {
+            const payload = {
+                supplier_id: selectedSupplier,
+                received_by: _user.employee_id,
+                lines: editedLines.map(line => ({
+                    part_id: line.part_id,
+                    quantity: parseFloat(line.quantity),
+                    cost_price: parseFloat(line.cost_price),
+                    sale_price: line.sale_price ? parseFloat(line.sale_price) : null
+                }))
+            };
+
+            await api.put(`/goods-receipts/${selectedGrn.grn_id}`, payload);
+            toast.success('Goods receipt updated successfully');
+
+            // Refresh the data
+            await fetchGrns();
+            const response = await api.get(`/goods-receipts/${selectedGrn.grn_id}/lines`);
+            setGrnLines(response.data);
+            setEditedLines(response.data.map(line => ({ ...line })));
+            setIsEditMode(false);
+        } catch (error) {
+            console.error('Error saving changes:', error);
+            toast.error('Failed to save changes');
+        }
+    };
+
+    const handleLineChange = (index, field, value) => {
+        const updatedLines = [...editedLines];
+        updatedLines[index] = { ...updatedLines[index], [field]: value };
+        setEditedLines(updatedLines);
+    };
+
+    const hasEditPermission = hasPermission('goods_receipt:edit');
 
     return (
         <div>
@@ -148,10 +217,38 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                         {selectedGrn && (
                             <div className="grid grid-cols-2 gap-4 text-sm">
                                 <div>
-                                    <strong>Supplier:</strong> {selectedGrn.supplier_name}
+                                    <strong>Supplier:</strong>
+                                    {isEditMode ? (
+                                        <select
+                                            value={selectedSupplier}
+                                            onChange={(e) => setSelectedSupplier(e.target.value)}
+                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                        >
+                                            {suppliers.map(supplier => (
+                                                <option key={supplier.supplier_id} value={supplier.supplier_id}>
+                                                    {supplier.supplier_name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    ) : (
+                                        ` ${selectedGrn.supplier_name}`
+                                    )}
                                 </div>
                                 <div>
                                     <strong>Received Date:</strong> {new Date(selectedGrn.receipt_date).toLocaleDateString()}
+                                    {hasEditPermission && (
+                                        <button
+                                            onClick={handleEditClick}
+                                            className={`ml-4 px-3 py-1 text-sm font-medium rounded-md ${
+                                                isEditMode
+                                                    ? 'bg-green-600 text-white hover:bg-green-700'
+                                                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                                            }`}
+                                        >
+                                            <Icon path={isEditMode ? ICONS.check : ICONS.edit} className="inline h-4 w-4 mr-1" />
+                                            {isEditMode ? 'Save' : 'Edit'}
+                                        </button>
+                                    )}
                                 </div>
                                 <div>
                                     <strong>Received By:</strong> {selectedGrn.employee_name}
@@ -172,14 +269,52 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {grnLines.map((line, index) => (
+                                    {(isEditMode ? editedLines : grnLines).map((line, index) => (
                                         <tr key={index} className="border-b">
                                             <td className="p-3 text-sm text-gray-800">{line.internal_sku}</td>
                                             <td className="p-3 text-sm text-gray-800">{line.display_name}</td>
-                                            <td className="p-3 text-sm text-gray-600">{line.quantity}</td>
-                                            <td className="p-3 text-sm text-gray-600">₱{parseFloat(line.cost_price).toFixed(2)}</td>
                                             <td className="p-3 text-sm text-gray-600">
-                                                {line.sale_price ? `₱${parseFloat(line.sale_price).toFixed(2)}` : '-'}
+                                                {isEditMode ? (
+                                                    <input
+                                                        type="number"
+                                                        value={line.quantity}
+                                                        onChange={(e) => handleLineChange(index, 'quantity', e.target.value)}
+                                                        onFocus={(e) => e.target.select()}
+                                                        className="w-full h-8 px-2 border rounded-md text-sm"
+                                                        step="0.01"
+                                                    />
+                                                ) : (
+                                                    line.quantity
+                                                )}
+                                            </td>
+                                            <td className="p-3 text-sm text-gray-600">
+                                                {isEditMode ? (
+                                                    <input
+                                                        type="number"
+                                                        value={line.cost_price}
+                                                        onChange={(e) => handleLineChange(index, 'cost_price', e.target.value)}
+                                                        onFocus={(e) => e.target.select()}
+                                                        className="w-full h-8 px-2 border rounded-md text-sm"
+                                                        step="0.01"
+                                                    />
+                                                ) : (
+                                                    `₱${parseFloat(line.cost_price).toFixed(2)}`
+                                                )}
+                                            </td>
+                                            <td className="p-3 text-sm text-gray-600">
+                                                {isEditMode ? (
+                                                    <input
+                                                        type="number"
+                                                        value={line.sale_price || ''}
+                                                        onChange={(e) => handleLineChange(index, 'sale_price', e.target.value)}
+                                                        onFocus={(e) => e.target.select()}
+                                                        className="w-full h-8 px-2 border rounded-md text-sm"
+                                                        step="0.01"
+                                                        placeholder="Optional"
+                                                    />
+                                                ) : (
+                                                    line.sale_price ? `₱${parseFloat(line.sale_price).toFixed(2)}` : '-'
+                                                )}
                                             </td>
                                             <td className="p-3 text-sm text-gray-600">
                                                 ₱{(parseFloat(line.quantity) * parseFloat(line.cost_price)).toFixed(2)}

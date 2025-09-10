@@ -1,10 +1,11 @@
 const express = require('express');
 const db = require('../db');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
+const { hasPermission, protect } = require('../middleware/authMiddleware');
 const router = express.Router();
 
 // GET /goods-receipts - Fetch list of posted GRNs with search and sorting
-router.get('/goods-receipts', async (req, res) => {
+router.get('/goods-receipts', protect, async (req, res) => {
   const { q: search = '', sortBy = 'receipt_date', sortOrder = 'desc' } = req.query;
 
   // Validate sortBy and sortOrder
@@ -66,7 +67,7 @@ router.get('/goods-receipts', async (req, res) => {
 });
 
 // GET /goods-receipts/:id/lines - Fetch line items for a specific GRN
-router.get('/goods-receipts/:id/lines', async (req, res) => {
+router.get('/goods-receipts/:id/lines', protect, async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -187,6 +188,71 @@ router.post('/goods-receipts', async (req, res) => {
 
     await client.query('COMMIT');
     res.status(201).json({ message: 'Goods receipt created successfully', grn_id: newGrnId });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Transaction Error:', err.message);
+    res.status(500).json({ message: 'Server error during transaction.', error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// PUT /goods-receipts/:id - Update a Goods Receipt (requires edit permission)
+router.put('/goods-receipts/:id', hasPermission('goods_receipt:edit'), async (req, res) => {
+  const { id } = req.params;
+  const { supplier_id, received_by, lines } = req.body;
+
+  if (!supplier_id || !received_by || !lines || !Array.isArray(lines) || lines.length === 0) {
+    return res.status(400).json({ message: 'Missing required fields.' });
+  }
+
+  const client = await db.getClient();
+
+  try {
+    await client.query('BEGIN');
+
+    // Update the main GRN record
+    const updateGrnQuery = `
+      UPDATE goods_receipt
+      SET supplier_id = $1, received_by = $2, receipt_date = CURRENT_TIMESTAMP
+      WHERE grn_id = $3
+    `;
+    await client.query(updateGrnQuery, [supplier_id, received_by, id]);
+
+    // Delete existing lines
+    await client.query('DELETE FROM goods_receipt_line WHERE grn_id = $1', [id]);
+
+    // Delete existing inventory transactions for this GRN
+    await client.query('DELETE FROM inventory_transaction WHERE reference_no = (SELECT grn_number FROM goods_receipt WHERE grn_id = $1) AND trans_type = \'StockIn\'', [id]);
+
+    // Insert new lines
+    for (const line of lines) {
+      const { part_id, quantity, cost_price, sale_price } = line;
+      if (!part_id || !quantity || !cost_price) {
+        throw new Error('Each line item must have part_id, quantity, and cost_price.');
+      }
+
+      const lineQuery = `
+        INSERT INTO goods_receipt_line (grn_id, part_id, quantity, cost_price, sale_price)
+        VALUES ($1, $2, $3, $4, $5);
+      `;
+      await client.query(lineQuery, [id, part_id, quantity, cost_price, sale_price ?? null]);
+
+      // Get the GRN number for the transaction reference
+      const grnNumberQuery = 'SELECT grn_number FROM goods_receipt WHERE grn_id = $1';
+      const grnResult = await client.query(grnNumberQuery, [id]);
+      const grn_number = grnResult.rows[0].grn_number;
+
+      const transactionQuery = `
+        INSERT INTO inventory_transaction (part_id, trans_type, quantity, unit_cost, reference_no, employee_id)
+        VALUES ($1, 'StockIn', $2, $3, $4, $5);
+      `;
+      await client.query(transactionQuery, [part_id, quantity, cost_price, grn_number, received_by]);
+    }
+
+    await client.query('COMMIT');
+    res.json({ message: 'Goods receipt updated successfully' });
 
   } catch (err) {
     await client.query('ROLLBACK');

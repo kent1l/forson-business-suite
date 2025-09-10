@@ -54,8 +54,8 @@ services:
     restart: unless-stopped
 
 networks:
-  forson_business_suite:
-    external: true
+  default:
+    name: forson_business_suite
 
 volumes:
   backend_node_modules:
