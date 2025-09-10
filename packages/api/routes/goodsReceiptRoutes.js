@@ -76,6 +76,7 @@ router.get('/goods-receipts/:id/lines', protect, async (req, res) => {
         grl.quantity,
         grl.cost_price,
         grl.sale_price,
+        grl.part_id AS part_id,
         p.internal_sku,
         CASE
           WHEN pn.part_number IS NOT NULL THEN
@@ -107,6 +108,16 @@ router.get('/goods-receipts/:id/lines', protect, async (req, res) => {
     `;
 
     const { rows } = await db.query(query, [id]);
+    
+    // DEBUG: Log what we're actually returning
+    console.log('[GRN Lines] SQL result for grn_id:', id);
+    console.log('[GRN Lines] Row count:', rows.length);
+    if (rows.length > 0) {
+      console.log('[GRN Lines] First row keys:', Object.keys(rows[0]));
+      console.log('[GRN Lines] First row part_id:', rows[0].part_id);
+      console.log('[GRN Lines] Sample row:', JSON.stringify(rows[0], null, 2));
+    }
+    
     res.json(rows);
   } catch (err) {
     console.error('Error fetching GRN lines:', err.message);
@@ -199,67 +210,155 @@ router.post('/goods-receipts', async (req, res) => {
 });
 
 // PUT /goods-receipts/:id - Update a Goods Receipt (requires edit permission)
-router.put('/goods-receipts/:id', hasPermission('goods_receipt:edit'), async (req, res) => {
+router.put('/goods-receipts/:id', protect, hasPermission('goods_receipt:edit'), async (req, res) => {
+  console.log('Received PUT request for goods receipt:', req.params.id);
+  console.log('Request body:', JSON.stringify(req.body, null, 2));
+  
   const { id } = req.params;
   const { supplier_id, received_by, lines } = req.body;
 
-  if (!supplier_id || !received_by || !lines || !Array.isArray(lines) || lines.length === 0) {
-    return res.status(400).json({ message: 'Missing required fields.' });
+  console.log('Validating input parameters...');
+  console.log('supplier_id:', supplier_id, 'type:', typeof supplier_id);
+  console.log('received_by:', received_by, 'type:', typeof received_by);
+  console.log('lines:', JSON.stringify(lines, null, 2));
+
+  // More detailed validation
+  if (!supplier_id) {
+    return res.status(400).json({ message: 'supplier_id is required' });
+  }
+  if (!received_by) {
+    return res.status(400).json({ message: 'received_by is required' });
+  }
+  if (!lines || !Array.isArray(lines)) {
+    return res.status(400).json({ message: 'lines must be an array' });
+  }
+  if (lines.length === 0) {
+    return res.status(400).json({ message: 'lines array cannot be empty' });
   }
 
-  const client = await db.getClient();
+  // Validate each line
+  for (const [index, line] of lines.entries()) {
+    console.log(`Validating line ${index}:`, JSON.stringify(line, null, 2));
+    if (!line.part_id) {
+      return res.status(400).json({ message: `Missing part_id in line ${index}` });
+    }
+    if (typeof line.quantity !== 'number' || line.quantity <= 0) {
+      return res.status(400).json({ message: `Invalid quantity in line ${index}` });
+    }
+    if (typeof line.cost_price !== 'number' || line.cost_price < 0) {
+      return res.status(400).json({ message: `Invalid cost_price in line ${index}` });
+    }
+    if (line.sale_price !== null && (typeof line.sale_price !== 'number' || line.sale_price < 0)) {
+      return res.status(400).json({ message: `Invalid sale_price in line ${index}` });
+    }
+  }
 
+  let client;
   try {
+    console.log('Getting database client...');
+    client = await db.getClient();
+    console.log('Starting transaction for GRN update...');
     await client.query('BEGIN');
 
-    // Update the main GRN record
-    const updateGrnQuery = `
-      UPDATE goods_receipt
-      SET supplier_id = $1, received_by = $2, receipt_date = CURRENT_TIMESTAMP
-      WHERE grn_id = $3
-    `;
-    await client.query(updateGrnQuery, [supplier_id, received_by, id]);
+    try {
+      // Verify the GRN exists and we can update it
+      console.log('Verifying GRN exists...');
+      const verifyGrnQuery = 'SELECT grn_id, grn_number FROM goods_receipt WHERE grn_id = $1';
+      const verifyResult = await client.query(verifyGrnQuery, [id]);
+      if (verifyResult.rows.length === 0) {
+        throw new Error(`GRN with id ${id} not found`);
+      }
+      const grn_number = verifyResult.rows[0].grn_number;
+      console.log('Found GRN number:', grn_number);
 
-    // Delete existing lines
-    await client.query('DELETE FROM goods_receipt_line WHERE grn_id = $1', [id]);
+      // Update the main GRN record
+      const updateGrnQuery = `
+        UPDATE goods_receipt
+        SET supplier_id = $1, received_by = $2, receipt_date = CURRENT_TIMESTAMP
+        WHERE grn_id = $3
+        RETURNING grn_id;
+      `;
+      console.log('Executing main GRN update:', { supplier_id, received_by, id });
+      const updateResult = await client.query(updateGrnQuery, [supplier_id, received_by, id]);
+      if (updateResult.rows.length === 0) {
+        throw new Error('Failed to update GRN record');
+      }
+      console.log('Main GRN update successful');
 
-    // Delete existing inventory transactions for this GRN
-    await client.query('DELETE FROM inventory_transaction WHERE reference_no = (SELECT grn_number FROM goods_receipt WHERE grn_id = $1) AND trans_type = \'StockIn\'', [id]);
+      // Delete existing lines
+      console.log('Deleting existing GRN lines for ID:', id);
+      const deleteLineResult = await client.query('DELETE FROM goods_receipt_line WHERE grn_id = $1 RETURNING grn_line_id', [id]);
+      console.log(`Deleted ${deleteLineResult.rowCount} existing GRN lines`);
 
-    // Insert new lines
-    for (const line of lines) {
-      const { part_id, quantity, cost_price, sale_price } = line;
-      if (!part_id || !quantity || !cost_price) {
-        throw new Error('Each line item must have part_id, quantity, and cost_price.');
+      // Delete existing inventory transactions for this GRN
+      console.log('Deleting existing inventory transactions for GRN:', grn_number);
+      const deleteTransResult = await client.query(
+        'DELETE FROM inventory_transaction WHERE reference_no = $1 AND trans_type = $2 RETURNING inv_trans_id',
+        [grn_number, 'StockIn']
+      );
+      console.log(`Deleted ${deleteTransResult.rowCount} existing inventory transactions`);
+
+      // Insert new lines
+      console.log('Starting to insert new lines...');
+      for (const [index, line] of lines.entries()) {
+        console.log(`Processing line ${index}:`, JSON.stringify(line, null, 2));
+        const { part_id, quantity, cost_price, sale_price } = line;
+
+        // Verify part exists
+        console.log('Verifying part exists:', part_id);
+        const verifyPartQuery = 'SELECT part_id FROM part WHERE part_id = $1';
+        const partResult = await client.query(verifyPartQuery, [part_id]);
+        if (partResult.rows.length === 0) {
+          throw new Error(`Part with id ${part_id} not found`);
+        }
+
+        const lineQuery = `
+          INSERT INTO goods_receipt_line (grn_id, part_id, quantity, cost_price, sale_price)
+          VALUES ($1, $2, $3, $4, $5)
+          RETURNING grn_line_id;
+        `;
+        console.log('Inserting GRN line:', { id, part_id, quantity, cost_price, sale_price });
+        const insertLineResult = await client.query(lineQuery, [id, part_id, quantity, cost_price, sale_price ?? null]);
+        if (!insertLineResult.rows[0]) {
+          throw new Error(`Failed to insert GRN line for part ${part_id}`);
+        }
+        console.log('GRN line inserted successfully, ID:', insertLineResult.rows[0].grn_line_id);
+
+        const transactionQuery = `
+          INSERT INTO inventory_transaction (part_id, trans_type, quantity, unit_cost, reference_no, employee_id)
+          VALUES ($1, $2, $3, $4, $5, $6)
+          RETURNING inv_trans_id;
+        `;
+        const transResult = await client.query(
+          transactionQuery,
+          [part_id, 'StockIn', quantity, cost_price, grn_number, received_by]
+        );
+        if (!transResult.rows[0]) {
+          throw new Error(`Failed to insert inventory transaction for part ${part_id}`);
+        }
+        console.log('Inventory transaction inserted successfully, ID:', transResult.rows[0].inv_trans_id);
       }
 
-      const lineQuery = `
-        INSERT INTO goods_receipt_line (grn_id, part_id, quantity, cost_price, sale_price)
-        VALUES ($1, $2, $3, $4, $5);
-      `;
-      await client.query(lineQuery, [id, part_id, quantity, cost_price, sale_price ?? null]);
-
-      // Get the GRN number for the transaction reference
-      const grnNumberQuery = 'SELECT grn_number FROM goods_receipt WHERE grn_id = $1';
-      const grnResult = await client.query(grnNumberQuery, [id]);
-      const grn_number = grnResult.rows[0].grn_number;
-
-      const transactionQuery = `
-        INSERT INTO inventory_transaction (part_id, trans_type, quantity, unit_cost, reference_no, employee_id)
-        VALUES ($1, 'StockIn', $2, $3, $4, $5);
-      `;
-      await client.query(transactionQuery, [part_id, quantity, cost_price, grn_number, received_by]);
+      console.log('All operations completed successfully, committing transaction...');
+      await client.query('COMMIT');
+      res.json({ message: 'Goods receipt updated successfully' });
+    } catch (innerErr) {
+      console.error('Inner transaction error:', innerErr);
+      await client.query('ROLLBACK');
+      throw innerErr; // Re-throw to be caught by outer catch
     }
-
-    await client.query('COMMIT');
-    res.json({ message: 'Goods receipt updated successfully' });
-
   } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('Transaction Error:', err.message);
-    res.status(500).json({ message: 'Server error during transaction.', error: err.message });
+    console.error('Transaction Error:', err);
+    res.status(500).json({ 
+      message: 'Server error during transaction.',
+      error: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   } finally {
-    client.release();
+    if (client) {
+      console.log('Releasing database client...');
+      client.release();
+    }
   }
 });
 

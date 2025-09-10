@@ -64,9 +64,23 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
         setModalLoading(true);
         setIsEditMode(false);
         try {
+            console.log('Fetching GRN lines for:', grn.grn_id);
             const response = await api.get(`/goods-receipts/${grn.grn_id}/lines`);
+            console.log('API Response:', response.data);
+            
+            // Add more detailed logging about each line
+            const processedLines = response.data.map(line => {
+                const processed = { ...line };
+                console.log('Processing line in handleRowClick:', {
+                    original: line,
+                    processed,
+                    part_id: processed.part_id
+                });
+                return processed;
+            });
+            
             setGrnLines(response.data);
-            setEditedLines(response.data.map(line => ({ ...line })));
+            setEditedLines(processedLines);
             setSelectedSupplier(grn.supplier_id);
         } catch (error) {
             console.error('Error fetching GRN lines:', error);
@@ -105,16 +119,52 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
 
     const handleSaveChanges = async () => {
         try {
+            console.log('Preparing payload for GRN update...');
+            console.log('Current edited lines:', editedLines);
+            console.log('Edited lines details:', editedLines.map((line, index) => ({
+                index,
+                sku: line.internal_sku,
+                part_id: line.part_id,
+                allProps: Object.keys(line)
+            })));
+            
             const payload = {
                 supplier_id: selectedSupplier,
                 received_by: _user.employee_id,
-                lines: editedLines.map(line => ({
-                    part_id: line.part_id,
-                    quantity: parseFloat(line.quantity),
-                    cost_price: parseFloat(line.cost_price),
-                    sale_price: line.sale_price ? parseFloat(line.sale_price) : null
-                }))
+                lines: editedLines.map((line, index) => {
+                    console.log(`Processing line ${index}:`, {
+                        line,
+                        part_id: line.part_id,
+                        internal_sku: line.internal_sku,
+                        prototype: Object.getPrototypeOf(line)
+                    });
+                    
+                    // Add validation to ensure part_id exists
+                    if (!line.part_id) {
+                        console.error('Missing part_id in line:', line);
+                        
+                        // Try to get part_id from a lookup if we have the internal_sku
+                        if (line.internal_sku) {
+                            console.log('Attempting to resolve part_id from internal_sku:', line.internal_sku);
+                            // For now, throw error - we'll add API call if needed
+                            throw new Error(`Missing part_id for line with SKU: ${line.internal_sku}. Please close and reopen this GRN to refresh the data.`);
+                        } else {
+                            throw new Error(`Missing part_id and internal_sku for line ${index}`);
+                        }
+                    }
+                    
+                    const processedLine = {
+                        part_id: line.part_id,
+                        quantity: parseFloat(line.quantity),
+                        cost_price: parseFloat(line.cost_price),
+                        sale_price: line.sale_price ? parseFloat(line.sale_price) : null
+                    };
+                    
+                    console.log(`Processed line ${index}:`, processedLine);
+                    return processedLine;
+                })
             };
+            console.log('Final payload:', payload);
 
             await api.put(`/goods-receipts/${selectedGrn.grn_id}`, payload);
             toast.success('Goods receipt updated successfully');
@@ -133,7 +183,25 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
 
     const handleLineChange = (index, field, value) => {
         const updatedLines = [...editedLines];
-        updatedLines[index] = { ...updatedLines[index], [field]: value };
+        const currentLine = updatedLines[index];
+        console.log('handleLineChange - Before update:', {
+            index,
+            field,
+            value,
+            currentLine,
+            part_id: currentLine.part_id
+        });
+        
+        updatedLines[index] = {
+            ...currentLine,
+            [field]: value
+        };
+        
+        console.log('handleLineChange - After update:', {
+            updatedLine: updatedLines[index],
+            part_id: updatedLines[index].part_id
+        });
+        
         setEditedLines(updatedLines);
     };
 
