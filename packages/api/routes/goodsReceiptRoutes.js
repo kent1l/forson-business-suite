@@ -223,9 +223,6 @@ router.put('/goods-receipts/:id', protect, hasPermission('goods_receipt:edit'), 
   console.log('lines:', JSON.stringify(lines, null, 2));
 
   // More detailed validation
-  if (!supplier_id) {
-    return res.status(400).json({ message: 'supplier_id is required' });
-  }
   if (!received_by) {
     return res.status(400).json({ message: 'received_by is required' });
   }
@@ -274,12 +271,13 @@ router.put('/goods-receipts/:id', protect, hasPermission('goods_receipt:edit'), 
       // Update the main GRN record
       const updateGrnQuery = `
         UPDATE goods_receipt
-        SET supplier_id = $1, received_by = $2, receipt_date = CURRENT_TIMESTAMP
-        WHERE grn_id = $3
+        SET ${supplier_id ? 'supplier_id = $1,' : ''} received_by = $${supplier_id ? '2' : '1'}, receipt_date = CURRENT_TIMESTAMP
+        WHERE grn_id = $${supplier_id ? '3' : '2'}
         RETURNING grn_id;
       `;
+      const updateParams = supplier_id ? [supplier_id, received_by, id] : [received_by, id];
       console.log('Executing main GRN update:', { supplier_id, received_by, id });
-      const updateResult = await client.query(updateGrnQuery, [supplier_id, received_by, id]);
+      const updateResult = await client.query(updateGrnQuery, updateParams);
       if (updateResult.rows.length === 0) {
         throw new Error('Failed to update GRN record');
       }

@@ -21,8 +21,6 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
     const [modalLoading, setModalLoading] = useState(false);
     const [isEditMode, setIsEditMode] = useState(false);
     const [editedLines, setEditedLines] = useState([]);
-    const [suppliers, setSuppliers] = useState([]);
-    const [selectedSupplier, setSelectedSupplier] = useState('');
 
     const fetchGrns = useCallback(async () => {
         try {
@@ -81,7 +79,6 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
             
             setGrnLines(response.data);
             setEditedLines(processedLines);
-            setSelectedSupplier(grn.supplier_id);
         } catch (error) {
             console.error('Error fetching GRN lines:', error);
             toast.error('Failed to load GRN details');
@@ -99,17 +96,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
 
     const handleEditClick = async () => {
         if (!isEditMode) {
-            // Enter edit mode - fetch suppliers if not already loaded
-            if (suppliers.length === 0) {
-                try {
-                    const response = await api.get('/suppliers');
-                    setSuppliers(response.data);
-                } catch (error) {
-                    console.error('Error fetching suppliers:', error);
-                    toast.error('Failed to load suppliers for editing');
-                    return;
-                }
-            }
+            // Enter edit mode
             setIsEditMode(true);
         } else {
             // Save changes
@@ -129,7 +116,6 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
             })));
             
             const payload = {
-                supplier_id: selectedSupplier,
                 received_by: _user.employee_id,
                 lines: editedLines.map((line, index) => {
                     console.log(`Processing line ${index}:`, {
@@ -285,22 +271,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                         {selectedGrn && (
                             <div className="grid grid-cols-2 gap-4 text-sm">
                                 <div>
-                                    <strong>Supplier:</strong>
-                                    {isEditMode ? (
-                                        <select
-                                            value={selectedSupplier}
-                                            onChange={(e) => setSelectedSupplier(e.target.value)}
-                                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                                        >
-                                            {suppliers.map(supplier => (
-                                                <option key={supplier.supplier_id} value={supplier.supplier_id}>
-                                                    {supplier.supplier_name}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    ) : (
-                                        ` ${selectedGrn.supplier_name}`
-                                    )}
+                                    <strong>Supplier:</strong> {selectedGrn.supplier_name}
                                 </div>
                                 <div>
                                     <strong>Received Date:</strong> {new Date(selectedGrn.receipt_date).toLocaleDateString()}
