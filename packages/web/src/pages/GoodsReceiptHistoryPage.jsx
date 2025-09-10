@@ -139,7 +139,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                 isOpen={!!selectedGrn}
                 onClose={closeModal}
                 title={`Details for ${selectedGrn?.grn_number || ''}`}
-                maxWidth="max-w-4xl"
+                maxWidth="max-w-7xl"
             >
                 {modalLoading ? (
                     <div className="p-4 text-center">Loading details...</div>
