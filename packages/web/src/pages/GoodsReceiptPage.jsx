@@ -6,13 +6,10 @@ import SearchBar from '../components/SearchBar';
 import Icon from '../components/ui/Icon';
 import Combobox from '../components/ui/Combobox';
 import { ICONS } from '../constants';
-import Modal from '../components/ui/Modal';
-import SupplierForm from '../components/forms/SupplierForm';
-import PartForm from '../components/forms/PartForm';
 import useDraft from '../hooks/useDraft';
 import { formatApplicationText } from '../helpers/applicationTextHelper';
 import { enrichPartsArray } from '../helpers/applicationCache';
-import PartApplicationManager from './PartApplicationManager';
+import GoodsReceiptModals from '../components/ui/GoodsReceiptModals';
 
 const GoodsReceiptPage = ({ user, onNavigate }) => {
     const [suppliers, setSuppliers] = useState([]);
@@ -443,31 +440,38 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
                     </button>
                 </div>
             </div>
-            <Modal isOpen={isSupplierModalOpen} onClose={() => setIsSupplierModalOpen(false)} title="Add New Supplier">
-                <SupplierForm onSave={handleNewSupplierSave} onCancel={() => setIsSupplierModalOpen(false)} />
-            </Modal>
-            <Modal isOpen={isNewPartModalOpen} onClose={() => setIsNewPartModalOpen(false)} title="Add New Part">
-                <PartForm
-                    brands={brands}
-                    groups={groups}
-                    onSave={handleSaveNewPart}
-                    onCancel={() => setIsNewPartModalOpen(false)}
-                    onBrandGroupAdded={fetchInitialData}
-                />
-            </Modal>
-            <Modal isOpen={isEditPartModalOpen} onClose={() => { setIsEditPartModalOpen(false); setCurrentEditPart(null); }} title="Edit Part">
-                <PartForm
-                    part={currentEditPart}
-                    brands={brands}
-                    groups={groups}
-                    onSave={handleEditPartSave}
-                    onCancel={() => { setIsEditPartModalOpen(false); setCurrentEditPart(null); }}
-                    onBrandGroupAdded={fetchInitialData}
-                />
-            </Modal>
-            <Modal isOpen={isAppModalOpen} onClose={handleAppManagerClose} title={`Manage Applications for: ${currentPart?.internal_sku || currentPart?.display_name || currentPart?.detail || ''}`}>
-                <PartApplicationManager part={currentPart} onCancel={handleAppManagerClose} />
-            </Modal>
+            <GoodsReceiptModals
+                // Modal states
+                isSupplierModalOpen={isSupplierModalOpen}
+                isNewPartModalOpen={isNewPartModalOpen}
+                isEditPartModalOpen={isEditPartModalOpen}
+                isAppModalOpen={isAppModalOpen}
+
+                // Modal state setters
+                setIsSupplierModalOpen={setIsSupplierModalOpen}
+                setIsEditPartModalOpen={setIsEditPartModalOpen}
+                setIsNewPartModalOpen={setIsNewPartModalOpen}
+                setIsAppModalOpen={setIsAppModalOpen}
+                setCurrentEditPart={setCurrentEditPart}
+                setCurrentPart={setCurrentPart}
+
+                // Data props
+                brands={brands}
+                groups={groups}
+                currentPart={currentPart}
+                currentEditPart={currentEditPart}
+
+                // Handler functions
+                handleNewSupplierSave={handleNewSupplierSave}
+                handleSaveNewPart={handleSaveNewPart}
+                handleEditPartSave={handleEditPartSave}
+                handleAppManagerClose={handleAppManagerClose}
+                fetchInitialData={fetchInitialData}
+
+                // State updaters for lines
+                _setLines={setLines}
+                _lines={lines}
+            />
         </div>
     );
 };
