@@ -106,7 +106,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                 detail: part.detail || '',
                 brand_id: part.brand_id || '',
                 group_id: part.group_id || '',
-                part_numbers_string: '',
+                part_numbers_string: part.part_numbers ? part.part_numbers.replace(/; /g, ', ') : '',
                 reorder_point: part.reorder_point || 1,
                 warning_quantity: part.warning_quantity || 1,
                 is_active: part.is_active ?? true,
@@ -267,10 +267,10 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
     return (
         <>
             <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto p-1">
-                {!part && !isBulkEdit && (
+                {!isBulkEdit && (
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Part Numbers (optional)</label>
-                        <textarea name="part_numbers_string" value={formData.part_numbers_string} onChange={handleChange} onFocus={(e) => e.target.select()} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows="2" placeholder="OEM123, MFG456; ALT789"></textarea>
+                        <textarea name="part_numbers_string" value={formData.part_numbers_string} onChange={handleChange} onFocus={(e) => e.target.select()} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows="2" placeholder="OEM123, MFG456, ALT789"></textarea>
                     </div>
                 )}
 
