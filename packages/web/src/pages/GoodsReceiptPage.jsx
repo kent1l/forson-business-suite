@@ -31,6 +31,8 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
     const [isNewPartModalOpen, setIsNewPartModalOpen] = useState(false);
     const [isAppModalOpen, setIsAppModalOpen] = useState(false);
     const [currentPart, setCurrentPart] = useState(null);
+    const [isEditPartModalOpen, setIsEditPartModalOpen] = useState(false);
+    const [currentEditPart, setCurrentEditPart] = useState(null);
     const [openPOs, setOpenPOs] = useState([]);
     const [selectedPO, setSelectedPO] = useState('');
 
@@ -163,6 +165,28 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
                 return 'Part created successfully!';
             },
             error: 'Failed to save part.'
+        });
+    };
+
+    const handleEditPartSave = (partData) => {
+        const payload = { ...partData };
+        const promise = api.put(`/parts/${currentEditPart.part_id}`, payload);
+
+        toast.promise(promise, {
+            loading: 'Updating part...',
+            success: (response) => {
+                const updatedPart = response.data;
+                setIsEditPartModalOpen(false);
+                setCurrentEditPart(null);
+                // Update the line with the new part data
+                setLines(lines.map(line =>
+                    line.part_id === updatedPart.part_id
+                        ? { ...line, ...updatedPart, quantity: line.quantity, cost_price: line.cost_price, sale_price: line.sale_price }
+                        : line
+                ));
+                return 'Part updated successfully!';
+            },
+            error: 'Failed to update part.'
         });
     };
 
@@ -351,13 +375,22 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
                                     <td className="p-2 align-middle">
                                         <div className="flex items-center justify-between gap-2">
                                             <div className="min-w-0 flex-1 truncate text-sm font-medium text-gray-800">{line.display_name}</div>
-                                            <button
-                                                onClick={() => { setCurrentPart(line); setIsAppModalOpen(true); }}
-                                                className="inline-flex items-center justify-center h-8 w-8 text-green-600 hover:text-green-800 rounded hover:bg-green-50"
-                                                title="Manage Applications"
-                                            >
-                                                <Icon path={ICONS.link} className="h-5 w-5"/>
-                                            </button>
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    onClick={() => { setCurrentEditPart(line); setIsEditPartModalOpen(true); }}
+                                                    className="inline-flex items-center justify-center h-8 w-8 text-blue-600 hover:text-blue-800 rounded hover:bg-blue-50"
+                                                    title="Edit Part"
+                                                >
+                                                    <Icon path={ICONS.edit} className="h-5 w-5"/>
+                                                </button>
+                                                <button
+                                                    onClick={() => { setCurrentPart(line); setIsAppModalOpen(true); }}
+                                                    className="inline-flex items-center justify-center h-8 w-8 text-green-600 hover:text-green-800 rounded hover:bg-green-50"
+                                                    title="Manage Applications"
+                                                >
+                                                    <Icon path={ICONS.link} className="h-5 w-5"/>
+                                                </button>
+                                            </div>
                                         </div>
                                     </td>
                                     <td className="p-2 align-middle text-center">
@@ -419,6 +452,16 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
                     groups={groups}
                     onSave={handleSaveNewPart}
                     onCancel={() => setIsNewPartModalOpen(false)}
+                    onBrandGroupAdded={fetchInitialData}
+                />
+            </Modal>
+            <Modal isOpen={isEditPartModalOpen} onClose={() => { setIsEditPartModalOpen(false); setCurrentEditPart(null); }} title="Edit Part">
+                <PartForm
+                    part={currentEditPart}
+                    brands={brands}
+                    groups={groups}
+                    onSave={handleEditPartSave}
+                    onCancel={() => { setIsEditPartModalOpen(false); setCurrentEditPart(null); }}
                     onBrandGroupAdded={fetchInitialData}
                 />
             </Modal>
