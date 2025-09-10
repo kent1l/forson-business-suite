@@ -3,6 +3,116 @@ const db = require('../db');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const router = express.Router();
 
+// GET /goods-receipts - Fetch list of posted GRNs with search and sorting
+router.get('/goods-receipts', async (req, res) => {
+  const { q: search = '', sortBy = 'receipt_date', sortOrder = 'desc' } = req.query;
+
+  // Validate sortBy and sortOrder
+  const allowedSortBy = ['receipt_date', 'supplier_name', 'grn_number'];
+  const allowedSortOrder = ['asc', 'desc'];
+  if (!allowedSortBy.includes(sortBy)) {
+    return res.status(400).json({ message: 'Invalid sortBy parameter' });
+  }
+  if (!allowedSortOrder.includes(sortOrder)) {
+    return res.status(400).json({ message: 'Invalid sortOrder parameter' });
+  }
+
+  try {
+    let query = `
+      SELECT 
+        gr.grn_id,
+        gr.grn_number,
+        gr.receipt_date,
+        s.supplier_name,
+        CONCAT(e.first_name, ' ', e.last_name) AS employee_name
+      FROM goods_receipt gr
+      JOIN supplier s ON gr.supplier_id = s.supplier_id
+      JOIN employee e ON gr.received_by = e.employee_id
+    `;
+
+    const params = [];
+    let paramIndex = 1;
+
+    if (search) {
+      query += `
+        WHERE gr.grn_number ILIKE $${paramIndex}
+           OR s.supplier_name ILIKE $${paramIndex + 1}
+           OR EXISTS (
+             SELECT 1 FROM goods_receipt_line grl
+             JOIN part p ON grl.part_id = p.part_id
+             LEFT JOIN brand b ON p.brand_id = b.brand_id
+             LEFT JOIN "group" g ON p.group_id = g.group_id
+             LEFT JOIN part_number pn ON pn.part_id = p.part_id
+             WHERE grl.grn_id = gr.grn_id
+               AND (pn.part_number ILIKE $${paramIndex + 2}
+                    OR p.detail ILIKE $${paramIndex + 2}
+                    OR p.internal_sku ILIKE $${paramIndex + 2}
+                    OR b.brand_name ILIKE $${paramIndex + 2}
+                    OR g.group_name ILIKE $${paramIndex + 2})
+           )
+      `;
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+      paramIndex += 3;
+    }
+
+    query += ` ORDER BY ${sortBy} ${sortOrder}`;
+
+    const { rows } = await db.query(query, params);
+    res.json(rows);
+  } catch (err) {
+    console.error('Error fetching goods receipts:', err.message);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
+// GET /goods-receipts/:id/lines - Fetch line items for a specific GRN
+router.get('/goods-receipts/:id/lines', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const query = `
+      SELECT 
+        grl.quantity,
+        grl.cost_price,
+        grl.sale_price,
+        p.internal_sku,
+        CASE
+          WHEN pn.part_number IS NOT NULL THEN
+            CASE
+              WHEN g.group_name IS NOT NULL AND b.brand_name IS NOT NULL THEN CONCAT(g.group_name, ' (', b.brand_name, ') | ', pn.part_number)
+              WHEN g.group_name IS NOT NULL THEN CONCAT(g.group_name, ' | ', pn.part_number)
+              WHEN b.brand_name IS NOT NULL THEN CONCAT(b.brand_name, ' | ', pn.part_number)
+              ELSE pn.part_number
+            END
+          ELSE
+            CASE
+              WHEN g.group_name IS NOT NULL AND b.brand_name IS NOT NULL THEN CONCAT(g.group_name, ' (', b.brand_name, ') | ', p.internal_sku)
+              WHEN g.group_name IS NOT NULL THEN CONCAT(g.group_name, ' | ', p.internal_sku)
+              WHEN b.brand_name IS NOT NULL THEN CONCAT(b.brand_name, ' | ', p.internal_sku)
+              ELSE p.internal_sku
+            END
+        END ||
+        CASE WHEN p.detail IS NOT NULL AND p.detail != '' THEN ' | ' || p.detail ELSE '' END AS display_name,
+        p.detail
+      FROM goods_receipt_line grl
+      JOIN part p ON grl.part_id = p.part_id
+      LEFT JOIN brand b ON p.brand_id = b.brand_id
+      LEFT JOIN "group" g ON p.group_id = g.group_id
+      LEFT JOIN part_number pn ON pn.part_id = p.part_id AND pn.display_order = (
+        SELECT MIN(pn2.display_order) FROM part_number pn2 WHERE pn2.part_id = p.part_id
+      )
+      WHERE grl.grn_id = $1
+      ORDER BY grl.grn_line_id
+    `;
+
+    const { rows } = await db.query(query, [id]);
+    res.json(rows);
+  } catch (err) {
+    console.error('Error fetching GRN lines:', err.message);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
 // POST /goods-receipts - Create a new Goods Receipt
 router.post('/goods-receipts', async (req, res) => {
   // NEW: Added po_id to destructuring

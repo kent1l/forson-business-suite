@@ -14,7 +14,7 @@ import { formatApplicationText } from '../helpers/applicationTextHelper';
 import { enrichPartsArray } from '../helpers/applicationCache';
 import PartApplicationManager from './PartApplicationManager';
 
-const GoodsReceiptPage = ({ user }) => {
+const GoodsReceiptPage = ({ user, onNavigate }) => {
     const [suppliers, setSuppliers] = useState([]);
     const [brands, setBrands] = useState([]);
     const [groups, setGroups] = useState([]);
@@ -238,7 +238,15 @@ const GoodsReceiptPage = ({ user }) => {
 
     return (
         <div>
-            <h1 className="text-2xl font-semibold text-gray-800 mb-6">New Goods Receipt</h1>
+            <div className="flex items-center justify-between mb-6">
+                <h1 className="text-2xl font-semibold text-gray-800">New Goods Receipt</h1>
+                <button
+                    onClick={() => onNavigate('goods_receipt_history')}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium"
+                >
+                    View History
+                </button>
+            </div>
             <div className="bg-white p-6 rounded-xl border border-gray-200 space-y-6">
                 {/* Draft saved indicator */}
                 <div className="flex items-center justify-end text-xs text-gray-500">
