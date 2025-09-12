@@ -160,9 +160,11 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
                     .map(p => p.part_id);
                 
                 const mergeData = {
-                    keepPartId: keepParts[group.groupId]?.part_id,
-                    mergePartIds: sourcePartIds,
-                    rules: mergeRules[group.groupId] || {}
+                    targetPartId: keepParts[group.groupId]?.part_id,
+                    sourcePartIds: sourcePartIds,
+                    conflictResolutions: mergeRules[group.groupId] || {},
+                    mergeNotes: '',
+                    preserveAliases: true
                 };
 
                 const response = await api.post('/parts/merge/merge', mergeData);

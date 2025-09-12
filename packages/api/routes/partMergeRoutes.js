@@ -147,6 +147,8 @@ router.post('/parts/merge/merge-preview', protect, hasPermission('parts:merge'),
 // Execute the actual merge operation
 router.post('/parts/merge/merge', protect, hasPermission('parts:merge'), async (req, res) => {
     try {
+        console.log('DEBUG: Merge request received:', req.body);
+        
         const { 
             sourcePartIds, 
             targetPartId, 
@@ -155,37 +157,47 @@ router.post('/parts/merge/merge', protect, hasPermission('parts:merge'), async (
             preserveAliases = true
         } = req.body;
 
-        if (!sourcePartIds || !Array.isArray(sourcePartIds) || sourcePartIds.length === 0) {
+        console.log('DEBUG: Extracted merge data:', { 
+            sourcePartIds, 
+            targetPartId, 
+            conflictResolutions, 
+            mergeNotes, 
+            preserveAliases 
+        });
+
+        // Convert IDs to integers to ensure proper database parameter types
+        const targetPartIdInt = parseInt(targetPartId);
+        const sourcePartIdsInt = sourcePartIds.map(id => parseInt(id));
+
+        if (!sourcePartIdsInt || !Array.isArray(sourcePartIdsInt) || sourcePartIdsInt.length === 0) {
+            console.log('DEBUG: sourcePartIds validation failed:', sourcePartIdsInt);
             return res.status(400).json({
                 success: false,
                 message: 'sourcePartIds array is required and must not be empty'
             });
         }
 
-        if (!targetPartId) {
+        if (!targetPartIdInt || isNaN(targetPartIdInt)) {
+            console.log('DEBUG: targetPartId validation failed:', targetPartIdInt);
             return res.status(400).json({
                 success: false,
-                message: 'targetPartId is required'
+                message: 'targetPartId is required and must be a valid number'
             });
         }
 
         const result = await partMergeService.executeMerge({
-            sourcePartIds,
-            targetPartId,
-            conflictResolutions,
-            mergeNotes,
-            preserveAliases,
-            userId: req.user.userId
-        });
+            keepPartId: targetPartIdInt,
+            mergePartIds: sourcePartIdsInt,
+            rules: conflictResolutions
+        }, req.user.employee_id);
 
         res.json({
             success: true,
             result: {
-                mergedPartId: result.targetPartId,
-                mergedPartIds: result.sourcePartIds,
-                conflicts: result.conflicts,
-                logId: result.logId,
-                summary: result.summary
+                mergedPartId: result.keepPartId,
+                mergedPartIds: result.mergedPartIds,
+                updatedCounts: result.updatedCounts,
+                warnings: result.warnings
             }
         });
     } catch (error) {

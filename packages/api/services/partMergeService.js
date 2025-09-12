@@ -60,7 +60,7 @@ class PartMergeService {
         // Validate again before execution
         await this.validateMergeRequest(keepPartId, mergePartIds);
         
-        const client = await this.db.connect();
+        const client = await this.db.getClient();
         try {
             await client.query('BEGIN');
             
@@ -530,10 +530,10 @@ class PartMergeService {
             UPDATE part 
             SET merged_into_part_id = $1, 
                 is_active = false,
-                internal_sku = internal_sku || '-merged-' || $1,
+                internal_sku = internal_sku || '-merged-' || $2,
                 date_modified = NOW()
-            WHERE part_id = ANY($2)
-        `, [keepPartId, mergePartIds]);
+            WHERE part_id = ANY($3)
+        `, [keepPartId, keepPartId.toString(), mergePartIds]);
     }
 
     async logMergeOperations(client, actorEmployeeId, keepPartId, mergePartIds, rules, counts) {
