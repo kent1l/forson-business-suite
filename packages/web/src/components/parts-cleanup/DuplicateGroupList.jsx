@@ -38,6 +38,22 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange }) => {
         fetchDuplicateGroups();
     }, [fetchDuplicateGroups]);
 
+    // Refresh when other parts of the app notify that parts were created/updated
+    useEffect(() => {
+        const handler = () => {
+            // Optional: allow event detail to include a boolean to force refresh
+            fetchDuplicateGroups();
+        };
+
+        window.addEventListener('parts:created', handler);
+        window.addEventListener('parts:updated', handler);
+
+        return () => {
+            window.removeEventListener('parts:created', handler);
+            window.removeEventListener('parts:updated', handler);
+        };
+    }, [fetchDuplicateGroups]);
+
     const handleGroupSelection = (group, isSelected) => {
         const newSelection = isSelected 
             ? [...selectedGroups, group]
@@ -126,7 +142,7 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange }) => {
                         </div>
                     </div>
                     
-                    <div className="w-full sm:w-48">
+                    <div className="w-full sm:w-48 flex items-end gap-3">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
                             Similarity Threshold
                         </label>
@@ -140,6 +156,14 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange }) => {
                             <option value={0.7}>Medium (70%)</option>
                             <option value={0.6}>Low (60%)</option>
                         </select>
+
+                        <button
+                            onClick={fetchDuplicateGroups}
+                            title="Refresh duplicate groups"
+                            className="ml-2 inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                        >
+                            Refresh
+                        </button>
                     </div>
                 </div>
             </div>
