@@ -44,7 +44,8 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
     const [mergeRules, setMergeRules] = useState({
         mergePartNumbers: true,
         mergeApplications: true,
-        preserveHistory: true
+        preserveHistory: true,
+        fieldOverrides: {}
     });
     const [mergePreview, setMergePreview] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -119,7 +120,7 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
                     const response = await api.post('/parts/merge/merge-preview', {
                         keepPartId: keepParts[group.groupId]?.part_id,
                         mergePartIds: sourcePartIds,
-                        rules: mergeRules[group.groupId] || {}
+                        rules: mergeRules
                     });
                     
                     const keepPart = keepParts[group.groupId];
@@ -162,7 +163,7 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
                 const mergeData = {
                     targetPartId: keepParts[group.groupId]?.part_id,
                     sourcePartIds: sourcePartIds,
-                    conflictResolutions: mergeRules[group.groupId] || {},
+                    conflictResolutions: mergeRules,
                     mergeNotes: '',
                     preserveAliases: true
                 };

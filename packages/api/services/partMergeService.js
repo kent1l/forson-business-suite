@@ -404,6 +404,11 @@ class PartMergeService {
                 UPDATE part_number 
                 SET part_id = $1 
                 WHERE part_id = ANY($2)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM part_number pn2 
+                      WHERE pn2.part_id = $1 
+                        AND pn2.part_number = part_number.part_number
+                  )
                 RETURNING part_number_id
             `, [keepPartId, mergePartIds]);
             counts.part_numbers = result.rowCount;
@@ -424,6 +429,11 @@ class PartMergeService {
                 UPDATE part_application 
                 SET part_id = $1 
                 WHERE part_id = ANY($2)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM part_application pa2 
+                      WHERE pa2.part_id = $1 
+                        AND pa2.application_id = part_application.application_id
+                  )
                 RETURNING part_app_id
             `, [keepPartId, mergePartIds]);
             counts.part_applications = result.rowCount;
@@ -534,6 +544,14 @@ class PartMergeService {
                 date_modified = NOW()
             WHERE part_id = ANY($3)
         `, [keepPartId, keepPartId.toString(), mergePartIds]);
+        
+        // Mark part_number records of merged parts as deleted
+        await client.query(`
+            UPDATE part_number 
+            SET deleted_at = NOW(), 
+                deleted_by = (SELECT created_by FROM part WHERE part_id = $1 LIMIT 1)
+            WHERE part_id = ANY($2)
+        `, [keepPartId, mergePartIds]);
     }
 
     async logMergeOperations(client, actorEmployeeId, keepPartId, mergePartIds, rules, counts) {

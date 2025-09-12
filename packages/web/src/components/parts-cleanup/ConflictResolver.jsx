@@ -14,7 +14,7 @@ const ConflictResolver = ({ selectedGroups, keepParts, rules, onRulesChange }) =
         onRulesChange({
             ...rules,
             fieldOverrides: {
-                ...rules.fieldOverrides,
+                ...(rules.fieldOverrides || {}),
                 [field]: value
             }
         });
@@ -121,10 +121,13 @@ const ConflictResolver = ({ selectedGroups, keepParts, rules, onRulesChange }) =
             {/* Field Conflicts per Group */}
             {selectedGroups.map(group => {
                 const keepPart = keepParts[group.groupId];
+                
+                if (!keepPart) return null;
+
                 const mergeParts = group.parts.filter(p => p.part_id !== keepPart.part_id);
                 const isExpanded = expandedGroups[group.groupId];
 
-                if (!keepPart || mergeParts.length === 0) return null;
+                if (mergeParts.length === 0) return null;
 
                 // Check for conflicts
                 const conflictFields = [
@@ -151,7 +154,7 @@ const ConflictResolver = ({ selectedGroups, keepParts, rules, onRulesChange }) =
                                     Group: {group.reasons.join(', ')}
                                 </h3>
                                 <div className="text-sm text-gray-600">
-                                    Keep: {keepPart.display_name} ({keepPart.internal_sku})
+                                    Keep: {keepPart.display_name || 'Unnamed Part'} ({keepPart.internal_sku})
                                     {hasConflicts && (
                                         <span className="ml-2 text-yellow-600 font-medium">
                                             • Conflicts detected
