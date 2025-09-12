@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
-const { hasPermission } = require('../middleware/authMiddleware');
-const duplicateFinder = require('../services/duplicateFinder');
+const { protect, hasPermission } = require('../middleware/authMiddleware');
+const DuplicateFinder = require('../services/duplicateFinder');
 const partMergeService = require('../services/partMergeService');
 
 const router = express.Router();
@@ -12,9 +12,12 @@ router.use((req, res, next) => {
     next();
 });
 
+// Create duplicate finder instance
+const duplicateFinder = new DuplicateFinder(db);
+
 // Route: GET /api/parts/merge/duplicates
 // Get potential duplicate parts grouped by similarity
-router.get('/parts/merge/duplicates', hasPermission('parts:merge'), async (req, res) => {
+router.get('/parts/merge/duplicates', protect, hasPermission('parts:merge'), async (req, res) => {
     try {
         const {
             minSimilarity = 0.75,
@@ -50,7 +53,7 @@ router.get('/parts/merge/duplicates', hasPermission('parts:merge'), async (req, 
 
 // Route: GET /api/parts/merge/search-for-merge
 // Search for parts similar to a given part (for manual merge initiation)
-router.get('/parts/merge/search-for-merge', hasPermission('parts:merge'), async (req, res) => {
+router.get('/parts/merge/search-for-merge', protect, hasPermission('parts:merge'), async (req, res) => {
     try {
         const { partId, query, limit = 20 } = req.query;
 
@@ -90,7 +93,7 @@ router.get('/parts/merge/search-for-merge', hasPermission('parts:merge'), async 
 
 // Route: POST /api/parts/merge/merge-preview
 // Get a preview of what would happen in a merge operation
-router.post('/parts/merge/merge-preview', hasPermission('parts:merge'), async (req, res) => {
+router.post('/parts/merge/merge-preview', protect, hasPermission('parts:merge'), async (req, res) => {
     try {
         const { sourcePartIds, targetPartId, conflictResolutions = {} } = req.body;
 
@@ -131,7 +134,7 @@ router.post('/parts/merge/merge-preview', hasPermission('parts:merge'), async (r
 
 // Route: POST /api/parts/merge/merge
 // Execute the actual merge operation
-router.post('/parts/merge/merge', hasPermission('parts:merge'), async (req, res) => {
+router.post('/parts/merge/merge', protect, hasPermission('parts:merge'), async (req, res) => {
     try {
         const { 
             sourcePartIds, 
@@ -186,7 +189,7 @@ router.post('/parts/merge/merge', hasPermission('parts:merge'), async (req, res)
 
 // Route: GET /api/parts/merge/:id/merge-history
 // Get merge history for a specific part
-router.get('/parts/merge/:id/merge-history', hasPermission('parts:view'), async (req, res) => {
+router.get('/parts/merge/:id/merge-history', protect, hasPermission('parts:view'), async (req, res) => {
     try {
         const partId = parseInt(req.params.id);
         
@@ -216,7 +219,7 @@ router.get('/parts/merge/:id/merge-history', hasPermission('parts:view'), async 
 
 // Route: GET /api/parts/merge/:id/details-for-merge
 // Get detailed part information optimized for merge operations
-router.get('/parts/merge/:id/details-for-merge', hasPermission('parts:merge'), async (req, res) => {
+router.get('/parts/merge/:id/details-for-merge', protect, hasPermission('parts:merge'), async (req, res) => {
     try {
         const partId = parseInt(req.params.id);
         

@@ -1,327 +1,314 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
-import SearchBar from '../SearchBar';
 
 const DuplicateGroupList = ({ selectedGroups, onSelectionChange }) => {
     const [duplicateGroups, setDuplicateGroups] = useState([]);
-    const [manualSearchResults, setManualSearchResults] = useState([]);
-    const [searchTerm, setSearchTerm] = useState('');
     const [loading, setLoading] = useState(true);
-    const [searchLoading, setSearchLoading] = useState(false);
-    const [strategy, setStrategy] = useState('auto');
+    const [error, setError] = useState(null);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [similarityThreshold, setSimilarityThreshold] = useState(0.8);
+    const [expandedGroups, setExpandedGroups] = useState({});
 
-    useEffect(() => {
-        fetchDuplicateGroups();
-    }, [strategy]);
-
-    useEffect(() => {
-        if (searchTerm.trim()) {
-            const debounceTimer = setTimeout(() => {
-                searchPartsForMerge(searchTerm);
-            }, 300);
-            return () => clearTimeout(debounceTimer);
-        } else {
-            setManualSearchResults([]);
-        }
-    }, [searchTerm]);
-
-    const fetchDuplicateGroups = async () => {
+    const fetchDuplicateGroups = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        
         try {
-            setLoading(true);
-            const response = await api.get('/parts/duplicates', {
-                params: { strategy, limit: 50 }
+            const response = await api.get('/parts/merge/duplicates', {
+                params: {
+                    minSimilarity: similarityThreshold,
+                    excludeMerged: true
+                }
             });
-            setDuplicateGroups(response.data);
-        } catch (error) {
-            console.error('Error fetching duplicate groups:', error);
-            toast.error('Failed to load duplicate groups: ' + (error.response?.data?.message || error.message));
+            
+            setDuplicateGroups(response.data.groups || []);
+        } catch (err) {
+            console.error('Error fetching duplicate groups:', err);
+            setError('Failed to fetch duplicate groups. Please try again.');
+            toast.error('Failed to load duplicate groups');
         } finally {
             setLoading(false);
         }
+    }, [similarityThreshold]);
+
+    useEffect(() => {
+        fetchDuplicateGroups();
+    }, [fetchDuplicateGroups]);
+
+    const handleGroupSelection = (group, isSelected) => {
+        const newSelection = isSelected 
+            ? [...selectedGroups, group]
+            : selectedGroups.filter(g => g.groupId !== group.groupId);
+        
+        onSelectionChange(newSelection);
     };
 
-    const searchPartsForMerge = async (query) => {
-        try {
-            setSearchLoading(true);
-            const response = await api.get('/parts/search-for-merge', {
-                params: { q: query, limit: 20 }
-            });
-            setManualSearchResults(response.data);
-        } catch (error) {
-            console.error('Error searching parts:', error);
-            toast.error('Failed to search parts: ' + (error.response?.data?.message || error.message));
-        } finally {
-            setSearchLoading(false);
-        }
+    const isGroupSelected = (groupId) => {
+        return selectedGroups.some(g => g.groupId === groupId);
     };
 
-    const handleGroupSelection = (group) => {
-        const isSelected = selectedGroups.some(g => g.groupId === group.groupId);
-        if (isSelected) {
-            onSelectionChange(selectedGroups.filter(g => g.groupId !== group.groupId));
-        } else {
-            onSelectionChange([...selectedGroups, group]);
-        }
+    const toggleGroupExpansion = (groupId) => {
+        setExpandedGroups(prev => ({
+            ...prev,
+            [groupId]: !prev[groupId]
+        }));
     };
 
-    const createManualGroup = (parts) => {
-        if (parts.length < 2) {
-            toast.error('Select at least 2 parts to create a merge group');
-            return;
-        }
+    const filteredGroups = duplicateGroups.filter(group => {
+        if (!searchTerm) return true;
+        
+        return group.parts.some(part => 
+            part.display_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            part.internal_sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            part.part_numbers?.some(pn => 
+                pn.part_number?.toLowerCase().includes(searchTerm.toLowerCase())
+            )
+        );
+    });
 
-        const manualGroup = {
-            groupId: `manual_${Date.now()}`,
-            score: 1.0,
-            reasons: ['manual_selection'],
-            parts: parts
-        };
-
-        onSelectionChange([...selectedGroups, manualGroup]);
-        setManualSearchResults([]);
-        setSearchTerm('');
-        toast.success('Manual group created successfully');
+    const formatPartNumber = (partNumbers) => {
+        if (!partNumbers || !Array.isArray(partNumbers)) return 'N/A';
+        return partNumbers.slice(0, 2).map(pn => pn.part_number || pn).join(', ') + 
+               (partNumbers.length > 2 ? ` +${partNumbers.length - 2} more` : '');
     };
 
-    const [selectedManualParts, setSelectedManualParts] = useState([]);
-
-    const handleManualPartSelection = (part) => {
-        const isSelected = selectedManualParts.some(p => p.part_id === part.part_id);
-        if (isSelected) {
-            setSelectedManualParts(selectedManualParts.filter(p => p.part_id !== part.part_id));
-        } else {
-            setSelectedManualParts([...selectedManualParts, part]);
-        }
-    };
-
-    const renderPartCard = (part, onClick, isSelected = false) => (
-        <div
-            key={part.part_id}
-            onClick={onClick}
-            className={`
-                p-3 border rounded-lg cursor-pointer transition-all
-                ${isSelected 
-                    ? 'border-blue-500 bg-blue-50' 
-                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                }
-            `}
-        >
-            <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-gray-900 truncate">
-                        {part.display_name}
-                    </div>
-                    <div className="text-xs text-gray-500 font-mono">
-                        SKU: {part.internal_sku}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                        {part.brand_name} • {part.group_name}
-                    </div>
-                    {part.tags && part.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1">
-                            {part.tags.slice(0, 3).map((tag, index) => (
-                                <span key={index} className="text-xs bg-gray-100 text-gray-600 px-1 py-0.5 rounded">
-                                    {tag}
-                                </span>
-                            ))}
-                            {part.tags.length > 3 && (
-                                <span className="text-xs text-gray-400">+{part.tags.length - 3}</span>
-                            )}
-                        </div>
-                    )}
-                </div>
-                {isSelected && (
-                    <Icon path={ICONS.check} className="h-4 w-4 text-blue-600 flex-shrink-0 ml-2" />
-                )}
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <span className="ml-3 text-gray-600">Finding duplicate parts...</span>
             </div>
-        </div>
-    );
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <div className="flex items-center">
+                    <Icon path={ICONS.warning} className="h-5 w-5 text-red-600 mr-2" />
+                    <h3 className="text-sm font-medium text-red-800">Error Loading Duplicates</h3>
+                </div>
+                <p className="text-sm text-red-700 mt-1">{error}</p>
+                <button
+                    onClick={fetchDuplicateGroups}
+                    className="mt-3 text-sm text-red-700 hover:text-red-900 underline"
+                >
+                    Try again
+                </button>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">
-            {/* Header */}
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <h2 className="text-lg font-semibold mb-4">Find Duplicate Parts</h2>
-                
-                {/* Strategy Selection */}
-                <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Detection Strategy
-                    </label>
-                    <div className="flex space-x-4">
-                        {[
-                            { value: 'auto', label: 'Auto (Recommended)' },
-                            { value: 'strict', label: 'Strict' },
-                            { value: 'loose', label: 'Loose' }
-                        ].map(option => (
-                            <label key={option.value} className="flex items-center">
-                                <input
-                                    type="radio"
-                                    value={option.value}
-                                    checked={strategy === option.value}
-                                    onChange={(e) => setStrategy(e.target.value)}
-                                    className="mr-2"
-                                />
-                                <span className="text-sm">{option.label}</span>
-                            </label>
-                        ))}
+            {/* Controls */}
+            <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <div className="flex flex-col sm:flex-row gap-4">
+                    <div className="flex-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Search Parts
+                        </label>
+                        <div className="relative">
+                            <Icon 
+                                path={ICONS.search} 
+                                className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400"
+                            />
+                            <input
+                                type="text"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                placeholder="Search by name, SKU, or part number..."
+                                className="pl-10 w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            />
+                        </div>
                     </div>
-                </div>
-
-                {/* Summary */}
-                <div className="text-sm text-gray-600">
-                    Found {duplicateGroups.length} potential duplicate groups. 
-                    Selected {selectedGroups.length} groups for merging.
+                    
+                    <div className="w-full sm:w-48">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Similarity Threshold
+                        </label>
+                        <select
+                            value={similarityThreshold}
+                            onChange={(e) => setSimilarityThreshold(parseFloat(e.target.value))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                            <option value={0.9}>Very High (90%)</option>
+                            <option value={0.8}>High (80%)</option>
+                            <option value={0.7}>Medium (70%)</option>
+                            <option value={0.6}>Low (60%)</option>
+                        </select>
+                    </div>
                 </div>
             </div>
 
-            {/* Suggested Duplicates */}
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <h3 className="text-md font-semibold mb-4">Suggested Duplicates</h3>
-                
-                {loading ? (
-                    <div className="text-center py-8">
-                        <div className="text-gray-500">Loading duplicate groups...</div>
+            {/* Summary */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h3 className="text-sm font-medium text-blue-900">
+                            Found {filteredGroups.length} duplicate group{filteredGroups.length !== 1 ? 's' : ''}
+                        </h3>
+                        <p className="text-sm text-blue-700">
+                            {selectedGroups.length} group{selectedGroups.length !== 1 ? 's' : ''} selected for merge
+                        </p>
                     </div>
-                ) : duplicateGroups.length === 0 ? (
-                    <div className="text-center py-8">
-                        <div className="text-gray-500">No duplicate groups found with current strategy</div>
-                        <div className="text-sm text-gray-400 mt-1">Try using a different detection strategy</div>
-                    </div>
-                ) : (
-                    <div className="space-y-4">
-                        {duplicateGroups.map(group => {
-                            const isSelected = selectedGroups.some(g => g.groupId === group.groupId);
-                            return (
-                                <div
-                                    key={group.groupId}
-                                    className={`
-                                        border rounded-lg p-4 cursor-pointer transition-all
-                                        ${isSelected 
-                                            ? 'border-blue-500 bg-blue-50' 
-                                            : 'border-gray-200 hover:border-gray-300'
-                                        }
-                                    `}
-                                    onClick={() => handleGroupSelection(group)}
-                                >
-                                    <div className="flex items-center justify-between mb-3">
-                                        <div className="flex items-center space-x-3">
-                                            <div className={`
-                                                w-5 h-5 rounded border-2 flex items-center justify-center
-                                                ${isSelected 
-                                                    ? 'border-blue-500 bg-blue-500' 
-                                                    : 'border-gray-300'
-                                                }
-                                            `}>
-                                                {isSelected && (
-                                                    <Icon path={ICONS.check} className="h-3 w-3 text-white" />
-                                                )}
-                                            </div>
-                                            <div>
-                                                <div className="text-sm font-medium">
-                                                    {group.reasons.join(', ')} (Score: {group.score.toFixed(2)})
+                    {selectedGroups.length > 0 && (
+                        <div className="text-sm text-blue-700">
+                            Total parts to merge: {selectedGroups.reduce((sum, g) => sum + g.parts.length - 1, 0)}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Duplicate Groups List */}
+            {filteredGroups.length === 0 ? (
+                <div className="text-center py-8">
+                    <Icon path={ICONS.check} className="h-12 w-12 text-green-500 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No Duplicates Found</h3>
+                    <p className="text-gray-600">
+                        {searchTerm 
+                            ? 'No duplicate groups match your search criteria.'
+                            : 'Great! No duplicate parts found with the current similarity threshold.'
+                        }
+                    </p>
+                    {searchTerm && (
+                        <button
+                            onClick={() => setSearchTerm('')}
+                            className="mt-3 text-blue-600 hover:text-blue-700 underline"
+                        >
+                            Clear search
+                        </button>
+                    )}
+                </div>
+            ) : (
+                <div className="space-y-4">
+                    {filteredGroups.map((group) => {
+                        const isSelected = isGroupSelected(group.groupId);
+                        const isExpanded = expandedGroups[group.groupId];
+                        
+                        return (
+                            <div
+                                key={group.groupId}
+                                className={`
+                                    border rounded-lg transition-all duration-200
+                                    ${isSelected 
+                                        ? 'border-blue-500 bg-blue-50' 
+                                        : 'border-gray-200 bg-white hover:border-gray-300'
+                                    }
+                                `}
+                            >
+                                <div className="p-4">
+                                    <div className="flex items-start justify-between">
+                                        <div className="flex items-start space-x-3">
+                                            <input
+                                                type="checkbox"
+                                                checked={isSelected}
+                                                onChange={(e) => handleGroupSelection(group, e.target.checked)}
+                                                className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                            />
+                                            <div className="flex-1">
+                                                <div className="flex items-center space-x-2 mb-2">
+                                                    <h3 className="text-sm font-medium text-gray-900">
+                                                        Similarity: {(group.score * 100).toFixed(1)}%
+                                                    </h3>
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {group.reasons?.map((reason, index) => (
+                                                            <span
+                                                                key={index}
+                                                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
+                                                            >
+                                                                {reason}
+                                                            </span>
+                                                        ))}
+                                                    </div>
                                                 </div>
-                                                <div className="text-xs text-gray-500">
-                                                    {group.parts.length} parts in this group
+                                                
+                                                <div className="text-sm text-gray-600 mb-2">
+                                                    {group.parts.length} parts • 
+                                                    Will merge {group.parts.length - 1} part{group.parts.length - 1 !== 1 ? 's' : ''} into 1
+                                                </div>
+
+                                                {/* Quick preview of parts */}
+                                                <div className="space-y-1">
+                                                    {group.parts.slice(0, isExpanded ? undefined : 2).map((part) => (
+                                                        <div key={part.part_id} className="text-xs text-gray-700">
+                                                            <span className="font-mono">{part.internal_sku}</span> - 
+                                                            <span className="ml-1">{part.display_name || 'Unnamed Part'}</span>
+                                                            {part.part_numbers && (
+                                                                <span className="ml-2 text-blue-600">
+                                                                    ({formatPartNumber(part.part_numbers)})
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                    
+                                                    {!isExpanded && group.parts.length > 2 && (
+                                                        <div className="text-xs text-gray-500">
+                                                            +{group.parts.length - 2} more part{group.parts.length - 2 !== 1 ? 's' : ''}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
+
+                                        <button
+                                            onClick={() => toggleGroupExpansion(group.groupId)}
+                                            className="text-gray-400 hover:text-gray-600 ml-2"
+                                        >
+                                            <Icon 
+                                                path={isExpanded ? ICONS.chevronUp : ICONS.chevronDown} 
+                                                className="h-5 w-5" 
+                                            />
+                                        </button>
                                     </div>
-                                    
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                        {group.parts.map(part => 
-                                            renderPartCard(part, (e) => e.stopPropagation())
-                                        )}
-                                    </div>
+
+                                    {/* Expanded details */}
+                                    {isExpanded && (
+                                        <div className="mt-4 pt-4 border-t border-gray-200">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                                {group.parts.map((part) => (
+                                                    <div
+                                                        key={part.part_id}
+                                                        className="bg-gray-50 rounded-lg p-3 text-xs"
+                                                    >
+                                                        <div className="font-medium text-gray-900 mb-1">
+                                                            {part.display_name || 'Unnamed Part'}
+                                                        </div>
+                                                        <div className="space-y-1 text-gray-600">
+                                                            <div><strong>SKU:</strong> {part.internal_sku}</div>
+                                                            {part.brand_name && (
+                                                                <div><strong>Brand:</strong> {part.brand_name}</div>
+                                                            )}
+                                                            {part.part_numbers && part.part_numbers.length > 0 && (
+                                                                <div>
+                                                                    <strong>Part Numbers:</strong> {formatPartNumber(part.part_numbers)}
+                                                                </div>
+                                                            )}
+                                                            {(part.cost_price || part.sale_price) && (
+                                                                <div>
+                                                                    <strong>Price:</strong> 
+                                                                    {part.cost_price && ` Cost: ₱${parseFloat(part.cost_price).toFixed(2)}`}
+                                                                    {part.sale_price && ` Sale: ₱${parseFloat(part.sale_price).toFixed(2)}`}
+                                                                </div>
+                                                            )}
+                                                            <div className="text-xs text-gray-500 mt-2">
+                                                                ID: {part.part_id}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                            );
-                        })}
-                    </div>
-                )}
-            </div>
-
-            {/* Manual Selection */}
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <h3 className="text-md font-semibold mb-4">Manual Selection</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                    Search and manually select parts to merge together
-                </p>
-                
-                <div className="mb-4">
-                    <SearchBar
-                        value={searchTerm}
-                        onChange={setSearchTerm}
-                        onClear={() => setSearchTerm('')}
-                        placeholder="Search by name, SKU, or part number..."
-                    />
+                            </div>
+                        );
+                    })}
                 </div>
-
-                {searchLoading && (
-                    <div className="text-center py-4">
-                        <div className="text-gray-500">Searching...</div>
-                    </div>
-                )}
-
-                {manualSearchResults.length > 0 && (
-                    <div className="space-y-3 mb-4">
-                        <div className="text-sm font-medium text-gray-700">
-                            Search Results (click to select)
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-64 overflow-y-auto">
-                            {manualSearchResults.map(part => 
-                                renderPartCard(
-                                    part, 
-                                    () => handleManualPartSelection(part),
-                                    selectedManualParts.some(p => p.part_id === part.part_id)
-                                )
-                            )}
-                        </div>
-                    </div>
-                )}
-
-                {selectedManualParts.length > 0 && (
-                    <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                            <div className="text-sm font-medium text-gray-700">
-                                Selected Parts ({selectedManualParts.length})
-                            </div>
-                            <div className="space-x-2">
-                                <button
-                                    onClick={() => setSelectedManualParts([])}
-                                    className="text-sm text-gray-500 hover:text-gray-700"
-                                >
-                                    Clear
-                                </button>
-                                <button
-                                    onClick={() => createManualGroup(selectedManualParts)}
-                                    disabled={selectedManualParts.length < 2}
-                                    className={`
-                                        px-3 py-1 text-sm rounded
-                                        ${selectedManualParts.length >= 2
-                                            ? 'bg-blue-600 text-white hover:bg-blue-700'
-                                            : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                                        }
-                                    `}
-                                >
-                                    Create Group
-                                </button>
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {selectedManualParts.map(part => 
-                                renderPartCard(
-                                    part, 
-                                    () => handleManualPartSelection(part),
-                                    true
-                                )
-                            )}
-                        </div>
-                    </div>
-                )}
-            </div>
+            )}
         </div>
     );
 };
