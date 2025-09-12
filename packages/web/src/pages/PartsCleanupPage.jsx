@@ -103,19 +103,43 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
     const generateMergePreview = async () => {
         setLoading(true);
         try {
-            const preview = {
-                groups: selectedDuplicateGroups.map(group => ({
-                    groupId: group.groupId,
-                    sourcePartIds: group.parts.filter(p => p.part_id !== keepParts[group.groupId]?.part_id).map(p => p.part_id),
-                    targetPartId: keepParts[group.groupId]?.part_id,
-                    conflicts: [],
-                    rules: mergeRules
-                }))
-            };
-            setMergePreview(preview);
+            const previews = [];
+            
+            for (const group of selectedDuplicateGroups) {
+                if (!keepParts[group.groupId]) {
+                    // Skip groups where no keep part is selected
+                    continue;
+                }
+                
+                const sourcePartIds = group.parts
+                    .filter(p => p.part_id !== keepParts[group.groupId]?.part_id)
+                    .map(p => p.part_id);
+                
+                if (sourcePartIds.length > 0) {
+                    const response = await api.post('/parts/merge/merge-preview', {
+                        keepPartId: keepParts[group.groupId]?.part_id,
+                        mergePartIds: sourcePartIds,
+                        rules: mergeRules[group.groupId] || {}
+                    });
+                    
+                    const keepPart = keepParts[group.groupId];
+                    const mergeParts = group.parts.filter(p => p.part_id !== keepPart?.part_id);
+                    
+                    previews.push({
+                        groupId: group.groupId,
+                        sourcePartIds,
+                        targetPartId: keepParts[group.groupId]?.part_id,
+                        keepPart,
+                        mergeParts,
+                        ...response.data
+                    });
+                }
+            }
+            
+            setMergePreview(previews);
         } catch (error) {
             console.error('Error generating merge preview:', error);
-            toast.error('Failed to generate merge preview');
+            toast.error('Failed to generate merge preview: ' + (error.response?.data?.message || error.message));
         } finally {
             setLoading(false);
         }
@@ -127,16 +151,18 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
             const results = [];
             
             for (const group of selectedDuplicateGroups) {
+                if (!keepParts[group.groupId]) {
+                    continue;
+                }
+                
                 const sourcePartIds = group.parts
                     .filter(p => p.part_id !== keepParts[group.groupId]?.part_id)
                     .map(p => p.part_id);
                 
                 const mergeData = {
-                    sourcePartIds,
-                    targetPartId: keepParts[group.groupId]?.part_id,
-                    conflictResolutions: {},
-                    mergeNotes: `Automated merge from Parts Cleanup - Group: ${group.reasons.join(', ')}`,
-                    preserveAliases: mergeRules.preserveHistory
+                    keepPartId: keepParts[group.groupId]?.part_id,
+                    mergePartIds: sourcePartIds,
+                    rules: mergeRules[group.groupId] || {}
                 };
 
                 const response = await api.post('/parts/merge/merge', mergeData);

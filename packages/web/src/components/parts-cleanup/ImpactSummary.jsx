@@ -22,7 +22,7 @@ const ImpactSummary = ({ mergePreview, loading }) => {
     const getTotalCounts = () => {
         const totals = {};
         mergePreview.forEach(item => {
-            Object.entries(item.preview.impact.byTable).forEach(([table, count]) => {
+            Object.entries(item.impact.byTable).forEach(([table, count]) => {
                 totals[table] = (totals[table] || 0) + count;
             });
         });
@@ -30,11 +30,11 @@ const ImpactSummary = ({ mergePreview, loading }) => {
     };
 
     const getAllWarnings = () => {
-        return mergePreview.flatMap(item => item.preview.warnings || []);
+        return mergePreview.flatMap(item => item.warnings || []);
     };
 
     const getAllConflicts = () => {
-        return mergePreview.flatMap(item => item.preview.conflicts || []);
+        return mergePreview.flatMap(item => item.conflicts || []);
     };
 
     const totalCounts = getTotalCounts();
@@ -114,13 +114,13 @@ const ImpactSummary = ({ mergePreview, loading }) => {
             </div>
 
             {/* Inventory Impact */}
-            {mergePreview.some(item => item.preview.impact.inventory?.locations?.length > 0) && (
+            {mergePreview.some(item => item.impact.inventory?.locations?.length > 0) && (
                 <div className="bg-white rounded-lg border border-gray-200 p-6">
                     <h3 className="text-md font-semibold mb-4">Inventory Impact</h3>
                     
                     <div className="space-y-4">
                         {mergePreview.map((item, index) => {
-                            const locations = item.preview.impact.inventory?.locations || [];
+                            const locations = item.impact.inventory?.locations || [];
                             if (locations.length === 0) return null;
 
                             return (
@@ -222,7 +222,7 @@ const ImpactSummary = ({ mergePreview, loading }) => {
                             </div>
 
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-                                {Object.entries(item.preview.impact.byTable)
+                                {Object.entries(item.impact.byTable)
                                     .filter(([, count]) => count > 0)
                                     .map(([table, count]) => (
                                         <div key={table} className="bg-gray-50 p-2 rounded">

@@ -20,9 +20,11 @@ class PartMergeService {
     async previewMerge(mergeRequest) {
         const { keepPartId, mergePartIds, rules } = mergeRequest;
         
+        console.log('DEBUG: Validating merge request...');
         // Validate input
         await this.validateMergeRequest(keepPartId, mergePartIds);
         
+        console.log('DEBUG: Getting part details for keepPartId:', keepPartId);
         // Get detailed part data
         const keepPart = await this.getPartDetails(keepPartId);
         const mergeParts = await Promise.all(
@@ -124,10 +126,14 @@ class PartMergeService {
     }
 
     async validateMergeRequest(keepPartId, mergePartIds) {
+        if (!Array.isArray(mergePartIds) || mergePartIds.length === 0) {
+            throw new Error('mergePartIds array is required and must not be empty');
+        }
+        
         // Check that all part IDs are valid
         const allPartIds = [keepPartId, ...mergePartIds];
         const result = await this.db.query(
-            'SELECT part_id, merged_into_part_id FROM parts WHERE part_id = ANY($1)',
+            'SELECT part_id, merged_into_part_id FROM part WHERE part_id = ANY($1)',
             [allPartIds]
         );
         
@@ -153,40 +159,44 @@ class PartMergeService {
     }
 
     async getPartDetails(partId, client = null) {
+        console.log('DEBUG: Getting part details for partId:', partId);
         const db = client || this.db;
         const result = await db.query(`
             SELECT p.*, 
                    b.brand_name, 
                    g.group_name,
+                   -- Provide a display_name for UI (fallback to SKU since part has no display_name column)
+                   p.internal_sku as display_name,
                    COALESCE(
                        json_agg(
                            DISTINCT jsonb_build_object(
-                               'id', pn.id,
+                               'id', pn.part_number_id,
                                'part_number', pn.part_number,
-                               'part_number_type', pn.part_number_type
+                               'part_number_type', pn.number_type
                            )
-                       ) FILTER (WHERE pn.id IS NOT NULL), 
+                       ) FILTER (WHERE pn.part_number_id IS NOT NULL), 
                        '[]'::json
                    ) as part_numbers,
                    COALESCE(
                        json_agg(
                            DISTINCT jsonb_build_object(
                                'application_id', pa.application_id,
-                               'make', a.make,
-                               'model', a.model,
-                               'engine', a.engine,
-                               'year_start', a.year_start,
-                               'year_end', a.year_end
+                               'make', vm.make_name,
+                               'model', vmo.model_name,
+                               'engine', ve.engine_name
                            )
                        ) FILTER (WHERE pa.application_id IS NOT NULL), 
                        '[]'::json
                    ) as applications
-            FROM parts p
-            LEFT JOIN brands b ON p.brand_id = b.brand_id
-            LEFT JOIN groups g ON p.group_id = g.group_id
-            LEFT JOIN part_numbers pn ON p.part_id = pn.part_id
-            LEFT JOIN part_applications pa ON p.part_id = pa.part_id
-            LEFT JOIN applications a ON pa.application_id = a.application_id
+            FROM part p
+            LEFT JOIN brand b ON p.brand_id = b.brand_id
+            LEFT JOIN "group" g ON p.group_id = g.group_id
+            LEFT JOIN part_number pn ON p.part_id = pn.part_id
+            LEFT JOIN part_application pa ON p.part_id = pa.part_id
+            LEFT JOIN application a ON pa.application_id = a.application_id
+            LEFT JOIN vehicle_make vm ON a.make_id = vm.make_id
+            LEFT JOIN vehicle_model vmo ON a.model_id = vmo.model_id
+            LEFT JOIN vehicle_engine ve ON a.engine_id = ve.engine_id
             WHERE p.part_id = $1
             GROUP BY p.part_id, b.brand_name, g.group_name
         `, [partId]);
@@ -235,12 +245,12 @@ class PartMergeService {
     }
 
     async calculateMergeImpact(keepPartId, mergePartIds) {
+        // Use actual schema table names
         const tables = [
-            'goods_receipt_lines',
-            'invoice_lines', 
-            'order_lines',
-            'stock_movements',
-            'inventory_locations'
+            'goods_receipt_line',
+            'invoice_line',
+            'purchase_order_line',
+            'credit_note_line'
         ];
         
         const impact = { byTable: {} };
@@ -258,29 +268,42 @@ class PartMergeService {
             }
         }
         
-        // Calculate inventory impact
-        impact.inventory = await this.calculateInventoryImpact(keepPartId, mergePartIds);
+        // Calculate inventory impact using inventory_transaction table
+        impact.inventory = await this.calculateInventoryImpact(mergePartIds);
         
         return impact;
     }
 
-    async calculateInventoryImpact(keepPartId, mergePartIds) {
-        const result = await this.db.query(`
-            SELECT 
-                location_id,
-                SUM(quantity_on_hand) as total_quantity,
-                AVG(weighted_average_cost) as avg_wac
-            FROM inventory_locations 
-            WHERE part_id = ANY($1)
-            GROUP BY location_id
-        `, [[keepPartId, ...mergePartIds]]);
-        
+    async calculateInventoryImpact(mergePartIds) {
+        // No inventory_locations table; infer stock from inventory_transaction
+        // Calculate combined inventory for merge parts only
+        const stockResult = await this.db.query(
+            `SELECT part_id, COALESCE(SUM(quantity),0) AS stock_on_hand FROM public.inventory_transaction WHERE part_id = ANY($1) GROUP BY part_id`,
+            [mergePartIds]
+        );
+        const wacResult = await this.db.query(
+            `SELECT part_id, COALESCE(wac_cost,0) AS wac_cost FROM public.part WHERE part_id = ANY($1)`,
+            [mergePartIds]
+        );
+
+        const stockByPart = Object.fromEntries(stockResult.rows.map(r => [String(r.part_id), Number(r.stock_on_hand)]));
+        const wacByPart = Object.fromEntries(wacResult.rows.map(r => [String(r.part_id), Number(r.wac_cost)]));
+
+        let totalQty = 0;
+        let totalCost = 0;
+        for (const id of mergePartIds) {
+            const qty = stockByPart[String(id)] || 0;
+            const wac = wacByPart[String(id)] || 0;
+            totalQty += qty;
+            totalCost += qty * wac;
+        }
+        const avgWac = totalQty > 0 ? totalCost / totalQty : 0;
+
         return {
-            locations: result.rows.map(row => ({
-                location_id: row.location_id,
-                quantity: parseFloat(row.total_quantity || 0),
-                avg_wac: parseFloat(row.avg_wac || 0)
-            }))
+            // Present a single consolidated pseudo-location for the UI
+            locations: [
+                { location_id: 'all', quantity: totalQty, avg_wac: avgWac }
+            ]
         };
     }
 
@@ -329,7 +352,7 @@ class PartMergeService {
 
     async lockParts(client, partIds) {
         await client.query(
-            'SELECT part_id FROM parts WHERE part_id = ANY($1) ORDER BY part_id FOR UPDATE',
+            'SELECT part_id FROM part WHERE part_id = ANY($1) ORDER BY part_id FOR UPDATE',
             [partIds]
         );
     }
@@ -341,9 +364,22 @@ class PartMergeService {
         
         // Update basic fields if overridden
         if (rules.fieldOverrides) {
+            // Map UI override names to actual column names where needed
+            const fieldMap = {
+                // UI name : DB column
+                detail: 'detail',
+                barcode: 'barcode',
+                brand_id: 'brand_id',
+                group_id: 'group_id',
+                is_active: 'is_active',
+                cost_price: 'last_cost',
+                sale_price: 'last_sale_price',
+                internal_sku: 'internal_sku',
+                tax_rate_id: 'tax_rate_id'
+            };
             for (const [field, value] of Object.entries(rules.fieldOverrides)) {
-                if (['display_name', 'detail', 'cost_price', 'sale_price', 'is_active'].includes(field)) {
-                    updateFields.push(`${field} = $${paramIndex}`);
+                if (fieldMap[field]) {
+                    updateFields.push(`${fieldMap[field]} = $${paramIndex}`);
                     params.push(value);
                     paramIndex++;
                 }
@@ -351,9 +387,9 @@ class PartMergeService {
         }
         
         if (updateFields.length > 0) {
-            updateFields.push(`modified_at = NOW()`);
+            updateFields.push(`date_modified = NOW()`);
             await client.query(
-                `UPDATE parts SET ${updateFields.join(', ')} WHERE part_id = $1`,
+                `UPDATE part SET ${updateFields.join(', ')} WHERE part_id = $1`,
                 params
             );
         }
@@ -362,28 +398,44 @@ class PartMergeService {
     async mergeChildRecords(client, keepPartId, mergePartIds, rules) {
         const counts = {};
         
-        // Merge part_numbers
+        // Merge part_number
         if (rules.mergePartNumbers) {
             const result = await client.query(`
-                UPDATE part_numbers 
+                UPDATE part_number 
                 SET part_id = $1 
                 WHERE part_id = ANY($2)
-                ON CONFLICT (part_id, part_number, part_number_type) DO NOTHING
-                RETURNING id
+                RETURNING part_number_id
             `, [keepPartId, mergePartIds]);
             counts.part_numbers = result.rowCount;
+            // Remove duplicates after reassignment using unique(part_id, part_number)
+            await client.query(`
+                DELETE FROM part_number pn
+                USING part_number pn2
+                WHERE pn.part_id = $1
+                  AND pn.part_id = pn2.part_id
+                  AND pn.part_number = pn2.part_number
+                  AND pn.part_number_id > pn2.part_number_id
+            `, [keepPartId]);
         }
         
-        // Merge part_applications
+        // Merge part_application
         if (rules.mergeApplications) {
             const result = await client.query(`
-                UPDATE part_applications 
+                UPDATE part_application 
                 SET part_id = $1 
                 WHERE part_id = ANY($2)
-                ON CONFLICT (part_id, application_id) DO NOTHING
-                RETURNING part_id, application_id
+                RETURNING part_app_id
             `, [keepPartId, mergePartIds]);
             counts.part_applications = result.rowCount;
+            // Remove duplicates after reassignment using unique(part_id, application_id)
+            await client.query(`
+                DELETE FROM part_application pa
+                USING part_application pa2
+                WHERE pa.part_id = $1
+                  AND pa.part_id = pa2.part_id
+                  AND pa.application_id = pa2.application_id
+                  AND pa.part_app_id > pa2.part_app_id
+            `, [keepPartId]);
         }
         
         return counts;
@@ -391,10 +443,11 @@ class PartMergeService {
 
     async reassignForeignKeys(client, keepPartId, mergePartIds) {
         const tables = [
-            'goods_receipt_lines',
-            'invoice_lines',
-            'order_lines',
-            'stock_movements'
+            'goods_receipt_line',
+            'invoice_line',
+            'purchase_order_line',
+            'credit_note_line',
+            'inventory_transaction'
         ];
         
         const counts = {};
@@ -415,42 +468,9 @@ class PartMergeService {
         return counts;
     }
 
-    async consolidateInventory(client, keepPartId, mergePartIds) {
-        // Consolidate inventory by location
-        const result = await client.query(`
-            INSERT INTO inventory_locations (part_id, location_id, quantity_on_hand, weighted_average_cost)
-            SELECT 
-                $1 as part_id,
-                location_id,
-                SUM(quantity_on_hand) as quantity_on_hand,
-                CASE 
-                    WHEN SUM(quantity_on_hand) > 0 THEN 
-                        SUM(quantity_on_hand * weighted_average_cost) / SUM(quantity_on_hand)
-                    ELSE 0 
-                END as weighted_average_cost
-            FROM inventory_locations
-            WHERE part_id = ANY($2)
-            GROUP BY location_id
-            ON CONFLICT (part_id, location_id) 
-            DO UPDATE SET 
-                quantity_on_hand = inventory_locations.quantity_on_hand + EXCLUDED.quantity_on_hand,
-                weighted_average_cost = CASE 
-                    WHEN inventory_locations.quantity_on_hand + EXCLUDED.quantity_on_hand > 0 THEN
-                        (inventory_locations.quantity_on_hand * inventory_locations.weighted_average_cost + 
-                         EXCLUDED.quantity_on_hand * EXCLUDED.weighted_average_cost) / 
-                        (inventory_locations.quantity_on_hand + EXCLUDED.quantity_on_hand)
-                    ELSE inventory_locations.weighted_average_cost
-                END
-            RETURNING part_id, location_id
-        `, [keepPartId, mergePartIds]);
-        
-        // Delete old inventory records
-        await client.query(
-            'DELETE FROM inventory_locations WHERE part_id = ANY($1)',
-            [mergePartIds]
-        );
-        
-        return { inventory_locations_consolidated: result.rowCount };
+    async consolidateInventory(_client, _keepPartId, _mergePartIds) {
+        // No inventory_locations table; consolidation is achieved by FK reassignment on inventory_transaction
+        return { inventory_consolidated: 0 };
     }
 
     async createAliases(client, keepPartId, mergeParts, _rules) {
@@ -507,11 +527,11 @@ class PartMergeService {
 
     async markPartsAsMerged(client, mergePartIds, keepPartId) {
         await client.query(`
-            UPDATE parts 
+            UPDATE part 
             SET merged_into_part_id = $1, 
                 is_active = false,
                 internal_sku = internal_sku || '-merged-' || $1,
-                modified_at = NOW()
+                date_modified = NOW()
             WHERE part_id = ANY($2)
         `, [keepPartId, mergePartIds]);
     }
@@ -589,9 +609,9 @@ class PartMergeService {
                 kp.internal_sku as keep_part_sku,
                 mp.internal_sku as merged_part_sku
             FROM part_merge_log pml
-            LEFT JOIN employees e ON pml.actor_employee_id = e.employee_id
-            LEFT JOIN parts kp ON pml.keep_part_id = kp.part_id
-            LEFT JOIN parts mp ON pml.merged_part_id = mp.part_id
+            LEFT JOIN employee e ON pml.actor_employee_id = e.employee_id
+            LEFT JOIN part kp ON pml.keep_part_id = kp.part_id
+            LEFT JOIN part mp ON pml.merged_part_id = mp.part_id
             WHERE pml.keep_part_id = $1 OR pml.merged_part_id = $1
             ORDER BY pml.merged_at DESC
         `, [partId]);

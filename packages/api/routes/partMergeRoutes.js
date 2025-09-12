@@ -2,7 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const DuplicateFinder = require('../services/duplicateFinder');
-const partMergeService = require('../services/partMergeService');
+const PartMergeService = require('../services/partMergeService');
 
 const router = express.Router();
 
@@ -12,8 +12,9 @@ router.use((req, res, next) => {
     next();
 });
 
-// Create duplicate finder instance
+// Create service instances
 const duplicateFinder = new DuplicateFinder(db);
+const partMergeService = new PartMergeService(db);
 
 // Route: GET /api/parts/merge/duplicates
 // Get potential duplicate parts grouped by similarity
@@ -95,32 +96,42 @@ router.get('/parts/merge/search-for-merge', protect, hasPermission('parts:merge'
 // Get a preview of what would happen in a merge operation
 router.post('/parts/merge/merge-preview', protect, hasPermission('parts:merge'), async (req, res) => {
     try {
-        const { sourcePartIds, targetPartId, conflictResolutions = {} } = req.body;
+        console.log('DEBUG: Merge preview request:', req.body);
+        
+        const { sourcePartIds, targetPartId, conflictResolutions = {}, keepPartId, mergePartIds, rules } = req.body;
+        
+        // Handle both old and new request formats
+        const finalKeepPartId = keepPartId || targetPartId;
+        const finalMergePartIds = mergePartIds || sourcePartIds;
+        const finalRules = rules || conflictResolutions;
 
-        if (!sourcePartIds || !Array.isArray(sourcePartIds) || sourcePartIds.length === 0) {
+        console.log('DEBUG: Starting preview merge with keepPartId:', finalKeepPartId, 'mergePartIds:', finalMergePartIds);
+
+        if (!finalMergePartIds || !Array.isArray(finalMergePartIds) || finalMergePartIds.length === 0) {
             return res.status(400).json({
                 success: false,
-                message: 'sourcePartIds array is required and must not be empty'
+                message: 'mergePartIds array is required and must not be empty'
             });
         }
 
-        if (!targetPartId) {
+        if (!finalKeepPartId) {
             return res.status(400).json({
                 success: false,
-                message: 'targetPartId is required'
+                message: 'keepPartId is required'
             });
         }
 
-        const preview = await partMergeService.generateMergePreview({
-            sourcePartIds,
-            targetPartId,
-            conflictResolutions,
-            userId: req.user.userId
+        console.log('DEBUG: PreviewMerge called with:', { keepPartId: finalKeepPartId, mergePartIds: finalMergePartIds, rules: finalRules });
+
+        const preview = await partMergeService.previewMerge({
+            keepPartId: finalKeepPartId,
+            mergePartIds: finalMergePartIds,
+            rules: finalRules
         });
 
         res.json({
             success: true,
-            preview
+            ...preview
         });
     } catch (error) {
         console.error('Error generating merge preview:', error);
