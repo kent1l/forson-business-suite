@@ -4,6 +4,7 @@ import Header from './Header';
 import Dashboard from '../../pages/Dashboard';
 import SuppliersPage from '../../pages/SuppliersPage';
 import PartsPage from '../../pages/PartsPage';
+import PartsCleanupPage from '../../pages/PartsCleanupPage';
 import GoodsReceiptPage from '../../pages/GoodsReceiptPage';
 import GoodsReceiptHistoryPage from '../../pages/GoodsReceiptHistoryPage';
 import InvoicingPage from '../../pages/InvoicingPage';
@@ -30,7 +31,8 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, posLines, setPosL
             case 'reporting': return <ReportingPage />;
             case 'power_search': return <PowerSearchPage />;
             case 'suppliers': return <SuppliersPage user={user} />;
-            case 'parts': return <PartsPage user={user} />;
+            case 'parts': return <PartsPage user={user} onNavigate={onNavigate} />;
+            case 'parts_cleanup': return <PartsCleanupPage user={user} onNavigate={onNavigate} />;
             case 'applications': return <ApplicationsPage user={user} />;
             case 'customers': return <CustomersPage user={user} />;
             case 'goods_receipt': return <GoodsReceiptPage user={user} onNavigate={onNavigate} />;

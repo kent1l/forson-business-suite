@@ -38,6 +38,7 @@ function registerRoute(routePrefix, modulePath) {
 
 // Core Modules
 registerRoute('/api', './routes/partRoutes');
+registerRoute('/api', './routes/partMergeRoutes');
 registerRoute('/api', './routes/inventoryRoutes');
 registerRoute('/api', './routes/purchaseOrderRoutes');
 registerRoute('/api', './routes/goodsReceiptRoutes');

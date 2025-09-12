@@ -13,8 +13,8 @@ import PartNumberManager from './PartNumberManager';
 import PartApplicationManager from './PartApplicationManager';
 import { formatApplicationText } from '../helpers/applicationTextHelper';
 
-const PartsPage = () => {
-    const { user, hasPermission } = useAuth();
+const PartsPage = ({ user, onNavigate }) => {
+    const { hasPermission } = useAuth();
     const [parts, setParts] = useState([]);
     const [brands, setBrands] = useState([]);
     const [groups, setGroups] = useState([]);
@@ -188,6 +188,11 @@ const PartsPage = () => {
                     {selectedParts.length > 0 && hasPermission('parts:edit') && (
                         <button onClick={() => setIsBulkEditModalOpen(true)} className="bg-yellow-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-yellow-600 transition">
                             Bulk Edit ({selectedParts.length})
+                        </button>
+                    )}
+                    {hasPermission('parts:merge') && (
+                        <button onClick={() => onNavigate('parts_cleanup')} className="bg-purple-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-700 transition">
+                            Cleanup Duplicates
                         </button>
                     )}
                     {hasPermission('parts:create') && (
