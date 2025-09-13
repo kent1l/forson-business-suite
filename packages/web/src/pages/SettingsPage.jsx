@@ -289,35 +289,38 @@ const SettingsPage = ({ user }) => {
         <div>
             <h1 className="text-2xl font-semibold text-gray-800 mb-6">Application Settings</h1>
             <div className="bg-white p-6 rounded-xl border border-gray-200 max-w-4xl">
-                <form onSubmit={handleSave}>
-                    <div className="mb-6 border-b border-gray-200">
-                        <nav className="-mb-px flex space-x-6">
-                            <button type="button" onClick={() => setActiveTab('company')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'company' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Company Info</button>
-                            <button type="button" onClick={() => setActiveTab('financial')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'financial' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Financial</button>
-                            <button type="button" onClick={() => setActiveTab('payment_methods')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'payment_methods' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Payment Methods</button>
-                            <button type="button" onClick={() => setActiveTab('tax_rates')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'tax_rates' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Tax Rates</button>
-                            <button type="button" onClick={() => setActiveTab('permissions')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'permissions' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Roles & Permissions</button>
-                            <button type="button" onClick={() => setActiveTab('backup')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'backup' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Backup & Restore</button>
-                            <button type="button" onClick={() => setActiveTab('data')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'data' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Data Utilities</button>
-                        </nav>
-                    </div>
-
-                    {activeTab === 'company' && <CompanyInfoSettings settings={settings} handleChange={handleChange} />}
-                    {activeTab === 'financial' && <FinancialSettings settings={settings} handleChange={handleChange} />}
-                    {activeTab === 'payment_methods' && <PaymentMethodSettings />}
-                    {activeTab === 'tax_rates' && <TaxRateSettings settings={settings} handleChange={handleChange} />}
-                    {activeTab === 'permissions' && <PermissionsSettings />}
-                    {activeTab === 'backup' && <BackupSettings settings={settings} handleChange={handleChange} handleSave={handleSave} />}
-                    {activeTab === 'data' && <DataUtilsSettings />}
-
-                    {['company', 'financial', 'tax_rates', 'backup'].includes(activeTab) && (
-                        <div className="pt-4 flex justify-end mt-6 border-t">
-                            <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
-                                Save Settings
-                            </button>
+                {activeTab === 'payment_methods' ? (
+                    <PaymentMethodSettings />
+                ) : (
+                    <form onSubmit={handleSave}>
+                        <div className="mb-6 border-b border-gray-200">
+                            <nav className="-mb-px flex space-x-6">
+                                <button type="button" onClick={() => setActiveTab('company')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'company' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Company Info</button>
+                                <button type="button" onClick={() => setActiveTab('financial')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'financial' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Financial</button>
+                                <button type="button" onClick={() => setActiveTab('payment_methods')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'payment_methods' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Payment Methods</button>
+                                <button type="button" onClick={() => setActiveTab('tax_rates')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'tax_rates' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Tax Rates</button>
+                                <button type="button" onClick={() => setActiveTab('permissions')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'permissions' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Roles & Permissions</button>
+                                <button type="button" onClick={() => setActiveTab('backup')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'backup' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Backup & Restore</button>
+                                <button type="button" onClick={() => setActiveTab('data')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'data' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Data Utilities</button>
+                            </nav>
                         </div>
-                    )}
-                </form>
+
+                        {activeTab === 'company' && <CompanyInfoSettings settings={settings} handleChange={handleChange} />}
+                        {activeTab === 'financial' && <FinancialSettings settings={settings} handleChange={handleChange} />}
+                        {activeTab === 'tax_rates' && <TaxRateSettings settings={settings} handleChange={handleChange} />}
+                        {activeTab === 'permissions' && <PermissionsSettings />}
+                        {activeTab === 'backup' && <BackupSettings settings={settings} handleChange={handleChange} handleSave={handleSave} />}
+                        {activeTab === 'data' && <DataUtilsSettings />}
+
+                        {['company', 'financial', 'tax_rates', 'backup'].includes(activeTab) && (
+                            <div className="pt-4 flex justify-end mt-6 border-t">
+                                <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
+                                    Save Settings
+                                </button>
+                            </div>
+                        )}
+                    </form>
+                )}
             </div>
         </div>
     );

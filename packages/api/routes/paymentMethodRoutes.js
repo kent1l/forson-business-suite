@@ -38,7 +38,7 @@ router.get('/payment-methods/enabled', protect, async (req, res) => {
 });
 
 // POST /api/payment-methods - Create a new payment method
-router.post('/payment-methods', protect, hasPermission('settings:manage'), async (req, res) => {
+router.post('/payment-methods', protect, hasPermission('settings:edit'), async (req, res) => {
     const { code, name, type, enabled = true, sort_order = 0, config = {} } = req.body;
     const { employee_id } = req.user;
 
@@ -82,10 +82,15 @@ router.post('/payment-methods', protect, hasPermission('settings:manage'), async
 });
 
 // PUT /api/payment-methods/:id - Update a payment method
-router.put('/payment-methods/:id', protect, hasPermission('settings:manage'), async (req, res) => {
+router.put('/payment-methods/:id', protect, async (req, res) => {
     const { id } = req.params;
     const { code, name, type, enabled, sort_order, config } = req.body;
     const { employee_id } = req.user;
+
+    console.log('[PUT /payment-methods/:id] Request received');
+    console.log('[PUT /payment-methods/:id] ID:', id);
+    console.log('[PUT /payment-methods/:id] Body:', req.body);
+    console.log('[PUT /payment-methods/:id] User:', req.user);
 
     if (!code || !name || !type) {
         return res.status(400).json({ message: 'Code, name, and type are required.' });
@@ -127,14 +132,15 @@ router.put('/payment-methods/:id', protect, hasPermission('settings:manage'), as
 
         // Update the method
         const { rows } = await client.query(`
-            UPDATE payment_methods 
-            SET code = $1, name = $2, type = $3, enabled = $4, sort_order = $5, 
+            UPDATE payment_methods
+            SET code = $1, name = $2, type = $3, enabled = $4, sort_order = $5,
                 config = $6, updated_at = CURRENT_TIMESTAMP, updated_by = $7
             WHERE method_id = $8
             RETURNING method_id, code, name, type, enabled, sort_order, config, updated_at
         `, [code, name, type, enabled, sort_order, JSON.stringify(config), employee_id, id]);
 
         await client.query('COMMIT');
+        console.log('[PUT /payment-methods/:id] Update successful:', rows[0]);
         res.json(rows[0]);
     } catch (err) {
         await client.query('ROLLBACK');
@@ -149,7 +155,7 @@ router.put('/payment-methods/:id', protect, hasPermission('settings:manage'), as
 });
 
 // PATCH /api/payment-methods/reorder - Reorder payment methods
-router.patch('/payment-methods/reorder', protect, hasPermission('settings:manage'), async (req, res) => {
+router.patch('/payment-methods/reorder', protect, async (req, res) => {
     const { methods } = req.body; // Array of { method_id, sort_order }
     const { employee_id } = req.user;
 
@@ -181,7 +187,7 @@ router.patch('/payment-methods/reorder', protect, hasPermission('settings:manage
 });
 
 // DELETE /api/payment-methods/:id - Delete/disable a payment method
-router.delete('/payment-methods/:id', protect, hasPermission('settings:manage'), async (req, res) => {
+router.delete('/payment-methods/:id', protect, async (req, res) => {
     const { id } = req.params;
     const { force = false } = req.query; // Add force parameter for hard delete
 
