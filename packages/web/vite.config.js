@@ -9,21 +9,18 @@ export default defineConfig({
     tailwindcss(),
   ],
   server: {
-    host: true,
+    host: '0.0.0.0',
+    port: 5173,
     hmr: {
       protocol: 'ws',
       host: 'localhost'
     },
     proxy: {
       '/api': {
-  // Proxy API requests to the backend. Use VITE_PROXY_TARGET to allow
-  // switching between host-local backend (http://localhost:3001) and the
-  // docker-compose service hostname (http://backend:3001) when running
-  // the frontend inside Docker.
-  target: process.env.VITE_PROXY_TARGET || 'http://localhost:3001',
+        target: 'http://forson_backend_dev:3001',
         changeOrigin: true,
-        secure: false,
-      },
+        secure: false
+      }
     },
   },
 })

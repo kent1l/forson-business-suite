@@ -297,18 +297,71 @@ router.post('/invoices/:id/payments', protect, hasPermission('invoicing:create')
         for (const payment of payments) {
             const { method_id, amount_paid, tendered_amount, reference, metadata = {} } = payment;
 
-            // Get method configuration for validation
-            const method = await client.query(
-                'SELECT * FROM payment_methods WHERE method_id = $1 AND enabled = true',
-                [method_id]
-            );
+            let method;
+            let methodConfig;
+
+            // Handle legacy payment methods (when split payments is disabled)
+            if (method_id && method_id.startsWith('legacy_')) {
+                // For legacy methods, look up by name from metadata
+                const methodName = metadata.method_name;
+                if (!methodName) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ message: `Legacy payment method name not found in metadata` });
+                }
+
+                // Try to find existing method by name
+                method = await client.query(
+                    'SELECT * FROM payment_methods WHERE name = $1 AND enabled = true',
+                    [methodName]
+                );
+
+                if (method.rows.length === 0) {
+                    // Create the legacy method on the fly
+                    const methodCode = methodName.toLowerCase().replace(/\s+/g, '_');
+                    const methodType = methodName.toLowerCase().includes('cash') ? 'cash' : 
+                                      methodName.toLowerCase().includes('card') ? 'card' : 'other';
+                    
+                    const defaultConfig = {
+                        requires_reference: methodName.toLowerCase().includes('card'),
+                        reference_label: methodName.toLowerCase().includes('card') ? 'Reference' : '',
+                        requires_receipt_no: methodName.toLowerCase().includes('card'),
+                        change_allowed: methodName.toLowerCase().includes('cash'),
+                        settlement_type: methodName.toLowerCase().includes('cash') ? 'instant' : 'delayed',
+                        max_split_count: null
+                    };
+
+                    try {
+                        method = await client.query(`
+                            INSERT INTO payment_methods (code, name, type, enabled, config)
+                            VALUES ($1, $2, $3, $4, $5)
+                            RETURNING *
+                        `, [methodCode, methodName, methodType, true, JSON.stringify(defaultConfig)]);
+                    } catch (insertErr) {
+                        if (insertErr.code === '23505') { // unique violation
+                            // Method already exists, fetch it
+                            method = await client.query(
+                                'SELECT * FROM payment_methods WHERE name = $1 AND enabled = true',
+                                [methodName]
+                            );
+                        } else {
+                            throw insertErr;
+                        }
+                    }
+                }
+            } else {
+                // Regular payment method lookup
+                method = await client.query(
+                    'SELECT * FROM payment_methods WHERE method_id = $1 AND enabled = true',
+                    [method_id]
+                );
+            }
 
             if (method.rows.length === 0) {
                 await client.query('ROLLBACK');
                 return res.status(400).json({ message: `Invalid payment method: ${method_id}` });
             }
 
-            const methodConfig = method.rows[0].config;
+            methodConfig = method.rows[0].config;
 
             // Validate required reference
             if (methodConfig.requires_reference && (!reference || reference.trim() === '')) {
@@ -324,7 +377,9 @@ router.post('/invoices/:id/payments', protect, hasPermission('invoicing:create')
                 return res.status(400).json({
                     message: `Physical receipt number is required for ${method.rows[0].name}`
                 });
-            }            // Calculate change
+            }
+
+            // Calculate change
             const tenderedAmt = tendered_amount ? parseFloat(tendered_amount) : null;
             const paidAmt = parseFloat(amount_paid);
             const changeAmt = tenderedAmt && tenderedAmt > paidAmt ? tenderedAmt - paidAmt : 0;
@@ -337,13 +392,16 @@ router.post('/invoices/:id/payments', protect, hasPermission('invoicing:create')
                 });
             }
 
+            // Use the actual method_id from database (important for legacy methods)
+            const actualMethodId = method.rows[0].method_id;
+
             // Insert payment
             const paymentResult = await client.query(`
                 INSERT INTO invoice_payments 
                 (invoice_id, method_id, amount_paid, tendered_amount, change_amount, reference, metadata, created_by)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 RETURNING *
-            `, [invoice_id, method_id, paidAmt, tenderedAmt, changeAmt, reference, JSON.stringify(metadata), employee_id]);
+            `, [invoice_id, actualMethodId, paidAmt, tenderedAmt, changeAmt, reference, JSON.stringify(metadata), employee_id]);
 
             insertedPayments.push(paymentResult.rows[0]);
         }

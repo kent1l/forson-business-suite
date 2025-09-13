@@ -48,7 +48,7 @@ services:
       - CHOKIDAR_USEPOLLING=true
       - CHOKIDAR_INTERVAL=100
       - NPM_CONFIG_LOGLEVEL=error
-      - VITE_PROXY_TARGET=http://backend:3001
+      - VITE_PROXY_TARGET=http://forson_backend_dev:3001
     ports:
       - "5173:5173"
     depends_on:
