@@ -11,18 +11,23 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [similarityThreshold, setSimilarityThreshold] = useState(0.8);
     const [expandedGroups, setExpandedGroups] = useState({});
+    const [useOptimized, setUseOptimized] = useState(false);
 
     const fetchDuplicateGroups = useCallback(async () => {
         setLoading(true);
         setError(null);
         
         try {
-            const response = await api.get('/parts/merge/duplicates', {
-                params: {
-                    minSimilarity: similarityThreshold,
-                    excludeMerged: true
-                }
-            });
+            const params = {
+                excludeMerged: true
+            };
+            if (useOptimized) {
+                params.algo = 'v2';
+                params.minScore = similarityThreshold;
+            } else {
+                params.minSimilarity = similarityThreshold;
+            }
+            const response = await api.get('/parts/merge/duplicates', { params });
             
             setDuplicateGroups(response.data.groups || []);
         } catch (err) {
@@ -32,7 +37,7 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange }) => {
         } finally {
             setLoading(false);
         }
-    }, [similarityThreshold]);
+    }, [similarityThreshold, useOptimized]);
 
     useEffect(() => {
         fetchDuplicateGroups();
@@ -143,19 +148,33 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange }) => {
                     </div>
                     
                     <div className="w-full sm:w-48 flex items-end gap-3">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Similarity Threshold
-                        </label>
-                        <select
-                            value={similarityThreshold}
-                            onChange={(e) => setSimilarityThreshold(parseFloat(e.target.value))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        >
-                            <option value={0.9}>Very High (90%)</option>
-                            <option value={0.8}>High (80%)</option>
-                            <option value={0.7}>Medium (70%)</option>
-                            <option value={0.6}>Low (60%)</option>
-                        </select>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Similarity Threshold
+                            </label>
+                            <select
+                                value={similarityThreshold}
+                                onChange={(e) => setSimilarityThreshold(parseFloat(e.target.value))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            >
+                                <option value={0.9}>Very High (90%)</option>
+                                <option value={0.8}>High (80%)</option>
+                                <option value={0.7}>Medium (70%)</option>
+                                <option value={0.6}>Low (60%)</option>
+                            </select>
+                        </div>
+
+                        <div className="flex flex-col items-start">
+                            <label className="flex items-center text-sm">
+                                <input
+                                    type="checkbox"
+                                    checked={useOptimized}
+                                    onChange={(e) => setUseOptimized(e.target.checked)}
+                                    className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                />
+                                Optimized Algorithm
+                            </label>
+                        </div>
 
                         <button
                             onClick={fetchDuplicateGroups}
@@ -236,7 +255,7 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange }) => {
                                             <div className="flex-1">
                                                 <div className="flex items-center space-x-2 mb-2">
                                                     <h3 className="text-sm font-medium text-gray-900">
-                                                        Similarity: {(group.score * 100).toFixed(1)}%
+                                                        {group.confidence ? `Confidence: ${group.confidence}` : `Similarity: ${(group.score * 100).toFixed(1)}%`}
                                                     </h3>
                                                     <div className="flex flex-wrap gap-1">
                                                         {group.reasons?.map((reason, index) => (

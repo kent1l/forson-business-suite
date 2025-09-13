@@ -23,21 +23,33 @@ router.get('/parts/merge/duplicates', protect, hasPermission('parts:merge'), asy
         const {
             minSimilarity = 0.75,
             limit = 50,
-            excludeMerged = true
+            excludeMerged = true,
+            algo = 'v1', // v1: current, v2: optimized with confidence
+            minScore = 0.6 // for v2: min confidence score
         } = req.query;
 
-        const groups = await duplicateFinder.findDuplicateGroups({
-            minSimilarity: parseFloat(minSimilarity),
-            limit: parseInt(limit),
-            excludeMerged: excludeMerged === 'true'
-        });
+        let groups;
+        if (algo === 'v2') {
+            groups = await duplicateFinder.findOptimizedDuplicateGroups({
+                minScore: parseFloat(minScore),
+                limit: parseInt(limit),
+                excludeMerged: excludeMerged === 'true'
+            });
+        } else {
+            groups = await duplicateFinder.findDuplicateGroups({
+                minSimilarity: parseFloat(minSimilarity),
+                limit: parseInt(limit),
+                excludeMerged: excludeMerged === 'true'
+            });
+        }
 
         res.json({
             success: true,
             groups,
             metadata: {
                 total: groups.length,
-                minSimilarity,
+                algo,
+                ...(algo === 'v2' ? { minScore } : { minSimilarity }),
                 limit,
                 excludeMerged
             }
