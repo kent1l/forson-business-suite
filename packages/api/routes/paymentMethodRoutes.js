@@ -4,6 +4,8 @@ const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatter');
 const router = express.Router();
 
+// Router for payment methods and invoice payments
+
 // GET /api/payment-methods - Get all payment methods (ordered by sort_order)
 router.get('/payment-methods', protect, async (req, res) => {
     try {
@@ -211,11 +213,7 @@ router.delete('/payment-methods/:id', protect, async (req, res) => {
 
         // Check if method is being used in payments
         const usageCheck = await client.query(`
-            SELECT COUNT(*) as count FROM (
-                SELECT 1 FROM customer_payment WHERE method_id = $1
-                UNION ALL
-                SELECT 1 FROM invoice_payments WHERE method_id = $1
-            ) combined
+            SELECT COUNT(*) as count FROM payments_unified WHERE method_id = $1
         `, [id]);
 
         const isInUse = parseInt(usageCheck.rows[0].count) > 0;
@@ -258,10 +256,12 @@ router.delete('/payment-methods/:id', protect, async (req, res) => {
 });
 
 // POST /api/invoices/:id/payments - Add payments to an invoice (split payment support)
-router.post('/invoices/:id/payments', protect, hasPermission('invoicing:create'), async (req, res) => {
+const invoicePaymentsMiddlewares = [protect, hasPermission('invoicing:create')];
+router.post('/invoices/:id/payments', ...invoicePaymentsMiddlewares, async (req, res) => {
     const { id: invoice_id } = req.params;
     const { payments, physical_receipt_no } = req.body;
-    const { employee_id } = req.user;
+    // Allow dev requests without auth by defaulting to employee_id 1 when req.user is missing
+    const { employee_id } = req.user || { employee_id: (process.env.NODE_ENV === 'development' ? 1 : undefined) };
 
     if (!Array.isArray(payments) || payments.length === 0) {
         return res.status(400).json({ message: 'Payments array is required.' });
@@ -273,7 +273,7 @@ router.post('/invoices/:id/payments', protect, hasPermission('invoicing:create')
 
         // Validate invoice exists and get total
         const invoice = await client.query(
-            'SELECT invoice_id, total_amount, customer_id FROM invoice WHERE invoice_id = $1',
+            'SELECT invoice_id, invoice_number, total_amount, customer_id FROM invoice WHERE invoice_id = $1',
             [invoice_id]
         );
 
@@ -301,7 +301,7 @@ router.post('/invoices/:id/payments', protect, hasPermission('invoicing:create')
             let methodConfig;
 
             // Handle legacy payment methods (when split payments is disabled)
-            if (method_id && method_id.startsWith('legacy_')) {
+            if (method_id && typeof method_id === 'string' && method_id.startsWith('legacy_')) {
                 // For legacy methods, look up by name from metadata
                 const methodName = metadata.method_name;
                 if (!methodName) {
@@ -350,13 +350,32 @@ router.post('/invoices/:id/payments', protect, hasPermission('invoicing:create')
                 }
             } else {
                 // Regular payment method lookup
+                // Accept numeric-string method_id values (from the frontend) by coercing when appropriate
+                let lookupParam = method_id;
+                try {
+                    if (typeof method_id === 'string' && /^\d+$/.test(method_id)) {
+                        lookupParam = parseInt(method_id, 10);
+                    }
+                } catch {
+                    // keep original method_id if coercion fails
+                    lookupParam = method_id;
+                }
+
                 method = await client.query(
                     'SELECT * FROM payment_methods WHERE method_id = $1 AND enabled = true',
-                    [method_id]
+                    [lookupParam]
                 );
             }
 
             if (method.rows.length === 0) {
+                // Log the offending payment for easier debugging in dev
+                console.error('Invalid payment method during invoice payment processing', {
+                    invoice_id,
+                    method_id,
+                    payment,
+                    metadata
+                });
+
                 await client.query('ROLLBACK');
                 return res.status(400).json({ message: `Invalid payment method: ${method_id}` });
             }

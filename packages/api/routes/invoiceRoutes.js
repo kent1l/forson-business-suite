@@ -303,7 +303,9 @@ router.delete('/invoices/:id', protect, isAdmin, async (req, res) => {
 
     // Delete allocations first (cascades would remove via invoice cascade but be explicit for clarity)
         await client.query('DELETE FROM invoice_payment_allocation WHERE invoice_id = $1', [id]);
-    // Also remove the auto-created payment that was generated when the invoice was posted.
+    // Remove invoice-specific payments from invoice_payments table
+    await client.query('DELETE FROM invoice_payments WHERE invoice_id = $1', [id]);
+    // Also remove the auto-created payment that was generated when the invoice was posted (legacy single payments).
     // We key it by reference_number = invoice_number which is only used for this purpose.
     await client.query('DELETE FROM customer_payment WHERE reference_number = $1', [invoiceNumber]);
     // Delete credit notes referencing this invoice (ON DELETE RESTRICT in schema, so must remove manually)

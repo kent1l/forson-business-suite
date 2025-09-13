@@ -52,7 +52,12 @@ const SplitPaymentModal = ({
 
         try {
             const response = await api.get('/payment-methods/enabled');
-            setPaymentMethods(response.data);
+            // Ensure method.config is an object (API may return it as JSON string in some cases)
+            const normalized = response.data.map(m => ({
+                ...m,
+                config: typeof m.config === 'string' ? JSON.parse(m.config) : (m.config || {})
+            }));
+            setPaymentMethods(normalized);
         } catch (err) {
             console.error('Failed to fetch payment methods:', err);
             toast.error('Failed to load payment methods');
@@ -150,7 +155,8 @@ const SplitPaymentModal = ({
         const errors = [];
 
         for (const payment of payments) {
-            const method = paymentMethods.find(m => m.method_id === payment.method_id);
+            // Normalize comparison because method_id can be number (from API) or string (from select value)
+            const method = paymentMethods.find(m => String(m.method_id) === String(payment.method_id));
             const amountPaid = parseFloat(payment.amount_paid) || 0;
             const tenderedAmount = parseFloat(payment.tendered_amount) || 0;
 
@@ -194,13 +200,29 @@ const SplitPaymentModal = ({
     }, [payments, paymentMethods, totalDue, physicalReceiptNo]);
 
     // Auto-allocate remaining amount to selected payment method
+    // Compute remaining at click time to avoid stale closure values.
     const autoAllocateRemaining = (paymentId) => {
-        if (remaining > 0) {
-            updatePayment(paymentId, 'amount_paid', remaining.toFixed(2));
-        }
+        setPayments(prev => {
+            // Sum amounts excluding the target payment
+            const totalPaidExcluding = prev.reduce((sum, p) => {
+                if (p.id === paymentId) return sum;
+                const v = parseFloat(p.amount_paid) || 0;
+                return sum + v;
+            }, 0);
+
+            const remainingNow = Math.max((totalDue || 0) - totalPaidExcluding, 0);
+
+            return prev.map(p => p.id === paymentId ? { ...p, amount_paid: remainingNow.toFixed(2) } : p);
+        });
     };
 
     const handleConfirm = useCallback(async () => {
+        // Prevent submission when client-side validation errors exist
+        if (validationErrors.length > 0) {
+            toast.error(validationErrors[0] || 'Please fix validation errors before confirming');
+            return;
+        }
+
         if (!canConfirm) return;
 
         setLoading(true);
@@ -231,7 +253,7 @@ const SplitPaymentModal = ({
         } finally {
             setLoading(false);
         }
-    }, [canConfirm, payments, paymentMethods, onConfirm, physicalReceiptNo, onClose]);
+    }, [canConfirm, payments, paymentMethods, onConfirm, physicalReceiptNo, onClose, validationErrors]);
 
     // Keyboard shortcuts
     useEffect(() => {
@@ -253,12 +275,12 @@ const SplitPaymentModal = ({
     if (!isOpen) return null;
 
     const requiresPhysicalReceipt = payments.some(payment => {
-        const method = paymentMethods.find(m => m.method_id === payment.method_id);
+        const method = paymentMethods.find(m => String(m.method_id) === String(payment.method_id));
         return method && method.config.requires_receipt_no;
     });
 
     return (
-        <div className="fixed inset-0 bg-neutral-800/50 flex items-center justify-center z-50 transition-opacity">
+        <div className="fixed inset-0 bg-neutral-800/50 flex items-center justify-center z-50 transition-opacity split-payment-modal">
             <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden transform transition-all">
                 <div className="flex items-center justify-between p-4 border-b bg-gray-50 rounded-t-lg">
                     <h2 className="text-xl font-semibold text-gray-800">
@@ -328,7 +350,7 @@ const SplitPaymentModal = ({
                     {/* Payment Lines */}
                     <div className="space-y-4">
                         {payments.map((payment, index) => {
-                            const method = paymentMethods.find(m => m.method_id === payment.method_id);
+                            const method = paymentMethods.find(m => String(m.method_id) === String(payment.method_id));
                             const showTendered = method && method.config.change_allowed;
                             const showReference = method && method.config.requires_reference;
 
@@ -346,7 +368,7 @@ const SplitPaymentModal = ({
                                         )}
                                     </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-1">
                                                 Payment Method <span className="text-red-500">*</span>
@@ -370,13 +392,13 @@ const SplitPaymentModal = ({
                                             <label className="block text-sm font-medium text-gray-700 mb-1">
                                                 Amount <span className="text-red-500">*</span>
                                             </label>
-                                            <div className="flex">
+                                            <div className="relative">
                                                 <input
                                                     type="number"
                                                     value={payment.amount_paid}
                                                     onChange={(e) => updatePayment(payment.id, 'amount_paid', e.target.value)}
                                                     onFocus={(e) => e.target.select()}
-                                                    className="flex-1 px-3 py-2 border-gray-300 rounded-l-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                                                    className="w-full pr-16 px-3 py-2 border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                                                     min="0"
                                                     step="0.01"
                                                     required
@@ -385,8 +407,9 @@ const SplitPaymentModal = ({
                                                     <button
                                                         type="button"
                                                         onClick={() => autoAllocateRemaining(payment.id)}
-                                                        className="px-3 py-2 bg-indigo-600 text-white rounded-r-lg hover:bg-indigo-700 text-xs font-semibold transition-colors"
+                                                        className="absolute inset-y-0 right-0 px-3 bg-indigo-600 text-white rounded-r-lg hover:bg-indigo-700 text-xs font-semibold transition-colors cursor-pointer select-none"
                                                         title="Allocate remaining amount"
+                                                        aria-label="Fill remaining amount"
                                                     >
                                                         FILL
                                                     </button>
@@ -394,7 +417,7 @@ const SplitPaymentModal = ({
                                             </div>
                                         </div>
 
-                                        {showTendered && (
+                                        {showTendered ? (
                                             <div>
                                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                                     Tendered
@@ -410,24 +433,31 @@ const SplitPaymentModal = ({
                                                     placeholder="Optional for exact amount"
                                                 />
                                             </div>
+                                        ) : (
+                                            <div />
                                         )}
-                                    </div>
 
-                                    {showReference && (
-                                        <div className="mt-4">
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                {method.config.reference_label || 'Reference'} <span className="text-red-500">*</span>
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={payment.reference}
-                                                onChange={(e) => updatePayment(payment.id, 'reference', e.target.value)}
-                                                className="w-full px-3 py-2 border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                                                placeholder={`Enter ${method.config.reference_label || 'reference'}`}
-                                                required
-                                            />
+                                        {/* Inline reference input when required by method config */}
+                                        <div className="col-span-1 sm:col-span-1">
+                                            {showReference ? (
+                                                <>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                        {(method?.config?.reference_label || 'Reference')} <span className="text-red-500">*</span>
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={payment.reference}
+                                                        onChange={(e) => updatePayment(payment.id, 'reference', e.target.value)}
+                                                        className="w-full px-3 py-2 border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                                                        placeholder={`Enter ${method?.config?.reference_label || 'reference'}`}
+                                                        required
+                                                    />
+                                                </>
+                                            ) : (
+                                                <div />
+                                            )}
                                         </div>
-                                    )}
+                                    </div>
                                 </div>
                             );
                         })}

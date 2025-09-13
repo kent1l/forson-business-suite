@@ -20,6 +20,7 @@ const InvoicingPage = ({ user }) => {
     const [lines, setLines] = useState([]);
     const [selectedCustomer, setSelectedCustomer] = useState('');
     const [paymentMethod, setPaymentMethod] = useState('');
+    const [physicalReceiptNo, setPhysicalReceiptNo] = useState('');
     const [isSplitPaymentModalOpen, setIsSplitPaymentModalOpen] = useState(false);
     const [terms, setTerms] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
@@ -221,7 +222,7 @@ const InvoicingPage = ({ user }) => {
             amount_paid: amount_paid,
             terms: terms,
             payment_terms_days: parsePaymentTermsDays(terms),
-            physical_receipt_no: null, // Not used in this flow
+            physical_receipt_no: formatPhysicalReceiptNumber(physicalReceiptNo) || null,
             lines: lines.map(line => ({
                 part_id: line.part_id,
                 quantity: line.quantity,
@@ -284,8 +285,14 @@ const InvoicingPage = ({ user }) => {
 
         } catch (err) {
             console.error('Split payment error:', err);
+            const backendMessage = err?.response?.data?.message || err?.response?.data?.error || err?.message;
             if (err?.response?.status === 409) {
-                throw new Error(err.response.data?.message || 'Physical Receipt No already exists.');
+                throw new Error(backendMessage || 'Physical Receipt No already exists.');
+            }
+            // Surface backend validation errors when present
+            if (err?.response?.status === 400 && backendMessage) {
+                toast.error(backendMessage);
+                throw new Error(backendMessage);
             }
             throw new Error('Failed to create invoice.');
         }
@@ -340,6 +347,16 @@ const InvoicingPage = ({ user }) => {
                                 </select>
                             </div>
                         )}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Physical Receipt No.</label>
+                            <input
+                                type="text"
+                                value={physicalReceiptNo}
+                                onChange={e => setPhysicalReceiptNo(e.target.value)}
+                                className="w-full px-3 py-2 border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                                placeholder={settings?.RECEIPT_NO_HELP_TEXT || 'Enter receipt number'}
+                            />
+                        </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Payment Terms</label>
                             <div className="flex items-center space-x-3">
@@ -460,6 +477,8 @@ const InvoicingPage = ({ user }) => {
                     onClose={() => setIsSplitPaymentModalOpen(false)}
                     totalDue={subtotal || 0}
                     onConfirm={handleConfirmSplitPayment}
+                    physicalReceiptNo={physicalReceiptNo}
+                    onPhysicalReceiptChange={setPhysicalReceiptNo}
                     requirePhysicalReceipt={true}
                 />
             )}

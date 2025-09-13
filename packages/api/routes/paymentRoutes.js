@@ -84,10 +84,11 @@ router.get('/payments', protect, hasPermission('ar:view'), async (req, res) => {
     }
     try {
         const query = `
-            SELECT payment_id, customer_id, employee_id, payment_date, amount, tendered_amount, payment_method, reference_number
-            FROM customer_payment
-            WHERE (payment_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
-            ORDER BY payment_date ASC;`;
+            SELECT payment_id, customer_id, employee_id, created_at as payment_date, amount_paid as amount, tendered_amount, legacy_method as payment_method, reference
+            FROM payments_unified
+            WHERE (created_at AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
+            AND source_table = 'customer_payment'
+            ORDER BY created_at ASC;`;
         const { rows } = await db.query(query, [startDate, endDate]);
         res.json(rows);
     } catch (err) {
