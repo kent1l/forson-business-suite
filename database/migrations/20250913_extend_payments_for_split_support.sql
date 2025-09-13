@@ -139,7 +139,6 @@ CREATE OR REPLACE FUNCTION update_invoice_balance_after_payment() RETURNS trigge
 DECLARE
     total_paid numeric(12,2);
     invoice_total numeric(12,2);
-    new_balance numeric(12,2);
 BEGIN
     -- Get the invoice total and current payments
     SELECT 
@@ -151,16 +150,12 @@ BEGIN
     WHERE i.invoice_id = COALESCE(NEW.invoice_id, OLD.invoice_id)
     GROUP BY i.invoice_id, i.total_amount;
     
-    -- Calculate new balance
-    new_balance := GREATEST(invoice_total - total_paid, 0);
-    
-    -- Update the invoice
+    -- Update the invoice (balance_due is computed, not stored)
     UPDATE invoice 
     SET 
         amount_paid = total_paid,
-        balance_due = new_balance,
         status = CASE 
-            WHEN new_balance = 0 THEN 'Paid'
+            WHEN total_paid >= invoice_total THEN 'Paid'
             WHEN total_paid > 0 THEN 'Partially Paid'
             ELSE 'Unpaid'
         END

@@ -129,8 +129,17 @@ const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave,
 
 const POSPage = ({ user, lines, setLines }) => {
     const { settings } = useSettings();
-    console.log('[POSPage] Component loaded, settings:', settings);
-    console.log('[POSPage] ENABLE_SPLIT_PAYMENTS setting:', settings?.ENABLE_SPLIT_PAYMENTS);
+    
+    // Memoize the split payments setting to prevent unnecessary re-renders
+    const splitPaymentsEnabled = useMemo(() => 
+        settings?.ENABLE_SPLIT_PAYMENTS === 'true', 
+        [settings?.ENABLE_SPLIT_PAYMENTS]
+    );
+    
+    // Debug logging moved to useEffect to prevent infinite re-renders
+    useEffect(() => {
+        console.log('[POSPage] Component loaded, splitPaymentsEnabled:', splitPaymentsEnabled);
+    }, [splitPaymentsEnabled]); // Only log when the setting changes
     const [physicalReceiptInput, setPhysicalReceiptInput] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState([]); // State for search results
@@ -372,18 +381,12 @@ const POSPage = ({ user, lines, setLines }) => {
         if (lines.length === 0) return toast.error("Please add items to the cart.");
         if (!selectedCustomer) return toast.error("Please select a customer.");
         
-        // Check if split payments are enabled
-        const splitPaymentsEnabled = settings?.ENABLE_SPLIT_PAYMENTS === 'true';
-        console.log('[POSPage] Checkout triggered, splitPaymentsEnabled:', splitPaymentsEnabled);
-        
         if (splitPaymentsEnabled) {
-            console.log('[POSPage] Opening split payment modal');
             setIsSplitPaymentModalOpen(true);
         } else {
-            console.log('[POSPage] Opening regular payment modal');
             setIsPaymentModalOpen(true);
         }
-    }, [lines.length, selectedCustomer, settings]);
+    }, [lines.length, selectedCustomer, splitPaymentsEnabled]); // Use memoized value
 
     const handleConfirmPayment = (paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo) => {
         // Check if physical receipt number is empty
@@ -473,7 +476,6 @@ const POSPage = ({ user, lines, setLines }) => {
 
     // Handle split payment confirmation (new API format)
     const handleConfirmSplitPayment = async (payments, physicalReceiptNo) => {
-        console.log('[POSPage] handleConfirmSplitPayment called with payments:', payments);
         try {
             const normalizedPRN = normalizePhysicalReceipt(physicalReceiptInput || physicalReceiptNo || '');
             
@@ -488,7 +490,6 @@ const POSPage = ({ user, lines, setLines }) => {
                     sale_price: line.sale_price,
                 })),
             };
-            console.log('[POSPage] Creating invoice with payload:', invoicePayload);
 
             const invoiceResponse = await api.post('/invoices', invoicePayload);
             const invoiceId = invoiceResponse.data.invoice_id;

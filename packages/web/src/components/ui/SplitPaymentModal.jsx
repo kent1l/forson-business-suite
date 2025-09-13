@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import { useSettings } from '../../contexts/SettingsContext';
@@ -18,9 +18,13 @@ const SplitPaymentModal = ({
     const [paymentMethods, setPaymentMethods] = useState([]);
     const [payments, setPayments] = useState([]);
     const [loading, setLoading] = useState(false);
+    const initializedRef = useRef(false);
 
-    // Check if split payments feature is enabled
-    const splitPaymentsEnabled = settings?.ENABLE_SPLIT_PAYMENTS === 'true';
+    // Check if split payments feature is enabled (memoized to prevent unnecessary re-renders)
+    const splitPaymentsEnabled = useMemo(() => 
+        settings?.ENABLE_SPLIT_PAYMENTS === 'true', 
+        [settings?.ENABLE_SPLIT_PAYMENTS]
+    );
 
     // Fetch payment methods from API if split payments enabled, otherwise use settings fallback
     const fetchPaymentMethods = useCallback(async () => {
@@ -71,11 +75,18 @@ const SplitPaymentModal = ({
             }));
             setPaymentMethods(legacyMethods);
         }
-    }, [splitPaymentsEnabled, settings]);
+    }, [splitPaymentsEnabled, settings?.PAYMENT_METHODS]); // Only depend on specific settings properties
 
-    // Initialize payments when modal opens
+    // Create a stable key for existingPayments to avoid unnecessary re-renders
+    const existingPaymentsKey = useMemo(() => 
+        JSON.stringify(existingPayments), 
+        [existingPayments]
+    );
+
+    // Initialize payments when modal opens (prevent infinite loops)
     useEffect(() => {
-        if (isOpen) {
+        if (isOpen && !initializedRef.current) {
+            initializedRef.current = true;
             fetchPaymentMethods();
             
             if (existingPayments.length > 0) {
@@ -91,8 +102,12 @@ const SplitPaymentModal = ({
                     metadata: {}
                 }]);
             }
+        } else if (!isOpen) {
+            // Reset when modal closes
+            initializedRef.current = false;
         }
-    }, [isOpen, existingPayments, fetchPaymentMethods]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, existingPaymentsKey, fetchPaymentMethods]); // Use stable key
 
     // Auto-focus first input when modal opens
     useEffect(() => {
@@ -166,7 +181,7 @@ const SplitPaymentModal = ({
             }
         }
 
-        const remainingDue = Math.max(totalDue - totalPaid, 0);
+        const remainingDue = Math.max((totalDue || 0) - totalPaid, 0);
         const canConfirm = errors.length === 0 && remainingDue <= 0.01; // Allow small rounding differences
 
         return {
@@ -264,7 +279,7 @@ const SplitPaymentModal = ({
                             <div>
                                 <div className="text-sm text-gray-500">Total Due</div>
                                 <div className="text-lg font-semibold">
-                                    {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{totalDue.toFixed(2)}
+                                    {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{(totalDue || 0).toFixed(2)}
                                 </div>
                             </div>
                             <div>

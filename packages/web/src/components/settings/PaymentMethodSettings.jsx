@@ -23,7 +23,6 @@ const PaymentMethodForm = ({ method, onSave, onCancel }) => {
     });
 
     useEffect(() => {
-        console.log('[PaymentMethodForm] useEffect triggered, method:', method);
         if (method) {
             const newFormData = {
                 ...method,
@@ -37,7 +36,6 @@ const PaymentMethodForm = ({ method, onSave, onCancel }) => {
                     ...method.config
                 }
             };
-            console.log('[PaymentMethodForm] Setting form data:', newFormData);
             setFormData(newFormData);
         }
     }, [method]);
@@ -61,9 +59,6 @@ const PaymentMethodForm = ({ method, onSave, onCancel }) => {
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        console.log('[PaymentMethodForm] Form submitted');
-        console.log('[PaymentMethodForm] Form data:', formData);
-        console.log('[PaymentMethodForm] Editing method:', method);
         
         // Auto-set defaults based on type
         const finalConfig = { ...formData.config };
@@ -82,12 +77,10 @@ const PaymentMethodForm = ({ method, onSave, onCancel }) => {
             finalConfig.change_allowed = false;
         }
 
-        console.log('[PaymentMethodForm] Final config:', finalConfig);
         const finalData = {
             ...formData,
             config: finalConfig
         };
-        console.log('[PaymentMethodForm] Final data to save:', finalData);
 
         onSave(finalData);
     };
@@ -272,23 +265,15 @@ const PaymentMethodSettings = () => {
     }, []);
 
     const handleSaveMethod = async (methodData) => {
-        console.log('[PaymentMethodSettings] handleSaveMethod called');
-        console.log('[PaymentMethodSettings] methodData:', methodData);
-        console.log('[PaymentMethodSettings] editingMethod:', editingMethod);
-        
         try {
             if (editingMethod) {
-                console.log('[PaymentMethodSettings] Making PUT request to:', `/payment-methods/${editingMethod.method_id}`);
                 const response = await api.put(`/payment-methods/${editingMethod.method_id}`, methodData);
-                console.log('[PaymentMethodSettings] PUT response:', response);
                 setMethods(prev => prev.map(m => 
                     m.method_id === editingMethod.method_id ? response.data : m
                 ));
                 toast.success('Payment method updated successfully.');
             } else {
-                console.log('[PaymentMethodSettings] Making POST request');
                 const response = await api.post('/payment-methods', methodData);
-                console.log('[PaymentMethodSettings] POST response:', response);
                 setMethods(prev => [...prev, response.data]);
                 toast.success('Payment method created successfully.');
             }
@@ -483,7 +468,6 @@ const PaymentMethodSettings = () => {
                                         </button>
                                         <button
                                             onClick={() => {
-                                                console.log('[PaymentMethodSettings] Edit button clicked for method:', method);
                                                 setEditingMethod(method);
                                                 setIsModalOpen(true);
                                             }}

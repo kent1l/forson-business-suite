@@ -298,7 +298,11 @@ const InvoicingPage = ({ user }) => {
         }
     };
 
-    const subtotal = lines.reduce((acc, line) => acc + (line.quantity * line.sale_price), 0);
+    const subtotal = lines.reduce((acc, line) => {
+        const quantity = parseFloat(line.quantity) || 0;
+        const salePrice = parseFloat(line.sale_price) || 0;
+        return acc + (quantity * salePrice);
+    }, 0);
 
     if (loading) return <p>Loading data...</p>;
 
@@ -453,7 +457,7 @@ const InvoicingPage = ({ user }) => {
                 <SplitPaymentModal
                     isOpen={isSplitPaymentModalOpen}
                     onClose={() => setIsSplitPaymentModalOpen(false)}
-                    totalAmount={subtotal}
+                    totalDue={subtotal || 0}
                     onConfirm={handleConfirmSplitPayment}
                     requirePhysicalReceipt={true}
                 />
