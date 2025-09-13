@@ -4,14 +4,12 @@ import toast from 'react-hot-toast';
 import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
 
-const DuplicateGroupList = ({ selectedGroups, onSelectionChange }) => {
+const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThreshold, useOptimized }) => {
     const [duplicateGroups, setDuplicateGroups] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
-    const [similarityThreshold, setSimilarityThreshold] = useState(0.8);
     const [expandedGroups, setExpandedGroups] = useState({});
-    const [useOptimized, setUseOptimized] = useState(false);
 
     const fetchDuplicateGroups = useCallback(async () => {
         setLoading(true);
@@ -147,39 +145,11 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange }) => {
                         </div>
                     </div>
                     
-                    <div className="w-full sm:w-48 flex items-end gap-3">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Similarity Threshold
-                            </label>
-                            <select
-                                value={similarityThreshold}
-                                onChange={(e) => setSimilarityThreshold(parseFloat(e.target.value))}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            >
-                                <option value={0.9}>Very High (90%)</option>
-                                <option value={0.8}>High (80%)</option>
-                                <option value={0.7}>Medium (70%)</option>
-                                <option value={0.6}>Low (60%)</option>
-                            </select>
-                        </div>
-
-                        <div className="flex flex-col items-start">
-                            <label className="flex items-center text-sm">
-                                <input
-                                    type="checkbox"
-                                    checked={useOptimized}
-                                    onChange={(e) => setUseOptimized(e.target.checked)}
-                                    className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                                />
-                                Optimized Algorithm
-                            </label>
-                        </div>
-
+                    <div className="w-full sm:w-auto flex items-end">
                         <button
                             onClick={fetchDuplicateGroups}
                             title="Refresh duplicate groups"
-                            className="ml-2 inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                            className="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
                         >
                             Refresh
                         </button>

@@ -49,6 +49,9 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
     });
     const [mergePreview, setMergePreview] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [hasStartedSearch, setHasStartedSearch] = useState(false);
+    const [similarityThreshold, setSimilarityThreshold] = useState(0.8);
+    const [useOptimized, setUseOptimized] = useState(false);
 
     // Step navigation helpers
     const stepOrder = [
@@ -185,10 +188,65 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
     const renderStepContent = () => {
         switch (currentStep) {
             case STEPS.FIND_DUPLICATES:
+                if (!hasStartedSearch) {
+                    return (
+                        <div className="space-y-6">
+                            <div className="text-center py-8">
+                                <Icon path={ICONS.search} className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+                                <h3 className="text-xl font-medium text-gray-900 mb-2">Ready to Find Duplicates</h3>
+                                <p className="text-gray-600 mb-6">
+                                    Adjust the search settings below and click "Start Search" to find duplicate parts.
+                                </p>
+                            </div>
+                            
+                            {/* Search Controls */}
+                            <div className="bg-white border border-gray-200 rounded-lg p-4 max-w-md mx-auto">
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Similarity Threshold
+                                        </label>
+                                        <select
+                                            value={similarityThreshold}
+                                            onChange={(e) => setSimilarityThreshold(parseFloat(e.target.value))}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        >
+                                            <option value={0.9}>Very High (90%)</option>
+                                            <option value={0.8}>High (80%)</option>
+                                            <option value={0.7}>Medium (70%)</option>
+                                            <option value={0.6}>Low (60%)</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <div className="flex items-center">
+                                        <input
+                                            type="checkbox"
+                                            checked={useOptimized}
+                                            onChange={(e) => setUseOptimized(e.target.checked)}
+                                            className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                        />
+                                        <label className="text-sm font-medium text-gray-700">
+                                            Use Optimized Algorithm
+                                        </label>
+                                    </div>
+                                    
+                                    <button
+                                        onClick={() => setHasStartedSearch(true)}
+                                        className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 font-semibold"
+                                    >
+                                        Start Duplicate Search
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
                 return (
                     <DuplicateGroupList
                         selectedGroups={selectedDuplicateGroups}
                         onSelectionChange={setSelectedDuplicateGroups}
+                        similarityThreshold={similarityThreshold}
+                        useOptimized={useOptimized}
                     />
                 );
             
