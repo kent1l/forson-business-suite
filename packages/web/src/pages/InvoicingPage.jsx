@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../api';
 import { parsePaymentTermsDays } from '../utils/terms';
+import { formatPhysicalReceiptNumber } from '../utils/receiptNumberFormatter';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
@@ -256,7 +257,7 @@ const InvoicingPage = ({ user }) => {
                 employee_id: user.employee_id,
                 terms: terms,
                 payment_terms_days: parsePaymentTermsDays(terms),
-                physical_receipt_no: (physicalReceiptNo || '').trim() || null,
+                physical_receipt_no: formatPhysicalReceiptNumber(physicalReceiptNo),
                 lines: lines.map(line => ({
                     part_id: line.part_id,
                     quantity: line.quantity,
@@ -270,7 +271,7 @@ const InvoicingPage = ({ user }) => {
             // Then add payments to the invoice
             await api.post(`/invoices/${invoiceId}/payments`, {
                 payments,
-                physical_receipt_no: (physicalReceiptNo || '').trim() || null
+                physical_receipt_no: formatPhysicalReceiptNumber(physicalReceiptNo)
             });
 
             // Success - reset form

@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
+const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatter');
 const router = express.Router();
 
 // GET /api/payment-methods - Get all payment methods (ordered by sort_order)
@@ -318,14 +319,12 @@ router.post('/invoices/:id/payments', protect, hasPermission('invoicing:create')
             }
 
             // Validate physical receipt requirement
-            if (methodConfig.requires_receipt_no && (!physical_receipt_no || physical_receipt_no.trim() === '')) {
+            if (methodConfig.requires_receipt_no && (!physical_receipt_no || formatPhysicalReceiptNumber(physical_receipt_no) === null)) {
                 await client.query('ROLLBACK');
-                return res.status(400).json({ 
-                    message: `Physical receipt number is required for ${method.rows[0].name}` 
+                return res.status(400).json({
+                    message: `Physical receipt number is required for ${method.rows[0].name}`
                 });
-            }
-
-            // Calculate change
+            }            // Calculate change
             const tenderedAmt = tendered_amount ? parseFloat(tendered_amount) : null;
             const paidAmt = parseFloat(amount_paid);
             const changeAmt = tenderedAmt && tenderedAmt > paidAmt ? tenderedAmt - paidAmt : 0;
@@ -350,10 +349,11 @@ router.post('/invoices/:id/payments', protect, hasPermission('invoicing:create')
         }
 
         // Update physical receipt number if provided
-        if (physical_receipt_no && physical_receipt_no.trim()) {
+        const formattedReceiptNo = formatPhysicalReceiptNumber(physical_receipt_no);
+        if (formattedReceiptNo) {
             await client.query(
                 'UPDATE invoice SET physical_receipt_no = $1 WHERE invoice_id = $2',
-                [physical_receipt_no.trim(), invoice_id]
+                [formattedReceiptNo, invoice_id]
             );
         }
 

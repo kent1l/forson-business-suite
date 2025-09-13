@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
+const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatter');
 const { protect, hasPermission, isAdmin } = require('../middleware/authMiddleware');
 const { constructDisplayName } = require('../helpers/displayNameHelper'); // Import the helper
 const router = express.Router();
@@ -201,11 +202,7 @@ router.post('/invoices', async (req, res) => {
         }
 
         // Normalize physical receipt number: trim and treat empty as null
-        let prn = null;
-        if (typeof physical_receipt_no === 'string') {
-            const t = physical_receipt_no.trim();
-            prn = t.length > 0 ? t : null;
-        }
+        const prn = formatPhysicalReceiptNumber(physical_receipt_no);
 
         const invoiceQuery = `
             INSERT INTO invoice (invoice_number, customer_id, employee_id, total_amount, amount_paid, status, terms, payment_terms_days, due_date, physical_receipt_no)
@@ -322,5 +319,57 @@ router.delete('/invoices/:id', protect, isAdmin, async (req, res) => {
         res.status(500).json({ message: 'Server error deleting invoice', error: err.message });
     } finally {
         client.release();
+    }
+});
+
+// PUT /api/invoices/:id/physical-receipt-no - Update physical receipt number
+router.put('/invoices/:id/physical-receipt-no', protect, hasPermission('invoicing:create'), async (req, res) => {
+    const { id } = req.params;
+    const { physical_receipt_no } = req.body;
+
+    if (!id || isNaN(parseInt(id))) {
+        return res.status(400).json({ message: 'Invalid invoice ID.' });
+    }
+
+    try {
+        // Normalize physical receipt number: trim and treat empty as null
+        const prn = formatPhysicalReceiptNumber(physical_receipt_no);
+
+        // Check if another invoice already has this physical receipt number (case-insensitive)
+        if (prn) {
+            const existingQuery = `
+                SELECT invoice_id FROM invoice 
+                WHERE LOWER(physical_receipt_no) = LOWER($1) 
+                AND invoice_id != $2
+                AND physical_receipt_no IS NOT NULL 
+                AND LENGTH(TRIM(physical_receipt_no)) > 0
+            `;
+            const { rows: existingRows } = await db.query(existingQuery, [prn, id]);
+            if (existingRows.length > 0) {
+                return res.status(409).json({ message: 'Physical Receipt No already exists. Please use a unique number.' });
+            }
+        }
+
+        // Update the invoice
+        const updateQuery = `
+            UPDATE invoice 
+            SET physical_receipt_no = $1
+            WHERE invoice_id = $2
+            RETURNING invoice_id, physical_receipt_no
+        `;
+        const { rows } = await db.query(updateQuery, [prn, id]);
+
+        if (rows.length === 0) {
+            return res.status(404).json({ message: 'Invoice not found.' });
+        }
+
+        res.json({ 
+            message: 'Physical receipt number updated successfully.',
+            invoice_id: rows[0].invoice_id,
+            physical_receipt_no: rows[0].physical_receipt_no
+        });
+    } catch (err) {
+        console.error('Update physical receipt no error:', err.message);
+        res.status(500).json({ message: 'Server error updating physical receipt number.', error: err.message });
     }
 });
