@@ -32,7 +32,7 @@ const CMD = argv._[0] || 'up';
 
 // Resolve repo root from this script
 const repoRoot = path.resolve(__dirname, '../../..');
-const migrationsDir = path.join(repoRoot, 'database', 'migrations');
+const migrationsDir = process.env.MIGRATIONS_DIR || path.join(repoRoot, 'database', 'migrations');
 
 function sha256(buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');

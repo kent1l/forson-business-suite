@@ -37,6 +37,7 @@ const SalesHistoryPage = () => {
     const { settings } = useSettings();
     const [invoices, setInvoices] = useState([]);
     const [payments, setPayments] = useState([]); // Phase 1 payments for cash metrics
+    const [paymentMethods, setPaymentMethods] = useState([]); // Configurable payment methods
     const [refundsApprox, setRefundsApprox] = useState(0); // TEMP approximate refunds treated as cash out
     const [loading, setLoading] = useState(false);
     const [sortConfig, setSortConfig] = useState({ key: 'invoice_date', direction: 'DESC' });
@@ -143,8 +144,20 @@ const SalesHistoryPage = () => {
         }
         const topCustomerShare = netSales > 0 ? topCustomerNet / netSales : 0; // Formula: Top Customer Net / Net Sales
 
-        // Phase 1: derive basic cash vs non-cash from payments (heuristic by payment_method)
-        const cashMethodNames = ['cash']; // compare case-insensitively; extend if more cash aliases exist
+        // Enhanced payment method categorization using configurable payment methods
+        const getCashMethodNames = () => {
+            if (settings?.ENABLE_SPLIT_PAYMENTS === 'true' && paymentMethods.length > 0) {
+                // Use payment method configurations to determine cash methods
+                return paymentMethods
+                    .filter(pm => pm.is_active && pm.config?.is_cash === true)
+                    .map(pm => pm.name.toLowerCase());
+            } else {
+                // Fallback to legacy hardcoded cash methods
+                return ['cash'];
+            }
+        };
+
+        const cashMethodNames = getCashMethodNames();
 
         // Treat deleted invoices as non-existent: skip payments that were created by an invoice that no longer exists.
         // Heuristic:
@@ -178,6 +191,28 @@ const SalesHistoryPage = () => {
 
         const approxNetCashAfterRefunds = Math.max(cashCollectedNet - refundsApprox, 0); // Formula: Cash Net - Approximate Refunds (clamped >=0)
 
+        // Enhanced payment method breakdown for detailed analysis
+        const paymentMethodBreakdown = {};
+        for (const p of payments) {
+            const ref = (p.reference_number || '').toString().trim();
+            const looksLikeInvoiceNo = /^INV/i.test(ref);
+            if (looksLikeInvoiceNo && !currentInvoiceNumbers.has(ref)) {
+                continue;
+            }
+            const method = (p.payment_method || '').toString().trim();
+            const amt = currencySafeNumber(p.amount);
+            
+            if (!paymentMethodBreakdown[method]) {
+                paymentMethodBreakdown[method] = {
+                    amount: 0,
+                    count: 0,
+                    methodName: method
+                };
+            }
+            paymentMethodBreakdown[method].amount += amt;
+            paymentMethodBreakdown[method].count += 1;
+        }
+
         return {
             grossSales,
             netSales,
@@ -195,9 +230,10 @@ const SalesHistoryPage = () => {
             cashCollectedNet,
             nonCashCollected,
             cashMix,
-            approxNetCashAfterRefunds
+            approxNetCashAfterRefunds,
+            paymentMethodBreakdown
         };
-    }, [invoices, payments, refundsApprox]);
+    }, [invoices, payments, refundsApprox, paymentMethods, settings?.ENABLE_SPLIT_PAYMENTS]);
 
     // Keep maxHeight in sync to animate expand/collapse
     useEffect(() => {
@@ -299,13 +335,29 @@ const SalesHistoryPage = () => {
         };
     }, [dates]);
 
+    const fetchPaymentMethods = useMemo(() => {
+        return async () => {
+            try {
+                // Only fetch if split payments are enabled
+                if (settings?.ENABLE_SPLIT_PAYMENTS === 'true') {
+                    const resp = await api.get('/payment-methods');
+                    setPaymentMethods(resp.data || []);
+                } else {
+                    setPaymentMethods([]);
+                }
+            } catch {
+                setPaymentMethods([]);
+            }
+        };
+    }, [settings?.ENABLE_SPLIT_PAYMENTS]);
+
     // A convenience full refresh used after actions that affect multiple datasets
     const fullRefresh = useMemo(() => {
         return async () => {
-            // run the three refreshes in parallel where sensible
-            await Promise.allSettled([fetchInvoices(), fetchPayments(), fetchRefundsApprox()]);
+            // run the refreshes in parallel where sensible
+            await Promise.allSettled([fetchInvoices(), fetchPayments(), fetchRefundsApprox(), fetchPaymentMethods()]);
         };
-    }, [fetchInvoices, fetchPayments, fetchRefundsApprox]);
+    }, [fetchInvoices, fetchPayments, fetchRefundsApprox, fetchPaymentMethods]);
 
     // Listen for external invoice changes so this page can react (e.g., deletions from other pages)
     useEffect(() => {
@@ -320,10 +372,16 @@ const SalesHistoryPage = () => {
 
     useEffect(() => {
         fetchInvoices();
-    fetchPayments();
-    fetchRefundsApprox();
+        fetchPayments();
+        fetchRefundsApprox();
+        fetchPaymentMethods();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dates, debouncedQuery]);
+
+    // Fetch payment methods when settings change
+    useEffect(() => {
+        fetchPaymentMethods();
+    }, [fetchPaymentMethods]);
 
     // Debounce the search input
     useEffect(() => {
@@ -545,7 +603,52 @@ const SalesHistoryPage = () => {
                                             </div>
                                         </>
                                     )
-                                }
+                                },
+                                // Payment Methods breakdown card (only show if split payments enabled or payment breakdown exists)
+                                ...(settings?.ENABLE_SPLIT_PAYMENTS === 'true' || Object.keys(stats.paymentMethodBreakdown || {}).length > 0 ? [{
+                                    key: 'payment-methods',
+                                    className: 'md:col-span-2',
+                                    content: (
+                                        <>
+                                            <div className="text-sm text-gray-500 flex items-center justify-between">
+                                                <span>Payment Methods</span>
+                                                <span className="text-[10px] uppercase tracking-wide text-gray-400">Breakdown</span>
+                                            </div>
+                                            <div className="mt-2">
+                                                {Object.keys(stats.paymentMethodBreakdown || {}).length === 0 ? (
+                                                    <div className="text-center text-gray-500 text-sm py-4">No payment data for this period</div>
+                                                ) : (
+                                                    <div className="space-y-2 max-h-32 overflow-y-auto">
+                                                        {Object.values(stats.paymentMethodBreakdown || {})
+                                                            .sort((a, b) => b.amount - a.amount)
+                                                            .map(method => {
+                                                                const totalPayments = Object.values(stats.paymentMethodBreakdown || {}).reduce((sum, m) => sum + m.amount, 0);
+                                                                const percentage = totalPayments > 0 ? (method.amount / totalPayments) * 100 : 0;
+                                                                return (
+                                                                    <div key={method.methodName} className="flex items-center justify-between">
+                                                                        <div className="flex items-center space-x-2">
+                                                                            <span className="text-sm font-medium text-gray-700">{method.methodName}</span>
+                                                                            <span className="text-xs text-gray-500">({method.count} txns)</span>
+                                                                        </div>
+                                                                        <div className="text-right">
+                                                                            <div className="text-sm font-semibold text-gray-800">
+                                                                                {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{method.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                                            </div>
+                                                                            <div className="text-xs text-gray-500">{percentage.toFixed(1)}%</div>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="text-[11px] text-gray-500 mt-2 flex justify-between">
+                                                <span>Cash Mix: {(stats.cashMix * 100).toFixed(1)}%</span>
+                                                <span>Non-Cash: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.nonCashCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                            </div>
+                                        </>
+                                    )
+                                }] : [])
                             ].map((card, idx) => {
                                 // stagger only on expand
                                 const delayMs = summaryCollapsed ? 0 : idx * 60;

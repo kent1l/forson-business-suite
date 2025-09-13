@@ -25,10 +25,12 @@ services:
       - ./packages/api:/usr/src/app
       - backend_node_modules:/usr/src/app/node_modules
       - ./backups:/backups
+      - ./database:/database
     environment:
       - NODE_ENV=development
       - CHOKIDAR_USEPOLLING=true
       - CHOKIDAR_INTERVAL=100
+      - MIGRATIONS_DIR=/database/migrations
     env_file:
       - .env
 

@@ -1,23 +1,25 @@
 /* eslint-disable no-unused-vars */
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
+import { useSettings } from '../contexts/SettingsContext';
+import { formatApplicationText } from '../helpers/applicationTextHelper';
+import { enrichPartsArray } from '../helpers/applicationCache';
+import useSavedSales from '../hooks/useSavedSales';
+import useTypeahead from '../hooks/useTypeahead';
 import api from '../api';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import SearchBar from '../components/SearchBar';
-import useTypeahead from '../hooks/useTypeahead';
-import { useSettings } from '../contexts/SettingsContext';
 import Modal from '../components/ui/Modal';
 import CustomerForm from '../components/forms/CustomerForm';
+import PartForm from '../components/forms/PartForm';
 import Combobox from '../components/ui/Combobox';
-import { formatApplicationText } from '../helpers/applicationTextHelper';
-import { enrichPartsArray } from '../helpers/applicationCache';
 import PaymentModal from '../components/ui/PaymentModal';
+import SplitPaymentModal from '../components/ui/SplitPaymentModal';
 import PriceQuantityModal from '../components/ui/PriceQuantityModal';
 import Receipt from '../components/ui/Receipt';
-import PartForm from '../components/forms/PartForm';
-import useSavedSales from '../hooks/useSavedSales';
 import SavedSalesPanel from '../components/pos/SavedSalesPanel';
 
 // Grid with Save Sale + View Saved + Void Transaction
@@ -127,6 +129,8 @@ const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave,
 
 const POSPage = ({ user, lines, setLines }) => {
     const { settings } = useSettings();
+    console.log('[POSPage] Component loaded, settings:', settings);
+    console.log('[POSPage] ENABLE_SPLIT_PAYMENTS setting:', settings?.ENABLE_SPLIT_PAYMENTS);
     const [physicalReceiptInput, setPhysicalReceiptInput] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState([]); // State for search results
@@ -139,6 +143,7 @@ const POSPage = ({ user, lines, setLines }) => {
     const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
     const [isNewCustomerModalOpen, setIsNewCustomerModalOpen] = useState(false);
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+    const [isSplitPaymentModalOpen, setIsSplitPaymentModalOpen] = useState(false);
     const [isNewPartModalOpen, setIsNewPartModalOpen] = useState(false);
     const [currentItem, setCurrentItem] = useState(null);
     const [showSaved, setShowSaved] = useState(false);
@@ -366,8 +371,19 @@ const POSPage = ({ user, lines, setLines }) => {
     const handleCheckout = useCallback(() => {
         if (lines.length === 0) return toast.error("Please add items to the cart.");
         if (!selectedCustomer) return toast.error("Please select a customer.");
-        setIsPaymentModalOpen(true);
-    }, [lines.length, selectedCustomer]);
+        
+        // Check if split payments are enabled
+        const splitPaymentsEnabled = settings?.ENABLE_SPLIT_PAYMENTS === 'true';
+        console.log('[POSPage] Checkout triggered, splitPaymentsEnabled:', splitPaymentsEnabled);
+        
+        if (splitPaymentsEnabled) {
+            console.log('[POSPage] Opening split payment modal');
+            setIsSplitPaymentModalOpen(true);
+        } else {
+            console.log('[POSPage] Opening regular payment modal');
+            setIsPaymentModalOpen(true);
+        }
+    }, [lines.length, selectedCustomer, settings]);
 
     const handleConfirmPayment = (paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo) => {
         // Check if physical receipt number is empty
@@ -453,6 +469,78 @@ const POSPage = ({ user, lines, setLines }) => {
         setIsReceiptConfirmOpen(false);
         setPendingPaymentData(null);
         setIsPaymentModalOpen(false);
+    };
+
+    // Handle split payment confirmation (new API format)
+    const handleConfirmSplitPayment = async (payments, physicalReceiptNo) => {
+        console.log('[POSPage] handleConfirmSplitPayment called with payments:', payments);
+        try {
+            const normalizedPRN = normalizePhysicalReceipt(physicalReceiptInput || physicalReceiptNo || '');
+            
+            // First create the invoice without payments
+            const invoicePayload = {
+                customer_id: selectedCustomer.customer_id,
+                employee_id: user.employee_id,
+                physical_receipt_no: normalizedPRN || null,
+                lines: lines.map(line => ({
+                    part_id: line.part_id,
+                    quantity: line.quantity,
+                    sale_price: line.sale_price,
+                })),
+            };
+            console.log('[POSPage] Creating invoice with payload:', invoicePayload);
+
+            const invoiceResponse = await api.post('/invoices', invoicePayload);
+            const invoiceId = invoiceResponse.data.invoice_id;
+            const invoiceNumber = invoiceResponse.data.invoice_number;
+
+            // Then add payments to the invoice
+            await api.post(`/invoices/${invoiceId}/payments`, {
+                payments,
+                physical_receipt_no: normalizedPRN || null
+            });
+
+            // Success - reset form and show receipt option
+            const saleDataForReceipt = { 
+                lines, 
+                total, 
+                subtotal, 
+                tax, 
+                invoice_number: invoiceNumber, 
+                physical_receipt_no: normalizedPRN || null 
+            };
+            
+            setLastSale(saleDataForReceipt);
+            setLines([]);
+            const walkIn = customers.find(c => c.first_name.toLowerCase() === 'walk-in');
+            setSelectedCustomer(walkIn || null);
+            setPhysicalReceiptInput('');
+            setIsSplitPaymentModalOpen(false);
+
+            toast.success(
+                (t) => (
+                    <div className="flex items-center">
+                        <span className="mr-4">Sale completed!</span>
+                        <button
+                            onClick={() => {
+                                toast.dismiss(t.id);
+                                handlePrintReceipt(saleDataForReceipt);
+                            }}
+                            className="px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
+                        >
+                            Print Receipt
+                        </button>
+                    </div>
+                ), { duration: 10000 }
+            );
+
+        } catch (err) {
+            console.error('Split payment error:', err);
+            if (err?.response?.status === 409) {
+                throw new Error(err.response.data?.message || 'Physical Receipt No already exists.');
+            }
+            throw new Error('Failed to process sale.');
+        }
     };
     
     const handlePrintReceipt = (saleData) => {
@@ -766,6 +854,15 @@ const POSPage = ({ user, lines, setLines }) => {
                 total={total}
                 onConfirmPayment={handleConfirmPayment}
                 physicalReceipt={physicalReceiptInput}
+            />
+            
+            <SplitPaymentModal
+                isOpen={isSplitPaymentModalOpen}
+                onClose={() => setIsSplitPaymentModalOpen(false)}
+                totalDue={total}
+                onConfirm={handleConfirmSplitPayment}
+                physicalReceiptNo={physicalReceiptInput}
+                onPhysicalReceiptChange={setPhysicalReceiptInput}
             />
             {/* Void confirmation modal (centered, styled like system) */}
             <Modal isOpen={isVoidConfirmOpen} onClose={() => setIsVoidConfirmOpen(false)} title="Confirm Void" centered>

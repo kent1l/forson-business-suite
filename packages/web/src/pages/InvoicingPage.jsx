@@ -8,6 +8,7 @@ import SearchBar from '../components/SearchBar';
 import Modal from '../components/ui/Modal';
 import CustomerForm from '../components/forms/CustomerForm';
 import PartForm from '../components/forms/PartForm';
+import SplitPaymentModal from '../components/ui/SplitPaymentModal';
 import { useSettings } from '../contexts/SettingsContext';
 import { formatApplicationText } from '../helpers/applicationTextHelper';
 import { enrichPartsArray } from '../helpers/applicationCache';
@@ -19,6 +20,7 @@ const InvoicingPage = ({ user }) => {
     const [selectedCustomer, setSelectedCustomer] = useState('');
     const [paymentMethod, setPaymentMethod] = useState('');
     const [physicalReceiptNo, setPhysicalReceiptNo] = useState('');
+    const [isSplitPaymentModalOpen, setIsSplitPaymentModalOpen] = useState(false);
     const [terms, setTerms] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState([]);
@@ -189,8 +191,23 @@ const InvoicingPage = ({ user }) => {
     };
 
     const handlePostInvoice = async () => {
-        if (!selectedCustomer || lines.length === 0 || !paymentMethod) {
-            toast.error('Please select a customer, payment method, and add at least one item.');
+        if (!selectedCustomer || lines.length === 0) {
+            toast.error('Please select a customer and add at least one item.');
+            return;
+        }
+
+        // Check if split payments are enabled
+        const splitPaymentsEnabled = settings?.ENABLE_SPLIT_PAYMENTS === 'true';
+
+        if (splitPaymentsEnabled) {
+            // Use split payment modal for payment processing
+            setIsSplitPaymentModalOpen(true);
+            return;
+        }
+
+        // Legacy single payment method flow
+        if (!paymentMethod) {
+            toast.error('Please select a payment method.');
             return;
         }
 
@@ -237,6 +254,50 @@ const InvoicingPage = ({ user }) => {
         });
     };
 
+    // Handle split payment confirmation for invoicing
+    const handleConfirmSplitPayment = async (payments, physicalReceiptNo) => {
+        try {
+            // First create the invoice without payments
+            const invoicePayload = {
+                customer_id: selectedCustomer,
+                employee_id: user.employee_id,
+                terms: terms,
+                payment_terms_days: parsePaymentTermsDays(terms),
+                physical_receipt_no: (physicalReceiptNo || '').trim() || null,
+                lines: lines.map(line => ({
+                    part_id: line.part_id,
+                    quantity: line.quantity,
+                    sale_price: line.sale_price,
+                })),
+            };
+
+            const invoiceResponse = await api.post('/invoices', invoicePayload);
+            const invoiceId = invoiceResponse.data.invoice_id;
+
+            // Then add payments to the invoice
+            await api.post(`/invoices/${invoiceId}/payments`, {
+                payments,
+                physical_receipt_no: (physicalReceiptNo || '').trim() || null
+            });
+
+            // Success - reset form
+            setLines([]);
+            setSelectedCustomer('');
+            setTerms(settings.DEFAULT_PAYMENT_TERMS || '');
+            setPhysicalReceiptNo('');
+            setIsSplitPaymentModalOpen(false);
+
+            toast.success('Invoice created successfully!');
+
+        } catch (err) {
+            console.error('Split payment error:', err);
+            if (err?.response?.status === 409) {
+                throw new Error(err.response.data?.message || 'Physical Receipt No already exists.');
+            }
+            throw new Error('Failed to create invoice.');
+        }
+    };
+
     const subtotal = lines.reduce((acc, line) => acc + (line.quantity * line.sale_price), 0);
 
     if (loading) return <p>Loading data...</p>;
@@ -256,27 +317,36 @@ const InvoicingPage = ({ user }) => {
                             <button onClick={() => setIsCustomerModalOpen(true)} className="px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm">New</button>
                         </div>
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
-                        <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                            {paymentMethods.map(method => <option key={method} value={method}>{method}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <div className="flex items-center justify-between mb-1">
-                            <label className="block text-sm font-medium text-gray-700">Physical Receipt No.</label>
+                    {settings?.ENABLE_SPLIT_PAYMENTS === 'true' ? (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Payment</label>
+                            <p className="text-sm text-gray-600 mb-2">Split payments will be configured at checkout</p>
                         </div>
-                        <input
-                            type="text"
-                            value={physicalReceiptNo}
-                            onChange={(e) => setPhysicalReceiptNo(e.target.value)}
-                            maxLength={50}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder={settings?.RECEIPT_NO_HELP_TEXT || 'Enter pre-printed receipt number'}
-                            required={paymentMethod.toLowerCase() === 'credit card'}
-                        />
-                        <p className="mt-1 text-xs text-gray-500">{paymentMethod.toLowerCase() === 'credit card' ? 'Required for credit card payments.' : 'Optional. Leave blank if not applicable.'}</p>
-                    </div>
+                    ) : (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
+                            <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                {paymentMethods.map(method => <option key={method} value={method}>{method}</option>)}
+                            </select>
+                        </div>
+                    )}
+                    {settings?.ENABLE_SPLIT_PAYMENTS !== 'true' && (
+                        <div>
+                            <div className="flex items-center justify-between mb-1">
+                                <label className="block text-sm font-medium text-gray-700">Physical Receipt No.</label>
+                            </div>
+                            <input
+                                type="text"
+                                value={physicalReceiptNo}
+                                onChange={(e) => setPhysicalReceiptNo(e.target.value)}
+                                maxLength={50}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                placeholder={settings?.RECEIPT_NO_HELP_TEXT || 'Enter pre-printed receipt number'}
+                                required={paymentMethod.toLowerCase() === 'credit card'}
+                            />
+                            <p className="mt-1 text-xs text-gray-500">{paymentMethod.toLowerCase() === 'credit card' ? 'Required for credit card payments.' : 'Optional. Leave blank if not applicable.'}</p>
+                        </div>
+                    )}
                 </div>
                 
                 <div>
@@ -379,6 +449,15 @@ const InvoicingPage = ({ user }) => {
                     onCancel={() => setIsNewPartModalOpen(false)}
                 />
             </Modal>
+            {settings?.ENABLE_SPLIT_PAYMENTS === 'true' && (
+                <SplitPaymentModal
+                    isOpen={isSplitPaymentModalOpen}
+                    onClose={() => setIsSplitPaymentModalOpen(false)}
+                    totalAmount={subtotal}
+                    onConfirm={handleConfirmSplitPayment}
+                    requirePhysicalReceipt={true}
+                />
+            )}
         </div>
     );
 };
