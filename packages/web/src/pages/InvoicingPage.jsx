@@ -19,7 +19,6 @@ const InvoicingPage = ({ user }) => {
     const [lines, setLines] = useState([]);
     const [selectedCustomer, setSelectedCustomer] = useState('');
     const [paymentMethod, setPaymentMethod] = useState('');
-    const [physicalReceiptNo, setPhysicalReceiptNo] = useState('');
     const [isSplitPaymentModalOpen, setIsSplitPaymentModalOpen] = useState(false);
     const [terms, setTerms] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
@@ -211,11 +210,6 @@ const InvoicingPage = ({ user }) => {
             return;
         }
 
-        if (paymentMethod.toLowerCase() === 'credit card' && (!physicalReceiptNo || physicalReceiptNo.trim() === '')) {
-            toast.error('Physical Receipt No is required for credit card payments.');
-            return;
-        }
-
         // Set amount_paid based on payment method
         const amount_paid = paymentMethod.toLowerCase() === 'cash' ? subtotal : 0;
 
@@ -226,7 +220,7 @@ const InvoicingPage = ({ user }) => {
             amount_paid: amount_paid,
             terms: terms,
             payment_terms_days: parsePaymentTermsDays(terms),
-            physical_receipt_no: (physicalReceiptNo || '').trim() || null,
+            physical_receipt_no: null, // Not used in this flow
             lines: lines.map(line => ({
                 part_id: line.part_id,
                 quantity: line.quantity,
@@ -242,7 +236,6 @@ const InvoicingPage = ({ user }) => {
                 setLines([]);
                 setSelectedCustomer('');
                 setTerms(settings.DEFAULT_PAYMENT_TERMS || '');
-                setPhysicalReceiptNo('');
                 return 'Invoice created successfully!';
             },
             error: (err) => {
@@ -284,7 +277,6 @@ const InvoicingPage = ({ user }) => {
             setLines([]);
             setSelectedCustomer('');
             setTerms(settings.DEFAULT_PAYMENT_TERMS || '');
-            setPhysicalReceiptNo('');
             setIsSplitPaymentModalOpen(false);
 
             toast.success('Invoice created successfully!');
@@ -307,139 +299,147 @@ const InvoicingPage = ({ user }) => {
     if (loading) return <p>Loading data...</p>;
 
     return (
-        <div>
-            <h1 className="text-2xl font-semibold text-gray-800 mb-6">New Invoice</h1>
-            <div className="bg-white p-6 rounded-xl border border-gray-200 space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
-                        <div className="flex items-center space-x-2">
-                            <select value={selectedCustomer} onChange={e => setSelectedCustomer(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                                <option value="">Select a Customer</option>
-                                {customers.map(c => <option key={c.customer_id} value={c.customer_id}>{c.first_name} {c.last_name}</option>)}
-                            </select>
-                            <button onClick={() => setIsCustomerModalOpen(true)} className="px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm">New</button>
-                        </div>
-                    </div>
-                    {settings?.ENABLE_SPLIT_PAYMENTS === 'true' ? (
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Payment</label>
-                            <p className="text-sm text-gray-600 mb-2">Split payments will be configured at checkout</p>
-                        </div>
-                    ) : (
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
-                            <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                                {paymentMethods.map(method => <option key={method} value={method}>{method}</option>)}
-                            </select>
-                        </div>
-                    )}
-                    {settings?.ENABLE_SPLIT_PAYMENTS !== 'true' && (
-                        <div>
-                            <div className="flex items-center justify-between mb-1">
-                                <label className="block text-sm font-medium text-gray-700">Physical Receipt No.</label>
-                            </div>
-                            <input
-                                type="text"
-                                value={physicalReceiptNo}
-                                onChange={(e) => setPhysicalReceiptNo(e.target.value)}
-                                maxLength={50}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                                placeholder={settings?.RECEIPT_NO_HELP_TEXT || 'Enter pre-printed receipt number'}
-                                required={paymentMethod.toLowerCase() === 'credit card'}
-                            />
-                            <p className="mt-1 text-xs text-gray-500">{paymentMethod.toLowerCase() === 'credit card' ? 'Required for credit card payments.' : 'Optional. Leave blank if not applicable.'}</p>
-                        </div>
-                    )}
-                </div>
-                
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Payment Terms</label>
-                    <div className="flex items-center space-x-3">
-                        <select
-                            value={commonTerms.includes(terms) ? terms : 'custom'}
-                            onChange={e => setTerms(e.target.value)}
-                            className="px-3 py-2 border border-gray-300 rounded-lg"
-                        >
-                            {commonTerms.map(ct => <option key={ct} value={ct}>{ct}</option>)}
-                            <option value="custom">Custom...</option>
-                        </select>
-                        <input
-                            type="text"
-                            value={terms}
-                            onChange={e => setTerms(e.target.value)}
-                            onFocus={e => e.target.select()}
-                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
-                            placeholder="Enter days (e.g. 30)"
-                        />
-                    </div>
-                </div>
-                
-                <div className="relative">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Add Part</label>
+        <div className="p-6 bg-gray-50 min-h-screen">
+            <div className="max-w-7xl mx-auto">
+                <div className="flex justify-between items-center mb-6">
+                    <h1 className="text-3xl font-bold text-gray-800">New Invoice</h1>
                     <div className="flex items-center space-x-2">
-                        <div className="relative flex-grow">
-                            <SearchBar
-                                value={searchTerm}
-                                onChange={setSearchTerm}
-                                onClear={() => setSearchTerm('')}
-                                placeholder="Search by part name or SKU..."
-                            />
-                        </div>
-                        <button onClick={() => setIsNewPartModalOpen(true)} className="bg-blue-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-700 transition whitespace-nowrap">
-                            New Part
+                        <button onClick={handlePostInvoice} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-indigo-700 transition shadow-sm flex items-center">
+                            <Icon path={ICONS.check} className="h-5 w-5 mr-2" />
+                            Post Invoice
                         </button>
                     </div>
-                    {searchResults.length > 0 && (
-                        <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg search-results">
-                            {searchResults.map(part => (
-                                <li key={part.part_id} onClick={() => addPartToLines(part)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer">
-                                    <div className="flex items-baseline justify-between">
-                                        <div className="flex items-baseline space-x-2 flex-1 min-w-0">
-                                            <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
-                                            {part.applications && <div className="text-xs text-gray-500 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
-                                        </div>
-                                        <div className="text-sm font-semibold text-gray-700 ml-2">
-                                            {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
-                                        </div>
-                                    </div>
-                                </li>
-                            ))}
-                        </ul>
-                    )}
                 </div>
 
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                        <thead className="border-b">
-                            <tr>
-                                <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
-                                <th className="p-3 text-sm font-semibold text-gray-600 w-28">Quantity</th>
-                                <th className="p-3 text-sm font-semibold text-gray-600 w-32">Sale Price</th>
-                                <th className="p-3 text-sm font-semibold text-gray-600 w-16 text-center"></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {lines.map(line => (
-                                <tr key={line.part_id} className="border-b">
-                                    <td className="p-2 text-sm font-medium text-gray-800">{line.display_name}</td>
-                                    <td className="p-2"><input type="number" value={line.quantity} onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)} onFocus={e => e.target.select()} className="w-full p-1 border rounded-md" /></td>
-                                    <td className="p-2"><input type="number" value={line.sale_price} onChange={e => handleLineChange(line.part_id, 'sale_price', e.target.value)} onFocus={e => e.target.select()} className="w-full p-1 border rounded-md" /></td>
-                                    <td className="p-2 text-center"><button onClick={() => removeLine(line.part_id)} className="text-red-500 hover:text-red-700"><Icon path={ICONS.trash} className="h-5 w-5"/></button></td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-
-                <div className="flex justify-between items-start pt-4 border-t">
-                    <div className="text-right">
-                        <p className="text-lg font-semibold">Subtotal: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{subtotal.toFixed(2)}</p>
-                        <p className="text-sm text-gray-500">+ Tax (calculated upon posting)</p>
+                <div className="bg-white p-8 rounded-xl border border-gray-200 shadow-sm space-y-8">
+                    {/* Customer and Payment Section */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pb-8 border-b">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Customer</label>
+                            <div className="flex items-center space-x-2">
+                                <select value={selectedCustomer} onChange={e => setSelectedCustomer(e.target.value)} className="w-full px-3 py-2 border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                                    <option value="">Select a Customer</option>
+                                    {customers.map(c => <option key={c.customer_id} value={c.customer_id}>{c.first_name} {c.last_name}</option>)}
+                                </select>
+                                <button onClick={() => setIsCustomerModalOpen(true)} className="p-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition">
+                                    <Icon path={ICONS.plus} className="h-5 w-5" />
+                                </button>
+                            </div>
+                        </div>
+                        {settings?.ENABLE_SPLIT_PAYMENTS === 'true' ? (
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Payment</label>
+                                <p className="text-sm text-gray-600 pt-2">Payment details will be handled at checkout.</p>
+                            </div>
+                        ) : (
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Payment Method</label>
+                                <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="w-full px-3 py-2 border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                                    {paymentMethods.map(method => <option key={method} value={method}>{method}</option>)}
+                                </select>
+                            </div>
+                        )}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Payment Terms</label>
+                            <div className="flex items-center space-x-3">
+                                <select
+                                    value={commonTerms.includes(terms) ? terms : 'custom'}
+                                    onChange={e => setTerms(e.target.value)}
+                                    className="px-3 py-2 border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                                >
+                                    {commonTerms.map(ct => <option key={ct} value={ct}>{ct === '0' ? 'Due on Receipt' : `${ct} Days`}</option>)}
+                                    <option value="custom">Custom...</option>
+                                </select>
+                                <input
+                                    type="text"
+                                    value={terms}
+                                    onChange={e => setTerms(e.target.value)}
+                                    onFocus={e => e.target.select()}
+                                    className="flex-1 px-3 py-2 border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                                    placeholder="e.g., 30"
+                                />
+                            </div>
+                        </div>
                     </div>
-                    <button onClick={handlePostInvoice} className="bg-green-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-green-700 transition">
-                        Post Invoice
-                    </button>
+                    
+                    {/* Add Part Section */}
+                    <div className="relative">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Add Items</label>
+                        <div className="flex items-center space-x-2">
+                            <div className="relative flex-grow">
+                                <SearchBar
+                                    value={searchTerm}
+                                    onChange={setSearchTerm}
+                                    onClear={() => setSearchTerm('')}
+                                    placeholder="Search by part name, SKU, or application..."
+                                />
+                            </div>
+                            <button onClick={() => setIsNewPartModalOpen(true)} className="bg-indigo-50 text-indigo-700 px-4 py-2 rounded-lg font-semibold hover:bg-indigo-100 transition whitespace-nowrap flex items-center">
+                                <Icon path={ICONS.plus} className="h-5 w-5 mr-2" />
+                                New Part
+                            </button>
+                        </div>
+                        {searchResults.length > 0 && (
+                            <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg search-results max-h-60 overflow-y-auto">
+                                {searchResults.map(part => (
+                                    <li key={part.part_id} onClick={() => addPartToLines(part)} className="px-4 py-3 hover:bg-indigo-50 cursor-pointer border-b last:border-b-0">
+                                        <div className="flex items-baseline justify-between">
+                                            <div className="flex items-baseline space-x-2 flex-1 min-w-0">
+                                                <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
+                                                {part.applications && <div className="text-xs text-gray-500 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
+                                            </div>
+                                            <div className="text-sm font-semibold text-gray-700 ml-4">
+                                                {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
+                                            </div>
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+
+                    {/* Invoice Lines Table */}
+                    <div className="overflow-x-auto border rounded-lg">
+                        <table className="w-full text-left">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="p-4 text-sm font-semibold text-gray-600">Item</th>
+                                    <th className="p-4 text-sm font-semibold text-gray-600 w-32 text-center">Quantity</th>
+                                    <th className="p-4 text-sm font-semibold text-gray-600 w-40 text-right">Sale Price</th>
+                                    <th className="p-4 text-sm font-semibold text-gray-600 w-40 text-right">Line Total</th>
+                                    <th className="p-4 text-sm font-semibold text-gray-600 w-16 text-center"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {lines.length > 0 ? lines.map(line => (
+                                    <tr key={line.part_id} className="border-b last:border-b-0 hover:bg-gray-50">
+                                        <td className="p-4 text-sm font-medium text-gray-800">{line.display_name}</td>
+                                        <td className="p-4"><input type="number" value={line.quantity} onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)} onFocus={e => e.target.select()} className="w-full p-2 border-gray-300 rounded-md text-center" /></td>
+                                        <td className="p-4"><input type="number" value={line.sale_price} onChange={e => handleLineChange(line.part_id, 'sale_price', e.target.value)} onFocus={e => e.target.select()} className="w-full p-2 border-gray-300 rounded-md text-right" /></td>
+                                        <td className="p-4 text-sm font-medium text-gray-800 text-right">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{(line.quantity * line.sale_price).toFixed(2)}</td>
+                                        <td className="p-4 text-center"><button onClick={() => removeLine(line.part_id)} className="text-gray-400 hover:text-red-600 transition-colors"><Icon path={ICONS.trash} className="h-5 w-5"/></button></td>
+                                    </tr>
+                                )) : (
+                                    <tr>
+                                        <td colSpan="5" className="text-center py-12 text-gray-500">
+                                            <Icon path={ICONS.inbox} className="h-12 w-12 mx-auto text-gray-300 mb-2" />
+                                            No items added yet.
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Totals Section */}
+                    <div className="flex justify-end items-center pt-6 border-t">
+                        <div className="text-right space-y-2">
+                            <p className="text-xl font-semibold text-gray-800">
+                                <span className="font-medium text-gray-600">Subtotal:</span> {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{subtotal.toFixed(2)}
+                            </p>
+                            <p className="text-sm text-gray-500">+ Tax (calculated upon posting)</p>
+                        </div>
+                    </div>
                 </div>
             </div>
             <Modal isOpen={isCustomerModalOpen} onClose={() => setIsCustomerModalOpen(false)} title="Add New Customer">

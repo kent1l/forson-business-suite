@@ -258,46 +258,46 @@ const SplitPaymentModal = ({
     });
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 split-payment-modal">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
-                <div className="flex items-center justify-between p-4 border-b">
-                    <h2 className="text-lg font-semibold">
+        <div className="fixed inset-0 bg-neutral-800/50 flex items-center justify-center z-50 transition-opacity">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden transform transition-all">
+                <div className="flex items-center justify-between p-4 border-b bg-gray-50 rounded-t-lg">
+                    <h2 className="text-xl font-semibold text-gray-800">
                         {splitPaymentsEnabled ? 'Split Payment' : 'Process Payment'}
                     </h2>
                     <button
                         onClick={onClose}
-                        className="text-gray-400 hover:text-gray-600"
+                        className="text-gray-500 hover:text-gray-800 transition-colors"
                     >
                         <Icon path={ICONS.close} className="h-6 w-6" />
                     </button>
                 </div>
 
-                <div className="p-6 overflow-y-auto max-h-[70vh]">
+                <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
                     {/* Summary */}
-                    <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                    <div className="mb-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
                             <div>
-                                <div className="text-sm text-gray-500">Total Due</div>
-                                <div className="text-lg font-semibold">
+                                <div className="text-sm font-medium text-slate-500">Total Due</div>
+                                <div className="text-2xl font-bold text-slate-800">
                                     {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{(totalDue || 0).toFixed(2)}
                                 </div>
                             </div>
                             <div>
-                                <div className="text-sm text-gray-500">Total Payments</div>
-                                <div className="text-lg font-semibold text-blue-600">
+                                <div className="text-sm font-medium text-slate-500">Total Payments</div>
+                                <div className="text-2xl font-bold text-blue-600">
                                     {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{totalPayments.toFixed(2)}
                                 </div>
                             </div>
                             <div>
-                                <div className="text-sm text-gray-500">Remaining</div>
-                                <div className={`text-lg font-semibold ${remaining > 0.01 ? 'text-red-600' : 'text-green-600'}`}>
+                                <div className="text-sm font-medium text-slate-500">Remaining</div>
+                                <div className={`text-2xl font-bold ${remaining > 0.01 ? 'text-red-600' : 'text-green-600'}`}>
                                     {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{remaining.toFixed(2)}
                                 </div>
                             </div>
                             {totalChange > 0 && (
                                 <div>
-                                    <div className="text-sm text-gray-500">Change Due</div>
-                                    <div className="text-lg font-semibold text-orange-600">
+                                    <div className="text-sm font-medium text-slate-500">Change Due</div>
+                                    <div className="text-2xl font-bold text-orange-500">
                                         {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{totalChange.toFixed(2)}
                                     </div>
                                 </div>
@@ -307,7 +307,7 @@ const SplitPaymentModal = ({
 
                     {/* Physical Receipt Input */}
                     {requiresPhysicalReceipt && (
-                        <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
                             <label className="block text-sm font-medium text-gray-700 mb-2">
                                 Physical Receipt Number <span className="text-red-500">*</span>
                             </label>
@@ -315,12 +315,12 @@ const SplitPaymentModal = ({
                                 type="text"
                                 value={physicalReceiptNo}
                                 onChange={(e) => onPhysicalReceiptChange(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                className="w-full px-3 py-2 border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                                 placeholder={settings?.RECEIPT_NO_HELP_TEXT || 'Enter pre-printed receipt number'}
                                 required
                             />
-                            <p className="text-xs text-yellow-700 mt-1">
-                                Required for card payments
+                            <p className="text-xs text-amber-800 mt-1">
+                                This payment method requires a physical receipt number.
                             </p>
                         </div>
                     )}
@@ -333,15 +333,15 @@ const SplitPaymentModal = ({
                             const showReference = method && method.config.requires_reference;
 
                             return (
-                                <div key={payment.id} className="p-4 border border-gray-200 rounded-lg">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <h4 className="font-medium">Payment {index + 1}</h4>
+                                <div key={payment.id} className="p-4 border border-gray-200 rounded-lg bg-white shadow-sm">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h4 className="font-medium text-gray-800">Payment {index + 1}</h4>
                                         {payments.length > 1 && (
                                             <button
                                                 onClick={() => removePaymentLine(payment.id)}
-                                                className="text-red-500 hover:text-red-700"
+                                                className="text-red-500 hover:text-red-700 transition-colors"
                                             >
-                                                <Icon path={ICONS.trash} className="h-4 w-4" />
+                                                <Icon path={ICONS.trash} className="h-5 w-5" />
                                             </button>
                                         )}
                                     </div>
@@ -354,7 +354,7 @@ const SplitPaymentModal = ({
                                             <select
                                                 value={payment.method_id}
                                                 onChange={(e) => updatePayment(payment.id, 'method_id', e.target.value)}
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                                className="w-full px-3 py-2 border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                                                 required
                                             >
                                                 <option value="">Select method...</option>
@@ -376,7 +376,7 @@ const SplitPaymentModal = ({
                                                     value={payment.amount_paid}
                                                     onChange={(e) => updatePayment(payment.id, 'amount_paid', e.target.value)}
                                                     onFocus={(e) => e.target.select()}
-                                                    className="flex-1 px-3 py-2 border border-gray-300 rounded-l-lg"
+                                                    className="flex-1 px-3 py-2 border-gray-300 rounded-l-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                                                     min="0"
                                                     step="0.01"
                                                     required
@@ -385,10 +385,10 @@ const SplitPaymentModal = ({
                                                     <button
                                                         type="button"
                                                         onClick={() => autoAllocateRemaining(payment.id)}
-                                                        className="px-2 py-2 bg-blue-600 text-white rounded-r-lg hover:bg-blue-700 text-xs"
+                                                        className="px-3 py-2 bg-indigo-600 text-white rounded-r-lg hover:bg-indigo-700 text-xs font-semibold transition-colors"
                                                         title="Allocate remaining amount"
                                                     >
-                                                        All
+                                                        FILL
                                                     </button>
                                                 )}
                                             </div>
@@ -404,7 +404,7 @@ const SplitPaymentModal = ({
                                                     value={payment.tendered_amount}
                                                     onChange={(e) => updatePayment(payment.id, 'tendered_amount', e.target.value)}
                                                     onFocus={(e) => e.target.select()}
-                                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                                    className="w-full px-3 py-2 border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                                                     min="0"
                                                     step="0.01"
                                                     placeholder="Optional for exact amount"
@@ -414,7 +414,7 @@ const SplitPaymentModal = ({
                                     </div>
 
                                     {showReference && (
-                                        <div className="mt-3">
+                                        <div className="mt-4">
                                             <label className="block text-sm font-medium text-gray-700 mb-1">
                                                 {method.config.reference_label || 'Reference'} <span className="text-red-500">*</span>
                                             </label>
@@ -422,7 +422,7 @@ const SplitPaymentModal = ({
                                                 type="text"
                                                 value={payment.reference}
                                                 onChange={(e) => updatePayment(payment.id, 'reference', e.target.value)}
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                                className="w-full px-3 py-2 border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                                                 placeholder={`Enter ${method.config.reference_label || 'reference'}`}
                                                 required
                                             />
@@ -438,35 +438,36 @@ const SplitPaymentModal = ({
                         <button
                             type="button"
                             onClick={addPaymentLine}
-                            className="mt-4 w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-blue-400 hover:text-blue-600"
+                            className="mt-4 w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-indigo-400 hover:text-indigo-600 transition-colors flex items-center justify-center"
                         >
-                            + Add Another Payment Method
+                            <Icon path={ICONS.plus} className="h-5 w-5 mr-2" />
+                            Add Another Payment Method
                         </button>
                     )}
 
                     {/* Validation Errors */}
                     {validationErrors.length > 0 && (
-                        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                        <div className="mt-6 p-3 bg-red-50 border border-red-200 rounded-lg">
                             <h4 className="text-sm font-medium text-red-800 mb-2">Please fix the following errors:</h4>
-                            <ul className="text-sm text-red-700 space-y-1">
+                            <ul className="text-sm text-red-700 space-y-1 list-disc list-inside">
                                 {validationErrors.map((error, index) => (
-                                    <li key={index}>• {error}</li>
+                                    <li key={index}>{error}</li>
                                 ))}
                             </ul>
                         </div>
                     )}
                 </div>
 
-                <div className="flex justify-between items-center p-4 bg-gray-50 border-t">
+                <div className="flex justify-between items-center p-4 bg-gray-100 border-t rounded-b-lg">
                     <div className="text-sm text-gray-600">
-                        <kbd className="px-2 py-1 bg-gray-200 rounded text-xs">Esc</kbd> to cancel •{' '}
-                        <kbd className="px-2 py-1 bg-gray-200 rounded text-xs">Ctrl+Enter</kbd> to confirm
+                        <kbd className="px-2 py-1 bg-white border border-gray-300 rounded text-xs shadow-sm">Esc</kbd> to cancel •{' '}
+                        <kbd className="px-2 py-1 bg-white border border-gray-300 rounded text-xs shadow-sm">Ctrl+Enter</kbd> to confirm
                     </div>
                     <div className="flex space-x-3">
                         <button
                             type="button"
                             onClick={onClose}
-                            className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300"
+                            className="px-4 py-2 bg-white border border-gray-300 text-gray-800 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
                             disabled={loading}
                         >
                             Cancel
@@ -474,7 +475,7 @@ const SplitPaymentModal = ({
                         <button
                             onClick={handleConfirm}
                             disabled={!canConfirm || loading}
-                            className="px-6 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                            className="px-6 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors shadow-sm"
                         >
                             {loading ? 'Processing...' : 'Confirm Payment'}
                         </button>
