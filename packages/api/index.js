@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
-const db = require('./db');
 const { setupMeiliSearch } = require('./meilisearch-setup');
 const { startMeiliListener } = require('./meili-listener');
 const { startMeiliApplicationsListener } = require('./meili-app-listener');
@@ -84,6 +83,14 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 
+// DEV: debug endpoint to inspect decoded user from JWT (only enabled outside production)
+if (process.env.NODE_ENV !== 'production') {
+  const { protect } = require('./middleware/authMiddleware');
+  app.get('/api/_debug/whoami', protect, (req, res) => {
+    res.json({ user: req.user || null });
+  });
+}
+
 // Basic 404 handler for unknown routes
 app.use((req, res) => res.status(404).json({ error: 'Not Found' }));
 
@@ -107,6 +114,12 @@ app.listen(PORT, async () => {
   console.log(`Server is running on port ${PORT}`);
   await setupMeiliSearch();
   // Start the Postgres listener that keeps Meilisearch in sync
-  startMeiliListener();
-  startMeiliApplicationsListener();
+  // Allow disabling listeners with DISABLE_MEILI_LISTENERS env var for local debugging
+  console.log('DISABLE_MEILI_LISTENERS:', process.env.DISABLE_MEILI_LISTENERS);
+  if (process.env.DISABLE_MEILI_LISTENERS !== 'true') {
+    startMeiliListener();
+    startMeiliApplicationsListener();
+  } else {
+    console.log('Meili listeners disabled by DISABLE_MEILI_LISTENERS=true');
+  }
 });

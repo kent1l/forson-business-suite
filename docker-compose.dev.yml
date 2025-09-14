@@ -31,6 +31,7 @@ services:
       - CHOKIDAR_USEPOLLING=true
       - CHOKIDAR_INTERVAL=100
       - MIGRATIONS_DIR=/database/migrations
+      - DISABLE_MEILI_LISTENERS=true
     env_file:
       - .env
 

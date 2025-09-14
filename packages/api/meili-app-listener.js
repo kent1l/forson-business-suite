@@ -3,6 +3,13 @@ const { syncApplications, removeApplication } = require('./meili-applications');
 
 const startMeiliApplicationsListener = async () => {
   const client = await db.getClient();
+  // Safe release for error paths
+  let released = false;
+  const safeRelease = () => {
+    if (released) return;
+    released = true;
+    try { client.release(); } catch (e) { console.error('Error releasing meili app listener client:', e && e.stack ? e.stack : e); }
+  };
   const pendingUpserts = new Set();
   const pendingDeletes = new Set();
   let timer = null;
@@ -63,12 +70,12 @@ const startMeiliApplicationsListener = async () => {
       }
     });
     client.on('error', (err) => console.error('Postgres app listener error:', err && err.stack ? err.stack : err));
-    process.on('exit', () => client.release());
-    process.on('SIGINT', () => client.release());
-    process.on('SIGTERM', () => client.release());
+    process.on('exit', safeRelease);
+    process.on('SIGINT', safeRelease);
+    process.on('SIGTERM', safeRelease);
   } catch (err) {
     console.error('Failed to start Meili applications listener:', err && err.stack ? err.stack : err);
-    try { client.release(); } catch (e) { console.error('Release client failed:', e && e.stack ? e.stack : e); }
+    try { safeRelease(); } catch (e) { console.error('Release client failed:', e && e.stack ? e.stack : e); }
   }
 };
 

@@ -8,6 +8,13 @@ const { syncPartWithMeili, removePartFromMeili } = require('./meilisearch');
  */
 const startMeiliListener = async () => {
   const client = await db.getClient();
+  // Define safeRelease in outer scope so error handlers can call it
+  let released = false;
+  const safeRelease = () => {
+    if (released) return;
+    released = true;
+    try { client.release(); } catch (e) { console.error('Error releasing meili listener client:', e && e.stack ? e.stack : e); }
+  };
   // Simple in-memory queue for batching
   const pendingUpserts = new Set();
   const pendingDeletes = new Set();
@@ -103,13 +110,15 @@ const startMeiliListener = async () => {
 
     // Keep the client open; handle errors and shutdown
     client.on('error', (err) => console.error('Postgres listener error:', err && err.stack ? err.stack : err));
-    process.on('exit', () => client.release());
-    process.on('SIGINT', () => client.release());
-    process.on('SIGTERM', () => client.release());
+    process.on('exit', safeRelease);
+    process.on('SIGINT', safeRelease);
+    process.on('SIGTERM', safeRelease);
   } catch (err) {
     console.error('Failed to start Meili listener:', err && err.stack ? err.stack : err);
     try {
-      client.release();
+      // Use safeRelease if available
+      if (typeof safeRelease === 'function') safeRelease();
+      else client.release();
     } catch (releaseErr) {
       console.error('Error releasing client after failed listener start:', releaseErr && releaseErr.stack ? releaseErr.stack : releaseErr);
     }

@@ -37,34 +37,61 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
     const { user } = useAuth();
     const [lines, setLines] = useState([]);
     const [payments, setPayments] = useState([]);
+    const [paymentsForbidden, setPaymentsForbidden] = useState(false);
     const [loading, setLoading] = useState(false);
     const [showRefundForm, setShowRefundForm] = useState(false);
     const [isEditingReceiptNo, setIsEditingReceiptNo] = useState(false);
     const [editingReceiptNo, setEditingReceiptNo] = useState('');
 
     useEffect(() => {
-        if (isOpen && invoice) {
+        if (!isOpen || !invoice) return;
+
+        let cancelled = false;
+        (async () => {
             setLoading(true);
             setShowRefundForm(false); // Reset on open
             setIsEditingReceiptNo(false); // Reset editing state
             setEditingReceiptNo(invoice.physical_receipt_no || ''); // Initialize with current value
-            
-            // Fetch invoice lines and payments in parallel
-            Promise.all([
-                api.get(`/invoices/${invoice.invoice_id}/lines-with-refunds`),
-                api.get(`/invoices/${invoice.invoice_id}/payments`)
-            ])
-            .then(([linesRes, paymentsRes]) => {
-                setLines(linesRes.data);
-                setPayments(paymentsRes.data || []);
-            })
-            .catch(() => {
+
+            try {
+                // Fetch lines first (this should rarely fail independently)
+                const linesRes = await api.get(`/invoices/${invoice.invoice_id}/lines-with-refunds`);
+                if (cancelled) return;
+                setLines(linesRes.data || []);
+
+                // Then attempt to fetch payments. If payments are forbidden (403) we surface a clear message
+                try {
+                    const paymentsRes = await api.get(`/invoices/${invoice.invoice_id}/payments`);
+                    if (cancelled) return;
+                    setPayments(paymentsRes.data || []);
+                    setPaymentsForbidden(false);
+                } catch (err) {
+                    if (cancelled) return;
+                    console.error('Failed to fetch payments', err);
+                    const status = err?.response?.status;
+                    if (status === 403) {
+                        setPayments([]);
+                        setPaymentsForbidden(true);
+                        toast.error('You do not have permission to view payments for this invoice.');
+                    } else {
+                        setPayments([]);
+                        setPaymentsForbidden(false);
+                        toast.error('Failed to load payments for this invoice.');
+                    }
+                }
+            } catch (err) {
+                if (cancelled) return;
+                console.error('Failed to load invoice details', err);
                 toast.error('Failed to load invoice details.');
                 setLines([]);
                 setPayments([]);
-            })
-            .finally(() => setLoading(false));
-        }
+                setPaymentsForbidden(false);
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        })();
+
+        return () => { cancelled = true; };
     }, [isOpen, invoice]);
     
     const handleRefundSuccess = () => {
@@ -309,6 +336,11 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                    )}
+                    {paymentsForbidden && (
+                        <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
+                            You do not have permission to view payment details for this invoice.
                         </div>
                     )}
                     
