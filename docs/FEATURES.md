@@ -149,3 +149,90 @@ Add new feature documentation
 4. Keep `docs/FEATURES.md` as the single index for feature-level docs.
 
 (End of file)
+
+## Sales History — Summary (detailed)
+
+Title: Sales History — Summary Cards
+
+Summary
+
+The Sales History page includes a compact and expanded "Summary" section that provides a quick at-a-glance view of sales performance for the selected date range. The summary aggregates invoice-level data (gross, refunds, net, A/R) and payment-level data (cash vs non-cash collections, payment method breakdown) to help finance and operations teams quickly understand daily/period cash flows and collection effectiveness.
+
+Why this exists
+
+- Provide fast insights (Net Sales, Collected, Cash after Refunds, Collection Rate, A/R Outstanding) without navigating to detailed reports.
+- Surface payment mix (cash vs non-cash) and top customer contribution for operational decisions.
+
+Metrics and formulas
+
+- Gross Sales: Sum of `invoice.total_amount` for all invoices in the selected date range where invoice.status != 'Cancelled'.
+- Refunds: Sum of `invoice.refunded_amount` (or `credit_note` totals when computing approximate cash refunds). Backend `invoice` queries send `refunded_amount` with invoices; for approximate cash refunds the frontend calls `/api/payments/refunds-approx` which aggregates `credit_note.total_amount`.
+- Net Sales: Sum of `net_amount` per invoice. Backend computes `GREATEST(i.total_amount - r.refunded_amount, 0) AS net_amount` so frontend trusts `net_amount` when present and falls back to `max(total - refunded, 0)`.
+- Invoices Issued: Count of active invoices in range (excludes cancelled).
+- Avg Net Invoice: `Net Sales / (count of invoices with net_amount > 0)`.
+- Amount Collected: Sum of `min(invoice.amount_paid, invoice.net_amount)` for active invoices (collection capped at net to avoid overstatement).
+- Collection Rate: `Amount Collected / Net Sales` (capped at 100%).
+- A/R Outstanding: Sum of `GREATEST(balance_due, 0)` across invoices (backend exposes `balance_due` via invoice queries using `GREATEST((i.total_amount - r.refunded_amount) - i.amount_paid, 0) AS balance_due`).
+- Refund Rate: `Refunds / Gross Sales` (capped at 100%).
+
+- Cash Collection (phase 1 heuristic): The frontend calls `/api/payments` (payments_unified view) and aggregates payments by method. Cash calculations:
+  - Identify cash methods: preferred path is to use `GET /api/payment-methods` (when `ENABLE_SPLIT_PAYMENTS === 'true'`) and treat `pm.type === 'cash'` as cash methods. Fallback: legacy string comparison to `'cash'`.
+  - For each payment row returned by `/api/payments`:
+    - `amount` = `amount_paid` (value applied to invoice)
+    - `tendered_amount` = `tendered_amount` (if present); use `amount` as fallback when tendered is null.
+    - `change` = `max(tendered_amount - amount, 0)`
+    - If method is cash: `cashCollected += tendered_amount` (or amount fallback); `changeReturned += change`.
+    - If non-cash: `nonCashCollected += amount`.
+  - `cashCollectedNet = max(sum(tendered) - sum(change), 0)` — this resolves to sum(amount) for well-formed rows, and correctly handles payments that included change.
+  - `cashMix = cashCollected / (cashCollected + nonCashCollected)` (zero when denominator is zero).
+  - `approxNetCashAfterRefunds = max(cashCollectedNet - refundsApprox, 0)`, where `refundsApprox` is obtained via `/api/payments/refunds-approx` which sums `credit_note.total_amount` for the date range. Note: this is an approximation and assumes refunds were cash-outs.
+
+Data sources & API routes
+
+- Invoices: `GET /api/invoices?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` — returns invoice rows including `total_amount`, `refunded_amount`, `net_amount`, `amount_paid`, `balance_due`, `status`, `invoice_number`, and customer fields.
+- Payments: `GET /api/payments?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` — returns payments from `payments_unified` view. Important: current implementation returns `payment_id, customer_id, employee_id, created_at AS payment_date, amount_paid AS amount, tendered_amount, COALESCE(legacy_method, method_name) AS payment_method, reference` and uses `(created_at AT TIME ZONE 'Asia/Manila')::date` for range filtering.
+- Refunds approximation (credit notes): `GET /api/payments/refunds-approx?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` — returns `{ total_refunds }` computed from `credit_note` table using Manila date-zone conversion.
+- Payment Methods: `GET /api/payment-methods` (and `/api/payment-methods/enabled`) — returns `method_id, code, name, type, enabled, sort_order, config` and is used to identify cash-type methods and to display the payment-method breakdown when split payments are enabled.
+
+Frontend implementation notes (`SalesHistoryPage.jsx` summary logic)
+
+- The summary is a `useMemo` that depends on `invoices`, `payments`, `refundsApprox`, and `paymentMethods`.
+- It filters out invoices with `status === 'Cancelled'`.
+- It uses a defensive `currencySafeNumber()` helper to coerce numbers safely.
+- The payment aggregation relies on `p.reference` to detect payments attached to invoices (invoice payments use `reference = invoice_number`), and skips payments whose `reference` looks like an invoice number but is not present in the current invoice list. This avoids counting payments tied to deleted invoices.
+- Payment method grouping uses `p.payment_method` (returned by the `/api/payments` endpoint as `COALESCE(legacy_method, method_name)`) and aggregates `amount` and `count` per method for the breakdown card.
+
+Edge cases and caveats
+
+- Timezones: All date filters use `(created_at AT TIME ZONE 'Asia/Manila')::date` on the backend when querying invoices, payments, and credit notes. The frontend sets default `startDate` and `endDate` using Manila time via `toZonedTime(new Date(), 'Asia/Manila')`, but users in different timezones should understand date-range semantics are Manila-local.
+- Payments source table: Historically some payments were stored in `customer_payment` while new split payments use `invoice_payments`. The `payments_unified` view normalizes these into a consistent shape; ensure backend query doesn't filter out `invoice_payments` if you want complete data.
+- Refunds approximation: `GET /api/payments/refunds-approx` aggregates `credit_note.total_amount`. This is a heuristic — refunds may not correspond to cash refunds (store credit, reversal to card, etc.). Use with caution for financial reporting.
+- Payment method detection: Rely on `payment_methods.type === 'cash'` where available. Legacy entries stored as string names may require heuristics; prefer to seed `payment_methods` or enable split payments so methods are standardized.
+- Null tendered amounts: Invoice payments often omit `tendered_amount` when there was exact change or when not recorded. The frontend falls back to using `amount_paid` for tendered when tendered is null so the cash totals don't undercount.
+
+Developer notes & follow-ups
+
+- Consider moving payments + refunds aggregation to the backend as a single `sales_summary` endpoint to reduce client-side heuristics and ensure consistent date handling and currency rounding.
+- When implementing more accurate refund classification, add `refund_method` or `credit_note.refund_method` to the schema so refunds can be categorized by cash vs non-cash.
+- Add unit tests for `SalesHistoryPage`'s stats computation (happy path + edge cases):
+  - No invoices
+  - Invoices with negative balances / overpayments
+  - Payments with missing tendered_amount
+  - Payments referencing deleted invoices
+
+Files to inspect for behavior
+
+- Frontend: `packages/web/src/pages/SalesHistoryPage.jsx` (summary computation), `packages/web/src/api.js` (API wrapper)
+- Backend: `packages/api/routes/paymentRoutes.js` (payments listing & refunds endpoint), `packages/api/routes/paymentMethodRoutes.js` (payment methods), `database/initial_schema.sql` and `database/migrations` (payments_unified view and payment_methods schema)
+
+Manual verification checklist
+
+1. Select a date range with known invoices & payments.
+2. Verify `/api/invoices` returns invoice rows with `net_amount`, `refunded_amount`, `amount_paid`, `balance_due` for the range.
+3. Verify `/api/payments` returns payment rows (both `customer_payment` and `invoice_payments`) and that `payment_method` is populated as `COALESCE(legacy_method, method_name)`.
+4. Verify `/api/payments/refunds-approx` returns the expected `total_refunds` matching credit notes.
+5. In the UI, confirm that the Summary cards show non-zero values for Net Sales, Collected, Approx Net Cash, and that the Payment Methods card lists methods with amounts when data exists.
+
+---
+
+End of Sales History — Summary section

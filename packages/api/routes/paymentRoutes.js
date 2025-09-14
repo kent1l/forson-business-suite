@@ -9,7 +9,11 @@ const router = express.Router();
 // POST /api/payments - Receive a new customer payment and allocate it
 router.post('/payments', protect, hasPermission('ar:receive_payment'), async (req, res) => {
     const { employee_id } = req.user;
-    const { customer_id, amount, payment_method, reference_number, notes, allocations } = req.body;
+    // Accept either `reference` (new clients) or legacy `reference_number`.
+    const { customer_id, amount, payment_method, reference, reference_number, notes, allocations } = req.body;
+
+    // Prefer `reference` if provided, otherwise fall back to `reference_number`.
+    const referenceValue = reference || reference_number || null;
 
     if (!customer_id || !amount || !allocations || !Array.isArray(allocations)) {
         return res.status(400).json({ message: 'Missing required fields.' });
@@ -25,7 +29,7 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
             VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING payment_id;
         `;
-        const paymentResult = await client.query(paymentQuery, [customer_id, employee_id, amount, payment_method, reference_number, notes]);
+        const paymentResult = await client.query(paymentQuery, [customer_id, employee_id, amount, payment_method, referenceValue, notes]);
         const newPaymentId = paymentResult.rows[0].payment_id;
 
         // Step 2: Create allocation records and update invoice statuses
