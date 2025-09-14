@@ -114,3 +114,96 @@ router.get('/payments/refunds-approx', protect, hasPermission('ar:view'), async 
         res.status(500).json({ message: 'Server error fetching refund approximation.' });
     }
 });
+
+// POST /api/payments/:id/settle - mark an invoice_payment as settled (manual/operator action)
+router.post('/payments/:id/settle', protect, hasPermission('ar:receive_payment'), async (req, res) => {
+    const paymentId = parseInt(req.params.id, 10);
+    const { settlement_reference, attempt_metadata } = req.body;
+
+    if (!paymentId) return res.status(400).json({ message: 'Invalid payment id' });
+
+    try {
+        const updateQ = `
+            UPDATE invoice_payments
+            SET payment_status = 'settled',
+                settled_at = CURRENT_TIMESTAMP,
+                settlement_reference = $2,
+                attempt_metadata = COALESCE($3::jsonb, attempt_metadata)
+            WHERE payment_id = $1
+            RETURNING *;
+        `;
+        const { rows } = await db.query(updateQ, [paymentId, settlement_reference || null, attempt_metadata ? JSON.stringify(attempt_metadata) : null]);
+        if (!rows.length) return res.status(404).json({ message: 'Payment not found' });
+        return res.json({ message: 'Payment marked as settled', payment: rows[0] });
+    } catch (err) {
+        console.error('Error settling payment:', err.message);
+        return res.status(500).json({ message: 'Server error while settling payment.' });
+    }
+});
+
+// POST /api/payments/:id/fail - mark an invoice_payment as failed
+router.post('/payments/:id/fail', protect, hasPermission('ar:receive_payment'), async (req, res) => {
+    const paymentId = parseInt(req.params.id, 10);
+    const { attempt_metadata } = req.body;
+
+    if (!paymentId) return res.status(400).json({ message: 'Invalid payment id' });
+
+    try {
+        const updateQ = `
+            UPDATE invoice_payments
+            SET payment_status = 'failed',
+                attempt_metadata = COALESCE($2::jsonb, attempt_metadata)
+            WHERE payment_id = $1
+            RETURNING *;
+        `;
+        const { rows } = await db.query(updateQ, [paymentId, attempt_metadata ? JSON.stringify(attempt_metadata) : null]);
+        if (!rows.length) return res.status(404).json({ message: 'Payment not found' });
+        return res.json({ message: 'Payment marked as failed', payment: rows[0] });
+    } catch (err) {
+        console.error('Error marking payment failed:', err.message);
+        return res.status(500).json({ message: 'Server error while updating payment.' });
+    }
+});
+
+// POST /api/payments/webhook - lightweight webhook receiver from payment processors
+// Expects header 'x-payment-webhook-secret' to match process.env.PAYMENT_WEBHOOK_SECRET
+router.post('/payments/webhook', async (req, res) => {
+    const secret = req.get('x-payment-webhook-secret');
+    const configured = process.env.PAYMENT_WEBHOOK_SECRET || null;
+    if (!configured || secret !== configured) {
+        return res.status(403).json({ message: 'Invalid webhook secret' });
+    }
+
+    const { payment_id, external_status, settlement_reference, attempt_metadata } = req.body;
+    if (!payment_id || !external_status) {
+        return res.status(400).json({ message: 'Missing required webhook fields' });
+    }
+
+    try {
+        // Map common external statuses to our internal statuses
+        let targetStatus = null;
+        if (['settled', 'succeeded', 'paid'].includes(String(external_status).toLowerCase())) targetStatus = 'settled';
+        else if (['failed', 'declined', 'error'].includes(String(external_status).toLowerCase())) targetStatus = 'failed';
+
+        if (!targetStatus) {
+            return res.status(400).json({ message: 'Unsupported external_status' });
+        }
+
+        const updateQ = `
+            UPDATE invoice_payments
+            SET payment_status = $2::varchar,
+                settled_at = CASE WHEN $2::varchar = 'settled' THEN CURRENT_TIMESTAMP ELSE settled_at END,
+                settlement_reference = COALESCE($3, settlement_reference),
+                attempt_metadata = COALESCE($4::jsonb, attempt_metadata)
+            WHERE payment_id = $1
+            RETURNING *;
+        `;
+
+        const { rows } = await db.query(updateQ, [payment_id, targetStatus, settlement_reference || null, attempt_metadata ? JSON.stringify(attempt_metadata) : null]);
+        if (!rows.length) return res.status(404).json({ message: 'Payment not found' });
+        return res.json({ message: 'Webhook processed', payment: rows[0] });
+    } catch (err) {
+        console.error('Error processing payment webhook:', err.message);
+        return res.status(500).json({ message: 'Server error processing webhook' });
+    }
+});

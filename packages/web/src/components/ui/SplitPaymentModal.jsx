@@ -160,7 +160,10 @@ const SplitPaymentModal = ({
             const amountPaid = parseFloat(payment.amount_paid) || 0;
             const tenderedAmount = parseFloat(payment.tendered_amount) || 0;
 
-            totalPaid += amountPaid;
+            // Only count settled payments in total paid
+            if (!payment.payment_status || payment.payment_status === 'settled') {
+                totalPaid += amountPaid;
+            }
 
             // Calculate change for this payment
             if (method && method.config.change_allowed && tenderedAmount > amountPaid) {
@@ -203,9 +206,9 @@ const SplitPaymentModal = ({
     // Compute remaining at click time to avoid stale closure values.
     const autoAllocateRemaining = (paymentId) => {
         setPayments(prev => {
-            // Sum amounts excluding the target payment
+            // Sum amounts excluding the target payment and pending payments
             const totalPaidExcluding = prev.reduce((sum, p) => {
-                if (p.id === paymentId) return sum;
+                if (p.id === paymentId || (p.payment_status && p.payment_status !== 'settled')) return sum;
                 const v = parseFloat(p.amount_paid) || 0;
                 return sum + v;
             }, 0);
@@ -214,6 +217,20 @@ const SplitPaymentModal = ({
 
             return prev.map(p => p.id === paymentId ? { ...p, amount_paid: remainingNow.toFixed(2) } : p);
         });
+    };
+
+    // Mark a payment as settled
+    const markPaymentSettled = async (paymentId) => {
+        try {
+            await api.post(`/payments/${paymentId}/settle`);
+            setPayments(prev => prev.map(p => 
+                p.id === paymentId ? { ...p, payment_status: 'settled', settled_at: new Date().toISOString() } : p
+            ));
+            toast.success('Payment marked as settled');
+        } catch (err) {
+            console.error('Failed to mark payment settled:', err);
+            toast.error('Failed to mark payment as settled');
+        }
     };
 
     const handleConfirm = useCallback(async () => {
@@ -357,15 +374,37 @@ const SplitPaymentModal = ({
                             return (
                                 <div key={payment.id} className="p-4 border border-gray-200 rounded-lg bg-white shadow-sm">
                                     <div className="flex items-center justify-between mb-4">
-                                        <h4 className="font-medium text-gray-800">Payment {index + 1}</h4>
-                                        {payments.length > 1 && (
-                                            <button
-                                                onClick={() => removePaymentLine(payment.id)}
-                                                className="text-red-500 hover:text-red-700 transition-colors"
-                                            >
-                                                <Icon path={ICONS.trash} className="h-5 w-5" />
-                                            </button>
-                                        )}
+                                        <div className="flex items-center space-x-2">
+                                            <h4 className="font-medium text-gray-800">Payment {index + 1}</h4>
+                                            {payment.payment_status && (
+                                                <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                                    payment.payment_status === 'settled' 
+                                                        ? 'bg-green-100 text-green-800' 
+                                                        : 'bg-yellow-100 text-yellow-800'
+                                                }`}>
+                                                    {payment.payment_status === 'settled' ? 'Settled' : 'Pending'}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            {payment.payment_status === 'pending' && (
+                                                <button
+                                                    onClick={() => markPaymentSettled(payment.id)}
+                                                    className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors"
+                                                    title="Mark as settled"
+                                                >
+                                                    Mark Settled
+                                                </button>
+                                            )}
+                                            {payments.length > 1 && (
+                                                <button
+                                                    onClick={() => removePaymentLine(payment.id)}
+                                                    className="text-red-500 hover:text-red-700 transition-colors"
+                                                >
+                                                    <Icon path={ICONS.trash} className="h-5 w-5" />
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
 
                                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

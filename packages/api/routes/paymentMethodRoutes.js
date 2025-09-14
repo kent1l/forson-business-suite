@@ -4,6 +4,25 @@ const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatter');
 const router = express.Router();
 
+// Capability detection: handle runtimes before the settlement migration is applied
+let SETTLEMENT_COLUMNS_SUPPORTED = null; // null=unknown (lazy check), true/false=cached
+async function settlementColumnsSupported() {
+    if (SETTLEMENT_COLUMNS_SUPPORTED !== null) return SETTLEMENT_COLUMNS_SUPPORTED;
+    try {
+        const sql = `SELECT 1
+                     FROM information_schema.columns
+                     WHERE table_schema = 'public'
+                       AND table_name = 'invoice_payments'
+                       AND column_name = 'payment_status'`;
+        const { rows } = await db.query(sql);
+        SETTLEMENT_COLUMNS_SUPPORTED = !!(rows && rows.length > 0);
+    } catch (e) {
+        console.error('Failed capability check for settlement columns:', e.message);
+        SETTLEMENT_COLUMNS_SUPPORTED = false;
+    }
+    return SETTLEMENT_COLUMNS_SUPPORTED;
+}
+
 // Router for payment methods and invoice payments
 
 // GET /api/payment-methods - Get all payment methods (ordered by sort_order)
@@ -414,13 +433,28 @@ router.post('/invoices/:id/payments', ...invoicePaymentsMiddlewares, async (req,
             // Use the actual method_id from database (important for legacy methods)
             const actualMethodId = method.rows[0].method_id;
 
-            // Insert payment
-            const paymentResult = await client.query(`
-                INSERT INTO invoice_payments 
-                (invoice_id, method_id, amount_paid, tendered_amount, change_amount, reference, metadata, created_by)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                RETURNING *
-            `, [invoice_id, actualMethodId, paidAmt, tenderedAmt, changeAmt, reference, JSON.stringify(metadata), employee_id]);
+            // Determine settlement behavior
+            const settlementType = methodConfig.settlement_type || (method.rows[0].type === 'cash' ? 'instant' : 'delayed');
+            const paymentStatus = settlementType === 'instant' ? 'settled' : 'pending';
+
+            // Insert payment; fall back gracefully if settlement columns are not yet present
+            const hasSettlement = await settlementColumnsSupported();
+            let paymentResult;
+            if (hasSettlement) {
+                paymentResult = await client.query(`
+                    INSERT INTO invoice_payments 
+                    (invoice_id, method_id, amount_paid, tendered_amount, change_amount, reference, metadata, created_by, payment_status, settled_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::varchar, CASE WHEN $9::varchar = 'settled' THEN CURRENT_TIMESTAMP ELSE NULL END)
+                    RETURNING *
+                `, [invoice_id, actualMethodId, paidAmt, tenderedAmt, changeAmt, reference, JSON.stringify(metadata), employee_id, paymentStatus]);
+            } else {
+                paymentResult = await client.query(`
+                    INSERT INTO invoice_payments 
+                    (invoice_id, method_id, amount_paid, tendered_amount, change_amount, reference, metadata, created_by)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    RETURNING *
+                `, [invoice_id, actualMethodId, paidAmt, tenderedAmt, changeAmt, reference, JSON.stringify(metadata), employee_id]);
+            }
 
             insertedPayments.push(paymentResult.rows[0]);
         }
@@ -462,10 +496,12 @@ router.get('/invoices/:id/payments', protect, hasPermission('invoicing:view'), a
     const { id: invoice_id } = req.params;
 
     try {
-        const { rows } = await db.query(`
+        const hasSettlement = await settlementColumnsSupported();
+        const selectSql = hasSettlement ? `
             SELECT 
                 ip.payment_id, ip.invoice_id, ip.amount_paid, ip.tendered_amount, 
                 ip.change_amount, ip.reference, ip.metadata, ip.created_at,
+                ip.payment_status, ip.settled_at,
                 pm.method_id, pm.code as method_code, pm.name as method_name, 
                 pm.type as method_type, pm.config as method_config,
                 e.first_name, e.last_name
@@ -474,7 +510,22 @@ router.get('/invoices/:id/payments', protect, hasPermission('invoicing:view'), a
             LEFT JOIN employee e ON ip.created_by = e.employee_id
             WHERE ip.invoice_id = $1
             ORDER BY ip.created_at ASC
-        `, [invoice_id]);
+        ` : `
+            SELECT 
+                ip.payment_id, ip.invoice_id, ip.amount_paid, ip.tendered_amount, 
+                ip.change_amount, ip.reference, ip.metadata, ip.created_at,
+                NULL::varchar as payment_status, NULL::timestamptz as settled_at,
+                pm.method_id, pm.code as method_code, pm.name as method_name, 
+                pm.type as method_type, pm.config as method_config,
+                e.first_name, e.last_name
+            FROM invoice_payments ip
+            JOIN payment_methods pm ON ip.method_id = pm.method_id
+            LEFT JOIN employee e ON ip.created_by = e.employee_id
+            WHERE ip.invoice_id = $1
+            ORDER BY ip.created_at ASC
+        `;
+
+        const { rows } = await db.query(selectSql, [invoice_id]);
 
         res.json(rows);
     } catch (err) {

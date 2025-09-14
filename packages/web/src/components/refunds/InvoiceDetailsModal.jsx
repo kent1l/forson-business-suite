@@ -7,6 +7,26 @@ import { useSettings } from '../../contexts/SettingsContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatPhysicalReceiptNumber } from '../../utils/receiptNumberFormatter';
 
+// Helper function to get payment status badge styles
+const getPaymentStatusBadge = (status) => {
+    switch (status?.toLowerCase()) {
+        case 'settled':
+            return 'bg-green-100 text-green-800';
+        case 'pending':
+            return 'bg-yellow-100 text-yellow-800';
+        case 'failed':
+            return 'bg-red-100 text-red-800';
+        default:
+            return 'bg-gray-100 text-gray-800';
+    }
+};
+
+// Helper function to format payment status for display
+const formatPaymentStatus = (status) => {
+    if (!status) return 'Unknown';
+    return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+};
+
 // Avoid linter warnings for unused imports in JSX
 void React;
 void Modal;
@@ -16,6 +36,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
     const { settings } = useSettings();
     const { user } = useAuth();
     const [lines, setLines] = useState([]);
+    const [payments, setPayments] = useState([]);
     const [loading, setLoading] = useState(false);
     const [showRefundForm, setShowRefundForm] = useState(false);
     const [isEditingReceiptNo, setIsEditingReceiptNo] = useState(false);
@@ -27,10 +48,22 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
             setShowRefundForm(false); // Reset on open
             setIsEditingReceiptNo(false); // Reset editing state
             setEditingReceiptNo(invoice.physical_receipt_no || ''); // Initialize with current value
-            api.get(`/invoices/${invoice.invoice_id}/lines-with-refunds`)
-                .then(res => setLines(res.data))
-                .catch(() => toast.error('Failed to load invoice details.'))
-                .finally(() => setLoading(false));
+            
+            // Fetch invoice lines and payments in parallel
+            Promise.all([
+                api.get(`/invoices/${invoice.invoice_id}/lines-with-refunds`),
+                api.get(`/invoices/${invoice.invoice_id}/payments`)
+            ])
+            .then(([linesRes, paymentsRes]) => {
+                setLines(linesRes.data);
+                setPayments(paymentsRes.data || []);
+            })
+            .catch(() => {
+                toast.error('Failed to load invoice details.');
+                setLines([]);
+                setPayments([]);
+            })
+            .finally(() => setLoading(false));
         }
     }, [isOpen, invoice]);
     
@@ -101,6 +134,30 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
     };    const handleCancelEditReceiptNo = () => {
         setEditingReceiptNo(invoice.physical_receipt_no || '');
         setIsEditingReceiptNo(false);
+    };
+
+    const handleMarkSettled = async (paymentId) => {
+        try {
+            await api.post(`/payments/${paymentId}/settle`);
+            toast.success('Payment marked as settled');
+            
+            // Refresh payments data
+            const paymentsRes = await api.get(`/invoices/${invoice.invoice_id}/payments`);
+            setPayments(paymentsRes.data || []);
+            
+            // Trigger refresh on parent page
+            onActionSuccess();
+            
+            // Notify other parts of the app that invoices changed
+            try {
+                window.dispatchEvent(new CustomEvent('invoices:changed'));
+            } catch {
+                // ignore if window not available
+            }
+        } catch (error) {
+            const message = error.response?.data?.message || 'Failed to mark payment as settled';
+            toast.error(message);
+        }
     };
 
 
@@ -176,6 +233,84 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                             ))}
                         </ul>
                     </div>
+
+                    {/* Payments Section */}
+                    {payments.length > 0 && (
+                        <div>
+                            <h3 className="font-semibold text-gray-800">Payments</h3>
+                            <div className="mt-2 space-y-2">
+                                {payments.map(payment => (
+                                    <div key={payment.payment_id} className="bg-gray-50 p-3 rounded-lg border">
+                                        <div className="flex justify-between items-start">
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <span className="text-sm font-medium">{payment.method_name || payment.payment_method}</span>
+                                                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getPaymentStatusBadge(payment.payment_status)}`}>
+                                                        {formatPaymentStatus(payment.payment_status)}
+                                                    </span>
+                                                </div>
+                                                <div className="text-sm text-gray-600">
+                                                    <div>Amount: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(payment.amount_paid).toFixed(2)}</div>
+                                                    {payment.tendered_amount && (
+                                                        <div>Tendered: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(payment.tendered_amount).toFixed(2)}</div>
+                                                    )}
+                                                    {payment.change_amount && parseFloat(payment.change_amount) > 0 && (
+                                                        <div>Change: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(payment.change_amount).toFixed(2)}</div>
+                                                    )}
+                                                    {payment.settled_at && (
+                                                        <div className="text-xs text-gray-500">
+                                                            Settled: {new Date(payment.settled_at).toLocaleString()}
+                                                        </div>
+                                                    )}
+                                                    {payment.created_at && (
+                                                        <div className="text-xs text-gray-500">
+                                                            Created: {new Date(payment.created_at).toLocaleString()}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            {payment.payment_status?.toLowerCase() === 'pending' && (
+                                                <button
+                                                    onClick={() => handleMarkSettled(payment.payment_id)}
+                                                    className="bg-green-600 text-white text-xs px-3 py-1 rounded hover:bg-green-700 transition-colors"
+                                                >
+                                                    Mark Settled
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                                
+                                {/* Payment Summary */}
+                                <div className="bg-blue-50 p-3 rounded-lg border border-blue-200 mt-3">
+                                    <div className="text-sm">
+                                        <div className="flex justify-between">
+                                            <span>Total Paid:</span>
+                                            <span className="font-mono">
+                                                {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}
+                                                {payments
+                                                    .filter(p => p.payment_status?.toLowerCase() === 'settled')
+                                                    .reduce((sum, p) => sum + parseFloat(p.amount_paid || 0), 0)
+                                                    .toFixed(2)}
+                                            </span>
+                                        </div>
+                                        {payments.some(p => p.payment_status?.toLowerCase() === 'pending') && (
+                                            <div className="flex justify-between text-yellow-700">
+                                                <span>Pending:</span>
+                                                <span className="font-mono">
+                                                    {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}
+                                                    {payments
+                                                        .filter(p => p.payment_status?.toLowerCase() === 'pending')
+                                                        .reduce((sum, p) => sum + parseFloat(p.amount_paid || 0), 0)
+                                                        .toFixed(2)}
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     
                     {!showRefundForm && (
                         <div className="pt-4 flex justify-between items-center gap-3">
