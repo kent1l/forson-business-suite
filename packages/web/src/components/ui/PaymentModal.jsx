@@ -1,9 +1,8 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSettings } from '../../contexts/SettingsContext';
 
-const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment, physicalReceipt = '' }) => {
+const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment, physicalReceipt = '', paymentMethods = [] }) => {
     const { settings } = useSettings();
-    const paymentMethods = useMemo(() => settings?.PAYMENT_METHODS ? settings.PAYMENT_METHODS.split(',') : ['Cash'], [settings]);
     
     const [selectedMethod, setSelectedMethod] = useState('');
     const [cashTendered, setCashTendered] = useState('');
@@ -12,29 +11,53 @@ const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment, physicalReceip
     useEffect(() => {
         if (isOpen) {
             setCashTendered('');
-            const defaultMethod = paymentMethods[0] || 'Cash';
-            setSelectedMethod(defaultMethod);
-            if (defaultMethod.toLowerCase() === 'cash') {
+            const availablePaymentMethods = paymentMethods.length > 0 ? paymentMethods : 
+                (settings?.PAYMENT_METHODS ? settings.PAYMENT_METHODS.split(',') : ['Cash']);
+            const defaultMethod = availablePaymentMethods[0] || 'Cash';
+            // If we have payment method objects, use the name; otherwise use the string
+            const methodName = typeof defaultMethod === 'object' ? defaultMethod.name : defaultMethod;
+            setSelectedMethod(methodName);
+            if (methodName.toLowerCase() === 'cash') {
                 setTimeout(() => cashInputRef.current?.focus(), 100);
             }
         }
-    }, [isOpen, paymentMethods]);
+    }, [isOpen, paymentMethods, settings?.PAYMENT_METHODS]);
 
     const changeDue = (parseFloat(cashTendered) || 0) - total;
 
     const requirePRN = String(settings?.REQUIRE_PHYSICAL_RECEIPT_NO || '').toLowerCase() === 'true';
 
     const handleConfirm = () => {
-    const normalizedPRN = (physicalReceipt || '').trim();
-    if (requirePRN && normalizedPRN.length === 0) return; // do nothing if required and empty
+        const normalizedPRN = (physicalReceipt || '').trim();
+        if (requirePRN && normalizedPRN.length === 0) return; // do nothing if required and empty
+        
+        console.log('PaymentModal handleConfirm:', { selectedMethod, paymentMethods });
+        
         // Treat empty or zero cash tender as exact cash when confirming
         if (selectedMethod.toLowerCase() === 'cash') {
             const tender = parseFloat(cashTendered) || 0;
             const amountPaid = tender <= 0 ? total : tender;
-            onConfirmPayment(selectedMethod, amountPaid, tender, normalizedPRN);
+            
+            // Find the payment method object to get method_id
+            const methodObj = paymentMethods.find(m => 
+                (typeof m === 'object' ? m.name : m) === selectedMethod
+            );
+            console.log('Found method object:', methodObj);
+            const methodId = methodObj && typeof methodObj === 'object' ? methodObj.method_id : selectedMethod;
+            console.log('Using methodId:', methodId);
+            
+            onConfirmPayment(methodId, amountPaid, tender, normalizedPRN);
         } else {
             // Non-cash methods always pay the exact total
-            onConfirmPayment(selectedMethod, total, total, normalizedPRN);
+            // Find the payment method object to get method_id
+            const methodObj = paymentMethods.find(m => 
+                (typeof m === 'object' ? m.name : m) === selectedMethod
+            );
+            console.log('Found method object:', methodObj);
+            const methodId = methodObj && typeof methodObj === 'object' ? methodObj.method_id : selectedMethod;
+            console.log('Using methodId:', methodId);
+            
+            onConfirmPayment(methodId, total, total, normalizedPRN);
         }
     };
 
@@ -52,7 +75,12 @@ const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment, physicalReceip
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
                         <select value={selectedMethod} onChange={(e) => setSelectedMethod(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                            {paymentMethods.map(method => <option key={method} value={method}>{method}</option>)}
+                            {(paymentMethods.length > 0 ? paymentMethods : 
+                                (settings?.PAYMENT_METHODS ? settings.PAYMENT_METHODS.split(',') : ['Cash'])
+                            ).map(method => {
+                                const methodName = typeof method === 'object' ? method.name : method;
+                                return <option key={methodName} value={methodName}>{methodName}</option>;
+                            })}
                         </select>
                     </div>
                     {selectedMethod.toLowerCase() === 'cash' && (
@@ -71,7 +99,14 @@ const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment, physicalReceip
                                         const amountPaid = tender <= 0 ? total : tender;
                                         const normalizedPRN = (physicalReceipt || '').trim();
                                         if (requirePRN && normalizedPRN.length === 0) return;
-                                        onConfirmPayment(selectedMethod, amountPaid, tender, normalizedPRN);
+                                        
+                                        // Find the payment method object to get method_id
+                                        const methodObj = paymentMethods.find(m => 
+                                            (typeof m === 'object' ? m.name : m) === selectedMethod
+                                        );
+                                        const methodId = methodObj && typeof methodObj === 'object' ? methodObj.method_id : selectedMethod;
+                                        
+                                        onConfirmPayment(methodId, amountPaid, tender, normalizedPRN);
                                     }
                                 }}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-lg"

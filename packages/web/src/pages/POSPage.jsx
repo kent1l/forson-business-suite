@@ -144,8 +144,9 @@ const POSPage = ({ user, lines, setLines }) => {
     const [isPriceModalOpen, setIsPriceModalOpen] = useState(false);
     const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
     const [isNewCustomerModalOpen, setIsNewCustomerModalOpen] = useState(false);
-    const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
     const [isNewPartModalOpen, setIsNewPartModalOpen] = useState(false);
+    const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+    const [paymentMethods, setPaymentMethods] = useState([]);
     const [currentItem, setCurrentItem] = useState(null);
     const [showSaved, setShowSaved] = useState(false);
     const [lastSale, setLastSale] = useState(null);
@@ -205,14 +206,17 @@ const POSPage = ({ user, lines, setLines }) => {
     useEffect(() => {
         (async () => {
             try {
-                const [brandsRes, groupsRes, taxRatesRes] = await Promise.all([
+                const [brandsRes, groupsRes, taxRatesRes, paymentMethodsRes] = await Promise.all([
                     api.get('/brands'),
                     api.get('/groups'),
-                    api.get('/tax-rates')
+                    api.get('/tax-rates'),
+                    api.get('/payment-methods/enabled')
                 ]);
                 setBrands(brandsRes.data);
                 setGroups(groupsRes.data);
                 setTaxRates(taxRatesRes.data);
+                setPaymentMethods(paymentMethodsRes.data || []);
+                console.debug('[POS] Loaded payment methods', paymentMethodsRes.data);
                 
                 const customersData = await fetchCustomers();
                 if (customersData) {
@@ -390,61 +394,97 @@ const POSPage = ({ user, lines, setLines }) => {
         processPayment(paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo);
     };
 
-    const processPayment = (paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo) => {
+    const processPayment = async (paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo) => {
         // Enforce full payment on POS: always send amount_paid equal to the final total.
         console.debug(`POS payment: method=${paymentMethod}, tendered=${tenderedAmount}, amountPaid=${amountPaid}, enforced=${total}`);
         const normalizedPRN = normalizePhysicalReceipt(physicalReceiptInput || physicalReceiptNo || '');
-        const payload = {
-            customer_id: selectedCustomer.customer_id,
-            employee_id: user.employee_id,
-            payment_method: paymentMethod,
-            amount_paid: Number(total) || 0,
-            tendered_amount: typeof tenderedAmount !== 'undefined' && tenderedAmount !== null ? Number(tenderedAmount) : null,
-            physical_receipt_no: normalizedPRN || null,
-            lines: lines.map(line => ({
-                part_id: line.part_id,
-                quantity: line.quantity,
-                sale_price: line.sale_price,
-            })),
-        };
-        const promise = api.post('/invoices', payload);
-        toast.promise(promise, {
-            loading: 'Processing sale...',
-            success: (response) => {
-                const newInvoiceNumber = response.data.invoice_number;
-                const saleDataForReceipt = { lines, total, subtotal, tax, invoice_number: newInvoiceNumber, physical_receipt_no: normalizedPRN || null };
-                setLastSale(saleDataForReceipt);
-                setLines([]);
-                const walkIn = customers.find(c => c.first_name.toLowerCase() === 'walk-in');
-                setSelectedCustomer(walkIn || null);
-                setPhysicalReceiptInput('');
-                setIsPaymentModalOpen(false);
-                
-                toast.success(
-                    (t) => (
-                        <div className="flex items-center">
-                            <span className="mr-4">Sale completed!</span>
-                            <button
-                                onClick={() => {
-                                    toast.dismiss(t.id);
-                                    handlePrintReceipt(saleDataForReceipt);
-                                }}
-                                className="px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
-                            >
-                                Print Receipt
-                            </button>
-                        </div>
-                    ), { duration: 10000 }
-                );
-                return 'Sale completed successfully!';
-            },
-            error: (err) => {
-                if (err?.response?.status === 409) {
-                    return err.response.data?.message || 'Physical Receipt No already exists.';
+
+        try {
+            // Step 1: Create invoice without payment data
+            const invoicePayload = {
+                customer_id: selectedCustomer.customer_id,
+                employee_id: user.employee_id,
+                physical_receipt_no: normalizedPRN || null,
+                lines: lines.map(line => ({
+                    part_id: line.part_id,
+                    quantity: line.quantity,
+                    sale_price: line.sale_price,
+                })),
+            };
+
+            const invoiceResponse = await api.post('/invoices', invoicePayload);
+            const invoiceId = invoiceResponse.data.invoice_id;
+            const newInvoiceNumber = invoiceResponse.data.invoice_number;
+
+            // Step 2: Add payment using the updated payment routes
+            // Coerce provided paymentMethod into a proper method_id; also determine methodName
+            let methodId = paymentMethod;
+            let methodName = paymentMethod;
+            const isNumericLike = (v) => (typeof v === 'number') || (typeof v === 'string' && /^\d+$/.test(v));
+            if (isNumericLike(paymentMethod)) {
+                const methodObj = paymentMethods.find(m => String(m.method_id) === String(paymentMethod));
+                if (methodObj) methodName = methodObj.name;
+            } else if (typeof paymentMethod === 'string') {
+                const methodObjByName = paymentMethods.find(m => (m.name || '').toLowerCase() === paymentMethod.toLowerCase());
+                if (methodObjByName) {
+                    methodId = methodObjByName.method_id;
+                    methodName = methodObjByName.name;
+                } else {
+                    // Fallback to legacy flow supported by backend; prevents integer cast errors
+                    methodId = `legacy_${paymentMethod}`;
                 }
-                return 'Failed to process sale.';
-            },
-        });
+            }
+            
+            const paymentPayload = {
+                payments: [{
+                    method_id: methodId, // Coerced to method_id or legacy_* string
+                    amount_paid: Number(total) || 0,
+                    tendered_amount: typeof tenderedAmount !== 'undefined' && tenderedAmount !== null ? Number(tenderedAmount) : null,
+                    reference: normalizedPRN || null,
+                    metadata: {
+                        method_name: methodName, // Use the actual method name
+                        source: 'pos'
+                    }
+                }],
+                physical_receipt_no: normalizedPRN
+            };
+
+            await api.post(`/invoices/${invoiceId}/payments`, paymentPayload);
+
+            // Success handling
+            const saleDataForReceipt = { lines, total, subtotal, tax, invoice_number: newInvoiceNumber, physical_receipt_no: normalizedPRN || null };
+            setLastSale(saleDataForReceipt);
+            setLines([]);
+            const walkIn = customers.find(c => c.first_name.toLowerCase() === 'walk-in');
+            setSelectedCustomer(walkIn || null);
+            setPhysicalReceiptInput('');
+            setIsPaymentModalOpen(false);
+
+            toast.success(
+                (t) => (
+                    <div className="flex items-center">
+                        <span className="mr-4">Sale completed!</span>
+                        <button
+                            onClick={() => {
+                                toast.dismiss(t.id);
+                                handlePrintReceipt(saleDataForReceipt);
+                            }}
+                            className="px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
+                        >
+                            Print Receipt
+                        </button>
+                    </div>
+                ), { duration: 10000 }
+            );
+
+        } catch (err) {
+            console.error('Payment processing error:', err);
+            if (err?.response?.status === 409) {
+                toast.error(err.response.data?.message || 'Physical Receipt No already exists.');
+            } else {
+                toast.error('Failed to process sale.');
+            }
+        }
     };
     
     const handleConfirmReceiptDialog = () => {
@@ -773,6 +813,7 @@ const POSPage = ({ user, lines, setLines }) => {
                 total={total}
                 onConfirmPayment={handleConfirmPayment}
                 physicalReceipt={physicalReceiptInput}
+                paymentMethods={paymentMethods}
             />
             {/* Void confirmation modal (centered, styled like system) */}
             <Modal isOpen={isVoidConfirmOpen} onClose={() => setIsVoidConfirmOpen(false)} title="Confirm Void" centered>
