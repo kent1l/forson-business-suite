@@ -179,13 +179,13 @@ const SalesHistoryPage = () => {
             const change = tendered > amt ? (tendered - amt) : 0; // Formula: Change = tendered - amount if tendered > amount
             const method = (p.payment_method || '').toString().trim().toLowerCase();
             if (cashMethodNames.includes(method)) {
-                cashCollected += amt; // Sum cash payments
+                cashCollected += tendered; // Sum tendered amounts for cash payments
                 changeReturned += change; // Sum change returned for cash
             } else {
                 nonCashCollected += amt; // Sum non-cash payments
             }
         }
-        const cashCollectedNet = Math.max(cashCollected - changeReturned, 0); // Formula: Cash Collected - Change Returned (clamped >=0)
+        const cashCollectedNet = Math.max(cashCollected - changeReturned, 0); // Formula: Cash Tendered - Change Returned (clamped >=0)
         const totalCollectedForMix = cashCollected + nonCashCollected; // Total collected for mix calculation
         const cashMix = totalCollectedForMix > 0 ? cashCollected / totalCollectedForMix : 0; // Formula: Cash Collected / Total Collected
 
