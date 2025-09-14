@@ -149,7 +149,7 @@ const SalesHistoryPage = () => {
             if (settings?.ENABLE_SPLIT_PAYMENTS === 'true' && paymentMethods.length > 0) {
                 // Use payment method configurations to determine cash methods
                 return paymentMethods
-                    .filter(pm => pm.is_active && pm.config?.is_cash === true)
+                    .filter(pm => pm.enabled && pm.type === 'cash')
                     .map(pm => pm.name.toLowerCase());
             } else {
                 // Fallback to legacy hardcoded cash methods
@@ -168,14 +168,14 @@ const SalesHistoryPage = () => {
 
         let cashCollected = 0; let nonCashCollected = 0; let changeReturned = 0;
         for (const p of payments) {
-            const ref = (p.reference_number || '').toString().trim();
+            const ref = (p.reference || '').toString().trim();
             const looksLikeInvoiceNo = /^INV/i.test(ref);
             if (looksLikeInvoiceNo && !currentInvoiceNumbers.has(ref)) {
                 // This is likely the initial payment for a deleted invoice — ignore it.
                 continue;
             }
             const amt = currencySafeNumber(p.amount);
-            const tendered = currencySafeNumber(p.tendered_amount);
+            const tendered = currencySafeNumber(p.tendered_amount) || amt;
             const change = tendered > amt ? (tendered - amt) : 0; // Formula: Change = tendered - amount if tendered > amount
             const method = (p.payment_method || '').toString().trim().toLowerCase();
             if (cashMethodNames.includes(method)) {
@@ -194,7 +194,7 @@ const SalesHistoryPage = () => {
         // Enhanced payment method breakdown for detailed analysis
         const paymentMethodBreakdown = {};
         for (const p of payments) {
-            const ref = (p.reference_number || '').toString().trim();
+            const ref = (p.reference || '').toString().trim();
             const looksLikeInvoiceNo = /^INV/i.test(ref);
             if (looksLikeInvoiceNo && !currentInvoiceNumbers.has(ref)) {
                 continue;
