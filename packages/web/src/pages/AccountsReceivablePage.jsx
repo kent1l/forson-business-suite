@@ -5,6 +5,12 @@ import { useAuth } from '../contexts/AuthContext';
 import Modal from '../components/ui/Modal';
 import ReceivePaymentForm from '../components/forms/ReceivePaymentForm';
 
+// Utility for currency formatting
+const formatCurrency = (value) => {
+    const num = Number(value) || 0;
+    return `₱${num.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
 const AccountsReceivablePage = () => {
     const { hasPermission } = useAuth();
     const [customers, setCustomers] = useState([]);
@@ -18,6 +24,7 @@ const AccountsReceivablePage = () => {
             const response = await api.get('/customers/with-balances');
             setCustomers(response.data);
         } catch (err) {
+            console.error('Failed to fetch customer balances:', err);
             toast.error('Failed to fetch customer balances.');
         } finally {
             setLoading(false);
@@ -73,7 +80,7 @@ const AccountsReceivablePage = () => {
                                             {customer.company_name || `${customer.first_name} ${customer.last_name}`}
                                         </td>
                                         <td className="p-3 text-sm text-right font-mono">
-                                            ₱{(Number.isFinite(Number(customer.balance_due)) ? Number(customer.balance_due) : 0).toFixed(2)}
+                                            {formatCurrency(customer.balance_due)}
                                         </td>
                                         <td className="p-3 text-sm text-right">
                                             {hasPermission('ar:receive_payment') && (

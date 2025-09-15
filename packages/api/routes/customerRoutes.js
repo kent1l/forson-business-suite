@@ -69,18 +69,11 @@ router.get('/customers/with-balances', protect, hasPermission('ar:view'), async 
                 c.last_name,
                 c.company_name,
                 (SELECT COALESCE(SUM(i.total_amount),0) FROM invoice i WHERE i.customer_id = c.customer_id) AS total_invoiced,
-                (SELECT COALESCE(SUM(ipa.amount_allocated),0) FROM invoice_payment_allocation ipa JOIN invoice i2 ON ipa.invoice_id = i2.invoice_id WHERE i2.customer_id = c.customer_id) AS total_paid,
-                (
-                    (SELECT COALESCE(SUM(i.total_amount),0) FROM invoice i WHERE i.customer_id = c.customer_id)
-                    -
-                    (SELECT COALESCE(SUM(ipa.amount_allocated),0) FROM invoice_payment_allocation ipa JOIN invoice i2 ON ipa.invoice_id = i2.invoice_id WHERE i2.customer_id = c.customer_id)
-                ) AS balance_due
+                COALESCE(SUM(CASE WHEN i.status IN ('Unpaid', 'Partially Paid') THEN i.total_amount - i.amount_paid ELSE 0 END), 0) AS balance_due
             FROM customer c
-            WHERE (
-                    (SELECT COALESCE(SUM(i.total_amount),0) FROM invoice i WHERE i.customer_id = c.customer_id)
-                    -
-                    (SELECT COALESCE(SUM(ipa.amount_allocated),0) FROM invoice_payment_allocation ipa JOIN invoice i2 ON ipa.invoice_id = i2.invoice_id WHERE i2.customer_id = c.customer_id)
-                  ) > 0
+            LEFT JOIN invoice i ON i.customer_id = c.customer_id
+            GROUP BY c.customer_id, c.first_name, c.last_name, c.company_name
+            HAVING COALESCE(SUM(CASE WHEN i.status IN ('Unpaid', 'Partially Paid') THEN i.total_amount - i.amount_paid ELSE 0 END), 0) > 0
             ORDER BY c.first_name, c.last_name;
         `;
         const { rows } = await db.query(query);
