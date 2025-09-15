@@ -268,11 +268,17 @@ const InvoicingPage = ({ user }) => {
 
             const invoiceResponse = await api.post('/invoices', invoicePayload);
             const invoiceId = invoiceResponse.data.invoice_id;
+            const returnedPhysicalReceiptNo = invoiceResponse.data.physical_receipt_no;
+
+            // Check if physical receipt number was auto-incremented
+            if (returnedPhysicalReceiptNo && returnedPhysicalReceiptNo !== formatPhysicalReceiptNumber(physicalReceiptNo)) {
+                toast.success(`Invoice created! Physical receipt number was auto-incremented to: ${returnedPhysicalReceiptNo}`);
+            }
 
             // Then add payments to the invoice
             await api.post(`/invoices/${invoiceId}/payments`, {
                 payments,
-                physical_receipt_no: formatPhysicalReceiptNumber(physicalReceiptNo)
+                physical_receipt_no: returnedPhysicalReceiptNo || formatPhysicalReceiptNumber(physicalReceiptNo)
             });
 
             // Success - reset form

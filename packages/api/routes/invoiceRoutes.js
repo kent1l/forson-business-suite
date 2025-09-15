@@ -202,7 +202,44 @@ router.post('/invoices', async (req, res) => {
         }
 
         // Normalize physical receipt number: trim and treat empty as null
-        const prn = formatPhysicalReceiptNumber(physical_receipt_no);
+        let prn = formatPhysicalReceiptNumber(physical_receipt_no);
+        
+        // If a physical receipt number is provided, ensure it's unique
+        if (prn) {
+            let attempts = 0;
+            let basePrn = prn;
+            let isUnique = false;
+            
+            while (!isUnique && attempts < 10) {
+                const existingQuery = `
+                    SELECT invoice_id FROM invoice 
+                    WHERE LOWER(physical_receipt_no) = LOWER($1) 
+                    AND physical_receipt_no IS NOT NULL 
+                    AND LENGTH(TRIM(physical_receipt_no)) > 0
+                `;
+                const { rows: existingRows } = await client.query(existingQuery, [prn]);
+                
+                if (existingRows.length === 0) {
+                    isUnique = true;
+                } else {
+                    attempts++;
+                    // Auto-increment: DR-4652 -> DR-4653, DR-4654, etc.
+                    const match = basePrn.match(/^(.+?)(\d+)$/);
+                    if (match) {
+                        const prefix = match[1];
+                        const number = parseInt(match[2]) + attempts;
+                        prn = `${prefix}${number}`;
+                    } else {
+                        // If no number pattern, append attempt number
+                        prn = `${basePrn}-${attempts}`;
+                    }
+                }
+            }
+            
+            if (!isUnique) {
+                throw new Error('Unable to generate unique physical receipt number after multiple attempts');
+            }
+        }
 
         const invoiceQuery = `
             INSERT INTO invoice (invoice_number, customer_id, employee_id, total_amount, amount_paid, status, terms, payment_terms_days, due_date, physical_receipt_no)
@@ -255,7 +292,16 @@ router.post('/invoices', async (req, res) => {
 
 
         await client.query('COMMIT');
-    res.status(201).json({ message: 'Invoice created successfully', invoice_id: newInvoiceId, invoice_number, amount_paid: paid, tendered_amount: tendered_amount || null, payment_terms_days: canonicalDays, due_date: dueDate });
+    res.status(201).json({ 
+        message: 'Invoice created successfully', 
+        invoice_id: newInvoiceId, 
+        invoice_number, 
+        amount_paid: paid, 
+        tendered_amount: tendered_amount || null, 
+        payment_terms_days: canonicalDays, 
+        due_date: dueDate,
+        physical_receipt_no: prn // Return the potentially auto-incremented number
+    });
 
     } catch (err) {
         await client.query('ROLLBACK');
@@ -265,6 +311,74 @@ router.post('/invoices', async (req, res) => {
         }
         console.error('Transaction Error:', err.message);
         res.status(500).json({ message: 'Server error during transaction.', error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+// POST /invoices/:id/payments - Add split payments to an invoice
+router.post('/invoices/:id/payments', async (req, res) => {
+    const { id } = req.params;
+    const { payments } = req.body;
+
+    if (!id || isNaN(parseInt(id))) {
+        return res.status(400).json({ message: 'Invalid invoice ID.' });
+    }
+    if (!Array.isArray(payments) || payments.length === 0) {
+        return res.status(400).json({ message: 'Payments array required.' });
+    }
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+
+        for (const payment of payments) {
+            const {
+                method_id,
+                amount_paid,
+                tendered_amount,
+                reference,
+                metadata
+            } = payment;
+
+            // Insert payment into invoice_payments table
+            await client.query(`
+                INSERT INTO invoice_payments (invoice_id, method_id, amount_paid, tendered_amount, reference, metadata)
+                VALUES ($1, $2, $3, $4, $5, $6)
+            `, [id, method_id, amount_paid, tendered_amount || null, reference || null, metadata ? JSON.stringify(metadata) : null]);
+        }
+
+        // Call function to update invoice balance and status
+        await client.query(`
+            UPDATE invoice 
+            SET 
+                amount_paid = (
+                    SELECT COALESCE(SUM(ip.amount_paid), 0)
+                    FROM invoice_payments ip
+                    WHERE ip.invoice_id = $1
+                ),
+                status = CASE 
+                    WHEN (
+                        SELECT COALESCE(SUM(ip.amount_paid), 0)
+                        FROM invoice_payments ip
+                        WHERE ip.invoice_id = $1
+                    ) >= total_amount THEN 'Paid'
+                    WHEN (
+                        SELECT COALESCE(SUM(ip.amount_paid), 0)
+                        FROM invoice_payments ip
+                        WHERE ip.invoice_id = $1
+                    ) > 0 THEN 'Partially Paid'
+                    ELSE 'Unpaid'
+                END
+            WHERE invoice_id = $1
+        `, [id]);
+
+        await client.query('COMMIT');
+        res.status(201).json({ message: 'Payments added and invoice updated.' });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Split payment error:', err.message);
+        res.status(500).json({ message: 'Server error processing payments.', error: err.message });
     } finally {
         client.release();
     }
