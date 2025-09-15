@@ -18,6 +18,7 @@ const SplitPaymentModal = ({
     const [paymentMethods, setPaymentMethods] = useState([]);
     const [payments, setPayments] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [showOnAccountConfirmation, setShowOnAccountConfirmation] = useState(false);
     const initializedRef = useRef(false);
 
     // Check if split payments feature is enabled (memoized to prevent unnecessary re-renders)
@@ -149,9 +150,10 @@ const SplitPaymentModal = ({
     };
 
     // Calculate totals and validation
-    const { totalPayments, totalChange, remaining, canConfirm, validationErrors } = useMemo(() => {
+    const { totalPayments, totalChange, remaining, canConfirm, validationErrors, onAccountSum, requiresOnAccountConfirmation } = useMemo(() => {
         let totalPaid = 0;
         let totalChangeAmount = 0;
+        let onAccountTotal = 0;
         const errors = [];
 
         for (const payment of payments) {
@@ -160,8 +162,15 @@ const SplitPaymentModal = ({
             const amountPaid = parseFloat(payment.amount_paid) || 0;
             const tenderedAmount = parseFloat(payment.tendered_amount) || 0;
 
-            // Only count settled payments in total paid
-            if (!payment.payment_status || payment.payment_status === 'settled') {
+            // Count payments based on settlement type:
+            // - instant: count immediately toward total
+            // - delayed: count toward total (will be pending but shows intent)
+            // - on_account: don't count toward paid, but track separately for on-account logic
+            const settlementType = method?.settlement_type || 'instant';
+            
+            if (settlementType === 'on_account') {
+                onAccountTotal += amountPaid;
+            } else {
                 totalPaid += amountPaid;
             }
 
@@ -191,14 +200,18 @@ const SplitPaymentModal = ({
         }
 
         const remainingDue = Math.max((totalDue || 0) - totalPaid, 0);
-        const canConfirm = errors.length === 0 && remainingDue <= 0.01; // Allow small rounding differences
+        const coveredByOnAccount = onAccountTotal >= remainingDue;
+        const requiresOnAccountConfirmation = onAccountTotal > 0 && remainingDue > 0.01 && coveredByOnAccount;
+        const canConfirm = errors.length === 0 && (remainingDue <= 0.01 || coveredByOnAccount);
 
         return {
             totalPayments: totalPaid,
             totalChange: totalChangeAmount,
             remaining: remainingDue,
             canConfirm,
-            validationErrors: errors
+            validationErrors: errors,
+            onAccountSum: onAccountTotal,
+            requiresOnAccountConfirmation
         };
     }, [payments, paymentMethods, totalDue, physicalReceiptNo]);
 
@@ -242,6 +255,12 @@ const SplitPaymentModal = ({
 
         if (!canConfirm) return;
 
+        // Check if on-account confirmation is required
+        if (requiresOnAccountConfirmation && !showOnAccountConfirmation) {
+            setShowOnAccountConfirmation(true);
+            return;
+        }
+
         setLoading(true);
         try {
             // Format payments for API
@@ -270,7 +289,7 @@ const SplitPaymentModal = ({
         } finally {
             setLoading(false);
         }
-    }, [canConfirm, payments, paymentMethods, onConfirm, physicalReceiptNo, onClose, validationErrors]);
+    }, [canConfirm, payments, paymentMethods, onConfirm, physicalReceiptNo, onClose, validationErrors, requiresOnAccountConfirmation, showOnAccountConfirmation]);
 
     // Keyboard shortcuts
     useEffect(() => {
@@ -407,7 +426,7 @@ const SplitPaymentModal = ({
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-1">
                                                 Payment Method <span className="text-red-500">*</span>
@@ -421,10 +440,20 @@ const SplitPaymentModal = ({
                                                 <option value="">Select method...</option>
                                                 {paymentMethods.map(method => (
                                                     <option key={method.method_id} value={method.method_id}>
-                                                        {method.name}
+                                                        {method.name} 
+                                                        {method.settlement_type === 'instant' && ' (instant)'}
+                                                        {method.settlement_type === 'delayed' && ' (pending until settled)'}
+                                                        {method.settlement_type === 'on_account' && ' (on account)'}
                                                     </option>
                                                 ))}
                                             </select>
+                                            {method && method.settlement_type && (
+                                                <p className="text-xs text-gray-500 mt-1">
+                                                    {method.settlement_type === 'instant' && '✓ Counted immediately toward invoice payment'}
+                                                    {method.settlement_type === 'delayed' && '⏳ Will be pending until manually settled'}
+                                                    {method.settlement_type === 'on_account' && '📋 No payment recorded - invoice remains due'}
+                                                </p>
+                                            )}
                                         </div>
 
                                         <div>
@@ -496,6 +525,43 @@ const SplitPaymentModal = ({
                                                 <div />
                                             )}
                                         </div>
+
+                                        {/* Payment Status */}
+                                        <div className="col-span-1 sm:col-span-1">
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Status
+                                            </label>
+                                            <div className="px-3 py-2 rounded-lg text-sm font-medium">
+                                                {(() => {
+                                                    if (!method) return <span className="text-gray-400">-</span>;
+                                                    
+                                                    const settlementType = method.settlement_type || 'instant';
+                                                    
+                                                    // For new payments (no payment_status yet), determine status by settlement type
+                                                    let effectiveStatus;
+                                                    if (payment.payment_status) {
+                                                        effectiveStatus = payment.payment_status;
+                                                    } else {
+                                                        // New payment - determine status from settlement type
+                                                        if (settlementType === 'delayed') {
+                                                            effectiveStatus = 'pending';
+                                                        } else if (settlementType === 'instant') {
+                                                            effectiveStatus = 'settled';
+                                                        } else {
+                                                            effectiveStatus = 'on_account';
+                                                        }
+                                                    }
+                                                    
+                                                    if (settlementType === 'on_account') {
+                                                        return <span className="text-blue-600 bg-blue-50 px-2 py-1 rounded">On Account</span>;
+                                                    } else if (effectiveStatus === 'pending') {
+                                                        return <span className="text-yellow-600 bg-yellow-50 px-2 py-1 rounded">Pending</span>;
+                                                    } else {
+                                                        return <span className="text-green-600 bg-green-50 px-2 py-1 rounded">Paid</span>;
+                                                    }
+                                                })()}
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             );
@@ -546,10 +612,62 @@ const SplitPaymentModal = ({
                             disabled={!canConfirm || loading}
                             className="px-6 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors shadow-sm"
                         >
-                            {loading ? 'Processing...' : 'Confirm Payment'}
+                            {loading ? 'Processing...' : 
+                             requiresOnAccountConfirmation ? 'Confirm & Record On Account' : 'Confirm Payment'}
                         </button>
                     </div>
                 </div>
+
+                {/* On Account Confirmation Modal */}
+                {showOnAccountConfirmation && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+                            <div className="p-6">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                                    Record as On Account?
+                                </h3>
+                                <div className="mb-4">
+                                    <p className="text-gray-700 mb-2">
+                                        You're about to record <strong>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{onAccountSum.toFixed(2)}</strong> to the customer's account.
+                                    </p>
+                                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                                        <div className="flex items-start">
+                                            <div className="flex-shrink-0">
+                                                <svg className="h-5 w-5 text-amber-400" viewBox="0 0 20 20" fill="currentColor">
+                                                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                                </svg>
+                                            </div>
+                                            <div className="ml-3">
+                                                <p className="text-sm text-amber-800">
+                                                    • The invoice will remain <strong>unpaid</strong><br/>
+                                                    • This creates an <strong>Accounts Receivable</strong> charge<br/>
+                                                    • The transaction is auditable and reversible
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex justify-end space-x-3">
+                                    <button
+                                        onClick={() => setShowOnAccountConfirmation(false)}
+                                        className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setShowOnAccountConfirmation(false);
+                                            handleConfirm();
+                                        }}
+                                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                    >
+                                        Record On Account
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

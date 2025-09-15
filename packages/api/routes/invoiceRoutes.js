@@ -341,32 +341,61 @@ router.post('/invoices/:id/payments', async (req, res) => {
                 metadata
             } = payment;
 
-            // Insert payment into invoice_payments table
+            // Get payment method details to determine settlement behavior
+            const { rows: methodRows } = await client.query(
+                'SELECT settlement_type, config FROM payment_methods WHERE method_id = $1',
+                [method_id]
+            );
+            
+            if (methodRows.length === 0) {
+                throw new Error(`Invalid payment method ID: ${method_id}`);
+            }
+            
+            const method = methodRows[0];
+            const settlementType = method.settlement_type || 'instant';
+            
+            // Determine payment status based on settlement type
+            let paymentStatus = 'settled';
+            let settledAt = null;
+            
+            if (settlementType === 'instant') {
+                paymentStatus = 'settled';
+                settledAt = new Date();
+            } else if (settlementType === 'delayed') {
+                paymentStatus = 'pending';
+                settledAt = null;
+            } else if (settlementType === 'on_account') {
+                // Record on-account payments as auditable entries
+                paymentStatus = 'on_account';
+                settledAt = null;
+            }
+
+            // Insert payment into invoice_payments table (including on_account for audit trail)
             await client.query(`
-                INSERT INTO invoice_payments (invoice_id, method_id, amount_paid, tendered_amount, reference, metadata)
-                VALUES ($1, $2, $3, $4, $5, $6)
-            `, [id, method_id, amount_paid, tendered_amount || null, reference || null, metadata ? JSON.stringify(metadata) : null]);
+                INSERT INTO invoice_payments (invoice_id, method_id, amount_paid, tendered_amount, reference, metadata, payment_status, settled_at, created_by)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            `, [id, method_id, amount_paid, tendered_amount || null, reference || null, metadata ? JSON.stringify(metadata) : null, paymentStatus, settledAt, req.user?.employee_id || null]);
         }
 
-        // Call function to update invoice balance and status
+        // Update invoice balance and status based on settled payments only
         await client.query(`
             UPDATE invoice 
             SET 
                 amount_paid = (
                     SELECT COALESCE(SUM(ip.amount_paid), 0)
                     FROM invoice_payments ip
-                    WHERE ip.invoice_id = $1
+                    WHERE ip.invoice_id = $1 AND ip.payment_status = 'settled'
                 ),
                 status = CASE 
                     WHEN (
                         SELECT COALESCE(SUM(ip.amount_paid), 0)
                         FROM invoice_payments ip
-                        WHERE ip.invoice_id = $1
+                        WHERE ip.invoice_id = $1 AND ip.payment_status = 'settled'
                     ) >= total_amount THEN 'Paid'
                     WHEN (
                         SELECT COALESCE(SUM(ip.amount_paid), 0)
                         FROM invoice_payments ip
-                        WHERE ip.invoice_id = $1
+                        WHERE ip.invoice_id = $1 AND ip.payment_status = 'settled'
                     ) > 0 THEN 'Partially Paid'
                     ELSE 'Unpaid'
                 END
@@ -379,6 +408,69 @@ router.post('/invoices/:id/payments', async (req, res) => {
         await client.query('ROLLBACK');
         console.error('Split payment error:', err.message);
         res.status(500).json({ message: 'Server error processing payments.', error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+// PUT /invoices/payments/:payment_id/settle - Mark a delayed payment as settled
+router.put('/invoices/payments/:payment_id/settle', protect, hasPermission('invoicing:create'), async (req, res) => {
+    const { payment_id } = req.params;
+
+    if (!payment_id || isNaN(parseInt(payment_id))) {
+        return res.status(400).json({ message: 'Invalid payment ID.' });
+    }
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+
+        // Update payment status to settled
+        const { rows: paymentRows } = await client.query(`
+            UPDATE invoice_payments 
+            SET payment_status = 'settled', settled_at = CURRENT_TIMESTAMP
+            WHERE payment_id = $1 AND payment_status = 'pending'
+            RETURNING invoice_id, amount_paid
+        `, [payment_id]);
+
+        if (paymentRows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: 'Payment not found or already settled.' });
+        }
+
+        const invoiceId = paymentRows[0].invoice_id;
+
+        // Update invoice balance and status based on all settled payments
+        await client.query(`
+            UPDATE invoice 
+            SET 
+                amount_paid = (
+                    SELECT COALESCE(SUM(ip.amount_paid), 0)
+                    FROM invoice_payments ip
+                    WHERE ip.invoice_id = $1 AND ip.payment_status = 'settled'
+                ),
+                status = CASE 
+                    WHEN (
+                        SELECT COALESCE(SUM(ip.amount_paid), 0)
+                        FROM invoice_payments ip
+                        WHERE ip.invoice_id = $1 AND ip.payment_status = 'settled'
+                    ) >= total_amount THEN 'Paid'
+                    WHEN (
+                        SELECT COALESCE(SUM(ip.amount_paid), 0)
+                        FROM invoice_payments ip
+                        WHERE ip.invoice_id = $1 AND ip.payment_status = 'settled'
+                    ) > 0 THEN 'Partially Paid'
+                    ELSE 'Unpaid'
+                END
+            WHERE invoice_id = $1
+        `, [invoiceId]);
+
+        await client.query('COMMIT');
+        res.json({ message: 'Payment settled successfully.' });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Settle payment error:', err.message);
+        res.status(500).json({ message: 'Server error settling payment.', error: err.message });
     } finally {
         client.release();
     }

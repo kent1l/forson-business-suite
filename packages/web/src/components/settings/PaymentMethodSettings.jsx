@@ -70,11 +70,21 @@ const PaymentMethodForm = ({ method, onSave, onCancel }) => {
             finalConfig.reference_label = finalConfig.reference_label || 'Auth Code';
             finalConfig.requires_receipt_no = true;
             finalConfig.change_allowed = false;
+            finalConfig.settlement_type = 'instant';
         } else if (formData.type === 'bank') {
             finalConfig.requires_reference = true;
             finalConfig.reference_label = finalConfig.reference_label || 'Reference Number';
             finalConfig.settlement_type = 'delayed';
             finalConfig.change_allowed = false;
+        } else if (formData.type === 'mobile') {
+            finalConfig.requires_reference = true;
+            finalConfig.reference_label = finalConfig.reference_label || 'Transaction ID';
+            finalConfig.settlement_type = 'instant';
+            finalConfig.change_allowed = false;
+        } else if (formData.type === 'credit') {
+            finalConfig.settlement_type = 'on_account';
+            finalConfig.change_allowed = false;
+            finalConfig.requires_reference = false;
         }
 
         const finalData = {
@@ -216,9 +226,13 @@ const PaymentMethodForm = ({ method, onSave, onCancel }) => {
                             onChange={(e) => handleConfigChange('settlement_type', e.target.value)}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         >
-                            <option value="instant">Instant (affects cash metrics immediately)</option>
-                            <option value="delayed">Delayed (bank transfers, cheques)</option>
+                            <option value="instant">Instant - Funds received immediately (cash, cards)</option>
+                            <option value="delayed">Delayed - Funds settle later (bank transfer, cheque)</option>
+                            <option value="on_account">On Account - No payment now, invoice remains due</option>
                         </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                            Instant: counted immediately toward invoice payment. Delayed: marked pending until settled. On Account: no payment recorded.
+                        </p>
                     </div>
                 </div>
             </div>

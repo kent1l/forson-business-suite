@@ -35,7 +35,18 @@ router.get('/payment-methods', protect, async (req, res) => {
             FROM payment_methods 
             ORDER BY sort_order ASC, name ASC
         `);
-        res.json(rows);
+        
+        // Extract settlement_type from config and add as top-level property
+        const processedRows = rows.map(row => {
+            const config = typeof row.config === 'string' ? JSON.parse(row.config) : row.config;
+            return {
+                ...row,
+                config,
+                settlement_type: config?.settlement_type || 'instant'
+            };
+        });
+        
+        res.json(processedRows);
     } catch (err) {
         console.error('Error fetching payment methods:', err.message);
         res.status(500).json({ message: 'Server error fetching payment methods.' });
@@ -52,7 +63,18 @@ router.get('/payment-methods/enabled', protect, async (req, res) => {
             WHERE enabled = true
             ORDER BY sort_order ASC, name ASC
         `);
-        res.json(rows);
+        
+        // Extract settlement_type from config and add as top-level property
+        const processedRows = rows.map(row => {
+            const config = typeof row.config === 'string' ? JSON.parse(row.config) : row.config;
+            return {
+                ...row,
+                config,
+                settlement_type: config?.settlement_type || 'instant'
+            };
+        });
+        
+        res.json(processedRows);
     } catch (err) {
         console.error('Error fetching enabled payment methods:', err.message);
         res.status(500).json({ message: 'Server error fetching payment methods.' });
@@ -93,7 +115,14 @@ router.post('/payment-methods', protect, hasPermission('settings:edit'), async (
             RETURNING method_id, code, name, type, enabled, sort_order, config, created_at
         `, [code, name, type, enabled, sort_order, JSON.stringify(finalConfig), employee_id]);
 
-        res.status(201).json(rows[0]);
+        // Process the returned data to extract settlement_type
+        const processedRow = {
+            ...rows[0],
+            config: finalConfig,
+            settlement_type: finalConfig.settlement_type
+        };
+
+        res.status(201).json(processedRow);
     } catch (err) {
         if (err.code === '23505') { // unique violation
             return res.status(409).json({ message: 'Payment method code already exists.' });
@@ -162,8 +191,16 @@ router.put('/payment-methods/:id', protect, async (req, res) => {
         `, [code, name, type, enabled, sort_order, JSON.stringify(config), employee_id, id]);
 
         await client.query('COMMIT');
-        console.log('[PUT /payment-methods/:id] Update successful:', rows[0]);
-        res.json(rows[0]);
+        
+        // Process the returned data to extract settlement_type
+        const processedRow = {
+            ...rows[0],
+            config: config,
+            settlement_type: config.settlement_type
+        };
+        
+        console.log('[PUT /payment-methods/:id] Update successful:', processedRow);
+        res.json(processedRow);
     } catch (err) {
         await client.query('ROLLBACK');
         if (err.code === '23505') { // unique violation
