@@ -1,0 +1,22 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "web: build",
+			"type": "shell",
+			"command": "cd \"f:\\Temporary Files\\forson-business-suite\\packages\\web\" && npm run build",
+			"problemMatcher": [
+				"$eslint-stylish"
+			]
+		},
+		{
+			"label": "web: build",
+			"type": "shell",
+			"command": "Set-Location -Path \"f:\\Temporary Files\\forson-business-suite\\packages\\web\"; npm run build",
+			"problemMatcher": [
+				"$eslint-stylish"
+			],
+			"group": "build"
+		}
+	]
+}
