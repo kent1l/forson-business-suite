@@ -100,7 +100,7 @@ const AccountsReceivablePage = () => {
                 )}
             </div>
             
-            <Modal isOpen={isPaymentModalOpen} onClose={() => setIsPaymentModalOpen(false)} title={`Receive Payment from ${selectedCustomer?.company_name || selectedCustomer?.first_name}`} maxWidth="max-w-2xl">
+            <Modal isOpen={isPaymentModalOpen} onClose={() => setIsPaymentModalOpen(false)} title={`Receive Payment from ${selectedCustomer?.company_name || selectedCustomer?.first_name}`} maxWidth="max-w-4xl">
                 {selectedCustomer && (
                     <ReceivePaymentForm 
                         customer={selectedCustomer} 
