@@ -1,3 +1,47 @@
+/**
+ * Customer Summary Table Component for the Forson Business Suite
+ *
+ * A comprehensive table component that displays customer accounts receivable data
+ * including customer details, invoice counts, due dates, balances, and payment status.
+ * The component provides interactive features like customer selection, payment actions,
+ * and CSV export functionality. It includes loading states and permission-based
+ * action visibility.
+ *
+ * @component
+ * @param {Object} props - Component props
+ * @param {Array} props.customers - Array of customer objects with AR data
+ * @param {string} props.customers[].customer_id - Unique customer identifier
+ * @param {string} props.customers[].company_name - Company name (if applicable)
+ * @param {string} props.customers[].first_name - Customer first name
+ * @param {string} props.customers[].last_name - Customer last name
+ * @param {number} props.customers[].invoice_count - Number of outstanding invoices
+ * @param {string} props.customers[].earliest_due_date - ISO date string of next due date
+ * @param {number} props.customers[].total_balance_due - Total outstanding balance
+ * @param {Function} props.onCustomerClick - Callback when customer row is clicked
+ * @param {Function} props.onReceivePayment - Callback when receive payment button is clicked
+ * @param {boolean} props.hasPaymentPermission - Whether user can perform payment actions
+ * @param {boolean} [props.loading=false] - Whether to show loading skeleton
+ * @param {Function} props.onExport - Callback for CSV export functionality
+ *
+ * @example
+ * const customers = [
+ *   {
+ *     customer_id: '123',
+ *     company_name: 'ABC Corp',
+ *     invoice_count: 3,
+ *     earliest_due_date: '2024-01-15',
+ *     total_balance_due: 25000
+ *   }
+ * ];
+ *
+ * <CustomerSummaryTable
+ *   customers={customers}
+ *   onCustomerClick={(customer) => showCustomerDetails(customer)}
+ *   onReceivePayment={(customer) => openPaymentModal(customer)}
+ *   hasPaymentPermission={true}
+ *   onExport={() => exportCustomerData()}
+ * />
+ */
 import { formatCurrency } from '../../utils/currency';
 import { getCustomerStatusBadge } from '../../utils/status';
 

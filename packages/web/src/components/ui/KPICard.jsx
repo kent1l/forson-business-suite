@@ -1,4 +1,50 @@
+// eslint-disable-next-line no-unused-vars
 import Icon from './Icon';
+
+/**
+ * KPI Card Component for the Forson Business Suite
+ *
+ * A reusable card component for displaying Key Performance Indicators (KPIs) in dashboards.
+ * This component provides a consistent design pattern for showing metrics with icons,
+ * titles, values, and optional trend information. It includes loading state support
+ * with skeleton animations for better user experience during data fetching.
+ *
+ * @component
+ * @param {Object} props - Component props
+ * @param {string} props.iconName - Name/key of the icon to display from the Icon component
+ * @param {string} props.title - Title text displayed below the icon
+ * @param {string|number} props.value - Main KPI value to display prominently
+ * @param {string} [props.trend] - Optional trend text (e.g., "+12% from last month")
+ * @param {string} [props.trendColorClass='text-green-500'] - Tailwind CSS class for trend text color
+ * @param {boolean} [props.loading=false] - Whether to show loading skeleton instead of content
+ *
+ * @example
+ * // Basic KPI card
+ * <KPICard
+ *   iconName="dollar-sign"
+ *   title="Total Revenue"
+ *   value="₱125,000"
+ *   trend="+15% from last month"
+ * />
+ *
+ * @example
+ * // Loading state
+ * <KPICard
+ *   iconName="users"
+ *   title="Active Customers"
+ *   loading={true}
+ * />
+ *
+ * @example
+ * // Negative trend with red color
+ * <KPICard
+ *   iconName="trending-down"
+ *   title="Overdue Invoices"
+ *   value="12"
+ *   trend="-5% from last month"
+ *   trendColorClass="text-red-500"
+ * />
+ */
 
 // A reusable KPI card component based on Dashboard.jsx styles
 const KPICard = ({ iconName, title, value, trend, trendColorClass = 'text-green-500', loading = false }) => {

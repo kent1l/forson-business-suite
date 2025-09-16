@@ -1,3 +1,33 @@
+/**
+ * Invoice Aging Summary Chart Component for the Forson Business Suite
+ *
+ * A visual component that displays invoice aging data as a horizontal progress bar
+ * with color-coded segments representing different aging buckets (Current, 1-30 Days,
+ * 31-60 Days, 61-90 Days, 90+ Days). The component includes interactive features
+ * like bucket clicking and CSV export functionality.
+ *
+ * @component
+ * @param {Object} props - Component props
+ * @param {Array} props.agingData - Array of aging bucket objects
+ * @param {string} props.agingData[].name - Name of the aging bucket (e.g., "Current", "1-30 Days")
+ * @param {number} props.agingData[].value - Monetary value for the aging bucket
+ * @param {boolean} [props.loading=false] - Whether to show loading skeleton
+ * @param {Function} [props.onBucketClick] - Callback function when a bucket segment is clicked
+ *
+ * @example
+ * const agingData = [
+ *   { name: 'Current', value: 50000 },
+ *   { name: '1-30 Days', value: 25000 },
+ *   { name: '31-60 Days', value: 15000 },
+ *   { name: '61-90 Days', value: 8000 },
+ *   { name: '90+ Days', value: 12000 }
+ * ];
+ *
+ * <InvoiceAgingSummaryChart
+ *   agingData={agingData}
+ *   onBucketClick={(bucketName) => console.log(`Clicked ${bucketName}`)}
+ * />
+ */
 import { exportToCSV } from '../../utils/csv';
 import { formatCurrency } from '../../utils/currency';
 

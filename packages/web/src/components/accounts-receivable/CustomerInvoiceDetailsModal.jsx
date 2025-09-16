@@ -1,3 +1,19 @@
+/**
+ * CustomerInvoiceDetailsModal Component
+ *
+ * A modal component that displays detailed information about a customer's payable invoices
+ * in the Accounts Receivable section of the Forson Business Suite.
+ *
+ * Features:
+ * - Shows a table of invoices with due dates, amounts, and balances
+ * - Displays payment status with color-coded badges (overdue, due today, days remaining)
+ * - Includes "Receive Payment" action buttons for invoices with outstanding balances
+ * - Handles loading states and empty states gracefully
+ * - Integrates with the payment processing workflow
+ *
+ * Used in: AccountsReceivablePage.jsx for customer invoice drill-down functionality
+ */
+
 import Modal from '../../components/ui/Modal';
 import { formatCurrency } from '../../utils/currency';
 

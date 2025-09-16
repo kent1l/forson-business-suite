@@ -1,3 +1,19 @@
+/**
+ * CSV Export Utility Functions
+ *
+ * Provides functionality for exporting data to CSV format in the Forson Business Suite.
+ * Handles data serialization, CSV escaping, and browser download initiation.
+ *
+ * Features:
+ * - Automatic CSV escaping for commas and quotes
+ * - Error handling for empty datasets
+ * - User feedback via toast notifications
+ * - Browser-compatible file download
+ * - UTF-8 encoding support
+ *
+ * Used in: Reports, customer lists, invoice exports, and data backup features
+ */
+
 // Utility for CSV export functionality
 import toast from 'react-hot-toast';
 
