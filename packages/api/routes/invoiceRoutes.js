@@ -4,6 +4,7 @@ const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatter');
 const { protect, hasPermission, isAdmin } = require('../middleware/authMiddleware');
 const { constructDisplayName } = require('../helpers/displayNameHelper'); // Import the helper
+const { validatePaymentTerms, formatPaymentTerms } = require('../helpers/paymentTermsHelper');
 const router = express.Router();
 
 // GET /invoices - Get all invoices with date filtering and optional search
@@ -60,7 +61,16 @@ router.get('/invoices', protect, hasPermission('invoicing:create'), async (req, 
                 e.last_name as employee_last_name,
                 r.refunded_amount,
                 GREATEST(i.total_amount - r.refunded_amount, 0) AS net_amount,
-                GREATEST((i.total_amount - r.refunded_amount) - i.amount_paid, 0) AS balance_due
+                GREATEST((i.total_amount - r.refunded_amount) - i.amount_paid, 0) AS balance_due,
+                CASE 
+                    WHEN i.due_date IS NULL THEN NULL
+                    WHEN i.due_date < CURRENT_TIMESTAMP THEN 
+                        EXTRACT(days FROM CURRENT_TIMESTAMP - i.due_date)::integer
+                    ELSE 0
+                END AS days_overdue,
+                ps.settled_amount,
+                ps.pending_amount,
+                ps.on_account_amount
             FROM invoice i
             JOIN customer c ON i.customer_id = c.customer_id
             JOIN employee e ON i.employee_id = e.employee_id
@@ -69,6 +79,14 @@ router.get('/invoices', protect, hasPermission('invoicing:create'), async (req, 
                 FROM credit_note cn
                 WHERE cn.invoice_id = i.invoice_id
             ) r ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT 
+                    COALESCE(SUM(CASE WHEN ip.payment_status = 'settled' THEN ip.amount_paid ELSE 0 END), 0) AS settled_amount,
+                    COALESCE(SUM(CASE WHEN ip.payment_status = 'pending' THEN ip.amount_paid ELSE 0 END), 0) AS pending_amount,
+                    COALESCE(SUM(CASE WHEN ip.payment_status = 'on_account' THEN ip.amount_paid ELSE 0 END), 0) AS on_account_amount
+                FROM invoice_payments ip
+                WHERE ip.invoice_id = i.invoice_id
+            ) ps ON TRUE
             WHERE ${whereClauses.join(' AND ')}
             ORDER BY i.invoice_date DESC;
         `;
@@ -183,23 +201,23 @@ router.post('/invoices', async (req, res) => {
             status = 'Partially Paid';
         }
 
-        // Determine canonical payment_terms_days: prefer explicit field, else try to parse from terms (e.g., "Net 30")
-        let canonicalDays = null;
-        if (typeof payment_terms_days === 'number' && !Number.isNaN(payment_terms_days)) {
-            canonicalDays = payment_terms_days;
-        } else if (terms) {
-            const m = String(terms).match(/(\d{1,4})/);
-            if (m) canonicalDays = parseInt(m[1], 10);
+        // Validate and process payment terms using robust helper
+        const termsValidation = validatePaymentTerms({
+            terms,
+            payment_terms_days,
+            invoice_date: new Date() // Use current time as invoice date
+        });
+
+        if (!termsValidation.isValid) {
+            return res.status(400).json({ 
+                message: 'Invalid payment terms', 
+                errors: termsValidation.errors 
+            });
         }
 
-        // Compute due_date based on canonicalDays if present
-        let dueDate = null;
-        if (canonicalDays && Number.isInteger(canonicalDays)) {
-            // use current timestamp as invoice_date basis
-            const now = new Date();
-            const due = new Date(now.getTime() + canonicalDays * 24 * 60 * 60 * 1000);
-            dueDate = due.toISOString(); // will be sent to pg as timestamptz
-        }
+        const canonicalDays = termsValidation.canonicalDays;
+        const dueDate = termsValidation.dueDate;
+        const normalizedTerms = termsValidation.normalizedTerms;
 
         // Normalize physical receipt number: trim and treat empty as null
         let prn = formatPhysicalReceiptNumber(physical_receipt_no);
@@ -250,7 +268,7 @@ router.post('/invoices', async (req, res) => {
     console.log(`Creating invoice ${invoice_number} - total_amount=${total_amount}, amount_paid=${paid}, status=${status}, payment_terms_days=${canonicalDays}, due_date=${dueDate}`);
 
     // Store numeric paid amount and computed status
-    const invoiceResult = await client.query(invoiceQuery, [invoice_number, customer_id, employee_id, total_amount, paid, status, terms, canonicalDays, dueDate, prn]);
+    const invoiceResult = await client.query(invoiceQuery, [invoice_number, customer_id, employee_id, total_amount, paid, status, normalizedTerms, canonicalDays, dueDate, prn]);
         const newInvoiceId = invoiceResult.rows[0].invoice_id;
 
         for (const line of lines) {
