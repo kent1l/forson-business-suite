@@ -43,7 +43,7 @@ router.post('/login', async (req, res) => {
         );
         const permissions = permissionsRes.rows.map(p => p.permission_key);
 
-        const { password_hash, password_salt, ...user_data } = user;
+    const { password_hash: _password_hash, password_salt: _password_salt, ...user_data } = user;
     
         res.json({ 
             message: 'Login successful', 

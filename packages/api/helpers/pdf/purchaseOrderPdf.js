@@ -98,7 +98,7 @@ const generatePurchaseOrderPDF = async (poData, linesData, options = {}) => {
         throw error;
     } finally {
         if (browser) {
-            try { await browser.close(); } catch (_) {}
+            try { await browser.close(); } catch { /* noop */ }
         }
     }
 };

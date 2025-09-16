@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { protect, hasPermission } = require('../middleware/authMiddleware');
+const { protect } = require('../middleware/authMiddleware');
 const router = express.Router();
 
 // Helper to parse composite IDs like "invoice-26"

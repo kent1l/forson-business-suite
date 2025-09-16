@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
+// eslint-disable-next-line no-unused-vars
 import Modal from '../components/ui/Modal';
+// eslint-disable-next-line no-unused-vars
 import ReceivePaymentForm from '../components/forms/ReceivePaymentForm';
 
 // Utility for currency formatting

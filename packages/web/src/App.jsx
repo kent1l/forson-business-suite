@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+/* eslint-disable no-unused-vars */
+import { useState, useEffect } from 'react';
 import api from './api';
 import { Toaster } from 'react-hot-toast';
 import LoginScreen from './pages/LoginScreen';

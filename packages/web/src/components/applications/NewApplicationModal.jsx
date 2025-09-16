@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import api from '../../api';
+// eslint-disable-next-line no-unused-vars
 import Modal from '../ui/Modal';
 
 const NewApplicationModal = ({ isOpen, onClose, onCreated }) => {

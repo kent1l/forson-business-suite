@@ -4,7 +4,7 @@ const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatter');
 const { protect, hasPermission, isAdmin } = require('../middleware/authMiddleware');
 const { constructDisplayName } = require('../helpers/displayNameHelper'); // Import the helper
-const { validatePaymentTerms, formatPaymentTerms } = require('../helpers/paymentTermsHelper');
+const { validatePaymentTerms } = require('../helpers/paymentTermsHelper');
 const router = express.Router();
 
 // GET /invoices - Get all invoices with date filtering and optional search
