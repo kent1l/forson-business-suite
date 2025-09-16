@@ -50,6 +50,7 @@ registerRoute('/api', './routes/paymentMethodRoutes');
 registerRoute('/api', './routes/draftRoutes');
 registerRoute('/api', './routes/refundRoutes');
 registerRoute('/api', './routes/paymentTermRoutes');
+registerRoute('/api', './routes/arRoutes');
 
 // Documents module (Document Management Interface)
 registerRoute('/api', './routes/documentsRoutes');

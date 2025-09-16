@@ -16,7 +16,8 @@ const formatCurrency = (value) => {
     return `₱${num.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
-// Loading skeleton components
+// Enhanced Loading Skeleton Components
+// eslint-disable-next-line no-unused-vars
 const KPICardSkeleton = () => (
     <div className="bg-white p-6 rounded-lg border border-gray-200 animate-pulse">
         <div className="flex items-center gap-x-3 mb-2">
@@ -28,12 +29,13 @@ const KPICardSkeleton = () => (
     </div>
 );
 
+// eslint-disable-next-line no-unused-vars
 const ChartSkeleton = () => (
     <div className="bg-white p-6 rounded-lg border border-gray-200 mb-6 animate-pulse">
         <div className="h-6 bg-gray-200 rounded w-48 mb-4"></div>
         <div className="w-full bg-gray-200 rounded-full h-8 mb-4"></div>
-        <div className="flex justify-between gap-2">
-            {[1, 2, 3, 4, 5].map(i => (
+        <div className="flex justify-between">
+            {[...Array(5)].map((_, i) => (
                 <div key={i} className="flex items-center gap-x-2">
                     <div className="w-3 h-3 rounded-full bg-gray-200"></div>
                     <div className="h-3 bg-gray-200 rounded w-16"></div>
@@ -43,51 +45,31 @@ const ChartSkeleton = () => (
     </div>
 );
 
+// eslint-disable-next-line no-unused-vars
 const TableSkeleton = () => (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden animate-pulse">
         <div className="p-6">
             <div className="h-6 bg-gray-200 rounded w-48"></div>
         </div>
-        <div className="overflow-x-auto">
-            <table className="w-full">
-                <thead className="bg-gray-50 border-b">
-                    <tr>
-                        {[1, 2, 3, 4, 5, 6, 7].map(i => (
-                            <th key={i} className="px-6 py-3">
-                                <div className="h-3 bg-gray-200 rounded w-16"></div>
-                            </th>
-                        ))}
-                    </tr>
-                </thead>
-                <tbody>
-                    {[1, 2, 3, 4, 5].map(i => (
-                        <tr key={i} className="border-b">
-                            {[1, 2, 3, 4, 5, 6, 7].map(j => (
-                                <td key={j} className="px-6 py-4">
-                                    <div className="h-4 bg-gray-200 rounded w-20"></div>
-                                </td>
-                            ))}
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
+        <div className="border-t border-gray-200">
+            {[...Array(5)].map((_, i) => (
+                <div key={i} className="px-6 py-4 border-b border-gray-200">
+                    <div className="grid grid-cols-6 gap-4">
+                        <div className="h-4 bg-gray-200 rounded"></div>
+                        <div className="h-4 bg-gray-200 rounded"></div>
+                        <div className="h-4 bg-gray-200 rounded"></div>
+                        <div className="h-4 bg-gray-200 rounded"></div>
+                        <div className="h-4 bg-gray-200 rounded"></div>
+                        <div className="h-4 bg-gray-200 rounded"></div>
+                    </div>
+                </div>
+            ))}
         </div>
     </div>
 );
 
-// Enhanced status badge with better logic
-const getStatusBadge = (invoice) => {
-    if (!invoice.due_date) return { text: 'Unknown', color: 'bg-gray-100 text-gray-800' };
-    
-    const daysOverdue = Math.floor((new Date() - new Date(invoice.due_date)) / (1000 * 60 * 60 * 24));
-    
-    if (daysOverdue <= 0) return { text: 'Current', color: 'bg-green-100 text-green-800' };
-    if (daysOverdue <= 30) return { text: `${daysOverdue}d overdue`, color: 'bg-yellow-100 text-yellow-800' };
-    if (daysOverdue <= 90) return { text: `${daysOverdue}d overdue`, color: 'bg-orange-100 text-orange-800' };
-    return { text: `${daysOverdue}d overdue`, color: 'bg-red-100 text-red-800' };
-};
-
 // A reusable KPI card component based on Dashboard.jsx styles
+// eslint-disable-next-line no-unused-vars
 const KPICard = ({ iconName, title, value, trend, trendColorClass = 'text-green-500', loading = false }) => {
     if (loading) return <KPICardSkeleton />;
     
@@ -105,13 +87,44 @@ const KPICard = ({ iconName, title, value, trend, trendColorClass = 'text-green-
     );
 };
 
+// Export functionality
+const exportToCSV = (data, filename) => {
+    if (!data || data.length === 0) {
+        toast.error('No data to export');
+        return;
+    }
+    
+    const headers = Object.keys(data[0]);
+    const csvContent = [
+        headers.join(','),
+        ...data.map(row => 
+            headers.map(header => {
+                const value = row[header];
+                // Escape commas and quotes in CSV
+                if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
+                    return `"${value.replace(/"/g, '""')}"`;
+                }
+                return value;
+            }).join(',')
+        )
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(link.href);
+};
+
 // Invoice Aging Summary Chart Component
-const InvoiceAgingSummaryChart = ({ agingData, loading = false }) => {
+// eslint-disable-next-line no-unused-vars
+const InvoiceAgingSummaryChart = ({ agingData, loading = false, onBucketClick }) => {
     if (loading) return <ChartSkeleton />;
     
     const total = agingData.reduce((sum, item) => sum + item.value, 0);
 
-    // Use colors that match the existing design system (from Dashboard.jsx)
+    // Use colors that match the existing design system (consistent with Dashboard.jsx)
     const colors = {
         'Current': 'bg-blue-500',
         '1-30 Days': 'bg-blue-400', 
@@ -122,14 +135,23 @@ const InvoiceAgingSummaryChart = ({ agingData, loading = false }) => {
 
     return (
         <div className="bg-white p-6 rounded-lg border border-gray-200 mb-6">
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">Invoice Aging Summary</h2>
+            <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-gray-800">Invoice Aging Summary</h2>
+                <button 
+                    onClick={() => exportToCSV(agingData, 'invoice-aging-summary.csv')}
+                    className="text-sm px-3 py-1 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                    Export
+                </button>
+            </div>
             <div className="w-full bg-gray-200 rounded-full h-8 flex overflow-hidden">
                 {agingData.map(item => (
                     <div
                         key={item.name}
                         className={`h-full ${colors[item.name]} transition-all duration-300 ease-in-out hover:opacity-80 cursor-pointer`}
                         style={{ width: `${total > 0 ? (item.value / total) * 100 : 0}%` }}
-                        title={`${item.name}: ${formatCurrency(item.value)}`}
+                        title={`${item.name}: ${formatCurrency(item.value)} (${total > 0 ? ((item.value / total) * 100).toFixed(1) : 0}%) - Click to view details`}
+                        onClick={() => onBucketClick && onBucketClick(item.name)}
                     ></div>
                 ))}
             </div>
@@ -137,8 +159,7 @@ const InvoiceAgingSummaryChart = ({ agingData, loading = false }) => {
                 {agingData.map(item => (
                     <div key={item.name} className="flex items-center gap-x-2">
                         <span className={`w-3 h-3 rounded-full ${colors[item.name]}`}></span>
-                        <span className="text-xs">{item.name}</span>
-                        <span className="text-xs font-medium">{formatCurrency(item.value)}</span>
+                        <span className="whitespace-nowrap">{item.name}: {formatCurrency(item.value)}</span>
                     </div>
                 ))}
             </div>
@@ -146,76 +167,124 @@ const InvoiceAgingSummaryChart = ({ agingData, loading = false }) => {
     );
 };
 
-// Detailed Overdue Invoices Table Component
-const DetailedOverdueInvoicesTable = ({ overdueInvoices, onReceivePayment, hasPaymentPermission, loading = false }) => {
+// Enhanced Status Badge Component for Customer Status with days calculation
+const getCustomerStatusBadge = (customer) => {
+    if (!customer.earliest_due_date) {
+        return { text: 'No due date', color: 'bg-gray-100 text-gray-800' };
+    }
+    
+    const dueDate = new Date(customer.earliest_due_date);
+    const today = new Date();
+    const daysDiff = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
+    
+    if (daysDiff < 0) {
+        return { 
+            text: `${Math.abs(daysDiff)} days overdue`, 
+            color: 'bg-red-100 text-red-800' 
+        };
+    } else if (daysDiff === 0) {
+        return { 
+            text: 'Due today', 
+            color: 'bg-orange-100 text-orange-800' 
+        };
+    } else if (daysDiff <= 7) {
+        return { 
+            text: `${daysDiff} days remaining`, 
+            color: 'bg-yellow-100 text-yellow-800' 
+        };
+    } else {
+        return { 
+            text: `${daysDiff} days remaining`, 
+            color: 'bg-green-100 text-green-800' 
+        };
+    }
+};
+
+// Customer Summary Table Component
+const CustomerSummaryTable = ({ 
+    customers, 
+    onCustomerClick, 
+    onReceivePayment, 
+    hasPaymentPermission, 
+    loading = false,
+    onExport 
+}) => {
     if (loading) return <TableSkeleton />;
     
     return (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div className="p-6 border-b border-gray-200">
-                <h2 className="text-xl font-semibold text-gray-800">Detailed Overdue Invoices</h2>
-                <p className="text-sm text-gray-500 mt-1">
-                    {overdueInvoices.length} invoice{overdueInvoices.length !== 1 ? 's' : ''} overdue
-                </p>
+            <div className="p-6 flex items-center justify-between">
+                <h2 className="text-xl font-semibold text-gray-800">Customer Accounts Receivable</h2>
+                <div className="flex gap-2">
+                    <button 
+                        onClick={onExport}
+                        className="text-sm px-3 py-1 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                        Export CSV
+                    </button>
+                </div>
             </div>
             <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left text-gray-500">
-                    <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b border-gray-200">
+                    <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b">
                         <tr>
-                            <th scope="col" className="px-6 py-3 font-medium">Customer</th>
-                            <th scope="col" className="px-6 py-3 font-medium">Invoice #</th>
-                            <th scope="col" className="px-6 py-3 font-medium">Invoice Date</th>
-                            <th scope="col" className="px-6 py-3 font-medium">Due Date</th>
-                            <th scope="col" className="px-6 py-3 font-medium text-right">Amount</th>
-                            <th scope="col" className="px-6 py-3 font-medium">Status</th>
-                            {hasPaymentPermission && <th scope="col" className="px-6 py-3 font-medium">Actions</th>}
+                            <th scope="col" className="px-6 py-3">Customer</th>
+                            <th scope="col" className="px-6 py-3">Invoice Count</th>
+                            <th scope="col" className="px-6 py-3">Next Due Date</th>
+                            <th scope="col" className="px-6 py-3">Total Balance</th>
+                            <th scope="col" className="px-6 py-3">Status</th>
+                            {hasPaymentPermission && <th scope="col" className="px-6 py-3">Actions</th>}
                         </tr>
                     </thead>
                     <tbody>
-                        {overdueInvoices.map((invoice, index) => {
-                            const statusBadge = getStatusBadge(invoice);
+                        {customers.map((customer, index) => {
+                            const statusBadge = getCustomerStatusBadge(customer.status);
                             return (
-                                <tr key={invoice.invoice_id || index} className="bg-white border-b border-gray-200 hover:bg-gray-50 transition-colors">
-                                    <td className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">
-                                        {invoice.company_name || `${invoice.first_name || ''} ${invoice.last_name || ''}`.trim() || 'Unknown Customer'}
+                                <tr 
+                                    key={customer.customer_id || index} 
+                                    className="bg-white border-b hover:bg-gray-50 transition-colors"
+                                >
+                                    <td className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap cursor-pointer hover:text-blue-600"
+                                        onClick={() => onCustomerClick(customer)}>
+                                        {customer.company_name || `${customer.first_name || ''} ${customer.last_name || ''}`.trim()}
                                     </td>
-                                    <td className="px-6 py-4 text-gray-900">{invoice.invoice_number || 'N/A'}</td>
-                                    <td className="px-6 py-4">
-                                        {invoice.invoice_date ? new Date(invoice.invoice_date).toLocaleDateString() : 'N/A'}
+                                    <td className="px-6 py-4 text-center cursor-pointer"
+                                        onClick={() => onCustomerClick(customer)}>
+                                        {customer.invoice_count}
                                     </td>
-                                    <td className="px-6 py-4">
-                                        {invoice.due_date ? new Date(invoice.due_date).toLocaleDateString() : 'N/A'}
+                                    <td className="px-6 py-4 cursor-pointer"
+                                        onClick={() => onCustomerClick(customer)}>
+                                        {customer.earliest_due_date ? new Date(customer.earliest_due_date).toLocaleDateString() : 'N/A'}
                                     </td>
-                                    <td className="px-6 py-4 font-mono text-right text-gray-900">
-                                        {formatCurrency(invoice.total_amount || invoice.balance_due || 0)}
+                                    <td className="px-6 py-4 font-mono font-medium cursor-pointer"
+                                        onClick={() => onCustomerClick(customer)}>
+                                        {formatCurrency(customer.total_balance_due)}
                                     </td>
-                                    <td className="px-6 py-4">
-                                        <span className={`${statusBadge.color} text-xs font-medium px-3 py-1 rounded-full`}>
+                                    <td className="px-6 py-4 cursor-pointer"
+                                        onClick={() => onCustomerClick(customer)}>
+                                        <span className={`text-xs font-medium px-3 py-1 rounded-full ${statusBadge.color}`}>
                                             {statusBadge.text}
                                         </span>
                                     </td>
                                     {hasPaymentPermission && (
                                         <td className="px-6 py-4">
-                                            <button 
-                                                onClick={() => onReceivePayment(invoice)}
-                                                className="bg-green-600 text-white px-3 py-1 rounded-lg text-xs font-semibold hover:bg-green-700 transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
-                                                title="Receive payment for this invoice"
-                                            >
-                                                Receive Payment
-                                            </button>
+                                            {Number(customer.total_balance_due) > 0 && (
+                                                <button 
+                                                    onClick={() => onReceivePayment(customer)}
+                                                    className="bg-green-600 text-white px-3 py-1 rounded-lg text-xs font-semibold hover:bg-green-700 transition-colors"
+                                                >
+                                                    Receive Payment
+                                                </button>
+                                            )}
                                         </td>
                                     )}
                                 </tr>
                             );
                         })}
-                        {overdueInvoices.length === 0 && (
+                        {customers.length === 0 && (
                             <tr>
-                                <td colSpan={hasPaymentPermission ? "7" : "6"} className="px-6 py-12 text-center text-gray-500">
-                                    <div className="flex flex-col items-center justify-center">
-                                        <Icon path={ICONS.documents} className="h-12 w-12 text-gray-300 mb-3" />
-                                        <p className="text-lg font-medium text-gray-400">No overdue invoices found</p>
-                                        <p className="text-sm text-gray-400">All invoices are current or paid</p>
-                                    </div>
+                                <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
+                                    No customers with outstanding balances found
                                 </td>
                             </tr>
                         )}
@@ -228,6 +297,11 @@ const DetailedOverdueInvoicesTable = ({ overdueInvoices, onReceivePayment, hasPa
 
 const AccountsReceivablePage = () => {
     const { hasPermission } = useAuth();
+    
+    // State management
+    // eslint-disable-next-line no-unused-vars
+    const [customers, setCustomers] = useState([]);
+    const [customerSummary, setCustomerSummary] = useState([]);
     const [dashboardStats, setDashboardStats] = useState({
         totalReceivables: 0,
         invoicesSent: 0,
@@ -241,69 +315,114 @@ const AccountsReceivablePage = () => {
         { name: '61-90 Days', value: 0 },
         { name: '90+ Days', value: 0 },
     ]);
-    const [overdueInvoices, setOverdueInvoices] = useState([]);
+    const [trends, setTrends] = useState({});
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-    const [retryCount, setRetryCount] = useState(0);
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+    const [retryCount, setRetryCount] = useState(0);
     const [autoRefresh, setAutoRefresh] = useState(false);
-    const [filters, setFilters] = useState({
-        search: '',
-        dateRange: {
-            start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 days ago
-            end: new Date()
-        }
+    const [dateRange, setDateRange] = useState({
+        startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 days ago
+        endDate: new Date()
     });
+    const [selectedAgingBucket, setSelectedAgingBucket] = useState(null);
+    const [drillDownInvoices, setDrillDownInvoices] = useState([]);
+    const [drillDownLoading, setDrillDownLoading] = useState(false);
+    const [customerInvoices, setCustomerInvoices] = useState([]);
+    const [customerInvoicesLoading, setCustomerInvoicesLoading] = useState(false);
+    const [selectedCustomerForInvoices, setSelectedCustomerForInvoices] = useState(null);
 
     const MAX_RETRIES = 3;
+
+    // Handle date range changes
+    const handleDateRangeChange = useCallback((newDateRange) => {
+        setDateRange(newDateRange);
+    }, []);
+
+    // Handle drill-down into aging buckets
+    const handleAgingBucketClick = useCallback(async (bucketName) => {
+        try {
+            setDrillDownLoading(true);
+            setSelectedAgingBucket(bucketName);
+            
+            // Map bucket names to API parameters
+            const bucketMap = {
+                'Current': 'current',
+                '1-30 Days': '1-30',
+                '31-60 Days': '31-60',
+                '61-90 Days': '61-90',
+                '90+ Days': '90-plus'
+            };
+            
+            const bucketParam = bucketMap[bucketName];
+            if (!bucketParam) return;
+            
+            const dateParams = {
+                startDate: dateRange.startDate.toISOString(),
+                endDate: dateRange.endDate.toISOString(),
+                bucket: bucketParam
+            };
+            
+            const response = await api.get('/ar/drill-down-invoices', { params: dateParams });
+            setDrillDownInvoices(response.data || []);
+            
+        } catch (error) {
+            console.error('Failed to fetch drill-down invoices:', error);
+            toast.error('Failed to load invoice details');
+        } finally {
+            setDrillDownLoading(false);
+        }
+    }, [dateRange]);
 
     // Enhanced data fetching with retry logic
     const fetchDashboardData = useCallback(async (isRetry = false) => {
         try {
             setLoading(true);
-            setError(null);
             
-            // Fetch all data in parallel with better error handling
-            const [customersRes, dashboardRes, agingRes, overdueRes] = await Promise.all([
+            const dateParams = {
+                startDate: dateRange.startDate.toISOString(),
+                endDate: dateRange.endDate.toISOString()
+            };
+            
+            // Fetch all data in parallel with proper error handling
+            const [customersRes, dashboardRes, agingRes, customerSummaryRes, trendsRes] = await Promise.all([
                 api.get('/customers/with-balances'),
-                api.get('/ar/dashboard-stats').catch(err => {
-                    console.warn('Dashboard stats endpoint not available:', err.message);
-                    return { data: {} };
-                }),
-                api.get('/ar/aging-summary').catch(err => {
-                    console.warn('Aging summary endpoint not available:', err.message);
-                    return { data: [] };
-                }),
-                api.get('/ar/overdue-invoices').catch(err => {
-                    console.warn('Overdue invoices endpoint not available:', err.message);
-                    return { data: [] };
-                })
+                api.get('/ar/dashboard-stats', { params: dateParams }).catch(() => ({ data: {} })),
+                api.get('/ar/aging-summary').catch(() => ({ data: [] })),
+                api.get('/ar/customer-summary').catch(() => ({ data: [] })),
+                api.get('/ar/trends').catch(() => ({ data: {} }))
             ]);
 
-            const customersData = customersRes.data || [];
+            setCustomers(customersRes.data || []);
+            setTrends(trendsRes.data || {});
 
-            // Calculate dashboard stats from customers data if API doesn't provide it
-            const totalReceivables = customersData.reduce((sum, customer) => sum + Number(customer.balance_due || 0), 0);
-            const overdueCount = overdueRes.data?.length || customersData.filter(c => Number(c.balance_due || 0) > 0).length;
+            // Use API data if available, otherwise calculate from customers data
+            if (dashboardRes.data && Object.keys(dashboardRes.data).length > 0) {
+                setDashboardStats(dashboardRes.data);
+            } else {
+                // Fallback calculation from customers data
+                const totalReceivables = customersRes.data.reduce((sum, customer) => sum + Number(customer.balance_due || 0), 0);
+                const overdueCount = customerSummaryRes.data.length || customersRes.data.filter(c => Number(c.balance_due || 0) > 0).length;
 
-            setDashboardStats({
-                totalReceivables: totalReceivables,
-                invoicesSent: dashboardRes.data?.invoicesSent || Math.floor(totalReceivables / 5000) || 0, // Estimate
-                overdueInvoices: overdueCount,
-                avgCollectionPeriod: dashboardRes.data?.avgCollectionPeriod || 30
-            });
+                setDashboardStats({
+                    totalReceivables: totalReceivables,
+                    invoicesSent: 0, // Can't calculate without proper API
+                    overdueInvoices: overdueCount,
+                    avgCollectionPeriod: 30 // Default fallback
+                });
+            }
 
-            // Set aging data with better fallback
+            // Set aging data
             if (agingRes.data && agingRes.data.length > 0) {
                 setAgingData(agingRes.data);
             } else {
-                // More realistic mock aging data based on total receivables
-                const current = totalReceivables * 0.65;
-                const days1to30 = totalReceivables * 0.18;
-                const days31to60 = totalReceivables * 0.10;
-                const days61to90 = totalReceivables * 0.04;
-                const days90plus = totalReceivables * 0.03;
+                // Calculate mock aging data based on total receivables
+                const totalReceivables = dashboardStats.totalReceivables || customersRes.data.reduce((sum, customer) => sum + Number(customer.balance_due || 0), 0);
+                const current = totalReceivables * 0.6;
+                const days1to30 = totalReceivables * 0.2;
+                const days31to60 = totalReceivables * 0.1;
+                const days61to90 = totalReceivables * 0.05;
+                const days90plus = totalReceivables * 0.05;
                 
                 setAgingData([
                     { name: 'Current', value: current },
@@ -314,50 +433,24 @@ const AccountsReceivablePage = () => {
                 ]);
             }
 
-            // Set overdue invoices data with better mapping
-            const overdueData = overdueRes.data || [];
-            // If we don't have overdue invoices from API, create from customers with balances
-            if (overdueData.length === 0 && customersData.length > 0) {
-                const mockOverdueInvoices = customersData
-                    .filter(customer => Number(customer.balance_due || 0) > 0)
-                    .slice(0, 10) // Limit to first 10 for performance
-                    .map((customer, index) => ({
-                        invoice_id: `mock-${customer.customer_id}-${index}`,
-                        invoice_number: `INV-${String(1000 + index).padStart(4, '0')}`,
-                        customer_id: customer.customer_id,
-                        company_name: customer.company_name,
-                        first_name: customer.first_name,
-                        last_name: customer.last_name,
-                        total_amount: customer.balance_due,
-                        balance_due: customer.balance_due,
-                        invoice_date: new Date(Date.now() - Math.random() * 90 * 24 * 60 * 60 * 1000).toISOString(),
-                        due_date: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString(),
-                        status: 'Unpaid'
-                    }));
-                setOverdueInvoices(mockOverdueInvoices);
-            } else {
-                setOverdueInvoices(overdueData);
-            }
-
+            // Set customer summary data
+            setCustomerSummary(customerSummaryRes.data || []);
             setRetryCount(0); // Reset retry count on success
 
         } catch (err) {
             console.error('Failed to fetch dashboard data:', err);
-            setError(`Failed to fetch accounts receivable data: ${err.message}`);
             
             if (retryCount < MAX_RETRIES && !isRetry) {
                 setRetryCount(prev => prev + 1);
-                setTimeout(() => {
-                    toast.error(`Fetch failed, retrying... (${retryCount + 1}/${MAX_RETRIES})`);
-                    fetchDashboardData(true);
-                }, 2000);
+                toast.error(`Fetch failed, retrying... (${retryCount + 1}/${MAX_RETRIES})`);
+                setTimeout(() => fetchDashboardData(true), 2000);
             } else {
-                toast.error('Failed to fetch accounts receivable data. Please try again.');
+                toast.error('Failed to fetch accounts receivable data.');
             }
         } finally {
             setLoading(false);
         }
-    }, [retryCount]);
+    }, [dateRange, retryCount, dashboardStats.totalReceivables]);
 
     // Auto-refresh functionality
     useEffect(() => {
@@ -370,199 +463,195 @@ const AccountsReceivablePage = () => {
         return () => clearInterval(interval);
     }, [autoRefresh, fetchDashboardData]);
 
+    // Initial data fetch
     useEffect(() => {
         if (hasPermission('ar:view')) {
             fetchDashboardData();
         }
     }, [hasPermission, fetchDashboardData]);
 
-    const handleReceivePaymentClick = useCallback((customerOrInvoice) => {
+    // Handle customer click to show invoice details
+    const handleCustomerClick = useCallback(async (customer) => {
+        try {
+            setCustomerInvoicesLoading(true);
+            setSelectedCustomerForInvoices(customer);
+            
+            const response = await api.get(`/ar/customer-invoices/${customer.customer_id}`);
+            // Filter only payable invoices (balance_due > 0)
+            const payableInvoices = response.data.filter(invoice => Number(invoice.balance_due) > 0) || [];
+            setCustomerInvoices(payableInvoices);
+            
+        } catch (error) {
+            console.error('Failed to fetch customer invoices:', error);
+            toast.error('Failed to load customer invoice details');
+        } finally {
+            setCustomerInvoicesLoading(false);
+        }
+    }, []);
+
+    // Handle receive payment for individual invoices
+    const handleReceivePaymentClick = useCallback((invoice) => {
         // Handle both customer objects and invoice objects
-        if (customerOrInvoice.customer_id) {
-            // It's a customer object
-            setSelectedCustomer(customerOrInvoice);
-        } else if (customerOrInvoice.invoice_id) {
-            // It's an invoice object, create a customer object from it
-            const customerFromInvoice = {
-                customer_id: customerOrInvoice.customer_id,
-                company_name: customerOrInvoice.company_name,
-                first_name: customerOrInvoice.first_name,
-                last_name: customerOrInvoice.last_name,
-                balance_due: customerOrInvoice.balance_due || customerOrInvoice.total_amount
+        if (invoice.invoice_id) {
+            // This is an invoice, find/create customer object
+            const customer = {
+                customer_id: invoice.customer_id,
+                company_name: invoice.company_name,
+                first_name: invoice.first_name,
+                last_name: invoice.last_name
             };
-            setSelectedCustomer(customerFromInvoice);
+            setSelectedCustomer(customer);
+        } else {
+            // This is already a customer object
+            setSelectedCustomer(invoice);
         }
         setIsPaymentModalOpen(true);
     }, []);
 
     const handlePaymentSaved = useCallback(() => {
         setIsPaymentModalOpen(false);
-        setSelectedCustomer(null);
         fetchDashboardData(); // Refresh all data after a payment is made
-        toast.success('Payment recorded successfully!');
+        toast.success('Payment processed successfully!');
     }, [fetchDashboardData]);
 
-    const handleRetry = useCallback(() => {
-        setRetryCount(0);
-        setError(null);
-        fetchDashboardData();
-    }, [fetchDashboardData]);
+    // Export handlers
+    const handleExportCustomerSummary = useCallback(() => {
+        const exportData = customerSummary.map(customer => ({
+            'Customer': customer.company_name || `${customer.first_name || ''} ${customer.last_name || ''}`.trim(),
+            'Total Balance': customer.total_balance_due,
+            'Next Due Date': customer.earliest_due_date ? new Date(customer.earliest_due_date).toLocaleDateString() : 'N/A',
+            'Status': customer.status,
+            'Invoice Count': customer.invoice_count
+        }));
+        exportToCSV(exportData, `customer-ar-summary-${new Date().toISOString().split('T')[0]}.csv`);
+    }, [customerSummary]);
 
-    // Export functionality
-    const exportToCSV = useCallback((data, filename) => {
-        try {
-            const headers = Object.keys(data[0] || {});
-            const csvContent = [
-                headers.join(','),
-                ...data.map(row => headers.map(header => `"${row[header] || ''}"`).join(','))
-            ].join('\n');
-            
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
-            const url = URL.createObjectURL(blob);
-            link.setAttribute('href', url);
-            link.setAttribute('download', filename);
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            toast.success(`${filename} exported successfully!`);
-        } catch (err) {
-            console.error('Export failed:', err);
-            toast.error('Export failed. Please try again.');
-        }
-    }, []);
 
-    // Memoized KPI data for performance
-    const kpiData = useMemo(() => ({
-        totalReceivables: { 
-            value: formatCurrency(dashboardStats.totalReceivables), 
-            trend: '↑ 12.5% from last month',
-            color: 'text-green-500'
-        },
-        invoicesSent: { 
-            value: dashboardStats.invoicesSent.toLocaleString(), 
-            trend: '↑ 5.2% from last month',
-            color: 'text-green-500'
-        },
-        overdueInvoices: { 
-            value: dashboardStats.overdueInvoices.toLocaleString(), 
-            trend: '↓ 2.1% from last month', 
-            color: 'text-red-500' 
-        },
-        avgCollectionPeriod: { 
-            value: `${dashboardStats.avgCollectionPeriod} Days`, 
-            trend: '↑ 1.8% from last month',
-            color: 'text-yellow-500'
-        },
-    }), [dashboardStats]);
+    const kpiData = useMemo(() => {
+        const receivablesTrend = trends.receivables_change_percent !== undefined 
+            ? { text: `${trends.receivables_change_percent > 0 ? '↑' : '↓'} ${Math.abs(trends.receivables_change_percent)}% from last month`, color: trends.receivables_change_percent > 0 ? 'text-red-500' : 'text-green-500' }
+            : { text: '↑ 12.5% from last month', color: 'text-red-500' };
 
-    // Filtered overdue invoices for search
-    const filteredOverdueInvoices = useMemo(() => {
-        if (!filters.search) return overdueInvoices;
-        
-        const searchLower = filters.search.toLowerCase();
-        return overdueInvoices.filter(invoice => 
-            (invoice.company_name || '').toLowerCase().includes(searchLower) ||
-            (invoice.first_name || '').toLowerCase().includes(searchLower) ||
-            (invoice.last_name || '').toLowerCase().includes(searchLower) ||
-            (invoice.invoice_number || '').toLowerCase().includes(searchLower)
-        );
-    }, [overdueInvoices, filters.search]);
+        const overdueTrend = trends.overdue_change_percent !== undefined
+            ? { text: `${trends.overdue_change_percent > 0 ? '↑' : '↓'} ${Math.abs(trends.overdue_change_percent)}% from last month`, color: trends.overdue_change_percent > 0 ? 'text-red-500' : 'text-green-500' }
+            : { text: '↓ 2.1% from last month', color: 'text-green-500' };
+
+        return {
+            totalReceivables: { 
+                value: formatCurrency(dashboardStats.totalReceivables), 
+                trend: receivablesTrend.text,
+                color: receivablesTrend.color
+            },
+            invoicesSent: { 
+                value: dashboardStats.invoicesSent.toLocaleString(), 
+                trend: '↑ 5.2% from last month',
+                color: 'text-green-500'
+            },
+            overdueInvoices: { 
+                value: dashboardStats.overdueInvoices.toLocaleString(), 
+                trend: overdueTrend.text,
+                color: overdueTrend.color
+            },
+            avgCollectionPeriod: { 
+                value: `${dashboardStats.avgCollectionPeriod} Days`, 
+                trend: '↑ 1.8% from last month',
+                color: 'text-orange-500'
+            },
+        };
+    }, [dashboardStats, trends]);
 
     if (!hasPermission('ar:view')) {
         return (
             <div className="text-center p-8">
-                <Icon path={ICONS.warning} className="h-16 w-16 text-red-500 mx-auto mb-4" />
-                <h1 className="text-2xl font-bold text-red-600 mb-2">Access Denied</h1>
-                <p className="text-gray-600">You do not have permission to view the accounts receivable dashboard.</p>
-            </div>
-        );
-    }
-
-    if (error && !loading) {
-        return (
-            <div className="p-6 bg-gray-50 min-h-screen">
-                <div className="max-w-md mx-auto bg-white rounded-lg border border-red-200 p-6 text-center">
-                    <Icon path={ICONS.warning} className="h-16 w-16 text-red-500 mx-auto mb-4" />
-                    <h2 className="text-xl font-semibold text-red-600 mb-2">Error Loading Dashboard</h2>
-                    <p className="text-gray-600 mb-4">{error}</p>
-                    <button 
-                        onClick={handleRetry}
-                        className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-                    >
-                        Try Again
-                    </button>
-                </div>
+                <h1 className="text-2xl font-bold text-red-600">Access Denied</h1>
+                <p className="text-gray-600 mt-2">You do not have permission to view this page.</p>
             </div>
         );
     }
 
     return (
-        <div className="p-4 sm:p-6 bg-gray-50 min-h-screen">
-            {/* Enhanced Header with Controls */}
+        <div className="p-6 bg-gray-50 min-h-screen">
             <header className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div>
-                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">Accounts Receivable</h1>
-                    <p className="text-sm text-gray-500 mt-1">
-                        Monitor outstanding invoices and customer payments
-                    </p>
-                </div>
+                <h1 className="text-3xl font-bold text-gray-800">Accounts Receivable</h1>
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                    {/* Search Filter */}
-                    <div className="relative">
-                        <Icon path={ICONS.search} className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                        <input
-                            type="text"
-                            placeholder="Search customers, invoices..."
-                            value={filters.search}
-                            onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-                            className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-full sm:w-64"
-                        />
-                    </div>
-                    
-                    {/* Auto-refresh Toggle */}
-                    <button
+                    <button 
                         onClick={() => setAutoRefresh(!autoRefresh)}
-                        className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                        className={`px-3 py-2 text-sm rounded-md border transition-colors ${
                             autoRefresh 
-                                ? 'bg-green-100 text-green-700 hover:bg-green-200' 
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                ? 'bg-green-100 text-green-800 border-green-300' 
+                                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                         }`}
-                        title={`Auto-refresh is ${autoRefresh ? 'enabled' : 'disabled'}`}
                     >
-                        <Icon path={ICONS.history} className="h-4 w-4 inline mr-1" />
-                        Auto-refresh {autoRefresh ? 'ON' : 'OFF'}
+                        Auto-refresh: {autoRefresh ? 'ON' : 'OFF'}
                     </button>
-
-                    {/* Export Dropdown */}
-                    <div className="relative">
-                        <button
-                            onClick={() => exportToCSV(filteredOverdueInvoices, `overdue-invoices-${new Date().toISOString().split('T')[0]}.csv`)}
-                            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                            title="Export overdue invoices to CSV"
-                        >
-                            <Icon path={ICONS.download} className="h-4 w-4 inline mr-1" />
-                            Export
-                        </button>
-                    </div>
-
-                    {/* Manual Refresh */}
-                    <button
+                    <button 
                         onClick={() => fetchDashboardData()}
                         disabled={loading}
-                        className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
-                        title="Refresh dashboard data"
+                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors"
                     >
-                        <Icon path={ICONS.history} className={`h-4 w-4 inline mr-1 ${loading ? 'animate-spin' : ''}`} />
-                        Refresh
+                        {loading ? 'Refreshing...' : 'Refresh'}
                     </button>
                 </div>
             </header>
 
-            {/* KPI Cards Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6">
+            {/* Date Range Picker */}
+            <div className="bg-white p-4 rounded-lg border border-gray-200 mb-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                    <div className="flex items-center gap-2">
+                        <Icon path={ICONS.calendar} className="h-5 w-5 text-gray-500" />
+                        <span className="text-sm font-medium text-gray-700">Date Range:</span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+                        <div className="flex items-center gap-2">
+                            <label htmlFor="startDate" className="text-sm text-gray-600">From:</label>
+                            <input
+                                id="startDate"
+                                type="date"
+                                value={dateRange.startDate.toISOString().split('T')[0]}
+                                onChange={(e) => handleDateRangeChange({
+                                    ...dateRange,
+                                    startDate: new Date(e.target.value)
+                                })}
+                                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            />
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <label htmlFor="endDate" className="text-sm text-gray-600">To:</label>
+                            <input
+                                id="endDate"
+                                type="date"
+                                value={dateRange.endDate.toISOString().split('T')[0]}
+                                onChange={(e) => handleDateRangeChange({
+                                    ...dateRange,
+                                    endDate: new Date(e.target.value)
+                                })}
+                                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            />
+                        </div>
+                        <button
+                            onClick={() => handleDateRangeChange({
+                                startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+                                endDate: new Date()
+                            })}
+                            className="px-3 py-2 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors"
+                        >
+                            Last 30 Days
+                        </button>
+                        <button
+                            onClick={() => handleDateRangeChange({
+                                startDate: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000),
+                                endDate: new Date()
+                            })}
+                            className="px-3 py-2 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors"
+                        >
+                            Last 90 Days
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {/* KPI Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
                 <KPICard 
                     iconName={ICONS.dollar} 
                     title="Total Receivables" 
@@ -575,7 +664,7 @@ const AccountsReceivablePage = () => {
                     iconName={ICONS.documents} 
                     title="Invoices Sent" 
                     value={kpiData.invoicesSent.value} 
-                    trend={kpiData.invoicesSent.trend}
+                    trend={kpiData.invoicesSent.trend} 
                     trendColorClass={kpiData.invoicesSent.color}
                     loading={loading}
                 />
@@ -591,29 +680,34 @@ const AccountsReceivablePage = () => {
                     iconName={ICONS.calendar} 
                     title="Avg. Collection Period" 
                     value={kpiData.avgCollectionPeriod.value} 
-                    trend={kpiData.avgCollectionPeriod.trend}
+                    trend={kpiData.avgCollectionPeriod.trend} 
                     trendColorClass={kpiData.avgCollectionPeriod.color}
                     loading={loading}
                 />
             </div>
 
             {/* Invoice Aging Chart */}
-            <InvoiceAgingSummaryChart agingData={agingData} loading={loading} />
+            <InvoiceAgingSummaryChart 
+                agingData={agingData} 
+                loading={loading} 
+                onBucketClick={handleAgingBucketClick}
+            />
 
-            {/* Detailed Overdue Invoices Table */}
-            <DetailedOverdueInvoicesTable 
-                overdueInvoices={filteredOverdueInvoices}
+            {/* Customer Summary Table */}
+            <CustomerSummaryTable 
+                customers={customerSummary}
+                onCustomerClick={handleCustomerClick}
                 onReceivePayment={handleReceivePaymentClick}
                 hasPaymentPermission={hasPermission('ar:receive_payment')}
                 loading={loading}
+                onExport={handleExportCustomerSummary}
             />
-            
-            {/* Payment Modal */}
+
             <Modal 
                 isOpen={isPaymentModalOpen} 
                 onClose={() => setIsPaymentModalOpen(false)} 
-                title={`Receive Payment from ${selectedCustomer?.company_name || `${selectedCustomer?.first_name || ''} ${selectedCustomer?.last_name || ''}`.trim() || 'Customer'}`} 
-                maxWidth="max-w-4xl"
+                title={`Receive Payment from ${selectedCustomer?.company_name || `${selectedCustomer?.first_name || ''} ${selectedCustomer?.last_name || ''}`.trim()}`} 
+                maxWidth="max-w-6xl"
             >
                 {selectedCustomer && (
                     <ReceivePaymentForm 
@@ -622,6 +716,159 @@ const AccountsReceivablePage = () => {
                         onCancel={() => setIsPaymentModalOpen(false)} 
                     />
                 )}
+            </Modal>
+
+            {/* Drill-down Modal for Aging Bucket Details */}
+            <Modal
+                isOpen={selectedAgingBucket !== null}
+                onClose={() => {
+                    setSelectedAgingBucket(null);
+                    setDrillDownInvoices([]);
+                }}
+                title={`Invoices - ${selectedAgingBucket}`}
+                maxWidth="max-w-6xl"
+            >
+                <div className="space-y-4">
+                    {drillDownLoading ? (
+                        <div className="flex items-center justify-center py-8">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                            <span className="ml-2 text-gray-600">Loading invoices...</span>
+                        </div>
+                    ) : drillDownInvoices.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">
+                            No invoices found for this aging bucket.
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left">
+                                <thead className="border-b border-gray-200">
+                                    <tr>
+                                        <th className="p-3 text-sm font-semibold text-gray-600">Invoice #</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600">Customer</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600">Invoice Date</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600">Due Date</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600 text-right">Amount</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600 text-right">Balance</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600 text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {drillDownInvoices.map(invoice => (
+                                        <tr key={invoice.invoice_id} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
+                                            <td className="p-3 text-sm font-mono">{invoice.invoice_number}</td>
+                                            <td className="p-3 text-sm">
+                                                {invoice.company_name || `${invoice.first_name || ''} ${invoice.last_name || ''}`.trim()}
+                                            </td>
+                                            <td className="p-3 text-sm">
+                                                {new Date(invoice.invoice_date).toLocaleDateString()}
+                                            </td>
+                                            <td className="p-3 text-sm">
+                                                {new Date(invoice.due_date).toLocaleDateString()}
+                                            </td>
+                                            <td className="p-3 text-sm text-right font-mono">
+                                                {formatCurrency(invoice.total_amount)}
+                                            </td>
+                                            <td className="p-3 text-sm text-right font-mono font-medium">
+                                                {formatCurrency(invoice.balance_due)}
+                                            </td>
+                                            <td className="p-3 text-sm text-center">
+                                                {hasPermission('ar:receive_payment') && Number(invoice.balance_due) > 0 && (
+                                                    <button
+                                                        onClick={() => {
+                                                            setSelectedAgingBucket(null);
+                                                            handleReceivePaymentClick(invoice);
+                                                        }}
+                                                        className="bg-green-600 text-white px-3 py-1 rounded-lg text-xs font-semibold hover:bg-green-700 transition-colors"
+                                                    >
+                                                        Receive Payment
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            </Modal>
+
+            {/* Customer Invoice Details Modal */}
+            <Modal
+                isOpen={customerInvoices.length > 0}
+                onClose={() => setCustomerInvoices([])}
+                title={`Payable Invoices for ${selectedCustomerForInvoices?.company_name || `${selectedCustomerForInvoices?.first_name || ''} ${selectedCustomerForInvoices?.last_name || ''}`.trim()}`}
+                maxWidth="max-w-6xl"
+            >
+                <div className="space-y-4">
+                    {customerInvoicesLoading ? (
+                        <div className="flex items-center justify-center py-8">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                            <span className="ml-2 text-gray-600">Loading customer invoices...</span>
+                        </div>
+                    ) : customerInvoices.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">
+                            No payable invoices found for this customer.
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left">
+                                <thead className="border-b border-gray-200">
+                                    <tr>
+                                        <th className="p-3 text-sm font-semibold text-gray-600">Invoice #</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600">Invoice Date</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600">Due Date</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total Amount</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600 text-right">Balance Due</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600 text-center">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {customerInvoices.map(invoice => {
+                                        const dueDate = new Date(invoice.due_date);
+                                        const today = new Date();
+                                        const daysDiff = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
+                                        
+                                        let statusText, statusColor;
+                                        if (daysDiff < 0) {
+                                            statusText = `${Math.abs(daysDiff)} days overdue`;
+                                            statusColor = 'bg-red-100 text-red-800';
+                                        } else if (daysDiff === 0) {
+                                            statusText = 'Due today';
+                                            statusColor = 'bg-orange-100 text-orange-800';
+                                        } else {
+                                            statusText = `${daysDiff} days remaining`;
+                                            statusColor = 'bg-green-100 text-green-800';
+                                        }
+                                        
+                                        return (
+                                            <tr key={invoice.invoice_id} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
+                                                <td className="p-3 text-sm font-mono">{invoice.invoice_number}</td>
+                                                <td className="p-3 text-sm">
+                                                    {new Date(invoice.invoice_date).toLocaleDateString()}
+                                                </td>
+                                                <td className="p-3 text-sm">
+                                                    {dueDate.toLocaleDateString()}
+                                                </td>
+                                                <td className="p-3 text-sm text-right font-mono">
+                                                    {formatCurrency(invoice.total_amount)}
+                                                </td>
+                                                <td className="p-3 text-sm text-right font-mono font-medium">
+                                                    {formatCurrency(invoice.balance_due)}
+                                                </td>
+                                                <td className="p-3 text-sm text-center">
+                                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor}`}>
+                                                        {statusText}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
             </Modal>
         </div>
     );
