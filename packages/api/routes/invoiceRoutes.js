@@ -335,9 +335,11 @@ router.post('/invoices', async (req, res) => {
 });
 
 // POST /invoices/:id/payments - Add split payments to an invoice
-router.post('/invoices/:id/payments', async (req, res) => {
+router.post('/invoices/:id/payments', protect, hasPermission('invoicing:create'), async (req, res) => {
     const { id } = req.params;
     const { payments } = req.body;
+    const requestingEmployeeId = req.user?.employee_id;
+    const isAdminUser = req.user?.role === 'admin' || req.user?.is_admin;
 
     if (!id || isNaN(parseInt(id))) {
         return res.status(400).json({ message: 'Invalid invoice ID.' });
@@ -356,26 +358,38 @@ router.post('/invoices/:id/payments', async (req, res) => {
                 amount_paid,
                 tendered_amount,
                 reference,
-                metadata
+                metadata,
+                employee_id: paymentEmployeeId
             } = payment;
+
+            // Validate employee_id if provided, else use requesting user
+            let employeeIdToUse = requestingEmployeeId;
+            if (paymentEmployeeId && paymentEmployeeId !== requestingEmployeeId) {
+                if (!isAdminUser) {
+                    throw new Error('Only admins can set employee_id different from themselves.');
+                }
+                // Validate employee exists
+                const { rows: empRows } = await client.query('SELECT employee_id FROM employee WHERE employee_id = $1', [paymentEmployeeId]);
+                if (empRows.length === 0) {
+                    throw new Error(`Invalid employee_id: ${paymentEmployeeId}`);
+                }
+                employeeIdToUse = paymentEmployeeId;
+            }
 
             // Get payment method details to determine settlement behavior
             const { rows: methodRows } = await client.query(
                 'SELECT settlement_type, config FROM payment_methods WHERE method_id = $1',
                 [method_id]
             );
-            
             if (methodRows.length === 0) {
                 throw new Error(`Invalid payment method ID: ${method_id}`);
             }
-            
             const method = methodRows[0];
             const settlementType = method.settlement_type || 'instant';
-            
+
             // Determine payment status based on settlement type
             let paymentStatus = 'settled';
             let settledAt = null;
-            
             if (settlementType === 'instant') {
                 paymentStatus = 'settled';
                 settledAt = new Date();
@@ -383,7 +397,6 @@ router.post('/invoices/:id/payments', async (req, res) => {
                 paymentStatus = 'pending';
                 settledAt = null;
             } else if (settlementType === 'on_account') {
-                // Record on-account payments as auditable entries
                 paymentStatus = 'on_account';
                 settledAt = null;
             }
@@ -392,7 +405,7 @@ router.post('/invoices/:id/payments', async (req, res) => {
             await client.query(`
                 INSERT INTO invoice_payments (invoice_id, method_id, amount_paid, tendered_amount, reference, metadata, payment_status, settled_at, created_by)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            `, [id, method_id, amount_paid, tendered_amount || null, reference || null, metadata ? JSON.stringify(metadata) : null, paymentStatus, settledAt, req.user?.employee_id || null]);
+            `, [id, method_id, amount_paid, tendered_amount || null, reference || null, metadata ? JSON.stringify(metadata) : null, paymentStatus, settledAt, employeeIdToUse]);
         }
 
         // Update invoice balance and status based on settled payments only
