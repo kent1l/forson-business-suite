@@ -12,7 +12,8 @@ const SplitPaymentModal = ({
     existingPayments = [],
     onConfirm,
     physicalReceiptNo = '',
-    onPhysicalReceiptChange = () => {}
+    onPhysicalReceiptChange = () => {},
+    employeeId = null
 }) => {
     const { settings } = useSettings();
     const [paymentMethods, setPaymentMethods] = useState([]);
@@ -281,7 +282,7 @@ const SplitPaymentModal = ({
                 };
             });
 
-            await onConfirm(formattedPayments, physicalReceiptNo);
+            await onConfirm(formattedPayments, physicalReceiptNo, { employeeId });
             onClose();
         } catch (err) {
             console.error('Payment confirmation error:', err);
@@ -289,7 +290,7 @@ const SplitPaymentModal = ({
         } finally {
             setLoading(false);
         }
-    }, [canConfirm, payments, paymentMethods, onConfirm, physicalReceiptNo, onClose, validationErrors, requiresOnAccountConfirmation, showOnAccountConfirmation]);
+    }, [canConfirm, payments, paymentMethods, onConfirm, physicalReceiptNo, onClose, validationErrors, requiresOnAccountConfirmation, showOnAccountConfirmation, employeeId]);
 
     // Keyboard shortcuts
     useEffect(() => {

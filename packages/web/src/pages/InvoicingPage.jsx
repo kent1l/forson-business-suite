@@ -250,12 +250,12 @@ const InvoicingPage = ({ user }) => {
     };
 
     // Handle split payment confirmation for invoicing
-    const handleConfirmSplitPayment = async (payments, physicalReceiptNo) => {
+    const handleConfirmSplitPayment = async (payments, physicalReceiptNo, { employeeId } = {}) => {
         try {
             // First create the invoice without payments
             const invoicePayload = {
                 customer_id: selectedCustomer,
-                employee_id: user.employee_id,
+                employee_id: employeeId || user.employee_id,
                 terms: terms,
                 payment_terms_days: parsePaymentTermsDays(terms),
                 physical_receipt_no: formatPhysicalReceiptNumber(physicalReceiptNo),
@@ -278,7 +278,8 @@ const InvoicingPage = ({ user }) => {
             // Then add payments to the invoice
             await api.post(`/invoices/${invoiceId}/payments`, {
                 payments,
-                physical_receipt_no: returnedPhysicalReceiptNo || formatPhysicalReceiptNumber(physicalReceiptNo)
+                physical_receipt_no: returnedPhysicalReceiptNo || formatPhysicalReceiptNumber(physicalReceiptNo),
+                employee_id: employeeId || user.employee_id
             });
 
             // Success - reset form
@@ -486,6 +487,7 @@ const InvoicingPage = ({ user }) => {
                     physicalReceiptNo={physicalReceiptNo}
                     onPhysicalReceiptChange={setPhysicalReceiptNo}
                     requirePhysicalReceipt={true}
+                    employeeId={user?.employee_id}
                 />
             )}
         </div>
