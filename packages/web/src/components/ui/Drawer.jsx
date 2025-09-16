@@ -84,7 +84,7 @@
  * - Body scroll lock management
  */
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 
 const Drawer = ({
     isOpen,
@@ -120,6 +120,10 @@ const Drawer = ({
     onOpen,
     _onCloseComplete
 }) => {
+    // Local render/visibility state to enable exit animations
+    const [shouldRender, setShouldRender] = useState(isOpen);
+    const [isVisible, setIsVisible] = useState(isOpen);
+
     // Handle escape key
     useEffect(() => {
         if (!closeOnEscape) return;
@@ -138,7 +142,7 @@ const Drawer = ({
     useEffect(() => {
         if (!lockBodyScroll) return;
 
-        if (isOpen) {
+        if (shouldRender) {
             document.body.style.overflow = 'hidden';
         } else {
             document.body.style.overflow = 'unset';
@@ -147,14 +151,27 @@ const Drawer = ({
         return () => {
             document.body.style.overflow = 'unset';
         };
-    }, [isOpen, lockBodyScroll]);
+    }, [shouldRender, lockBodyScroll]);
 
-    // Handle open callback
+    // Manage mount/unmount for smooth transitions
     useEffect(() => {
-        if (isOpen && onOpen) {
-            onOpen();
+        if (isOpen) {
+            setShouldRender(true);
+            // next frame: set visible for entering animation
+            const id = requestAnimationFrame(() => setIsVisible(true));
+            if (onOpen) onOpen();
+            return () => cancelAnimationFrame(id);
+        } else if (shouldRender) {
+            // start exit animation
+            setIsVisible(false);
+            const timeout = setTimeout(() => {
+                setShouldRender(false);
+                if (typeof _onCloseComplete === 'function') _onCloseComplete();
+            }, animationDuration);
+            return () => clearTimeout(timeout);
         }
-    }, [isOpen, onOpen]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen]);
 
     // Predefined size classes
     const sizeClasses = {
@@ -175,10 +192,18 @@ const Drawer = ({
 
     // Animation classes
     const slideClasses = {
-        left: isOpen ? 'translate-x-0' : '-translate-x-full',
-        right: isOpen ? 'translate-x-0' : 'translate-x-full',
-        top: isOpen ? 'translate-y-0' : '-translate-y-full',
-        bottom: isOpen ? 'translate-y-0' : 'translate-y-full'
+        left: isVisible ? 'translate-x-0' : '-translate-x-full',
+        right: isVisible ? 'translate-x-0' : 'translate-x-full',
+        top: isVisible ? 'translate-y-0' : '-translate-y-full',
+        bottom: isVisible ? 'translate-y-0' : 'translate-y-full'
+    };
+
+    // Rounded edge based on position for a modern look
+    const roundedClasses = {
+        left: 'rounded-r-2xl',
+        right: 'rounded-l-2xl',
+        top: 'rounded-b-2xl',
+        bottom: 'rounded-t-2xl'
     };
 
     // Handle backdrop click
@@ -204,7 +229,7 @@ const Drawer = ({
     // Default header
     const defaultHeader = showHeader && (
         <div className={`flex items-center justify-between p-4 border-b border-gray-200 ${headerClassName}`}>
-            {title && <h2 className="text-lg font-semibold text-gray-900">{title}</h2>}
+            {title && <h2 id="drawer-title" className="text-lg font-semibold text-gray-900">{title}</h2>}
             <div className="flex items-center">
                 {showCloseButton && (renderCloseButton ? renderCloseButton({ onClose }) : defaultCloseButton)}
             </div>
@@ -216,28 +241,30 @@ const Drawer = ({
 
     const header = customHeader || defaultHeader;
 
-    if (!isOpen) return null;
+    if (!shouldRender) return null;
 
     return (
         <>
             {/* Backdrop */}
             <div
-                className={`fixed inset-0 ${backdropClassName} ${backdropZIndex} transition-opacity`}
+                className={`fixed inset-0 ${backdropClassName} ${backdropZIndex} transition-opacity ${isVisible ? 'opacity-100' : 'opacity-0'}`}
                 onClick={handleBackdropClick}
                 aria-hidden="true"
+                style={{ transitionDuration: `${animationDuration}ms`, transitionTimingFunction: animationEasing }}
             />
 
             {/* Drawer */}
             <div
-                className={`fixed ${positionClasses[position]} ${typeof size === 'string' && sizeClasses[size] ? sizeClasses[size] : size} bg-white shadow-xl ${drawerZIndex} transform transition-all duration-${animationDuration} ${animationEasing} ${slideClasses[position]} ${drawerClassName}`}
+                className={`fixed ${positionClasses[position]} ${typeof size === 'string' && sizeClasses[size] ? sizeClasses[size] : size} bg-white shadow-2xl ring-1 ring-black/5 ${roundedClasses[position]} ${drawerZIndex} transform transition-transform ${slideClasses[position]} will-change-transform ${drawerClassName}`}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby={title ? "drawer-title" : undefined}
+                style={{ transitionDuration: `${animationDuration}ms`, transitionTimingFunction: animationEasing }}
             >
                 {header}
 
                 {/* Content */}
-                <div className={`flex-1 overflow-y-auto ${contentClassName}`}>
+                <div className={`flex-1 overflow-y-auto overscroll-contain ${contentClassName}`}>
                     {children}
                 </div>
             </div>

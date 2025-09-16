@@ -14,9 +14,9 @@
  * Used in: AccountsReceivablePage.jsx for customer invoice drill-down functionality
  */
 
-import { useState } from 'react';
-import Modal from '../../components/ui/Modal';
-import Drawer from '../../components/ui/Drawer';
+import { useMemo, useState } from 'react';
+import Modal from '../ui/Modal';
+import Drawer from '../ui/Drawer';
 import { formatCurrency } from '../../utils/currency';
 import api from '../../api';
 import toast from 'react-hot-toast';
@@ -32,6 +32,12 @@ const CustomerInvoiceDetailsModal = ({
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [invoiceLines, setInvoiceLines] = useState([]);
     const [linesLoading, setLinesLoading] = useState(false);
+
+    // Compute grand total for the invoice lines
+    const linesTotal = useMemo(() => {
+        if (!invoiceLines || invoiceLines.length === 0) return 0;
+        return invoiceLines.reduce((sum, line) => sum + (Number(line.quantity) * Number(line.sale_price || 0)), 0);
+    }, [invoiceLines]);
 
     const handleInvoiceClick = async (invoice) => {
         setSelectedInvoice(invoice);
@@ -171,6 +177,15 @@ const CustomerInvoiceDetailsModal = ({
                                         </tr>
                                     ))}
                                 </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td className="p-3 text-sm" colSpan={2}></td>
+                                        <td className="p-3 text-sm text-right font-semibold text-gray-700 border-t border-gray-200">Grand Total</td>
+                                        <td className="p-3 text-sm text-right font-mono font-semibold border-t border-gray-200">
+                                            {formatCurrency(linesTotal)}
+                                        </td>
+                                    </tr>
+                                </tfoot>
                             </table>
                         </div>
                     </div>
