@@ -540,11 +540,6 @@ const AccountsReceivablePage = () => {
                 title={`Payable Invoices for ${selectedCustomerForInvoices?.company_name || `${selectedCustomerForInvoices?.first_name || ''} ${selectedCustomerForInvoices?.last_name || ''}`.trim()}`}
                 invoices={customerInvoices}
                 loading={customerInvoicesLoading}
-                onReceivePaymentClick={(invoice) => {
-                    setSelectedAgingBucket(null);
-                    handleReceivePaymentClick(invoice);
-                }}
-                hasReceivePermission={hasPermission('ar:receive_payment')}
             />
         </div>
     );

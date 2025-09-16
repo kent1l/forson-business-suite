@@ -7,9 +7,7 @@
  * Features:
  * - Shows a table of invoices with due dates, amounts, and balances
  * - Displays payment status with color-coded badges (overdue, due today, days remaining)
- * - Includes "Receive Payment" action buttons for invoices with outstanding balances
  * - Handles loading states and empty states gracefully
- * - Integrates with the payment processing workflow
  *
  * Used in: AccountsReceivablePage.jsx for customer invoice drill-down functionality
  */
@@ -22,9 +20,7 @@ const CustomerInvoiceDetailsModal = ({
     onClose,
     title,
     invoices = [],
-    loading = false,
-    onReceivePaymentClick,
-    hasReceivePermission = false
+    loading = false
 }) => {
     return (
         <Modal
@@ -86,14 +82,6 @@ const CustomerInvoiceDetailsModal = ({
                                             <td className="p-3 text-sm text-center">
                                                 <div className="flex items-center justify-center gap-2">
                                                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor}`}>{statusText}</span>
-                                                    {hasReceivePermission && Number(invoice.balance_due) > 0 && (
-                                                        <button
-                                                            onClick={() => onReceivePaymentClick && onReceivePaymentClick(invoice)}
-                                                            className="bg-green-600 text-white px-3 py-1 rounded-lg text-xs font-semibold hover:bg-green-700 transition-colors"
-                                                        >
-                                                            Receive Payment
-                                                        </button>
-                                                    )}
                                                 </div>
                                             </td>
                                         </tr>
