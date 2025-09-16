@@ -173,6 +173,7 @@ router.get('/ar/customer-invoices/:customerId', protect, hasPermission('ar:view'
             SELECT 
                 i.invoice_id,
                 i.invoice_number,
+                i.physical_receipt_no,
                 i.invoice_date,
                 i.due_date,
                 i.total_amount,
@@ -287,6 +288,7 @@ router.get('/ar/drill-down-invoices', protect, hasPermission('ar:view'), async (
             SELECT
                 i.invoice_id,
                 i.invoice_number,
+                i.physical_receipt_no,
                 i.invoice_date,
                 i.due_date,
                 i.total_amount,

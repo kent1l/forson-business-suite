@@ -49,6 +49,7 @@ const CustomerInvoiceDetailsModal = ({
                             <thead className="border-b border-gray-200">
                                 <tr>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Invoice #</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Physical Receipt #</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Invoice Date</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Due Date</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total Amount</th>
@@ -77,6 +78,7 @@ const CustomerInvoiceDetailsModal = ({
                                     return (
                                         <tr key={invoice.invoice_id} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
                                             <td className="p-3 text-sm font-mono">{invoice.invoice_number}</td>
+                                            <td className="p-3 text-sm font-mono">{invoice.physical_receipt_no || 'N/A'}</td>
                                             <td className="p-3 text-sm">{new Date(invoice.invoice_date).toLocaleDateString()}</td>
                                             <td className="p-3 text-sm">{dueDate.toLocaleDateString()}</td>
                                             <td className="p-3 text-sm text-right font-mono">{formatCurrency(invoice.total_amount)}</td>

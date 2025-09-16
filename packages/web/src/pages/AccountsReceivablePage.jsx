@@ -482,6 +482,7 @@ const AccountsReceivablePage = () => {
                                 <thead className="border-b border-gray-200">
                                     <tr>
                                         <th className="p-3 text-sm font-semibold text-gray-600">Invoice #</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600">Physical Receipt #</th>
                                         <th className="p-3 text-sm font-semibold text-gray-600">Customer</th>
                                         <th className="p-3 text-sm font-semibold text-gray-600">Invoice Date</th>
                                         <th className="p-3 text-sm font-semibold text-gray-600">Due Date</th>
@@ -494,6 +495,7 @@ const AccountsReceivablePage = () => {
                                     {drillDownInvoices.map(invoice => (
                                         <tr key={invoice.invoice_id} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
                                             <td className="p-3 text-sm font-mono">{invoice.invoice_number}</td>
+                                            <td className="p-3 text-sm font-mono">{invoice.physical_receipt_no || 'N/A'}</td>
                                             <td className="p-3 text-sm">
                                                 {invoice.company_name || `${invoice.first_name || ''} ${invoice.last_name || ''}`.trim()}
                                             </td>
