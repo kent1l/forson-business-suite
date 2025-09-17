@@ -101,13 +101,13 @@ const Drawer = ({
     // Content configuration
     contentClassName = '',
     // Backdrop configuration
-    backdropClassName = 'bg-neutral-800/50',
+    backdropClassName = 'bg-black/50',
     backdropZIndex = 'z-40',
     // Drawer container configuration
     drawerClassName = '',
     drawerZIndex = 'z-50',
     // Animation configuration
-    animationDuration = 300,
+    animationDuration = 500,
     animationEasing = 'ease-in-out',
     // Behavior configuration
     closeOnBackdropClick = true,
@@ -122,7 +122,24 @@ const Drawer = ({
 }) => {
     // Local render/visibility state to enable exit animations
     const [shouldRender, setShouldRender] = useState(isOpen);
-    const [isVisible, setIsVisible] = useState(isOpen);
+    const [showDrawer, setShowDrawer] = useState(isOpen);
+
+    // Control the sliding transition
+    useEffect(() => {
+        if (isOpen) {
+            setShouldRender(true);
+            // delay ensures CSS transition runs
+            setTimeout(() => setShowDrawer(true), 20);
+            if (onOpen) onOpen();
+        } else {
+            setShowDrawer(false);
+            const timeout = setTimeout(() => {
+                setShouldRender(false);
+                if (typeof _onCloseComplete === 'function') _onCloseComplete();
+            }, animationDuration);
+            return () => clearTimeout(timeout);
+        }
+    }, [isOpen, animationDuration, onOpen, _onCloseComplete]);
 
     // Handle escape key
     useEffect(() => {
@@ -153,26 +170,6 @@ const Drawer = ({
         };
     }, [shouldRender, lockBodyScroll]);
 
-    // Manage mount/unmount for smooth transitions
-    useEffect(() => {
-        if (isOpen) {
-            setShouldRender(true);
-            // next frame: set visible for entering animation
-            const id = requestAnimationFrame(() => setIsVisible(true));
-            if (onOpen) onOpen();
-            return () => cancelAnimationFrame(id);
-        } else if (shouldRender) {
-            // start exit animation
-            setIsVisible(false);
-            const timeout = setTimeout(() => {
-                setShouldRender(false);
-                if (typeof _onCloseComplete === 'function') _onCloseComplete();
-            }, animationDuration);
-            return () => clearTimeout(timeout);
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen]);
-
     // Predefined size classes
     const sizeClasses = {
         sm: position === 'left' || position === 'right' ? 'w-80' : 'h-80',
@@ -188,14 +185,6 @@ const Drawer = ({
         right: 'right-0 top-0 h-full',
         top: 'top-0 left-0 w-full',
         bottom: 'bottom-0 left-0 w-full'
-    };
-
-    // Animation classes
-    const slideClasses = {
-        left: isVisible ? 'translate-x-0' : '-translate-x-full',
-        right: isVisible ? 'translate-x-0' : 'translate-x-full',
-        top: isVisible ? 'translate-y-0' : '-translate-y-full',
-        bottom: isVisible ? 'translate-y-0' : 'translate-y-full'
     };
 
     // Rounded edge based on position for a modern look
@@ -247,7 +236,9 @@ const Drawer = ({
         <>
             {/* Backdrop */}
             <div
-                className={`fixed inset-0 ${backdropClassName} ${backdropZIndex} transition-opacity ${isVisible ? 'opacity-100' : 'opacity-0'}`}
+                className={`fixed inset-0 ${backdropClassName} ${backdropZIndex} transition-opacity duration-300 ${
+                    showDrawer ? "opacity-100" : "opacity-0 pointer-events-none"
+                }`}
                 onClick={handleBackdropClick}
                 aria-hidden="true"
                 style={{ transitionDuration: `${animationDuration}ms`, transitionTimingFunction: animationEasing }}
@@ -255,11 +246,12 @@ const Drawer = ({
 
             {/* Drawer */}
             <div
-                className={`fixed ${positionClasses[position]} ${typeof size === 'string' && sizeClasses[size] ? sizeClasses[size] : size} bg-white shadow-2xl ring-1 ring-black/5 ${roundedClasses[position]} ${drawerZIndex} transform transition-transform ${slideClasses[position]} will-change-transform ${drawerClassName}`}
+                className={`fixed ${positionClasses[position]} ${typeof size === 'string' && sizeClasses[size] ? sizeClasses[size] : size} bg-white shadow-xl transform transition-transform duration-500 ease-in-out ${
+                    showDrawer ? "translate-x-0" : position === 'right' ? "translate-x-full" : position === 'left' ? "-translate-x-full" : position === 'top' ? "-translate-y-full" : "translate-y-full"
+                } ${roundedClasses[position]} ${drawerZIndex} ${drawerClassName}`}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby={title ? "drawer-title" : undefined}
-                style={{ transitionDuration: `${animationDuration}ms`, transitionTimingFunction: animationEasing }}
             >
                 {header}
 
