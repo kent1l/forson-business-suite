@@ -14,9 +14,10 @@
  * Used in: AccountsReceivablePage.jsx for customer invoice drill-down functionality
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import Modal from '../ui/Modal';
 import Drawer from '../ui/Drawer';
+import DueDateEditor from '../ui/DueDateEditor';
 import { formatCurrency } from '../../utils/currency';
 import api from '../../api';
 import toast from 'react-hot-toast';
@@ -32,12 +33,45 @@ const CustomerInvoiceDetailsModal = ({
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [invoiceLines, setInvoiceLines] = useState([]);
     const [linesLoading, setLinesLoading] = useState(false);
+    const [dueDateEditorOpen, setDueDateEditorOpen] = useState(false);
+    const [editingInvoice, setEditingInvoice] = useState(null);
+    const [invoiceData, setInvoiceData] = useState(invoices);
 
     // Compute grand total for the invoice lines
     const linesTotal = useMemo(() => {
         if (!invoiceLines || invoiceLines.length === 0) return 0;
         return invoiceLines.reduce((sum, line) => sum + (Number(line.quantity) * Number(line.sale_price || 0)), 0);
     }, [invoiceLines]);
+
+    // Update invoice data when props change
+    useEffect(() => {
+        setInvoiceData(invoices);
+    }, [invoices]);
+
+    const handleDueDateClick = (invoice, event) => {
+        // Prevent the row click from triggering
+        event.stopPropagation();
+        setEditingInvoice(invoice);
+        setDueDateEditorOpen(true);
+    };
+
+    const handleDueDateSaved = (updatedData) => {
+        // Update the invoice data with the new due date
+        setInvoiceData(prevInvoices => 
+            prevInvoices.map(inv => 
+                inv.invoice_id === updatedData.invoice_id 
+                    ? { ...inv, due_date: updatedData.new_due_date }
+                    : inv
+            )
+        );
+        setDueDateEditorOpen(false);
+        setEditingInvoice(null);
+    };
+
+    const handleDueDateEditorClose = () => {
+        setDueDateEditorOpen(false);
+        setEditingInvoice(null);
+    };
 
     const handleInvoiceClick = async (invoice) => {
         setSelectedInvoice(invoice);
@@ -75,7 +109,7 @@ const CustomerInvoiceDetailsModal = ({
                             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                             <span className="ml-2 text-gray-600">Loading customer invoices...</span>
                         </div>
-                    ) : invoices.length === 0 ? (
+                    ) : invoiceData.length === 0 ? (
                         <div className="text-center py-8 text-gray-500">
                             No payable invoices found for this customer.
                         </div>
@@ -94,7 +128,7 @@ const CustomerInvoiceDetailsModal = ({
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {invoices.map(invoice => {
+                                    {invoiceData.map(invoice => {
                                         const dueDate = new Date(invoice.due_date);
                                         const now = new Date();
                                         const philippinesTime = new Date(now.getTime() + (8 * 60 - now.getTimezoneOffset()) * 60000);
@@ -121,7 +155,15 @@ const CustomerInvoiceDetailsModal = ({
                                                 <td className="p-3 text-sm font-mono">{invoice.invoice_number}</td>
                                                 <td className="p-3 text-sm font-mono">{invoice.physical_receipt_no || 'N/A'}</td>
                                                 <td className="p-3 text-sm">{new Date(invoice.invoice_date).toLocaleDateString()}</td>
-                                                <td className="p-3 text-sm">{dueDate.toLocaleDateString()}</td>
+                                                <td className="p-3 text-sm">
+                                                    <button
+                                                        onClick={(e) => handleDueDateClick(invoice, e)}
+                                                        className="inline-flex items-center px-2.5 py-1 text-sm font-medium bg-gray-100 text-gray-700 border border-gray-200 rounded-full hover:bg-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-offset-1"
+                                                        title="Click to edit due date"
+                                                    >
+                                                        {dueDate.toLocaleDateString()}
+                                                    </button>
+                                                </td>
                                                 <td className="p-3 text-sm text-right font-mono">{formatCurrency(invoice.total_amount)}</td>
                                                 <td className="p-3 text-sm text-right font-mono font-medium">{formatCurrency(invoice.balance_due)}</td>
                                                 <td className="p-3 text-sm text-center">
@@ -192,6 +234,14 @@ const CustomerInvoiceDetailsModal = ({
                     </div>
                 )}
             </Drawer>
+
+            {/* Due Date Editor Modal */}
+            <DueDateEditor
+                isOpen={dueDateEditorOpen}
+                onClose={handleDueDateEditorClose}
+                invoice={editingInvoice}
+                onSaved={handleDueDateSaved}
+            />
         </>
     );
 };

@@ -612,3 +612,105 @@ router.put('/invoices/:id/physical-receipt-no', protect, hasPermission('invoicin
         res.status(500).json({ message: 'Server error updating physical receipt number.', error: err.message });
     }
 });
+
+// PUT /api/invoices/:id/due-date - Update invoice due date with comprehensive logging
+router.put('/invoices/:id/due-date', protect, hasPermission('invoicing:create'), async (req, res) => {
+    const { id } = req.params;
+    const { new_due_date, reason, days_adjustment } = req.body;
+
+    if (!id || isNaN(parseInt(id))) {
+        return res.status(400).json({ message: 'Invalid invoice ID.' });
+    }
+
+    if (!new_due_date) {
+        return res.status(400).json({ message: 'New due date is required.' });
+    }
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+
+        // Get current invoice data
+        const { rows: invoiceRows } = await client.query(
+            'SELECT invoice_id, due_date, invoice_number FROM invoice WHERE invoice_id = $1',
+            [id]
+        );
+
+        if (invoiceRows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: 'Invoice not found.' });
+        }
+
+        const invoice = invoiceRows[0];
+        const oldDueDate = invoice.due_date;
+        const newDueDate = new Date(new_due_date);
+
+        // Validate the new date
+        if (isNaN(newDueDate.getTime())) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: 'Invalid date format.' });
+        }
+
+        // Calculate days adjustment if not provided
+        let calculatedDaysAdjustment = days_adjustment;
+        if (oldDueDate && !calculatedDaysAdjustment) {
+            const oldDate = new Date(oldDueDate);
+            const timeDiff = newDueDate.getTime() - oldDate.getTime();
+            calculatedDaysAdjustment = Math.round(timeDiff / (1000 * 60 * 60 * 24));
+        }
+
+        // Get request metadata for audit trail
+        const userAgent = req.headers['user-agent'] || null;
+        const ipAddress = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'] || null;
+
+        // Update the invoice due date
+        await client.query(
+            'UPDATE invoice SET due_date = $1 WHERE invoice_id = $2',
+            [newDueDate, id]
+        );
+
+        // Log the change to due_date_log
+        await client.query(`
+            INSERT INTO due_date_log (
+                invoice_id, 
+                old_due_date, 
+                new_due_date, 
+                days_adjustment, 
+                edited_by, 
+                edited_on, 
+                reason, 
+                ip_address, 
+                user_agent,
+                system_generated
+            ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, $6, $7, $8, $9)
+        `, [
+            id,
+            oldDueDate,
+            newDueDate,
+            calculatedDaysAdjustment,
+            req.user.employee_id,
+            reason || null,
+            ipAddress,
+            userAgent,
+            false // manual edit
+        ]);
+
+        await client.query('COMMIT');
+
+        res.json({
+            message: 'Due date updated successfully.',
+            invoice_id: id,
+            invoice_number: invoice.invoice_number,
+            old_due_date: oldDueDate,
+            new_due_date: newDueDate,
+            days_adjustment: calculatedDaysAdjustment
+        });
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Update due date error:', err.message);
+        res.status(500).json({ message: 'Server error updating due date.', error: err.message });
+    } finally {
+        client.release();
+    }
+});
