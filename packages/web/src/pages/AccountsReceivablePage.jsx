@@ -540,6 +540,24 @@ const AccountsReceivablePage = () => {
                 title={`Payable Invoices for ${selectedCustomerForInvoices?.company_name || `${selectedCustomerForInvoices?.first_name || ''} ${selectedCustomerForInvoices?.last_name || ''}`.trim()}`}
                 invoices={customerInvoices}
                 loading={customerInvoicesLoading}
+                onAfterDueDateUpdate={async () => {
+                    // Refresh overall dashboard and summaries
+                    await fetchDashboardData();
+
+                    // Also refresh the currently opened customer's invoices if available
+                    if (selectedCustomerForInvoices?.customer_id) {
+                        try {
+                            setCustomerInvoicesLoading(true);
+                            const response = await api.get(`/ar/customer-invoices/${selectedCustomerForInvoices.customer_id}`);
+                            const payableInvoices = response.data.filter(invoice => Number(invoice.balance_due) > 0) || [];
+                            setCustomerInvoices(payableInvoices);
+                        } catch (e) {
+                            console.error('Failed to refresh customer invoices after due date update:', e);
+                        } finally {
+                            setCustomerInvoicesLoading(false);
+                        }
+                    }
+                }}
             />
         </div>
     );

@@ -27,7 +27,8 @@ const CustomerInvoiceDetailsModal = ({
     onClose,
     title,
     invoices = [],
-    loading = false
+    loading = false,
+    onAfterDueDateUpdate
 }) => {
     const [selectedInvoice, setSelectedInvoice] = useState(null);
     const [drawerOpen, setDrawerOpen] = useState(false);
@@ -86,6 +87,16 @@ const CustomerInvoiceDetailsModal = ({
 
         setDueDateEditorOpen(false);
         setEditingInvoice(null);
+
+        // Notify parent page to refresh AR data if handler provided
+        if (typeof onAfterDueDateUpdate === 'function') {
+            try {
+                onAfterDueDateUpdate(updatedData);
+            } catch (e) {
+                // non-blocking
+                console.warn('onAfterDueDateUpdate handler threw:', e);
+            }
+        }
     };
 
     const handleDueDateEditorClose = () => {
