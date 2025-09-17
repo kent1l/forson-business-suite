@@ -50,6 +50,15 @@ const EditHistory = ({
         });
     };
 
+    const formatDateOnly = (dateString) => {
+        if (!dateString) return 'N/A';
+        return new Date(dateString).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+        });
+    };
+
     const formatDaysAdjustment = (adjustment) => {
         if (adjustment === null || adjustment === undefined) return '—';
         if (adjustment === 0) return '0';
@@ -128,7 +137,7 @@ const EditHistory = ({
                                     <tr key={r.key} className="border-b border-gray-100 hover:bg-gray-50">
                                         <td className="px-3 py-2 whitespace-nowrap text-gray-800">{formatDate(r.edited_on)}</td>
                                         <td className="px-3 py-2 whitespace-nowrap text-gray-800">{r.edited_by}</td>
-                                        <td className="px-3 py-2 whitespace-nowrap font-medium text-blue-700">{formatDate(r.due_date)}</td>
+                                        <td className="px-3 py-2 whitespace-nowrap font-medium text-blue-700">{formatDateOnly(r.due_date)}</td>
                                         <td className={`px-3 py-2 whitespace-nowrap font-medium ${getAdjustmentColor(r.days_adjustment)}`}>{formatDaysAdjustment(r.days_adjustment)}</td>
                                         <td className="px-3 py-2 text-gray-700">
                                             {r.reason ? (
