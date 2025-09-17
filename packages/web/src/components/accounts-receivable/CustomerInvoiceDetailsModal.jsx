@@ -96,8 +96,9 @@ const CustomerInvoiceDetailsModal = ({
                                 <tbody>
                                     {invoices.map(invoice => {
                                         const dueDate = new Date(invoice.due_date);
-                                        const today = new Date();
-                                        const daysDiff = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
+                                        const now = new Date();
+                                        const philippinesTime = new Date(now.getTime() + (8 * 60 - now.getTimezoneOffset()) * 60000);
+                                        const daysDiff = Math.ceil((dueDate - philippinesTime) / (1000 * 60 * 60 * 24));
 
                                         let statusText, statusColor;
                                         if (daysDiff < 0) {

@@ -33,8 +33,9 @@ export const getCustomerStatusBadge = (customer) => {
     }
 
     const dueDate = new Date(customer.earliest_due_date);
-    const today = new Date();
-    const daysDiff = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
+    const now = new Date();
+    const philippinesTime = new Date(now.getTime() + (8 * 60 - now.getTimezoneOffset()) * 60000);
+    const daysDiff = Math.ceil((dueDate - philippinesTime) / (1000 * 60 * 60 * 24));
 
     if (daysDiff < 0) {
         return {
@@ -77,8 +78,9 @@ export const getCustomerStatusBadge = (customer) => {
  */
 export const getInvoiceStatusBadge = (dueDate) => {
     const due = new Date(dueDate);
-    const today = new Date();
-    const daysDiff = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
+    const now = new Date();
+    const philippinesTime = new Date(now.getTime() + (8 * 60 - now.getTimezoneOffset()) * 60000);
+    const daysDiff = Math.ceil((due - philippinesTime) / (1000 * 60 * 60 * 24));
 
     if (daysDiff < 0) {
         return {
