@@ -36,6 +36,7 @@ const CustomerInvoiceDetailsModal = ({
     const [dueDateEditorOpen, setDueDateEditorOpen] = useState(false);
     const [editingInvoice, setEditingInvoice] = useState(null);
     const [invoiceData, setInvoiceData] = useState(invoices);
+    const [refreshing, setRefreshing] = useState(false);
 
     // Compute grand total for the invoice lines
     const linesTotal = useMemo(() => {
@@ -64,6 +65,25 @@ const CustomerInvoiceDetailsModal = ({
                     : inv
             )
         );
+
+        // Attempt to refetch the latest invoices for this customer to ensure full refresh
+        const targetInvoice = editingInvoice || invoiceData.find(inv => inv.invoice_id === updatedData.invoice_id);
+        const customerId = targetInvoice?.customer_id;
+        if (customerId) {
+            (async () => {
+                try {
+                    setRefreshing(true);
+                    const { data } = await api.get(`/ar/customer-invoices/${customerId}`);
+                    setInvoiceData(Array.isArray(data) ? data : []);
+                } catch (err) {
+                    console.error('Failed to refresh invoices after due date update:', err);
+                    toast.error('Updated due date, but failed to refresh list');
+                } finally {
+                    setRefreshing(false);
+                }
+            })();
+        }
+
         setDueDateEditorOpen(false);
         setEditingInvoice(null);
     };
@@ -104,6 +124,12 @@ const CustomerInvoiceDetailsModal = ({
                 maxWidth="max-w-6xl"
             >
                 <div className="space-y-4">
+                    {refreshing && (
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                            <div className="h-3 w-3 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin"></div>
+                            Refreshing invoices...
+                        </div>
+                    )}
                     {loading ? (
                         <div className="flex items-center justify-center py-8">
                             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
