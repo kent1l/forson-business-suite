@@ -643,7 +643,25 @@ router.put('/invoices/:id/due-date', protect, hasPermission('invoicing:create'),
 
         const invoice = invoiceRows[0];
         const oldDueDate = invoice.due_date;
-        const newDueDate = new Date(new_due_date);
+        
+        // Preserve the original time when updating the date
+        let newDueDate;
+        if (oldDueDate) {
+            // Extract time components from the original due date
+            const originalDate = new Date(oldDueDate);
+            const originalHours = originalDate.getHours();
+            const originalMinutes = originalDate.getMinutes();
+            const originalSeconds = originalDate.getSeconds();
+            const originalMilliseconds = originalDate.getMilliseconds();
+            
+            // Create new date with the selected date but preserve original time
+            const selectedDate = new Date(new_due_date + 'T00:00:00.000Z'); // Parse as UTC date
+            selectedDate.setUTCHours(originalHours, originalMinutes, originalSeconds, originalMilliseconds);
+            newDueDate = selectedDate;
+        } else {
+            // If no original due date, use the selected date as-is
+            newDueDate = new Date(new_due_date);
+        }
 
         // Validate the new date
         if (isNaN(newDueDate.getTime())) {

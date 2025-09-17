@@ -37,20 +37,33 @@ const DueDateEditor = ({
     useEffect(() => {
         if (isOpen && invoice?.due_date) {
             const dueDate = new Date(invoice.due_date);
-            setNewDueDate(dueDate.toISOString().split('T')[0]);
+            // Format date in local timezone to avoid timezone conversion issues
+            const year = dueDate.getFullYear();
+            const month = String(dueDate.getMonth() + 1).padStart(2, '0');
+            const day = String(dueDate.getDate()).padStart(2, '0');
+            setNewDueDate(`${year}-${month}-${day}`);
         } else if (isOpen) {
-            // If no due date, default to today
-            setNewDueDate(new Date().toISOString().split('T')[0]);
+            // If no due date, default to today in local timezone
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            const day = String(today.getDate()).padStart(2, '0');
+            setNewDueDate(`${year}-${month}-${day}`);
         }
         setReason('');
         setCustomDaysAdjustment('');
     }, [isOpen, invoice]);
 
     const adjustDateByDays = (days) => {
-        const currentDate = newDueDate ? new Date(newDueDate) : new Date();
+        const currentDate = newDueDate ? new Date(newDueDate + 'T00:00:00') : new Date();
         const adjustedDate = new Date(currentDate);
         adjustedDate.setDate(adjustedDate.getDate() + days);
-        setNewDueDate(adjustedDate.toISOString().split('T')[0]);
+        
+        // Format date in local timezone
+        const year = adjustedDate.getFullYear();
+        const month = String(adjustedDate.getMonth() + 1).padStart(2, '0');
+        const day = String(adjustedDate.getDate()).padStart(2, '0');
+        setNewDueDate(`${year}-${month}-${day}`);
     };
 
     const handleCustomDaysApply = () => {
