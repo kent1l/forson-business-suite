@@ -317,4 +317,132 @@ router.get('/ar/drill-down-invoices', protect, hasPermission('ar:view'), async (
     }
 });
 
+// GET /ar/invoice-due-date-history/:invoiceId - Get due date change history for an invoice
+router.get('/ar/invoice-due-date-history/:invoiceId', protect, hasPermission('ar:view'), async (req, res) => {
+    try {
+        const { invoiceId } = req.params;
+        const { limit = 100, offset = 0 } = req.query;
+
+        // Verify invoice exists and pull key header fields, including creator info
+        const { rows: invRows } = await db.query(`
+            SELECT 
+                i.invoice_id,
+                i.invoice_number,
+                i.invoice_date,
+                i.due_date AS current_due_date,
+                i.employee_id AS created_by_employee_id,
+                e.first_name AS created_by_first_name,
+                e.last_name AS created_by_last_name,
+                c.customer_id,
+                c.company_name,
+                c.first_name AS customer_first_name,
+                c.last_name AS customer_last_name
+            FROM invoice i
+            JOIN employee e ON i.employee_id = e.employee_id
+            JOIN customer c ON i.customer_id = c.customer_id
+            WHERE i.invoice_id = $1
+        `, [invoiceId]);
+
+        if (invRows.length === 0) {
+            return res.status(404).json({ message: 'Invoice not found' });
+        }
+
+        const invoiceHeader = invRows[0];
+
+        // Get the due date history (ascending for timeline construction)
+        const historyQuery = `
+            SELECT
+                ddl.log_id,
+                ddl.old_due_date,
+                ddl.new_due_date,
+                ddl.days_adjustment,
+                ddl.edited_on,
+                ddl.reason,
+                ddl.system_generated,
+                e.employee_id,
+                e.first_name,
+                e.last_name,
+                e.username
+            FROM due_date_log ddl
+            JOIN employee e ON ddl.edited_by = e.employee_id
+            WHERE ddl.invoice_id = $1
+            ORDER BY ddl.edited_on ASC
+            LIMIT $2 OFFSET $3;
+        `;
+
+        const { rows } = await db.query(historyQuery, [invoiceId, limit, offset]);
+
+        const history = rows.map(row => ({
+            log_id: row.log_id,
+            old_due_date: row.old_due_date,
+            new_due_date: row.new_due_date,
+            days_adjustment: row.days_adjustment,
+            edited_on: row.edited_on,
+            reason: row.reason,
+            system_generated: row.system_generated,
+            edited_by: {
+                employee_id: row.employee_id,
+                first_name: row.first_name,
+                last_name: row.last_name,
+                username: row.username,
+                full_name: `${row.first_name} ${row.last_name}`.trim()
+            }
+        }));
+
+        // Build full timeline from initial to current due date
+        // Determine initial due date: earliest old_due_date if available; otherwise use current_due_date
+        const earliest = history.length > 0 ? history[0] : null;
+        const initialDueDate = earliest && earliest.old_due_date ? earliest.old_due_date : invoiceHeader.current_due_date;
+
+        const timeline = [];
+
+        // Initial row (invoice creation)
+        timeline.push({
+            kind: 'initial',
+            edited_on: invoiceHeader.invoice_date,
+            edited_by: {
+                employee_id: invoiceHeader.created_by_employee_id,
+                first_name: invoiceHeader.created_by_first_name,
+                last_name: invoiceHeader.created_by_last_name,
+                username: null,
+                full_name: `${invoiceHeader.created_by_first_name} ${invoiceHeader.created_by_last_name}`.trim()
+            },
+            due_date: initialDueDate,
+            reason: 'Initial due date',
+        });
+
+        // Subsequent edits from history
+        for (const h of history) {
+            timeline.push({
+                kind: 'edit',
+                edited_on: h.edited_on,
+                edited_by: h.edited_by,
+                due_date: h.new_due_date,
+                days_adjustment: h.days_adjustment,
+                reason: h.reason || null,
+            });
+        }
+
+        res.json({
+            invoice: {
+                invoice_id: invoiceHeader.invoice_id,
+                invoice_number: invoiceHeader.invoice_number,
+                invoice_date: invoiceHeader.invoice_date,
+                current_due_date: invoiceHeader.current_due_date,
+                customer: {
+                    customer_id: invoiceHeader.customer_id,
+                    company_name: invoiceHeader.company_name,
+                    first_name: invoiceHeader.customer_first_name,
+                    last_name: invoiceHeader.customer_last_name
+                }
+            },
+            history, // keep raw history for debugging/back-compat
+            timeline
+        });
+    } catch (err) {
+        console.error('AR Invoice Due Date History Error:', err.message);
+        res.status(500).json({ message: 'Failed to fetch due date history' });
+    }
+});
+
 module.exports = router;

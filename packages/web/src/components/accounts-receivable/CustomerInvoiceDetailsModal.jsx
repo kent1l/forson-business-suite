@@ -18,6 +18,7 @@ import { useMemo, useState, useEffect } from 'react';
 import Modal from '../ui/Modal';
 import Drawer from '../ui/Drawer';
 import DueDateEditor from '../ui/DueDateEditor';
+import EditHistory from '../EditHistory';
 import { formatCurrency } from '../../utils/currency';
 import api from '../../api';
 import toast from 'react-hot-toast';
@@ -38,6 +39,8 @@ const CustomerInvoiceDetailsModal = ({
     const [editingInvoice, setEditingInvoice] = useState(null);
     const [invoiceData, setInvoiceData] = useState(invoices);
     const [refreshing, setRefreshing] = useState(false);
+    const [historyModalOpen, setHistoryModalOpen] = useState(false);
+    const [historyInvoice, setHistoryInvoice] = useState(null);
 
     // Compute grand total for the invoice lines
     const linesTotal = useMemo(() => {
@@ -102,6 +105,18 @@ const CustomerInvoiceDetailsModal = ({
     const handleDueDateEditorClose = () => {
         setDueDateEditorOpen(false);
         setEditingInvoice(null);
+    };
+
+    const handleHistoryClick = (invoice, event) => {
+        // Prevent the row click from triggering
+        event.stopPropagation();
+        setHistoryInvoice(invoice);
+        setHistoryModalOpen(true);
+    };
+
+    const handleHistoryModalClose = () => {
+        setHistoryModalOpen(false);
+        setHistoryInvoice(null);
     };
 
     const handleInvoiceClick = async (invoice) => {
@@ -193,13 +208,24 @@ const CustomerInvoiceDetailsModal = ({
                                                 <td className="p-3 text-sm font-mono">{invoice.physical_receipt_no || 'N/A'}</td>
                                                 <td className="p-3 text-sm">{new Date(invoice.invoice_date).toLocaleDateString()}</td>
                                                 <td className="p-3 text-sm">
-                                                    <button
-                                                        onClick={(e) => handleDueDateClick(invoice, e)}
-                                                        className="inline-flex items-center px-2.5 py-1 text-sm font-medium bg-gray-100 text-gray-700 border border-gray-200 rounded-full hover:bg-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-offset-1"
-                                                        title="Click to edit due date"
-                                                    >
-                                                        {dueDate.toLocaleDateString()}
-                                                    </button>
+                                                    <div className="flex items-center gap-2">
+                                                        <button
+                                                            onClick={(e) => handleDueDateClick(invoice, e)}
+                                                            className="inline-flex items-center px-2.5 py-1 text-sm font-medium bg-gray-100 text-gray-700 border border-gray-200 rounded-full hover:bg-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-offset-1"
+                                                            title="Click to edit due date"
+                                                        >
+                                                            {dueDate.toLocaleDateString()}
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => handleHistoryClick(invoice, e)}
+                                                            className="inline-flex items-center justify-center w-6 h-6 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-offset-1"
+                                                            title="View due date edit history"
+                                                        >
+                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                            </svg>
+                                                        </button>
+                                                    </div>
                                                 </td>
                                                 <td className="p-3 text-sm text-right font-mono">{formatCurrency(invoice.total_amount)}</td>
                                                 <td className="p-3 text-sm text-right font-mono font-medium">{formatCurrency(invoice.balance_due)}</td>
@@ -278,6 +304,14 @@ const CustomerInvoiceDetailsModal = ({
                 onClose={handleDueDateEditorClose}
                 invoice={editingInvoice}
                 onSaved={handleDueDateSaved}
+            />
+
+            {/* Edit History Modal */}
+            <EditHistory
+                isOpen={historyModalOpen}
+                onClose={handleHistoryModalClose}
+                invoiceId={historyInvoice?.invoice_id}
+                invoiceNumber={historyInvoice?.invoice_number}
             />
         </>
     );

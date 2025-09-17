@@ -17,6 +17,12 @@
 				"$eslint-stylish"
 			],
 			"group": "build"
+		},
+		{
+			"label": "web: build",
+			"type": "shell",
+			"command": "Set-Location -Path \"f:\\Temporary Files\\forson-business-suite\\packages\\web\"; npm run build",
+			"group": "build"
 		}
 	]
 }
