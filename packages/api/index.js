@@ -64,6 +64,7 @@ registerRoute('/api', './routes/brandRoutes');
 registerRoute('/api', './routes/groupRoutes');
 registerRoute('/api', './routes/tagRoutes');
 registerRoute('/api', './routes/taxRateRoutes');
+registerRoute('/api', './routes/taxReportRoutes');
 
 // Admin & System Modules
 registerRoute('/api', './routes/employeeRoutes');

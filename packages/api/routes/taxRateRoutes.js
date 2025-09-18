@@ -17,17 +17,33 @@ router.get('/tax-rates', protect, async (req, res) => {
 // POST /api/tax-rates - Create a new tax rate
 router.post('/tax-rates', protect, isAdmin, async (req, res) => {
     const { rate_name, rate_percentage } = req.body;
-    if (!rate_name || rate_percentage === undefined) {
-        return res.status(400).json({ message: 'Rate name and percentage are required.' });
+    
+    // Validate required fields
+    if (!rate_name || rate_name.trim() === '') {
+        return res.status(400).json({ message: 'Rate name is required.' });
     }
+    
+    if (rate_percentage === undefined || rate_percentage === null || rate_percentage === '') {
+        return res.status(400).json({ message: 'Rate percentage is required.' });
+    }
+    
+    // Convert and validate rate_percentage
+    const ratePercentageNum = parseFloat(rate_percentage);
+    if (isNaN(ratePercentageNum) || ratePercentageNum < 0 || ratePercentageNum > 1) {
+        return res.status(400).json({ message: 'Rate percentage must be a number between 0 and 1 (e.g., 0.12 for 12%).' });
+    }
+    
     try {
         const newRate = await db.query(
             'INSERT INTO tax_rate (rate_name, rate_percentage) VALUES ($1, $2) RETURNING *',
-            [rate_name, rate_percentage]
+            [rate_name.trim(), ratePercentageNum]
         );
         res.status(201).json(newRate.rows[0]);
     } catch (err) {
-        console.error(err.message);
+        console.error('Error creating tax rate:', err.message);
+        if (err.code === '23505') { // Unique violation
+            return res.status(409).json({ message: 'A tax rate with this name already exists.' });
+        }
         res.status(500).send('Server Error');
     }
 });
@@ -36,20 +52,36 @@ router.post('/tax-rates', protect, isAdmin, async (req, res) => {
 router.put('/tax-rates/:id', protect, isAdmin, async (req, res) => {
     const { id } = req.params;
     const { rate_name, rate_percentage } = req.body;
-    if (!rate_name || rate_percentage === undefined) {
-        return res.status(400).json({ message: 'Rate name and percentage are required.' });
+    
+    // Validate required fields
+    if (!rate_name || rate_name.trim() === '') {
+        return res.status(400).json({ message: 'Rate name is required.' });
     }
+    
+    if (rate_percentage === undefined || rate_percentage === null || rate_percentage === '') {
+        return res.status(400).json({ message: 'Rate percentage is required.' });
+    }
+    
+    // Convert and validate rate_percentage
+    const ratePercentageNum = parseFloat(rate_percentage);
+    if (isNaN(ratePercentageNum) || ratePercentageNum < 0 || ratePercentageNum > 1) {
+        return res.status(400).json({ message: 'Rate percentage must be a number between 0 and 1 (e.g., 0.12 for 12%).' });
+    }
+    
     try {
         const updatedRate = await db.query(
             'UPDATE tax_rate SET rate_name = $1, rate_percentage = $2 WHERE tax_rate_id = $3 RETURNING *',
-            [rate_name, rate_percentage, id]
+            [rate_name.trim(), ratePercentageNum, id]
         );
         if (updatedRate.rows.length === 0) {
             return res.status(404).json({ message: 'Tax rate not found.' });
         }
         res.json(updatedRate.rows[0]);
     } catch (err) {
-        console.error(err.message);
+        console.error('Error updating tax rate:', err.message);
+        if (err.code === '23505') { // Unique violation
+            return res.status(409).json({ message: 'A tax rate with this name already exists.' });
+        }
         res.status(500).send('Server Error');
     }
 });

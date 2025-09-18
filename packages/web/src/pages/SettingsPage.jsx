@@ -57,97 +57,203 @@ const TaxRateSettings = ({ settings, handleChange }) => {
     const [taxRates, setTaxRates] = useState([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentRate, setCurrentRate] = useState(null);
+    const [loading, setLoading] = useState(true);
 
     const fetchTaxRates = async () => {
-        const response = await api.get('/tax-rates');
-        setTaxRates(response.data);
+        try {
+            setLoading(true);
+            const response = await api.get('/tax-rates');
+            setTaxRates(response.data);
+        } catch (error) {
+            console.error('Failed to fetch tax rates:', error);
+            toast.error('Failed to load tax rates.');
+        } finally {
+            setLoading(false);
+        }
     };
 
     useEffect(() => {
         fetchTaxRates();
     }, []);
 
-    const handleSave = (rateData) => {
-        const promise = currentRate
-            ? api.put(`/tax-rates/${currentRate.tax_rate_id}`, rateData)
-            : api.post('/tax-rates', rateData);
+    const handleSave = async (rateData) => {
+        // Validate rate data
+        if (!rateData.rate_name || !rateData.rate_name.trim()) {
+            toast.error('Rate name is required.');
+            return;
+        }
         
-        toast.promise(promise, {
-            loading: 'Saving tax rate...',
-            success: () => {
-                setIsModalOpen(false);
-                fetchTaxRates();
-                return 'Tax rate saved!';
-            },
-            error: 'Failed to save tax rate.'
-        });
+        // Convert rate_percentage to number and validate
+        const ratePercentage = parseFloat(rateData.rate_percentage);
+        if (isNaN(ratePercentage) || ratePercentage < 0 || ratePercentage > 1) {
+            toast.error('Rate percentage must be a number between 0 and 1 (e.g., 0.12 for 12%).');
+            return;
+        }
+
+        const validatedData = {
+            ...rateData,
+            rate_percentage: ratePercentage
+        };
+
+        try {
+            currentRate
+                ? await api.put(`/tax-rates/${currentRate.tax_rate_id}`, validatedData)
+                : await api.post('/tax-rates', validatedData);
+            
+            setIsModalOpen(false);
+            fetchTaxRates();
+            toast.success('Tax rate saved successfully!');
+        } catch (err) {
+            console.error('Save tax rate error:', err);
+            
+            if (err.response?.status === 401) {
+                toast.error('Authentication expired. Please log out and log back in.');
+                return;
+            }
+            
+            const errorMessage = err.response?.data?.message || 'Failed to save tax rate.';
+            toast.error(errorMessage);
+        }
     };
 
-    const handleDelete = (rateId) => {
+    const handleDelete = (rateId, rateName) => {
+        if (!window.confirm(`Are you sure you want to delete the tax rate "${rateName}"? This action cannot be undone.`)) {
+            return;
+        }
+
         const promise = api.delete(`/tax-rates/${rateId}`);
         toast.promise(promise, {
             loading: 'Deleting tax rate...',
             success: () => {
                 fetchTaxRates();
-                return 'Tax rate deleted!';
+                return 'Tax rate deleted successfully!';
             },
-            error: (err) => err.response?.data?.message || 'Failed to delete.'
+            error: (err) => {
+                console.error('Delete tax rate error:', err);
+                return err.response?.data?.message || 'Failed to delete tax rate.';
+            }
         });
     };
 
-    const handleSetDefault = (rateId) => {
+    const handleSetDefault = (rateId, rateName) => {
         const promise = api.put(`/tax-rates/${rateId}/set-default`);
         toast.promise(promise, {
-            loading: 'Setting default...',
+            loading: 'Setting default tax rate...',
             success: () => {
                 fetchTaxRates();
-                return 'Default tax rate updated!';
+                return `"${rateName}" is now the default tax rate.`;
             },
-            error: 'Failed to set default.'
+            error: (err) => {
+                console.error('Set default tax rate error:', err);
+                return err.response?.data?.message || 'Failed to set default tax rate.';
+            }
         });
     };
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center py-8">
+                <div className="text-sm text-gray-500">Loading tax rates...</div>
+            </div>
+        );
+    }
 
     return (
         <div>
             <div className="pb-4 mb-4 border-b">
-                 <div className="flex items-center">
+                <div className="flex items-center">
                     <input 
                         type="checkbox" 
                         name="DEFAULT_IS_TAX_INCLUSIVE" 
                         id="default_is_tax_inclusive"
                         checked={settings.DEFAULT_IS_TAX_INCLUSIVE === 'true'} 
                         onChange={handleChange} 
-                        className="h-4 w-4 text-blue-600 border-gray-300 rounded" 
+                        className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" 
                     />
                     <label htmlFor="default_is_tax_inclusive" className="ml-2 block text-sm text-gray-900">
                         New parts default to "Price is Tax Inclusive"
                     </label>
                 </div>
+                <p className="mt-1 text-xs text-gray-500">
+                    When enabled, new parts will have tax-inclusive pricing by default. This setting does not affect existing parts.
+                </p>
             </div>
 
             <div className="flex justify-between items-center mb-4">
-                <p className="text-sm text-gray-600">Manage tax rates for your products.</p>
-                <button type="button" onClick={() => { setCurrentRate(null); setIsModalOpen(true); }} className="bg-blue-600 text-white px-3 py-1 rounded-lg text-sm font-semibold hover:bg-blue-700">Add Rate</button>
+                <div>
+                    <p className="text-sm text-gray-600">Configure tax rates for your products and services.</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                        {taxRates.length === 0 ? 'No tax rates configured.' : `${taxRates.length} tax rate(s) configured.`}
+                    </p>
+                </div>
+                <button 
+                    type="button" 
+                    onClick={() => { setCurrentRate(null); setIsModalOpen(true); }} 
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    aria-label="Add new tax rate"
+                >
+                    Add Tax Rate
+                </button>
             </div>
-            <div className="space-y-2">
-                {taxRates.map(rate => (
-                    <div key={rate.tax_rate_id} className="flex items-center justify-between bg-gray-50 p-2 rounded-lg">
-                        <div className="flex items-center">
-                            <span className="text-sm font-medium">{rate.rate_name} ({(rate.rate_percentage * 100).toFixed(2)}%)</span>
-                            {rate.is_default && (
-                                <Icon path={ICONS.star} className="h-4 w-4 text-yellow-500 ml-2" />
-                            )}
+
+            {taxRates.length === 0 ? (
+                <div className="text-center py-8 bg-gray-50 rounded-lg">
+                    <p className="text-sm text-gray-500 mb-3">No tax rates configured yet.</p>
+                    <button 
+                        type="button"
+                        onClick={() => { setCurrentRate(null); setIsModalOpen(true); }}
+                        className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                    >
+                        Add your first tax rate
+                    </button>
+                </div>
+            ) : (
+                <div className="space-y-2">
+                    {taxRates.map(rate => (
+                        <div key={rate.tax_rate_id} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg hover:bg-gray-100 transition-colors">
+                            <div className="flex items-center">
+                                <div>
+                                    <span className="text-sm font-medium text-gray-900">{rate.rate_name}</span>
+                                    <span className="ml-2 text-sm text-gray-600">({(rate.rate_percentage * 100).toFixed(2)}%)</span>
+                                </div>
+                                {rate.is_default && (
+                                    <div className="ml-3 flex items-center">
+                                        <Icon path={ICONS.star} className="h-4 w-4 text-yellow-500" />
+                                        <span className="ml-1 text-xs text-yellow-700 font-medium">Default</span>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                {!rate.is_default && (
+                                    <button 
+                                        onClick={() => handleSetDefault(rate.tax_rate_id, rate.rate_name)} 
+                                        className="text-xs font-medium text-gray-600 hover:text-gray-900 px-2 py-1 rounded hover:bg-gray-200 transition-colors"
+                                        title="Set as default tax rate"
+                                    >
+                                        Set Default
+                                    </button>
+                                )}
+                                <button 
+                                    onClick={() => { setCurrentRate(rate); setIsModalOpen(true); }} 
+                                    className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50 transition-colors"
+                                    title="Edit tax rate"
+                                >
+                                    <Icon path={ICONS.edit} className="h-4 w-4" />
+                                </button>
+                                <button 
+                                    onClick={() => handleDelete(rate.tax_rate_id, rate.rate_name)} 
+                                    className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 transition-colors"
+                                    title="Delete tax rate"
+                                    disabled={rate.is_default}
+                                >
+                                    <Icon path={ICONS.trash} className="h-4 w-4" />
+                                </button>
+                            </div>
                         </div>
-                        <div className="flex items-center space-x-3">
-                            {!rate.is_default && (
-                                <button onClick={() => handleSetDefault(rate.tax_rate_id)} className="text-xs font-semibold text-gray-600 hover:text-black">Set as Default</button>
-                            )}
-                            <button onClick={() => { setCurrentRate(rate); setIsModalOpen(true); }} className="text-blue-600 hover:text-blue-800"><Icon path={ICONS.edit} className="h-4 w-4" /></button>
-                            <button onClick={() => handleDelete(rate.tax_rate_id)} className="text-red-500 hover:text-red-700"><Icon path={ICONS.trash} className="h-4 w-4" /></button>
-                        </div>
-                    </div>
-                ))}
-            </div>
+                    ))}
+                </div>
+            )}
+
             <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={currentRate ? 'Edit Tax Rate' : 'Add New Tax Rate'}>
                 <TaxRateForm rate={currentRate} onSave={handleSave} onCancel={() => setIsModalOpen(false)} />
             </Modal>
@@ -160,7 +266,10 @@ const TaxRateForm = ({ rate, onSave, onCancel }) => {
 
     const initialFormData = useMemo(() => {
         if (rate) {
-            return { rate_name: rate.rate_name, rate_percentage: rate.rate_percentage };
+            return { 
+                rate_name: rate.rate_name || '', 
+                rate_percentage: rate.rate_percentage ? rate.rate_percentage.toString() : '' 
+            };
         } else {
             return { rate_name: '', rate_percentage: '' };
         }
@@ -176,7 +285,10 @@ const TaxRateForm = ({ rate, onSave, onCancel }) => {
 
     useEffect(() => {
         if (rate) {
-            setFormData({ rate_name: rate.rate_name, rate_percentage: rate.rate_percentage });
+            setFormData({ 
+                rate_name: rate.rate_name || '', 
+                rate_percentage: rate.rate_percentage ? rate.rate_percentage.toString() : '' 
+            });
         } else {
             setFormData({ rate_name: '', rate_percentage: '' });
         }
@@ -188,7 +300,8 @@ const TaxRateForm = ({ rate, onSave, onCancel }) => {
     };
 
     const handleSubmit = useCallback((e) => {
-        if (e) e.preventDefault();
+        e.preventDefault();
+        e.stopPropagation();
         onSave(formData);
     }, [formData, onSave]);
 
@@ -220,7 +333,23 @@ const TaxRateForm = ({ rate, onSave, onCancel }) => {
             </div>
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Rate Percentage (e.g., 0.12 for 12%)</label>
-                <input type="number" step="0.0001" name="rate_percentage" value={formData.rate_percentage} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
+                <input 
+                    type="number" 
+                    step="0.01" 
+                    min="0" 
+                    max="1" 
+                    name="rate_percentage" 
+                    value={formData.rate_percentage} 
+                    onChange={handleChange} 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg" 
+                    placeholder="0.12"
+                    required 
+                />
+                {formData.rate_percentage && (
+                    <p className="mt-1 text-xs text-gray-500">
+                        This represents {(parseFloat(formData.rate_percentage) * 100).toFixed(2)}%
+                    </p>
+                )}
             </div>
             <div className="mt-6 flex justify-end space-x-4">
                 <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg">Cancel</button>
@@ -292,7 +421,7 @@ const SettingsPage = ({ user }) => {
                 {activeTab === 'payment_methods' ? (
                     <PaymentMethodSettings />
                 ) : (
-                    <form onSubmit={handleSave}>
+                    <div>
                         <div className="mb-6 border-b border-gray-200">
                             <nav className="-mb-px flex space-x-6">
                                 <button type="button" onClick={() => setActiveTab('company')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'company' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Company Info</button>
@@ -312,14 +441,16 @@ const SettingsPage = ({ user }) => {
                         {activeTab === 'backup' && <BackupSettings settings={settings} handleChange={handleChange} handleSave={handleSave} />}
                         {activeTab === 'data' && <DataUtilsSettings />}
 
-                        {['company', 'financial', 'tax_rates', 'backup'].includes(activeTab) && (
-                            <div className="pt-4 flex justify-end mt-6 border-t">
-                                <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
-                                    Save Settings
-                                </button>
-                            </div>
+                        {['company', 'financial', 'backup'].includes(activeTab) && (
+                            <form onSubmit={handleSave}>
+                                <div className="pt-4 flex justify-end mt-6 border-t">
+                                    <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
+                                        Save Settings
+                                    </button>
+                                </div>
+                            </form>
                         )}
-                    </form>
+                    </div>
                 )}
             </div>
         </div>

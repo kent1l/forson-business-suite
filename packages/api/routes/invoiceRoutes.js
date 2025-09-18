@@ -5,6 +5,7 @@ const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatt
 const { protect, hasPermission, isAdmin } = require('../middleware/authMiddleware');
 const { constructDisplayName } = require('../helpers/displayNameHelper'); // Import the helper
 const { validatePaymentTerms } = require('../helpers/paymentTermsHelper');
+const { calculateInvoiceTax, storeTaxBreakdown, validateTaxCalculation } = require('../services/taxCalculationService');
 const router = express.Router();
 
 // GET /invoices - Get all invoices with date filtering and optional search
@@ -70,7 +71,8 @@ router.get('/invoices', protect, hasPermission('invoicing:create'), async (req, 
                 END AS days_overdue,
                 ps.settled_amount,
                 ps.pending_amount,
-                ps.on_account_amount
+                ps.on_account_amount,
+                tb.tax_breakdown
             FROM invoice i
             JOIN customer c ON i.customer_id = c.customer_id
             JOIN employee e ON i.employee_id = e.employee_id
@@ -87,6 +89,18 @@ router.get('/invoices', protect, hasPermission('invoicing:create'), async (req, 
                 FROM invoice_payments ip
                 WHERE ip.invoice_id = i.invoice_id
             ) ps ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT json_agg(json_build_object(
+                    'tax_rate_id', itb.tax_rate_id,
+                    'rate_name', itb.rate_name,
+                    'rate_percentage', itb.rate_percentage,
+                    'tax_base', itb.tax_base,
+                    'tax_amount', itb.tax_amount,
+                    'line_count', itb.line_count
+                )) as tax_breakdown
+                FROM invoice_tax_breakdown itb
+                WHERE itb.invoice_id = i.invoice_id
+            ) tb ON TRUE
             WHERE ${whereClauses.join(' AND ')}
             ORDER BY i.invoice_date DESC;
         `;
@@ -182,13 +196,22 @@ router.post('/invoices', async (req, res) => {
 
         const invoice_number = await getNextDocumentNumber(client, 'INV');
 
-        // Calculate total amount from lines (safely parse numeric fields)
-        const total_amount = lines.reduce((sum, line) => {
-            const qty = Number(line.quantity) || 0;
-            const sale = Number(line.sale_price) || 0;
-            const discount = Number(line.discount_amount) || 0;
-            return sum + (qty * sale) - discount;
-        }, 0);
+        // Get part details for tax calculation
+        const partIds = lines.map(line => line.part_id);
+        const { rows: parts } = await client.query(
+            'SELECT part_id, tax_rate_id, is_tax_inclusive_price FROM part WHERE part_id = ANY($1)',
+            [partIds]
+        );
+
+        // Calculate tax using the centralized service
+        const taxCalculation = await calculateInvoiceTax(lines, parts);
+        
+        // Validate calculation
+        if (!validateTaxCalculation(taxCalculation)) {
+            throw new Error('Tax calculation validation failed');
+        }
+
+        const { subtotal_ex_tax, tax_total, total_amount } = taxCalculation;
 
         // Securely parse amount_paid provided by client; default to 0
         const paid = parseFloat(String(amount_paid || '').replace(/[^0-9.-]+/g, '')) || 0;
@@ -260,28 +283,31 @@ router.post('/invoices', async (req, res) => {
         }
 
         const invoiceQuery = `
-            INSERT INTO invoice (invoice_number, customer_id, employee_id, total_amount, amount_paid, status, terms, payment_terms_days, due_date, physical_receipt_no)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            INSERT INTO invoice (invoice_number, customer_id, employee_id, total_amount, subtotal_ex_tax, tax_total, amount_paid, status, terms, payment_terms_days, due_date, physical_receipt_no, tax_calculation_version)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             RETURNING invoice_id;
         `;
     // Debug: log computed financials to aid troubleshooting
-    console.log(`Creating invoice ${invoice_number} - total_amount=${total_amount}, amount_paid=${paid}, status=${status}, payment_terms_days=${canonicalDays}, due_date=${dueDate}`);
+    console.log(`Creating invoice ${invoice_number} - total_amount=${total_amount}, subtotal_ex_tax=${subtotal_ex_tax}, tax_total=${tax_total}, amount_paid=${paid}, status=${status}, payment_terms_days=${canonicalDays}, due_date=${dueDate}`);
 
-    // Store numeric paid amount and computed status
-    const invoiceResult = await client.query(invoiceQuery, [invoice_number, customer_id, employee_id, total_amount, paid, status, normalizedTerms, canonicalDays, dueDate, prn]);
+    // Store numeric paid amount and computed status with tax breakdown
+    const invoiceResult = await client.query(invoiceQuery, [invoice_number, customer_id, employee_id, total_amount, subtotal_ex_tax, tax_total, paid, status, normalizedTerms, canonicalDays, dueDate, prn, taxCalculation.tax_calculation_version]);
         const newInvoiceId = invoiceResult.rows[0].invoice_id;
 
-        for (const line of lines) {
-            const { part_id, quantity, sale_price, discount_amount } = line;
+        // Store tax breakdown
+        await storeTaxBreakdown(newInvoiceId, taxCalculation.tax_breakdown, client);
+
+        for (const line of taxCalculation.lines) {
+            const { part_id, quantity, sale_price, discount_amount, tax_rate_id, tax_rate_snapshot, tax_base, tax_amount, is_tax_inclusive } = line;
 
             const costResult = await client.query('SELECT wac_cost FROM part WHERE part_id = $1', [part_id]);
             const cost_at_sale = costResult.rows.length > 0 ? costResult.rows[0].wac_cost : 0;
 
             const lineQuery = `
-                INSERT INTO invoice_line (invoice_id, part_id, quantity, sale_price, cost_at_sale, discount_amount)
-                VALUES ($1, $2, $3, $4, $5, $6);
+                INSERT INTO invoice_line (invoice_id, part_id, quantity, sale_price, cost_at_sale, discount_amount, tax_rate_id, tax_rate_snapshot, tax_base, tax_amount, is_tax_inclusive)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11);
             `;
-            await client.query(lineQuery, [newInvoiceId, part_id, quantity, sale_price, cost_at_sale, discount_amount]);
+            await client.query(lineQuery, [newInvoiceId, part_id, quantity, sale_price, cost_at_sale, discount_amount || 0, tax_rate_id, tax_rate_snapshot, tax_base, tax_amount, is_tax_inclusive]);
 
             const transactionQuery = `
                 INSERT INTO inventory_transaction (part_id, trans_type, quantity, unit_cost, reference_no, employee_id)
@@ -318,7 +344,11 @@ router.post('/invoices', async (req, res) => {
         tendered_amount: tendered_amount || null, 
         payment_terms_days: canonicalDays, 
         due_date: dueDate,
-        physical_receipt_no: prn // Return the potentially auto-incremented number
+        physical_receipt_no: prn,
+        subtotal_ex_tax,
+        tax_total,
+        total_amount,
+        tax_breakdown: taxCalculation.tax_breakdown
     });
 
     } catch (err) {
