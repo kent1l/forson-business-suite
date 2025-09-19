@@ -34,7 +34,7 @@ void RefundForm;
 
 const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
     const { settings } = useSettings();
-    const { user } = useAuth();
+    const { hasPermission } = useAuth();
     const [lines, setLines] = useState([]);
     const [payments, setPayments] = useState([]);
     const [paymentsForbidden, setPaymentsForbidden] = useState(false);
@@ -347,27 +347,20 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                     {!showRefundForm && (
                         <div className="pt-4 flex justify-between items-center gap-3">
                             <div className="flex gap-2">
-                                {user?.permission_level_id === 10 ? (
-                                    <>
-                                        <button
-                                            onClick={handleEditReceiptNo}
-                                            className="bg-cyan-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-cyan-700 transition-colors duration-200 shadow-sm"
-                                        >
-                                            Edit Receipt No.
-                                        </button>
-                                        <button
-                                            onClick={handleDelete}
-                                            className="bg-white border border-red-300 text-red-600 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-red-50"
-                                        >
-                                            Delete Invoice
-                                        </button>
-                                    </>
-                                ) : (
+                                {hasPermission('invoice:edit_receipt_no') && (
                                     <button
                                         onClick={handleEditReceiptNo}
                                         className="bg-cyan-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-cyan-700 transition-colors duration-200 shadow-sm"
                                     >
                                         Edit Receipt No.
+                                    </button>
+                                )}
+                                {hasPermission('invoice:delete') && (
+                                    <button
+                                        onClick={handleDelete}
+                                        className="bg-white border border-red-300 text-red-600 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-red-50"
+                                    >
+                                        Delete Invoice
                                     </button>
                                 )}
                             </div>

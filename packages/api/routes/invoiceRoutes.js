@@ -2,7 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatter');
-const { protect, hasPermission, isAdmin } = require('../middleware/authMiddleware');
+const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { constructDisplayName } = require('../helpers/displayNameHelper'); // Import the helper
 const { validatePaymentTerms } = require('../helpers/paymentTermsHelper');
 const { calculateInvoiceTax, storeTaxBreakdown, validateTaxCalculation } = require('../services/taxCalculationService');
@@ -537,9 +537,8 @@ router.put('/invoices/payments/:payment_id/settle', protect, hasPermission('invo
     }
 });
 
-module.exports = router;
-// DELETE /api/invoices/:id - Admin only hard delete with stock reversal
-router.delete('/invoices/:id', protect, isAdmin, async (req, res) => {
+// DELETE /api/invoices/:id - Permission-based delete with stock reversal
+router.delete('/invoices/:id', protect, hasPermission('invoice:delete'), async (req, res) => {
     const { id } = req.params;
     const client = await db.getClient();
     try {
@@ -592,7 +591,7 @@ router.delete('/invoices/:id', protect, isAdmin, async (req, res) => {
 });
 
 // PUT /api/invoices/:id/physical-receipt-no - Update physical receipt number
-router.put('/invoices/:id/physical-receipt-no', protect, hasPermission('invoicing:create'), async (req, res) => {
+router.put('/invoices/:id/physical-receipt-no', protect, hasPermission('invoice:edit_receipt_no'), async (req, res) => {
     const { id } = req.params;
     const { physical_receipt_no } = req.body;
 
@@ -762,3 +761,5 @@ router.put('/invoices/:id/due-date', protect, hasPermission('invoicing:create'),
         client.release();
     }
 });
+
+module.exports = router;
