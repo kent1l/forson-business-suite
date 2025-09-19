@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
+import { useSettings } from '../../contexts/SettingsContext';
 import Combobox from '../ui/Combobox';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
 const SalesByCustomerReport = () => {
+    const { settings } = useSettings();
     const [reportData, setReportData] = useState([]);
     const [customers, setCustomers] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -99,7 +101,7 @@ const SalesByCustomerReport = () => {
                                     <tr key={row.customer_id} className="border-b hover:bg-gray-50">
                                         <td className="p-3 text-sm font-medium text-gray-800">{row.first_name} {row.last_name}</td>
                                         <td className="p-3 text-sm text-center">{row.total_invoices}</td>
-                                        <td className="p-3 text-sm text-right font-mono">₱{parseFloat(row.total_sales).toFixed(2)}</td>
+                                        <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.total_sales).toFixed(2)}</td>
                                     </tr>
                                 ))}
                             </tbody>

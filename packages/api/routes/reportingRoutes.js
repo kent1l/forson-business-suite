@@ -2,10 +2,11 @@ const express = require('express');
 const db = require('../db');
 const { Parser } = require('json2csv');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
+const { protect, hasPermission } = require('../middleware/authMiddleware');
 const router = express.Router();
 
 // GET /api/reports/sales-summary
-router.get('/reports/sales-summary', async (req, res) => {
+router.get('/reports/sales-summary', protect, hasPermission('reports:view'), async (req, res) => {
     const { startDate, endDate, format = 'json' } = req.query;
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
     
@@ -71,7 +72,7 @@ router.get('/reports/sales-summary', async (req, res) => {
 });
 
 // GET /api/reports/top-selling - (No change needed here as it doesn't calculate profit)
-router.get('/reports/top-selling', async (req, res) => {
+router.get('/reports/top-selling', protect, hasPermission('reports:view'), async (req, res) => {
     const { startDate, endDate, sortBy = 'revenue', format = 'json' } = req.query;
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
 
@@ -111,7 +112,7 @@ router.get('/reports/top-selling', async (req, res) => {
 });
 
 // GET /api/reports/inventory-valuation
-router.get('/reports/inventory-valuation', async (req, res) => {
+router.get('/reports/inventory-valuation', protect, hasPermission('reports:view'), async (req, res) => {
     const { format = 'json' } = req.query;
     try {
         const query = `
@@ -165,7 +166,7 @@ router.get('/reports/inventory-valuation', async (req, res) => {
 });
 
 // GET /api/reports/low-stock - (No change needed)
-router.get('/reports/low-stock', async (req, res) => {
+router.get('/reports/low-stock', protect, hasPermission('reports:view'), async (req, res) => {
     const { format = 'json' } = req.query;
     try {
         const query = `
@@ -211,7 +212,7 @@ router.get('/reports/low-stock', async (req, res) => {
 
 
 // GET /api/reports/sales-by-customer - (No change needed)
-router.get('/reports/sales-by-customer', async (req, res) => {
+router.get('/reports/sales-by-customer', protect, hasPermission('reports:view'), async (req, res) => {
     const { startDate, endDate, customerId, format = 'json' } = req.query;
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
 
@@ -253,7 +254,7 @@ router.get('/reports/sales-by-customer', async (req, res) => {
 });
 
 // GET /api/reports/inventory-movement - (No change needed)
-router.get('/reports/inventory-movement', async (req, res) => {
+router.get('/reports/inventory-movement', protect, hasPermission('reports:view'), async (req, res) => {
     const { startDate, endDate, partId, format = 'json' } = req.query;
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
 
@@ -303,7 +304,7 @@ router.get('/reports/inventory-movement', async (req, res) => {
 });
 
 // GET /api/reports/profitability-by-product
-router.get('/reports/profitability-by-product', async (req, res) => {
+router.get('/reports/profitability-by-product', protect, hasPermission('reports:view'), async (req, res) => {
     const { startDate, endDate, brandId, groupId, format = 'json' } = req.query;
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
     
@@ -357,7 +358,7 @@ router.get('/reports/profitability-by-product', async (req, res) => {
 });
 
 // NEW ENDPOINT: Get refunds report
-router.get('/reports/refunds', async (req, res) => {
+router.get('/reports/refunds', protect, hasPermission('reports:view'), async (req, res) => {
     const { startDate, endDate } = req.query;
     if (!startDate || !endDate) {
         return res.status(400).json({ message: 'Start date and end date are required.' });

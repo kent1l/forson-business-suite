@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
+import { useSettings } from '../../contexts/SettingsContext';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
 const TopSellingReport = () => {
+    const { settings } = useSettings();
     const [reportData, setReportData] = useState([]);
     const [loading, setLoading] = useState(false);
     const [dates, setDates] = useState(() => {
@@ -100,7 +102,7 @@ const TopSellingReport = () => {
                                     <td className="p-3 text-sm font-mono">{row.internal_sku}</td>
                                     <td className="p-3 text-sm">{row.display_name}</td>
                                     <td className="p-3 text-sm text-center font-semibold">{Number(row.total_quantity_sold).toLocaleString()}</td>
-                                    <td className="p-3 text-sm text-right font-mono">₱{parseFloat(row.total_revenue).toFixed(2)}</td>
+                                    <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.total_revenue).toFixed(2)}</td>
                                 </tr>
                             ))}
                              {reportData.length === 0 && !loading && (
