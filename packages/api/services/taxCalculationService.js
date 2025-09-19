@@ -18,7 +18,9 @@ const TAX_CALCULATION_VERSION = 'v1.0';
 function calculateLineTax(line, part, taxRates, defaultTaxRate) {
     const lineTotal = (line.quantity * line.sale_price) - (line.discount_amount || 0);
     const taxRateId = part.tax_rate_id;
-    const taxRatePercentage = taxRates.get(taxRateId) || defaultTaxRate;
+    // Normalize: allow stored values like 12 meaning 12% or 0.12 meaning 12%
+    const rawRate = taxRates.get(taxRateId) ?? defaultTaxRate;
+    const taxRatePercentage = rawRate > 1 ? rawRate / 100 : rawRate;
     const isTaxInclusive = part.is_tax_inclusive_price || false;
     
     let taxBase, taxAmount;
@@ -65,19 +67,28 @@ async function calculateInvoiceTax(lines, parts, selectedTaxRateId = null) {
                 [selectedTaxRateId]
             );
             if (selectedRateRows.length > 0) {
-                defaultTaxRate = parseFloat(selectedRateRows[0].rate_percentage);
+                const raw = parseFloat(selectedRateRows[0].rate_percentage);
+                defaultTaxRate = raw > 1 ? raw / 100 : raw;
             }
         }
         
         if (defaultTaxRate === null) {
             // Fall back to database default
             const { rows } = await db.query('SELECT rate_percentage FROM tax_rate WHERE is_default = true LIMIT 1');
-            defaultTaxRate = rows.length > 0 ? parseFloat(rows[0].rate_percentage) : 0.12; // 12% fallback
+            if (rows.length > 0) {
+                const raw = parseFloat(rows[0].rate_percentage);
+                defaultTaxRate = raw > 1 ? raw / 100 : raw;
+            } else {
+                defaultTaxRate = 0.12; // 12% fallback
+            }
         }
         
         // Get all tax rates for efficient lookup
         const { rows: taxRateRows } = await db.query('SELECT tax_rate_id, rate_percentage FROM tax_rate');
-        const taxRates = new Map(taxRateRows.map(r => [r.tax_rate_id, parseFloat(r.rate_percentage)]));
+        const taxRates = new Map(taxRateRows.map(r => {
+            const raw = parseFloat(r.rate_percentage);
+            return [r.tax_rate_id, raw > 1 ? raw / 100 : raw];
+        }));
         
         // Create parts lookup map
         const partsMap = new Map(parts.map(p => [p.part_id, p]));

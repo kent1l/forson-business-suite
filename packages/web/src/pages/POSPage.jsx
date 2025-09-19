@@ -355,45 +355,93 @@ const POSPage = ({ user, lines, setLines }) => {
         setLines(lines.filter(line => line.part_id !== partId));
     };
     
-    const { subtotal, tax, total } = useMemo(() => {
-        // Calculate totals using the same logic as backend taxCalculationService
-        const taxRatesMap = new Map(taxRates.map(rate => [rate.tax_rate_id, parseFloat(rate.rate_percentage)]));
-        const defaultTaxRate = taxRates.find(r => r.is_default)?.rate_percentage || 0;
-        const selectedTaxRatePercentage = selectedTaxRate?.rate_percentage || defaultTaxRate;
+    const { subtotal, tax, total, grossSubtotal, hasInclusive, anomaly } = useMemo(() => {
+        // Calculate totals using backend-aligned logic but also retain the raw (gross) entered line totals
+        // so we can present clearer labels and debug anomalies (e.g. unexpectedly huge tax share).
+        const normalizeRate = (r) => {
+            if (r === null || r === undefined || r === '') return 0;
+            const num = parseFloat(r);
+            if (isNaN(num) || num < 0) return 0;
+            // Extend normalization: treat anything > 1 and <= 100 as a percent (e.g. 12 -> 0.12, 9 -> 0.09)
+            if (num > 1 && num <= 100) return num / 100;
+            return num; // already decimal (0 - 1)
+        };
+        const taxRatesMap = new Map(taxRates.map(rate => [rate.tax_rate_id, normalizeRate(rate.rate_percentage)]));
+        const defaultTaxRate = normalizeRate(taxRates.find(r => r.is_default)?.rate_percentage ?? 0);
+        const selectedTaxRatePercentage = normalizeRate(selectedTaxRate?.rate_percentage ?? defaultTaxRate);
 
-        let calculatedSubtotal = 0;
+        let netSubtotal = 0;      // Sum of tax bases (exclusive of tax)
+        let grossSubtotal = 0;    // Sum of visible/entered line totals (quantity * price - discount)
         let calculatedTax = 0;
+        let hasInclusive = false;
 
         lines.forEach(line => {
-            // Calculate line total the same way as backend: (quantity * sale_price) - discount_amount
             const lineTotal = (line.quantity * line.sale_price) - (line.discount_amount || 0);
-            calculatedSubtotal += lineTotal;
-
-            // Use part-specific tax rate if available, otherwise use selected tax rate as default
-            const partTaxRateId = line.tax_rate_id; // Now available from search API
-            const ratePercentage = taxRatesMap.get(partTaxRateId) ?? selectedTaxRatePercentage;
+            grossSubtotal += lineTotal;
+            const partTaxRateId = line.tax_rate_id;
+            let ratePercentage = taxRatesMap.get(partTaxRateId);
+            if (ratePercentage === undefined || ratePercentage === null) ratePercentage = selectedTaxRatePercentage;
+            // Final defensive clamp: if somehow ratePercentage > 1 after normalization, scale it (prevents 900% accidents)
+            if (ratePercentage > 1) {
+                console.warn('[POS][TAX] Abnormal rate >1 encountered after normalization, clamping', ratePercentage);
+                ratePercentage = ratePercentage / 100;
+            }
 
             let taxBase, taxAmount;
-
             if (line.is_tax_inclusive_price) {
-                // Tax inclusive: extract tax from total (same as backend)
+                hasInclusive = true;
                 taxBase = lineTotal / (1 + ratePercentage);
                 taxAmount = lineTotal - taxBase;
             } else {
-                // Tax exclusive: add tax to base (same as backend)
                 taxBase = lineTotal;
                 taxAmount = lineTotal * ratePercentage;
             }
 
-            // Round tax amount to 2 decimal places (same as backend per-line rounding)
-            taxAmount = Math.round(taxAmount * 100) / 100;
+            taxAmount = Math.round(taxAmount * 100) / 100; // per-line rounding
+            netSubtotal += taxBase;
             calculatedTax += taxAmount;
         });
 
+        const roundedNetSubtotal = Math.round(netSubtotal * 100) / 100;
+        const roundedGrossSubtotal = Math.round(grossSubtotal * 100) / 100;
+        const total = Math.round((roundedNetSubtotal + calculatedTax) * 100) / 100;
+
+        // Detect anomaly: effective tax rate extremely high or mismatch between reconstructed total and gross subtotal
+        let anomaly = null;
+        if (roundedNetSubtotal > 0) {
+            const effectiveRate = calculatedTax / roundedNetSubtotal; // e.g. 0.12 expected
+            if (effectiveRate > 1) { // >100%
+                anomaly = {
+                    type: 'HIGH_EFFECTIVE_RATE',
+                    effectiveRate,
+                    netSubtotal: roundedNetSubtotal,
+                    tax: calculatedTax,
+                    grossSubtotal: roundedGrossSubtotal
+                };
+            }
+        }
+        // Mismatch check (allow 1c rounding tolerance)
+        const recomposedFromNet = Math.round((roundedNetSubtotal + calculatedTax) * 100) / 100;
+        if (!anomaly && Math.abs(recomposedFromNet - roundedGrossSubtotal) > 0.05) {
+            anomaly = {
+                type: 'RECOMPOSE_MISMATCH',
+                netSubtotal: roundedNetSubtotal,
+                tax: calculatedTax,
+                recomposed: recomposedFromNet,
+                grossSubtotal: roundedGrossSubtotal
+            };
+        }
+        if (anomaly) {
+            console.warn('[POS][TAX][ANOMALY]', anomaly);
+        }
+
         return {
-            subtotal: calculatedSubtotal,
-            tax: calculatedTax,
-            total: calculatedSubtotal + calculatedTax,
+            subtotal: roundedNetSubtotal, // keep existing variable name for backwards references (represents NET ex-tax)
+            tax: Math.round(calculatedTax * 100) / 100,
+            total,
+            grossSubtotal: roundedGrossSubtotal,
+            hasInclusive,
+            anomaly
         };
     }, [lines, taxRates, selectedTaxRate]);
 
@@ -825,9 +873,24 @@ const POSPage = ({ user, lines, setLines }) => {
                         {lines.length === 0 && <p className="text-sm text-gray-500 text-center py-8">No items in cart.</p>}
                     </div>
                     <div className="p-4 border-t space-y-2">
-                        <div className="flex justify-between text-sm"><span>Subtotal</span><span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{subtotal.toFixed(2)}</span></div>
+                        {/* When there are tax-inclusive items we show both gross entered total and net ex-tax base for clarity */}
+                        {hasInclusive && (
+                            <div className="flex justify-between text-xs text-slate-500">
+                                <span>Items Total (Entered)</span>
+                                <span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{grossSubtotal.toFixed(2)}</span>
+                            </div>
+                        )}
+                        <div className="flex justify-between text-sm" title={hasInclusive ? 'Net subtotal (exclusive of tax extracted from inclusive line prices)' : 'Sum of line totals before tax'}>
+                            <span>{hasInclusive ? 'Net Subtotal (Ex Tax)' : 'Subtotal'}</span>
+                            <span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{subtotal.toFixed(2)}</span>
+                        </div>
                         <div className="flex justify-between text-sm"><span>Tax</span><span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{tax.toFixed(2)}</span></div>
                         <div className="flex justify-between font-bold text-lg"><span>Total</span><span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{total.toFixed(2)}</span></div>
+                        {anomaly && (
+                            <div className="mt-2 p-2 rounded bg-amber-50 border border-amber-200 text-[11px] text-amber-700 leading-snug">
+                                <strong>Tax Anomaly:</strong> {anomaly.type === 'HIGH_EFFECTIVE_RATE' && `Effective tax rate ${(anomaly.effectiveRate * 100).toFixed(2)}%`} {anomaly.type === 'RECOMPOSE_MISMATCH' && 'Mismatch between entered and recomposed totals.'}
+                            </div>
+                        )}
                         <button onClick={handleCheckout} className="w-full mt-4 bg-green-600 text-white py-3 rounded-lg font-semibold text-lg hover:bg-green-700 transition">Checkout (Ctrl+Enter)</button>
                     </div>
                 </div>
