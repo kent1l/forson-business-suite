@@ -482,7 +482,9 @@ const POSPage = ({ user, lines, setLines }) => {
                     part_id: line.part_id,
                     quantity: line.quantity,
                     sale_price: line.sale_price,
-                    discount_amount: line.discount_amount || 0
+                    discount_amount: line.discount_amount || 0,
+                    tax_rate_id: line.tax_rate_id || null,
+                    is_tax_inclusive_price: line.is_tax_inclusive_price || false
                 })),
             };
 
