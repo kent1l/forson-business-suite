@@ -50,13 +50,27 @@ function calculateLineTax(line, part, taxRates, defaultTaxRate) {
  * Calculate tax breakdown for an entire invoice
  * @param {Array} lines - Array of line items
  * @param {Array} parts - Array of part details
- * @param {number} defaultTaxRate - Default tax rate percentage
+ * @param {number} selectedTaxRateId - Optional selected tax rate ID from frontend
  * @returns {Object} Complete tax calculation
  */
-async function calculateInvoiceTax(lines, parts, defaultTaxRate = null) {
+async function calculateInvoiceTax(lines, parts, selectedTaxRateId = null) {
     try {
         // Get default tax rate if not provided
+        let defaultTaxRate = null;
+        
+        if (selectedTaxRateId) {
+            // Use the selected tax rate as default
+            const { rows: selectedRateRows } = await db.query(
+                'SELECT rate_percentage FROM tax_rate WHERE tax_rate_id = $1',
+                [selectedTaxRateId]
+            );
+            if (selectedRateRows.length > 0) {
+                defaultTaxRate = parseFloat(selectedRateRows[0].rate_percentage);
+            }
+        }
+        
         if (defaultTaxRate === null) {
+            // Fall back to database default
             const { rows } = await db.query('SELECT rate_percentage FROM tax_rate WHERE is_default = true LIMIT 1');
             defaultTaxRate = rows.length > 0 ? parseFloat(rows[0].rate_percentage) : 0.12; // 12% fallback
         }
@@ -120,7 +134,7 @@ async function calculateInvoiceTax(lines, parts, defaultTaxRate = null) {
                 if (key !== 'default') {
                     breakdown.rate_name = rateNamesMap.get(breakdown.tax_rate_id) || 'Unknown';
                 } else {
-                    breakdown.rate_name = 'Default Rate';
+                    breakdown.rate_name = selectedTaxRateId ? 'Selected Rate' : 'Default Rate';
                 }
             });
         }

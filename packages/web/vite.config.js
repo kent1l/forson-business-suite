@@ -17,7 +17,7 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://172.18.0.5:3001',
+        target: process.env.VITE_PROXY_TARGET || 'http://forson_backend_dev:3001',
         changeOrigin: true,
         secure: false
       }

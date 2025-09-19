@@ -184,7 +184,7 @@ router.get('/invoices/:id/lines-with-refunds', protect, hasPermission('invoicing
 
 // POST /invoices - Create a new invoice
 router.post('/invoices', async (req, res) => {
-    const { customer_id, employee_id, lines, amount_paid, tendered_amount, payment_method, terms, payment_terms_days, physical_receipt_no } = req.body;
+    const { customer_id, employee_id, lines, amount_paid, tendered_amount, payment_method, terms, payment_terms_days, physical_receipt_no, tax_rate_id } = req.body;
 
     if (!customer_id || !employee_id || !lines || !Array.isArray(lines) || lines.length === 0) {
         return res.status(400).json({ message: 'Missing required fields.' });
@@ -203,8 +203,8 @@ router.post('/invoices', async (req, res) => {
             [partIds]
         );
 
-        // Calculate tax using the centralized service
-        const taxCalculation = await calculateInvoiceTax(lines, parts);
+        // Calculate tax using the centralized service with selected tax rate
+        const taxCalculation = await calculateInvoiceTax(lines, parts, tax_rate_id);
         
         // Validate calculation
         if (!validateTaxCalculation(taxCalculation)) {

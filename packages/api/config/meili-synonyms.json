@@ -28,7 +28,7 @@
 ["Catalytic Converter", "cat", "cat converter", "catalytic"],
 ["Spark Plug", "sparkplug", "plug", "ngk", "denso", "bosch", "champion"],
 ["Ignition Coil", "coil", "coil pack", "coilpack", "ignition coil pack"],
-["Fuel Pump", "fuelpump", "in-tank pump", "in tank pump", "fuel sending unit", "fuel sender"],
+["Fuel Pump", "fuelpump", "in-tank pump", "in tank pump", "fuel sending unit", "fuel sender", "Fuel filter base", "Fuel base"],
 ["Fuel Injector", "injector", "fuel nozzle", "injectors"],
 ["Air Filter", "engine air filter", "intake filter", "airfilter", "air filter element"],
 ["Cabin Filter", "cabin air filter", "pollen filter", "cabin filter element"],
@@ -47,7 +47,7 @@
 ["Driveshaft", "prop shaft", "propeller shaft", "propshaft", "drive shaft"],
 ["Axle", "rear axle", "front axle", "axle shaft", "axles"],
 ["Differential", "diff", "rear diff", "front diff", "differential gear"],
-["Clutch", "clutch kit", "clutch disc", "clutch plate", "clutch assembly"],
+["clutch disc", "clutch plate", "clutch lining"],
 ["ECU", "ECM", "engine control unit", "engine control module", "engine computer", "ecu module"],
 ["PCM", "powertrain control module", "pcm module"],
 ["O2 Sensor", "oxygen sensor", "lambda sensor", "o2 sens", "lambda"],
@@ -135,6 +135,7 @@
 ["maintenance free", "mf", "maintenance-free", "maintenance free battery", "mf battery"],
 ["low maintenance", "lm", "low-maintenance", "low maintenance battery", "lm battery"],
 ["Isuzu Genuine Parts", "Isuzu OEM", "Genuine Isuzu", "Isuzu GP", "Orig Isuzu", "Isuzu Orig", "Isuzu Casa Parts", "Isuzu Genuine Japan", "Isuzu Surplus Orig", "Isuzu Orig Pyesa", "Pang-Isuzu Orig", "Isuzu Tunay na Pyesa", "100% Genuine Isuzu", "Authentic Isuzu", "Isuzu Japan Original", "Isuzu Factory Original"],
-["Car Freshener", "Air Freshener", "Car Air Freshener", "Car Scent", "Car Perfume", "Car Cologne", "Car Fragrance", "Dashboard Freshener", "Vent Freshener", "Clip Freshener", "Hanging Freshener", "Mirror Freshener", "Gel Freshener", "Spray Freshener", "Liquid Freshener", "Car Deodorizer", "Car Odor Remover", "Car Scents", "Air Spencer", "Little Trees", "California Scents", "Ambi Pur", "Glade Car", "Febreze Car", "Car Aroma", "Car Smell", "Pampabango ng Kotse", "Pabangong Kotse", "Bango Kotse"]
+["Car Freshener", "Air Freshener", "Car Air Freshener", "Car Scent", "Car Perfume", "Car Cologne", "Car Fragrance", "Dashboard Freshener", "Vent Freshener", "Clip Freshener", "Hanging Freshener", "Mirror Freshener", "Gel Freshener", "Spray Freshener", "Liquid Freshener", "Car Deodorizer", "Car Odor Remover", "Car Scents", "Air Spencer", "Little Trees", "California Scents", "Ambi Pur", "Glade Car", "Febreze Car", "Car Aroma", "Car Smell", "Pampabango ng Kotse", "Pabangong Kotse", "Bango Kotse"],
+["Hydrovac Cup","Booster Seal", "Seal vacuum", "Hydrovac Seal", "Hydrovac Booster Seal", "Brake Booster Seal", "Brake Hydrovac Seal", "Brake Booster Gasket", "Hydrovac Gasket", "Booster Gasket"]
 
 ]

@@ -134,6 +134,7 @@ const POSPage = ({ user, lines, setLines }) => {
         console.log('[POSPage] Component loaded');
     }, []); // Only log on mount
     const [physicalReceiptInput, setPhysicalReceiptInput] = useState('');
+    const [selectedTaxRate, setSelectedTaxRate] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState([]); // State for search results
     const [customers, setCustomers] = useState([]);
@@ -216,6 +217,14 @@ const POSPage = ({ user, lines, setLines }) => {
                 setGroups(groupsRes.data);
                 setTaxRates(taxRatesRes.data);
                 setPaymentMethods(paymentMethodsRes.data || []);
+                
+                // Set default tax rate if available and none is currently selected
+                if (taxRatesRes.data.length > 0 && !selectedTaxRate) {
+                    const defaultRate = taxRatesRes.data.find(r => r.is_default);
+                    if (defaultRate) {
+                        setSelectedTaxRate(defaultRate);
+                    }
+                }
                 console.debug('[POS] Loaded payment methods', paymentMethodsRes.data);
                 
                 const customersData = await fetchCustomers();
@@ -228,7 +237,7 @@ const POSPage = ({ user, lines, setLines }) => {
                 toast.error("Could not load initial data.");
             }
         })();
-    }, []);
+    }, [selectedTaxRate]);
 
     const customerOptions = useMemo(() => customers.map(c => ({
         value: c.customer_id,
@@ -293,6 +302,7 @@ const POSPage = ({ user, lines, setLines }) => {
         setLines([]);
         setSelectedCustomer(customers.find(c => c.first_name.toLowerCase() === 'walk-in') || null);
         setPhysicalReceiptInput('');
+        setSelectedTaxRate(null);
         setIsVoidConfirmOpen(false);
         toast((t) => (
             <div className="flex items-center">
@@ -346,26 +356,38 @@ const POSPage = ({ user, lines, setLines }) => {
     };
     
     const { subtotal, tax, total } = useMemo(() => {
-        // For display purposes, calculate estimated totals from lines
-        // The actual tax will be calculated by backend during invoice creation
+        // Calculate totals using the same logic as backend taxCalculationService
         const taxRatesMap = new Map(taxRates.map(rate => [rate.tax_rate_id, parseFloat(rate.rate_percentage)]));
         const defaultTaxRate = taxRates.find(r => r.is_default)?.rate_percentage || 0;
+        const selectedTaxRatePercentage = selectedTaxRate?.rate_percentage || defaultTaxRate;
 
         let calculatedSubtotal = 0;
         let calculatedTax = 0;
 
         lines.forEach(line => {
-            const lineSubtotal = line.quantity * line.sale_price;
-            calculatedSubtotal += lineSubtotal;
+            // Calculate line total the same way as backend: (quantity * sale_price) - discount_amount
+            const lineTotal = (line.quantity * line.sale_price) - (line.discount_amount || 0);
+            calculatedSubtotal += lineTotal;
 
-            const ratePercentage = taxRatesMap.get(line.tax_rate_id) ?? defaultTaxRate;
+            // Use part-specific tax rate if available, otherwise use selected tax rate as default
+            const partTaxRateId = line.tax_rate_id; // Now available from search API
+            const ratePercentage = taxRatesMap.get(partTaxRateId) ?? selectedTaxRatePercentage;
+
+            let taxBase, taxAmount;
 
             if (line.is_tax_inclusive_price) {
-                const taxAmount = lineSubtotal - (lineSubtotal / (1 + ratePercentage));
-                calculatedTax += taxAmount;
+                // Tax inclusive: extract tax from total (same as backend)
+                taxBase = lineTotal / (1 + ratePercentage);
+                taxAmount = lineTotal - taxBase;
             } else {
-                calculatedTax += lineSubtotal * ratePercentage;
+                // Tax exclusive: add tax to base (same as backend)
+                taxBase = lineTotal;
+                taxAmount = lineTotal * ratePercentage;
             }
+
+            // Round tax amount to 2 decimal places (same as backend per-line rounding)
+            taxAmount = Math.round(taxAmount * 100) / 100;
+            calculatedTax += taxAmount;
         });
 
         return {
@@ -373,7 +395,7 @@ const POSPage = ({ user, lines, setLines }) => {
             tax: calculatedTax,
             total: calculatedSubtotal + calculatedTax,
         };
-    }, [lines, taxRates]);
+    }, [lines, taxRates, selectedTaxRate]);
 
     const handleCheckout = useCallback(() => {
         if (lines.length === 0) return toast.error("Please add items to the cart.");
@@ -407,6 +429,7 @@ const POSPage = ({ user, lines, setLines }) => {
                 customer_id: selectedCustomer.customer_id,
                 employee_id: user.employee_id,
                 physical_receipt_no: normalizedPRN || null,
+                tax_rate_id: selectedTaxRate?.tax_rate_id || null,
                 lines: lines.map(line => ({
                     part_id: line.part_id,
                     quantity: line.quantity,
@@ -475,6 +498,7 @@ const POSPage = ({ user, lines, setLines }) => {
             const walkIn = customers.find(c => c.first_name.toLowerCase() === 'walk-in');
             setSelectedCustomer(walkIn || null);
             setPhysicalReceiptInput('');
+            setSelectedTaxRate(null);
             setIsPaymentModalOpen(false);
 
             toast.success(
@@ -562,8 +586,8 @@ const POSPage = ({ user, lines, setLines }) => {
         const items = [...lines]
             .map(l => ({ id: l.part_id, q: l.quantity, p: l.sale_price }))
             .sort((a, b) => (a.id > b.id ? 1 : -1));
-        return JSON.stringify({ items, c: selectedCustomer?.customer_id || null });
-    }, [lines, selectedCustomer?.customer_id]);
+        return JSON.stringify({ items, c: selectedCustomer?.customer_id || null, t: selectedTaxRate?.tax_rate_id || null });
+    }, [lines, selectedCustomer?.customer_id, selectedTaxRate?.tax_rate_id]);
 
     // Normalize physical receipt input to format: LL-XXXX (uppercase, dash separator)
     const normalizePhysicalReceipt = (value) => {
@@ -597,6 +621,7 @@ const POSPage = ({ user, lines, setLines }) => {
                 sale_price: l.sale_price
             })),
             customerId: selectedCustomer?.customer_id || null,
+            taxRateId: selectedTaxRate?.tax_rate_id || null,
             totals: { subtotal, tax, grandTotal: total }
         };
         const entry = saveSale(cartSnapshot);
@@ -604,7 +629,7 @@ const POSPage = ({ user, lines, setLines }) => {
             setLastSavedSignature(cartSignature);
             toast.success('Sale saved.');
         }
-    }, [canSave, lines, selectedCustomer?.customer_id, subtotal, tax, total, saveSale, cartSignature]);
+    }, [canSave, lines, selectedCustomer?.customer_id, selectedTaxRate?.tax_rate_id, subtotal, tax, total, saveSale, cartSignature]);
 
     // Keyboard shortcut (Ctrl+S / Cmd+S) to save sale
     useEffect(() => {
@@ -688,6 +713,8 @@ const POSPage = ({ user, lines, setLines }) => {
         setLines(restoredLines);
         const customer = customers.find(c => c.customer_id === cart.customerId);
         if (customer) setSelectedCustomer(customer);
+        const taxRate = taxRates.find(r => r.tax_rate_id === cart.taxRateId);
+        if (taxRate) setSelectedTaxRate(taxRate);
         removeSaved(id); // consume on restore (approved default)
         setShowSaved(false);
         toast.success('Sale restored.');
@@ -749,10 +776,34 @@ const POSPage = ({ user, lines, setLines }) => {
                     </div>
                     <div className="w-full md:w-1/3 bg-white rounded-xl border border-gray-200 flex flex-col order-1 md:order-2">
                     <div className="p-4 border-b">
-                        <div className="flex items-center space-x-3">
-                            <div className="font-semibold whitespace-nowrap">Physical Receipt No:</div>
-                            <div className="flex-1 p-2 bg-gray-50 rounded-lg">
-                                <input ref={physicalReceiptRef} value={physicalReceiptInput} onChange={(e) => setPhysicalReceiptInput(e.target.value)} onBlur={() => setPhysicalReceiptInput(normalizePhysicalReceipt(physicalReceiptInput))} placeholder="Enter receipt no (Ctrl+P)" className="w-full px-3 py-2 border rounded-md text-sm" />
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="flex flex-col">
+                                <div className="font-semibold text-sm mb-2 whitespace-nowrap">Physical Receipt No:</div>
+                                <div className="p-2 bg-gray-50 rounded-lg">
+                                    <input ref={physicalReceiptRef} value={physicalReceiptInput} onChange={(e) => setPhysicalReceiptInput(e.target.value)} onBlur={() => setPhysicalReceiptInput(normalizePhysicalReceipt(physicalReceiptInput))} placeholder="Enter receipt no (Ctrl+P)" className="w-full px-3 py-2 border rounded-md text-sm" />
+                                </div>
+                            </div>
+                            <div className="flex flex-col">
+                                <div className="font-semibold text-sm mb-2 whitespace-nowrap">Tax Rate:</div>
+                                <div className="p-2 bg-gray-50 rounded-lg">
+                                    <select
+                                        value={selectedTaxRate?.tax_rate_id || ''}
+                                        onChange={(e) => {
+                                            const rateId = e.target.value;
+                                            const rate = taxRates.find(r => r.tax_rate_id === parseInt(rateId));
+                                            setSelectedTaxRate(rate || null);
+                                        }}
+                                        className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                    >
+                                        <option value="">Select tax rate...</option>
+                                        {taxRates.map(rate => (
+                                            <option key={rate.tax_rate_id} value={rate.tax_rate_id}>
+                                                {rate.rate_name} ({(rate.rate_percentage * 100).toFixed(2)}%)
+                                                {rate.is_default ? ' - Default' : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
                         </div>
                     </div>
