@@ -26,7 +26,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, posLines, setPosL
 
     const renderPage = () => {
         switch (currentPage) {
-            case 'dashboard': return <Dashboard />;
+            case 'dashboard': return <Dashboard onNavigate={onNavigate} />;
             case 'pos': return <POSPage user={user} lines={posLines} setLines={setPosLines} />;
             case 'reporting': return <ReportingPage />;
             case 'power_search': return <PowerSearchPage />;

@@ -1,103 +1,208 @@
-import React, { useState, useEffect } from 'react';
-import api from '../api'; // Use the configured api instance
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import Icon from '../components/ui/Icon';
-import { ICONS } from '../constants';
+import { useState, useEffect, useCallback } from 'react';
+import api from '../api';
+import { RefreshCw, Activity } from 'lucide-react';
+import EnhancedKPICard from '../components/dashboard/EnhancedKPICard';
+import { SalesTrendChart, TopProductsChart } from '../components/dashboard/AnalyticsCharts';
+import { QuickActionsPanel } from '../components/dashboard/QuickActionsPanel';
+import { RecentActivityFeed } from '../components/dashboard/RecentActivityFeed';
 
-const DashboardCard = ({ title, value, icon, color, loading }) => (
-    <div className="bg-white p-6 rounded-lg border border-gray-200 flex items-center space-x-4">
-        <div className={`w-12 h-12 rounded-full flex items-center justify-center ${color.bg}`}>
-            <Icon path={icon} className={`h-6 w-6 ${color.text}`} />
-        </div>
-        <div>
-            <h3 className="text-sm font-medium text-gray-500">{title}</h3>
-            {loading ? (
-                <div className="mt-2 h-8 w-16 bg-gray-200 rounded animate-pulse"></div>
-            ) : (
-                <p className="text-2xl font-bold text-gray-800 mt-1">{value}</p>
-            )}
-        </div>
-    </div>
-);
-
-const Dashboard = () => {
-    const [stats, setStats] = useState({ totalParts: 0, lowStockItems: 0, pendingOrders: 0 });
-    const [chartData, setChartData] = useState([]);
+const Dashboard = ({ onNavigate }) => {
     const [loading, setLoading] = useState(true);
+    const [autoRefresh, setAutoRefresh] = useState(false);
+    const [lastUpdated, setLastUpdated] = useState(new Date());
     const [error, setError] = useState('');
+    const [timeRange, setTimeRange] = useState('30');
+    
+    // Dashboard data states
+    const [enhancedStats, setEnhancedStats] = useState({
+        kpis: {
+            todayRevenue: { value: 0, change: null, trend: null },
+            outstandingAR: { value: 0, change: null, trend: null },
+            inventoryValue: { value: 0, change: null, trend: null },
+            lowStockCount: { value: 0, urgent: false }
+        },
+        recentSales: [],
+        topProducts: []
+    });
+    const [chartData, setChartData] = useState([]);
+    const [lowStockItems, setLowStockItems] = useState([]);
+
+    const fetchDashboardData = useCallback(async () => {
+        try {
+            setLoading(true);
+            setError('');
+            
+            const [enhancedRes, chartRes, lowStockRes] = await Promise.all([
+                api.get('/dashboard/enhanced-stats'),
+                api.get(`/dashboard/sales-chart?days=${timeRange}`),
+                api.get('/dashboard/low-stock-items')
+            ]);
+            
+            setEnhancedStats(enhancedRes.data);
+            setChartData(chartRes.data);
+            setLowStockItems(lowStockRes.data);
+            setLastUpdated(new Date());
+        } catch (err) {
+            setError('Failed to load dashboard data.');
+            console.error('Dashboard data fetch error:', err);
+        } finally {
+            setLoading(false);
+        }
+    }, [timeRange]);
 
     useEffect(() => {
-        const fetchData = async () => {
-            try {
-                setLoading(true);
-                const [statsRes, chartRes] = await Promise.all([
-                    api.get('/dashboard/stats'),
-                    api.get('/dashboard/sales-chart')
-                ]);
-                setStats(statsRes.data);
-                setChartData(chartRes.data);
-            } catch (err) {
-                setError('Failed to load dashboard data.');
-                console.error(err);
-            } finally {
-                setLoading(false);
-            }
-        };
+        fetchDashboardData();
+    }, [fetchDashboardData]);
 
-        fetchData();
-    }, []);
+    // Auto-refresh functionality
+    useEffect(() => {
+        let interval;
+        if (autoRefresh) {
+            interval = setInterval(() => {
+                fetchDashboardData();
+            }, 30000); // Refresh every 30 seconds
+        }
+        return () => {
+            if (interval) clearInterval(interval);
+        };
+    }, [autoRefresh, fetchDashboardData]);
+
+    const handleNavigation = (path) => {
+        if (onNavigate) {
+            onNavigate(path);
+        }
+    };
+
+    const handleRefresh = () => {
+        fetchDashboardData();
+    };
+
+    const formatLastUpdated = () => {
+        return lastUpdated.toLocaleTimeString();
+    };
 
     if (error) {
-        return <p className="text-red-500">{error}</p>;
+        return (
+            <div className="min-h-screen bg-gray-50 p-4">
+                <div className="max-w-7xl mx-auto">
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-600">
+                        <p className="font-medium">Error loading dashboard</p>
+                        <p className="text-sm">{error}</p>
+                        <button 
+                            onClick={handleRefresh}
+                            className="mt-2 bg-red-100 hover:bg-red-200 px-3 py-1 rounded text-sm transition-colors"
+                        >
+                            Retry
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
     }
 
     return (
-        <div>
-            <h1 className="text-2xl font-semibold text-gray-800 mb-6">Dashboard</h1>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-                <DashboardCard 
-                    title="Total Parts" 
-                    value={stats.totalParts.toLocaleString()} 
-                    icon={ICONS.box} 
-                    color={{bg: 'bg-blue-100', text: 'text-blue-600'}} 
-                    loading={loading}
-                />
-                <DashboardCard 
-                    title="Low Stock Items" 
-                    value={stats.lowStockItems.toLocaleString()} 
-                    icon={ICONS.warning} 
-                    color={{bg: 'bg-yellow-100', text: 'text-yellow-600'}} 
-                    loading={loading}
-                />
-                <DashboardCard 
-                    title="Total Invoices" 
-                    value={stats.pendingOrders} 
-                    icon={ICONS.truck} 
-                    color={{bg: 'bg-red-100', text: 'text-red-600'}} 
-                    loading={loading}
-                />
-            </div>
-
-            <div className="bg-white p-6 rounded-xl border border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">Last 30 Days Sales</h3>
-                {loading ? (
-                    <div className="h-80 bg-gray-200 rounded animate-pulse"></div>
-                ) : (
-                    <div style={{ width: '100%', height: 300 }}>
-                        <ResponsiveContainer>
-                            <BarChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                <XAxis dataKey="date" fontSize={12} tickLine={false} axisLine={false} />
-                                <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `₱${value/1000}k`} />
-                                <Tooltip
-                                    cursor={{ fill: 'rgba(239, 246, 255, 0.5)' }}
-                                    formatter={(value) => [`₱${Number(value).toLocaleString()}`, "Sales"]}
-                                />
-                                <Bar dataKey="total_sales" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                            </BarChart>
-                        </ResponsiveContainer>
+        <div className="min-h-screen bg-gray-50">
+            <div className="max-w-7xl mx-auto p-4 space-y-6">
+                {/* Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <h1 className="text-3xl font-bold text-gray-900 mb-2">Dashboard</h1>
+                        <div className="flex items-center space-x-4 text-sm text-gray-600">
+                            <div className="flex items-center space-x-1">
+                                <Activity className="h-4 w-4" />
+                                <span>Last updated: {formatLastUpdated()}</span>
+                            </div>
+                        </div>
                     </div>
-                )}
+                    
+                    <div className="flex items-center space-x-3 mt-4 sm:mt-0">
+                        <label className="flex items-center space-x-2 text-sm text-gray-600">
+                            <input
+                                type="checkbox"
+                                checked={autoRefresh}
+                                onChange={(e) => setAutoRefresh(e.target.checked)}
+                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span>Auto-refresh (30s)</span>
+                        </label>
+                        
+                        <button
+                            onClick={handleRefresh}
+                            disabled={loading}
+                            className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg transition-colors"
+                        >
+                            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                            <span>Refresh</span>
+                        </button>
+                    </div>
+                </div>
+
+                {/* KPI Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <EnhancedKPICard
+                        title="Today's Revenue"
+                        value={enhancedStats.kpis.todayRevenue.value}
+                        change={enhancedStats.kpis.todayRevenue.change}
+                        trend={enhancedStats.kpis.todayRevenue.trend}
+                        icon="currency"
+                        color="green"
+                        loading={loading}
+                        onClick={() => handleNavigation('sales_history')}
+                    />
+                    <EnhancedKPICard
+                        title="Outstanding A/R"
+                        value={enhancedStats.kpis.outstandingAR.value}
+                        icon="invoice"
+                        color="blue"
+                        loading={loading}
+                        onClick={() => handleNavigation('accounts_receivable')}
+                        subtitle="Unpaid invoices"
+                    />
+                    <EnhancedKPICard
+                        title="Inventory Value"
+                        value={enhancedStats.kpis.inventoryValue.value}
+                        icon="package"
+                        color="purple"
+                        loading={loading}
+                        onClick={() => handleNavigation('inventory')}
+                        subtitle="Total stock value"
+                    />
+                    <EnhancedKPICard
+                        title="Low Stock Alert"
+                        value={`${enhancedStats.kpis.lowStockCount.value} items`}
+                        icon="warning"
+                        color="orange"
+                        urgent={enhancedStats.kpis.lowStockCount.urgent}
+                        loading={loading}
+                        onClick={() => handleNavigation('inventory')}
+                    />
+                </div>
+
+                {/* Quick Actions */}
+                <QuickActionsPanel onNavigate={handleNavigation} />
+
+                {/* Charts */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <SalesTrendChart
+                        data={chartData}
+                        loading={loading}
+                        timeRange={timeRange}
+                        onTimeRangeChange={setTimeRange}
+                    />
+                    <TopProductsChart
+                        data={enhancedStats.topProducts}
+                        loading={loading}
+                    />
+                </div>
+
+                {/* Recent Activity */}
+                <RecentActivityFeed
+                    recentSales={enhancedStats.recentSales}
+                    lowStockItems={lowStockItems}
+                    loading={loading}
+                    onViewAllSales={() => handleNavigation('sales_history')}
+                    onManageStock={() => handleNavigation('inventory')}
+                />
             </div>
         </div>
     );
