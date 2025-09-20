@@ -77,6 +77,9 @@ registerRoute('/api', './routes/settingsRoutes');
 registerRoute('/api/data', './routes/dataUtilsRoutes');
 registerRoute('/api/backups', './routes/backupRoutes');
 
+// Health Check Routes
+registerRoute('/api', './routes/healthRoutes');
+
 // Special Setup Route
 registerRoute('/api', './routes/setupRoutes');
 
@@ -114,7 +117,21 @@ const PORT = process.env.PORT || 3001;
 // Make the listen function async and call the setup function
 app.listen(PORT, async () => {
   console.log(`Server is running on port ${PORT}`);
-  await setupMeiliSearch();
+  
+  // Non-blocking Meilisearch setup with graceful handling
+  const setupResult = await setupMeiliSearch();
+  if (setupResult.success) {
+    console.log('Meilisearch setup completed successfully');
+  } else {
+    console.warn('Meilisearch setup had issues, but server will continue running');
+    if (setupResult.errors) {
+      console.warn('Setup errors:', setupResult.errors);
+    }
+    if (setupResult.error) {
+      console.warn('Setup error:', setupResult.error);
+    }
+  }
+  
   // Start the Postgres listener that keeps Meilisearch in sync
   // Allow disabling listeners with DISABLE_MEILI_LISTENERS env var for local debugging
   console.log('DISABLE_MEILI_LISTENERS:', process.env.DISABLE_MEILI_LISTENERS);
