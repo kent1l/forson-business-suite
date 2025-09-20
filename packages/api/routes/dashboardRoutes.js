@@ -33,25 +33,25 @@ router.get('/dashboard/stats', async (req, res) => {
 // GET /dashboard/sales-chart - Data for the last 30 days sales chart (now calculates NET sales)
 router.get('/dashboard/sales-chart', async (req, res) => {
     try {
-        const query = `
-            WITH all_days AS (
-                SELECT generate_series(
-                    CURRENT_DATE - INTERVAL '29 days',
-                    CURRENT_DATE,
-                    '1 day'
-                )::date AS day
-            )
-            SELECT
-                TO_CHAR(d.day, 'Mon DD') as date,
-                (
-                    COALESCE((SELECT SUM(total_amount) FROM invoice WHERE invoice_date::date = d.day), 0)
-                    -
-                    COALESCE((SELECT SUM(total_amount) FROM credit_note WHERE refund_date::date = d.day), 0)
-                ) as "total_sales"
-            FROM all_days d
-            GROUP BY d.day
-            ORDER BY d.day;
-        `;
+    const query = `
+      WITH all_days AS (
+        SELECT generate_series(
+          CURRENT_DATE - INTERVAL '29 days',
+          CURRENT_DATE,
+          '1 day'
+        )::date AS day
+      )
+      SELECT
+        TO_CHAR(d.day, 'Mon DD') as date,
+        (
+          COALESCE((SELECT SUM(total_amount) FROM invoice WHERE invoice_date::date = d.day AND (status = 'Paid' OR amount_paid >= total_amount)), 0)
+          -
+          COALESCE((SELECT SUM(total_amount) FROM credit_note WHERE refund_date::date = d.day), 0)
+        ) as "total_sales"
+      FROM all_days d
+      GROUP BY d.day
+      ORDER BY d.day;
+    `;
         const { rows } = await db.query(query);
         res.json(rows);
     } catch (err) {
