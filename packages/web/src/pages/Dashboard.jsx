@@ -155,7 +155,7 @@ const Dashboard = ({ onNavigate }) => {
                         icon="invoice"
                         color="blue"
                         loading={loading}
-                        onClick={() => handleNavigation('accounts_receivable')}
+                        onClick={() => handleNavigation('ar')}
                         subtitle="Unpaid invoices"
                     />
                     <EnhancedKPICard

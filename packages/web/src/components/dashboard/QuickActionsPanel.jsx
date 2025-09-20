@@ -111,14 +111,14 @@ export const QuickActionsPanel = ({ onNavigate }) => {
             title: 'Orders',
             description: 'Track orders',
             color: 'blue',
-            path: 'orders',
+            path: 'purchase_orders',
         },
         {
             icon: Users,
             title: 'Customers',
             description: 'Manage customers',
             color: 'green',
-            path: 'customer_management',
+            path: 'customers',
         },
         {
             icon: Settings,
