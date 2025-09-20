@@ -1,4 +1,5 @@
 import { Clock, User, FileText, AlertTriangle, Package, ExternalLink } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 
 const formatTimeAgo = (dateString) => {
     const date = new Date(dateString);
@@ -19,6 +20,8 @@ const formatTimeAgo = (dateString) => {
 };
 
 export const RecentSalesPanel = ({ data = [], loading = false, onViewAll }) => {
+    const { hasPermission } = useAuth();
+    
     return (
         <div className="bg-white p-6 rounded-xl border border-gray-200">
             <div className="flex justify-between items-center mb-4">
@@ -26,13 +29,15 @@ export const RecentSalesPanel = ({ data = [], loading = false, onViewAll }) => {
                     <FileText className="h-5 w-5 text-gray-600" />
                     <h3 className="text-lg font-semibold text-gray-800">Recent Sales</h3>
                 </div>
-                <button 
-                    onClick={onViewAll}
-                    className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center space-x-1 transition-colors"
-                >
-                    <span>View All</span>
-                    <ExternalLink className="h-3 w-3" />
-                </button>
+                {hasPermission('invoicing:create') && onViewAll && (
+                    <button 
+                        onClick={onViewAll}
+                        className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center space-x-1 transition-colors"
+                    >
+                        <span>View All</span>
+                        <ExternalLink className="h-3 w-3" />
+                    </button>
+                )}
             </div>
             
             {loading ? (
@@ -83,6 +88,8 @@ export const RecentSalesPanel = ({ data = [], loading = false, onViewAll }) => {
 };
 
 export const LowStockAlertsPanel = ({ data = [], loading = false, onManageStock }) => {
+    const { hasPermission } = useAuth();
+    
     return (
         <div className="bg-white p-6 rounded-xl border border-gray-200">
             <div className="flex justify-between items-center mb-4">
@@ -90,13 +97,15 @@ export const LowStockAlertsPanel = ({ data = [], loading = false, onManageStock 
                     <AlertTriangle className="h-5 w-5 text-orange-600" />
                     <h3 className="text-lg font-semibold text-gray-800">Stock Alerts</h3>
                 </div>
-                <button 
-                    onClick={onManageStock}
-                    className="text-orange-600 hover:text-orange-800 text-sm font-medium flex items-center space-x-1 transition-colors"
-                >
-                    <span>Manage Stock</span>
-                    <ExternalLink className="h-3 w-3" />
-                </button>
+                {hasPermission('inventory:view') && onManageStock && (
+                    <button 
+                        onClick={onManageStock}
+                        className="text-orange-600 hover:text-orange-800 text-sm font-medium flex items-center space-x-1 transition-colors"
+                    >
+                        <span>Manage Stock</span>
+                        <ExternalLink className="h-3 w-3" />
+                    </button>
+                )}
             </div>
             
             {loading ? (
@@ -145,18 +154,39 @@ export const LowStockAlertsPanel = ({ data = [], loading = false, onManageStock 
 };
 
 export const RecentActivityFeed = ({ recentSales, lowStockItems, loading, onViewAllSales, onManageStock }) => {
+    const { hasPermission } = useAuth();
+    
+    const showSalesPanel = hasPermission('invoicing:create');
+    const showStockPanel = hasPermission('inventory:view');
+    
+    if (!showSalesPanel && !showStockPanel) {
+        return (
+            <div className="bg-white p-6 rounded-xl border border-gray-200">
+                <div className="text-center py-8 text-gray-500">
+                    <FileText className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                    <p>No activity data available</p>
+                    <p className="text-sm text-gray-400 mt-1">Contact your administrator for access</p>
+                </div>
+            </div>
+        );
+    }
+    
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <RecentSalesPanel 
-                data={recentSales} 
-                loading={loading} 
-                onViewAll={onViewAllSales}
-            />
-            <LowStockAlertsPanel 
-                data={lowStockItems} 
-                loading={loading} 
-                onManageStock={onManageStock}
-            />
+        <div className={`grid grid-cols-1 ${showSalesPanel && showStockPanel ? 'lg:grid-cols-2' : ''} gap-6`}>
+            {showSalesPanel && (
+                <RecentSalesPanel 
+                    data={recentSales} 
+                    loading={loading} 
+                    onViewAll={onViewAllSales}
+                />
+            )}
+            {showStockPanel && (
+                <LowStockAlertsPanel 
+                    data={lowStockItems} 
+                    loading={loading} 
+                    onManageStock={onManageStock}
+                />
+            )}
         </div>
     );
 };

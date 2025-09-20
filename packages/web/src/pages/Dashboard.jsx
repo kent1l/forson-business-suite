@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../api';
 import { RefreshCw, Activity } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 import EnhancedKPICard from '../components/dashboard/EnhancedKPICard';
 import { SalesTrendChart, TopProductsChart } from '../components/dashboard/AnalyticsCharts';
 import { QuickActionsPanel } from '../components/dashboard/QuickActionsPanel';
 import { RecentActivityFeed } from '../components/dashboard/RecentActivityFeed';
 
 const Dashboard = ({ onNavigate }) => {
+    const { hasPermission } = useAuth();
     const [loading, setLoading] = useState(true);
     const [autoRefresh, setAutoRefresh] = useState(false);
     const [lastUpdated, setLastUpdated] = useState(new Date());
@@ -139,61 +141,75 @@ const Dashboard = ({ onNavigate }) => {
 
                 {/* KPI Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <EnhancedKPICard
-                        title="Today's Revenue"
-                        value={enhancedStats.kpis.todayRevenue.value}
-                        change={enhancedStats.kpis.todayRevenue.change}
-                        trend={enhancedStats.kpis.todayRevenue.trend}
-                        icon="currency"
-                        color="green"
-                        loading={loading}
-                        onClick={() => handleNavigation('sales_history')}
-                    />
-                    <EnhancedKPICard
-                        title="Outstanding A/R"
-                        value={enhancedStats.kpis.outstandingAR.value}
-                        icon="invoice"
-                        color="blue"
-                        loading={loading}
-                        onClick={() => handleNavigation('ar')}
-                        subtitle="Unpaid invoices"
-                    />
-                    <EnhancedKPICard
-                        title="Inventory Value"
-                        value={enhancedStats.kpis.inventoryValue.value}
-                        icon="package"
-                        color="purple"
-                        loading={loading}
-                        onClick={() => handleNavigation('inventory')}
-                        subtitle="Total stock value"
-                    />
-                    <EnhancedKPICard
-                        title="Low Stock Alert"
-                        value={`${enhancedStats.kpis.lowStockCount.value} items`}
-                        icon="warning"
-                        color="orange"
-                        urgent={enhancedStats.kpis.lowStockCount.urgent}
-                        loading={loading}
-                        onClick={() => handleNavigation('inventory')}
-                    />
+                    {hasPermission('invoicing:create') && (
+                        <EnhancedKPICard
+                            title="Today's Revenue"
+                            value={enhancedStats.kpis.todayRevenue.value}
+                            change={enhancedStats.kpis.todayRevenue.change}
+                            trend={enhancedStats.kpis.todayRevenue.trend}
+                            icon="currency"
+                            color="green"
+                            loading={loading}
+                            onClick={() => handleNavigation('sales_history')}
+                        />
+                    )}
+                    {hasPermission('ar:view') && (
+                        <EnhancedKPICard
+                            title="Outstanding A/R"
+                            value={enhancedStats.kpis.outstandingAR.value}
+                            icon="invoice"
+                            color="blue"
+                            loading={loading}
+                            onClick={() => handleNavigation('ar')}
+                            subtitle="Unpaid invoices"
+                        />
+                    )}
+                    {hasPermission('inventory:view') && (
+                        <EnhancedKPICard
+                            title="Inventory Value"
+                            value={enhancedStats.kpis.inventoryValue.value}
+                            icon="package"
+                            color="purple"
+                            loading={loading}
+                            onClick={() => handleNavigation('inventory')}
+                            subtitle="Total stock value"
+                        />
+                    )}
+                    {hasPermission('inventory:view') && (
+                        <EnhancedKPICard
+                            title="Low Stock Alert"
+                            value={`${enhancedStats.kpis.lowStockCount.value} items`}
+                            icon="warning"
+                            color="orange"
+                            urgent={enhancedStats.kpis.lowStockCount.urgent}
+                            loading={loading}
+                            onClick={() => handleNavigation('inventory')}
+                        />
+                    )}
                 </div>
 
                 {/* Quick Actions */}
                 <QuickActionsPanel onNavigate={handleNavigation} />
 
                 {/* Charts */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <SalesTrendChart
-                        data={chartData}
-                        loading={loading}
-                        timeRange={timeRange}
-                        onTimeRangeChange={setTimeRange}
-                    />
-                    <TopProductsChart
-                        data={enhancedStats.topProducts}
-                        loading={loading}
-                    />
-                </div>
+                {(hasPermission('reports:view') || hasPermission('invoicing:create') || hasPermission('inventory:view')) && (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {(hasPermission('invoicing:create') || hasPermission('reports:view')) && (
+                            <SalesTrendChart
+                                data={chartData}
+                                loading={loading}
+                                timeRange={timeRange}
+                                onTimeRangeChange={setTimeRange}
+                            />
+                        )}
+                        {(hasPermission('inventory:view') || hasPermission('reports:view')) && (
+                            <TopProductsChart
+                                data={enhancedStats.topProducts}
+                                loading={loading}
+                            />
+                        )}
+                    </div>
+                )}
 
                 {/* Recent Activity */}
                 <RecentActivityFeed

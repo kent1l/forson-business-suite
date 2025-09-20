@@ -1,4 +1,5 @@
 import { Plus, Package, Search, BarChart3, FileText, Truck, Users, Settings } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 
 const QuickActionButton = ({ 
     icon: Icon, 
@@ -70,6 +71,8 @@ const QuickActionButton = ({
 };
 
 export const QuickActionsPanel = ({ onNavigate }) => {
+    const { hasPermission } = useAuth();
+    
     const actions = [
         {
             icon: Plus,
@@ -77,6 +80,7 @@ export const QuickActionsPanel = ({ onNavigate }) => {
             description: 'Create new invoice',
             color: 'blue',
             path: 'invoicing',
+            permission: 'invoicing:create',
         },
         {
             icon: Package,
@@ -84,6 +88,7 @@ export const QuickActionsPanel = ({ onNavigate }) => {
             description: 'Goods receipt',
             color: 'green',
             path: 'goods_receipt',
+            permission: 'goods_receipt:create',
         },
         {
             icon: Search,
@@ -91,6 +96,7 @@ export const QuickActionsPanel = ({ onNavigate }) => {
             description: 'Power search',
             color: 'purple',
             path: 'power_search',
+            permission: 'parts:view',
         },
         {
             icon: BarChart3,
@@ -98,6 +104,7 @@ export const QuickActionsPanel = ({ onNavigate }) => {
             description: 'View analytics',
             color: 'orange',
             path: 'reporting',
+            permission: 'reports:view',
         },
         {
             icon: FileText,
@@ -105,6 +112,7 @@ export const QuickActionsPanel = ({ onNavigate }) => {
             description: 'Manage files',
             color: 'gray',
             path: 'documents',
+            permission: 'documents:view',
         },
         {
             icon: Truck,
@@ -112,6 +120,7 @@ export const QuickActionsPanel = ({ onNavigate }) => {
             description: 'Track orders',
             color: 'blue',
             path: 'purchase_orders',
+            permission: 'purchase_orders:view',
         },
         {
             icon: Users,
@@ -119,6 +128,7 @@ export const QuickActionsPanel = ({ onNavigate }) => {
             description: 'Manage customers',
             color: 'green',
             path: 'customers',
+            permission: 'customers:view',
         },
         {
             icon: Settings,
@@ -126,8 +136,12 @@ export const QuickActionsPanel = ({ onNavigate }) => {
             description: 'Configuration',
             color: 'gray',
             path: 'settings',
+            permission: 'settings:view',
         },
     ];
+
+    // Filter actions based on user permissions
+    const allowedActions = actions.filter(action => hasPermission(action.permission));
 
     return (
         <div className="bg-white p-6 rounded-xl border border-gray-200">
@@ -136,18 +150,26 @@ export const QuickActionsPanel = ({ onNavigate }) => {
                 <span className="text-sm text-gray-500">Common tasks</span>
             </div>
             
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
-                {actions.map((action, index) => (
-                    <QuickActionButton
-                        key={index}
-                        icon={action.icon}
-                        title={action.title}
-                        description={action.description}
-                        color={action.color}
-                        onClick={() => onNavigate && onNavigate(action.path)}
-                    />
-                ))}
-            </div>
+            {allowedActions.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                    <Settings className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                    <p>No quick actions available</p>
+                    <p className="text-sm text-gray-400 mt-1">Contact your administrator for access</p>
+                </div>
+            ) : (
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
+                    {allowedActions.map((action, index) => (
+                        <QuickActionButton
+                            key={index}
+                            icon={action.icon}
+                            title={action.title}
+                            description={action.description}
+                            color={action.color}
+                            onClick={() => onNavigate && onNavigate(action.path)}
+                        />
+                    ))}
+                </div>
+            )}
         </div>
     );
 };
