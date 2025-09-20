@@ -132,7 +132,7 @@ const InventoryPage = () => {
                 )}
             </div>
 
-            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={`Adjust Stock for ${selectedPart?.display_name}`}>
+            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={`Stock Adjustment - ${selectedPart?.display_name}`}>
                 <StockAdjustmentForm 
                     part={selectedPart} 
                     onSave={handleAdjustmentSave} 

@@ -1,9 +1,10 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 
 const StockAdjustmentForm = ({ part, user, onSave, onCancel }) => {
     const [quantity, setQuantity] = useState('');
     const [notes, setNotes] = useState('');
+    const quantityInputRef = useRef(null);
 
     const initialFormData = useMemo(() => ({
         quantity: '',
@@ -35,19 +36,31 @@ const StockAdjustmentForm = ({ part, user, onSave, onCancel }) => {
         onSave(payload);
     }, [quantity, notes, part.part_id, user.employee_id, onSave]);
 
+    // Auto-focus the quantity input when component mounts
+    useEffect(() => {
+        if (quantityInputRef.current) {
+            quantityInputRef.current.focus();
+        }
+    }, []);
+
     useEffect(() => {
         const handleKeyDown = (e) => {
-            if (e.target && isFormElement(e.target)) return;
-
-            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-                e.preventDefault();
-                handleSubmit();
-            } else if (e.key === 'Escape') {
+            // Allow Escape key to work from any element
+            if (e.key === 'Escape') {
                 if (isFormDirty) {
                     const confirmCancel = window.confirm('You have unsaved changes. Are you sure you want to cancel?');
                     if (!confirmCancel) return;
                 }
                 onCancel();
+                return;
+            }
+
+            // Only handle Ctrl+S when not in form elements
+            if (e.target && isFormElement(e.target)) return;
+
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                handleSubmit();
             }
         };
 
@@ -57,12 +70,28 @@ const StockAdjustmentForm = ({ part, user, onSave, onCancel }) => {
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Current Stock Display */}
+            <div className="bg-gray-50 p-4 rounded-lg border">
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Current Stock Information</h3>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <span className="text-gray-600">SKU:</span>
+                        <span className="ml-2 font-mono">{part?.internal_sku}</span>
+                    </div>
+                    <div>
+                        <span className="text-gray-600">Current Stock:</span>
+                        <span className="ml-2 font-semibold text-blue-600">{Number(part?.stock_on_hand || 0).toLocaleString()}</span>
+                    </div>
+                </div>
+            </div>
+
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                     Adjustment Quantity
                 </label>
                 <p className="text-xs text-gray-500 mb-2">Enter a positive number to add stock (e.g., 5) or a negative number to remove stock (e.g., -2).</p>
                 <input 
+                    ref={quantityInputRef}
                     type="number"
                     step="any"
                     value={quantity} 
@@ -70,6 +99,11 @@ const StockAdjustmentForm = ({ part, user, onSave, onCancel }) => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg" 
                     required 
                 />
+                {quantity && !isNaN(parseFloat(quantity)) && (
+                    <p className="text-xs text-gray-600 mt-1">
+                        New stock will be: <span className="font-semibold">{Number((part?.stock_on_hand || 0) + parseFloat(quantity)).toLocaleString()}</span>
+                    </p>
+                )}
             </div>
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Reason / Notes</label>
