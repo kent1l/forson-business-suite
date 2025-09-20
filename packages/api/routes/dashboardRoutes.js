@@ -1,5 +1,6 @@
 const express = require('express');
 const db = require('../db');
+const { constructDisplayName } = require('../helpers/displayNameHelper');
 const router = express.Router();
 
 // GET /dashboard/stats - Fetch dashboard statistics
@@ -129,15 +130,23 @@ router.get('/dashboard/enhanced-stats', async (req, res) => {
             // Top selling products (last 30 days)
             db.query(`
                 SELECT 
-                    p.detail as product_name,
+                    p.part_id,
+                    p.detail,
+                    p.internal_sku,
+                    COALESCE(g.group_name, '') as group_name,
+                    COALESCE(b.brand_name, '') as brand_name,
+                    COALESCE(array_to_string(array_agg(DISTINCT pn.part_number), ', '), '') as part_numbers,
                     SUM(il.quantity) as total_quantity,
                     SUM((il.sale_price * il.quantity) - COALESCE(il.discount_amount, 0)) as total_revenue
                 FROM invoice_line il
                 JOIN invoice i ON il.invoice_id = i.invoice_id
                 JOIN part p ON il.part_id = p.part_id
+                LEFT JOIN "group" g ON p.group_id = g.group_id
+                LEFT JOIN brand b ON p.brand_id = b.brand_id
+                LEFT JOIN part_number pn ON p.part_id = pn.part_id
                 WHERE i.invoice_date >= CURRENT_DATE - INTERVAL '30 days'
                 AND i.status IN ('Paid', 'Partially Paid')
-                GROUP BY p.part_id, p.detail
+                GROUP BY p.part_id, p.detail, p.internal_sku, g.group_name, b.brand_name
                 ORDER BY total_revenue DESC
                 LIMIT 10
             `)
@@ -171,7 +180,10 @@ router.get('/dashboard/enhanced-stats', async (req, res) => {
                 }
             },
             recentSales: recentSalesRes.rows,
-            topProducts: topProductsRes.rows
+            topProducts: topProductsRes.rows.map(product => ({
+                ...product,
+                product_name: constructDisplayName(product)
+            }))
         };
 
         res.json(enhancedStats);
