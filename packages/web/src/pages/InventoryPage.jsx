@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import SearchBar from '../components/SearchBar';
+import { enrichPartsArray } from '../helpers/applicationCache';
 import Modal from '../components/ui/Modal';
 import StockAdjustmentForm from '../components/forms/StockAdjustmentForm';
 import TransactionHistoryModal from '../components/ui/TransactionHistoryModal';
@@ -26,9 +27,16 @@ const InventoryPage = () => {
         try {
             setError('');
             setLoading(true);
-            // --- UPDATED: Call the correct inventory endpoint ---
-            const response = await api.get(`/inventory`, { params: { search: searchTerm } });
-            setInventory(response.data);
+            // If there's no search term, use the inventory endpoint (full list)
+            if (!searchTerm || !searchTerm.trim()) {
+                const response = await api.get(`/inventory`);
+                setInventory(response.data);
+            } else {
+                // Use MeiliSearch-backed endpoint for smart searching (same as POS/Invoicing)
+                const response = await api.get('/power-search/parts', { params: { keyword: searchTerm } });
+                const enriched = await enrichPartsArray(response.data || []);
+                setInventory(enriched);
+            }
         } catch (error) {
             console.error('Failed to fetch inventory', error);
             setError('Failed to fetch inventory: ' + (error.response?.data?.message || error.message));
@@ -87,6 +95,7 @@ const InventoryPage = () => {
                         onClear={() => setSearchTerm('')}
                         placeholder="Search inventory..."
                     />
+                    
                 </div>
             </div>
 
