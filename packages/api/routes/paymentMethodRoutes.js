@@ -529,8 +529,32 @@ router.post('/invoices/:id/payments', ...invoicePaymentsMiddlewares, async (req,
 });
 
 // GET /api/invoices/:id/payments - Get payments for an invoice
-router.get('/invoices/:id/payments', protect, hasPermission('invoicing:view'), async (req, res) => {
+router.get('/invoices/:id/payments', protect, async (req, res) => {
     const { id: invoice_id } = req.params;
+
+    // Check for permission to view any invoice's payments or ownership of this invoice
+    const canViewAny = req.user.permissions.includes('invoice_payment_view_any');
+    
+    if (!canViewAny) {
+        // Only allow if they have general invoicing view permission AND own the invoice
+        if (!req.user.permissions.includes('invoicing:view')) {
+            return res.status(403).json({ message: 'You do not have permission to view payments.' });
+        }
+        
+        // Check if user owns/created this invoice
+        const { rows } = await db.query(
+            'SELECT created_by FROM invoice WHERE invoice_id = $1',
+            [invoice_id]
+        );
+        
+        if (rows.length === 0) {
+            return res.status(404).json({ message: 'Invoice not found.' });
+        }
+        
+        if (rows[0].created_by !== req.user.employee_id) {
+            return res.status(403).json({ message: 'You do not have permission to view payments for this invoice.' });
+        }
+    }
 
     try {
         const hasSettlement = await settlementColumnsSupported();
