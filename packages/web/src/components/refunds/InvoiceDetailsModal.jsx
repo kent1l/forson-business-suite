@@ -245,6 +245,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
     const handleSubmitInlineRefund = async () => {
         const entries = Object.entries(refundLines).filter(([, q]) => Number(q) > 0);
         if (entries.length === 0) return toast.error('Select at least one item to refund.');
+        if (!selectedMethodId) return toast.error('Please select a payment method for the refund.');
         if (!user?.employee_id) return toast.error('Cannot determine employee for refund.');
 
         const linesPayload = entries.map(([id, qty]) => {
@@ -489,7 +490,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                                 <div>
                                     <label className="block text-xs font-medium text-gray-700 mb-1">
-                                        Refund Method
+                                        Refund Method <span className="text-red-500">*</span>
                                     </label>
                                     <select
                                         value={selectedMethodId}
