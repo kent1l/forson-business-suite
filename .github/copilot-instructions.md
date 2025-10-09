@@ -32,8 +32,17 @@ The Forson Business Suite is a modular application with distinct components for 
 - **Build Frontend**: Run `npm run build` in `packages/web`.
 - **Run Tests**: Add tests in the `__tests__` directory (not yet implemented).
 
-### Debugging
-- Use `console.log` for debugging backend services.
+## Copilot Caution & Verification Protocol
+
+- **Be extremely cautious when implementing changes.** Always consider the impact of your edits on existing features and other parts of the codebase.
+- **Connection Verification:** Before making any change, verify the codebase connections and dependencies for the affected code. This means:
+   - Check at least 3-levels deep (direct usage, indirect usage, and related modules/components).
+   - Ensure that changes will not break any feature, route, helper, middleware, or integration point.
+   - If unsure, trace function/class/variable usage across the codebase before proceeding.
+   - Document any potential risks or required follow-up testing.
+
+Follow the existing patterns in the codebase to maintain consistency.
+Refer to `README.md` for additional setup instructions.
 - For frontend, use browser developer tools.
 
 ## Project-Specific Conventions
