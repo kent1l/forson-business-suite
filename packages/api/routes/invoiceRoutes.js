@@ -553,18 +553,28 @@ router.delete('/invoices/:id', protect, hasPermission('invoice:delete'), async (
         const invoiceNumber = invoiceRows[0].invoice_number;
 
         const { rows: lines } = await client.query(`
-            SELECT il.invoice_line_id, il.part_id, il.quantity, il.cost_at_sale
+            SELECT il.invoice_line_id, il.part_id, il.quantity, il.cost_at_sale,
+                   COALESCE(rf.refunded_quantity, 0) AS refunded_quantity
             FROM invoice_line il
+            LEFT JOIN (
+                SELECT cn.invoice_id, cnl.part_id, SUM(cnl.quantity) AS refunded_quantity
+                FROM credit_note_line cnl
+                JOIN credit_note cn ON cnl.cn_id = cn.cn_id
+                WHERE cn.invoice_id = $1
+                GROUP BY cn.invoice_id, cnl.part_id
+            ) rf ON rf.part_id = il.part_id
             WHERE il.invoice_id = $1
         `, [id]);
 
-        // Reversal strategy: add back stock using StockIn so WAC recalculates using original cost_at_sale
+        // Reversal strategy: add back only the net stock (original sold minus already refunded) using StockIn so WAC recalculates using original cost_at_sale
         for (const line of lines) {
-            // quantity on invoice is negative stock movement, so we add back positive quantity
-            await client.query(`
-                INSERT INTO inventory_transaction (part_id, trans_type, quantity, unit_cost, reference_no, employee_id, notes)
-                VALUES ($1, 'StockIn', $2, $3, $4, $5, $6);
-            `, [line.part_id, line.quantity, line.cost_at_sale, invoiceNumber, req.user.employee_id || null, 'SYSTEM REVERSAL: Invoice deleted']);
+            const netQuantity = line.quantity - line.refunded_quantity;
+            if (netQuantity > 0) {
+                await client.query(`
+                    INSERT INTO inventory_transaction (part_id, trans_type, quantity, unit_cost, reference_no, employee_id, notes)
+                    VALUES ($1, 'StockIn', $2, $3, $4, $5, $6);
+                `, [line.part_id, netQuantity, line.cost_at_sale, invoiceNumber, req.user.employee_id || null, 'SYSTEM REVERSAL: Invoice deleted (net of refunds)']);
+            }
         }
 
     // Delete allocations first (cascades would remove via invoice cascade but be explicit for clarity)
