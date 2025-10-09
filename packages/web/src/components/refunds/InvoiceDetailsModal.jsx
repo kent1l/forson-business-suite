@@ -191,15 +191,15 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
     if (!isOpen || !invoice) return null;
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`Details for Invoice #${invoice.invoice_number}`} maxWidth="max-w-2xl">
+        <Modal isOpen={isOpen} onClose={onClose} title={`Details for Invoice #${invoice.invoice_number}`} maxWidth="max-w-3xl">
             {loading ? <p>Loading details...</p> : (
-                <div className="space-y-4">
+                <div className="space-y-5">
                     {/* Physical Receipt Number Editing Section - Only shown when editing */}
                     {isEditingReceiptNo && (
-                        <div className="bg-gray-50 p-4 rounded-lg border-2 border-cyan-200">
+                        <div className="bg-cyan-50 p-4 rounded-lg border border-cyan-200 shadow-sm">
                             <div className="flex items-center justify-between">
                                 <div className="flex-1">
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label className="block text-sm font-medium text-gray-800 mb-2">
                                         Edit Physical Receipt No.
                                     </label>
                                     <div className="flex items-center gap-2">
@@ -219,7 +219,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                                 const formatted = formatPhysicalReceiptNumber(e.target.value);
                                                 setEditingReceiptNo(formatted || '');
                                             }}
-                                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+                                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 bg-white"
                                             placeholder="e.g., SI-1234, ABC/5678, or XYZ 9999"
                                             autoFocus
                                         />
@@ -228,13 +228,13 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                         </span>
                                         <button
                                             onClick={handleSaveReceiptNo}
-                                            className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors duration-200"
+                                            className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors duration-200 shadow-sm"
                                         >
                                             Save
                                         </button>
                                         <button
                                             onClick={handleCancelEditReceiptNo}
-                                            className="bg-gray-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-600 transition-colors duration-200"
+                                            className="bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors duration-200 shadow-sm"
                                         >
                                             Cancel
                                         </button>
@@ -244,28 +244,103 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                         </div>
                     )}
 
-                    <div>
-                        <h3 className="font-semibold text-gray-800">Items Sold</h3>
-                        <ul className="divide-y divide-gray-200 mt-2">
-                            {lines.map(line => (
-                                <li key={line.invoice_line_id} className="py-2 flex justify-between items-center">
-                                    <div>
-                                        <p className="text-sm font-medium">{line.display_name}</p>
-                                        <p className="text-xs text-gray-500">
-                                            {line.quantity} x {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(line.sale_price).toFixed(2)}
-                                        </p>
-                                    </div>
-                                    <p className="text-sm font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{(line.quantity * line.sale_price).toFixed(2)}</p>
-                                </li>
-                            ))}
+                    {/* Items with refund visualization */}
+                    <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-sm font-semibold text-gray-800">Items</h3>
+                            {/* Legend */}
+                            <div className="hidden sm:flex items-center gap-3 text-xs text-gray-500">
+                                <span className="inline-flex items-center gap-1"><span className="w-3 h-1.5 rounded bg-rose-300"></span> Refunded</span>
+                                <span className="inline-flex items-center gap-1"><span className="w-3 h-1.5 rounded bg-amber-300"></span> Partial</span>
+                                <span className="inline-flex items-center gap-1"><span className="w-3 h-1.5 rounded bg-emerald-300"></span> Remaining</span>
+                            </div>
+                        </div>
+
+                        <ul className="mt-3 divide-y divide-gray-100">
+                            {lines.map((line) => {
+                                const qty = Number(line.quantity) || 0;
+                                const refunded = Number(line.quantity_refunded || 0);
+                                const remaining = Math.max(qty - refunded, 0);
+                                const refundedPct = qty > 0 ? Math.min(refunded / qty, 1) : 0;
+                                const isFull = refunded >= qty && qty > 0;
+                                const isPartial = refunded > 0 && refunded < qty;
+                                // Chip styles for quick status glance
+                                const chipClass = isFull
+                                    ? 'bg-rose-100 text-rose-700 border border-rose-200'
+                                    : isPartial
+                                        ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200';
+                                const chipText = isFull ? 'Fully Refunded' : isPartial ? 'Partially Refunded' : 'Not Refunded';
+                                return (
+                                    <li key={line.invoice_line_id} className="py-3">
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-2">
+                                                    <p className="text-sm font-medium text-gray-900 truncate">{line.display_name}</p>
+                                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${chipClass}`}>{chipText}</span>
+                                                </div>
+                                                <div className="mt-1 text-xs text-gray-500">
+                                                    {qty} x {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{(Number(line.sale_price) || 0).toFixed(2)}
+                                                    {refunded > 0 && (
+                                                        <span className="ml-2 inline-flex items-center gap-1 text-rose-700">
+                                                            Refunded: <span className="font-mono">{refunded}</span>
+                                                        </span>
+                                                    )}
+                                                    {remaining >= 0 && (
+                                                        <span className="ml-2 inline-flex items-center gap-1 text-emerald-700">
+                                                            Remaining: <span className="font-mono">{remaining}</span>
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                {/* Progress Bar */}
+                                                <div className="mt-2 h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+                                                    <div className="relative h-full w-full">
+                                                        {/* refunded portion */}
+                                                        <div
+                                                            className="absolute left-0 top-0 h-full bg-rose-300"
+                                                            style={{ width: `${refundedPct * 100}%` }}
+                                                        />
+                                                        {/* remaining portion for contrast on large screens */}
+                                                        <div
+                                                            className="absolute right-0 top-0 h-full bg-emerald-300"
+                                                            style={{ width: `${(1 - refundedPct) * 100}%` }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-sm font-mono text-gray-900">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{((Number(line.quantity) || 0) * (Number(line.sale_price) || 0)).toFixed(2)}</p>
+                                                {isPartial && (
+                                                    <p className="text-xs text-gray-500 mt-1">
+                                                        Refunded value: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{((Number(line.sale_price) || 0) * refunded).toFixed(2)}
+                                                    </p>
+                                                )}
+                                                {isFull && (
+                                                    <p className="text-xs text-rose-600 mt-1 font-medium">No quantity remaining</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </li>
+                                );
+                            })}
                         </ul>
                     </div>
 
                     {/* Payments Section */}
                     {payments.length > 0 && (
-                        <div>
-                            <h3 className="font-semibold text-gray-800">Payments</h3>
-                            <div className="mt-2 space-y-2">
+                        <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-sm font-semibold text-gray-800">Payments</h3>
+                                {/* Totals quick glance */}
+                                <div className="text-xs text-gray-600">
+                                    <span className="mr-3">Settled: <span className="font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{payments.filter(p => p.payment_status?.toLowerCase() === 'settled').reduce((s, p) => s + (parseFloat(p.amount_paid || 0) || 0), 0).toFixed(2)}</span></span>
+                                    {payments.some(p => p.payment_status?.toLowerCase() === 'pending') && (
+                                        <span className="text-yellow-700">Pending: <span className="font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{payments.filter(p => p.payment_status?.toLowerCase() === 'pending').reduce((s, p) => s + (parseFloat(p.amount_paid || 0) || 0), 0).toFixed(2)}</span></span>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="mt-3 space-y-2">
                                 {payments.map(payment => (
                                     <div key={payment.payment_id} className="bg-gray-50 p-3 rounded-lg border">
                                         <div className="flex justify-between items-start">
@@ -345,8 +420,8 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                     )}
                     
                     {!showRefundForm && (
-                        <div className="pt-4 flex justify-between items-center gap-3">
-                            <div className="flex gap-2">
+                        <div className="pt-4 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
+                            <div className="flex gap-2 flex-wrap">
                                 {hasPermission('invoice:edit_receipt_no') && (
                                     <button
                                         onClick={handleEditReceiptNo}
@@ -358,7 +433,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                 {hasPermission('invoice:delete') && (
                                     <button
                                         onClick={handleDelete}
-                                        className="bg-white border border-red-300 text-red-600 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-red-50"
+                                        className="bg-white border border-red-300 text-red-600 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-red-50 shadow-sm"
                                     >
                                         Delete Invoice
                                     </button>

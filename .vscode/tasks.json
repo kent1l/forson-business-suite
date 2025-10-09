@@ -23,6 +23,13 @@
 			"type": "shell",
 			"command": "Set-Location -Path \"f:\\Temporary Files\\forson-business-suite\\packages\\web\"; npm run build",
 			"group": "build"
+		},
+		{
+			"label": "web: build (pwsh)",
+			"type": "shell",
+			"command": "Set-Location -Path \"f:\\Temporary Files\\forson-business-suite\\packages\\web\"; npm run build",
+			"isBackground": false,
+			"group": "build"
 		}
 	]
 }
