@@ -118,6 +118,30 @@ router.get('/payments/refunds-approx', protect, hasPermission('ar:view'), async 
     }
 });
 
+// NEW: GET /api/payments/refunds-cash - actual cash refunds by payment method
+router.get('/payments/refunds-cash', protect, hasPermission('ar:view'), async (req, res) => {
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+        return res.status(400).json({ message: 'Start date and end date are required.' });
+    }
+    try {
+        const q = `
+            SELECT 
+                COALESCE(SUM(CASE WHEN pm.type = 'cash' THEN cn.total_amount ELSE 0 END), 0) AS cash_refunds,
+                COALESCE(SUM(CASE WHEN pm.type != 'cash' OR pm.type IS NULL THEN cn.total_amount ELSE 0 END), 0) AS non_cash_refunds,
+                COALESCE(SUM(cn.total_amount), 0) AS total_refunds
+            FROM credit_note cn
+            LEFT JOIN payment_methods pm ON cn.method_id = pm.method_id
+            WHERE (cn.refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2;
+        `;
+        const { rows } = await db.query(q, [startDate, endDate]);
+        res.json(rows[0]);
+    } catch (err) {
+        console.error('Error fetching cash refunds:', err.message);
+        res.status(500).json({ message: 'Server error fetching cash refunds.' });
+    }
+});
+
 // POST /api/payments/:id/settle - mark an invoice_payment as settled (manual/operator action)
 router.post('/payments/:id/settle', protect, hasPermission('ar:receive_payment'), async (req, res) => {
     const paymentId = parseInt(req.params.id, 10);

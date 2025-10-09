@@ -194,9 +194,11 @@ const SalesHistoryPage = () => {
         const totalCollectedForMix = cashCollected + nonCashCollected; // Total collected for mix calculation
         const cashMix = totalCollectedForMix > 0 ? cashCollected / totalCollectedForMix : 0; // Formula: Cash Collected / Total Collected
 
-        // CORRECTED: Approx Net Cash = Net cash collected (after change) plus any non-cash settled amounts minus approximate cash refunds
-        // This represents the expected net cash flow from sales and related transactions
-        const approxNetCashAfterRefunds = Math.max(cashCollectedNet - refundsApprox, 0); // Formula: Cash Net - Approximate Cash Refunds (clamped >=0)
+        // CORRECTED: Net Cash = Net cash collected (after change) minus actual cash refunds
+        // When split payments are enabled, this uses accurate cash refund tracking
+        // Otherwise falls back to approximation (assumes all refunds are cash)
+        // This can be negative if cash refunds exceed cash collections for the period
+        const approxNetCashAfterRefunds = cashCollectedNet - refundsApprox; // Formula: Cash Net - Cash Refunds (can be negative)
 
         // Enhanced payment method breakdown for detailed analysis
         const paymentMethodBreakdown = {};
@@ -334,13 +336,22 @@ const SalesHistoryPage = () => {
     const fetchRefundsApprox = useMemo(() => {
         return async () => {
             try {
-                const resp = await api.get('/payments/refunds-approx', { params: { ...dates } });
-                setRefundsApprox(parseFloat(resp.data.total_refunds) || 0);
+                // Try to get accurate cash refunds first, fall back to approximation
+                if (settings?.ENABLE_SPLIT_PAYMENTS === 'true') {
+                    // Get actual cash refunds using payment method types
+                    const resp = await api.get('/payments/refunds-cash', { params: { ...dates } });
+                    setRefundsApprox(parseFloat(resp.data.cash_refunds) || 0);
+                } else {
+                    // Fallback to approximation (assumes all refunds are cash)
+                    const resp = await api.get('/payments/refunds-approx', { params: { ...dates } });
+                    setRefundsApprox(parseFloat(resp.data.total_refunds) || 0);
+                }
             } catch {
+                // Final fallback
                 setRefundsApprox(0);
             }
         };
-    }, [dates]);
+    }, [dates, settings?.ENABLE_SPLIT_PAYMENTS]);
 
     const fetchPaymentMethods = useMemo(() => {
         return async () => {
@@ -507,9 +518,9 @@ const SalesHistoryPage = () => {
                         <div className="text-[11px] text-gray-500">Collected</div>
                         <div className="text-sm font-semibold text-green-600 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.amountCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
-                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Approx Net Cash = Net cash collected minus estimated cash refunds">
-                        <div className="text-[11px] text-gray-500">Approx Net Cash (After Refunds)</div>
-                        <div className="text-sm font-semibold text-gray-800 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.approxNetCashAfterRefunds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Net Cash = Cash collected minus cash refunds for the period (can be negative if refunds exceed collections)">
+                        <div className="text-[11px] text-gray-500">Net Cash (After Refunds)</div>
+                        <div className={`text-sm font-semibold truncate ${stats.approxNetCashAfterRefunds >= 0 ? 'text-gray-800' : 'text-red-600'}`}>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.approxNetCashAfterRefunds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
                     <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Collection Rate = Collected / Net Sales">
                         <div className="text-[11px] text-gray-500">Collection Rate</div>
