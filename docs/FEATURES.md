@@ -170,8 +170,8 @@ Metrics and formulas
 - Net Sales: Sum of `net_amount` per invoice. Backend computes `GREATEST(i.total_amount - r.refunded_amount, 0) AS net_amount` so frontend trusts `net_amount` when present and falls back to `max(total - refunded, 0)`.
 - Invoices Issued: Count of active invoices in range (excludes cancelled).
 - Avg Net Invoice: `Net Sales / (count of invoices with net_amount > 0)`.
-- Amount Collected: Sum of `min(invoice.amount_paid, invoice.net_amount)` for active invoices (collection capped at net to avoid overstatement).
-- Collection Rate: `Amount Collected / Net Sales` (capped at 100%).
+- Amount Collected: Sum of `invoice.amount_paid` for active invoices (actual collections without capping to avoid understatement).
+- Collection Rate: `Amount Collected / Net Sales` (not capped, can exceed 100% due to overpayments).
 - A/R Outstanding: Sum of `GREATEST(balance_due, 0)` across invoices (backend exposes `balance_due` via invoice queries using `GREATEST((i.total_amount - r.refunded_amount) - i.amount_paid, 0) AS balance_due`).
 - Refund Rate: `Refunds / Gross Sales` (capped at 100%).
 
