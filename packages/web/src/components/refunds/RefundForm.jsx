@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
@@ -8,6 +8,28 @@ const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
     const { user } = useAuth();
     const { settings } = useSettings();
     const [refundLines, setRefundLines] = useState({});
+    const [paymentMethods, setPaymentMethods] = useState([]);
+    const [selectedMethodId, setSelectedMethodId] = useState('');
+    const [reference, setReference] = useState('');
+    const [loadingMethods, setLoadingMethods] = useState(false);
+
+    // Fetch payment methods on component mount
+    useEffect(() => {
+        const fetchPaymentMethods = async () => {
+            setLoadingMethods(true);
+            try {
+                const response = await api.get('/payment-methods/enabled');
+                setPaymentMethods(response.data);
+            } catch (error) {
+                console.error('Failed to fetch payment methods:', error);
+                toast.error('Failed to load payment methods');
+            } finally {
+                setLoadingMethods(false);
+            }
+        };
+
+        fetchPaymentMethods();
+    }, []);
 
     const handleCheckboxChange = (lineId, checked) => {
         const line = lines.find(l => l.invoice_line_id === lineId);
@@ -62,6 +84,8 @@ const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
                 quantity: line.quantity,
                 sale_price: line.sale_price
             })),
+            method_id: selectedMethodId ? parseInt(selectedMethodId) : null,
+            reference: reference.trim() || null
         };
 
         const promise = api.post('/refunds', payload);
@@ -104,6 +128,44 @@ const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
                         )}
                     </div>
                 ))}
+            </div>
+            <div className="mt-4 pt-4 border-t">
+                <h4 className="font-semibold text-gray-800 mb-3">Refund Payment Method</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Payment Method <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                            value={selectedMethodId}
+                            onChange={(e) => setSelectedMethodId(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            disabled={loadingMethods}
+                        >
+                            <option value="">
+                                {loadingMethods ? 'Loading...' : 'Select payment method'}
+                            </option>
+                            {paymentMethods.map(method => (
+                                <option key={method.method_id} value={method.method_id}>
+                                    {method.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Reference Number (Optional)
+                        </label>
+                        <input
+                            type="text"
+                            value={reference}
+                            onChange={(e) => setReference(e.target.value)}
+                            placeholder="e.g., Check #123, Transaction ID"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            maxLength={200}
+                        />
+                    </div>
+                </div>
             </div>
             <div className="mt-4 pt-4 border-t flex justify-between items-center">
                 <div className="text-lg font-bold">
