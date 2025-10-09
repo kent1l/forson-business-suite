@@ -535,10 +535,12 @@ const InvoicingPage = ({ user }) => {
                                             <div className="flex items-baseline space-x-2 flex-1 min-w-0">
                                                 <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
                                                 {part.applications && <div className="text-xs text-gray-500 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
-                                                <div className="text-xs text-gray-500">Stock: {typeof part.stock_on_hand !== 'undefined' ? Number(part.stock_on_hand).toFixed(2) : '-'}</div>
                                             </div>
-                                            <div className="text-sm font-semibold text-gray-700 ml-4">
-                                                {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
+                                            <div className="flex items-baseline space-x-2 ml-2">
+                                                <div className="text-xs text-gray-500">Stock: {typeof part.stock_on_hand !== 'undefined' ? Number(part.stock_on_hand).toFixed(2) : '-'}</div>
+                                                <div className="text-sm font-semibold text-gray-700 ml-4">
+                                                    {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
+                                                </div>
                                             </div>
                                         </div>
                                     </li>
