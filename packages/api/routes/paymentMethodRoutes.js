@@ -472,7 +472,8 @@ router.post('/invoices/:id/payments', ...invoicePaymentsMiddlewares, async (req,
 
             // Determine settlement behavior
             const settlementType = methodConfig.settlement_type || (method.rows[0].type === 'cash' ? 'instant' : 'delayed');
-            const paymentStatus = settlementType === 'instant' ? 'settled' : 'pending';
+            const paymentStatus = settlementType === 'instant' ? 'settled' : 
+                                 settlementType === 'on_account' ? 'on_account' : 'pending';
 
             // Insert payment; fall back gracefully if settlement columns are not yet present
             const hasSettlement = await settlementColumnsSupported();
