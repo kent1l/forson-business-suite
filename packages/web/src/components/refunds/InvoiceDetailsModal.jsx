@@ -48,6 +48,9 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
     const [selectedMethodId, setSelectedMethodId] = useState('');
     const [reference, setReference] = useState('');
     const [loadingMethods, setLoadingMethods] = useState(false);
+    // Invoice date editing state
+    const [isEditingDate, setIsEditingDate] = useState(false);
+    const [editingDate, setEditingDate] = useState('');
 
     useEffect(() => {
         if (!isOpen || !invoice) return;
@@ -58,6 +61,20 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
             setShowRefundForm(false); // Reset on open
             setIsEditingReceiptNo(false); // Reset editing state
             setEditingReceiptNo(invoice.physical_receipt_no || ''); // Initialize with current value
+            setIsEditingDate(false); // Reset date editing state
+            // Initialize editing date with current invoice date (format for datetime-local input)
+            if (invoice.invoice_date) {
+                const date = new Date(invoice.invoice_date);
+                // Format for datetime-local input (YYYY-MM-DDTHH:mm)
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                setEditingDate(`${year}-${month}-${day}T${hours}:${minutes}`);
+            } else {
+                setEditingDate('');
+            }
 
             try {
                 // Fetch lines first (this should rarely fail independently)
@@ -189,6 +206,57 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
     };    const handleCancelEditReceiptNo = () => {
         setEditingReceiptNo(invoice.physical_receipt_no || '');
         setIsEditingReceiptNo(false);
+    };
+
+    const handleEditDate = () => {
+        setIsEditingDate(true);
+    };
+
+    const handleSaveDate = async () => {
+        try {
+            if (!editingDate) {
+                toast.error('Please select a date and time');
+                return;
+            }
+
+            const response = await api.put(`/invoices/${invoice.invoice_id}/date`, {
+                invoice_date: new Date(editingDate).toISOString()
+            });
+
+            // Update the invoice object with the server response
+            invoice.invoice_date = response.data.invoice_date;
+
+            toast.success('Invoice date updated successfully');
+            setIsEditingDate(false);
+            onActionSuccess();
+
+            // Notify other parts of the app that invoices changed
+            try {
+                window.dispatchEvent(new CustomEvent('invoices:changed'));
+            } catch {
+                // ignore if window not available
+            }
+
+        } catch (error) {
+            const message = error.response?.data?.message || 'Failed to update invoice date';
+            toast.error(message);
+        }
+    };
+
+    const handleCancelEditDate = () => {
+        // Reset to original date
+        if (invoice.invoice_date) {
+            const date = new Date(invoice.invoice_date);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            setEditingDate(`${year}-${month}-${day}T${hours}:${minutes}`);
+        } else {
+            setEditingDate('');
+        }
+        setIsEditingDate(false);
     };
 
     const handleMarkSettled = async (paymentId) => {
@@ -327,6 +395,43 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                         </button>
                                         <button
                                             onClick={handleCancelEditReceiptNo}
+                                            className="bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors duration-200 shadow-sm"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Invoice Date Editing Section - Only shown when editing */}
+                    {isEditingDate && (
+                        <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 shadow-sm">
+                            <div className="flex items-center justify-between">
+                                <div className="flex-1">
+                                    <label className="block text-sm font-medium text-gray-800 mb-2">
+                                        Edit Invoice Date & Time
+                                    </label>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="datetime-local"
+                                            value={editingDate}
+                                            onChange={(e) => setEditingDate(e.target.value)}
+                                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                            autoFocus
+                                        />
+                                        <span className="text-xs text-gray-500 whitespace-nowrap">
+                                            This will update related payments & refunds
+                                        </span>
+                                        <button
+                                            onClick={handleSaveDate}
+                                            className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors duration-200 shadow-sm"
+                                        >
+                                            Save
+                                        </button>
+                                        <button
+                                            onClick={handleCancelEditDate}
                                             className="bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors duration-200 shadow-sm"
                                         >
                                             Cancel
@@ -641,6 +746,14 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                         className="bg-cyan-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-cyan-700 transition-colors duration-200 shadow-sm"
                                     >
                                         Edit Receipt No.
+                                    </button>
+                                )}
+                                {hasPermission('invoice:edit_date') && (
+                                    <button
+                                        onClick={handleEditDate}
+                                        className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200 shadow-sm"
+                                    >
+                                        Edit Invoice Date
                                     </button>
                                 )}
                                 {hasPermission('invoice:delete') && (

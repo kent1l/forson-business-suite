@@ -652,6 +652,92 @@ router.put('/invoices/:id/physical-receipt-no', protect, hasPermission('invoice:
     }
 });
 
+// PUT /api/invoices/:id/date - Update invoice date and related transaction timestamps
+router.put('/invoices/:id/date', protect, hasPermission('invoice:edit_date'), async (req, res) => {
+    const { id } = req.params;
+    const { invoice_date } = req.body;
+
+    if (!id || isNaN(parseInt(id))) {
+        return res.status(400).json({ message: 'Invalid invoice ID.' });
+    }
+
+    if (!invoice_date) {
+        return res.status(400).json({ message: 'Invoice date is required.' });
+    }
+
+    // Validate the date format
+    const newDate = new Date(invoice_date);
+    if (isNaN(newDate.getTime())) {
+        return res.status(400).json({ message: 'Invalid date format.' });
+    }
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+
+        // Get current invoice data to verify it exists and get current date
+        const { rows: invoiceRows } = await client.query(
+            'SELECT invoice_id, invoice_date, invoice_number FROM invoice WHERE invoice_id = $1',
+            [id]
+        );
+
+        if (invoiceRows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: 'Invoice not found.' });
+        }
+
+        const invoice = invoiceRows[0];
+        const oldDate = invoice.invoice_date;
+
+        // Update the invoice date
+        const updateQuery = `
+            UPDATE invoice 
+            SET invoice_date = $1
+            WHERE invoice_id = $2
+            RETURNING invoice_id, invoice_date
+        `;
+        const { rows: updatedRows } = await client.query(updateQuery, [newDate, id]);
+
+        if (oldDate) {
+            const timeShiftMs = newDate.getTime() - new Date(oldDate).getTime();
+
+            if (timeShiftMs !== 0) {
+                await client.query(`
+                    UPDATE invoice_payments 
+                    SET created_at = created_at + ($1 * interval '1 millisecond'),
+                        settled_at = CASE 
+                            WHEN settled_at IS NOT NULL THEN settled_at + ($1 * interval '1 millisecond')
+                            ELSE NULL 
+                        END
+                    WHERE invoice_id = $2
+                `, [timeShiftMs, id]);
+
+                await client.query(`
+                    UPDATE credit_note 
+                    SET refund_date = refund_date + ($1 * interval '1 millisecond')
+                    WHERE invoice_id = $2 AND refund_date IS NOT NULL
+                `, [timeShiftMs, id]);
+            }
+        }
+
+        await client.query('COMMIT');
+
+        res.json({ 
+            message: 'Invoice date updated successfully.',
+            invoice_id: updatedRows[0].invoice_id,
+            invoice_date: updatedRows[0].invoice_date,
+            old_date: oldDate
+        });
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Update invoice date error:', err.message);
+        res.status(500).json({ message: 'Server error updating invoice date.', error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
 // PUT /api/invoices/:id/due-date - Update invoice due date with comprehensive logging
 router.put('/invoices/:id/due-date', protect, hasPermission('invoicing:create'), async (req, res) => {
     const { id } = req.params;
