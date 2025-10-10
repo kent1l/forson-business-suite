@@ -315,10 +315,169 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
 });
 
 router.put('/parts/bulk-update', protect, hasPermission('parts:edit'), async (req, res) => {
-    // This is a placeholder for the bulk update logic.
-    // For a real implementation, you would loop through partIds and apply updates.
-    // After updating, you would need to re-sync each affected part with Meilisearch.
-    res.status(501).json({ message: 'Bulk update not implemented yet.' });
+    const { partIds, updates } = req.body || {};
+
+    if (!Array.isArray(partIds) || partIds.length === 0) {
+        return res.status(400).json({ message: 'No part IDs were provided for bulk update.' });
+    }
+
+    if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
+        return res.status(400).json({ message: 'Updates payload is missing or invalid.' });
+    }
+
+    const normalizedPartIds = Array.from(new Set(
+        partIds
+            .map(id => {
+                const parsed = Number(id);
+                return Number.isFinite(parsed) ? Math.trunc(parsed) : NaN;
+            })
+            .filter(id => Number.isInteger(id))
+    ));
+
+    if (normalizedPartIds.length === 0) {
+        return res.status(400).json({ message: 'No valid part IDs were provided.' });
+    }
+
+    const parseBoolean = (value, field) => {
+        if (typeof value === 'boolean') return value;
+        if (value === 'true' || value === '1' || value === 1) return true;
+        if (value === 'false' || value === '0' || value === 0) return false;
+        throw new Error(`Invalid boolean value provided for ${field}.`);
+    };
+
+    const parseNumber = (value, field) => {
+        if (value === null || value === undefined || value === '') {
+            throw new Error(`Missing numeric value for ${field}.`);
+        }
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) {
+            throw new Error(`Invalid numeric value provided for ${field}.`);
+        }
+        return parsed;
+    };
+
+    const parseInteger = (value, field) => {
+        if (value === null || value === undefined || value === '') {
+            throw new Error(`Missing integer value for ${field}.`);
+        }
+        const parsed = Number(value);
+        if (!Number.isInteger(parsed)) {
+            throw new Error(`Invalid integer value provided for ${field}.`);
+        }
+        return parsed;
+    };
+
+    const parseNullableInteger = (value, field) => {
+        if (value === null || value === undefined || value === '') {
+            return null;
+        }
+        return parseInteger(value, field);
+    };
+
+    const fieldParsers = {
+        brand_id: (value) => parseInteger(value, 'brand_id'),
+        group_id: (value) => parseInteger(value, 'group_id'),
+        reorder_point: (value) => parseInteger(value, 'reorder_point'),
+        warning_quantity: (value) => parseInteger(value, 'warning_quantity'),
+        last_cost: (value) => parseNumber(value, 'last_cost'),
+        last_sale_price: (value) => parseNumber(value, 'last_sale_price'),
+        barcode: (value) => {
+            if (typeof value !== 'string') {
+                throw new Error('Barcode must be a string.');
+            }
+            return value.trim();
+        },
+        measurement_unit: (value) => {
+            if (typeof value !== 'string') {
+                throw new Error('Measurement unit must be a string.');
+            }
+            return value.trim();
+        },
+        tax_rate_id: (value) => parseNullableInteger(value, 'tax_rate_id'),
+        is_active: (value) => parseBoolean(value, 'is_active'),
+        is_price_change_allowed: (value) => parseBoolean(value, 'is_price_change_allowed'),
+        is_using_default_quantity: (value) => parseBoolean(value, 'is_using_default_quantity'),
+        is_service: (value) => parseBoolean(value, 'is_service'),
+        low_stock_warning: (value) => parseBoolean(value, 'low_stock_warning'),
+        is_tax_inclusive_price: (value) => parseBoolean(value, 'is_tax_inclusive_price')
+    };
+
+    const setFragments = [];
+    const values = [];
+    let paramIndex = 1;
+
+    try {
+        for (const [key, rawValue] of Object.entries(updates)) {
+            if (!Object.prototype.hasOwnProperty.call(fieldParsers, key)) {
+                continue;
+            }
+
+            const parsedValue = fieldParsers[key](rawValue);
+            setFragments.push(`${key} = $${paramIndex++}`);
+            values.push(parsedValue);
+        }
+    } catch (err) {
+        return res.status(400).json({ message: err.message });
+    }
+
+    if (setFragments.length === 0) {
+        return res.status(400).json({ message: 'No valid fields were provided for update.' });
+    }
+
+    // Always stamp who modified and when
+    setFragments.push(`modified_by = $${paramIndex++}`);
+    values.push(req.user?.employee_id || null);
+    setFragments.push('date_modified = CURRENT_TIMESTAMP');
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+
+        values.push(normalizedPartIds);
+        const updateQuery = `
+            UPDATE part
+            SET ${setFragments.join(', ')}
+            WHERE part_id = ANY($${paramIndex})
+            RETURNING part_id;
+        `;
+
+        const { rows, rowCount } = await client.query(updateQuery, values);
+        if (rowCount === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: 'No matching parts were updated.' });
+        }
+
+        await client.query('COMMIT');
+
+        const syncedPartIds = [];
+        for (const row of rows) {
+            try {
+                const partData = await getPartDataForMeili(db, row.part_id);
+                if (partData) {
+                    syncPartWithMeili(partData);
+                    syncedPartIds.push(row.part_id);
+                }
+            } catch (syncError) {
+                console.error(`[WARN] Failed to sync part ${row.part_id} with Meilisearch:`, syncError);
+            }
+        }
+
+        return res.json({
+            message: 'Parts updated successfully.',
+            updatedCount: rowCount,
+            partIds: rows.map(r => r.part_id),
+            syncedCount: syncedPartIds.length
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Bulk part update failed:', err);
+        return res.status(500).json({
+            message: 'Failed to apply bulk updates.',
+            error: process.env.NODE_ENV !== 'production' ? err.message : undefined
+        });
+    } finally {
+        client.release();
+    }
 });
 
 router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) => {
