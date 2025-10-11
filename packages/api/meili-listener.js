@@ -45,10 +45,37 @@ const startMeiliListener = async () => {
                     p.is_active,
                     (SELECT COALESCE(json_agg(pn.part_number), '[]'::json) FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('./helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers,
                     (SELECT COALESCE(json_agg(t.tag_name), '[]'::json) FROM part_tag pt JOIN tag t ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags,
-                    (SELECT COALESCE(json_agg(pa.application_id), '[]'::json) FROM part_application pa WHERE pa.part_id = p.part_id) AS applications,
-                    (SELECT COALESCE(json_agg(concat_ws(' ', COALESCE(av.make,''), COALESCE(av.model,''), COALESCE(av.engine,''))), '[]'::json)
-                       FROM part_application pa JOIN application_view av ON av.application_id = pa.application_id
-                       WHERE pa.part_id = p.part_id) AS searchable_applications
+          (SELECT COALESCE(json_agg(pa.application_id), '[]'::json) FROM part_application pa WHERE pa.part_id = p.part_id) AS applications,
+          (SELECT COALESCE(json_agg(
+              TRIM(
+                CONCAT(
+                  COALESCE(app.make, ''),
+                  CASE WHEN app.model IS NOT NULL AND app.model <> '' THEN CONCAT(' ', app.model) ELSE '' END,
+                  CASE WHEN app.engine IS NOT NULL AND app.engine <> '' THEN CONCAT(' ', app.engine) ELSE '' END,
+                  CASE
+                    WHEN app.year_start IS NOT NULL AND app.year_end IS NOT NULL AND app.year_start = app.year_end THEN CONCAT(' [', app.year_start, ']')
+                    WHEN app.year_start IS NOT NULL AND app.year_end IS NOT NULL THEN CONCAT(' [', app.year_start, '-', app.year_end, ']')
+                    WHEN app.year_start IS NOT NULL THEN CONCAT(' [', app.year_start, '-]')
+                    WHEN app.year_end IS NOT NULL THEN CONCAT(' [-', app.year_end, ']')
+                    ELSE ''
+                  END
+                )
+              )
+            ), '[]'::json)
+           FROM (
+             SELECT vmk.make_name AS make, vmd.model_name AS model, veng.engine_name AS engine, pa.year_start, pa.year_end
+             FROM part_application pa
+             JOIN application a ON a.application_id = pa.application_id
+             LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
+             LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
+             LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
+             WHERE pa.part_id = p.part_id
+              UNION ALL
+              SELECT paf.make_name, paf.model_name, paf.engine_name, paf.year_start, paf.year_end
+              FROM part_application_flexible paf
+              WHERE paf.part_id = p.part_id
+             ) app
+          ) AS searchable_applications
              FROM part p
              LEFT JOIN brand b ON b.brand_id = p.brand_id
              LEFT JOIN "group" g ON g.group_id = p.group_id

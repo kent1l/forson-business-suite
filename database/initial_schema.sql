@@ -157,6 +157,44 @@ CREATE TABLE IF NOT EXISTS public.part_application (
     UNIQUE (part_id, application_id)
 );
 
+CREATE TABLE IF NOT EXISTS public.part_application_flexible (
+    part_app_flex_id serial PRIMARY KEY,
+    part_id integer NOT NULL REFERENCES public.part(part_id) ON DELETE CASCADE,
+    make_name character varying(100),
+    model_name character varying(100),
+    engine_name character varying(100),
+    year_start integer,
+    year_end integer,
+    notes text,
+    created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (
+        part_id,
+        COALESCE(make_name, ''),
+        COALESCE(model_name, ''),
+        COALESCE(engine_name, ''),
+        COALESCE(year_start, -1),
+        COALESCE(year_end, -1)
+    )
+);
+CREATE INDEX IF NOT EXISTS idx_part_app_flex_part_id ON public.part_application_flexible (part_id);
+CREATE INDEX IF NOT EXISTS idx_part_app_flex_make ON public.part_application_flexible (make_name);
+CREATE INDEX IF NOT EXISTS idx_part_app_flex_model ON public.part_application_flexible (model_name);
+CREATE INDEX IF NOT EXISTS idx_part_app_flex_engine ON public.part_application_flexible (engine_name);
+
+CREATE OR REPLACE FUNCTION public.touch_part_application_flexible()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    NEW.updated_at := CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_touch_part_application_flexible ON public.part_application_flexible;
+CREATE TRIGGER trg_touch_part_application_flexible
+BEFORE UPDATE ON public.part_application_flexible
+FOR EACH ROW EXECUTE FUNCTION public.touch_part_application_flexible();
+
 CREATE TABLE IF NOT EXISTS public.supplier (
     supplier_id serial PRIMARY KEY,
     supplier_name character varying(255) NOT NULL UNIQUE,

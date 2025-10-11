@@ -5,22 +5,21 @@ const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { syncPartWithMeili, removePartFromMeili, meiliClient } = require('../meilisearch');
 const { activeAliasCondition } = require('../helpers/partNumberSoftDelete');
 const { normalizePartData } = require('../helpers/normalizePart');
+const {
+    fetchPartApplications,
+    formatApplicationDisplay,
+    buildSearchableApplications
+} = require('../helpers/applicationHelper');
 const router = express.Router();
 
 // Helper function to get all data for a part for Meilisearch indexing
 const getPartDataForMeili = async (client, partId) => {
     const query = `
         SELECT
-            p.*, b.brand_name, g.group_name,
-            (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${activeAliasCondition('pn')}) as part_numbers,
-                        (SELECT ARRAY_AGG(
-                                CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''))
-                        ) FROM part_application pa
-                            JOIN application a ON pa.application_id = a.application_id
-                            LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
-                            LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
-                            LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
-                        WHERE pa.part_id = p.part_id) AS applications_array,
+            p.*,
+            b.brand_name,
+            g.group_name,
+            (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${activeAliasCondition('pn')}) AS part_numbers,
             (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags_array
         FROM part AS p
         LEFT JOIN brand AS b ON p.brand_id = b.brand_id
@@ -31,20 +30,15 @@ const getPartDataForMeili = async (client, partId) => {
     if (res.rows.length === 0) return null;
 
     const part = res.rows[0];
+    const applicationRows = await fetchPartApplications(client, partId);
+    const applicationLabels = applicationRows.map(formatApplicationDisplay).filter(Boolean);
+    const searchableApplications = buildSearchableApplications(applicationRows);
     const normalizedFields = normalizePartData(part);
     return {
         ...part,
         display_name: constructDisplayName(part),
-        applications: part.applications_array || [],
-        // Flatten applications into a single searchable string for Meilisearch
-        searchable_applications: (part.applications_array && Array.isArray(part.applications_array))
-            ? part.applications_array.map(app => {
-                // SQL returns a concatenated string like "Make Model Engine" for each application.
-                if (typeof app === 'string') return app;
-                // If for some reason the application is an object, concatenate known fields.
-                return `${app.make || ''} ${app.model || ''} ${app.engine || ''}`.trim();
-            }).join(', ')
-            : '',
+        applications: applicationLabels,
+        searchable_applications: searchableApplications,
         tags: part.tags_array || [],
         normalized_internal_sku: normalizedFields.normalized_internal_sku,
         normalized_part_numbers: normalizedFields.normalized_part_numbers
@@ -139,21 +133,30 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
                 (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = p.part_id AND ${activeAliasCondition('pn')}) AS part_numbers,
                 (SELECT STRING_AGG(
                     CONCAT(
-                        vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''),
+                        COALESCE(app.make, ''),
+                        CASE WHEN app.model IS NOT NULL AND app.model <> '' THEN CONCAT(' ', app.model) ELSE '' END,
+                        CASE WHEN app.engine IS NOT NULL AND app.engine <> '' THEN CONCAT(' ', app.engine) ELSE '' END,
                         CASE
-                            WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL AND pa.year_start = pa.year_end THEN CONCAT(' [', pa.year_start, ']')
-                            WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL THEN CONCAT(' [', pa.year_start, '-', pa.year_end, ']')
-                            WHEN pa.year_start IS NOT NULL THEN CONCAT(' [', pa.year_start, '-]')
-                            WHEN pa.year_end IS NOT NULL THEN CONCAT(' [-', pa.year_end, ']')
+                            WHEN app.year_start IS NOT NULL AND app.year_end IS NOT NULL AND app.year_start = app.year_end THEN CONCAT(' [', app.year_start, ']')
+                            WHEN app.year_start IS NOT NULL AND app.year_end IS NOT NULL THEN CONCAT(' [', app.year_start, '-', app.year_end, ']')
+                            WHEN app.year_start IS NOT NULL THEN CONCAT(' [', app.year_start, '-]')
+                            WHEN app.year_end IS NOT NULL THEN CONCAT(' [-', app.year_end, ']')
                             ELSE ''
                         END
                     ), '; '
-                ) FROM part_application pa
-                  JOIN application a ON pa.application_id = a.application_id
-                  LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
-                  LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
-                  LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
-                WHERE pa.part_id = p.part_id) AS applications,
+                ) FROM (
+                    SELECT vmk.make_name AS make, vmd.model_name AS model, veng.engine_name AS engine, pa.year_start, pa.year_end
+                    FROM part_application pa
+                    JOIN application a ON pa.application_id = a.application_id
+                    LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
+                    LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
+                    LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
+                    WHERE pa.part_id = p.part_id
+                    UNION ALL
+                    SELECT paf.make_name, paf.model_name, paf.engine_name, paf.year_start, paf.year_end
+                    FROM part_application_flexible paf
+                    WHERE paf.part_id = p.part_id
+                ) app) AS applications,
                 (SELECT STRING_AGG(t.tag_name, ', ') FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags
             FROM part AS p
             LEFT JOIN brand AS b ON p.brand_id = b.brand_id
