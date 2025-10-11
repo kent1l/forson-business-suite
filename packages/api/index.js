@@ -73,6 +73,7 @@ registerRoute('/api', './routes/reportingRoutes');
 registerRoute('/api', './routes/settingsRoutes');
 registerRoute('/api/data', './routes/dataUtilsRoutes');
 registerRoute('/api/backups', './routes/backupRoutes');
+registerRoute('/api', './routes/chequeRoutes');
 
 // Health Check Routes
 registerRoute('/api', './routes/healthRoutes');

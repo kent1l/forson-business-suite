@@ -22,6 +22,7 @@ const PurchaseOrderPage = lazy(() => import('../../pages/PurchaseOrderPage'));
 const AccountsReceivablePage = lazy(() => import('../../pages/AccountsReceivablePage'));
 const SalesHistoryPage = lazy(() => import('../../pages/SalesHistoryPage'));
 const DocumentsPage = lazy(() => import('../../pages/DocumentsPage'));
+const ChequePrinterPage = lazy(() => import('../../pages/ChequePrinterPage'));
 
 const PageFallback = () => (
     <div className="flex h-full items-center justify-center rounded-3xl border border-dashed border-blue-200 bg-white/70 p-12 text-sm font-medium text-blue-600 shadow-inner shadow-blue-500/10">
@@ -50,6 +51,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, posLines, setPosL
         ar: () => <AccountsReceivablePage />,
         inventory: () => <InventoryPage user={user} />,
         employees: () => <EmployeesPage user={user} />,
+        cheque_printer: () => <ChequePrinterPage />,
         settings: () => <SettingsPage user={user} />
     }), [user, onNavigate, posLines, setPosLines]);
 
