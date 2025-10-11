@@ -4,6 +4,7 @@ const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { amountToWords, renderChequeHtml } = require('../helpers/chequeFormatter');
 const { generateChequePdfBuffer, generateChequePdfFile } = require('../helpers/pdf/chequePdf');
+const { bufferToBase64 } = require('../helpers/bufferUtils');
 
 const router = express.Router();
 
@@ -320,7 +321,7 @@ router.post('/cheque-templates/:id/preview', protect, ensureAnyPermission(['cheq
     });
     res.json({
       html,
-      pdf: buffer.toString('base64'),
+      pdf: bufferToBase64(buffer),
       pdfMimeType: 'application/pdf'
     });
   } catch (error) {
@@ -422,13 +423,22 @@ router.post('/cheque-prints', protect, hasPermission('cheque:print'), async (req
     res.status(201).json({
       chequePrint: record,
       previewHtml: html,
-      pdf: pdfBuffer ? pdfBuffer.toString('base64') : null,
+      pdf: bufferToBase64(pdfBuffer),
       pdfMimeType: pdfBuffer ? 'application/pdf' : null,
       pdfAvailable: Boolean(pdfBuffer)
     });
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('[cheque][prints:create] error', error);
+    
+    // Handle duplicate cheque number
+    if (error.code === '23505' && error.constraint === 'idx_cheque_prints_unique_number') {
+      const chequeNum = req.body?.chequeNumber || 'unknown';
+      return res.status(400).json({ 
+        message: `Cheque number ${chequeNum} has already been printed. Please use a different number.` 
+      });
+    }
+    
     res.status(500).json({ message: 'Failed to create cheque print record.' });
   } finally {
     client.release();
