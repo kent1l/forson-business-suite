@@ -245,114 +245,256 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
 
     return (
         <>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-6">
             {/* Draft saved indicator */}
-            <div className="flex items-center justify-end text-xs text-gray-500">
-                {poDraftStatus === 'saving' && <span>Saving draft…</span>}
-                {poDraftStatus === 'saved' && (
-                    <span>Draft saved{poLastSavedAt ? ` at ${poLastSavedAt.toLocaleTimeString()}` : ''}</span>
-                )}
-                {poDraftStatus === 'error' && <span className="text-red-600">Draft save failed</span>}
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
-                    <Combobox
-                        options={supplierOptions}
-                        value={formData.selectedSupplier}
-                        onChange={handleSupplierChange}
-                        placeholder="Select a supplier..."
-                    />
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/70 p-3 text-xs font-medium text-slate-600">
+                <div className="inline-flex items-center gap-2 text-slate-500">
+                    <Icon path={ICONS.history} className="h-4 w-4 text-blue-500" />
+                    <span>Auto-save status</span>
                 </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Expected Date</label>
-                    <input
-                        type="date"
-                        name="expectedDate"
-                        value={formData.expectedDate}
-                        onChange={handleFormChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    />
+                <div className="inline-flex items-center gap-2">
+                    {poDraftStatus === 'saving' && (
+                        <span className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-amber-700">
+                            <span className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
+                            Saving draft…
+                        </span>
+                    )}
+                    {poDraftStatus === 'saved' && (
+                        <span className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-emerald-700">
+                            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                            Draft saved {poLastSavedAt ? `• ${poLastSavedAt.toLocaleTimeString()}` : ''}
+                        </span>
+                    )}
+                    {poDraftStatus === 'error' && (
+                        <span className="inline-flex items-center gap-2 rounded-full bg-rose-100 px-3 py-1 text-rose-700">
+                            <span className="h-2 w-2 rounded-full bg-rose-500" />
+                            Draft save failed
+                        </span>
+                    )}
+                    {poDraftStatus === 'idle' && (
+                        <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-slate-500">
+                            <span className="h-2 w-2 rounded-full bg-slate-300" />
+                            Ready to edit
+                        </span>
+                    )}
                 </div>
-            </div>
-            <div className="relative" ref={searchBarRef}>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Add Part</label>
-                <div className="flex items-center space-x-2">
-                    <div className="flex-grow">
-                        <SearchBar
-                            value={searchTerm}
-                            onChange={setSearchTerm}
-                            onClear={() => setSearchTerm('')}
-                            placeholder="Search for parts to add..."
-                        />
-                    </div>
-                    <div>
-                        <button type="button" onClick={() => setIsNewPartOpen(true)} className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm">New Part</button>
-                    </div>
-                </div>
-                {searchResults.length > 0 && (
-                    <ul 
-                        className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto search-results"
-                        onTouchStart={(e) => {
-                            isScrollingRef.current = true;
-                            e.stopPropagation();
-                        }}
-                        onTouchMove={(e) => {
-                            if (isScrollingRef.current && e.currentTarget.scrollHeight > e.currentTarget.clientHeight) {
-                                e.preventDefault();
-                            }
-                            e.stopPropagation();
-                        }}
-                        onTouchEnd={() => {
-                            isScrollingRef.current = false;
-                        }}
-                    >
-                        {searchResults.map(part => (
-                            <li key={part.part_id} onClick={() => addPartToLines(part)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm">
-                                <div className="flex items-baseline justify-between">
-                                    <div className="flex items-baseline space-x-2 flex-1 min-w-0">
-                                        <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
-                                        {part.applications && <div className="text-xs text-gray-500 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
-                                    </div>
-                                    <div className="text-xs text-gray-500 ml-2">Stock: {typeof part.stock_on_hand !== 'undefined' ? Number(part.stock_on_hand).toFixed(2) : '-'}</div>
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                )}
             </div>
 
-            {/* New Part modal is rendered outside the form to avoid nested forms */}
-            <div className="max-h-64 overflow-y-auto border rounded-lg">
-                <table className="w-full text-left text-sm">
-                    <tbody>
-                        {formData.lines.map(line => (
-                            <tr key={line.part_id} className="border-b">
-                                <td className="p-2">{line.display_name}</td>
-                                <td className="p-2 w-20">
-                                    <input
-                                        type="number"
-                                        value={line.quantity}
-                                        onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)}
-                                        onFocus={e => e.target.select()}
-                                        onMouseUp={e => e.preventDefault()}
-                                        className="w-full p-1 border rounded-md text-center"
-                                    />
-                                </td>
-                                <td className="p-2 w-12 text-center"><button type="button" onClick={() => removeLine(line.part_id)} className="text-red-500 hover:text-red-700"><Icon path={ICONS.trash} className="h-4 w-4" /></button></td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-            <div className="text-right font-bold">Total: ₱{total.toFixed(2)}</div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                <textarea name="notes" value={formData.notes} onChange={handleFormChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows="2"></textarea>
-            </div>
-            <div className="mt-6 flex justify-end space-x-4">
-                <button type="button" onClick={clearDraftAndCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">{existingPO ? 'Update Purchase Order' : 'Create Purchase Order'}</button>
+            <section className="rounded-3xl border border-slate-100 bg-white/90 shadow-sm shadow-slate-900/5 backdrop-blur-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-4">
+                    <div>
+                        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Supplier & scheduling</h2>
+                        <p className="text-xs text-slate-400">Choose a supplier and set expectations so your team stays aligned.</p>
+                    </div>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-[11px] font-semibold uppercase text-blue-600">
+                        <Icon path={ICONS.suppliers} className="h-4 w-4" />
+                        Supplier details
+                    </span>
+                </div>
+                <div className="grid gap-4 px-5 py-5 sm:grid-cols-2">
+                    <label className="flex flex-col gap-2">
+                        <span className="text-sm font-medium text-slate-600">Supplier</span>
+                        <Combobox
+                            options={supplierOptions}
+                            value={formData.selectedSupplier}
+                            onChange={handleSupplierChange}
+                            placeholder="Select a supplier..."
+                        />
+                    </label>
+                    <label className="flex flex-col gap-2">
+                        <span className="text-sm font-medium text-slate-600">Expected date</span>
+                        <input
+                            type="date"
+                            name="expectedDate"
+                            value={formData.expectedDate}
+                            onChange={handleFormChange}
+                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 shadow-inner shadow-slate-900/5 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                        />
+                    </label>
+                </div>
+            </section>
+
+            <section className="rounded-3xl border border-slate-100 bg-white/90 shadow-sm shadow-slate-900/5 backdrop-blur-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-4">
+                    <div>
+                        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Parts catalog</h2>
+                        <p className="text-xs text-slate-400">Search your inventory to add the exact items you need.</p>
+                    </div>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase text-emerald-600">
+                        <Icon path={ICONS.power_search} className="h-4 w-4" />
+                        Smart search
+                    </span>
+                </div>
+                <div className="relative space-y-4 px-5 py-5" ref={searchBarRef}>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <div className="flex-1">
+                            <SearchBar
+                                value={searchTerm}
+                                onChange={setSearchTerm}
+                                onClear={() => setSearchTerm('')}
+                                placeholder="Search for parts to add..."
+                            />
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setIsNewPartOpen(true)}
+                            className="inline-flex items-center justify-center rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 transition hover:-translate-y-0.5 hover:bg-emerald-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                        >
+                            <Icon path={ICONS.plus} className="mr-2 h-4 w-4" />
+                            New part
+                        </button>
+                    </div>
+
+                    {searchResults.length > 0 && (
+                        <ul
+                            className="search-results absolute left-0 right-0 top-full z-20 mt-2 max-h-72 overflow-y-auto rounded-2xl border border-slate-100 bg-white shadow-2xl shadow-slate-900/10"
+                            onTouchStart={(e) => {
+                                isScrollingRef.current = true;
+                                e.stopPropagation();
+                            }}
+                            onTouchMove={(e) => {
+                                if (isScrollingRef.current && e.currentTarget.scrollHeight > e.currentTarget.clientHeight) {
+                                    e.preventDefault();
+                                }
+                                e.stopPropagation();
+                            }}
+                            onTouchEnd={() => {
+                                isScrollingRef.current = false;
+                            }}
+                        >
+                            {searchResults.map(part => (
+                                <li
+                                    key={part.part_id}
+                                    onClick={() => addPartToLines(part)}
+                                    className="cursor-pointer border-b border-slate-100 px-4 py-3 text-sm transition hover:bg-blue-50/80"
+                                >
+                                    <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+                                        <div className="flex flex-1 items-baseline gap-2 truncate">
+                                            <span className="text-sm font-semibold text-slate-700 truncate">{part.display_name}</span>
+                                            {part.applications && (
+                                                <span className="hidden text-xs text-slate-400 sm:block">
+                                                    {formatApplicationText(part.applications, { style: 'searchSuggestion' })}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <span className="text-xs font-medium text-slate-500">Stock: {typeof part.stock_on_hand !== 'undefined' ? Number(part.stock_on_hand).toFixed(2) : '-'}</span>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+            </section>
+
+            <section className="rounded-3xl border border-slate-100 bg-white/90 shadow-sm shadow-slate-900/5 backdrop-blur-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-4">
+                    <div>
+                        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Line items</h2>
+                        <p className="text-xs text-slate-400">Adjust quantities and keep a clean overview of every part you’re ordering.</p>
+                    </div>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase text-slate-500">
+                        <Icon path={ICONS.box} className="h-4 w-4" />
+                        {formData.lines.length} items
+                    </span>
+                </div>
+                <div className="px-5 pb-5">
+                    <div className="overflow-hidden rounded-2xl border border-slate-100">
+                        <table className="min-w-full table-auto text-left text-sm text-slate-600">
+                            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
+                                <tr>
+                                    <th className="px-4 py-3 font-semibold">Part</th>
+                                    <th className="px-4 py-3 text-center font-semibold">Qty</th>
+                                    <th className="px-4 py-3 text-right font-semibold">Cost</th>
+                                    <th className="px-4 py-3 text-center font-semibold">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {formData.lines.length === 0 && (
+                                    <tr>
+                                        <td colSpan={4} className="px-4 py-8 text-center text-sm text-slate-400">
+                                            No line items yet — search above to add your first part.
+                                        </td>
+                                    </tr>
+                                )}
+                                {formData.lines.map(line => (
+                                    <tr key={line.part_id} className="transition hover:bg-blue-50/40">
+                                        <td className="px-4 py-3">
+                                            <div className="font-semibold text-slate-700">{line.display_name}</div>
+                                            <div className="text-xs uppercase tracking-wide text-slate-400">{line.internal_sku || 'SKU pending'}</div>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <input
+                                                type="number"
+                                                value={line.quantity}
+                                                onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)}
+                                                onFocus={e => e.target.select()}
+                                                onMouseUp={e => e.preventDefault()}
+                                                className="mx-auto block w-20 rounded-lg border border-slate-200 px-2 py-1 text-center text-sm font-semibold text-slate-700 shadow-inner shadow-slate-900/5 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                                            />
+                                        </td>
+                                        <td className="px-4 py-3 text-right font-mono text-sm text-slate-700">₱{Number(line.cost_price || 0).toFixed(2)}</td>
+                                        <td className="px-4 py-3 text-center">
+                                            <button
+                                                type="button"
+                                                onClick={() => removeLine(line.part_id)}
+                                                className="inline-flex items-center justify-center rounded-full bg-rose-50 p-2 text-rose-600 transition hover:bg-rose-100"
+                                                title="Remove line"
+                                            >
+                                                <Icon path={ICONS.trash} className="h-4 w-4" />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <section className="rounded-3xl border border-slate-100 bg-white/90 shadow-sm shadow-slate-900/5 backdrop-blur-sm">
+                <div className="grid gap-5 px-5 py-5 lg:grid-cols-3">
+                    <div className="lg:col-span-2">
+                        <label className="flex flex-col gap-2">
+                            <span className="text-sm font-medium text-slate-600">Internal notes</span>
+                            <textarea
+                                name="notes"
+                                value={formData.notes}
+                                onChange={handleFormChange}
+                                rows={4}
+                                className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm text-slate-700 shadow-inner shadow-slate-900/5 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                                placeholder="Optional notes to align your team and suppliers."
+                            />
+                        </label>
+                    </div>
+                    <div className="flex flex-col justify-between gap-4 rounded-2xl border border-slate-100 bg-slate-50/80 p-4 text-sm text-slate-600">
+                        <div>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Order summary</p>
+                            <p className="mt-2 text-2xl font-semibold text-slate-900">₱{total.toFixed(2)}</p>
+                            <p className="text-xs text-slate-400">Total based on quantity × cost per part.</p>
+                        </div>
+                        <div className="space-y-2 text-xs text-slate-500">
+                            <p>Drafts auto-save while you work.</p>
+                            <p>Parts availability updates when you add them to the purchase order.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">
+                <button
+                    type="button"
+                    onClick={clearDraftAndCancel}
+                    className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-5 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                >
+                    Cancel
+                </button>
+                <button
+                    type="submit"
+                    className="inline-flex items-center justify-center rounded-full bg-blue-600 px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-blue-600/30 transition hover:-translate-y-0.5 hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400"
+                >
+                    <Icon path={ICONS.send} className="mr-2 h-4 w-4" />
+                    {existingPO ? 'Update Purchase Order' : 'Create Purchase Order'}
+                </button>
             </div>
         </form>
 
