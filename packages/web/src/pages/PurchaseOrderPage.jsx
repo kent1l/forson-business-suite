@@ -1,15 +1,21 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, lazy } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
-// Modal removed in favor of dedicated full-page editor
-import PurchaseOrderEditorPage from './PurchaseOrderEditorPage';
 import FilterBar from '../components/ui/FilterBar';
 import { downloadFile } from '../utils/downloadFile';
 import { format, parseISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
+
+const PurchaseOrderEditorPage = lazy(() => import('./PurchaseOrderEditorPage'));
+
+const EditorFallback = () => (
+    <div className="flex h-[60vh] items-center justify-center rounded-3xl border border-dashed border-blue-200 bg-white/70 p-12 text-sm font-medium text-blue-600 shadow-inner shadow-blue-500/10">
+        Loading editor…
+    </div>
+);
 
 const PurchaseOrderLines = ({ poId }) => {
     const [lines, setLines] = useState([]);
@@ -204,11 +210,13 @@ const PurchaseOrderPage = () => {
 
     if (isEditing) {
         return (
-            <PurchaseOrderEditorPage
-                user={user}
-                existingPO={editingPO}
-                onDone={exitEditor}
-            />
+            <React.Suspense fallback={<EditorFallback />}>
+                <PurchaseOrderEditorPage
+                    user={user}
+                    existingPO={editingPO}
+                    onDone={exitEditor}
+                />
+            </React.Suspense>
         );
     }
 

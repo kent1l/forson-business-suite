@@ -1,25 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, lazy } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
-import Dashboard from '../../pages/Dashboard';
-import SuppliersPage from '../../pages/SuppliersPage';
-import PartsPage from '../../pages/PartsPage';
-import PartsCleanupPage from '../../pages/PartsCleanupPage';
-import GoodsReceiptPage from '../../pages/GoodsReceiptPage';
-import GoodsReceiptHistoryPage from '../../pages/GoodsReceiptHistoryPage';
-import InvoicingPage from '../../pages/InvoicingPage';
-import ApplicationsPage from '../../pages/ApplicationsPage';
-import CustomersPage from '../../pages/CustomersPage';
-import PowerSearchPage from '../../pages/PowerSearchPage';
-import InventoryPage from '../../pages/InventoryPage';
-import ReportingPage from '../../pages/ReportingPage';
-import EmployeesPage from '../../pages/EmployeesPage';
-import SettingsPage from '../../pages/SettingsPage';
-import POSPage from '../../pages/POSPage';
-import PurchaseOrderPage from '../../pages/PurchaseOrderPage';
-import AccountsReceivablePage from '../../pages/AccountsReceivablePage';
-import SalesHistoryPage from '../../pages/SalesHistoryPage'; // <-- Import new page
-import DocumentsPage from '../../pages/DocumentsPage';
+
+const { Suspense } = React;
+
+const Dashboard = lazy(() => import('../../pages/Dashboard'));
+const SuppliersPage = lazy(() => import('../../pages/SuppliersPage'));
+const PartsPage = lazy(() => import('../../pages/PartsPage'));
+const PartsCleanupPage = lazy(() => import('../../pages/PartsCleanupPage'));
+const GoodsReceiptPage = lazy(() => import('../../pages/GoodsReceiptPage'));
+const GoodsReceiptHistoryPage = lazy(() => import('../../pages/GoodsReceiptHistoryPage'));
+const InvoicingPage = lazy(() => import('../../pages/InvoicingPage'));
+const ApplicationsPage = lazy(() => import('../../pages/ApplicationsPage'));
+const CustomersPage = lazy(() => import('../../pages/CustomersPage'));
+const PowerSearchPage = lazy(() => import('../../pages/PowerSearchPage'));
+const InventoryPage = lazy(() => import('../../pages/InventoryPage'));
+const ReportingPage = lazy(() => import('../../pages/ReportingPage'));
+const EmployeesPage = lazy(() => import('../../pages/EmployeesPage'));
+const SettingsPage = lazy(() => import('../../pages/SettingsPage'));
+const POSPage = lazy(() => import('../../pages/POSPage'));
+const PurchaseOrderPage = lazy(() => import('../../pages/PurchaseOrderPage'));
+const AccountsReceivablePage = lazy(() => import('../../pages/AccountsReceivablePage'));
+const SalesHistoryPage = lazy(() => import('../../pages/SalesHistoryPage'));
+const DocumentsPage = lazy(() => import('../../pages/DocumentsPage'));
+
+const PageFallback = () => (
+    <div className="flex h-full items-center justify-center rounded-3xl border border-dashed border-blue-200 bg-white/70 p-12 text-sm font-medium text-blue-600 shadow-inner shadow-blue-500/10">
+        Loading module…
+    </div>
+);
 
 const MainLayout = ({ user, onLogout, onNavigate, currentPage, posLines, setPosLines }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -55,7 +64,9 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, posLines, setPosL
             <div className="flex-1 flex flex-col overflow-hidden">
                 <Header user={user} onLogout={onLogout} onMenuClick={() => setSidebarOpen(true)} />
                 <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-50 p-4 sm:p-6 md:p-8">
-                    {renderPage()}
+                    <Suspense fallback={<PageFallback />}>
+                        {renderPage()}
+                    </Suspense>
                 </main>
             </div>
         </div>
