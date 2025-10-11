@@ -512,47 +512,35 @@ const ChequePrinterPage = () => {
           </div>
 
           {editorOpen && editorTemplate && (
-            <div className="grid gap-6 lg:grid-cols-[minmax(280px,320px)_minmax(320px,1fr)_minmax(260px,320px)]">
-              <div className="space-y-4">
-                <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm text-sm">
-                  <label className="block">
-                    <span className="text-xs font-medium text-slate-600">Template Name</span>
-                    <input
-                      type="text"
-                      className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 focus:border-blue-500 focus:outline-none"
-                      value={editorTemplate.template_name}
-                      onChange={(event) => handleTemplateEditorChange({ template_name: event.target.value })}
-                    />
-                  </label>
-                  <label className="mt-3 block">
-                    <span className="text-xs font-medium text-slate-600">Description</span>
-                    <textarea
-                      className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 focus:border-blue-500 focus:outline-none"
-                      rows={3}
-                      value={editorTemplate.description || ''}
-                      onChange={(event) => handleTemplateEditorChange({ description: event.target.value })}
-                    />
-                  </label>
+            <div className="space-y-6">
+              <div className="grid gap-6 lg:grid-cols-2">
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm text-sm">
+                    <label className="block">
+                      <span className="text-xs font-medium text-slate-600">Template Name</span>
+                      <input
+                        type="text"
+                        className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 focus:border-blue-500 focus:outline-none"
+                        value={editorTemplate.template_name}
+                        onChange={(event) => handleTemplateEditorChange({ template_name: event.target.value })}
+                      />
+                    </label>
+                    <label className="mt-3 block">
+                      <span className="text-xs font-medium text-slate-600">Description</span>
+                      <textarea
+                        className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 focus:border-blue-500 focus:outline-none"
+                        rows={3}
+                        value={editorTemplate.description || ''}
+                        onChange={(event) => handleTemplateEditorChange({ description: event.target.value })}
+                      />
+                    </label>
+                  </div>
+                  <TemplateSettingsForm template={editorTemplate} onChange={setEditorTemplate} />
                 </div>
-                <TemplateSettingsForm template={editorTemplate} onChange={setEditorTemplate} />
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={handleSaveTemplate}
-                    className="flex-1 rounded bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700"
-                  >
-                    Save Template
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditorOpen(false)}
-                    className="rounded border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
-                  >
-                    Close
-                  </button>
+                <div className="space-y-4">
+                  <FieldInspector element={editorSelectedElement} onChange={handleElementReplace} />
                 </div>
               </div>
-
               <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
                 <TemplateCanvas
                   template={editorTemplate}
@@ -563,9 +551,21 @@ const ChequePrinterPage = () => {
                   onChange={handleElementChange}
                 />
               </div>
-
-              <div className="space-y-4">
-                <FieldInspector element={editorSelectedElement} onChange={handleElementReplace} />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleSaveTemplate}
+                  className="flex-1 rounded bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700"
+                >
+                  Save Template
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditorOpen(false)}
+                  className="rounded border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
+                >
+                  Close
+                </button>
               </div>
             </div>
           )}
