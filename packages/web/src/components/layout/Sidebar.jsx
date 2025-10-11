@@ -21,7 +21,6 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
         { name: 'Parts', icon: ICONS.parts, page: 'parts', permission: 'parts:view' },
         { name: 'Suppliers', icon: ICONS.suppliers, page: 'suppliers', permission: 'suppliers:view' },
         { name: 'Customers', icon: ICONS.customers, page: 'customers', permission: 'customers:view' },
-        { name: 'Applications', icon: ICONS.applications, page: 'applications', permission: 'applications:view' },
         { name: 'Employees', icon: ICONS.employees, page: 'employees', permission: 'employees:view' },
         { name: 'Settings', icon: ICONS.settings, page: 'settings', permission: 'settings:view' },
     ];

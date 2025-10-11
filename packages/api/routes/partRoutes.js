@@ -145,15 +145,11 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
                         END
                     ), '; '
                 ) FROM (
-                    SELECT vmk.make_name AS make, vmd.model_name AS model, veng.engine_name AS engine, pa.year_start, pa.year_end
-                    FROM part_application pa
-                    JOIN application a ON pa.application_id = a.application_id
-                    LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
-                    LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
-                    LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
-                    WHERE pa.part_id = p.part_id
-                    UNION ALL
-                    SELECT paf.make_name, paf.model_name, paf.engine_name, paf.year_start, paf.year_end
+                    SELECT paf.make_name AS make,
+                           paf.model_name AS model,
+                           paf.engine_name AS engine,
+                           paf.year_start,
+                           paf.year_end
                     FROM part_application_flexible paf
                     WHERE paf.part_id = p.part_id
                 ) app) AS applications,

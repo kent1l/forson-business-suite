@@ -1,4 +1,4 @@
-import React, { useState, lazy } from 'react';
+import React, { useState, lazy, useMemo } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
 
@@ -11,7 +11,6 @@ const PartsCleanupPage = lazy(() => import('../../pages/PartsCleanupPage'));
 const GoodsReceiptPage = lazy(() => import('../../pages/GoodsReceiptPage'));
 const GoodsReceiptHistoryPage = lazy(() => import('../../pages/GoodsReceiptHistoryPage'));
 const InvoicingPage = lazy(() => import('../../pages/InvoicingPage'));
-const ApplicationsPage = lazy(() => import('../../pages/ApplicationsPage'));
 const CustomersPage = lazy(() => import('../../pages/CustomersPage'));
 const PowerSearchPage = lazy(() => import('../../pages/PowerSearchPage'));
 const InventoryPage = lazy(() => import('../../pages/InventoryPage'));
@@ -33,30 +32,28 @@ const PageFallback = () => (
 const MainLayout = ({ user, onLogout, onNavigate, currentPage, posLines, setPosLines }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
 
-    const renderPage = () => {
-        switch (currentPage) {
-            case 'dashboard': return <Dashboard onNavigate={onNavigate} />;
-            case 'pos': return <POSPage user={user} lines={posLines} setLines={setPosLines} />;
-            case 'reporting': return <ReportingPage />;
-            case 'power_search': return <PowerSearchPage />;
-            case 'suppliers': return <SuppliersPage user={user} />;
-            case 'parts': return <PartsPage user={user} onNavigate={onNavigate} />;
-            case 'parts_cleanup': return <PartsCleanupPage user={user} onNavigate={onNavigate} />;
-            case 'applications': return <ApplicationsPage user={user} />;
-            case 'customers': return <CustomersPage user={user} />;
-            case 'goods_receipt': return <GoodsReceiptPage user={user} onNavigate={onNavigate} />;
-            case 'goods_receipt_history': return <GoodsReceiptHistoryPage user={user} />;
-            case 'invoicing': return <InvoicingPage user={user} />;
-            case 'sales_history': return <SalesHistoryPage />; // <-- Add case for new page
-            case 'documents': return <DocumentsPage />;
-            case 'purchase_orders': return <PurchaseOrderPage />;
-            case 'ar': return <AccountsReceivablePage />;
-            case 'inventory': return <InventoryPage user={user} />;
-            case 'employees': return <EmployeesPage user={user} />;
-            case 'settings': return <SettingsPage user={user} />;
-            default: return <Dashboard />;
-        }
-    };
+    const pageRenderers = useMemo(() => ({
+        dashboard: () => <Dashboard onNavigate={onNavigate} />,
+        pos: () => <POSPage user={user} lines={posLines} setLines={setPosLines} />,
+        reporting: () => <ReportingPage />,
+        power_search: () => <PowerSearchPage />,
+        suppliers: () => <SuppliersPage user={user} />,
+        parts: () => <PartsPage user={user} onNavigate={onNavigate} />,
+        parts_cleanup: () => <PartsCleanupPage user={user} onNavigate={onNavigate} />,
+        customers: () => <CustomersPage user={user} />,
+        goods_receipt: () => <GoodsReceiptPage user={user} onNavigate={onNavigate} />,
+        goods_receipt_history: () => <GoodsReceiptHistoryPage user={user} />,
+        invoicing: () => <InvoicingPage user={user} />,
+        sales_history: () => <SalesHistoryPage />,
+        documents: () => <DocumentsPage />,
+        purchase_orders: () => <PurchaseOrderPage />,
+        ar: () => <AccountsReceivablePage />,
+        inventory: () => <InventoryPage user={user} />,
+        employees: () => <EmployeesPage user={user} />,
+        settings: () => <SettingsPage user={user} />
+    }), [user, onNavigate, posLines, setPosLines]);
+
+    const renderPage = pageRenderers[currentPage] || pageRenderers.dashboard;
 
     return (
         <div className="flex h-screen bg-slate-50 font-sans text-gray-800">

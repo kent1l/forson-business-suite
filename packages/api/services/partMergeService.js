@@ -195,13 +195,15 @@ class PartMergeService {
         const part = result.rows[0];
         const applicationRows = await fetchPartApplications(db, partId);
         const applications = applicationRows.map((row) => ({
-            source: row.source,
-            application_id: row.application_id,
+            source: 'flex',
+            link_id: row.link_id,
+            part_app_flex_id: row.link_id,
             make: row.make,
             model: row.model,
             engine: row.engine,
             year_start: row.year_start,
             year_end: row.year_end,
+            notes: row.notes,
             display: formatApplicationDisplay(row)
         }));
 
@@ -426,30 +428,38 @@ class PartMergeService {
             `, [keepPartId]);
         }
         
-        // Merge part_application
-        if (rules.mergeApplications) {
-            const result = await client.query(`
-                UPDATE part_application 
-                SET part_id = $1 
-                WHERE part_id = ANY($2)
-                  AND NOT EXISTS (
-                      SELECT 1 FROM part_application pa2 
-                      WHERE pa2.part_id = $1 
-                        AND pa2.application_id = part_application.application_id
-                  )
-                RETURNING part_app_id
-            `, [keepPartId, mergePartIds]);
-            counts.part_applications = result.rowCount;
-            // Remove duplicates after reassignment using unique(part_id, application_id)
-            await client.query(`
-                DELETE FROM part_application pa
-                USING part_application pa2
-                WHERE pa.part_id = $1
-                  AND pa.part_id = pa2.part_id
-                  AND pa.application_id = pa2.application_id
-                  AND pa.part_app_id > pa2.part_app_id
-            `, [keepPartId]);
-        }
+                // Merge part_application_flexible records
+                if (rules.mergeApplications) {
+                        const result = await client.query(`
+                                UPDATE part_application_flexible
+                                SET part_id = $1
+                                WHERE part_id = ANY($2)
+                                    AND NOT EXISTS (
+                                            SELECT 1 FROM part_application_flexible paf2
+                                            WHERE paf2.part_id = $1
+                                                AND COALESCE(paf2.make_name, '') = COALESCE(part_application_flexible.make_name, '')
+                                                AND COALESCE(paf2.model_name, '') = COALESCE(part_application_flexible.model_name, '')
+                                                AND COALESCE(paf2.engine_name, '') = COALESCE(part_application_flexible.engine_name, '')
+                                                AND COALESCE(paf2.year_start, -1) = COALESCE(part_application_flexible.year_start, -1)
+                                                AND COALESCE(paf2.year_end, -1) = COALESCE(part_application_flexible.year_end, -1)
+                                    )
+                                RETURNING part_app_flex_id
+                        `, [keepPartId, mergePartIds]);
+                        counts.part_applications = result.rowCount;
+
+                        await client.query(`
+                                DELETE FROM part_application_flexible paf
+                                USING part_application_flexible paf2
+                                WHERE paf.part_id = $1
+                                    AND paf.part_id = paf2.part_id
+                                    AND COALESCE(paf.make_name, '') = COALESCE(paf2.make_name, '')
+                                    AND COALESCE(paf.model_name, '') = COALESCE(paf2.model_name, '')
+                                    AND COALESCE(paf.engine_name, '') = COALESCE(paf2.engine_name, '')
+                                    AND COALESCE(paf.year_start, -1) = COALESCE(paf2.year_start, -1)
+                                    AND COALESCE(paf.year_end, -1) = COALESCE(paf2.year_end, -1)
+                                    AND paf.part_app_flex_id > paf2.part_app_flex_id
+                        `, [keepPartId]);
+                }
         
         return counts;
     }
@@ -611,8 +621,6 @@ class PartMergeService {
         const seen = new Set();
         return applications.filter(app => {
             const key = [
-                app.source || 'legacy',
-                app.application_id || '',
                 (app.make || '').toLowerCase().trim(),
                 (app.model || '').toLowerCase().trim(),
                 (app.engine || '').toLowerCase().trim(),

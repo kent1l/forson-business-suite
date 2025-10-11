@@ -5,7 +5,6 @@ import Modal from '../ui/Modal';
 import Combobox from '../ui/Combobox';
 import { useSettings } from '../../contexts/SettingsContext';
 import TagInput from '../ui/TagInput'; // <-- Import TagInput
-import ApplicationSearchCombobox from '../applications/ApplicationSearchCombobox';
 import PartApplicationManager from '../../pages/PartApplicationManager';
 
 const BrandGroupForm = ({ type, onSave, onCancel, initialName = '' }) => {
@@ -73,7 +72,8 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
         if (!part) { setSelectedApps([]); return; }
         try {
             const res = await api.get(`/parts/${part.part_id}/applications`);
-            setSelectedApps(Array.isArray(res.data) ? res.data : []);
+            const apps = Array.isArray(res.data) ? res.data : [];
+            setSelectedApps(apps);
         } catch (error) {
             console.error(error);
             toast.error('Could not load part applications.');
@@ -81,16 +81,6 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
     }, [part, isBulkEdit]);
 
     useEffect(() => { fetchSelectedApps(); }, [fetchSelectedApps]);
-
-    const addApplication = (app) => {
-        if (!app || !app.application_id) return;
-        setSelectedApps(prev => {
-            if (prev.find(a => a.application_id === app.application_id)) return prev;
-            return [...prev, app];
-        });
-    };
-
-    const removeApplication = (id) => setSelectedApps(prev => prev.filter(a => a.application_id !== id));
 
     const getInitialState = useCallback(() => {
         if (isBulkEdit) {
@@ -172,9 +162,8 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
             if (formData[key] !== initialFormData[key]) return true;
         }
         if (JSON.stringify(tags) !== JSON.stringify(initialTags)) return true;
-        if (selectedApps.length > 0) return true;
         return false;
-    }, [formData, initialFormData, tags, initialTags, selectedApps]);
+    }, [formData, initialFormData, tags, initialTags]);
 
     const isFormElement = (el) => {
         if (!el) return false;
@@ -249,20 +238,6 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
             setIsGroupModalOpen(false);
         }
     };
-
-    // BooleanSelect used for bulk edit dropdowns
-    function BooleanSelect({ name, label }) {
-        return (
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-                <select name={name} value={formData[name]} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                    <option value="unchanged">No Change</option>
-                    <option value="true">Yes</option>
-                    <option value="false">No</option>
-                </select>
-            </div>
-        );
-    }
 
     return (
         <>
@@ -339,31 +314,21 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                 {/* Show applications only when editing an existing part (hide for New Part) */}
                 {!isBulkEdit && part && (
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Applications</label>
-                        <div className="flex items-center space-x-2">
-                            <div className="flex-grow">
-                                <ApplicationSearchCombobox value={null} onChange={(app) => addApplication(app)} placeholder="Search make model engine" />
-                            </div>
-                            {part && (
-                                <button type="button" onClick={() => setIsAppManagerOpen(true)} className="px-2 py-1 border rounded text-sm text-gray-700 hover:bg-gray-100">Manage</button>
-                            )}
+                        <div className="flex items-center justify-between mb-2">
+                            <label className="block text-sm font-medium text-gray-700">Applications</label>
+                            <button type="button" onClick={() => setIsAppManagerOpen(true)} className="px-2 py-1 border rounded text-sm text-gray-700 hover:bg-gray-100">Manage</button>
                         </div>
-                        <div className="mt-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                                {selectedApps.slice(0, 6).map(app => (
-                                    <div key={app.application_id} className="inline-flex items-center space-x-2 bg-gray-50 border rounded-full px-3 py-1 text-xs">
-                                        <span className="truncate max-w-[16rem]">{labelForApp(app)}</span>
-                                        <button type="button" onClick={() => removeApplication(app.application_id)} className="text-gray-400 hover:text-red-600 ml-1">{'\u00d7'}</button>
-                                    </div>
+                        {selectedApps.length > 0 ? (
+                            <ul className="space-y-1">
+                                {selectedApps.map(app => (
+                                    <li key={app.application_id || app.part_app_flex_id} className="text-sm text-gray-700">
+                                        {labelForApp(app) || 'Unspecified application'}
+                                    </li>
                                 ))}
-                                {selectedApps.length > 6 && (
-                                    <div className="inline-flex items-center text-xs text-gray-500">+{selectedApps.length - 6} more</div>
-                                )}
-                                {selectedApps.length === 0 && (
-                                    <div className="text-sm text-gray-500">No linked applications</div>
-                                )}
-                            </div>
-                        </div>
+                            </ul>
+                        ) : (
+                            <p className="text-sm text-gray-500">No linked applications yet. Use Manage to add new ones.</p>
+                        )}
                     </div>
                 )}
 
@@ -447,12 +412,54 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t">
                                 {isBulkEdit ? (
                                     <>
-                                        <BooleanSelect name="is_active" label="Active" />
-                                        <BooleanSelect name="is_service" label="Is Service" />
-                                        <BooleanSelect name="low_stock_warning" label="Low Stock Warning" />
-                                        <BooleanSelect name="is_price_change_allowed" label="Price Change Allowed" />
-                                        <BooleanSelect name="is_using_default_quantity" label="Use Default Qty" />
-                                        <BooleanSelect name="is_tax_inclusive_price" label="Price is Tax Inclusive" />
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Active</label>
+                                            <select name="is_active" value={formData.is_active} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                                <option value="unchanged">No Change</option>
+                                                <option value="true">Yes</option>
+                                                <option value="false">No</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Is Service</label>
+                                            <select name="is_service" value={formData.is_service} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                                <option value="unchanged">No Change</option>
+                                                <option value="true">Yes</option>
+                                                <option value="false">No</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Low Stock Warning</label>
+                                            <select name="low_stock_warning" value={formData.low_stock_warning} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                                <option value="unchanged">No Change</option>
+                                                <option value="true">Yes</option>
+                                                <option value="false">No</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Price Change Allowed</label>
+                                            <select name="is_price_change_allowed" value={formData.is_price_change_allowed} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                                <option value="unchanged">No Change</option>
+                                                <option value="true">Yes</option>
+                                                <option value="false">No</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Use Default Qty</label>
+                                            <select name="is_using_default_quantity" value={formData.is_using_default_quantity} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                                <option value="unchanged">No Change</option>
+                                                <option value="true">Yes</option>
+                                                <option value="false">No</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Price is Tax Inclusive</label>
+                                            <select name="is_tax_inclusive_price" value={formData.is_tax_inclusive_price} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                                <option value="unchanged">No Change</option>
+                                                <option value="true">Yes</option>
+                                                <option value="false">No</option>
+                                            </select>
+                                        </div>
                                     </>
                                 ) : (
                                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 col-span-2">

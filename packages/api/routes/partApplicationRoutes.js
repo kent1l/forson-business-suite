@@ -50,8 +50,9 @@ router.get('/parts/:partId/applications', async (req, res) => {
         const rows = await fetchPartApplications(db, partId);
         const payload = rows.map((row) => ({
             ...row,
-            part_app_id: row.source === 'legacy' ? row.link_id : null,
-            part_app_flex_id: row.source === 'flex' ? row.link_id : null,
+            source: 'flex',
+            part_app_id: null,
+            part_app_flex_id: row.link_id,
             display: formatApplicationDisplay(row)
         }));
         res.json(payload);
@@ -64,7 +65,7 @@ router.get('/parts/:partId/applications', async (req, res) => {
 // POST a new application link for a part
 router.post('/parts/:partId/applications', async (req, res) => {
     const { partId } = req.params;
-    const { application_id, year_start, year_end, make, model, engine, notes } = req.body;
+    const { make, model, engine, notes, year_start, year_end } = req.body;
 
     const trimmedMake = typeof make === 'string' ? make.trim() : '';
     const trimmedModel = typeof model === 'string' ? model.trim() : '';
@@ -74,12 +75,12 @@ router.post('/parts/:partId/applications', async (req, res) => {
         const parsed = parseInt(value, 10);
         return Number.isFinite(parsed) ? parsed : null;
     };
-    const normalizedApplicationId = toIntOrNull(application_id);
     const sanitizedYearStart = toIntOrNull(year_start);
     const sanitizedYearEnd = toIntOrNull(year_end);
+    const sanitizedNotes = typeof notes === 'string' ? notes.trim() : '';
 
-    if (application_id && normalizedApplicationId === null) {
-        return res.status(400).json({ message: 'Invalid application_id supplied.' });
+    if (!trimmedMake && !trimmedModel && !trimmedEngine) {
+        return res.status(400).json({ message: 'Provide at least one of make, model, or engine.' });
     }
 
     const client = await db.getClient();
@@ -87,76 +88,45 @@ router.post('/parts/:partId/applications', async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        let insertedRow;
-        let insertedSource;
-
-    if (normalizedApplicationId !== null) {
-            const insertQuery = `
-                INSERT INTO part_application (part_id, application_id, year_start, year_end)
-                VALUES ($1, $2, $3, $4)
-                ON CONFLICT (part_id, application_id) DO NOTHING
-                RETURNING part_app_id;
-            `;
-            const result = await client.query(insertQuery, [partId, normalizedApplicationId, sanitizedYearStart, sanitizedYearEnd]);
-            if (result.rows.length === 0) {
-                await client.query('COMMIT');
-                const existingRows = await fetchPartApplications(db, partId);
-                const existing = existingRows.find((row) => row.application_id === normalizedApplicationId && row.source === 'legacy');
-                return res.status(200).json(existing || null);
-            }
-            insertedSource = 'legacy';
-            insertedRow = result.rows[0];
-        } else if (trimmedMake || trimmedModel || trimmedEngine) {
-            const insertFlex = `
-                INSERT INTO part_application_flexible (
-                    part_id,
-                    make_name,
-                    model_name,
-                    engine_name,
-                    year_start,
-                    year_end,
-                    notes
-                )
-                VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), NULLIF($4, ''), $5, $6, NULLIF($7, ''))
-                ON CONFLICT DO NOTHING
-                RETURNING part_app_flex_id;
-            `;
-            const result = await client.query(insertFlex, [
-                partId,
-                trimmedMake,
-                trimmedModel,
-                trimmedEngine,
-                sanitizedYearStart,
-                sanitizedYearEnd,
-                typeof notes === 'string' ? notes.trim() : null
-            ]);
-            if (result.rows.length === 0) {
-                await client.query('COMMIT');
-                const existingRows = await fetchPartApplications(db, partId);
-                const existing = existingRows.find((row) =>
-                    row.source === 'flex' &&
-                    row.make === (trimmedMake || null) &&
-                    row.model === (trimmedModel || null) &&
-                    row.engine === (trimmedEngine || null) &&
-                    row.year_start === sanitizedYearStart &&
-                    row.year_end === sanitizedYearEnd
-                );
-                return res.status(200).json(existing || null);
-            }
-            insertedSource = 'flex';
-            insertedRow = result.rows[0];
-        } else {
-            throw new Error('Either application_id or at least one of make, model, or engine must be provided');
-        }
+        const insertFlex = `
+            INSERT INTO part_application_flexible (
+                part_id,
+                make_name,
+                model_name,
+                engine_name,
+                year_start,
+                year_end,
+                notes
+            )
+            VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), NULLIF($4, ''), $5, $6, NULLIF($7, ''))
+            ON CONFLICT DO NOTHING
+            RETURNING part_app_flex_id;
+        `;
+        const result = await client.query(insertFlex, [
+            partId,
+            trimmedMake,
+            trimmedModel,
+            trimmedEngine,
+            sanitizedYearStart,
+            sanitizedYearEnd,
+            sanitizedNotes || null
+        ]);
 
         await client.query('COMMIT');
 
         const rows = await fetchPartApplications(db, partId);
-        let payload;
-        if (insertedSource === 'legacy') {
-            payload = rows.find((row) => row.source === 'legacy' && row.link_id === insertedRow.part_app_id);
+        let payload = null;
+        if (result.rows.length === 0) {
+            payload = rows.find((row) =>
+                row.make === (trimmedMake || null) &&
+                row.model === (trimmedModel || null) &&
+                row.engine === (trimmedEngine || null) &&
+                row.year_start === sanitizedYearStart &&
+                row.year_end === sanitizedYearEnd &&
+                (row.notes || '') === (sanitizedNotes || '')
+            ) || null;
         } else {
-            payload = rows.find((row) => row.source === 'flex' && row.link_id === insertedRow.part_app_flex_id);
+            payload = rows.find((row) => row.link_id === result.rows[0].part_app_flex_id) || null;
         }
 
         const partForMeili = await getPartDataForMeili(db, partId);
@@ -168,41 +138,9 @@ router.post('/parts/:partId/applications', async (req, res) => {
     } catch (err) {
         await client.query('ROLLBACK');
         console.error(err.message);
-        if (err.message && err.message.includes('Either application_id')) {
-            return res.status(400).json({ message: err.message });
-        }
         res.status(500).send('Server Error');
     } finally {
         client.release();
-    }
-});
-
-// PUT - Update year range for an existing application link
-router.put('/part-applications/:partAppId', async (req, res) => {
-    const { partAppId } = req.params;
-    const { year_start, year_end } = req.body;
-
-    try {
-        const updatedLink = await db.query(
-            'UPDATE part_application SET year_start = $1, year_end = $2 WHERE part_app_id = $3 RETURNING *',
-            [year_start || null, year_end || null, partAppId]
-        );
-
-        if (updatedLink.rows.length === 0) {
-            return res.status(404).json({ message: 'Application link not found' });
-        }
-
-        // Re-sync part with Meilisearch
-        const partId = updatedLink.rows[0].part_id;
-        const partForMeili = await getPartDataForMeili(db, partId);
-        if (partForMeili) {
-            syncPartWithMeili(partForMeili);
-        }
-
-        res.json(updatedLink.rows[0]);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
     }
 });
 
@@ -275,31 +213,6 @@ router.put('/part-applications-flex/:partAppFlexId', async (req, res) => {
 });
 
 
-// DELETE an application link from a part
-router.delete('/parts/:partId/applications/:appId', async (req, res) => {
-    const { partId, appId } = req.params;
-    try {
-        const deleteOp = await db.query(
-            'DELETE FROM part_application WHERE part_id = $1 AND application_id = $2',
-            [partId, appId]
-        );
-        if (deleteOp.rowCount === 0) {
-            return res.status(404).json({ message: 'Application link not found.' });
-        }
-
-        // Re-sync part with Meilisearch
-        const partForMeili = await getPartDataForMeili(db, partId);
-        if (partForMeili) {
-            syncPartWithMeili(partForMeili);
-        }
-
-        res.json({ message: 'Application link deleted successfully.' });
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
-    }
-});
-
 // DELETE a flexible application link from a part
 router.delete('/parts/:partId/flexible-applications/:flexId', async (req, res) => {
     const { partId, flexId } = req.params;
@@ -329,9 +242,8 @@ router.delete('/parts/:partId/flexible-applications/:flexId', async (req, res) =
 router.post('/reindex/parts', async (req, res) => {
     try {
         const allPartsQuery = `
-            SELECT DISTINCT p.part_id 
+            SELECT p.part_id 
             FROM part p
-            LEFT JOIN part_application pa ON p.part_id = pa.part_id
         `;
         const { rows } = await db.query(allPartsQuery);
         
