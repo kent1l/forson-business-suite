@@ -23,18 +23,11 @@ RUN if [ -f package-lock.json ]; then \
         npm install --include=optional; \
     fi
 
-# Copy web source code (needed before installing optional peer deps)
+# Copy web source code
 COPY packages/web ./packages/web/
 
-# Workaround for npm optional dependencies bug (https://github.com/npm/cli/issues/4828)
-# Install Alpine musl-specific native binaries that Vite/Rollup needs
-# Must be done in the web workspace directory where they'll be used
-RUN cd packages/web && \
-    npm install --save-optional --no-package-lock \
-        @rollup/rollup-linux-x64-musl \
-        lightningcss-linux-x64-musl
-
 # Build the web application with workspace context
+# The Alpine binaries are now in optionalDependencies and installed by npm ci
 RUN npm run build --workspace packages/web
 
 # Production stage
