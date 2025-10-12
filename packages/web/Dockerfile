@@ -8,13 +8,15 @@ WORKDIR /workspace
 RUN apk add --no-cache python3 make g++
 
 # Copy workspace root package files first (critical for workspace setup)
+# Copy root package files and lockfile for deterministic installs
 COPY package*.json ./
+COPY package-lock.json ./
 
 # Copy web package files
 COPY packages/web/package*.json ./packages/web/
 
-# Install dependencies using workspace structure
-# Note: Alpine Linux (musl) requires special native bindings for Rollup and LightningCSS
+# Install workspace dependencies deterministically when lockfile exists
+# Use npm ci to ensure single versions are installed and hoisted correctly
 RUN if [ -f package-lock.json ]; then \
         npm ci --include=optional; \
     else \
