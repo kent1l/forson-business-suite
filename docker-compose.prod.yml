@@ -62,7 +62,10 @@ services:
     logging: *default-logging
 
   frontend:
-    image: ${DOCKER_REGISTRY:-kentonel}/forson-frontend:${TAG:-latest}
+    build:
+      context: ./packages/web
+      dockerfile: Dockerfile
+    image: ${DOCKER_REGISTRY:-kentonel}/forson-frontend:${TAG:-react18-fix}
     container_name: forson_frontend
     restart: unless-stopped
     depends_on:
