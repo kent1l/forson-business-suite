@@ -2,22 +2,22 @@
 FROM node:20-alpine AS builder
 
 # Set working directory
-WORKDIR /app
+WORKDIR /workspace
 
-# Copy package files for better cache utilization
+# Copy workspace root package files
 COPY package*.json ./
 
-# Install dependencies with exact versions
-RUN npm ci
+# Copy web package files
+COPY packages/web/package*.json ./packages/web/
 
-# Copy source code
-COPY . .
+# Install all workspace dependencies
+RUN npm install
 
-# Ensure date-fns and date-fns-tz are installed
-RUN npm install date-fns@^4.1.0 date-fns-tz@^3.2.0
+# Copy web source code
+COPY packages/web ./packages/web/
 
-# Build the application
-RUN npm run build
+# Build the web application
+RUN npm run build --workspace packages/web
 
 # Production stage
 FROM nginx:stable-alpine
@@ -31,10 +31,10 @@ RUN addgroup -S appgroup && \
     adduser -S appuser -G appgroup
 
 # Copy built files from builder
-COPY --from=builder /app/dist /usr/share/nginx/html
+COPY --from=builder /workspace/packages/web/dist /usr/share/nginx/html
 
 # Copy nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY packages/web/nginx.conf /etc/nginx/conf.d/default.conf
 
 # Set correct permissions
 RUN chown -R appuser:appgroup /usr/share/nginx/html && \

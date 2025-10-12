@@ -63,8 +63,8 @@ services:
 
   frontend:
     build:
-      context: ./packages/web
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./packages/web/Dockerfile
     image: ${DOCKER_REGISTRY:-kentonel}/forson-frontend:${TAG:-react18-fix}
     container_name: forson_frontend
     restart: unless-stopped
