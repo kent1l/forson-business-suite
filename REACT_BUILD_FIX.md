@@ -1,32 +1,54 @@
-# React Build Fix - Production Deployment Issue
+# Production Build Fix - Multiple Issues Resolved
 
-## Problem Identified
+## Problems Identified
 
+### Issue 1: White Screen in Production (React Error)
 The production deployment was showing a white screen with the following error:
 ```
 Uncaught TypeError: Cannot set properties of undefined (setting 'Children')
 ```
 
-### Root Cause
+**Root Cause:**
 1. **Multiple React instances**: The production build was loading multiple copies of React due to inconsistent dependency resolution
 2. **No package-lock.json**: The Dockerfile was using `npm install --no-package-lock`, which allowed different versions of dependencies to be installed
 3. **Missing React deduplication**: Vite wasn't configured to deduplicate React modules during the build process
 
-## Solution Applied
+### Issue 2: Docker Build Failure (Rollup Native Binary)
+Both local and GitHub Actions builds were failing with:
+```
+Error: Cannot find module @rollup/rollup-linux-x64-musl
+```
 
-### 1. Updated `packages/web/Dockerfile`
+**Root Cause:**
+1. **npm optional dependencies bug**: Known npm bug with optional dependencies (https://github.com/npm/cli/issues/4828)
+2. **Alpine Linux (musl)**: Requires specific native binaries for Rollup and LightningCSS
+3. **Install order**: The optional dependencies were being installed then removed during workspace install
+
+## Solutions Applied
+
+### Fix 1: React Deduplication (White Screen Issue)
+
+**1. Updated `packages/web/Dockerfile`:**
 - Changed from `npm install --no-package-lock` to using workspace-aware installation
 - Now respects the root `package-lock.json` if it exists
 - Ensures consistent dependency versions across builds
 
-### 2. Updated `packages/web/vite.config.js`
+**2. Updated `packages/web/vite.config.js`:**
 - Added explicit React deduplication: `dedupe: ['react', 'react-dom']`
 - Grouped both `react` and `react-dom` in the same vendor chunk
 - Added `commonjsOptions` for better module resolution
 
-### 3. Workspace Configuration
+**3. Workspace Configuration:**
 - Root `package.json` already has React 18.3.1 with overrides
 - This ensures all workspace packages use the same React version
+
+### Fix 2: Alpine Native Binaries (Build Failure)
+
+**Updated `packages/web/Dockerfile`:**
+- Copy source code before installing optional dependencies
+- Explicitly install Alpine musl binaries in the web package directory
+- Install `@rollup/rollup-linux-x64-musl` and `lightningcss-linux-x64-musl` after main dependencies
+- Use `--save-optional --no-package-lock` to prevent npm from removing them
 
 ## Deployment Instructions
 

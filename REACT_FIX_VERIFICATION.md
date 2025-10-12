@@ -6,7 +6,16 @@
 - [x] No duplicate React modules in vendor chunks
 - [x] vite.config.js has React deduplication
 - [x] Dockerfile respects workspace structure
+- [x] Dockerfile handles Alpine native binaries correctly
 - [x] All changes committed
+
+## Build Issues Fixed
+
+This fix addresses **two separate issues**:
+1. **Runtime Error (White Screen)**: React "Cannot set properties of undefined (setting 'Children')"
+2. **Build Error**: "Cannot find module @rollup/rollup-linux-x64-musl"
+
+Both issues must be resolved for successful deployment.
 
 ## Deployment Steps
 
@@ -136,7 +145,29 @@ docker inspect forson_frontend
    docker exec forson_frontend nginx -t
    ```
 
-### Issue: React error still appears
+### Issue: Build fails with "Cannot find module @rollup/rollup-linux-x64-musl"
+
+This is the Alpine native binary issue:
+
+1. **Check if source code was copied before installing binaries:**
+   ```bash
+   # The Dockerfile should copy packages/web BEFORE installing the musl binaries
+   grep -A5 "COPY packages/web" packages/web/Dockerfile
+   ```
+
+2. **Verify Alpine packages are installed:**
+   ```bash
+   # In the Docker build logs, check for:
+   # - python3, make, g++ installation
+   # - @rollup/rollup-linux-x64-musl installation
+   ```
+
+3. **Rebuild with verbose output:**
+   ```bash
+   docker-compose -f docker-compose.prod.yml build --no-cache --progress=plain frontend
+   ```
+
+### Issue: React error still appears (after successful build)
 1. **Verify build used correct config:**
    ```bash
    # Rebuild without cache

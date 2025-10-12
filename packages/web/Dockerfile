@@ -14,17 +14,23 @@ COPY package*.json ./
 COPY packages/web/package*.json ./packages/web/
 
 # Install dependencies using workspace structure
-# Use ci if package-lock exists, otherwise install with exact versions
+# Note: Alpine Linux (musl) requires special native bindings for Rollup and LightningCSS
 RUN if [ -f package-lock.json ]; then \
         npm ci --include=optional; \
     else \
         npm install --include=optional; \
-    fi && \
-    npm ls @rollup/rollup-linux-x64-musl || npm install @rollup/rollup-linux-x64-musl@latest --no-save --force && \
-    npm ls lightningcss-linux-x64-musl || npm install lightningcss-linux-x64-musl@latest --no-save --force
+    fi
 
-# Copy web source code
+# Copy web source code (needed before installing optional peer deps)
 COPY packages/web ./packages/web/
+
+# Workaround for npm optional dependencies bug (https://github.com/npm/cli/issues/4828)
+# Install Alpine musl-specific native binaries that Vite/Rollup needs
+# Must be done in the web workspace directory where they'll be used
+RUN cd packages/web && \
+    npm install --save-optional --no-package-lock \
+        @rollup/rollup-linux-x64-musl \
+        lightningcss-linux-x64-musl
 
 # Build the web application with workspace context
 RUN npm run build --workspace packages/web
