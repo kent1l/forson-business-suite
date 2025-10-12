@@ -11,8 +11,14 @@ echo "  1. White screen (React error)"
 echo "  2. Build failure (Rollup binary)"
 echo ""
 
-cd ~/docker/forson-business-suite
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 
+echo "📂 Working directory: $PROJECT_DIR"
+cd "$PROJECT_DIR"
+
+echo ""
 echo "📥 Pulling latest changes..."
 git pull origin master
 
