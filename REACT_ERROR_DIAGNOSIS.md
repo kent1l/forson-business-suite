@@ -45,7 +45,7 @@ vendor-react-D2jcrJUs.js  ← NEW BUNDLE with single React 19.2.0
 
 ## Solution Applied
 
-### Changes Made (Commits ce5bef0 + bf96e90):
+### Changes Made (Commits ce5bef0 + bf96e90 + 840460f):
 
 1. **Unified React Version** (`package.json` + `packages/web/package.json`):
    - Set React + ReactDOM to `^19.2.0` in root workspace
@@ -67,7 +67,29 @@ vendor-react-D2jcrJUs.js  ← NEW BUNDLE with single React 19.2.0
    ```
    This ensures the exact same dependency versions are installed every time.
 
-4. **Local Build Verification**:
+4. **CRITICAL FIX - Alpine Binaries as Optional Dependencies** (commit 840460f):
+   - **Problem Found**: The Dockerfile had a separate `npm install` step for Alpine binaries that was **re-resolving dependencies** and bringing back React 18
+   - **Solution**: Moved `@rollup/rollup-linux-x64-musl` and `lightningcss-linux-x64-musl` to `optionalDependencies` in `packages/web/package.json`
+   - **Result**: These binaries are now installed by the initial `npm ci`, preserving the lockfile state
+   
+   Before (broken):
+   ```dockerfile
+   RUN npm ci --include=optional
+   RUN cd packages/web && npm install --save-optional --no-package-lock \
+       @rollup/rollup-linux-x64-musl lightningcss-linux-x64-musl
+   # ↑ This was removing 13 packages and changing 45 packages!
+   ```
+   
+   After (fixed):
+   ```json
+   // packages/web/package.json
+   "optionalDependencies": {
+     "@rollup/rollup-linux-x64-musl": "^4.30.2",
+     "lightningcss-linux-x64-musl": "^1.30.0"
+   }
+   ```
+
+5. **Local Build Verification**:
    ```bash
    $ npm ls react
    # Result: All packages dedupe to react@19.2.0 ✓
@@ -78,13 +100,17 @@ vendor-react-D2jcrJUs.js  ← NEW BUNDLE with single React 19.2.0
 
 ## Deployment Steps
 
+### IMPORTANT: Previous Build Issue Resolved!
+
+The first rebuild attempt (commit 9aaa45c) produced the old hash `CJOLRsrI` because the Dockerfile had a separate `npm install` step that was **re-resolving dependencies**. This has been fixed in commit **840460f**.
+
 ### Option 1: Automated Rebuild (Recommended)
 
 ```bash
 cd ~/projects/forson-business-suite
 git pull origin master
 chmod +x scripts/verify_and_rebuild.sh
-./scripts/verify_and_rebuild.sh
+sudo ./scripts/verify_and_rebuild.sh
 ```
 
 This script will:
@@ -92,6 +118,8 @@ This script will:
 - Rebuild the frontend container with no cache
 - Verify the new bundle is deployed
 - Check React version in the bundle
+
+**Expected Result:** Bundle hash should be `D2jcrJUs` (or similar new hash, NOT `CJOLRsrI`)
 
 ### Option 2: Manual Rebuild
 
