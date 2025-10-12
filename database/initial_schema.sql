@@ -105,19 +105,30 @@ CREATE TABLE IF NOT EXISTS public.part_application_flexible (
     notes text,
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (
-        part_id,
-        COALESCE(make_name, ''),
-        COALESCE(model_name, ''),
-        COALESCE(engine_name, ''),
-        COALESCE(year_start, -1),
-        COALESCE(year_end, -1)
-    )
+    -- Unique constraint on normalized application fields is implemented via an expression
+    -- index below because expressions are not allowed in inline UNIQUE table constraints.
 );
 CREATE INDEX IF NOT EXISTS idx_part_app_flex_part_id ON public.part_application_flexible (part_id);
 CREATE INDEX IF NOT EXISTS idx_part_app_flex_make ON public.part_application_flexible (make_name);
 CREATE INDEX IF NOT EXISTS idx_part_app_flex_model ON public.part_application_flexible (model_name);
 CREATE INDEX IF NOT EXISTS idx_part_app_flex_engine ON public.part_application_flexible (engine_name);
+
+-- Add an expression-based unique index to enforce uniqueness across NULL-normalized columns
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'ux_part_app_flex_composite'
+    ) THEN
+        CREATE UNIQUE INDEX ux_part_app_flex_composite ON public.part_application_flexible (
+            part_id,
+            COALESCE(make_name, ''),
+            COALESCE(model_name, ''),
+            COALESCE(engine_name, ''),
+            COALESCE(year_start, -1),
+            COALESCE(year_end, -1)
+        );
+    END IF;
+END$$;
 
 CREATE OR REPLACE FUNCTION public.touch_part_application_flexible()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$

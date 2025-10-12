@@ -44,8 +44,10 @@ services:
     container_name: forson_backend
     restart: unless-stopped
     depends_on:
-      - db
-      - meilisearch
+      db:
+        condition: service_healthy
+      meilisearch:
+        condition: service_started
     env_file: .env
     environment:
       NODE_ENV: production
@@ -56,6 +58,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 40s
     logging: *default-logging
 
   frontend:
@@ -63,7 +66,8 @@ services:
     container_name: forson_frontend
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
       - "8090:80"
     volumes:
@@ -74,6 +78,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 20s
     logging: *default-logging
 
   backup:
