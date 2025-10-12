@@ -38,55 +38,26 @@ const buildPayloadFromForm = (form, template) => {
 
 const sanitizeBase64 = (value) => (typeof value === 'string' ? value.replace(/\s+/g, '') : '');
 
-const createPrintWindowShell = () => {
-  const placeholder = window.open('', '_blank', 'noopener,noreferrer');
-  if (!placeholder) {
-    toast.error('Unable to open print window. Allow pop-ups and try again.');
-    return null;
-  }
-
-  placeholder.document.write(
-    `<!doctype html><html><head><title>Preparing cheque…</title></head><body style="margin:0;padding:2rem;font-family:system-ui;color:#334155;background:#f8fafc;">
-      <div style="max-width:340px;margin:auto;text-align:center;">
-        <h1 style="font-size:1.1rem;margin-bottom:0.75rem;">Preparing cheque preview…</h1>
-        <p style="font-size:0.85rem;line-height:1.4;">This window will update automatically once the cheque layout is ready.</p>
-      </div>
-    </body></html>`
-  );
-  placeholder.document.close();
-  return placeholder;
-};
-
-const renderPrintWindow = (html, existingWindow) => {
-  const printWindow = existingWindow && !existingWindow.closed
-    ? existingWindow
-    : window.open('', '_blank', 'noopener,noreferrer');
+const printCheque = (template, payload) => {
+  const printWindow = window.open('/cheque-print.html', '_blank', 'width=1000,height=600');
   if (!printWindow) {
-    toast.error('Unable to open print window. Allow pop-ups and try again.');
-    return null;
+    toast.error('Unable to open print window. Please allow pop-ups and try again.');
+    return;
   }
 
-  printWindow.document.open();
-  printWindow.document.write(html);
-  printWindow.document.close();
-  printWindow.focus();
-
-  const triggerPrint = () => {
+  // Use a specific message marker so extensions (eg. Grammarly) don't interfere
+  const message = { __chequePrint: true, template, payload };
+  printWindow.addEventListener('load', () => {
     try {
-      printWindow.print();
-    } catch (error) {
-      console.error('Failed to trigger print dialog', error);
-      toast.error('Cheque ready, but the browser blocked the print dialog.');
+      printWindow.postMessage(message, '*');
+    } catch (err) {
+      console.error('Failed to post cheque message to print window', err);
+      // fallback: try a short delay to allow window to be ready
+      setTimeout(() => {
+        try { printWindow.postMessage(message, '*'); } catch (e) { console.error(e); }
+      }, 250);
     }
-  };
-
-  if (printWindow.document.readyState === 'complete') {
-    triggerPrint();
-  } else {
-    printWindow.onload = triggerPrint;
-  }
-
-  return printWindow;
+  });
 };
 
 const downloadPdfFromBase64 = (base64, mimeType, fileName) => {
@@ -305,18 +276,15 @@ const ChequePrinterPage = () => {
       chequeNumber: printForm.chequeNumber
     };
 
-    const pendingPrintWindow = createPrintWindowShell();
-
     try {
       const { data } = await api.post('/cheque-prints', payload);
       toast.success('Cheque print recorded');
 
-      if (data?.previewHtml) {
-        renderPrintWindow(data.previewHtml, pendingPrintWindow);
-      } else if (pendingPrintWindow && !pendingPrintWindow.closed) {
-        pendingPrintWindow.close();
-      }
+      // Print the cheque using the simplified print window
+      const printPayload = buildPayloadFromForm(printForm, selectedTemplate);
+      printCheque(selectedTemplate, printPayload);
 
+      // Optionally download PDF if available
       if (data?.pdf) {
         downloadPdfFromBase64(data.pdf, data.pdfMimeType, `${payload.chequeNumber || 'cheque'}.pdf`);
       }
@@ -325,9 +293,6 @@ const ChequePrinterPage = () => {
         setHistory((current) => [data.chequePrint, ...current]);
       }
     } catch (error) {
-      if (pendingPrintWindow && !pendingPrintWindow.closed) {
-        pendingPrintWindow.close();
-      }
       console.error('Failed to create cheque print', error);
       toast.error(error?.response?.data?.message || 'Failed to create cheque');
     }
@@ -716,8 +681,19 @@ const ChequePrinterPage = () => {
                           className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-100"
                           onClick={async () => {
                             try {
-                              const { data } = await api.get(`/cheque-prints/${record.cheque_print_id}/preview`);
-                              if (data?.html) renderPrintWindow(data.html);
+                              const { data: recordData } = await api.get(`/cheque-prints/${record.cheque_print_id}`);
+                              const { data: templateData } = await api.get(`/cheque-templates/${recordData.template_id}`);
+                              
+                              const payload = {
+                                payee_name: recordData.payee_name,
+                                cheque_date: recordData.cheque_date,
+                                amount_numeric: recordData.amount_numeric,
+                                amount_in_words: recordData.amount_in_words,
+                                memo: recordData.memo,
+                                cheque_number: recordData.cheque_number
+                              };
+                              
+                              printCheque(templateData, payload);
                             } catch (error) {
                               console.error('Failed to load preview', error);
                               toast.error('Preview unavailable');

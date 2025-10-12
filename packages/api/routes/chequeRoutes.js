@@ -420,9 +420,9 @@ router.post('/cheque-prints', protect, hasPermission('cheque:print'), async (req
     const record = rows[0];
     await client.query('COMMIT');
 
+    // Return simplified response - client will handle rendering
     res.status(201).json({
       chequePrint: record,
-      previewHtml: html,
       pdf: bufferToBase64(pdfBuffer),
       pdfMimeType: pdfBuffer ? 'application/pdf' : null,
       pdfAvailable: Boolean(pdfBuffer)
