@@ -4,14 +4,18 @@ FROM node:20-alpine AS builder
 # Set working directory
 WORKDIR /workspace
 
+# Install build dependencies needed for native modules
+RUN apk add --no-cache python3 make g++
+
 # Copy workspace root package files
 COPY package*.json package-lock.json ./
 
 # Copy web package files
 COPY packages/web/package*.json ./packages/web/
 
-# Install all workspace dependencies with ci for reproducible builds
-RUN npm ci --include=optional
+# Install dependencies
+# Use npm install instead of npm ci to handle optional dependencies better in Alpine
+RUN npm install --include=optional
 
 # Copy web source code
 COPY packages/web ./packages/web/
