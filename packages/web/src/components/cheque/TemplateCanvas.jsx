@@ -15,8 +15,10 @@ const TemplateCanvas = ({
 }) => {
   const dpi = Number(template?.dpi) || 300;
   const pxPerMm = useMemo(() => dpi / 25.4, [dpi]);
-  const widthPx = mmToPx(template?.paper_width_mm || 203.2, dpi);
-  const heightPx = mmToPx(template?.paper_height_mm || 92.08, dpi);
+  // Scale down for preview: use 96 DPI for display (standard screen DPI)
+  const displayDpi = readOnly ? 96 : dpi;
+  const widthPx = mmToPx(template?.paper_width_mm || 203.2, displayDpi);
+  const heightPx = mmToPx(template?.paper_height_mm || 76.2, displayDpi);
 
   const handleDragStop = (key, d) => {
     if (!onChange) return;
@@ -34,7 +36,7 @@ const TemplateCanvas = ({
     onChange(key, { x_mm, y_mm, width_mm, height_mm });
   };
 
-  const dragGrid = readOnly ? undefined : [mmToPx(1, dpi), mmToPx(1, dpi)];
+  const dragGrid = readOnly ? undefined : [mmToPx(1, displayDpi), mmToPx(1, displayDpi)];
 
   return (
     <div
@@ -42,10 +44,10 @@ const TemplateCanvas = ({
       style={{ width: widthPx, height: heightPx }}
     >
       {elements.map((element) => {
-        const width = mmToPx(element.width_mm, dpi);
-        const height = mmToPx(element.height_mm, dpi);
-        const x = mmToPx(element.x_mm, dpi);
-        const y = mmToPx(element.y_mm, dpi);
+        const width = mmToPx(element.width_mm, displayDpi);
+        const height = mmToPx(element.height_mm, displayDpi);
+        const x = mmToPx(element.x_mm, displayDpi);
+        const y = mmToPx(element.y_mm, displayDpi);
         const isSelected = selectedKey === element.key;
         const displayValue = payload ? deriveElementValue(element.key, payload, template) : element.label;
         const fontStyle = {

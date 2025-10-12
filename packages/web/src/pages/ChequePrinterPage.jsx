@@ -501,14 +501,24 @@ const ChequePrinterPage = () => {
 
           <div className="space-y-4">
             <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <h2 className="mb-3 text-base font-semibold text-slate-700">Preview</h2>
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-base font-semibold text-slate-700">Preview</h2>
+                {selectedTemplate && (
+                  <span className="text-xs text-slate-500">
+                    {selectedTemplate.paper_width_mm}mm × {selectedTemplate.paper_height_mm}mm 
+                    ({(selectedTemplate.paper_width_mm / 25.4).toFixed(1)}" × {(selectedTemplate.paper_height_mm / 25.4).toFixed(1)}") @ 96 DPI preview
+                  </span>
+                )}
+              </div>
               {selectedTemplate ? (
-                <TemplateCanvas
-                  template={selectedTemplate}
-                  elements={selectedTemplate.elements}
-                  payload={previewPayload}
-                  readOnly
-                />
+                <div className="overflow-auto">
+                  <TemplateCanvas
+                    template={selectedTemplate}
+                    elements={selectedTemplate.elements}
+                    payload={previewPayload}
+                    readOnly
+                  />
+                </div>
               ) : (
                 <div className="flex h-64 items-center justify-center rounded border border-dashed border-slate-300 text-sm text-slate-500">
                   Select a template to preview cheque layout
@@ -605,14 +615,23 @@ const ChequePrinterPage = () => {
                 </div>
               </div>
               <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                <TemplateCanvas
-                  template={editorTemplate}
-                  elements={editorTemplate.elements}
-                  payload={previewPayload}
-                  selectedKey={selectedElementKey}
-                  onSelect={setSelectedElementKey}
-                  onChange={handleElementChange}
-                />
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-slate-700">Template Editor Canvas</h3>
+                  <span className="text-xs text-slate-500">
+                    {editorTemplate.paper_width_mm}mm × {editorTemplate.paper_height_mm}mm 
+                    ({(editorTemplate.paper_width_mm / 25.4).toFixed(1)}" × {(editorTemplate.paper_height_mm / 25.4).toFixed(1)}") @ {editorTemplate.dpi} DPI
+                  </span>
+                </div>
+                <div className="overflow-auto">
+                  <TemplateCanvas
+                    template={editorTemplate}
+                    elements={editorTemplate.elements}
+                    payload={previewPayload}
+                    selectedKey={selectedElementKey}
+                    onSelect={setSelectedElementKey}
+                    onChange={handleElementChange}
+                  />
+                </div>
               </div>
               <div className="flex gap-2">
                 <button
