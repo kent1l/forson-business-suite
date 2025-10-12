@@ -5,13 +5,13 @@ FROM node:20-alpine AS builder
 WORKDIR /workspace
 
 # Copy workspace root package files
-COPY package*.json ./
+COPY package*.json package-lock.json ./
 
 # Copy web package files
 COPY packages/web/package*.json ./packages/web/
 
-# Install all workspace dependencies
-RUN npm install
+# Install all workspace dependencies with ci for reproducible builds
+RUN npm ci --include=optional
 
 # Copy web source code
 COPY packages/web ./packages/web/
