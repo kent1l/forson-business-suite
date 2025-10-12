@@ -22,9 +22,9 @@ RUN npm run build
 # Production stage
 FROM nginx:stable-alpine
 
-# Install security updates
-RUN apk update && \
-    apk upgrade --no-cache
+# Install security updates (best effort to avoid build failures on mirror hiccups)
+RUN apk update --no-cache || true && \
+    apk upgrade --no-cache || true
 
 # Create non-root user
 RUN addgroup -S appgroup && \
