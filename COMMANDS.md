@@ -95,9 +95,17 @@ Start production stack.
 sudo docker compose -f docker-compose.prod.yml up -d
 ```
 
-Initialize database using automated script (PowerShell - Windows/WSL).
+Initialize database using automated script.
+
+**PowerShell (Windows/WSL):**
 ```powershell
 pwsh ./scripts/rebuild_database.ps1
+```
+
+**Bash (Linux/macOS):**
+```bash
+chmod +x ./scripts/rebuild_database.sh
+./scripts/rebuild_database.sh
 ```
 
 OR Initialize database manually (Linux/Mac).
@@ -214,10 +222,18 @@ Stop application services.
 sudo docker compose -f docker-compose.prod.yml stop backend frontend
 ```
 
-Rebuild database from backup using PowerShell script (Windows/WSL).
+Rebuild database from backup using automated script.
+
+**PowerShell (Windows/WSL):**
 ```powershell
 # First restore your backup to the database manually, then:
 pwsh ./scripts/rebuild_database.ps1
+```
+
+**Bash (Linux/macOS):**
+```bash
+# First restore your backup to the database manually, then:
+./scripts/rebuild_database.sh
 ```
 
 OR restore manually from dump file.
@@ -454,7 +470,8 @@ sudo ufw status
 | **Check health** | `curl http://localhost:3001/health` |
 | **Production readiness** | `./scripts/check_production_readiness.sh` |
 | **Automated deploy** | `./scripts/deploy_production.sh` |
-| **Rebuild DB** | `pwsh ./scripts/rebuild_database.ps1` |
+| **Rebuild DB (PowerShell)** | `pwsh ./scripts/rebuild_database.ps1` |
+| **Rebuild DB (Bash)** | `./scripts/rebuild_database.sh` |
 
 ---
 
