@@ -28,7 +28,7 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            if (id.includes('react')) {
+            if (id.includes('react') || id.includes('react-dom')) {
               return 'vendor-react';
             }
             if (id.includes('recharts')) {
@@ -47,6 +47,15 @@ export default defineConfig({
         entryFileNames: 'assets/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash][extname]'
       }
+    },
+    // Ensure consistent module resolution
+    commonjsOptions: {
+      include: [/node_modules/],
+      transformMixedEsModules: true
     }
+  },
+  // Deduplicate React to prevent multiple instances
+  resolve: {
+    dedupe: ['react', 'react-dom']
   }
 })

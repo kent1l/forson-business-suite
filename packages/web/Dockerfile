@@ -7,22 +7,26 @@ WORKDIR /workspace
 # Install build dependencies needed for native modules
 RUN apk add --no-cache python3 make g++
 
-# Copy workspace root package files
+# Copy workspace root package files first (critical for workspace setup)
 COPY package*.json ./
 
 # Copy web package files
 COPY packages/web/package*.json ./packages/web/
 
-# Install dependencies without using package-lock.json for better compatibility
-# Then ensure Alpine-specific native bindings are installed
-RUN npm install --include=optional --no-package-lock && \
+# Install dependencies using workspace structure
+# Use ci if package-lock exists, otherwise install with exact versions
+RUN if [ -f package-lock.json ]; then \
+        npm ci --include=optional; \
+    else \
+        npm install --include=optional; \
+    fi && \
     npm ls @rollup/rollup-linux-x64-musl || npm install @rollup/rollup-linux-x64-musl@latest --no-save --force && \
     npm ls lightningcss-linux-x64-musl || npm install lightningcss-linux-x64-musl@latest --no-save --force
 
 # Copy web source code
 COPY packages/web ./packages/web/
 
-# Build the web application
+# Build the web application with workspace context
 RUN npm run build --workspace packages/web
 
 # Production stage
