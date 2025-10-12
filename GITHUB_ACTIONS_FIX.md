@@ -16,17 +16,24 @@ The issue was caused by:
 4. Missing build tools (python, make, g++) needed to compile native modules
 
 ## Solution
-Modified `packages/web/Dockerfile` to:
+Modified `packages/web/Dockerfile` with a multi-layered fix:
 
 1. **Install build dependencies** before npm install:
    ```dockerfile
    RUN apk add --no-cache python3 make g++
    ```
 
-2. **Use `npm install` instead of `npm ci`**:
-   - `npm ci` is stricter and can fail with optional dependencies in Alpine
-   - `npm install` is more forgiving and handles optional native dependencies better
+2. **Use `npm install` without package-lock.json**:
+   - Removed `package-lock.json` from the COPY step to force fresh dependency resolution
+   - Using `--no-package-lock` flag to prevent lock file issues in Alpine
    - Added `--include=optional` flag to ensure optional dependencies are installed
+
+3. **Explicit fallback for Rollup binding**:
+   ```dockerfile
+   npm ls @rollup/rollup-linux-x64-musl || npm install @rollup/rollup-linux-x64-musl@latest --no-save --force
+   ```
+   - If the musl binding isn't found after install, force install it explicitly
+   - This handles cases where npm's optional dependency resolution fails
 
 ## Changes Made
 - **File**: `packages/web/Dockerfile`

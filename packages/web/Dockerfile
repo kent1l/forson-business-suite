@@ -8,14 +8,16 @@ WORKDIR /workspace
 RUN apk add --no-cache python3 make g++
 
 # Copy workspace root package files
-COPY package*.json package-lock.json ./
+COPY package*.json ./
 
 # Copy web package files
 COPY packages/web/package*.json ./packages/web/
 
-# Install dependencies
-# Use npm install instead of npm ci to handle optional dependencies better in Alpine
-RUN npm install --include=optional
+# Set npm config to ensure optional dependencies are installed
+# Install dependencies without using package-lock.json for better compatibility
+RUN npm config set optional true && \
+    npm install --include=optional --no-package-lock && \
+    npm ls @rollup/rollup-linux-x64-musl || npm install @rollup/rollup-linux-x64-musl@latest --no-save --force
 
 # Copy web source code
 COPY packages/web ./packages/web/
