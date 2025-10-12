@@ -11,8 +11,10 @@ This occurred in both the `Build and Push Docker Images` and `Deploy` workflows 
 ## Root Cause
 The issue was caused by:
 1. **Alpine Linux** (used in `node:20-alpine`) uses `musl` libc instead of `glibc`
-2. **Rollup** (used by Vite) requires native bindings for the specific platform
-3. **npm ci** in Alpine sometimes fails to properly install optional dependencies like `@rollup/rollup-linux-x64-musl`
+2. **Rollup** (used by Vite) and **LightningCSS** (used by Tailwind CSS v4) require native bindings for the specific platform
+3. **npm** in Alpine sometimes fails to properly install optional dependencies like:
+   - `@rollup/rollup-linux-x64-musl`
+   - `lightningcss-linux-x64-musl`
 4. Missing build tools (python, make, g++) needed to compile native modules
 
 ## Solution
@@ -28,11 +30,13 @@ Modified `packages/web/Dockerfile` with a multi-layered fix:
    - Using `--no-package-lock` flag to prevent lock file issues in Alpine
    - Added `--include=optional` flag to ensure optional dependencies are installed
 
-3. **Explicit fallback for Rollup binding**:
+3. **Explicit fallback for native bindings**:
    ```dockerfile
-   npm ls @rollup/rollup-linux-x64-musl || npm install @rollup/rollup-linux-x64-musl@latest --no-save --force
+   npm ls @rollup/rollup-linux-x64-musl || npm install @rollup/rollup-linux-x64-musl@latest --no-save --force && \
+   npm ls lightningcss-linux-x64-musl || npm install lightningcss-linux-x64-musl@latest --no-save --force
    ```
-   - If the musl binding isn't found after install, force install it explicitly
+   - If the musl bindings aren't found after install, force install them explicitly
+   - Covers both Rollup (Vite) and LightningCSS (Tailwind CSS v4)
    - This handles cases where npm's optional dependency resolution fails
 
 ## Changes Made

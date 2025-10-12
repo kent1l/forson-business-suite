@@ -13,11 +13,11 @@ COPY package*.json ./
 # Copy web package files
 COPY packages/web/package*.json ./packages/web/
 
-# Set npm config to ensure optional dependencies are installed
 # Install dependencies without using package-lock.json for better compatibility
-RUN npm config set optional true && \
-    npm install --include=optional --no-package-lock && \
-    npm ls @rollup/rollup-linux-x64-musl || npm install @rollup/rollup-linux-x64-musl@latest --no-save --force
+# Then ensure Alpine-specific native bindings are installed
+RUN npm install --include=optional --no-package-lock && \
+    npm ls @rollup/rollup-linux-x64-musl || npm install @rollup/rollup-linux-x64-musl@latest --no-save --force && \
+    npm ls lightningcss-linux-x64-musl || npm install lightningcss-linux-x64-musl@latest --no-save --force
 
 # Copy web source code
 COPY packages/web ./packages/web/
