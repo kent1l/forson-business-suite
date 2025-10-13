@@ -13,5 +13,8 @@
 		"date-fns-tz": "^3.2.0",
 		"react": "^19.1.0",
 		"react-dom": "^19.1.0"
+	},
+	"overrides": {
+		"use-sync-external-store": "1.2.2"
 	}
 }
