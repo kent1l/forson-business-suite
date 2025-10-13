@@ -1752,3 +1752,1715 @@ The changes have been thoroughly tested and documented, with clear upgrade paths
 - `DEPLOYMENT_GUIDE.md` - Deployment options
 - `COMMANDS.md` - Common commands
 - Individual feature documentation in the docs/ directory
+
+---
+
+## Strategic Re-Implementation Plan
+
+This section provides a strategic, dependency-aware plan for re-implementing all features and fixes from scratch. The plan is organized by phases, with each phase building on the previous one.
+
+### Purpose of This Plan
+If you need to create a branch from commit `00feb95` and re-implement these changes, follow this plan to:
+- Minimize conflicts and rework
+- Build foundational changes first
+- Test incrementally at each phase
+- Maintain system stability throughout
+
+---
+
+## Phase 1: Foundation & Infrastructure (Days 1-2)
+
+**Purpose:** Establish critical infrastructure and dependencies that everything else relies on.
+
+### 1.1 Development Environment Setup
+**Priority:** CRITICAL | **Complexity:** LOW | **Dependencies:** None
+
+```bash
+# Actions
+1. Create branch from 00feb95
+   git checkout -b reimplementation-plan 00feb95ec129a2b1a1de471ec0cb206c484204b6
+
+2. Update .gitignore
+   - Add build artifacts
+   - Add environment files
+   - Add IDE specific files
+   - Add log files
+
+3. Create .env.production.example
+   - Document all environment variables
+   - Add security guidelines
+   - Include example values
+```
+
+**Files to Create/Modify:**
+- `.gitignore` (enhancement)
+- `.env.production.example` (new)
+
+**Why First:** Clean repository setup prevents future conflicts and confusion.
+
+---
+
+### 1.2 React 19 Migration & Build Configuration
+**Priority:** CRITICAL | **Complexity:** MEDIUM | **Dependencies:** 1.1
+
+```bash
+# Actions
+1. Update package.json dependencies
+   {
+     "react": "19.2.0",
+     "react-dom": "19.2.0",
+     "@vitejs/plugin-react": "5.0.4",
+     "vite": "7.1.9"
+   }
+
+2. Update vite.config.js
+   - Add preserveSymlinks
+   - Add React deduplication aliases
+   - Configure build options
+   - Enable source maps
+   - Add keepNames option
+
+3. Run npm install and verify
+   npm install
+   npm run build
+
+4. Test application thoroughly
+```
+
+**Files to Modify:**
+- `packages/web/package.json`
+- `packages/web/vite.config.js`
+- `package.json` (workspace root)
+- `package-lock.json` (regenerate)
+
+**Commits:**
+- `053020b` - React 19.1.0 update
+- `6a8c781` - React 19.2.0 update
+- `1397177` - Plugin update to 5.0.4
+
+**Why Second:** Establishes stable build foundation. All UI changes depend on this.
+
+**Testing Checklist:**
+- [ ] Development build works
+- [ ] Production build works
+- [ ] No console errors
+- [ ] All pages render correctly
+
+---
+
+### 1.3 ErrorBoundary Component
+**Priority:** HIGH | **Complexity:** LOW | **Dependencies:** 1.2
+
+```bash
+# Actions
+1. Create ErrorBoundary component
+   packages/web/src/components/ErrorBoundary.jsx
+
+2. Integrate in App.jsx
+   - Wrap entire application
+   - Add error logging
+   - Add retry mechanism
+
+3. Test error scenarios
+```
+
+**Files to Create:**
+- `packages/web/src/components/ErrorBoundary.jsx` (148 lines)
+
+**Files to Modify:**
+- `packages/web/src/App.jsx`
+
+**Why Third:** Safety net before adding complex features. Catches errors during development.
+
+**Testing:**
+- [ ] Throw test error and verify boundary catches it
+- [ ] Verify error logging works
+- [ ] Test retry functionality
+
+---
+
+### 1.4 Lazy Loading Setup
+**Priority:** MEDIUM | **Complexity:** LOW | **Dependencies:** 1.2, 1.3
+
+```bash
+# Actions
+1. Update MainLayout.jsx
+   - Convert imports to React.lazy()
+   - Add Suspense wrappers
+   - Create loading fallback components
+
+2. Test all page transitions
+```
+
+**Files to Modify:**
+- `packages/web/src/components/layout/MainLayout.jsx`
+
+**Commit:** `e3d8235`
+
+**Why Fourth:** Improves performance before adding more heavy pages.
+
+**Testing:**
+- [ ] All pages load correctly
+- [ ] Loading fallbacks appear
+- [ ] No lazy loading errors
+
+---
+
+## Phase 2: Database Schema & Backend Foundation (Days 3-4)
+
+**Purpose:** Establish database structure that features will use.
+
+### 2.1 Database Extensions & Views
+**Priority:** HIGH | **Complexity:** MEDIUM | **Dependencies:** None
+
+```bash
+# Actions
+1. Run parts_view migration
+   database/migrations/20251010_create_parts_view.sql
+   - Install pg_trgm, btree_gin, unaccent extensions
+   - Create parts_view materialized view
+   - Create optimized indexes
+
+2. Verify view performance
+```
+
+**Files to Create:**
+- `database/migrations/20251010_create_parts_view.sql`
+
+**Commit:** `bb393c2`
+
+**Why First in Phase 2:** Provides optimized queries for all parts-related features.
+
+**Testing:**
+```sql
+-- Test view exists
+SELECT * FROM parts_view LIMIT 10;
+
+-- Test performance
+EXPLAIN ANALYZE SELECT * FROM parts_view WHERE part_number ILIKE '%test%';
+```
+
+---
+
+### 2.2 Payment Terms Tables
+**Priority:** LOW | **Complexity:** LOW | **Dependencies:** None
+
+```bash
+# Actions
+1. Create payment_terms table migration
+   database/migrations/20250820_create_payment_term_table.sql
+
+2. Add payment terms fields to invoice
+   database/migrations/20250820_add_payment_terms_days_and_due_date.sql
+
+3. Seed default payment terms
+```
+
+**Files to Create:**
+- `database/migrations/20250820_create_payment_term_table.sql`
+- `database/migrations/20250820_add_payment_terms_days_and_due_date.sql`
+
+**Why Now:** Independent of other features, useful infrastructure.
+
+---
+
+### 2.3 Refund Payment Method Tracking
+**Priority:** HIGH | **Complexity:** LOW | **Dependencies:** None
+
+```bash
+# Actions
+1. Add method_id and method_reference to credit_note
+   database/migrations/20251009_add_refund_payment_method_tracking.sql
+
+2. Update existing credit_note records (optional, can be NULL)
+```
+
+**Files to Create:**
+- `database/migrations/20251009_add_refund_payment_method_tracking.sql`
+
+**Commit:** `1c8f475`
+
+**Why Now:** Required for refund management features in Phase 3.
+
+---
+
+### 2.4 Invoice Date Edit Permission
+**Priority:** MEDIUM | **Complexity:** LOW | **Dependencies:** None
+
+```bash
+# Actions
+1. Add invoice:edit_date permission
+   database/migrations/20251010_add_invoice_edit_date_permission.sql
+
+2. Assign to Admin and Manager roles
+```
+
+**Files to Create:**
+- `database/migrations/20251010_add_invoice_edit_date_permission.sql`
+
+**Commit:** `9d05c34`
+
+**Why Now:** Needed before implementing invoice date edit feature.
+
+---
+
+### 2.5 Flexible Part Applications
+**Priority:** MEDIUM | **Complexity:** MEDIUM | **Dependencies:** None
+
+```bash
+# Actions
+1. Create part_application_flexible table
+   database/migrations/20251011_create_part_application_flexible.sql
+
+2. Migrate data from legacy part_application
+   - Write migration script
+   - Verify data integrity
+   - Test queries
+
+3. Drop legacy tables (DO THIS LAST in Phase 4)
+   database/migrations/20251011_drop_legacy_applications.sql
+```
+
+**Files to Create:**
+- `database/migrations/20251011_create_part_application_flexible.sql`
+
+**Commit:** `4bfe819`
+
+**Why Now:** Foundation for part application features, but don't drop legacy yet.
+
+**⚠️ CAUTION:** Don't drop legacy tables until frontend is fully migrated (Phase 4).
+
+---
+
+### 2.6 Cheque Printing Tables
+**Priority:** LOW | **Complexity:** LOW | **Dependencies:** None
+
+```bash
+# Actions
+1. Create cheque_templates table
+2. Create cheque_prints table
+   database/migrations/20251011_create_cheque_printing_tables.sql
+
+3. Create indexes for performance
+```
+
+**Files to Create:**
+- `database/migrations/20251011_create_cheque_printing_tables.sql`
+
+**Commit:** `735a856`
+
+**Why Last in Phase 2:** Independent feature, can be done anytime.
+
+---
+
+## Phase 3: Financial & Reporting Fixes (Days 5-6)
+
+**Purpose:** Fix critical financial calculations before adding new features.
+
+### 3.1 Correct Sales Summary Calculations
+**Priority:** CRITICAL | **Complexity:** MEDIUM | **Dependencies:** 2.3
+
+```bash
+# Actions
+1. Update reportingRoutes.js
+   - Fix "Collected Amount" formula
+   - Fix "A/R Outstanding" calculation
+   - Rename "Approx Net Cash" to "Cash Collections Net"
+   - Allow negative values
+
+2. Create new endpoint for cash refunds by method
+   GET /api/refunds/cash-by-method
+
+3. Update frontend to use new calculations
+```
+
+**Files to Modify:**
+- `packages/api/routes/reportingRoutes.js`
+- `packages/api/routes/refundRoutes.js` (add new endpoint)
+- `packages/web/src/pages/SalesHistoryPage.jsx`
+
+**Commits:**
+- `c83fd78` - Correct formulas
+- `0f50db4` - Add cash refunds endpoint
+
+**Documentation:**
+- Create `IMPROVED_CASH_DEFINITIONS.md`
+- Create `SUMMARY_SECTION_CORRECTIONS.md`
+- Create `SUMMARY_VERIFICATION.sql`
+
+**Why First in Phase 3:** Critical business logic fix.
+
+**Testing:**
+- [ ] Run SUMMARY_VERIFICATION.sql
+- [ ] Verify calculations match expected results
+- [ ] Test with various date ranges
+- [ ] Verify negative values display correctly
+
+---
+
+### 3.2 Enhanced AR Dashboard
+**Priority:** HIGH | **Complexity:** MEDIUM | **Dependencies:** 2.3, 3.1
+
+```bash
+# Actions
+1. Update arRoutes.js
+   - Account for partially refunded invoices
+   - Fix outstanding balance calculations
+   - Update aging report queries
+
+2. Test with real data
+```
+
+**Files to Modify:**
+- `packages/api/routes/arRoutes.js`
+
+**Commit:** `63cdb72`
+
+**Testing:**
+- [ ] Verify AR dashboard totals
+- [ ] Test aging buckets
+- [ ] Verify customer balances
+- Create `test-ar-data.js` and run tests
+
+---
+
+### 3.3 Payment Status Enhancement
+**Priority:** MEDIUM | **Complexity:** LOW | **Dependencies:** None
+
+```bash
+# Actions
+1. Update paymentRoutes.js
+   - Better settlement type handling
+   - Accurate status calculation
+   - Support for partial settlements
+
+2. Test various payment scenarios
+```
+
+**Files to Modify:**
+- `packages/api/routes/paymentRoutes.js`
+
+**Commit:** `f31987d`
+
+---
+
+### 3.4 Stock Reversal Fix
+**Priority:** HIGH | **Complexity:** LOW | **Dependencies:** 2.3
+
+```bash
+# Actions
+1. Update invoiceRoutes.js delete endpoint
+   - Calculate: stock_to_restore = invoiced_qty - refunded_qty
+   - Update stock reversal logic
+   - Add validation
+
+2. Test invoice deletion with partial refunds
+```
+
+**Files to Modify:**
+- `packages/api/routes/invoiceRoutes.js`
+
+**Commit:** `3ff1416`
+
+**Why Critical:** Prevents stock discrepancies.
+
+**Testing:**
+- [ ] Delete invoice without refunds (full reversal)
+- [ ] Delete invoice with partial refund (partial reversal)
+- [ ] Delete invoice with full refund (no reversal)
+- [ ] Verify stock levels after each scenario
+
+---
+
+## Phase 4: Refund Management Features (Days 7-8)
+
+**Purpose:** Complete refund tracking and management system.
+
+### 4.1 Backend Refund Enhancements
+**Priority:** HIGH | **Complexity:** MEDIUM | **Dependencies:** 2.3, 3.1
+
+```bash
+# Actions
+1. Update refundRoutes.js
+   - Add payment method tracking
+   - Add validation
+   - Prevent over-refunding
+
+2. Update invoiceRoutes.js
+   - Track refunded quantities
+   - Update related calculations
+
+3. Create test file
+   test-refund-payment-methods.js
+```
+
+**Files to Modify:**
+- `packages/api/routes/refundRoutes.js`
+- `packages/api/routes/invoiceRoutes.js`
+
+**Files to Create:**
+- `test-refund-payment-methods.js`
+
+**Commits:**
+- `1c8f475` - Add payment method tracking
+- `0f50db4` - Add cash refunds endpoint
+
+---
+
+### 4.2 Inline Refund UI
+**Priority:** HIGH | **Complexity:** HIGH | **Dependencies:** 4.1
+
+```bash
+# Actions
+1. Enhance InvoiceDetailsModal.jsx
+   - Add inline refund form
+   - Show refunded quantities with colors
+   - Add payment method selector
+   - Calculate refund amounts in real-time
+   - Add progress bars for refund status
+
+2. Update RefundForm.jsx
+   - Add validation for payment method
+   - Prevent submission without method
+   - Better error handling
+
+3. Test thoroughly
+```
+
+**Files to Modify:**
+- `packages/web/src/components/refunds/InvoiceDetailsModal.jsx` (+200 lines)
+- `packages/web/src/components/refunds/RefundForm.jsx`
+
+**Commits:**
+- `30de8bf` - Enhance InvoiceDetailsModal
+- `7abfb62` - Implement inline refund
+- `743e027` - Validate payment method
+
+**Testing:**
+- [ ] Create refund with cash
+- [ ] Create refund with card
+- [ ] Try to over-refund (should fail)
+- [ ] Try to submit without payment method (should fail)
+- [ ] Verify visual indicators work
+- [ ] Test partial refunds
+- [ ] Test full refunds
+
+---
+
+## Phase 5: Invoice Date Editing (Day 9)
+
+**Purpose:** Allow authorized date corrections.
+
+### 5.1 Backend Invoice Date API
+**Priority:** MEDIUM | **Complexity:** MEDIUM | **Dependencies:** 2.4
+
+```bash
+# Actions
+1. Add new endpoint to invoiceRoutes.js
+   PUT /api/invoices/:id/date
+   - Validate permissions
+   - Calculate time delta
+   - Update invoice date
+   - Update payment timestamps
+   - Update refund timestamps
+   - Use database transaction
+
+2. Create test file
+   test-invoice-date-edit.js
+```
+
+**Files to Modify:**
+- `packages/api/routes/invoiceRoutes.js` (+60 lines)
+
+**Files to Create:**
+- `test-invoice-date-edit.js`
+
+**Commit:** `9d05c34`
+
+---
+
+### 5.2 Frontend Invoice Date UI
+**Priority:** MEDIUM | **Complexity:** LOW | **Dependencies:** 5.1
+
+```bash
+# Actions
+1. Update InvoiceDetailsModal.jsx
+   - Add "Edit Invoice Date" button (permission-gated)
+   - Add datetime picker
+   - Add warning text about cascading updates
+   - Handle API calls
+   - Show success/error feedback
+
+2. Test with different user roles
+```
+
+**Files to Modify:**
+- `packages/web/src/components/refunds/InvoiceDetailsModal.jsx` (+50 lines)
+
+**Documentation:**
+- Create `INVOICE_DATE_EDIT_IMPLEMENTATION.md`
+
+**Testing:**
+- [ ] Admin can see and use button
+- [ ] Manager can see and use button
+- [ ] Regular user cannot see button
+- [ ] Date changes cascade correctly
+- [ ] Related timestamps updated
+- [ ] Error handling works
+
+---
+
+## Phase 6: Parts Management Enhancements (Days 10-12)
+
+**Purpose:** Improve parts data entry and search.
+
+### 6.1 Meilisearch Configuration
+**Priority:** MEDIUM | **Complexity:** MEDIUM | **Dependencies:** 2.1
+
+```bash
+# Actions
+1. Update meilisearch-setup.js
+   - Configure parts index
+   - Set up filterable attributes
+   - Configure searchable attributes
+   - Set up ranking rules
+
+2. Update meili-listener.js
+   - Add retry logic
+   - Better error handling
+   - Batch sync support
+   - Health check monitoring
+
+3. Test search functionality
+```
+
+**Files to Modify:**
+- `packages/api/meilisearch-setup.js`
+- `packages/api/meili-listener.js`
+
+**Commits:**
+- Improvements spread across multiple commits
+
+---
+
+### 6.2 Part Bulk Update Backend
+**Priority:** MEDIUM | **Complexity:** MEDIUM | **Dependencies:** 2.1, 6.1
+
+```bash
+# Actions
+1. Add bulk update endpoint to partRoutes.js
+   POST /api/parts/bulk-update
+   - Validate part IDs
+   - Validate field updates
+   - Use database transaction
+   - Sync with Meilisearch
+   - Return detailed results
+
+2. Test with various bulk operations
+```
+
+**Files to Modify:**
+- `packages/api/routes/partRoutes.js` (+150 lines)
+
+**Commit:** `c51fc6b`
+
+**Testing:**
+- [ ] Bulk price update
+- [ ] Bulk category change
+- [ ] Bulk status update
+- [ ] Verify Meilisearch sync
+- [ ] Test with invalid IDs
+- [ ] Test transaction rollback
+
+---
+
+### 6.3 Application Helper & Backend
+**Priority:** MEDIUM | **Complexity:** MEDIUM | **Dependencies:** 2.5
+
+```bash
+# Actions
+1. Create applicationHelper.js
+   - fetchPartApplications()
+   - formatApplicationDisplay()
+   - buildApplicationQuery()
+
+2. Update partRoutes.js
+   - Use new flexible application system
+   - Update application queries
+   - Use helper functions
+
+3. Update partMergeService.js
+   - Merge flexible applications
+   - Deduplicate logic
+   - Preserve history
+
+4. Test application queries
+```
+
+**Files to Create:**
+- `packages/api/helpers/applicationHelper.js` (70 lines)
+
+**Files to Modify:**
+- `packages/api/routes/partRoutes.js`
+- `packages/api/routes/partApplicationRoutes.js`
+- `packages/api/services/partMergeService.js`
+
+**Commits:**
+- `4bfe819` - Introduce flexible support
+- `8c8b105` - Refactor handling
+
+---
+
+### 6.4 Part Application Frontend
+**Priority:** MEDIUM | **Complexity:** HIGH | **Dependencies:** 6.3
+
+```bash
+# Actions
+1. Rewrite PartApplicationManager.jsx
+   - New flexible application form
+   - Edit applications inline
+   - Year range selectors
+   - Make/model autocomplete
+   - Unlink functionality
+
+2. Update PartForm.jsx
+   - Integrate with flexible applications
+   - Show applications in form
+   - Add/remove applications
+
+3. Update MainLayout.jsx and Sidebar.jsx
+   - Remove legacy applications page
+   - Update navigation
+
+4. Test thoroughly before dropping legacy tables
+```
+
+**Files to Modify:**
+- `packages/web/src/pages/PartApplicationManager.jsx` (complete rewrite - 323 lines)
+- `packages/web/src/components/forms/PartForm.jsx`
+- `packages/web/src/components/layout/MainLayout.jsx`
+- `packages/web/src/components/layout/Sidebar.jsx`
+
+**Commit:** `8c8b105`
+
+**⚠️ TESTING CRITICAL:**
+- [ ] Add new flexible applications
+- [ ] Edit existing applications
+- [ ] Unlink applications
+- [ ] Search by application
+- [ ] Verify data integrity
+- [ ] Test part merging with applications
+
+**ONLY AFTER FULL TESTING:**
+```bash
+# Drop legacy tables
+psql -d forson_db -f database/migrations/20251011_drop_legacy_applications.sql
+```
+
+---
+
+### 6.5 Part Enhancements
+**Priority:** LOW | **Complexity:** LOW | **Dependencies:** None
+
+```bash
+# Actions
+1. Update PartForm.jsx
+   - UI improvements
+   - Better validation
+   - Enhanced layout
+
+2. Implement part detail loading in GoodsReceiptPage.jsx
+   - Load part details on edit click
+   - Pre-populate form
+   - Show inventory context
+```
+
+**Files to Modify:**
+- `packages/web/src/components/forms/PartForm.jsx`
+- `packages/web/src/pages/GoodsReceiptPage.jsx`
+
+**Commit:** `fbb7d2c`
+
+---
+
+## Phase 7: Stock Visibility (Day 13)
+
+**Purpose:** Show real-time stock across all pages.
+
+### 7.1 Stock Display Implementation
+**Priority:** MEDIUM | **Complexity:** LOW | **Dependencies:** 2.1
+
+```bash
+# Actions
+1. Update PurchaseOrderPage.jsx
+   - Add stock display to part selection
+   - Color-coded indicators
+   - Stock level tooltips
+
+2. Update GoodsReceiptPage.jsx
+   - Show before/after stock
+   - Calculate new stock levels
+
+3. Update InvoicingPage.jsx
+   - Real-time stock check
+   - Low stock warnings
+   - Prevent negative stock
+
+4. Update POSPage.jsx
+   - Instant stock availability
+   - Quick visual indicators
+
+5. Create/enhance stock badge component
+```
+
+**Files to Modify:**
+- `packages/web/src/pages/PurchaseOrderPage.jsx` (+50 lines)
+- `packages/web/src/pages/GoodsReceiptPage.jsx` (+30 lines)
+- `packages/web/src/pages/InvoicingPage.jsx` (+25 lines)
+- `packages/web/src/pages/POSPage.jsx` (+25 lines)
+
+**Commits:**
+- `22e5ee4` - Display stock availability
+- `2af61b9` - Improve stock display layout
+
+**Testing:**
+- [ ] Verify stock shows on all pages
+- [ ] Test color coding (green/yellow/red)
+- [ ] Verify warnings appear for low stock
+- [ ] Test with out-of-stock items
+- [ ] Check performance with large catalogs
+
+---
+
+## Phase 8: Purchase Order Improvements (Day 14)
+
+**Purpose:** Better UX for purchase orders.
+
+### 8.1 Goods Receipt Enhancements
+**Priority:** LOW | **Complexity:** LOW | **Dependencies:** None
+
+```bash
+# Actions
+1. Update goodsReceiptRoutes.js
+   - Enhance part number aggregation
+   - Better grouping in GRN line items
+   - Optimize queries
+
+2. Test GRN retrieval
+```
+
+**Files to Modify:**
+- `packages/api/routes/goodsReceiptRoutes.js`
+
+**Commit:** `cc9579f`
+
+---
+
+### 8.2 Purchase Order UI Enhancements
+**Priority:** LOW | **Complexity:** MEDIUM | **Dependencies:** None
+
+```bash
+# Actions
+1. Update PurchaseOrderPage.jsx
+   - Refactor layout
+   - Better status badges
+   - Improved grid layout
+   - Better responsive design
+
+2. Update PurchaseOrderEditorPage.jsx
+   - Add auto-save indicators
+   - Loading states
+   - Better user feedback
+
+3. Update PurchaseOrderForm.jsx
+   - Enhanced validation
+   - Better error messages
+   - Improved layout
+
+4. Test all PO workflows
+```
+
+**Files to Modify:**
+- `packages/web/src/pages/PurchaseOrderPage.jsx` (378 lines)
+- `packages/web/src/pages/PurchaseOrderEditorPage.jsx` (60 lines)
+- `packages/web/src/components/forms/PurchaseOrderForm.jsx` (335 lines)
+
+**Commits:**
+- `ef005b3` - Refactor layout
+- `bbdc4f1` - Enhance editor layout
+- `e3d8235` - Add lazy loading
+
+**Testing:**
+- [ ] Create new PO
+- [ ] Edit existing PO
+- [ ] Verify auto-save indicators
+- [ ] Test status badge colors
+- [ ] Check responsive layout
+
+---
+
+## Phase 9: Cheque Printing System (Days 15-17)
+
+**Purpose:** Complete cheque printing implementation.
+
+### 9.1 Backend Cheque Infrastructure
+**Priority:** LOW | **Complexity:** MEDIUM | **Dependencies:** 2.6
+
+```bash
+# Actions
+1. Create buffer utilities
+   packages/api/helpers/bufferUtils.js
+
+2. Create cheque formatter
+   packages/api/helpers/chequeFormatter.js
+   - Amount to words conversion
+   - Date formatting
+   - Memo formatting
+
+3. Create PDF generator
+   packages/api/helpers/pdf/chequePdf.js
+
+4. Test helper functions
+```
+
+**Files to Create:**
+- `packages/api/helpers/bufferUtils.js` (50 lines)
+- `packages/api/helpers/chequeFormatter.js` (229 lines)
+- `packages/api/helpers/pdf/chequePdf.js` (50 lines)
+- `packages/api/test/chequePdf.test.js` (6 lines)
+
+**Commit:** `c8550dc`
+
+---
+
+### 9.2 Cheque Routes API
+**Priority:** LOW | **Complexity:** HIGH | **Dependencies:** 9.1
+
+```bash
+# Actions
+1. Create chequeRoutes.js
+   - Template CRUD operations
+   - Print job management
+   - Print history endpoints
+   - PDF generation endpoints
+
+2. Register routes in index.js
+
+3. Test all endpoints
+```
+
+**Files to Create:**
+- `packages/api/routes/chequeRoutes.js` (612 lines)
+
+**Files to Modify:**
+- `packages/api/index.js` (register routes)
+
+**Commit:** `735a856`
+
+**Testing:**
+- [ ] Create template
+- [ ] Update template
+- [ ] Delete template
+- [ ] Print cheque
+- [ ] Get print history
+- [ ] Download PDF
+
+---
+
+### 9.3 Cheque Print HTML Page
+**Priority:** LOW | **Complexity:** MEDIUM | **Dependencies:** None
+
+```bash
+# Actions
+1. Create cheque-print.html
+   - Standalone print page
+   - PostMessage receiver
+   - Dynamic cheque rendering
+   - Auto-print trigger
+   - Proper page size setup
+
+2. Test in different browsers
+```
+
+**Files to Create:**
+- `packages/web/public/cheque-print.html` (231 lines)
+
+**Commits:**
+- `94f662d` - Simplify printing process
+- `557c871` - Update dimensions
+
+---
+
+### 9.4 Cheque Frontend Components
+**Priority:** LOW | **Complexity:** HIGH | **Dependencies:** 9.2, 9.3
+
+```bash
+# Actions
+1. Create cheque helper functions
+   packages/web/src/helpers/cheque.js
+
+2. Create TemplateCanvas.jsx
+   - Drag-and-drop editor
+   - Real-time preview
+   - Proper scaling
+
+3. Create TemplateSettingsForm.jsx
+   - Paper size settings
+   - DPI configuration
+   - Currency options
+
+4. Create FieldInspector.jsx
+   - Field property editor
+   - Position/size controls
+   - Font styling
+
+5. Test template editor
+```
+
+**Files to Create:**
+- `packages/web/src/helpers/cheque.js` (207 lines)
+- `packages/web/src/components/cheque/TemplateCanvas.jsx` (97 lines)
+- `packages/web/src/components/cheque/TemplateSettingsForm.jsx` (186 lines)
+- `packages/web/src/components/cheque/FieldInspector.jsx` (170 lines)
+
+---
+
+### 9.5 Cheque Printer Page
+**Priority:** LOW | **Complexity:** HIGH | **Dependencies:** 9.4
+
+```bash
+# Actions
+1. Create ChequePrinterPage.jsx
+   - Template management tab
+   - Print cheque tab
+   - History tab
+   - Integrate all components
+   - PostMessage print flow
+
+2. Add to sidebar navigation
+
+3. Add to constants.js
+
+4. Update Meilisearch setup (if needed)
+
+5. Test complete workflow
+```
+
+**Files to Create:**
+- `packages/web/src/pages/ChequePrinterPage.jsx` (724 lines)
+
+**Files to Modify:**
+- `packages/web/src/components/layout/Sidebar.jsx`
+- `packages/web/src/constants.js`
+- `packages/api/meilisearch-setup.js`
+
+**Commits:**
+- `735a856` - Implement functionality
+- `eb6a6bc` - Enhance layout
+- `94f662d` - Simplify printing
+
+**Documentation:**
+- Create `CHEQUE_PRINTING_IMPROVEMENTS.md`
+- Create `CHEQUE_PRINTING_COMPARISON.md`
+- Create `CHEQUE_PRINTER_UPDATES.md`
+
+**COMPREHENSIVE TESTING:**
+- [ ] Create template
+- [ ] Edit template fields with drag-and-drop
+- [ ] Save template
+- [ ] Print new cheque
+- [ ] Preview cheque before printing
+- [ ] View print history
+- [ ] Reprint from history
+- [ ] Download PDF
+- [ ] Test on actual cheque paper
+- [ ] Verify alignment (may need template adjustments)
+
+---
+
+## Phase 10: Production & Deployment (Days 18-20)
+
+**Purpose:** Set up robust deployment infrastructure.
+
+### 10.1 Documentation Suite
+**Priority:** HIGH | **Complexity:** LOW | **Dependencies:** All previous phases
+
+```bash
+# Actions - Create documentation files:
+
+1. Financial Documentation
+   - IMPROVED_CASH_DEFINITIONS.md
+   - SUMMARY_SECTION_CORRECTIONS.md
+   - SUMMARY_VERIFICATION.sql
+
+2. Feature Documentation
+   - INVOICE_DATE_EDIT_IMPLEMENTATION.md
+   - CHEQUE_PRINTING_IMPROVEMENTS.md
+   - CHEQUE_PRINTING_COMPARISON.md
+   - CHEQUE_PRINTER_UPDATES.md
+
+3. Deployment Documentation
+   - DEPLOYMENT_GUIDE.md
+   - DEPLOYMENT_COMPARISON.md
+   - SIMPLE_DEPLOYMENT.md
+   - DOCKER_DEPLOYMENT_COMPARISON.md
+   - PRODUCTION_DEPLOYMENT.md
+   - PRODUCTION_QUICKSTART.md
+   - PRODUCTION_READY.md
+   - PRODUCTION_CHECKLIST.md
+
+4. Technical Documentation
+   - REACT_ERROR_DIAGNOSIS.md
+   - REACT_BUILD_FIX.md
+   - REACT_FIX_VERIFICATION.md
+   - PRODUCTION_ERROR_RESOLUTION.md
+   - ROLLBACK_ANALYSIS.md
+   - ROLLBACK_SUMMARY.md
+   - TECHNICAL_ANALYSIS_FINAL.md
+   - PRODUCTION_FIX_FINAL.md
+
+5. Quick References
+   - Update COMMANDS.md
+   - COMMANDS_UPDATE_SUMMARY.md
+   - QUICK_FIX_SUMMARY.md
+   - FIX_VISUAL_SUMMARY.txt
+   - GITHUB_ACTIONS_FIX.md
+```
+
+**Why Important:** Knowledge preservation, onboarding, troubleshooting.
+
+---
+
+### 10.2 Deployment Scripts
+**Priority:** HIGH | **Complexity:** MEDIUM | **Dependencies:** None
+
+```bash
+# Actions - Create scripts in scripts/ directory:
+
+1. Database Scripts
+   - rebuild_database.sh (124 lines)
+   - rebuild_database.ps1 (79 lines)
+
+2. Deployment Scripts
+   - deploy_production.sh (117 lines) - Main deployment
+   - deploy_current.sh (50 lines) - Deploy current HEAD
+   - deploy_00feb95.sh (80 lines) - Deploy known good commit
+   - deploy_rollback.sh (99 lines) - Automated rollback
+   - simple_deploy.sh (44 lines) - Simplified deployment
+   - quick_deploy.sh (45 lines) - Fast deployment
+
+3. Diagnostic Scripts
+   - check_production_readiness.sh (192 lines)
+   - diagnose_react_bundle.sh (114 lines)
+   - verify_and_rebuild.sh (150 lines)
+
+4. Make all scripts executable
+   chmod +x scripts/*.sh
+
+5. Test each script in staging
+```
+
+**Commits:**
+- `a3453f8` - Production documentation and scripts
+- `f2de3d7` - Database rebuild scripts
+- `bf96e90` - Diagnostic scripts
+
+---
+
+### 10.3 Docker Configuration
+**Priority:** HIGH | **Complexity:** MEDIUM | **Dependencies:** 1.2
+
+```bash
+# Actions
+1. Simplify packages/web/Dockerfile
+   - Remove workspace complexity
+   - Use package context
+   - Remove unnecessary user management
+   - Keep multi-stage build
+   - Keep Nginx and health checks
+
+2. Update docker-compose.prod.yml
+   - Change context to ./packages/web
+   - Simplify volume mounts
+   - Keep health checks and logging
+
+3. Test Docker build
+   docker-compose -f docker-compose.prod.yml build
+   docker-compose -f docker-compose.prod.yml up -d
+
+4. Verify container health
+```
+
+**Files to Modify:**
+- `packages/web/Dockerfile`
+- `docker-compose.prod.yml`
+- `docker-compose.yml` (minor updates)
+
+**Commits:**
+- `2c5e636` - Simplify production Docker config
+- Multiple commits for Docker improvements
+
+**Documentation:**
+- Update `SIMPLE_DEPLOYMENT.md`
+- Update `DOCKER_DEPLOYMENT_COMPARISON.md`
+
+---
+
+### 10.4 GitHub Actions
+**Priority:** MEDIUM | **Complexity:** LOW | **Dependencies:** 10.3
+
+```bash
+# Actions
+1. Update .github/workflows/deploy.yml
+   - Update Dockerfile path
+   - Proper context configuration
+   - Enhanced error handling
+
+2. Update .github/workflows/docker-publish.yml
+   - New Docker structure
+   - Proper tagging
+   - Multi-platform builds
+
+3. Test workflows
+```
+
+**Files to Modify:**
+- `.github/workflows/deploy.yml`
+- `.github/workflows/docker-publish.yml`
+
+**Documentation:**
+- Create `GITHUB_ACTIONS_FIX.md`
+
+---
+
+### 10.5 Backup System
+**Priority:** MEDIUM | **Complexity:** LOW | **Dependencies:** None
+
+```bash
+# Actions
+1. Enhance backup/backup.sh
+   - Persistent loop
+   - Error handling
+   - Retention policy
+   - Compression
+   - Logging
+
+2. Test backup script
+3. Set up cron job or systemd service
+```
+
+**Files to Modify:**
+- `backup/backup.sh`
+
+**Commit:** `bed77a9`
+
+---
+
+### 10.6 VS Code Configuration
+**Priority:** LOW | **Complexity:** LOW | **Dependencies:** None
+
+```bash
+# Actions
+1. Create/update .vscode/tasks.json
+   - Add build tasks
+   - Add dev server tasks
+   - Add deployment tasks
+
+2. Test tasks in VS Code
+```
+
+**Files to Create/Modify:**
+- `.vscode/tasks.json`
+
+---
+
+### 10.7 Copilot Instructions
+**Priority:** LOW | **Complexity:** LOW | **Dependencies:** None
+
+```bash
+# Actions
+1. Update .github/copilot-instructions.md
+   - Add connection verification protocol
+   - Enhance caution guidelines
+   - Document 3-level deep checking
+
+2. Test with Copilot
+```
+
+**Files to Modify:**
+- `.github/copilot-instructions.md`
+
+**Commit:** `f3d16de`
+
+---
+
+## Phase 11: Testing & Quality Assurance (Days 21-23)
+
+**Purpose:** Comprehensive testing before production.
+
+### 11.1 Create Test Files
+**Priority:** HIGH | **Complexity:** MEDIUM | **Dependencies:** All features
+
+```bash
+# Actions - Create test files:
+1. test-refund-payment-methods.js
+2. test-invoice-date-edit.js
+3. test-ar-endpoints.js
+4. test-ar-data.js
+5. test-dashboard-components.js
+6. test-on-account.js
+7. test-payment-fix.js
+8. test-payment-methods.js
+9. test-tax-api.js
+
+# Run all tests
+npm test
+```
+
+---
+
+### 11.2 Integration Testing
+**Priority:** HIGH | **Complexity:** HIGH | **Dependencies:** 11.1
+
+```bash
+# Test each feature end-to-end:
+
+1. Financial Reporting
+   [ ] Sales summary calculations
+   [ ] AR dashboard accuracy
+   [ ] Net cash calculations
+   [ ] Payment status tracking
+
+2. Refund Management
+   [ ] Create refund with payment method
+   [ ] Partial refunds
+   [ ] Full refunds
+   [ ] Stock reversal on refunded invoice deletion
+   [ ] Cash refund reporting
+
+3. Invoice Date Editing
+   [ ] Edit invoice date as admin
+   [ ] Verify cascading timestamp updates
+   [ ] Permission checking
+   [ ] Error handling
+
+4. Parts Management
+   [ ] Bulk part updates
+   [ ] Flexible applications CRUD
+   [ ] Part merging with applications
+   [ ] Meilisearch sync
+   [ ] Stock visibility
+
+5. Purchase Orders
+   [ ] Create/edit PO
+   [ ] Auto-save indicators
+   [ ] Status badges
+   [ ] Goods receipt
+
+6. Cheque Printing
+   [ ] Create template
+   [ ] Edit template
+   [ ] Print cheque
+   [ ] Reprint from history
+   [ ] PDF download
+   [ ] Physical alignment test
+
+7. Performance
+   [ ] Page load times
+   [ ] Lazy loading
+   [ ] Search performance
+   [ ] Large dataset handling
+```
+
+---
+
+### 11.3 User Acceptance Testing
+**Priority:** HIGH | **Complexity:** LOW | **Dependencies:** 11.2
+
+```bash
+# Actions
+1. Create UAT test cases document
+2. Recruit test users
+3. Conduct UAT sessions
+4. Document issues
+5. Fix critical issues
+6. Retest
+
+# Key workflows to test:
+- Daily sales operations
+- Refund processing
+- Purchase order workflow
+- Cheque printing
+- Financial reporting
+```
+
+---
+
+## Phase 12: Production Deployment (Day 24)
+
+**Purpose:** Deploy to production safely.
+
+### 12.1 Pre-Deployment Checklist
+**Priority:** CRITICAL | **Complexity:** LOW | **Dependencies:** All phases
+
+```bash
+# Run production readiness check
+./scripts/check_production_readiness.sh
+
+# Review checklist:
+[ ] All tests passing
+[ ] Documentation complete
+[ ] Database migrations tested
+[ ] Backup system working
+[ ] Environment variables configured
+[ ] SSL certificates valid
+[ ] Monitoring configured
+[ ] Rollback plan ready
+[ ] Team notified
+```
+
+---
+
+### 12.2 Production Deployment
+**Priority:** CRITICAL | **Complexity:** MEDIUM | **Dependencies:** 12.1
+
+```bash
+# Deployment steps:
+
+1. Backup current production
+   ./backup/backup.sh
+
+2. Deploy to production
+   ./scripts/deploy_production.sh
+
+3. Monitor logs
+   docker-compose -f docker-compose.prod.yml logs -f
+
+4. Verify health checks
+   curl http://localhost:3000/health
+   curl http://localhost:5000/health
+
+5. Smoke test critical features
+   - Login
+   - Create invoice
+   - Process refund
+   - Print cheque
+   - View reports
+
+6. Monitor for 24 hours
+
+7. If issues occur, rollback:
+   ./scripts/deploy_rollback.sh
+```
+
+---
+
+### 12.3 Post-Deployment
+**Priority:** HIGH | **Complexity:** LOW | **Dependencies:** 12.2
+
+```bash
+# Actions
+1. Document deployment
+   - Date/time
+   - Deployed commit
+   - Any issues encountered
+   - Resolution steps
+
+2. Update production documentation
+
+3. Create git tag
+   git tag -a v2.0.0 -m "Major release with cheque printing, refunds, and more"
+   git push origin v2.0.0
+
+4. Celebrate! 🎉
+```
+
+---
+
+## Dependency Graph
+
+```
+Phase 1: Foundation
+  └─> 1.1 Environment Setup (START HERE)
+      └─> 1.2 React 19 Migration *** CRITICAL ***
+          ├─> 1.3 ErrorBoundary
+          └─> 1.4 Lazy Loading
+
+Phase 2: Database (parallel with Phase 1.3+)
+  ├─> 2.1 Parts View *** IMPORTANT ***
+  ├─> 2.2 Payment Terms (independent)
+  ├─> 2.3 Refund Payment Tracking *** IMPORTANT ***
+  ├─> 2.4 Invoice Edit Permission
+  ├─> 2.5 Flexible Applications
+  └─> 2.6 Cheque Tables
+
+Phase 3: Financial Fixes *** CRITICAL ***
+  └─> 2.3 Refund Payment Tracking
+      ├─> 3.1 Sales Summary Fixes
+      │   └─> 3.2 AR Dashboard
+      ├─> 3.3 Payment Status
+      └─> 3.4 Stock Reversal Fix
+
+Phase 4: Refund Features
+  └─> Phase 3 complete
+      ├─> 4.1 Backend Refunds
+      └─> 4.2 Inline Refund UI
+
+Phase 5: Invoice Date
+  └─> 2.4 Invoice Edit Permission
+      ├─> 5.1 Backend API
+      └─> 5.2 Frontend UI
+
+Phase 6: Parts Management
+  └─> 2.1 Parts View, 2.5 Flexible Apps
+      ├─> 6.1 Meilisearch Config
+      │   └─> 6.2 Bulk Update
+      ├─> 6.3 Application Helpers
+      │   └─> 6.4 Application Frontend *** TEST BEFORE DROP LEGACY ***
+      └─> 6.5 Part Enhancements
+
+Phase 7: Stock Visibility
+  └─> 2.1 Parts View
+      └─> 7.1 Stock Display
+
+Phase 8: Purchase Orders
+  └─> No dependencies (parallel with 6, 7)
+      ├─> 8.1 Goods Receipt
+      └─> 8.2 PO UI
+
+Phase 9: Cheque Printing
+  └─> 2.6 Cheque Tables
+      ├─> 9.1 Backend Helpers
+      │   └─> 9.2 Cheque Routes
+      ├─> 9.3 Print HTML Page
+      │   └─> 9.4 Frontend Components
+      │       └─> 9.5 Cheque Printer Page
+
+Phase 10: Production Deployment
+  └─> All features complete
+      ├─> 10.1 Documentation
+      ├─> 10.2 Deployment Scripts
+      ├─> 10.3 Docker Config
+      ├─> 10.4 GitHub Actions
+      ├─> 10.5 Backup System
+      ├─> 10.6 VS Code Config
+      └─> 10.7 Copilot Instructions
+
+Phase 11: Testing
+  └─> All features implemented
+      ├─> 11.1 Test Files
+      ├─> 11.2 Integration Testing
+      └─> 11.3 UAT
+
+Phase 12: Go Live
+  └─> Phase 11 complete
+      ├─> 12.1 Pre-Deployment Checklist
+      ├─> 12.2 Production Deployment
+      └─> 12.3 Post-Deployment
+```
+
+---
+
+## Critical Success Factors
+
+### Must-Do Items (Can't Skip)
+1. ✅ React 19 Migration First (Phase 1.2)
+2. ✅ ErrorBoundary Before Other Features (Phase 1.3)
+3. ✅ Database Migrations Before Features (Phase 2)
+4. ✅ Financial Fixes Before Production (Phase 3)
+5. ✅ Test Part Applications Before Dropping Legacy (Phase 6.4)
+6. ✅ Run Production Readiness Check (Phase 12.1)
+
+### Can Be Deferred (Lower Priority)
+- Cheque Printing (Phase 9) - Can be done last
+- Purchase Order UI Enhancements (Phase 8.2)
+- Part Enhancements (Phase 6.5)
+- VS Code Config (Phase 10.6)
+
+### Parallel Work Opportunities
+- Phase 2 (Database) can run parallel with Phase 1.3+
+- Phase 8 (PO) can run parallel with Phase 6-7
+- Documentation (Phase 10.1) can be written throughout
+
+---
+
+## Time Estimates
+
+### Optimistic (Experienced Developer)
+- **Total:** 18-20 days
+- Phase 1-2: 3 days
+- Phase 3-5: 4 days
+- Phase 6-8: 6 days
+- Phase 9: 3 days
+- Phase 10-12: 2-4 days
+
+### Realistic (Average Developer)
+- **Total:** 24-28 days (1 month)
+- Phase 1-2: 4 days
+- Phase 3-5: 6 days
+- Phase 6-8: 8 days
+- Phase 9: 4 days
+- Phase 10-12: 2-6 days
+
+### Conservative (Includes Learning)
+- **Total:** 35-40 days (1.5-2 months)
+- Add 50% to realistic estimates
+- Include time for learning new patterns
+- Include time for fixing unexpected issues
+
+---
+
+## Risk Mitigation
+
+### High-Risk Items
+1. **React 19 Migration**
+   - **Risk:** Build failures, white screen errors
+   - **Mitigation:** Follow exact version numbers, test thoroughly
+
+2. **Legacy Application Drop**
+   - **Risk:** Data loss, broken features
+   - **Mitigation:** Backup data, test extensively before dropping tables
+
+3. **Financial Calculation Changes**
+   - **Risk:** Incorrect financial reporting
+   - **Mitigation:** Run verification SQL, compare old vs new results
+
+4. **Production Deployment**
+   - **Risk:** Downtime, data corruption
+   - **Mitigation:** Backup everything, test rollback, deploy during low-traffic
+
+### Medium-Risk Items
+- Meilisearch sync issues
+- Docker build problems
+- Permission system changes
+- Database migration failures
+
+### Mitigation Strategies
+- Always backup before changes
+- Test in staging first
+- Have rollback plan ready
+- Document every change
+- Use transactions for database changes
+- Incremental deployment (feature flags if needed)
+
+---
+
+## Rollback Strategy
+
+### If Something Goes Wrong
+
+**Phase 1-2 Issues:**
+```bash
+git reset --hard 00feb95
+npm install
+```
+
+**Phase 3-8 Issues (Feature Specific):**
+```bash
+git revert <problematic-commit>
+# OR
+git reset --hard <last-good-commit>
+npm install
+```
+
+**Database Issues:**
+```bash
+# Restore from backup
+psql -d forson_db < backups/backup-YYYYMMDD.sql
+
+# OR rollback specific migration
+# Remove migration from migrations table
+DELETE FROM migrations WHERE name = 'problematic_migration.sql';
+```
+
+**Production Issues:**
+```bash
+# Use deployment scripts
+./scripts/deploy_rollback.sh
+
+# OR nuclear option
+./scripts/deploy_00feb95.sh
+```
+
+---
+
+## Success Metrics
+
+### After Implementation, Verify:
+
+**Functionality:**
+- [ ] All 6 major features working
+- [ ] No regression in existing features
+- [ ] All tests passing
+- [ ] Financial calculations accurate
+
+**Performance:**
+- [ ] Page load < 3 seconds
+- [ ] Search response < 500ms
+- [ ] API response < 1 second
+- [ ] Build time < 2 minutes
+
+**Stability:**
+- [ ] No crashes in 24 hours
+- [ ] Error rate < 0.1%
+- [ ] Uptime > 99.9%
+- [ ] Memory leaks absent
+
+**User Experience:**
+- [ ] Positive user feedback
+- [ ] Task completion time reduced
+- [ ] Error messages helpful
+- [ ] UI responsive
+
+**Code Quality:**
+- [ ] Documentation complete
+- [ ] Code follows conventions
+- [ ] No security vulnerabilities
+- [ ] Technical debt minimized
+
+---
+
+## Final Checklist
+
+```bash
+# Before starting
+[ ] Read this entire plan
+[ ] Understand dependency graph
+[ ] Set up development environment
+[ ] Create branch from 00feb95
+[ ] Backup everything
+
+# During implementation
+[ ] Follow phases in order
+[ ] Test after each phase
+[ ] Document as you go
+[ ] Commit frequently with clear messages
+[ ] Ask for help when stuck
+
+# Before production
+[ ] All tests passing
+[ ] UAT complete
+[ ] Documentation reviewed
+[ ] Backup verified
+[ ] Rollback plan tested
+[ ] Team trained
+[ ] Production checklist complete
+
+# After deployment
+[ ] Monitor for 24 hours
+[ ] Document issues
+[ ] Update documentation
+[ ] Create release notes
+[ ] Celebrate success! 🎉
+```
+
+---
+
+**Good luck with your re-implementation!** 
+
+Remember: **Slow is smooth, smooth is fast.** Take your time in each phase, test thoroughly, and don't rush to production. The plan is designed to build incrementally and safely.
+
+**Questions or issues?** Refer to the extensive documentation created in Phase 10, particularly:
+- `DEPLOYMENT_GUIDE.md`
+- `PRODUCTION_QUICKSTART.md`
+- Feature-specific documentation for detailed implementation notes
