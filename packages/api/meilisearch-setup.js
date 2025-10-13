@@ -168,16 +168,16 @@ const setupMeiliSearch = async () => {
       const partsSettings = {
         rankingRules: config.rankingRules,
         searchableAttributes: [
-          'display_name',
-          'detail',
-          'internal_sku',
-          'normalized_internal_sku',
-          'brand_name',
-          'group_name',
-          'searchable_applications',
-          'part_numbers',
-          'normalized_part_numbers',
-          'tags'
+          'normalized_internal_sku',      // Exact match priority for SKU
+          'normalized_part_numbers',      // Exact match priority for part numbers
+          'internal_sku',                 // Fuzzy match for SKU
+          'part_numbers',                 // Fuzzy match for part numbers
+          'display_name',                 // Main display field
+          'detail',                       // Additional detail
+          'brand_name',                   // Brand search
+          'group_name',                   // Category search
+          'tags',                         // Tag search
+          'searchable_applications'       // Vehicle application search
         ],
         stopWords: [
           'a', 'an', 'and', 'the'

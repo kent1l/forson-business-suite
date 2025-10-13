@@ -35,6 +35,7 @@ const getPartDataForMeili = async (client, partId) => {
     return {
         ...part,
         display_name: constructDisplayName(part),
+        part_numbers: part.part_numbers ? part.part_numbers.split('; ').filter(Boolean) : [],
         applications: part.applications_array || [],
         // Flatten applications into a single searchable string for Meilisearch
         searchable_applications: (part.applications_array && Array.isArray(part.applications_array))
@@ -112,9 +113,8 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
         const index = meiliClient.index('parts');
         const searchOptions = { 
             limit: 200, 
-            attributesToRetrieve: ['part_id'],
-            // Prioritize exact normalized matches, then fall back to fuzzy search
-            attributesToSearchOn: ['normalized_internal_sku', 'normalized_part_numbers', 'internal_sku', 'part_numbers', 'display_name', 'detail', 'brand_name', 'group_name', 'searchable_applications', 'tags']
+            attributesToRetrieve: ['part_id']
+            // Use searchableAttributes order from meilisearch-setup.js for proper ranking
         };
         const filter = [];
 

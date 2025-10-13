@@ -1,5 +1,7 @@
 const db = require('./db');
 const { syncPartWithMeili, removePartFromMeili } = require('./meilisearch');
+const { constructDisplayName } = require('./helpers/displayNameHelper');
+const { normalizePartData } = require('./helpers/normalizePart');
 
 /**
  * Dedicated listener that uses a persistent Postgres client to LISTEN for
@@ -43,7 +45,7 @@ const startMeiliListener = async () => {
                     b.brand_name,
                     g.group_name,
                     p.is_active,
-                    (SELECT COALESCE(json_agg(pn.part_number), '[]'::json) FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('./helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers,
+                    (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('./helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers,
                     (SELECT COALESCE(json_agg(t.tag_name), '[]'::json) FROM part_tag pt JOIN tag t ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags,
                     (SELECT COALESCE(json_agg(pa.application_id), '[]'::json) FROM part_application pa WHERE pa.part_id = p.part_id) AS applications,
                     (SELECT COALESCE(json_agg(concat_ws(' ', COALESCE(av.make,''), COALESCE(av.model,''), COALESCE(av.engine,''))), '[]'::json)
@@ -56,18 +58,29 @@ const startMeiliListener = async () => {
             [upserts]
           );
 
-          const docs = rows.map(row => ({
-            part_id: row.part_id,
-            display_name: row.internal_sku || row.detail || '',
-            internal_sku: row.internal_sku,
-            brand_name: row.brand_name,
-            group_name: row.group_name,
-            is_active: row.is_active,
-            part_numbers: row.part_numbers || [],
-            tags: row.tags || [],
-            applications: row.applications || [],
-            searchable_applications: row.searchable_applications || [],
-          }));
+          const docs = rows.map(row => {
+            // Calculate normalized fields
+            const normalizedFields = normalizePartData(row);
+            
+            // Use constructDisplayName to create consistent display name
+            const displayName = constructDisplayName(row);
+            
+            return {
+              part_id: row.part_id,
+              display_name: displayName,
+              internal_sku: row.internal_sku,
+              detail: row.detail,
+              brand_name: row.brand_name,
+              group_name: row.group_name,
+              is_active: row.is_active,
+              part_numbers: row.part_numbers ? row.part_numbers.split('; ').filter(Boolean) : [],
+              tags: row.tags || [],
+              applications: row.applications || [],
+              searchable_applications: row.searchable_applications || [],
+              normalized_internal_sku: normalizedFields.normalized_internal_sku,
+              normalized_part_numbers: normalizedFields.normalized_part_numbers,
+            };
+          });
 
           if (docs.length) await syncPartWithMeili(docs);
         }
