@@ -1,9 +1,6 @@
 import React, { useState } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
-
-// Avoid linter warnings for React import (needed for JSX transformation)
-void React;
 import Dashboard from '../../pages/Dashboard';
 import SuppliersPage from '../../pages/SuppliersPage';
 import PartsPage from '../../pages/PartsPage';
