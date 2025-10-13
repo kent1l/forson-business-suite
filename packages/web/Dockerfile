@@ -5,10 +5,10 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Copy package files for better cache utilization
-COPY package*.json ./
+COPY package*.json package-lock.json ./
 
 # Install dependencies with exact versions
-RUN npm ci
+RUN npm install
 
 # Copy source code
 COPY . .
