@@ -1,69 +1,29 @@
 # Build stage
 FROM node:20-alpine AS builder
 
-# Set working directory
-WORKDIR /workspace
+WORKDIR /app
 
-# Install build dependencies needed for native modules
-RUN apk add --no-cache python3 make g++
-
-# Copy workspace root package files first (critical for workspace setup)
-# Copy root package files and lockfile for deterministic installs
+# Install dependencies
 COPY package*.json ./
-COPY package-lock.json ./
+RUN npm install
 
-# Copy web package files
-COPY packages/web/package*.json ./packages/web/
-
-# Install workspace dependencies deterministically when lockfile exists
-# Use npm ci to ensure single versions are installed and hoisted correctly
-RUN if [ -f package-lock.json ]; then \
-        npm ci --include=optional; \
-    else \
-        npm install --include=optional; \
-    fi
-
-# Copy web source code
-COPY packages/web ./packages/web/
-
-# Build the web application with workspace context
-# The Alpine binaries are now in optionalDependencies and installed by npm ci
-RUN npm run build --workspace packages/web
+# Copy source code and build
+COPY . .
+RUN npm run build
 
 # Production stage
 FROM nginx:stable-alpine
 
-# Install security updates (best effort to avoid build failures on mirror hiccups)
-RUN apk update --no-cache || true && \
-    apk upgrade --no-cache || true
-
-# Create non-root user
-RUN addgroup -S appgroup && \
-    adduser -S appuser -G appgroup
-
-# Copy built files from builder
-COPY --from=builder /workspace/packages/web/dist /usr/share/nginx/html
+# Copy built files
+COPY --from=builder /app/dist /usr/share/nginx/html
 
 # Copy nginx configuration
-COPY packages/web/nginx.conf /etc/nginx/conf.d/default.conf
-
-# Set correct permissions
-RUN chown -R appuser:appgroup /usr/share/nginx/html && \
-    chown -R appuser:appgroup /var/cache/nginx && \
-    chown -R appuser:appgroup /var/log/nginx && \
-    chown -R appuser:appgroup /etc/nginx/conf.d && \
-    touch /var/run/nginx.pid && \
-    chown -R appuser:appgroup /var/run/nginx.pid
-
-# Run as root so Nginx can bind to port 80 inside the container
-USER root
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:80/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost/health || exit 1
 
-# Expose port 80
 EXPOSE 80
 
-# Start Nginx
 CMD ["nginx", "-g", "daemon off;"]
