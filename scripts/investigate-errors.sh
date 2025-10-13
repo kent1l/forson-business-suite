@@ -188,12 +188,22 @@ if [ "$CHECK_DOCKER" = true ]; then
     
     # Check if containers are running
     echo -e "  ${NC}Checking running containers...${NC}"
-    CONTAINERS=$(docker ps --filter "name=forson" --format "{{.Names}} - {{.Status}}" 2>/dev/null)
     
-    if [ -z "$CONTAINERS" ]; then
-        print_finding WARNING "No Forson containers are running"
-        echo -e "    ${GRAY}Start containers: docker-compose -f docker-compose.prod.yml up -d${NC}"
+    # Try both docker compose and docker-compose commands
+    if docker compose ps --filter "name=forson" --format "{{.Names}} - {{.Status}}" 2>/dev/null | grep -q .; then
+        DOCKER_CMD="docker compose"
+        CONTAINERS=$(docker compose ps --filter "name=forson" --format "{{.Names}} - {{.Status}}")
+    elif docker-compose ps --filter "name=forson" --format "{{.Names}} - {{.Status}}" 2>/dev/null | grep -q .; then
+        DOCKER_CMD="docker-compose"
+        CONTAINERS=$(docker-compose ps --filter "name=forson" --format "{{.Names}} - {{.Status}}")
     else
+        print_finding WARNING "No Forson containers are running"
+        echo -e "    ${GRAY}Start containers: docker compose -f docker-compose.prod.yml up -d${NC}"
+        echo -e "    ${GRAY}Or: docker-compose -f docker-compose.prod.yml up -d${NC}"
+        CONTAINERS=""
+    fi
+    
+    if [ -n "$CONTAINERS" ]; then
         echo ""
         echo "$CONTAINERS" | while read -r line; do
             echo -e "    ${GREEN}$line${NC}"
@@ -203,13 +213,22 @@ if [ "$CHECK_DOCKER" = true ]; then
         echo ""
         echo -e "  ${NC}Recent web container logs (last 50 lines):${NC}"
         echo ""
-        docker-compose -f docker-compose.prod.yml logs --tail=50 web 2>/dev/null || \
-            echo -e "    ${YELLOW}Could not retrieve logs. Is docker-compose running?${NC}"
+        if [ "$DOCKER_CMD" = "docker compose" ]; then
+            $DOCKER_CMD -f docker-compose.prod.yml logs --tail=50 web 2>/dev/null || \
+                echo -e "    ${YELLOW}Could not retrieve logs. Is docker compose running?${NC}"
+        else
+            $DOCKER_CMD -f docker-compose.prod.yml logs --tail=50 web 2>/dev/null || \
+                echo -e "    ${YELLOW}Could not retrieve logs. Is docker-compose running?${NC}"
+        fi
         
         # Check for common error patterns
         echo ""
         echo -e "  ${NC}Checking for common errors...${NC}"
-        LOGS=$(docker-compose -f docker-compose.prod.yml logs web 2>&1 || echo "")
+        if [ "$DOCKER_CMD" = "docker compose" ]; then
+            LOGS=$($DOCKER_CMD -f docker-compose.prod.yml logs web 2>&1 || echo "")
+        else
+            LOGS=$($DOCKER_CMD -f docker-compose.prod.yml logs web 2>&1 || echo "")
+        fi
         
         if echo "$LOGS" | grep -qi "error"; then
             print_finding ERROR "Found error messages in logs"

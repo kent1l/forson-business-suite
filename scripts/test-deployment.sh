@@ -446,16 +446,28 @@ if [ "$BUILD_ONLY" = false ]; then
     
     cd "$PROJECT_ROOT"
     
+    # Determine which docker command to use
+    if docker compose version &> /dev/null; then
+        DOCKER_CMD="docker compose"
+        print_info "Using: docker compose"
+    elif docker-compose --version &> /dev/null; then
+        DOCKER_CMD="docker-compose"
+        print_info "Using: docker-compose"
+    else
+        print_fail "Neither docker compose nor docker-compose found"
+        exit 1
+    fi
+    
     print_info "Building Docker image (this may take a few minutes)..."
     echo ""
     
     START_TIME=$(date +%s)
     
     if [ "$VERBOSE" = true ]; then
-        docker-compose -f docker-compose.prod.yml build web
+        $DOCKER_CMD -f docker-compose.prod.yml build web
         DOCKER_EXIT=$?
     else
-        docker-compose -f docker-compose.prod.yml build web > /tmp/docker-build.log 2>&1
+        $DOCKER_CMD -f docker-compose.prod.yml build web > /tmp/docker-build.log 2>&1
         DOCKER_EXIT=$?
         if [ $DOCKER_EXIT -ne 0 ]; then
             cat /tmp/docker-build.log
