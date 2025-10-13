@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, lazy } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
@@ -8,14 +8,10 @@ import FilterBar from '../components/ui/FilterBar';
 import { downloadFile } from '../utils/downloadFile';
 import { format, parseISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
+import PurchaseOrderEditorPage from './PurchaseOrderEditorPage';
 
-const PurchaseOrderEditorPage = lazy(() => import('./PurchaseOrderEditorPage'));
-
-const EditorFallback = () => (
-    <div className="flex h-[60vh] items-center justify-center rounded-3xl border border-dashed border-blue-200 bg-white/70 p-12 text-sm font-medium text-blue-600 shadow-inner shadow-blue-500/10">
-        Loading editor…
-    </div>
-);
+// Avoid linter warnings for React import (needed for JSX transformation)
+void React;
 
 const PurchaseOrderLines = ({ poId }) => {
     const [lines, setLines] = useState([]);
@@ -210,13 +206,11 @@ const PurchaseOrderPage = () => {
 
     if (isEditing) {
         return (
-            <React.Suspense fallback={<EditorFallback />}>
-                <PurchaseOrderEditorPage
-                    user={user}
-                    existingPO={editingPO}
-                    onDone={exitEditor}
-                />
-            </React.Suspense>
+            <PurchaseOrderEditorPage
+                user={user}
+                existingPO={editingPO}
+                onDone={exitEditor}
+            />
         );
     }
 
