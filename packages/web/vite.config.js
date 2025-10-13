@@ -3,11 +3,20 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     tailwindcss(),
   ],
+  // Enable detailed error messages in production for debugging
+  define: {
+    'process.env.NODE_ENV': JSON.stringify(mode),
+  },
+  // Preserve error details in production builds
+  esbuild: {
+    keepNames: true,
+    sourcemap: true,
+  },
   server: {
     host: '0.0.0.0',
     port: 5173,
@@ -24,6 +33,10 @@ export default defineConfig({
     },
   },
   build: {
+    // Generate sourcemaps for debugging production issues
+    sourcemap: true,
+    // Use esbuild minify (faster and keeps names with keepNames option)
+    minify: 'esbuild',
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -58,4 +71,4 @@ export default defineConfig({
   resolve: {
     dedupe: ['react', 'react-dom']
   }
-})
+}))
