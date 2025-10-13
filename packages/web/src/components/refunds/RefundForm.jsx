@@ -1,8 +1,11 @@
-import { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
+
+// Avoid linter warnings for React import (needed for JSX transformation)
+void React;
 
 const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
     const { user } = useAuth();
@@ -19,10 +22,11 @@ const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
             setLoadingMethods(true);
             try {
                 const response = await api.get('/payment-methods/enabled');
-                setPaymentMethods(response.data);
+                setPaymentMethods(response.data || []);
             } catch (error) {
                 console.error('Failed to fetch payment methods:', error);
                 toast.error('Failed to load payment methods');
+                setPaymentMethods([]);
             } finally {
                 setLoadingMethods(false);
             }

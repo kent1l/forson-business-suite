@@ -1,9 +1,12 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import { useSettings } from '../../contexts/SettingsContext';
 import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
+
+// Avoid linter warnings for React import (needed for JSX transformation)
+void React;
 
 const SplitPaymentModal = ({ 
     isOpen, 
@@ -55,7 +58,8 @@ const SplitPaymentModal = ({
         try {
             const response = await api.get('/payment-methods/enabled');
             // Ensure method.config is an object (API may return it as JSON string in some cases)
-            const normalized = response.data.map(m => ({
+            const dataArray = Array.isArray(response.data) ? response.data : [];
+            const normalized = dataArray.map(m => ({
                 ...m,
                 config: typeof m.config === 'string' ? JSON.parse(m.config) : (m.config || {})
             }));
