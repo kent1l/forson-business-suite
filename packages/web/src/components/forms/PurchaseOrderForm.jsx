@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import api from '../../api'; // <-- CORRECTED PATH
+import api from '../../api';
 import toast from 'react-hot-toast';
 import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
@@ -246,7 +246,6 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
     return (
         <>
         <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Draft saved indicator */}
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/70 p-3 text-xs font-medium text-slate-600">
                 <div className="inline-flex items-center gap-2 text-slate-500">
                     <Icon path={ICONS.history} className="h-4 w-4 text-blue-500" />
@@ -280,7 +279,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                 </div>
             </div>
 
-            <section className="rounded-3xl border border-slate-100 bg-white/90 shadow-sm shadow-slate-900/5 backdrop-blur-sm">
+            <section className="relative rounded-3xl border border-slate-200 bg-white shadow-sm shadow-slate-900/5">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-4">
                     <div>
                         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Supplier & scheduling</h2>
@@ -314,7 +313,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                 </div>
             </section>
 
-            <section className="rounded-3xl border border-slate-100 bg-white/90 shadow-sm shadow-slate-900/5 backdrop-blur-sm">
+            <section className="relative z-30 rounded-3xl border border-slate-200 bg-white shadow-sm shadow-slate-900/5">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-4">
                     <div>
                         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Parts catalog</h2>
@@ -347,7 +346,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
 
                     {searchResults.length > 0 && (
                         <ul
-                            className="search-results absolute left-0 right-0 top-full z-20 mt-2 max-h-72 overflow-y-auto rounded-2xl border border-slate-100 bg-white shadow-2xl shadow-slate-900/10"
+                            className="search-results absolute left-0 right-0 top-full z-40 mt-2 max-h-72 overflow-y-auto rounded-2xl border border-slate-100 bg-white shadow-2xl shadow-slate-900/10"
                             onTouchStart={(e) => {
                                 isScrollingRef.current = true;
                                 e.stopPropagation();
@@ -370,7 +369,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                                 >
                                     <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
                                         <div className="flex flex-1 items-baseline gap-2 truncate">
-                                            <span className="text-sm font-semibold text-slate-700 truncate">{part.display_name}</span>
+                                            <span className="truncate text-sm font-semibold text-slate-700">{part.display_name}</span>
                                             {part.applications && (
                                                 <span className="hidden text-xs text-slate-400 sm:block">
                                                     {formatApplicationText(part.applications, { style: 'searchSuggestion' })}
@@ -386,7 +385,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                 </div>
             </section>
 
-            <section className="rounded-3xl border border-slate-100 bg-white/90 shadow-sm shadow-slate-900/5 backdrop-blur-sm">
+            <section className="relative z-20 rounded-3xl border border-slate-200 bg-white shadow-sm shadow-slate-900/5">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-4">
                     <div>
                         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Line items</h2>
@@ -451,7 +450,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                 </div>
             </section>
 
-            <section className="rounded-3xl border border-slate-100 bg-white/90 shadow-sm shadow-slate-900/5 backdrop-blur-sm">
+            <section className="relative z-10 rounded-3xl border border-slate-200 bg-white shadow-sm shadow-slate-900/5">
                 <div className="grid gap-5 px-5 py-5 lg:grid-cols-3">
                     <div className="lg:col-span-2">
                         <label className="flex flex-col gap-2">
@@ -498,20 +497,17 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
             </div>
         </form>
 
-        {/* New Part modal (outside outer form) */}
         <Modal isOpen={isNewPartOpen} onClose={() => setIsNewPartOpen(false)} title="Add New Part">
             <PartForm
                 part={null}
                 brands={brands}
                 groups={groups}
                 onSave={(payload) => {
-                    // create the part and add to lines on success
                     const promise = api.post('/parts', payload);
                     toast.promise(promise, {
                         loading: 'Creating part...',
                         success: (res) => {
                             const newPart = res.data;
-                            // ensure minimal fields and add to lines
                             addPartToLines({
                                 part_id: newPart.part_id,
                                 display_name: newPart.display_name || newPart.detail || (newPart.brand_name ? `${newPart.brand_name} ${newPart.detail}` : ''),
@@ -527,7 +523,6 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                 }}
                 onCancel={() => setIsNewPartOpen(false)}
                 onBrandGroupAdded={async () => {
-                    // refresh brands/groups if a new one was created inside the PartForm
                     try {
                         const [b, g] = await Promise.all([api.get('/brands'), api.get('/groups')]);
                         setBrands(Array.isArray(b.data) ? b.data : []);

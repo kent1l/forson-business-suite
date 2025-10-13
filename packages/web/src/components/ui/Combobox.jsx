@@ -146,7 +146,7 @@ const Combobox = ({ options, value, onChange, placeholder, allowCreate = false, 
             {isOpen && (
                 <ul 
                     ref={listRef}
-                    className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto"
+                    className="absolute z-50 w-full bg-white border rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto"
                     role="listbox"
                 >
                     {filteredOptions.map((option, index) => (
