@@ -1,11 +1,22 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../api';
-import { RefreshCw, Activity } from 'lucide-react';
+import { RefreshCw, Clock } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import EnhancedKPICard from '../components/dashboard/EnhancedKPICard';
 import { SalesTrendChart, TopProductsChart } from '../components/dashboard/AnalyticsCharts';
 import { QuickActionsPanel } from '../components/dashboard/QuickActionsPanel';
 import { RecentActivityFeed } from '../components/dashboard/RecentActivityFeed';
+
+const defaultStats = {
+    kpis: {
+        todayRevenue: { value: 0, change: null, trend: null },
+        outstandingAR: { value: 0, change: null, trend: null },
+        inventoryValue: { value: 0, change: null, trend: null },
+        lowStockCount: { value: 0, urgent: false }
+    },
+    recentSales: [],
+    topProducts: []
+};
 
 const Dashboard = ({ onNavigate }) => {
     const { hasPermission } = useAuth();
@@ -16,16 +27,7 @@ const Dashboard = ({ onNavigate }) => {
     const [timeRange, setTimeRange] = useState('30');
     
     // Dashboard data states
-    const [enhancedStats, setEnhancedStats] = useState({
-        kpis: {
-            todayRevenue: { value: 0, change: null, trend: null },
-            outstandingAR: { value: 0, change: null, trend: null },
-            inventoryValue: { value: 0, change: null, trend: null },
-            lowStockCount: { value: 0, urgent: false }
-        },
-        recentSales: [],
-        topProducts: []
-    });
+    const [enhancedStats, setEnhancedStats] = useState(defaultStats);
     const [chartData, setChartData] = useState([]);
     const [lowStockItems, setLowStockItems] = useState([]);
 
@@ -40,7 +42,7 @@ const Dashboard = ({ onNavigate }) => {
                 api.get('/dashboard/low-stock-items')
             ]);
             
-            setEnhancedStats(enhancedRes.data);
+            setEnhancedStats(enhancedRes.data || defaultStats);
             setChartData(chartRes.data);
             setLowStockItems(lowStockRes.data);
             setLastUpdated(new Date());
@@ -111,7 +113,7 @@ const Dashboard = ({ onNavigate }) => {
                         <h1 className="text-3xl font-bold text-gray-900 mb-2">Dashboard</h1>
                         <div className="flex items-center space-x-4 text-sm text-gray-600">
                             <div className="flex items-center space-x-1">
-                                <Activity className="h-4 w-4" />
+                                <Clock className="h-4 w-4" />
                                 <span>Last updated: {formatLastUpdated()}</span>
                             </div>
                         </div>
@@ -213,8 +215,8 @@ const Dashboard = ({ onNavigate }) => {
 
                 {/* Recent Activity */}
                 <RecentActivityFeed
-                    recentSales={enhancedStats.recentSales}
-                    lowStockItems={lowStockItems}
+                    recentSales={enhancedStats.recentSales || []}
+                    lowStockItems={lowStockItems || []}
                     loading={loading}
                     onViewAllSales={() => handleNavigation('sales_history')}
                     onManageStock={() => handleNavigation('inventory')}

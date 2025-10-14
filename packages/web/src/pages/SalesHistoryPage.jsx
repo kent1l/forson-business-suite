@@ -102,7 +102,7 @@ const SalesHistoryPage = () => {
         };
 
         // Exclude Cancelled invoices from revenue metrics if such status exists
-        const active = invoices.filter(inv => inv.status !== 'Cancelled');
+        const active = invoices.filter(inv => inv && inv.status !== 'Cancelled');
 
         let grossSales = 0;
         let refunds = 0;
@@ -153,7 +153,8 @@ const SalesHistoryPage = () => {
         const getCashMethodNames = () => {
             if (settings?.ENABLE_SPLIT_PAYMENTS === 'true' && paymentMethods.length > 0) {
                 // Use payment method configurations to determine cash methods
-                return paymentMethods
+                const validMethods = paymentMethods.filter(pm => pm);
+                return validMethods
                     .filter(pm => pm.enabled && pm.type === 'cash')
                     .map(pm => pm.name.toLowerCase());
             } else {
@@ -172,7 +173,8 @@ const SalesHistoryPage = () => {
         const currentInvoiceNumbers = new Set(active.map(inv => inv.invoice_number));
 
         let cashCollected = 0; let nonCashCollected = 0; let changeReturned = 0;
-        for (const p of payments) {
+        const validPayments = payments.filter(p => p);
+        for (const p of validPayments) {
             const ref = (p.reference || '').toString().trim();
             const looksLikeInvoiceNo = /^INV/i.test(ref);
             if (looksLikeInvoiceNo && !currentInvoiceNumbers.has(ref)) {
@@ -202,7 +204,7 @@ const SalesHistoryPage = () => {
 
         // Enhanced payment method breakdown for detailed analysis
         const paymentMethodBreakdown = {};
-        for (const p of payments) {
+        for (const p of validPayments) {
             const ref = (p.reference || '').toString().trim();
             const looksLikeInvoiceNo = /^INV/i.test(ref);
             if (looksLikeInvoiceNo && !currentInvoiceNumbers.has(ref)) {
@@ -423,7 +425,7 @@ const SalesHistoryPage = () => {
 
     const sortedInvoices = useMemo(() => {
         const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
-        const data = [...invoices];
+        const data = [...invoices].filter(inv => inv);
         const { key, direction } = sortConfig;
         const factor = direction === 'ASC' ? 1 : -1;
 
