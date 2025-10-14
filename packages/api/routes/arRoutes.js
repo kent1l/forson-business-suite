@@ -27,7 +27,7 @@ router.get('/ar/dashboard-stats', protect, hasPermission('ar:view'), async (req,
                     FROM credit_note cn
                     WHERE cn.invoice_id = i.invoice_id
                 ) r ON TRUE
-                WHERE i.status IN ('Unpaid', 'Partially Paid')
+                WHERE i.status IN ('Unpaid', 'Partially Paid', 'Partially Refunded')
             `),
             
             // Invoices sent in date range
@@ -41,7 +41,7 @@ router.get('/ar/dashboard-stats', protect, hasPermission('ar:view'), async (req,
             db.query(`
                 SELECT COUNT(*) as overdue_count
                 FROM invoice i
-                WHERE i.status IN ('Unpaid', 'Partially Paid') 
+                WHERE i.status IN ('Unpaid', 'Partially Paid', 'Partially Refunded') 
                 AND i.due_date < CURRENT_DATE
             `),
             
@@ -102,7 +102,7 @@ router.get('/ar/aging-summary', protect, hasPermission('ar:view'), async (req, r
                     FROM credit_note cn
                     WHERE cn.invoice_id = i.invoice_id
                 ) r ON TRUE
-                WHERE i.status IN ('Unpaid', 'Partially Paid')
+                WHERE i.status IN ('Unpaid', 'Partially Paid', 'Partially Refunded')
                 AND GREATEST((i.total_amount - COALESCE(r.refunded_amount, 0)) - i.amount_paid, 0) > 0
             )
             SELECT bucket_name as name, COALESCE(SUM(bucket_value), 0) as value
@@ -171,7 +171,7 @@ router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req
                 FROM credit_note cn
                 WHERE cn.invoice_id = i.invoice_id
             ) r ON TRUE
-            WHERE i.status IN ('Unpaid', 'Partially Paid')
+            WHERE i.status IN ('Unpaid', 'Partially Paid', 'Partially Refunded')
             AND GREATEST((i.total_amount - COALESCE(r.refunded_amount, 0)) - i.amount_paid, 0) > 0
             GROUP BY c.customer_id, c.company_name, c.first_name, c.last_name
             HAVING COALESCE(SUM(
@@ -229,7 +229,7 @@ router.get('/ar/customer-invoices/:customerId', protect, hasPermission('ar:view'
                 WHERE cn.invoice_id = i.invoice_id
             ) r ON TRUE
             WHERE i.customer_id = $1
-            AND i.status IN ('Unpaid', 'Partially Paid')
+            AND i.status IN ('Unpaid', 'Partially Paid', 'Partially Refunded')
             AND GREATEST((i.total_amount - COALESCE(r.refunded_amount, 0)) - i.amount_paid, 0) > 0
             ORDER BY i.due_date ASC, GREATEST((i.total_amount - COALESCE(r.refunded_amount, 0)) - i.amount_paid, 0) DESC
             LIMIT $2 OFFSET $3;
@@ -261,7 +261,7 @@ router.get('/ar/trends', protect, hasPermission('ar:view'), async (req, res) => 
                     FROM credit_note cn
                     WHERE cn.invoice_id = i.invoice_id
                 ) r ON TRUE
-                WHERE i.status IN ('Unpaid', 'Partially Paid')
+                WHERE i.status IN ('Unpaid', 'Partially Paid', 'Partially Refunded')
                 AND GREATEST((i.total_amount - COALESCE(r.refunded_amount, 0)) - i.amount_paid, 0) > 0
             ),
             previous_period AS (
@@ -280,7 +280,7 @@ router.get('/ar/trends', protect, hasPermission('ar:view'), async (req, res) => 
                     FROM credit_note cn
                     WHERE cn.invoice_id = i.invoice_id
                 ) r ON TRUE
-                WHERE i.status IN ('Unpaid', 'Partially Paid')
+                WHERE i.status IN ('Unpaid', 'Partially Paid', 'Partially Refunded')
                 AND i.invoice_date <= CURRENT_DATE - INTERVAL '30 days'
                 AND GREATEST((i.total_amount - COALESCE(r.refunded_amount, 0)) - i.amount_paid, 0) > 0
             )
@@ -366,7 +366,7 @@ router.get('/ar/drill-down-invoices', protect, hasPermission('ar:view'), async (
                 FROM credit_note cn
                 WHERE cn.invoice_id = i.invoice_id
             ) r ON TRUE
-            WHERE i.status IN ('Unpaid', 'Partially Paid')
+            WHERE i.status IN ('Unpaid', 'Partially Paid', 'Partially Refunded')
             AND GREATEST((i.total_amount - COALESCE(r.refunded_amount, 0)) - i.amount_paid, 0) > 0
             AND ${dateCondition}
             ${dateRangeCondition}
