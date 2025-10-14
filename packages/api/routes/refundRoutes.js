@@ -122,3 +122,32 @@ router.post('/refunds', protect, hasPermission('invoicing:create'), async (req, 
 });
 
 module.exports = router;
+
+// GET /api/refunds/cash-by-method - Get cash refunds grouped by payment method
+router.get('/refunds/cash-by-method', protect, hasPermission('reports:view'), async (req, res) => {
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+        return res.status(400).json({ message: 'Start date and end date are required.' });
+    }
+    try {
+        const query = `
+            SELECT 
+                pm.method_id,
+                pm.name as method_name,
+                pm.type as method_type,
+                COALESCE(SUM(cn.total_amount), 0) as total_cash_refunds
+            FROM payment_methods pm
+            LEFT JOIN credit_note cn ON pm.method_id = cn.method_id
+                AND cn.refund_date IS NOT NULL
+                AND (cn.refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
+            WHERE pm.type = 'cash' AND pm.enabled = true
+            GROUP BY pm.method_id, pm.name, pm.type
+            ORDER BY total_cash_refunds DESC;
+        `;
+        const { rows } = await db.query(query, [startDate, endDate]);
+        res.json(rows);
+    } catch (err) {
+        console.error('Error fetching cash refunds by method:', err.message);
+        res.status(500).json({ message: 'Server error fetching cash refunds by method.' });
+    }
+});
