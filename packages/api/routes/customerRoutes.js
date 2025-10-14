@@ -69,11 +69,24 @@ router.get('/customers/with-balances', protect, hasPermission('ar:view'), async 
                 c.last_name,
                 c.company_name,
                 (SELECT COALESCE(SUM(i.total_amount),0) FROM invoice i WHERE i.customer_id = c.customer_id) AS total_invoiced,
-                COALESCE(SUM(CASE WHEN i.status IN ('Unpaid', 'Partially Paid') THEN i.total_amount - i.amount_paid ELSE 0 END), 0) AS balance_due
+                COALESCE(SUM(
+                    CASE WHEN i.status IN ('Unpaid', 'Partially Paid', 'Partially Refunded') THEN 
+                        GREATEST((i.total_amount - COALESCE(r.refunded_amount, 0)) - i.amount_paid, 0)
+                    ELSE 0 END
+                ), 0) AS balance_due
             FROM customer c
             LEFT JOIN invoice i ON i.customer_id = c.customer_id
+            LEFT JOIN LATERAL (
+                SELECT COALESCE(SUM(cn.total_amount), 0) AS refunded_amount
+                FROM credit_note cn
+                WHERE cn.invoice_id = i.invoice_id
+            ) r ON TRUE
             GROUP BY c.customer_id, c.first_name, c.last_name, c.company_name
-            HAVING COALESCE(SUM(CASE WHEN i.status IN ('Unpaid', 'Partially Paid') THEN i.total_amount - i.amount_paid ELSE 0 END), 0) > 0
+            HAVING COALESCE(SUM(
+                CASE WHEN i.status IN ('Unpaid', 'Partially Paid', 'Partially Refunded') THEN 
+                    GREATEST((i.total_amount - COALESCE(r.refunded_amount, 0)) - i.amount_paid, 0)
+                ELSE 0 END
+            ), 0) > 0
             ORDER BY c.first_name, c.last_name;
         `;
         const { rows } = await db.query(query);
@@ -95,12 +108,20 @@ router.get('/customers/:id/unpaid-invoices', protect, hasPermission('ar:view'), 
                 i.invoice_date,
                 i.total_amount,
                 COALESCE(SUM(ipa.amount_allocated), 0) as amount_paid,
-                (i.total_amount - COALESCE(SUM(ipa.amount_allocated), 0)) as balance_due
+                GREATEST(
+                    (i.total_amount - COALESCE(r.refunded_amount, 0)) - COALESCE(SUM(ipa.amount_allocated), 0), 
+                    0
+                ) as balance_due
             FROM invoice i
             LEFT JOIN invoice_payment_allocation ipa ON i.invoice_id = ipa.invoice_id
-            WHERE i.customer_id = $1 AND i.status IN ('Unpaid', 'Partially Paid')
-            GROUP BY i.invoice_id
-            HAVING (i.total_amount - COALESCE(SUM(ipa.amount_allocated), 0)) > 0
+            LEFT JOIN LATERAL (
+                SELECT COALESCE(SUM(cn.total_amount), 0) AS refunded_amount
+                FROM credit_note cn
+                WHERE cn.invoice_id = i.invoice_id
+            ) r ON TRUE
+            WHERE i.customer_id = $1 AND i.status IN ('Unpaid', 'Partially Paid', 'Partially Refunded')
+            GROUP BY i.invoice_id, i.invoice_number, i.invoice_date, i.total_amount, r.refunded_amount
+            HAVING GREATEST((i.total_amount - COALESCE(r.refunded_amount, 0)) - COALESCE(SUM(ipa.amount_allocated), 0), 0) > 0
             ORDER BY i.invoice_date ASC;
         `;
         const { rows } = await db.query(query, [id]);
