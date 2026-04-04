@@ -79,12 +79,12 @@ router.get('/goods-receipts/:id/lines', protect, async (req, res) => {
         grl.part_id AS part_id,
         p.internal_sku,
         CASE
-          WHEN string_agg(pn.part_number, '; ' ORDER BY pn.display_order) IS NOT NULL THEN
+          WHEN pn.part_number IS NOT NULL THEN
             CASE
-              WHEN g.group_name IS NOT NULL AND b.brand_name IS NOT NULL THEN CONCAT(g.group_name, ' (', b.brand_name, ') | ', string_agg(pn.part_number, '; ' ORDER BY pn.display_order))
-              WHEN g.group_name IS NOT NULL THEN CONCAT(g.group_name, ' | ', string_agg(pn.part_number, '; ' ORDER BY pn.display_order))
-              WHEN b.brand_name IS NOT NULL THEN CONCAT(b.brand_name, ' | ', string_agg(pn.part_number, '; ' ORDER BY pn.display_order))
-              ELSE string_agg(pn.part_number, '; ' ORDER BY pn.display_order)
+              WHEN g.group_name IS NOT NULL AND b.brand_name IS NOT NULL THEN CONCAT(g.group_name, ' (', b.brand_name, ') | ', pn.part_number)
+              WHEN g.group_name IS NOT NULL THEN CONCAT(g.group_name, ' | ', pn.part_number)
+              WHEN b.brand_name IS NOT NULL THEN CONCAT(b.brand_name, ' | ', pn.part_number)
+              ELSE pn.part_number
             END
           ELSE
             CASE
@@ -100,9 +100,10 @@ router.get('/goods-receipts/:id/lines', protect, async (req, res) => {
       JOIN part p ON grl.part_id = p.part_id
       LEFT JOIN brand b ON p.brand_id = b.brand_id
       LEFT JOIN "group" g ON p.group_id = g.group_id
-      LEFT JOIN part_number pn ON pn.part_id = p.part_id
+      LEFT JOIN part_number pn ON pn.part_id = p.part_id AND pn.display_order = (
+        SELECT MIN(pn2.display_order) FROM part_number pn2 WHERE pn2.part_id = p.part_id
+      )
       WHERE grl.grn_id = $1
-      GROUP BY grl.grn_line_id, grl.quantity, grl.cost_price, grl.sale_price, grl.part_id, p.internal_sku, p.detail, b.brand_name, g.group_name
       ORDER BY grl.grn_line_id
     `;
 

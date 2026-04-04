@@ -129,7 +129,8 @@ const setupMeiliSearch = async () => {
       rankingRules: config.rankingRules.length
     });
     
-  const partsIndex = meiliClient.index('parts');
+    const partsIndex = meiliClient.index('parts');
+    const applicationsIndex = meiliClient.index('applications');
     
     // Load and validate synonyms from a JSON file (groups of equivalent terms).
     const synonymsPath = path.join(__dirname, 'config', 'meili-synonyms.json');
@@ -182,7 +183,7 @@ const setupMeiliSearch = async () => {
           'a', 'an', 'and', 'the'
         ],
         synonyms: symmetricSynonyms,
-  filterableAttributes: ['is_active', 'tags'],
+        filterableAttributes: ['is_active', 'tags', 'applications'],
         sortableAttributes: ['display_name', 'internal_sku', 'brand_name', 'group_name']
       };
 
@@ -193,6 +194,50 @@ const setupMeiliSearch = async () => {
       console.log('Parts index configured successfully');
     } catch (error) {
       const errorMsg = `Failed to configure parts index: ${error.message}`;
+      console.error(errorMsg);
+      setupErrors.push(errorMsg);
+    }
+
+    // Configure Applications Index
+    try {
+      const applicationsSettings = {
+        rankingRules: config.rankingRules,
+        searchableAttributes: [
+          'label',      // Primary search field (combined make+model+engine)
+          'make',       // Individual fields for more granular matching
+          'model',
+          'engine'
+        ],
+        filterableAttributes: ['make_id', 'model_id', 'engine_id'],
+        sortableAttributes: ['make', 'model', 'engine'],
+        // Configure typo tolerance based on environment
+        typoTolerance: {
+          enabled: config.typoEnabled,
+          minWordSizeForTypos: {
+            oneTypo: config.typoMinWordSize,
+            twoTypos: config.typoMinWordSizeTwo
+          },
+          disableOnWords: [],
+          disableOnAttributes: []
+        },
+        // Add common car-related synonyms
+        synonyms: {
+          'toyota': ['toyata', 'toyotta', 'toyta'],
+          'diesel': ['deisel', 'desel'],
+          'manual': ['manuel', 'man'],
+          'automatic': ['auto', 'at'],
+          'transmission': ['trans', 'tranny'],
+          'engine': ['eng', 'motor']
+        }
+      };
+
+      await retryAsync(
+        () => applicationsIndex.updateSettings(applicationsSettings),
+        { attempts: config.maxRetries, baseDelay: config.retryDelay }
+      );
+      console.log('Applications index configured successfully');
+    } catch (error) {
+      const errorMsg = `Failed to configure applications index: ${error.message}`;
       console.error(errorMsg);
       setupErrors.push(errorMsg);
     }

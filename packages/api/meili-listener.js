@@ -45,36 +45,10 @@ const startMeiliListener = async () => {
                     p.is_active,
                     (SELECT COALESCE(json_agg(pn.part_number), '[]'::json) FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('./helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers,
                     (SELECT COALESCE(json_agg(t.tag_name), '[]'::json) FROM part_tag pt JOIN tag t ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags,
-                    (SELECT COALESCE(json_agg(
-                        json_build_object(
-                            'make', paf.make_name,
-                            'model', paf.model_name,
-                            'engine', paf.engine_name,
-                            'year_start', paf.year_start,
-                            'year_end', paf.year_end,
-                            'notes', paf.notes
-                        )
-                    ), '[]'::json)
-                     FROM part_application_flexible paf
-                     WHERE paf.part_id = p.part_id) AS applications,
-                    (SELECT COALESCE(json_agg(
-                        TRIM(
-                            CONCAT(
-                                COALESCE(paf.make_name, ''),
-                                CASE WHEN paf.model_name IS NOT NULL AND paf.model_name <> '' THEN CONCAT(' ', paf.model_name) ELSE '' END,
-                                CASE WHEN paf.engine_name IS NOT NULL AND paf.engine_name <> '' THEN CONCAT(' ', paf.engine_name) ELSE '' END,
-                                CASE
-                                    WHEN paf.year_start IS NOT NULL AND paf.year_end IS NOT NULL AND paf.year_start = paf.year_end THEN CONCAT(' [', paf.year_start, ']')
-                                    WHEN paf.year_start IS NOT NULL AND paf.year_end IS NOT NULL THEN CONCAT(' [', paf.year_start, '-', paf.year_end, ']')
-                                    WHEN paf.year_start IS NOT NULL THEN CONCAT(' [', paf.year_start, '-]')
-                                    WHEN paf.year_end IS NOT NULL THEN CONCAT(' [-', paf.year_end, ']')
-                                    ELSE ''
-                                END
-                            )
-                        )
-                    ), '[]'::json)
-                     FROM part_application_flexible paf
-                     WHERE paf.part_id = p.part_id) AS searchable_applications
+                    (SELECT COALESCE(json_agg(pa.application_id), '[]'::json) FROM part_application pa WHERE pa.part_id = p.part_id) AS applications,
+                    (SELECT COALESCE(json_agg(concat_ws(' ', COALESCE(av.make,''), COALESCE(av.model,''), COALESCE(av.engine,''))), '[]'::json)
+                       FROM part_application pa JOIN application_view av ON av.application_id = pa.application_id
+                       WHERE pa.part_id = p.part_id) AS searchable_applications
              FROM part p
              LEFT JOIN brand b ON b.brand_id = p.brand_id
              LEFT JOIN "group" g ON g.group_id = p.group_id

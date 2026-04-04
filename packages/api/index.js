@@ -4,6 +4,7 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 const { setupMeiliSearch } = require('./meilisearch-setup');
 const { startMeiliListener } = require('./meili-listener');
+const { startMeiliApplicationsListener } = require('./meili-app-listener');
 
 // Set default timezone to Philippine Time
 process.env.TZ = 'Asia/Manila';
@@ -56,6 +57,7 @@ registerRoute('/api', './routes/documentsRoutes');
 
 // Entity & Data Management Modules
 registerRoute('/api', './routes/supplierRoutes');
+registerRoute('/api', './routes/applicationRoutes');
 registerRoute('/api', './routes/partNumberRoutes');
 registerRoute('/api', './routes/partApplicationRoutes');
 registerRoute('/api', './routes/brandRoutes');
@@ -69,11 +71,11 @@ registerRoute('/api', './routes/employeeRoutes');
 registerRoute('/api', './routes/permissionRoutes');
 registerRoute('/api', './routes/dashboardRoutes');
 registerRoute('/api', './routes/powerSearchRoutes');
+registerRoute('/api', './routes/applicationSearchRoutes');
 registerRoute('/api', './routes/reportingRoutes');
 registerRoute('/api', './routes/settingsRoutes');
 registerRoute('/api/data', './routes/dataUtilsRoutes');
 registerRoute('/api/backups', './routes/backupRoutes');
-registerRoute('/api', './routes/chequeRoutes');
 
 // Health Check Routes
 registerRoute('/api', './routes/healthRoutes');
@@ -134,7 +136,8 @@ app.listen(PORT, async () => {
   // Allow disabling listeners with DISABLE_MEILI_LISTENERS env var for local debugging
   console.log('DISABLE_MEILI_LISTENERS:', process.env.DISABLE_MEILI_LISTENERS);
   if (process.env.DISABLE_MEILI_LISTENERS !== 'true') {
-  startMeiliListener();
+    startMeiliListener();
+    startMeiliApplicationsListener();
   } else {
     console.log('Meili listeners disabled by DISABLE_MEILI_LISTENERS=true');
   }

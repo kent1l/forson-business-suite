@@ -370,15 +370,11 @@ router.get('/reports/refunds', protect, hasPermission('reports:view'), async (re
                 cn.cn_number,
                 cn.refund_date,
                 cn.total_amount,
-                cn.reference,
                 i.invoice_number,
-                c.first_name || ' ' || c.last_name as customer_name,
-                pm.name as refund_method,
-                pm.type as refund_method_type
+                c.first_name || ' ' || c.last_name as customer_name
             FROM credit_note cn
             JOIN invoice i ON cn.invoice_id = i.invoice_id
             JOIN customer c ON i.customer_id = c.customer_id
-            LEFT JOIN payment_methods pm ON cn.method_id = pm.method_id
             WHERE (cn.refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
             ORDER BY cn.refund_date DESC;
         `;

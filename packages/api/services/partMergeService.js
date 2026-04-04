@@ -1,8 +1,4 @@
 const DuplicateFinder = require('./duplicateFinder');
-const {
-    fetchPartApplications,
-    formatApplicationDisplay
-} = require('../helpers/applicationHelper');
 
 /**
  * Service for merging parts and managing the merge process
@@ -169,7 +165,7 @@ class PartMergeService {
             SELECT p.*, 
                    b.brand_name, 
                    g.group_name,
-                   -- Provide a display_name for UI (fallback to SKU)
+                   -- Provide a display_name for UI (fallback to SKU since part has no display_name column)
                    p.internal_sku as display_name,
                    COALESCE(
                        json_agg(
@@ -180,11 +176,27 @@ class PartMergeService {
                            )
                        ) FILTER (WHERE pn.part_number_id IS NOT NULL), 
                        '[]'::json
-                   ) as part_numbers
+                   ) as part_numbers,
+                   COALESCE(
+                       json_agg(
+                           DISTINCT jsonb_build_object(
+                               'application_id', pa.application_id,
+                               'make', vm.make_name,
+                               'model', vmo.model_name,
+                               'engine', ve.engine_name
+                           )
+                       ) FILTER (WHERE pa.application_id IS NOT NULL), 
+                       '[]'::json
+                   ) as applications
             FROM part p
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
             LEFT JOIN part_number pn ON p.part_id = pn.part_id
+            LEFT JOIN part_application pa ON p.part_id = pa.part_id
+            LEFT JOIN application a ON pa.application_id = a.application_id
+            LEFT JOIN vehicle_make vm ON a.make_id = vm.make_id
+            LEFT JOIN vehicle_model vmo ON a.model_id = vmo.model_id
+            LEFT JOIN vehicle_engine ve ON a.engine_id = ve.engine_id
             WHERE p.part_id = $1
             GROUP BY p.part_id, b.brand_name, g.group_name
         `, [partId]);
@@ -192,25 +204,8 @@ class PartMergeService {
         if (result.rows.length === 0) {
             throw new Error(`Part ${partId} not found`);
         }
-        const part = result.rows[0];
-        const applicationRows = await fetchPartApplications(db, partId);
-        const applications = applicationRows.map((row) => ({
-            source: 'flex',
-            link_id: row.link_id,
-            part_app_flex_id: row.link_id,
-            make: row.make,
-            model: row.model,
-            engine: row.engine,
-            year_start: row.year_start,
-            year_end: row.year_end,
-            notes: row.notes,
-            display: formatApplicationDisplay(row)
-        }));
-
-        return {
-            ...part,
-            applications
-        };
+        
+        return result.rows[0];
     }
 
     calculateResolvedPart(keepPart, mergeParts, rules) {
@@ -428,38 +423,30 @@ class PartMergeService {
             `, [keepPartId]);
         }
         
-                // Merge part_application_flexible records
-                if (rules.mergeApplications) {
-                        const result = await client.query(`
-                                UPDATE part_application_flexible
-                                SET part_id = $1
-                                WHERE part_id = ANY($2)
-                                    AND NOT EXISTS (
-                                            SELECT 1 FROM part_application_flexible paf2
-                                            WHERE paf2.part_id = $1
-                                                AND COALESCE(paf2.make_name, '') = COALESCE(part_application_flexible.make_name, '')
-                                                AND COALESCE(paf2.model_name, '') = COALESCE(part_application_flexible.model_name, '')
-                                                AND COALESCE(paf2.engine_name, '') = COALESCE(part_application_flexible.engine_name, '')
-                                                AND COALESCE(paf2.year_start, -1) = COALESCE(part_application_flexible.year_start, -1)
-                                                AND COALESCE(paf2.year_end, -1) = COALESCE(part_application_flexible.year_end, -1)
-                                    )
-                                RETURNING part_app_flex_id
-                        `, [keepPartId, mergePartIds]);
-                        counts.part_applications = result.rowCount;
-
-                        await client.query(`
-                                DELETE FROM part_application_flexible paf
-                                USING part_application_flexible paf2
-                                WHERE paf.part_id = $1
-                                    AND paf.part_id = paf2.part_id
-                                    AND COALESCE(paf.make_name, '') = COALESCE(paf2.make_name, '')
-                                    AND COALESCE(paf.model_name, '') = COALESCE(paf2.model_name, '')
-                                    AND COALESCE(paf.engine_name, '') = COALESCE(paf2.engine_name, '')
-                                    AND COALESCE(paf.year_start, -1) = COALESCE(paf2.year_start, -1)
-                                    AND COALESCE(paf.year_end, -1) = COALESCE(paf2.year_end, -1)
-                                    AND paf.part_app_flex_id > paf2.part_app_flex_id
-                        `, [keepPartId]);
-                }
+        // Merge part_application
+        if (rules.mergeApplications) {
+            const result = await client.query(`
+                UPDATE part_application 
+                SET part_id = $1 
+                WHERE part_id = ANY($2)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM part_application pa2 
+                      WHERE pa2.part_id = $1 
+                        AND pa2.application_id = part_application.application_id
+                  )
+                RETURNING part_app_id
+            `, [keepPartId, mergePartIds]);
+            counts.part_applications = result.rowCount;
+            // Remove duplicates after reassignment using unique(part_id, application_id)
+            await client.query(`
+                DELETE FROM part_application pa
+                USING part_application pa2
+                WHERE pa.part_id = $1
+                  AND pa.part_id = pa2.part_id
+                  AND pa.application_id = pa2.application_id
+                  AND pa.part_app_id > pa2.part_app_id
+            `, [keepPartId]);
+        }
         
         return counts;
     }
@@ -620,13 +607,7 @@ class PartMergeService {
     deduplicateApplications(applications) {
         const seen = new Set();
         return applications.filter(app => {
-            const key = [
-                (app.make || '').toLowerCase().trim(),
-                (app.model || '').toLowerCase().trim(),
-                (app.engine || '').toLowerCase().trim(),
-                app.year_start || '',
-                app.year_end || ''
-            ].join('|');
+            const key = app.application_id;
             if (seen.has(key)) return false;
             seen.add(key);
             return true;

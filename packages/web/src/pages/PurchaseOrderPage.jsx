@@ -4,14 +4,12 @@ import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
+// Modal removed in favor of dedicated full-page editor
+import PurchaseOrderEditorPage from './PurchaseOrderEditorPage';
 import FilterBar from '../components/ui/FilterBar';
 import { downloadFile } from '../utils/downloadFile';
 import { format, parseISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
-import PurchaseOrderEditorPage from './PurchaseOrderEditorPage';
-
-// Avoid linter warnings for React import (needed for JSX transformation)
-void React;
 
 const PurchaseOrderLines = ({ poId }) => {
     const [lines, setLines] = useState([]);
@@ -64,14 +62,6 @@ const PurchaseOrderLines = ({ poId }) => {
     );
 };
 
-
-const statusBadgeStyles = {
-    Received: 'bg-green-100 text-green-800 border border-green-200',
-    Pending: 'bg-amber-100 text-amber-800 border border-amber-200',
-    Ordered: 'bg-blue-100 text-blue-800 border border-blue-200',
-    'Partially Received': 'bg-purple-100 text-purple-800 border border-purple-200',
-    Cancelled: 'bg-gray-100 text-gray-700 border border-gray-200'
-};
 
 const PurchaseOrderPage = () => {
     const { user, hasPermission } = useAuth();
@@ -170,30 +160,19 @@ const PurchaseOrderPage = () => {
     };
 
     const toggleRowExpansion = (poId) => {
-        setExpandedRows((prevExpanded) => {
-            const updated = new Set(prevExpanded);
-            if (updated.has(poId)) {
-                updated.delete(poId);
-            } else {
-                updated.add(poId);
-            }
-            return updated;
-        });
+        const newExpandedRows = new Set(expandedRows);
+        if (newExpandedRows.has(poId)) {
+            newExpandedRows.delete(poId);
+        } else {
+            newExpandedRows.add(poId);
+        }
+        setExpandedRows(newExpandedRows);
     };
 
     // --- NEW: Download handler using the utility ---
     const handleDownloadPDF = (po) => {
         downloadFile(`/purchase-orders/${po.po_id}/pdf`, `PO-${po.po_number}.pdf`);
     };
-
-    const renderStatusBadge = (status) => (
-        <span
-            className={`inline-flex items-center gap-2 px-3 py-1 text-xs font-semibold uppercase tracking-wide rounded-full shadow-sm ${statusBadgeStyles[status] || 'bg-slate-100 text-slate-700 border border-slate-200'}`}
-        >
-            <span className="inline-block h-2 w-2 rounded-full bg-current" />
-            {status}
-        </span>
-    );
 
     if (!hasPermission('purchase_orders:view')) {
         return (
@@ -215,18 +194,11 @@ const PurchaseOrderPage = () => {
     }
 
     return (
-        <div key="po-list" className="space-y-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                    <h1 className="text-3xl font-semibold text-gray-900 tracking-tight">Purchase Orders</h1>
-                    <p className="text-sm text-gray-500">Monitor vendor commitments, download PDFs, and keep your purchasing pipeline on track.</p>
-                </div>
+        <div key="po-list">
+            <div className="flex justify-between items-center mb-6">
+                <h1 className="text-2xl font-semibold text-gray-800">Purchase Orders</h1>
                 {hasPermission('purchase_orders:edit') && (
-                    <button
-                        onClick={handleAddNew}
-                        className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-blue-600/30 transition hover:-translate-y-0.5 hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-                    >
-                        <Icon path={ICONS.plus} className="mr-2 h-5 w-5" />
+                    <button onClick={handleAddNew} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
                         New Purchase Order
                     </button>
                 )}
@@ -238,238 +210,82 @@ const PurchaseOrderPage = () => {
                 onTabClick={setStatusFilter}
             />
 
-            <div className="rounded-3xl border border-gray-100 bg-white shadow-xl shadow-gray-900/5">
-                {loading ? (
-                    <div className="flex items-center justify-center px-6 py-16">
-                        <div className="flex items-center gap-3 text-sm font-medium text-gray-500">
-                            <span className="h-2 w-2 animate-ping rounded-full bg-blue-500" />
-                            Loading purchase orders...
-                        </div>
-                    </div>
-                ) : (
-                    <div className="p-4 sm:p-6">
-                        {purchaseOrders.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-gray-200 bg-gradient-to-b from-white to-gray-50 px-4 py-16 text-center">
-                                <Icon path={ICONS.documents} className="h-10 w-10 text-gray-300" />
-                                <div className="space-y-1">
-                                    <p className="text-base font-semibold text-gray-700">No purchase orders found</p>
-                                    <p className="text-sm text-gray-500">Try adjusting your filters or create a new purchase order to get started.</p>
-                                </div>
-                                {hasPermission('purchase_orders:edit') && (
-                                    <button
-                                        onClick={handleAddNew}
-                                        className="inline-flex items-center justify-center rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition hover:border-blue-300 hover:bg-blue-100"
-                                    >
-                                        <Icon path={ICONS.plus} className="mr-2 h-4 w-4" />
-                                        Create Purchase Order
-                                    </button>
-                                )}
-                            </div>
-                        ) : (
-                            <>
-                                <div className="space-y-4 lg:hidden">
-                                    {purchaseOrders.map((po) => {
-                                        const isExpanded = expandedRows.has(po.po_id);
-                                        const isPending = po.status === 'Pending';
-                                        return (
-                                            <div
-                                                key={po.po_id}
-                                                className="group rounded-2xl border border-gray-100 bg-white p-4 shadow-md shadow-gray-900/5 transition hover:border-blue-100 hover:shadow-lg"
-                                            >
-                                                <div className="flex items-start justify-between gap-3">
-                                                    <div>
-                                                        <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-gray-400">
-                                                            <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-500">PO</span>
-                                                            {po.po_number}
-                                                        </div>
-                                                        <p className="mt-2 text-base font-semibold text-gray-900">{po.supplier_name}</p>
-                                                    </div>
-                                                    {renderStatusBadge(po.status)}
-                                                </div>
-                                                <dl className="mt-4 grid grid-cols-2 gap-4 text-sm text-gray-600">
-                                                    <div>
-                                                        <dt className="font-medium text-gray-500">Order date</dt>
-                                                        <dd className="mt-1 font-mono text-[13px] text-gray-900">
-                                                            {format(toZonedTime(parseISO(po.order_date), 'Asia/Manila'), 'MMM dd, yyyy')}
-                                                        </dd>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <dt className="font-medium text-gray-500">Total</dt>
-                                                        <dd className="mt-1 text-lg font-semibold text-gray-900">₱{parseFloat(po.total_amount).toFixed(2)}</dd>
-                                                    </div>
-                                                    <div className="col-span-2">
-                                                        <dt className="font-medium text-gray-500">PO ID</dt>
-                                                        <dd className="mt-1 font-mono text-xs text-gray-500">{po.po_id}</dd>
-                                                    </div>
-                                                </dl>
-                                                <div className="mt-6 flex flex-wrap items-center gap-3">
-                                                    <button
-                                                        onClick={() => handleDownloadPDF(po)}
-                                                        className="inline-flex items-center rounded-full border border-gray-200 px-4 py-2 text-xs font-medium text-gray-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
-                                                        title="Download PDF"
-                                                    >
-                                                        <Icon path={ICONS.download} className="mr-2 h-4 w-4" />
-                                                        Download PDF
-                                                    </button>
-                                                    <button
-                                                        onClick={() => toggleRowExpansion(po.po_id)}
-                                                        className="inline-flex items-center rounded-full border border-gray-200 px-4 py-2 text-xs font-medium text-gray-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
-                                                        title="Toggle line items"
-                                                    >
-                                                        <Icon path={isExpanded ? ICONS.chevronUp : ICONS.chevronDown} className="mr-2 h-4 w-4" />
-                                                        {isExpanded ? 'Hide line items' : 'View line items'}
-                                                    </button>
-                                                    {showActionsColumn && (
-                                                        <div className="flex flex-wrap gap-2">
-                                                            {isPending ? (
-                                                                <>
-                                                                    <button
-                                                                        onClick={() => handleUpdateStatus(po.po_id, 'Ordered')}
-                                                                        className="inline-flex items-center rounded-full bg-green-50 px-3 py-2 text-xs font-semibold text-green-700 transition hover:bg-green-100"
-                                                                        title="Mark as Ordered"
-                                                                    >
-                                                                        <Icon path={ICONS.send} className="mr-1.5 h-4 w-4" />
-                                                                        Mark as Ordered
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => handleEdit(po)}
-                                                                        className="inline-flex items-center rounded-full bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-100"
-                                                                        title="Edit PO"
-                                                                    >
-                                                                        <Icon path={ICONS.edit} className="mr-1.5 h-4 w-4" />
-                                                                        Edit
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => handleUpdateStatus(po.po_id, 'Cancelled')}
-                                                                        className="inline-flex items-center rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 transition hover:bg-amber-100"
-                                                                        title="Cancel PO"
-                                                                    >
-                                                                        <Icon path={ICONS.cancel} className="mr-1.5 h-4 w-4" />
-                                                                        Cancel
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => handleDelete(po.po_id)}
-                                                                        className="inline-flex items-center rounded-full bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100"
-                                                                        title="Delete PO"
-                                                                    >
-                                                                        <Icon path={ICONS.trash} className="mr-1.5 h-4 w-4" />
-                                                                        Delete
-                                                                    </button>
-                                                                </>
-                                                            ) : (
-                                                                <span className="rounded-full bg-gray-100 px-3 py-2 text-xs font-medium text-gray-500">No actions available</span>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                {isExpanded && (
-                                                    <div className="mt-6">
-                                                        <PurchaseOrderLines poId={po.po_id} />
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-
-                                <div className="hidden lg:block">
-                                    <div className="overflow-hidden rounded-2xl border border-gray-100">
-                                        <table className="hidden min-w-full table-fixed text-left text-sm text-gray-700 lg:table">
-                                            <thead className="bg-gray-50">
-                                                <tr className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                                    <th className="p-4">PO Number</th>
-                                                    <th className="p-4">Supplier</th>
-                                                    <th className="p-4">Status</th>
-                                                    <th className="p-4">Order Date</th>
-                                                    <th className="p-4 text-right">Total</th>
-                                                    <th className="p-4 text-center">Details</th>
-                                                    <th className="p-4 text-center">Download</th>
-                                                    {showActionsColumn && <th className="p-4 text-right">Actions</th>}
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-100 bg-white">
-                                                {purchaseOrders.map((po) => (
-                                                    <React.Fragment key={po.po_id}>
-                                                        <tr className="transition hover:bg-blue-50/40">
-                                                            <td className="p-4 font-mono text-xs text-gray-600">{po.po_number}</td>
-                                                            <td className="p-4 text-sm font-medium text-gray-900">{po.supplier_name}</td>
-                                                            <td className="p-4">{renderStatusBadge(po.status)}</td>
-                                                            <td className="p-4 text-sm text-gray-600">{format(toZonedTime(parseISO(po.order_date), 'Asia/Manila'), 'MMM dd, yyyy')}</td>
-                                                            <td className="p-4 text-right font-mono text-sm text-gray-900">₱{parseFloat(po.total_amount).toFixed(2)}</td>
-                                                            <td className="p-4 text-center">
-                                                                <button
-                                                                    onClick={() => toggleRowExpansion(po.po_id)}
-                                                                    className="inline-flex items-center justify-center rounded-full border border-transparent p-2 text-gray-500 transition hover:border-gray-200 hover:bg-gray-100 hover:text-gray-700"
-                                                                    title="Toggle line items"
-                                                                >
-                                                                    <Icon path={expandedRows.has(po.po_id) ? ICONS.chevronUp : ICONS.chevronDown} className="h-4 w-4" />
-                                                                </button>
-                                                            </td>
-                                                            <td className="p-4 text-center">
-                                                                <button
-                                                                    onClick={() => handleDownloadPDF(po)}
-                                                                    className="inline-flex items-center justify-center rounded-full border border-transparent p-2 text-gray-500 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
-                                                                    title="Download PDF"
-                                                                >
-                                                                    <Icon path={ICONS.download} className="h-4 w-4" />
-                                                                </button>
-                                                            </td>
-                                                            {showActionsColumn && (
-                                                                <td className="p-4 text-right">
-                                                                    <div className="flex items-center justify-end gap-3">
-                                                                        {po.status === 'Pending' ? (
-                                                                            <>
-                                                                                <button
-                                                                                    onClick={() => handleUpdateStatus(po.po_id, 'Ordered')}
-                                                                                    className="rounded-full bg-green-50 p-2 text-green-700 transition hover:bg-green-100"
-                                                                                    title="Mark as Ordered"
-                                                                                >
-                                                                                    <Icon path={ICONS.send} className="h-4 w-4" />
-                                                                                </button>
-                                                                                <button
-                                                                                    onClick={() => handleEdit(po)}
-                                                                                    className="rounded-full bg-blue-50 p-2 text-blue-700 transition hover:bg-blue-100"
-                                                                                    title="Edit"
-                                                                                >
-                                                                                    <Icon path={ICONS.edit} className="h-4 w-4" />
-                                                                                </button>
-                                                                                <button
-                                                                                    onClick={() => handleUpdateStatus(po.po_id, 'Cancelled')}
-                                                                                    className="rounded-full bg-amber-50 p-2 text-amber-700 transition hover:bg-amber-100"
-                                                                                    title="Cancel PO"
-                                                                                >
-                                                                                    <Icon path={ICONS.cancel} className="h-4 w-4" />
-                                                                                </button>
-                                                                                <button
-                                                                                    onClick={() => handleDelete(po.po_id)}
-                                                                                    className="rounded-full bg-red-50 p-2 text-red-700 transition hover:bg-red-100"
-                                                                                    title="Delete PO"
-                                                                                >
-                                                                                    <Icon path={ICONS.trash} className="h-4 w-4" />
-                                                                                </button>
-                                                                            </>
-                                                                        ) : (
-                                                                            <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-500">-</span>
-                                                                        )}
-                                                                    </div>
-                                                                </td>
-                                                            )}
-                                                        </tr>
-                                                        {expandedRows.has(po.po_id) && (
-                                                            <tr key={`${po.po_id}-details`} className="bg-gray-50/80">
-                                                                <td colSpan={showActionsColumn ? 8 : 7} className="p-4">
-                                                                    <PurchaseOrderLines poId={po.po_id} />
-                                                                </td>
-                                                            </tr>
+            <div className="bg-white p-6 rounded-xl border border-gray-200">
+                {loading ? <p>Loading...</p> : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead className="border-b">
+                                <tr>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">PO Number</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Supplier</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Status</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Order Date</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 text-center">Details</th>
+                                    {/* --- NEW: Download Column Header --- */}
+                                    <th className="p-3 text-sm font-semibold text-gray-600 text-center">Download</th>
+                                    {showActionsColumn && <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {purchaseOrders.map(po => (
+                                        <React.Fragment key={po.po_id}>
+                                        <tr className="border-b hover:bg-gray-50">
+                                            <td className="p-3 text-sm font-mono">{po.po_number}</td>
+                                            <td className="p-3 text-sm">{po.supplier_name}</td>
+                                            <td className="p-3 text-sm">
+                                                <span className={`px-2 py-1 text-xs font-semibold rounded-full 
+                                                    ${po.status === 'Received' ? 'bg-green-100 text-green-800' : ''}
+                                                    ${po.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' : ''}
+                                                    ${po.status === 'Ordered' ? 'bg-blue-100 text-blue-800' : ''}
+                                                    ${po.status === 'Partially Received' ? 'bg-purple-100 text-purple-800' : ''}
+                                                    ${po.status === 'Cancelled' ? 'bg-gray-100 text-gray-800' : ''}
+                                                `}>
+                                                    {po.status}
+                                                </span>
+                                            </td>
+                                            <td className="p-3 text-sm">{format(toZonedTime(parseISO(po.order_date), 'Asia/Manila'), 'MM/dd/yyyy')}</td>
+                                            <td className="p-3 text-sm text-right font-mono">₱{parseFloat(po.total_amount).toFixed(2)}</td>
+                                            <td className="p-3 text-sm text-center">
+                                                <button onClick={() => toggleRowExpansion(po.po_id)} className="text-gray-500 hover:text-gray-800">
+                                                    <Icon path={expandedRows.has(po.po_id) ? ICONS.chevronUp : ICONS.chevronDown} className="h-5 w-5" />
+                                                </button>
+                                            </td>
+                                            {/* --- NEW: Download Button Cell --- */}
+                                            <td className="p-3 text-sm text-center">
+                                                <button onClick={() => handleDownloadPDF(po)} title="Download PDF" className="text-gray-500 hover:text-gray-800">
+                                                    <Icon path={ICONS.download} className="h-5 w-5" />
+                                                </button>
+                                            </td>
+                                            {showActionsColumn && (
+                                                <td className="p-3 text-sm text-right">
+                                                    <div className="flex justify-end items-center space-x-4 h-full">
+                                                        {po.status === 'Pending' ? (
+                                                            <>
+                                                                <button onClick={() => handleUpdateStatus(po.po_id, 'Ordered')} title="Mark as Ordered" className="text-green-600 hover:text-green-800"><Icon path={ICONS.send} className="h-5 w-5" /></button>
+                                                                <button onClick={() => handleEdit(po)} title="Edit" className="text-blue-600 hover:text-blue-800"><Icon path={ICONS.edit} className="h-5 w-5" /></button>
+                                                                <button onClick={() => handleUpdateStatus(po.po_id, 'Cancelled')} title="Cancel PO" className="text-yellow-600 hover:text-yellow-800"><Icon path={ICONS.cancel} className="h-5 w-5" /></button>
+                                                                <button onClick={() => handleDelete(po.po_id)} title="Delete PO" className="text-red-600 hover:text-red-800"><Icon path={ICONS.trash} className="h-5 w-5" /></button>
+                                                            </>
+                                                        ) : (
+                                                            <span>-</span> 
                                                         )}
-                                                    </React.Fragment>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            </>
-                        )}
+                                                    </div>
+                                                </td>
+                                            )}
+                                        </tr>
+                    {expandedRows.has(po.po_id) && (
+                                            <tr key={`${po.po_id}-details`}>
+                        {/* --- UPDATE: ColSpan value to account for new column --- */}
+                        <td colSpan={showActionsColumn ? 9 : 8}>
+                                                    <PurchaseOrderLines poId={po.po_id} />
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </React.Fragment>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 )}
             </div>

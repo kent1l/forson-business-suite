@@ -18,9 +18,8 @@ import SettingsPage from '../../pages/SettingsPage';
 import POSPage from '../../pages/POSPage';
 import PurchaseOrderPage from '../../pages/PurchaseOrderPage';
 import AccountsReceivablePage from '../../pages/AccountsReceivablePage';
-import SalesHistoryPage from '../../pages/SalesHistoryPage';
+import SalesHistoryPage from '../../pages/SalesHistoryPage'; // <-- Import new page
 import DocumentsPage from '../../pages/DocumentsPage';
-import ChequePrinterPage from '../../pages/ChequePrinterPage';
 
 const MainLayout = ({ user, onLogout, onNavigate, currentPage, posLines, setPosLines }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -39,15 +38,14 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, posLines, setPosL
             case 'goods_receipt': return <GoodsReceiptPage user={user} onNavigate={onNavigate} />;
             case 'goods_receipt_history': return <GoodsReceiptHistoryPage user={user} />;
             case 'invoicing': return <InvoicingPage user={user} />;
-            case 'sales_history': return <SalesHistoryPage />;
+            case 'sales_history': return <SalesHistoryPage />; // <-- Add case for new page
             case 'documents': return <DocumentsPage />;
             case 'purchase_orders': return <PurchaseOrderPage />;
             case 'ar': return <AccountsReceivablePage />;
             case 'inventory': return <InventoryPage user={user} />;
             case 'employees': return <EmployeesPage user={user} />;
-            case 'cheque_printer': return <ChequePrinterPage />;
             case 'settings': return <SettingsPage user={user} />;
-            default: return <Dashboard onNavigate={onNavigate} />;
+            default: return <Dashboard />;
         }
     };
 

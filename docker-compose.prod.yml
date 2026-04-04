@@ -98,22 +98,15 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       BACKUP_PATH: /backups
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
-    # Run the backup script in a persistent loop so the container remains running
-    # after a successful backup (prevents Docker from repeatedly restarting it).
-    # BACKUP_INTERVAL_SECONDS can be set in the environment to change frequency.
     command: >
       /bin/sh -c "
       while ! pg_isready -h db -U ${DB_USER}; do
         echo 'Waiting for main database to be ready...'
         sleep 2
       done;
-      cp /scripts/backup.sh /tmp/backup.sh && chmod +x /tmp/backup.sh;
-      # Run once immediately, then loop with sleep to run daily by default
-      while true; do
-        echo \"Running backup at $(date)\";
-        /tmp/backup.sh || echo \"Backup script failed with exit $?\";
-        sleep ${BACKUP_INTERVAL_SECONDS:-86400};
-      done
+      cp /scripts/backup.sh /tmp/backup.sh &&
+      chmod +x /tmp/backup.sh &&
+      /tmp/backup.sh
       "
     healthcheck:
       test: ["CMD", "test", "-d", "/backups"]

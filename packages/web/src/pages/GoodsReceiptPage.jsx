@@ -187,20 +187,6 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
         });
     };
 
-    const handleEditPartClick = async (line) => {
-        if (!line || !line.part_id) return;
-        try {
-            toast.loading('Loading part details...');
-            const response = await api.get(`/parts/${line.part_id}`);
-            setCurrentEditPart(response.data);
-            setIsEditPartModalOpen(true);
-            toast.dismiss();
-        } catch {
-            toast.dismiss();
-            toast.error('Failed to load part details.');
-        }
-    };
-
     const handleAppManagerClose = () => {
         setIsAppModalOpen(false);
         setCurrentPart(null);
@@ -353,12 +339,9 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
                                                     {...itemProps}
                                                     className={`px-4 py-2 cursor-pointer ${itemProps['aria-selected'] ? 'bg-blue-100' : 'hover:bg-blue-50'}`}
                                                 >
-                                                    <div className="flex items-baseline justify-between">
-                                                        <div className="flex items-baseline space-x-2 flex-1 min-w-0">
-                                                            <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
-                                                            {part.applications && <div className="text-xs text-gray-500 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
-                                                        </div>
-                                                        <div className="text-xs text-gray-500 ml-2">Stock: {typeof part.stock_on_hand !== 'undefined' ? Number(part.stock_on_hand).toFixed(2) : '-'}</div>
+                                                    <div className="flex items-baseline space-x-2">
+                                                        <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
+                                                        {part.applications && <div className="text-xs text-gray-500 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
                                                     </div>
                                                 </li>
                                             );
@@ -391,7 +374,7 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
                                             <div className="min-w-0 flex-1 truncate text-sm font-medium text-gray-800">{line.display_name}</div>
                                             <div className="flex items-center gap-1">
                                                 <button
-                                                    onClick={() => handleEditPartClick(line)}
+                                                    onClick={() => { setCurrentEditPart(line); setIsEditPartModalOpen(true); }}
                                                     className="inline-flex items-center justify-center h-8 w-8 text-blue-600 hover:text-blue-800 rounded hover:bg-blue-50"
                                                     title="Edit Part"
                                                 >

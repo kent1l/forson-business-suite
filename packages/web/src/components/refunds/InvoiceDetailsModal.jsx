@@ -34,7 +34,7 @@ void RefundForm;
 
 const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
     const { settings } = useSettings();
-    const { hasPermission, user } = useAuth();
+    const { hasPermission } = useAuth();
     const [lines, setLines] = useState([]);
     const [payments, setPayments] = useState([]);
     const [paymentsForbidden, setPaymentsForbidden] = useState(false);
@@ -42,15 +42,6 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
     const [showRefundForm, setShowRefundForm] = useState(false);
     const [isEditingReceiptNo, setIsEditingReceiptNo] = useState(false);
     const [editingReceiptNo, setEditingReceiptNo] = useState('');
-    // Inline refund UI state
-    const [refundLines, setRefundLines] = useState({}); // { [invoice_line_id]: quantity }
-    const [paymentMethods, setPaymentMethods] = useState([]);
-    const [selectedMethodId, setSelectedMethodId] = useState('');
-    const [reference, setReference] = useState('');
-    const [loadingMethods, setLoadingMethods] = useState(false);
-    // Invoice date editing state
-    const [isEditingDate, setIsEditingDate] = useState(false);
-    const [editingDate, setEditingDate] = useState('');
 
     useEffect(() => {
         if (!isOpen || !invoice) return;
@@ -61,20 +52,6 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
             setShowRefundForm(false); // Reset on open
             setIsEditingReceiptNo(false); // Reset editing state
             setEditingReceiptNo(invoice.physical_receipt_no || ''); // Initialize with current value
-            setIsEditingDate(false); // Reset date editing state
-            // Initialize editing date with current invoice date (format for datetime-local input)
-            if (invoice.invoice_date) {
-                const date = new Date(invoice.invoice_date);
-                // Format for datetime-local input (YYYY-MM-DDTHH:mm)
-                const year = date.getFullYear();
-                const month = String(date.getMonth() + 1).padStart(2, '0');
-                const day = String(date.getDate()).padStart(2, '0');
-                const hours = String(date.getHours()).padStart(2, '0');
-                const minutes = String(date.getMinutes()).padStart(2, '0');
-                setEditingDate(`${year}-${month}-${day}T${hours}:${minutes}`);
-            } else {
-                setEditingDate('');
-            }
 
             try {
                 // Fetch lines first (this should rarely fail independently)
@@ -116,28 +93,6 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
 
         return () => { cancelled = true; };
     }, [isOpen, invoice]);
-
-    // Fetch payment methods when entering refund mode
-    useEffect(() => {
-        if (!showRefundForm) return;
-        let cancelled = false;
-        (async () => {
-            setLoadingMethods(true);
-            try {
-                const response = await api.get('/payment-methods/enabled');
-                if (cancelled) return;
-                setPaymentMethods(response.data || []);
-            } catch (error) {
-                if (cancelled) return;
-                console.error('Failed to fetch payment methods:', error);
-                toast.error('Failed to load payment methods');
-                setPaymentMethods([]);
-            } finally {
-                if (!cancelled) setLoadingMethods(false);
-            }
-        })();
-        return () => { cancelled = true; };
-    }, [showRefundForm]);
     
     const handleRefundSuccess = () => {
         onClose(); // Close the modal
@@ -208,57 +163,6 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
         setIsEditingReceiptNo(false);
     };
 
-    const handleEditDate = () => {
-        setIsEditingDate(true);
-    };
-
-    const handleSaveDate = async () => {
-        try {
-            if (!editingDate) {
-                toast.error('Please select a date and time');
-                return;
-            }
-
-            const response = await api.put(`/invoices/${invoice.invoice_id}/date`, {
-                invoice_date: new Date(editingDate).toISOString()
-            });
-
-            // Update the invoice object with the server response
-            invoice.invoice_date = response.data.invoice_date;
-
-            toast.success('Invoice date updated successfully');
-            setIsEditingDate(false);
-            onActionSuccess();
-
-            // Notify other parts of the app that invoices changed
-            try {
-                window.dispatchEvent(new CustomEvent('invoices:changed'));
-            } catch {
-                // ignore if window not available
-            }
-
-        } catch (error) {
-            const message = error.response?.data?.message || 'Failed to update invoice date';
-            toast.error(message);
-        }
-    };
-
-    const handleCancelEditDate = () => {
-        // Reset to original date
-        if (invoice.invoice_date) {
-            const date = new Date(invoice.invoice_date);
-            const year = date.getFullYear();
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const day = String(date.getDate()).padStart(2, '0');
-            const hours = String(date.getHours()).padStart(2, '0');
-            const minutes = String(date.getMinutes()).padStart(2, '0');
-            setEditingDate(`${year}-${month}-${day}T${hours}:${minutes}`);
-        } else {
-            setEditingDate('');
-        }
-        setIsEditingDate(false);
-    };
-
     const handleMarkSettled = async (paymentId) => {
         try {
             await api.post(`/payments/${paymentId}/settle`);
@@ -283,84 +187,19 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
         }
     };
 
-    // Inline refund handlers
-    const handleRefundCheckboxChange = (lineId, checked) => {
-        const line = lines.find(l => l.invoice_line_id === lineId);
-        if (!line) return;
-        const remaining = Math.max((Number(line.quantity) || 0) - (Number(line.quantity_refunded) || 0), 0);
-        if (remaining <= 0) return;
-        setRefundLines(prev => {
-            const next = { ...prev };
-            if (checked) next[lineId] = remaining; else delete next[lineId];
-            return next;
-        });
-    };
-
-    const handleRefundQtyChange = (lineId, value) => {
-        const line = lines.find(l => l.invoice_line_id === lineId);
-        if (!line) return;
-        const remaining = Math.max((Number(line.quantity) || 0) - (Number(line.quantity_refunded) || 0), 0);
-        const n = Math.max(0, Math.min(remaining, Number(value)));
-        setRefundLines(prev => ({ ...prev, [lineId]: n }));
-    };
-
-    const totalRefundAmount = Object.entries(refundLines).reduce((sum, [id, qty]) => {
-        const line = lines.find(l => l.invoice_line_id === Number(id));
-        const price = Number(line?.sale_price) || 0;
-        return sum + (Number(qty) || 0) * price;
-    }, 0);
-
-    const handleSubmitInlineRefund = async () => {
-        const entries = Object.entries(refundLines).filter(([, q]) => Number(q) > 0);
-        if (entries.length === 0) return toast.error('Select at least one item to refund.');
-        if (!selectedMethodId) return toast.error('Please select a payment method for the refund.');
-        if (!user?.employee_id) return toast.error('Cannot determine employee for refund.');
-
-        const linesPayload = entries.map(([id, qty]) => {
-            const line = lines.find(l => l.invoice_line_id === Number(id));
-            return {
-                part_id: line.part_id,
-                quantity: Number(qty),
-                sale_price: Number(line.sale_price)
-            };
-        });
-
-        const payload = {
-            invoice_id: invoice.invoice_id,
-            invoice_number: invoice.invoice_number,
-            employee_id: user.employee_id,
-            lines: linesPayload,
-            method_id: selectedMethodId ? parseInt(selectedMethodId) : null,
-            reference: reference.trim() || null
-        };
-
-        try {
-            const promise = api.post('/refunds', payload);
-            await toast.promise(promise, {
-                loading: 'Processing refund...',
-                success: (res) => res.data?.message || 'Refund processed successfully!',
-                error: (err) => err.response?.data?.message || 'Failed to process refund.'
-            });
-            // Success flow mirrors RefundForm
-            handleRefundSuccess();
-        } catch {
-            // toast already handled in promise
-        }
-    };
-
 
     if (!isOpen || !invoice) return null;
 
     return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Details for Invoice #${invoice.invoice_number}`} maxWidth="max-w-4xl">
+        <Modal isOpen={isOpen} onClose={onClose} title={`Details for Invoice #${invoice.invoice_number}`} maxWidth="max-w-2xl">
             {loading ? <p>Loading details...</p> : (
-                <div className="space-y-5">
+                <div className="space-y-4">
                     {/* Physical Receipt Number Editing Section - Only shown when editing */}
                     {isEditingReceiptNo && (
-                        <div className="bg-cyan-50 p-4 rounded-lg border border-cyan-200 shadow-sm">
+                        <div className="bg-gray-50 p-4 rounded-lg border-2 border-cyan-200">
                             <div className="flex items-center justify-between">
                                 <div className="flex-1">
-                                    <label className="block text-sm font-medium text-gray-800 mb-2">
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
                                         Edit Physical Receipt No.
                                     </label>
                                     <div className="flex items-center gap-2">
@@ -380,7 +219,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                                 const formatted = formatPhysicalReceiptNumber(e.target.value);
                                                 setEditingReceiptNo(formatted || '');
                                             }}
-                                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 bg-white"
+                                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
                                             placeholder="e.g., SI-1234, ABC/5678, or XYZ 9999"
                                             autoFocus
                                         />
@@ -389,13 +228,13 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                         </span>
                                         <button
                                             onClick={handleSaveReceiptNo}
-                                            className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors duration-200 shadow-sm"
+                                            className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors duration-200"
                                         >
                                             Save
                                         </button>
                                         <button
                                             onClick={handleCancelEditReceiptNo}
-                                            className="bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors duration-200 shadow-sm"
+                                            className="bg-gray-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-600 transition-colors duration-200"
                                         >
                                             Cancel
                                         </button>
@@ -405,260 +244,28 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                         </div>
                     )}
 
-                    {/* Invoice Date Editing Section - Only shown when editing */}
-                    {isEditingDate && (
-                        <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 shadow-sm">
-                            <div className="flex items-center justify-between">
-                                <div className="flex-1">
-                                    <label className="block text-sm font-medium text-gray-800 mb-2">
-                                        Edit Invoice Date & Time
-                                    </label>
-                                    <div className="flex items-center gap-2">
-                                        <input
-                                            type="datetime-local"
-                                            value={editingDate}
-                                            onChange={(e) => setEditingDate(e.target.value)}
-                                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                                            autoFocus
-                                        />
-                                        <span className="text-xs text-gray-500 whitespace-nowrap">
-                                            This will update related payments & refunds
-                                        </span>
-                                        <button
-                                            onClick={handleSaveDate}
-                                            className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors duration-200 shadow-sm"
-                                        >
-                                            Save
-                                        </button>
-                                        <button
-                                            onClick={handleCancelEditDate}
-                                            className="bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors duration-200 shadow-sm"
-                                        >
-                                            Cancel
-                                        </button>
+                    <div>
+                        <h3 className="font-semibold text-gray-800">Items Sold</h3>
+                        <ul className="divide-y divide-gray-200 mt-2">
+                            {lines.map(line => (
+                                <li key={line.invoice_line_id} className="py-2 flex justify-between items-center">
+                                    <div>
+                                        <p className="text-sm font-medium">{line.display_name}</p>
+                                        <p className="text-xs text-gray-500">
+                                            {line.quantity} x {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(line.sale_price).toFixed(2)}
+                                        </p>
                                     </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Items with refund visualization */}
-                    <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                            <h3 className="text-sm font-semibold text-gray-800">Items</h3>
-                            {/* Legend */}
-                            <div className="flex items-center justify-between gap-3">
-                                <div className="hidden sm:flex items-center gap-3 text-xs text-gray-500">
-                                    <span className="inline-flex items-center gap-1"><span className="w-3 h-1.5 rounded bg-rose-300"></span> Refunded</span>
-                                    <span className="inline-flex items-center gap-1"><span className="w-3 h-1.5 rounded bg-amber-300"></span> Partial</span>
-                                    <span className="inline-flex items-center gap-1"><span className="w-3 h-1.5 rounded bg-emerald-300"></span> Remaining</span>
-                                </div>
-                                {showRefundForm && (
-                                    <div className="flex items-center gap-2 text-xs">
-                                        <span className="text-gray-600">Selected: <span className="font-semibold">{Object.values(refundLines).filter(q => Number(q) > 0).length}</span></span>
-                                        <span className="hidden sm:inline text-gray-400">•</span>
-                                        <span className="text-gray-600">Total: <span className="font-mono font-semibold">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{totalRefundAmount.toFixed(2)}</span></span>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                const next = {};
-                                                for (const line of lines) {
-                                                    const qty = Number(line.quantity) || 0;
-                                                    const refunded = Number(line.quantity_refunded || 0);
-                                                    const remain = Math.max(qty - refunded, 0);
-                                                    if (remain > 0) next[line.invoice_line_id] = remain;
-                                                }
-                                                setRefundLines(next);
-                                            }}
-                                            className="ml-2 px-2 py-1 rounded border text-gray-700 hover:bg-gray-50"
-                                        >
-                                            Select All
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setRefundLines({})}
-                                            className="px-2 py-1 rounded border text-gray-700 hover:bg-gray-50"
-                                        >
-                                            Clear
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        <ul className="mt-3 divide-y divide-gray-100">
-                            {lines.map((line) => {
-                                const qty = Number(line.quantity) || 0;
-                                const refunded = Number(line.quantity_refunded || 0);
-                                const remaining = Math.max(qty - refunded, 0);
-                                const refundedPct = qty > 0 ? Math.min(refunded / qty, 1) : 0;
-                                const isFull = refunded >= qty && qty > 0;
-                                const isPartial = refunded > 0 && refunded < qty;
-                                // Chip styles for quick status glance
-                                const chipClass = isFull
-                                    ? 'bg-rose-100 text-rose-700 border border-rose-200'
-                                    : isPartial
-                                        ? 'bg-amber-100 text-amber-700 border border-amber-200'
-                                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200';
-                                const chipText = isFull ? 'Fully Refunded' : isPartial ? 'Partially Refunded' : 'Not Refunded';
-                                return (
-                                    <li key={line.invoice_line_id} className="py-3">
-                                        <div className="flex items-start justify-between gap-4">
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex items-center gap-2">
-                                                    <p className="text-sm font-medium text-gray-900 truncate">{line.display_name}</p>
-                                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${chipClass}`}>{chipText}</span>
-                                                </div>
-                                                <div className="mt-1 text-xs text-gray-500">
-                                                    {qty} x {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{(Number(line.sale_price) || 0).toFixed(2)}
-                                                    {refunded > 0 && (
-                                                        <span className="ml-2 inline-flex items-center gap-1 text-rose-700">
-                                                            Refunded: <span className="font-mono">{refunded}</span>
-                                                        </span>
-                                                    )}
-                                                    {remaining >= 0 && (
-                                                        <span className="ml-2 inline-flex items-center gap-1 text-emerald-700">
-                                                            Remaining: <span className="font-mono">{remaining}</span>
-                                                        </span>
-                                                    )}
-                                                </div>
-
-                                                {/* Progress Bar */}
-                                                <div className="mt-2 h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-                                                    <div className="relative h-full w-full">
-                                                        {/* refunded portion */}
-                                                        <div
-                                                            className="absolute left-0 top-0 h-full bg-rose-300"
-                                                            style={{ width: `${refundedPct * 100}%` }}
-                                                        />
-                                                        {/* remaining portion for contrast on large screens */}
-                                                        <div
-                                                            className="absolute right-0 top-0 h-full bg-emerald-300"
-                                                            style={{ width: `${(1 - refundedPct) * 100}%` }}
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="text-right w-64 shrink-0">
-                                                <p className="text-sm font-mono text-gray-900">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{((Number(line.quantity) || 0) * (Number(line.sale_price) || 0)).toFixed(2)}</p>
-                                                {isPartial && (
-                                                    <p className="text-xs text-gray-500 mt-1">
-                                                        Refunded value: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{((Number(line.sale_price) || 0) * refunded).toFixed(2)}
-                                                    </p>
-                                                )}
-                                                {isFull && (
-                                                    <p className="text-xs text-rose-600 mt-1 font-medium">No quantity remaining</p>
-                                                )}
-                                                {showRefundForm && remaining > 0 && (
-                                                    <div className="mt-3 space-y-1">
-                                                        <div className="flex items-center justify-end gap-3">
-                                                            <label className="inline-flex items-center gap-2 text-xs text-gray-700">
-                                                                <input
-                                                                    type="checkbox"
-                                                                    className="h-4 w-4 rounded"
-                                                                    checked={refundLines[line.invoice_line_id] > 0}
-                                                                    onChange={(e) => handleRefundCheckboxChange(line.invoice_line_id, e.target.checked)}
-                                                                />
-                                                                <span>Select</span>
-                                                            </label>
-                                                            {refundLines[line.invoice_line_id] > 0 && (
-                                                                <div className="flex items-center gap-2">
-                                                                    <label className="text-xs text-gray-600">Qty</label>
-                                                                    <input
-                                                                        type="number"
-                                                                        min={0}
-                                                                        step={1}
-                                                                        max={remaining}
-                                                                        value={refundLines[line.invoice_line_id] ?? 0}
-                                                                        onChange={(e) => handleRefundQtyChange(line.invoice_line_id, e.target.value)}
-                                                                        className="w-24 px-2 py-1 border rounded-md text-sm text-right"
-                                                                    />
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                        {refundLines[line.invoice_line_id] > 0 && (
-                                                            <div className="text-[11px] text-gray-500">Max refundable: <span className="font-mono">{remaining}</span></div>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </li>
-                                );
-                            })}
+                                    <p className="text-sm font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{(line.quantity * line.sale_price).toFixed(2)}</p>
+                                </li>
+                            ))}
                         </ul>
                     </div>
 
-                    {/* Inline refund controls (compact) */}
-                    {showRefundForm && (
-                        <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                                        Refund Method <span className="text-red-500">*</span>
-                                    </label>
-                                    <select
-                                        value={selectedMethodId}
-                                        onChange={(e) => setSelectedMethodId(e.target.value)}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
-                                        disabled={loadingMethods}
-                                    >
-                                        <option value="">{loadingMethods ? 'Loading…' : 'Select method'}</option>
-                                        {paymentMethods.map(pm => (
-                                            <option key={pm.method_id} value={pm.method_id}>{pm.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-700 mb-1">Reference (optional)</label>
-                                    <input
-                                        type="text"
-                                        value={reference}
-                                        onChange={(e) => setReference(e.target.value)}
-                                        placeholder="Txn ID / Check #"
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
-                                        maxLength={200}
-                                    />
-                                </div>
-                                <div className="flex md:justify-end md:text-right items-center md:items-end gap-4">
-                                    <div className="text-sm">
-                                        <div className="text-gray-600">Total Refund</div>
-                                        <div className="text-xl font-semibold text-blue-700">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{totalRefundAmount.toFixed(2)}</div>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            onClick={handleSubmitInlineRefund}
-                                            className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 shadow-sm"
-                                            disabled={Object.values(refundLines).every(q => !q || Number(q) <= 0)}
-                                        >
-                                            Confirm Refund
-                                        </button>
-                                        <button
-                                            onClick={() => { setShowRefundForm(false); setRefundLines({}); }}
-                                            className="px-4 py-2 rounded-lg border text-gray-700 hover:bg-gray-50"
-                                        >
-                                            Cancel
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
                     {/* Payments Section */}
                     {payments.length > 0 && (
-                        <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-                            <div className="flex items-center justify-between">
-                                <h3 className="text-sm font-semibold text-gray-800">Payments</h3>
-                                {/* Totals quick glance */}
-                                <div className="text-xs text-gray-600">
-                                    <span className="mr-3">Settled: <span className="font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{payments.filter(p => p.payment_status?.toLowerCase() === 'settled').reduce((s, p) => s + (parseFloat(p.amount_paid || 0) || 0), 0).toFixed(2)}</span></span>
-                                    {payments.some(p => p.payment_status?.toLowerCase() === 'pending') && (
-                                        <span className="text-yellow-700">Pending: <span className="font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{payments.filter(p => p.payment_status?.toLowerCase() === 'pending').reduce((s, p) => s + (parseFloat(p.amount_paid || 0) || 0), 0).toFixed(2)}</span></span>
-                                    )}
-                                </div>
-                            </div>
-                            <div className="mt-3 space-y-2">
+                        <div>
+                            <h3 className="font-semibold text-gray-800">Payments</h3>
+                            <div className="mt-2 space-y-2">
                                 {payments.map(payment => (
                                     <div key={payment.payment_id} className="bg-gray-50 p-3 rounded-lg border">
                                         <div className="flex justify-between items-start">
@@ -738,8 +345,8 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                     )}
                     
                     {!showRefundForm && (
-                        <div className="pt-4 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
-                            <div className="flex gap-2 flex-wrap">
+                        <div className="pt-4 flex justify-between items-center gap-3">
+                            <div className="flex gap-2">
                                 {hasPermission('invoice:edit_receipt_no') && (
                                     <button
                                         onClick={handleEditReceiptNo}
@@ -748,45 +355,27 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                         Edit Receipt No.
                                     </button>
                                 )}
-                                {hasPermission('invoice:edit_date') && (
-                                    <button
-                                        onClick={handleEditDate}
-                                        className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200 shadow-sm"
-                                    >
-                                        Edit Invoice Date
-                                    </button>
-                                )}
                                 {hasPermission('invoice:delete') && (
                                     <button
                                         onClick={handleDelete}
-                                        className="bg-white border border-red-300 text-red-600 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-red-50 shadow-sm"
+                                        className="bg-white border border-red-300 text-red-600 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-red-50"
                                     >
                                         Delete Invoice
                                     </button>
                                 )}
                             </div>
                             <div className="flex-1 text-right">
-                                {!showRefundForm ? (
-                                    <button
-                                        onClick={() => setShowRefundForm(true)}
-                                        className="bg-red-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-red-700"
-                                    >
-                                        Process Refund
-                                    </button>
-                                ) : (
-                                    <button
-                                        onClick={() => { setShowRefundForm(false); setRefundLines({}); }}
-                                        className="bg-gray-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-gray-700"
-                                    >
-                                        Close Refund
-                                    </button>
-                                )}
+                                <button
+                                    onClick={() => setShowRefundForm(true)}
+                                    className="bg-red-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-red-700"
+                                >
+                                    Process Refund
+                                </button>
                             </div>
                         </div>
                     )}
 
-                    {/* The legacy RefundForm component is intentionally not rendered to avoid duplication.
-                        We keep the import and a void reference at top to preserve linting behavior. */}
+                    {showRefundForm && <RefundForm invoice={invoice} lines={lines} onRefundSuccess={handleRefundSuccess} />}
                 </div>
             )}
         </Modal>

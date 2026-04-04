@@ -1,34 +1,8 @@
 # Dependency directories
 node_modules/
 
-# Environment variables (NEVER commit these!)
+# Environment variables
 .env
-.env.local
-.env.production
-.env.*.local
 
 # Backup Files
 backups/
-*.sql
-*.sql.gz
-*.dump
-
-# Logs
-*.log
-logs/
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Docker volumes (local development)
-postgres_data/
-meili_data/
-backup_data/

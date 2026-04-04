@@ -44,8 +44,7 @@ jobs:
       - name: Build and push Web image
         uses: docker/build-push-action@v5
         with:
-          context: .
-          file: ./packages/web/Dockerfile
+          context: ./packages/web
           push: true
           tags: |
             ghcr.io/${{ github.repository }}/web:latest

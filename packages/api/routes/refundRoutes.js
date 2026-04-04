@@ -6,24 +6,10 @@ const router = express.Router();
 
 // POST /api/refunds - Process a new refund
 router.post('/refunds', protect, hasPermission('invoicing:create'), async (req, res) => {
-    const { invoice_id, invoice_number, employee_id, lines, method_id, reference } = req.body;
+    const { invoice_id, invoice_number, employee_id, lines } = req.body;
 
     if (!invoice_id || !employee_id || !lines || !Array.isArray(lines) || lines.length === 0) {
         return res.status(400).json({ message: 'Missing required fields for refund.' });
-    }
-
-    // Validate method_id if provided
-    if (method_id !== undefined && method_id !== null) {
-        const methodCheck = await db.query(
-            'SELECT method_id, enabled FROM payment_methods WHERE method_id = $1',
-            [method_id]
-        );
-        if (methodCheck.rows.length === 0) {
-            return res.status(400).json({ message: 'Invalid payment method selected.' });
-        }
-        if (!methodCheck.rows[0].enabled) {
-            return res.status(400).json({ message: 'Selected payment method is not enabled.' });
-        }
     }
 
     const client = await db.getClient();
@@ -71,10 +57,10 @@ router.post('/refunds', protect, hasPermission('invoicing:create'), async (req, 
 
         // Create the main credit note record
         const cnQuery = `
-            INSERT INTO credit_note (cn_number, invoice_id, employee_id, total_amount, notes, method_id, reference)
-            VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING cn_id;
+            INSERT INTO credit_note (cn_number, invoice_id, employee_id, total_amount, notes)
+            VALUES ($1, $2, $3, $4, $5) RETURNING cn_id;
         `;
-        const cnResult = await client.query(cnQuery, [creditNoteNumber, invoice_id, employee_id, totalRefundAmount, `Refund for Invoice #${invoice_number}`, method_id || null, reference || null]);
+        const cnResult = await client.query(cnQuery, [creditNoteNumber, invoice_id, employee_id, totalRefundAmount, `Refund for Invoice #${invoice_number}`]);
         const newCnId = cnResult.rows[0].cn_id;
 
         // Insert lines and inventory transactions

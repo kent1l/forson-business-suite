@@ -45,11 +45,11 @@ services:
 
   # --- Frontend Service ---
   frontend:
+    container_name: forson_frontend
     build:
       context: ./packages/web
       dockerfile: Dockerfile
     image: kentonel/forson-frontend:latest
-    container_name: forson_frontend
     restart: always
     depends_on:
       - backend 

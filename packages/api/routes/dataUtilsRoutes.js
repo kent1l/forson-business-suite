@@ -9,11 +9,6 @@ const { syncPartWithMeili } = require('../meilisearch');
 const { setupMeiliSearch } = require('../meilisearch-setup');
 const { getPartDataForMeili } = require('./partRoutes');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
-const {
-    fetchPartApplications,
-    formatApplicationDisplay,
-    buildSearchableApplications
-} = require('../helpers/applicationHelper');
 const router = express.Router();
 
 // Configure multer for in-memory file storage
@@ -212,6 +207,14 @@ router.get('/sync-parts-to-meili', protect, isAdmin, async (req, res) => {
             SELECT
                 p.*, b.brand_name, g.group_name,
                 (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) as part_numbers,
+                                (SELECT ARRAY_AGG(
+                                        CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''))
+                                ) FROM part_application pa
+                                    JOIN application a ON pa.application_id = a.application_id
+                                    LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
+                                    LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
+                                    LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
+                                WHERE pa.part_id = p.part_id) AS applications_array,
                 (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags_array
             FROM part AS p
             LEFT JOIN brand AS b ON p.brand_id = b.brand_id
@@ -223,15 +226,11 @@ router.get('/sync-parts-to-meili', protect, isAdmin, async (req, res) => {
             return res.status(200).json({ message: 'No parts found in the database to sync.' });
         }
 
-        const partsToSync = await Promise.all(rows.map(async (part) => {
-            const applicationRows = await fetchPartApplications(db, part.part_id);
-            return {
-                ...part,
-                display_name: constructDisplayName(part),
-                applications: applicationRows.map(formatApplicationDisplay).filter(Boolean),
-                searchable_applications: buildSearchableApplications(applicationRows),
-                tags: part.tags_array || []
-            };
+        const partsToSync = rows.map(part => ({
+            ...part,
+            display_name: constructDisplayName(part),
+            applications: part.applications_array || [],
+            tags: part.tags_array || []
         }));
 
         // Sync with Meilisearch

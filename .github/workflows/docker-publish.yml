@@ -33,7 +33,6 @@ jobs:
       - name: Build and push frontend image
         uses: docker/build-push-action@v5
         with:
-          context: .
-          file: ./packages/web/Dockerfile
+          context: ./packages/web
           push: true
           tags: kentonel/forson-frontend:latest # Corrected username

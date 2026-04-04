@@ -5,21 +5,22 @@ const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { syncPartWithMeili, removePartFromMeili, meiliClient } = require('../meilisearch');
 const { activeAliasCondition } = require('../helpers/partNumberSoftDelete');
 const { normalizePartData } = require('../helpers/normalizePart');
-const {
-    fetchPartApplications,
-    formatApplicationDisplay,
-    buildSearchableApplications
-} = require('../helpers/applicationHelper');
 const router = express.Router();
 
 // Helper function to get all data for a part for Meilisearch indexing
 const getPartDataForMeili = async (client, partId) => {
     const query = `
         SELECT
-            p.*,
-            b.brand_name,
-            g.group_name,
-            (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${activeAliasCondition('pn')}) AS part_numbers,
+            p.*, b.brand_name, g.group_name,
+            (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${activeAliasCondition('pn')}) as part_numbers,
+                        (SELECT ARRAY_AGG(
+                                CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''))
+                        ) FROM part_application pa
+                            JOIN application a ON pa.application_id = a.application_id
+                            LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
+                            LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
+                            LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
+                        WHERE pa.part_id = p.part_id) AS applications_array,
             (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags_array
         FROM part AS p
         LEFT JOIN brand AS b ON p.brand_id = b.brand_id
@@ -30,15 +31,20 @@ const getPartDataForMeili = async (client, partId) => {
     if (res.rows.length === 0) return null;
 
     const part = res.rows[0];
-    const applicationRows = await fetchPartApplications(client, partId);
-    const applicationLabels = applicationRows.map(formatApplicationDisplay).filter(Boolean);
-    const searchableApplications = buildSearchableApplications(applicationRows);
     const normalizedFields = normalizePartData(part);
     return {
         ...part,
         display_name: constructDisplayName(part),
-        applications: applicationLabels,
-        searchable_applications: searchableApplications,
+        applications: part.applications_array || [],
+        // Flatten applications into a single searchable string for Meilisearch
+        searchable_applications: (part.applications_array && Array.isArray(part.applications_array))
+            ? part.applications_array.map(app => {
+                // SQL returns a concatenated string like "Make Model Engine" for each application.
+                if (typeof app === 'string') return app;
+                // If for some reason the application is an object, concatenate known fields.
+                return `${app.make || ''} ${app.model || ''} ${app.engine || ''}`.trim();
+            }).join(', ')
+            : '',
         tags: part.tags_array || [],
         normalized_internal_sku: normalizedFields.normalized_internal_sku,
         normalized_part_numbers: normalizedFields.normalized_part_numbers
@@ -133,26 +139,21 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
                 (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = p.part_id AND ${activeAliasCondition('pn')}) AS part_numbers,
                 (SELECT STRING_AGG(
                     CONCAT(
-                        COALESCE(app.make, ''),
-                        CASE WHEN app.model IS NOT NULL AND app.model <> '' THEN CONCAT(' ', app.model) ELSE '' END,
-                        CASE WHEN app.engine IS NOT NULL AND app.engine <> '' THEN CONCAT(' ', app.engine) ELSE '' END,
+                        vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''),
                         CASE
-                            WHEN app.year_start IS NOT NULL AND app.year_end IS NOT NULL AND app.year_start = app.year_end THEN CONCAT(' [', app.year_start, ']')
-                            WHEN app.year_start IS NOT NULL AND app.year_end IS NOT NULL THEN CONCAT(' [', app.year_start, '-', app.year_end, ']')
-                            WHEN app.year_start IS NOT NULL THEN CONCAT(' [', app.year_start, '-]')
-                            WHEN app.year_end IS NOT NULL THEN CONCAT(' [-', app.year_end, ']')
+                            WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL AND pa.year_start = pa.year_end THEN CONCAT(' [', pa.year_start, ']')
+                            WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL THEN CONCAT(' [', pa.year_start, '-', pa.year_end, ']')
+                            WHEN pa.year_start IS NOT NULL THEN CONCAT(' [', pa.year_start, '-]')
+                            WHEN pa.year_end IS NOT NULL THEN CONCAT(' [-', pa.year_end, ']')
                             ELSE ''
                         END
                     ), '; '
-                ) FROM (
-                    SELECT paf.make_name AS make,
-                           paf.model_name AS model,
-                           paf.engine_name AS engine,
-                           paf.year_start,
-                           paf.year_end
-                    FROM part_application_flexible paf
-                    WHERE paf.part_id = p.part_id
-                ) app) AS applications,
+                ) FROM part_application pa
+                  JOIN application a ON pa.application_id = a.application_id
+                  LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
+                  LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
+                  LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
+                WHERE pa.part_id = p.part_id) AS applications,
                 (SELECT STRING_AGG(t.tag_name, ', ') FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags
             FROM part AS p
             LEFT JOIN brand AS b ON p.brand_id = b.brand_id
@@ -314,169 +315,10 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
 });
 
 router.put('/parts/bulk-update', protect, hasPermission('parts:edit'), async (req, res) => {
-    const { partIds, updates } = req.body || {};
-
-    if (!Array.isArray(partIds) || partIds.length === 0) {
-        return res.status(400).json({ message: 'No part IDs were provided for bulk update.' });
-    }
-
-    if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
-        return res.status(400).json({ message: 'Updates payload is missing or invalid.' });
-    }
-
-    const normalizedPartIds = Array.from(new Set(
-        partIds
-            .map(id => {
-                const parsed = Number(id);
-                return Number.isFinite(parsed) ? Math.trunc(parsed) : NaN;
-            })
-            .filter(id => Number.isInteger(id))
-    ));
-
-    if (normalizedPartIds.length === 0) {
-        return res.status(400).json({ message: 'No valid part IDs were provided.' });
-    }
-
-    const parseBoolean = (value, field) => {
-        if (typeof value === 'boolean') return value;
-        if (value === 'true' || value === '1' || value === 1) return true;
-        if (value === 'false' || value === '0' || value === 0) return false;
-        throw new Error(`Invalid boolean value provided for ${field}.`);
-    };
-
-    const parseNumber = (value, field) => {
-        if (value === null || value === undefined || value === '') {
-            throw new Error(`Missing numeric value for ${field}.`);
-        }
-        const parsed = Number(value);
-        if (!Number.isFinite(parsed)) {
-            throw new Error(`Invalid numeric value provided for ${field}.`);
-        }
-        return parsed;
-    };
-
-    const parseInteger = (value, field) => {
-        if (value === null || value === undefined || value === '') {
-            throw new Error(`Missing integer value for ${field}.`);
-        }
-        const parsed = Number(value);
-        if (!Number.isInteger(parsed)) {
-            throw new Error(`Invalid integer value provided for ${field}.`);
-        }
-        return parsed;
-    };
-
-    const parseNullableInteger = (value, field) => {
-        if (value === null || value === undefined || value === '') {
-            return null;
-        }
-        return parseInteger(value, field);
-    };
-
-    const fieldParsers = {
-        brand_id: (value) => parseInteger(value, 'brand_id'),
-        group_id: (value) => parseInteger(value, 'group_id'),
-        reorder_point: (value) => parseInteger(value, 'reorder_point'),
-        warning_quantity: (value) => parseInteger(value, 'warning_quantity'),
-        last_cost: (value) => parseNumber(value, 'last_cost'),
-        last_sale_price: (value) => parseNumber(value, 'last_sale_price'),
-        barcode: (value) => {
-            if (typeof value !== 'string') {
-                throw new Error('Barcode must be a string.');
-            }
-            return value.trim();
-        },
-        measurement_unit: (value) => {
-            if (typeof value !== 'string') {
-                throw new Error('Measurement unit must be a string.');
-            }
-            return value.trim();
-        },
-        tax_rate_id: (value) => parseNullableInteger(value, 'tax_rate_id'),
-        is_active: (value) => parseBoolean(value, 'is_active'),
-        is_price_change_allowed: (value) => parseBoolean(value, 'is_price_change_allowed'),
-        is_using_default_quantity: (value) => parseBoolean(value, 'is_using_default_quantity'),
-        is_service: (value) => parseBoolean(value, 'is_service'),
-        low_stock_warning: (value) => parseBoolean(value, 'low_stock_warning'),
-        is_tax_inclusive_price: (value) => parseBoolean(value, 'is_tax_inclusive_price')
-    };
-
-    const setFragments = [];
-    const values = [];
-    let paramIndex = 1;
-
-    try {
-        for (const [key, rawValue] of Object.entries(updates)) {
-            if (!Object.prototype.hasOwnProperty.call(fieldParsers, key)) {
-                continue;
-            }
-
-            const parsedValue = fieldParsers[key](rawValue);
-            setFragments.push(`${key} = $${paramIndex++}`);
-            values.push(parsedValue);
-        }
-    } catch (err) {
-        return res.status(400).json({ message: err.message });
-    }
-
-    if (setFragments.length === 0) {
-        return res.status(400).json({ message: 'No valid fields were provided for update.' });
-    }
-
-    // Always stamp who modified and when
-    setFragments.push(`modified_by = $${paramIndex++}`);
-    values.push(req.user?.employee_id || null);
-    setFragments.push('date_modified = CURRENT_TIMESTAMP');
-
-    const client = await db.getClient();
-    try {
-        await client.query('BEGIN');
-
-        values.push(normalizedPartIds);
-        const updateQuery = `
-            UPDATE part
-            SET ${setFragments.join(', ')}
-            WHERE part_id = ANY($${paramIndex})
-            RETURNING part_id;
-        `;
-
-        const { rows, rowCount } = await client.query(updateQuery, values);
-        if (rowCount === 0) {
-            await client.query('ROLLBACK');
-            return res.status(404).json({ message: 'No matching parts were updated.' });
-        }
-
-        await client.query('COMMIT');
-
-        const syncedPartIds = [];
-        for (const row of rows) {
-            try {
-                const partData = await getPartDataForMeili(db, row.part_id);
-                if (partData) {
-                    syncPartWithMeili(partData);
-                    syncedPartIds.push(row.part_id);
-                }
-            } catch (syncError) {
-                console.error(`[WARN] Failed to sync part ${row.part_id} with Meilisearch:`, syncError);
-            }
-        }
-
-        return res.json({
-            message: 'Parts updated successfully.',
-            updatedCount: rowCount,
-            partIds: rows.map(r => r.part_id),
-            syncedCount: syncedPartIds.length
-        });
-    } catch (err) {
-        await client.query('ROLLBACK');
-        console.error('Bulk part update failed:', err);
-        return res.status(500).json({
-            message: 'Failed to apply bulk updates.',
-            error: process.env.NODE_ENV !== 'production' ? err.message : undefined
-        });
-    } finally {
-        client.release();
-    }
+    // This is a placeholder for the bulk update logic.
+    // For a real implementation, you would loop through partIds and apply updates.
+    // After updating, you would need to re-sync each affected part with Meilisearch.
+    res.status(501).json({ message: 'Bulk update not implemented yet.' });
 });
 
 router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) => {

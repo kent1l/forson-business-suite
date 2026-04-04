@@ -46,4 +46,3 @@ export const ICONS = {
 
 // Added bookmark icon (used in POS saved sales feature)
 ICONS.bookmark = "M17 20l-5-5-5 5V5a2 2 0 012-2h6a2 2 0 012 2z";
-ICONS.cheque = "M4 6a2 2 0 012-2h12a2 2 0 012 2v8a2 2 0 01-2 2h-5l-3 3v-3H6a2 2 0 01-2-2V6zm3 3h10M7 12h6";

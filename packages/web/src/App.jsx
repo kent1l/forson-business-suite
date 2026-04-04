@@ -7,7 +7,6 @@ import MainLayout from './components/layout/MainLayout';
 import SetupPage from './pages/SetupPage';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import ErrorBoundary from './components/ErrorBoundary';
 
 // AppContent remains the same, but it will now always have access to auth and settings
 function AppContent() {
@@ -69,12 +68,10 @@ function App() {
 
     // If setup is complete, render the main application with AuthProvider
     return (
-        <ErrorBoundary>
-            <AuthProvider>
-                <Toaster position="top-center" />
-                <AppContent />
-            </AuthProvider>
-        </ErrorBoundary>
+        <AuthProvider>
+            <Toaster position="top-center" />
+            <AppContent />
+        </AuthProvider>
     );
 }
 

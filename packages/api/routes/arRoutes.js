@@ -15,14 +15,9 @@ router.get('/ar/dashboard-stats', protect, hasPermission('ar:view'), async (req,
         const [totalReceivablesRes, invoicesSentRes, overdueInvoicesRes, avgCollectionRes] = await Promise.all([
             // Total receivables
             db.query(`
-                SELECT COALESCE(SUM(GREATEST(i.total_amount - COALESCE(cn_totals.refunded_amount, 0) - i.amount_paid, 0)), 0) as total_receivables
-                FROM invoice i
-                LEFT JOIN LATERAL (
-                    SELECT COALESCE(SUM(cn.total_amount), 0) AS refunded_amount
-                    FROM credit_note cn
-                    WHERE cn.invoice_id = i.invoice_id
-                ) cn_totals ON TRUE
-                WHERE i.status IN ('Unpaid', 'Partially Paid', 'Partially Refunded')
+                SELECT COALESCE(SUM(i.total_amount - i.amount_paid), 0) as total_receivables
+                FROM invoice i 
+                WHERE i.status IN ('Unpaid', 'Partially Paid')
             `),
             
             // Invoices sent in date range
@@ -36,7 +31,7 @@ router.get('/ar/dashboard-stats', protect, hasPermission('ar:view'), async (req,
             db.query(`
                 SELECT COUNT(*) as overdue_count
                 FROM invoice i
-                WHERE i.status IN ('Unpaid', 'Partially Paid', 'Partially Refunded') 
+                WHERE i.status IN ('Unpaid', 'Partially Paid') 
                 AND i.due_date < CURRENT_DATE
             `),
             
@@ -86,14 +81,9 @@ router.get('/ar/aging-summary', protect, hasPermission('ar:view'), async (req, r
                         WHEN COALESCE(i.due_date, CURRENT_DATE - INTERVAL '91 days') >= CURRENT_DATE - INTERVAL '90 days' THEN '61-90 Days'
                         ELSE '90+ Days'
                     END as bucket_name,
-                    COALESCE(SUM(GREATEST(i.total_amount - COALESCE(cn_totals.refunded_amount, 0) - i.amount_paid, 0)), 0) as bucket_value
+                    COALESCE(SUM(i.total_amount - i.amount_paid), 0) as bucket_value
                 FROM invoice i
-                LEFT JOIN LATERAL (
-                    SELECT COALESCE(SUM(cn.total_amount), 0) AS refunded_amount
-                    FROM credit_note cn
-                    WHERE cn.invoice_id = i.invoice_id
-                ) cn_totals ON TRUE
-                WHERE i.status IN ('Unpaid', 'Partially Paid', 'Partially Refunded')
+                WHERE i.status IN ('Unpaid', 'Partially Paid')
                 GROUP BY 
                     CASE 
                         WHEN COALESCE(i.due_date, CURRENT_DATE - INTERVAL '91 days') >= CURRENT_DATE THEN 'Current'
@@ -145,7 +135,7 @@ router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req
                 c.company_name,
                 c.first_name,
                 c.last_name,
-                COALESCE(SUM(GREATEST(i.total_amount - COALESCE(cn_totals.refunded_amount, 0) - i.amount_paid, 0)), 0) as total_balance_due,
+                COALESCE(SUM(i.total_amount - i.amount_paid), 0) as total_balance_due,
                 MIN(i.due_date) as earliest_due_date,
                 COUNT(i.invoice_id) as invoice_count,
                 CASE 
@@ -157,14 +147,10 @@ router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req
                 END as status
             FROM customer c
             JOIN invoice i ON c.customer_id = i.customer_id
-            LEFT JOIN LATERAL (
-                SELECT COALESCE(SUM(cn.total_amount), 0) AS refunded_amount
-                FROM credit_note cn
-                WHERE cn.invoice_id = i.invoice_id
-            ) cn_totals ON TRUE
-            WHERE i.status IN ('Unpaid', 'Partially Paid', 'Partially Refunded')
+            WHERE i.status IN ('Unpaid', 'Partially Paid')
+            AND (i.total_amount - i.amount_paid) > 0
             GROUP BY c.customer_id, c.company_name, c.first_name, c.last_name
-            HAVING COALESCE(SUM(GREATEST(i.total_amount - COALESCE(cn_totals.refunded_amount, 0) - i.amount_paid, 0)), 0) > 0
+            HAVING COALESCE(SUM(i.total_amount - i.amount_paid), 0) > 0
             ORDER BY earliest_due_date ASC, total_balance_due DESC
             LIMIT $1 OFFSET $2;
         `;
@@ -192,7 +178,7 @@ router.get('/ar/customer-invoices/:customerId', protect, hasPermission('ar:view'
                 i.due_date,
                 i.total_amount,
                 i.amount_paid,
-                GREATEST(i.total_amount - COALESCE(cn_totals.refunded_amount, 0) - i.amount_paid, 0) as balance_due,
+                (i.total_amount - i.amount_paid) as balance_due,
                 c.customer_id,
                 c.company_name,
                 c.first_name,
@@ -207,14 +193,10 @@ router.get('/ar/customer-invoices/:customerId', protect, hasPermission('ar:view'
                 END as status
             FROM invoice i
             JOIN customer c ON i.customer_id = c.customer_id
-            LEFT JOIN LATERAL (
-                SELECT COALESCE(SUM(cn.total_amount), 0) AS refunded_amount
-                FROM credit_note cn
-                WHERE cn.invoice_id = i.invoice_id
-            ) cn_totals ON TRUE
             WHERE i.customer_id = $1
-            AND i.status IN ('Unpaid', 'Partially Paid', 'Partially Refunded')
-            ORDER BY i.due_date ASC, GREATEST(i.total_amount - COALESCE(cn_totals.refunded_amount, 0) - i.amount_paid, 0) DESC
+            AND i.status IN ('Unpaid', 'Partially Paid')
+            AND (i.total_amount - i.amount_paid) > 0
+            ORDER BY i.due_date ASC, (i.total_amount - i.amount_paid) DESC
             LIMIT $2 OFFSET $3;
         `;
         
@@ -230,27 +212,17 @@ router.get('/ar/trends', protect, hasPermission('ar:view'), async (req, res) => 
         const query = `
             WITH current_period AS (
                 SELECT 
-                    COALESCE(SUM(GREATEST(i.total_amount - COALESCE(cn_totals.refunded_amount, 0) - i.amount_paid, 0)), 0) as current_receivables,
+                    COALESCE(SUM(i.total_amount - i.amount_paid), 0) as current_receivables,
                     COUNT(CASE WHEN i.due_date < CURRENT_DATE THEN 1 END) as current_overdue
                 FROM invoice i
-                LEFT JOIN LATERAL (
-                    SELECT COALESCE(SUM(cn.total_amount), 0) AS refunded_amount
-                    FROM credit_note cn
-                    WHERE cn.invoice_id = i.invoice_id
-                ) cn_totals ON TRUE
-                WHERE i.status IN ('Unpaid', 'Partially Paid', 'Partially Refunded')
+                WHERE i.status IN ('Unpaid', 'Partially Paid')
             ),
             previous_period AS (
                 SELECT 
-                    COALESCE(SUM(GREATEST(i.total_amount - COALESCE(cn_totals.refunded_amount, 0) - i.amount_paid, 0)), 0) as previous_receivables,
+                    COALESCE(SUM(i.total_amount - i.amount_paid), 0) as previous_receivables,
                     COUNT(CASE WHEN i.due_date < (CURRENT_DATE - INTERVAL '30 days') THEN 1 END) as previous_overdue
                 FROM invoice i
-                LEFT JOIN LATERAL (
-                    SELECT COALESCE(SUM(cn.total_amount), 0) AS refunded_amount
-                    FROM credit_note cn
-                    WHERE cn.invoice_id = i.invoice_id
-                ) cn_totals ON TRUE
-                WHERE i.status IN ('Unpaid', 'Partially Paid', 'Partially Refunded')
+                WHERE i.status IN ('Unpaid', 'Partially Paid')
                 AND i.invoice_date <= CURRENT_DATE - INTERVAL '30 days'
             )
             SELECT 
@@ -321,7 +293,7 @@ router.get('/ar/drill-down-invoices', protect, hasPermission('ar:view'), async (
                 i.due_date,
                 i.total_amount,
                 i.amount_paid,
-                GREATEST(i.total_amount - COALESCE(cn_totals.refunded_amount, 0) - i.amount_paid, 0) as balance_due,
+                (i.total_amount - i.amount_paid) as balance_due,
                 c.customer_id,
                 c.company_name,
                 c.first_name,
@@ -329,16 +301,11 @@ router.get('/ar/drill-down-invoices', protect, hasPermission('ar:view'), async (
                 EXTRACT(days FROM (CURRENT_DATE - COALESCE(i.due_date, CURRENT_DATE - INTERVAL '90 days'))) as days_overdue
             FROM invoice i
             LEFT JOIN customer c ON i.customer_id = c.customer_id
-            LEFT JOIN LATERAL (
-                SELECT COALESCE(SUM(cn.total_amount), 0) AS refunded_amount
-                FROM credit_note cn
-                WHERE cn.invoice_id = i.invoice_id
-            ) cn_totals ON TRUE
-            WHERE i.status IN ('Unpaid', 'Partially Paid', 'Partially Refunded')
-            AND GREATEST(i.total_amount - COALESCE(cn_totals.refunded_amount, 0) - i.amount_paid, 0) > 0
+            WHERE i.status IN ('Unpaid', 'Partially Paid')
+            AND (i.total_amount - i.amount_paid) > 0
             AND ${dateCondition}
             ${dateRangeCondition}
-            ORDER BY i.due_date ASC, GREATEST(i.total_amount - COALESCE(cn_totals.refunded_amount, 0) - i.amount_paid, 0) DESC
+            ORDER BY i.due_date ASC, (i.total_amount - i.amount_paid) DESC
             LIMIT $1 OFFSET $2;
         `;
 

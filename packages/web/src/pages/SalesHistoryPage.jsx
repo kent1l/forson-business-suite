@@ -67,12 +67,7 @@ const SalesHistoryPage = () => {
     const summaryRef = useRef(null);
     const [maxHeight, setMaxHeight] = useState('0px');
 
-    // CORRECTED computation of enhanced stats leveraging refunded_amount, net_amount, balance_due + Phase 1 cash metrics
-    // This calculation respects date range filters and search queries applied to invoice data
-    // Definitions:
-    // - Collected: Total sales that are settled or that has been collected (actual amount_paid)
-    // - Approx Net Cash: The total expected amount of cash derived from the sales and other transactions like refunds
-    // - A/R Outstanding: The total receivables (sum of unpaid balances)
+    // Pure computation of enhanced stats leveraging refunded_amount, net_amount, balance_due + Phase 1 cash metrics
     const stats = useMemo(() => {
         if (!Array.isArray(invoices) || invoices.length === 0) {
             return {
@@ -118,18 +113,18 @@ const SalesHistoryPage = () => {
             const refundedAmt = currencySafeNumber(inv.refunded_amount);
             // net_amount provided by backend (already clamped) fallback compute if missing
             const net = currencySafeNumber(inv.net_amount !== undefined ? inv.net_amount : Math.max(total - refundedAmt, 0));
-            const collected = currencySafeNumber(inv.amount_paid); // CORRECTED: Collected = actual amount paid (no capping at net)
+            const collected = Math.min(currencySafeNumber(inv.amount_paid), net); // cap collection at net
             // balance_due may be negative if overpaid; always clamp to >= 0
             const balanceRaw = inv.balance_due !== undefined
                 ? currencySafeNumber(inv.balance_due)
-                : Math.max(net - collected, 0); // CORRECTED: Ensure proper balance calculation
+                : (net - collected);
             const balance = Math.max(balanceRaw, 0);
 
             grossSales += total; // Formula: Sum of total_amount for all active invoices
             refunds += refundedAmt; // Formula: Sum of refunded_amount for all active invoices
             netSales += net; // Formula: Sum of net_amount (total - refunds, clamped >=0) for all active invoices
-            amountCollected += collected; // CORRECTED Formula: Sum of amount_paid (actual collections, not capped)
-            arOutstanding += balance; // CORRECTED Formula: Sum of max(balance_due, 0) - represents total receivables (A/R Outstanding)
+            amountCollected += collected; // Formula: Sum of min(amount_paid, net) to cap at net value
+            arOutstanding += balance; // Formula: Sum of max(balance_due, 0) to prevent negative A/R
             if (net > 0) netActiveInvoices += 1; // Count invoices with positive net for averaging
 
             const customerName = `${inv.customer_first_name || ''} ${inv.customer_last_name || ''}`.trim() || 'Unknown';
@@ -138,7 +133,7 @@ const SalesHistoryPage = () => {
 
         const invoicesIssued = active.length; // Formula: Total count of active invoices
         const avgNetInvoice = netActiveInvoices > 0 ? netSales / netActiveInvoices : 0; // Formula: Net Sales / Net Active Invoices (average net per invoice)
-        const collectionRate = netSales > 0 ? amountCollected / netSales : 0; // CORRECTED Formula: Amount Collected / Net Sales (not capped, can exceed 100% due to overpayments)
+        const collectionRate = netSales > 0 ? Math.min(amountCollected / netSales, 1) : 0; // Formula: Amount Collected / Net Sales (capped at 100%)
         const refundRate = grossSales > 0 ? Math.min(refunds / grossSales, 1) : 0; // Formula: Refunds / Gross Sales (capped at 100%)
 
         // Determine top customer by net contribution
@@ -194,11 +189,7 @@ const SalesHistoryPage = () => {
         const totalCollectedForMix = cashCollected + nonCashCollected; // Total collected for mix calculation
         const cashMix = totalCollectedForMix > 0 ? cashCollected / totalCollectedForMix : 0; // Formula: Cash Collected / Total Collected
 
-        // CORRECTED: Net Cash = Net cash collected (after change) minus actual cash refunds
-        // When split payments are enabled, this uses accurate cash refund tracking
-        // Otherwise falls back to approximation (assumes all refunds are cash)
-        // This can be negative if cash refunds exceed cash collections for the period
-        const approxNetCashAfterRefunds = cashCollectedNet - refundsApprox; // Formula: Cash Net - Cash Refunds (can be negative)
+        const approxNetCashAfterRefunds = Math.max(cashCollectedNet - refundsApprox, 0); // Formula: Cash Net - Approximate Refunds (clamped >=0)
 
         // Enhanced payment method breakdown for detailed analysis
         const paymentMethodBreakdown = {};
@@ -336,22 +327,13 @@ const SalesHistoryPage = () => {
     const fetchRefundsApprox = useMemo(() => {
         return async () => {
             try {
-                // Try to get accurate cash refunds first, fall back to approximation
-                if (settings?.ENABLE_SPLIT_PAYMENTS === 'true') {
-                    // Get actual cash refunds using payment method types
-                    const resp = await api.get('/payments/refunds-cash', { params: { ...dates } });
-                    setRefundsApprox(parseFloat(resp.data.cash_refunds) || 0);
-                } else {
-                    // Fallback to approximation (assumes all refunds are cash)
-                    const resp = await api.get('/payments/refunds-approx', { params: { ...dates } });
-                    setRefundsApprox(parseFloat(resp.data.total_refunds) || 0);
-                }
+                const resp = await api.get('/payments/refunds-approx', { params: { ...dates } });
+                setRefundsApprox(parseFloat(resp.data.total_refunds) || 0);
             } catch {
-                // Final fallback
                 setRefundsApprox(0);
             }
         };
-    }, [dates, settings?.ENABLE_SPLIT_PAYMENTS]);
+    }, [dates]);
 
     const fetchPaymentMethods = useMemo(() => {
         return async () => {
@@ -514,19 +496,19 @@ const SalesHistoryPage = () => {
                         <div className="text-[11px] text-gray-500">Net Sales</div>
                         <div className="text-sm font-semibold text-gray-800 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.netSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
-                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Collected = Total amount paid on invoices (settled/collected payments)">
+                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Amount Collected (capped at Net)">
                         <div className="text-[11px] text-gray-500">Collected</div>
                         <div className="text-sm font-semibold text-green-600 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.amountCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
-                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Net Cash = Cash collected minus cash refunds for the period (can be negative if refunds exceed collections)">
-                        <div className="text-[11px] text-gray-500">Net Cash (After Refunds)</div>
-                        <div className={`text-sm font-semibold truncate ${stats.approxNetCashAfterRefunds >= 0 ? 'text-gray-800' : 'text-red-600'}`}>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.approxNetCashAfterRefunds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Approx Net Cash = Cash Net - Credit Notes (assumes all refunds were cash)">
+                        <div className="text-[11px] text-gray-500">Approx Net Cash (After Refunds)</div>
+                        <div className="text-sm font-semibold text-gray-800 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.approxNetCashAfterRefunds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
                     <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Collection Rate = Collected / Net Sales">
                         <div className="text-[11px] text-gray-500">Collection Rate</div>
                         <div className="text-sm font-semibold text-gray-800">{(stats.collectionRate * 100).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%</div>
                     </div>
-                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="A/R Outstanding = Total receivables (sum of unpaid balances)">
+                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Outstanding A/R = Sum of balances due">
                         <div className="text-[11px] text-gray-500">A/R Outstanding</div>
                         <div className="text-sm font-semibold text-red-600 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.arOutstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
