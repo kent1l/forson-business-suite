@@ -116,10 +116,16 @@ DB_PASSWORD=change_me
 MEILISEARCH_MASTER_KEY=change_me_meili
 JWT_SECRET=change_me_jwt
 MEILISEARCH_HOST=http://meilisearch:7700
+DISABLE_MEILI_OUTBOX_WORKER=false
+DISABLE_MEILI_APPLICATIONS_LISTENER=false
+ENABLE_LEGACY_MEILI_PART_LISTENER=false
 ```
 Notes:
 - The backend reads discrete DB_* variables.
 - In containers, `DB_HOST=db` and `MEILISEARCH_HOST=http://meilisearch:7700` are correct.
+- `DISABLE_MEILI_OUTBOX_WORKER=true` disables parts outbox processing (debugging only).
+- `DISABLE_MEILI_APPLICATIONS_LISTENER=true` disables applications index LISTEN/NOTIFY updates.
+- `ENABLE_LEGACY_MEILI_PART_LISTENER=true` re-enables legacy parts LISTEN/NOTIFY listener (normally off when outbox is enabled).
 
 ### Database Initialization
 Run once on fresh installs.
@@ -221,9 +227,9 @@ sudo docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql
 sudo docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
 ```
 
-Apply migrations.
+Apply migrations (recommended runner with history + checksums).
 ```bash
-for f in $(ls database/migrations/*.sql | sort); do cat "$f" | sudo docker exec -i forson_db psql -U postgres -d forson_business_suite; done
+npm --prefix packages/api run migrate -- --host 127.0.0.1
 ```
 
 Verify services.
@@ -252,7 +258,7 @@ sudo docker compose -f docker-compose.prod.yml up -d --pull=always --remove-orph
 
 Apply migrations.
 ```bash
-for f in $(ls database/migrations/*.sql | sort); do cat "$f" | sudo docker exec -i forson_db psql -U postgres -d forson_business_suite; done
+npm --prefix packages/api run migrate -- --host 127.0.0.1
 ```
 
 Smoke test API.
@@ -271,6 +277,11 @@ Use the built-in migration runner to apply idempotent SQL migrations safely.
 npm --prefix packages/api run migrate -- --host localhost
 ```
 
+- Apply from inside the backend container (recommended for Docker Desktop users):
+```powershell
+docker exec -it forson_backend_dev sh -lc "node scripts/migrate.js --host db --user postgres --password \"$DB_PASSWORD\" --db forson_business_suite"
+```
+
 - Status and verify:
 ```powershell
 npm --prefix packages/api run migrate:status -- --host localhost
@@ -282,9 +293,20 @@ npm --prefix packages/api run migrate:verify -- --host localhost
 npm --prefix packages/api run migrate -- --host 127.0.0.1
 ```
 
+- Target a specific migration window (useful when you only need a single new migration):
+```bash
+npm --prefix packages/api run migrate -- --host 127.0.0.1 --from 20260415_add_meili_sync_outbox.sql --to 20260415_add_meili_sync_outbox.sql
+```
+
+- Skip known seed migrations in existing databases:
+```bash
+npm --prefix packages/api run migrate -- --host 127.0.0.1 --skip 20250821_seed_documents.sql
+```
+
 Notes
 - Non-destructive: migrations are idempotent and applied in order.
 - Drift detection: if a previously applied file changes, verify/repair before proceeding.
+- `--from`/`--to` now fail fast when a filename is missing or excluded.
 
 ---
 

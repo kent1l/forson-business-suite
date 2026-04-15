@@ -140,11 +140,18 @@ app.listen(PORT, async () => {
     console.log('Meili outbox worker disabled by DISABLE_MEILI_OUTBOX_WORKER=true');
   }
 
-  // Keep legacy LISTEN/NOTIFY listeners opt-in for compatibility or migration periods.
-  if (process.env.ENABLE_LEGACY_MEILI_LISTENERS === 'true') {
-    startMeiliListener();
+  // Keep applications listener enabled by default so the `applications` Meilisearch index
+  // stays updated from DB NOTIFY events.
+  if (process.env.DISABLE_MEILI_APPLICATIONS_LISTENER !== 'true') {
     startMeiliApplicationsListener();
   } else {
-    console.log('Legacy meili listeners disabled (set ENABLE_LEGACY_MEILI_LISTENERS=true to enable).');
+    console.log('Applications meili listener disabled by DISABLE_MEILI_APPLICATIONS_LISTENER=true');
+  }
+
+  // Legacy part listener is opt-in to avoid duplicate processing with the outbox worker.
+  if (process.env.ENABLE_LEGACY_MEILI_PART_LISTENER === 'true' || process.env.ENABLE_LEGACY_MEILI_LISTENERS === 'true') {
+    startMeiliListener();
+  } else {
+    console.log('Legacy part meili listener disabled (set ENABLE_LEGACY_MEILI_PART_LISTENER=true to enable).');
   }
 });
