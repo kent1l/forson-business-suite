@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { syncPartWithMeili } = require('../meilisearch');
+const { enqueuePartUpsert } = require('../services/meiliOutboxService');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
 const router = express.Router();
 
@@ -128,7 +129,7 @@ router.post('/parts/:partId/applications', async (req, res) => {
     // Re-sync part with Meilisearch
     const partForMeili = await getPartDataForMeili(db, partId);
     if (partForMeili) {
-        syncPartWithMeili(partForMeili);
+        await enqueuePartUpsert(partForMeili.part_id, { source: 'partApplicationRoutes.create' });
     }
     
     res.status(201).json(result.rows[0]);
@@ -157,7 +158,7 @@ router.put('/part-applications/:partAppId', async (req, res) => {
         const partId = updatedLink.rows[0].part_id;
         const partForMeili = await getPartDataForMeili(db, partId);
         if (partForMeili) {
-            syncPartWithMeili(partForMeili);
+            await enqueuePartUpsert(partForMeili.part_id, { source: 'partApplicationRoutes.update' });
         }
 
         res.json(updatedLink.rows[0]);
@@ -183,7 +184,7 @@ router.delete('/parts/:partId/applications/:appId', async (req, res) => {
         // Re-sync part with Meilisearch
         const partForMeili = await getPartDataForMeili(db, partId);
         if (partForMeili) {
-            syncPartWithMeili(partForMeili);
+            await enqueuePartUpsert(partForMeili.part_id, { source: 'partApplicationRoutes.delete' });
         }
 
         res.json({ message: 'Application link deleted successfully.' });

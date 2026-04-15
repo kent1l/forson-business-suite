@@ -5,6 +5,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 const { setupMeiliSearch } = require('./meilisearch-setup');
 const { startMeiliListener } = require('./meili-listener');
 const { startMeiliApplicationsListener } = require('./meili-app-listener');
+const { startMeiliOutboxWorker } = require('./meili-outbox-worker');
 
 // Set default timezone to Philippine Time
 process.env.TZ = 'Asia/Manila';
@@ -132,13 +133,18 @@ app.listen(PORT, async () => {
     }
   }
   
-  // Start the Postgres listener that keeps Meilisearch in sync
-  // Allow disabling listeners with DISABLE_MEILI_LISTENERS env var for local debugging
-  console.log('DISABLE_MEILI_LISTENERS:', process.env.DISABLE_MEILI_LISTENERS);
-  if (process.env.DISABLE_MEILI_LISTENERS !== 'true') {
+  // Start durable outbox worker for part sync by default.
+  if (process.env.DISABLE_MEILI_OUTBOX_WORKER !== 'true') {
+    startMeiliOutboxWorker();
+  } else {
+    console.log('Meili outbox worker disabled by DISABLE_MEILI_OUTBOX_WORKER=true');
+  }
+
+  // Keep legacy LISTEN/NOTIFY listeners opt-in for compatibility or migration periods.
+  if (process.env.ENABLE_LEGACY_MEILI_LISTENERS === 'true') {
     startMeiliListener();
     startMeiliApplicationsListener();
   } else {
-    console.log('Meili listeners disabled by DISABLE_MEILI_LISTENERS=true');
+    console.log('Legacy meili listeners disabled (set ENABLE_LEGACY_MEILI_LISTENERS=true to enable).');
   }
 });

@@ -2,7 +2,8 @@ const express = require('express');
 const db = require('../db');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
-const { syncPartWithMeili, removePartFromMeili, meiliClient } = require('../meilisearch');
+const { meiliClient } = require('../meilisearch');
+const { enqueuePartUpsert, enqueuePartDelete } = require('../services/meiliOutboxService');
 const { activeAliasCondition } = require('../helpers/partNumberSoftDelete');
 const { normalizePartData } = require('../helpers/normalizePart');
 const router = express.Router();
@@ -291,8 +292,8 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
         
         const partForMeili = await getPartDataForMeili(db, newPartData.part_id);
         if (partForMeili) {
-            // Sync to search and return enriched payload including display_name
-            syncPartWithMeili(partForMeili);
+            // Queue durable background sync and return enriched payload including display_name
+            await enqueuePartUpsert(partForMeili.part_id, { source: 'partRoutes.create' });
             return res.status(201).json(partForMeili);
         }
 
@@ -360,7 +361,7 @@ router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) 
 
         const partForMeili = await getPartDataForMeili(db, id);
         if (partForMeili) {
-            syncPartWithMeili(partForMeili);
+            await enqueuePartUpsert(partForMeili.part_id, { source: 'partRoutes.update' });
             return res.json(partForMeili);
         }
         
@@ -383,7 +384,7 @@ router.delete('/parts/:id', protect, hasPermission('parts:delete'), async (req, 
         if (deleteOp.rowCount === 0) {
             return res.status(404).json({ message: 'Part not found' });
         }
-        removePartFromMeili(id);
+        await enqueuePartDelete(id, { source: 'partRoutes.delete' });
         res.json({ message: 'Part deleted successfully' });
     } catch (err) {
         console.error(err.message);
