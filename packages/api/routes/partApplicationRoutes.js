@@ -1,5 +1,6 @@
 const express = require('express');
 const db = require('../db');
+const { syncPartWithMeili } = require('../meilisearch');
 const { enqueuePartUpsert } = require('../services/meiliOutboxService');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
 const router = express.Router();

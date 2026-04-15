@@ -87,7 +87,7 @@ docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_sche
 
 5) Apply SQL migrations (recommended)
 ```bash
-npm --prefix packages/api run migrate -- --host localhost
+docker exec -it forson_backend_dev sh -lc "node scripts/migrate.js --host db --user \"$DB_USER\" --password \"$DB_PASSWORD\" --db \"$DB_NAME\""
 ```
 
 6) Access
@@ -207,7 +207,7 @@ docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_sche
 
 Apply migrations.
 ```bash
-npm --prefix packages/api run migrate -- --host localhost
+docker exec -it forson_backend_dev sh -lc "node scripts/migrate.js --host db --user \"$DB_USER\" --password \"$DB_PASSWORD\" --db \"$DB_NAME\""
 ```
 
 ### Production (Docker Compose, Linux server)

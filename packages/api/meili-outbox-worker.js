@@ -190,7 +190,7 @@ const processBatch = async (config) => {
       finalize.release();
     }
   } catch (error) {
-    try { await client.query('ROLLBACK'); } catch (_) { /* no-op */ }
+    try { await client.query('ROLLBACK'); } catch { /* no-op */ }
     throw error;
   } finally {
     client.release();
