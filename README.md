@@ -303,10 +303,16 @@ npm --prefix packages/api run migrate -- --host 127.0.0.1 --from 20260415_add_me
 npm --prefix packages/api run migrate -- --host 127.0.0.1 --skip 20250821_seed_documents.sql
 ```
 
+- Include optional seed migrations explicitly (off by default):
+```bash
+npm --prefix packages/api run migrate -- --host 127.0.0.1 --include-seeds
+```
+
 Notes
 - Non-destructive: migrations are idempotent and applied in order.
 - Drift detection: if a previously applied file changes, verify/repair before proceeding.
 - `--from`/`--to` now fail fast when a filename is missing or excluded.
+- Optional seed migrations (e.g. demo/sample data) are excluded from normal runs unless `--include-seeds` or `MIGRATE_INCLUDE_SEEDS=true` is set.
 
 ---
 

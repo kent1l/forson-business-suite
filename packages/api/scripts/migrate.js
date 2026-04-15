@@ -23,6 +23,7 @@ const argv = yargs
   .option('user', { type: 'string', describe: 'DB user' })
   .option('password', { type: 'string', describe: 'DB password' })
   .option('skip', { type: 'array', describe: 'Migration filename(s) to skip; can be repeated or comma-separated' })
+  .option('include-seeds', { type: 'boolean', default: false, describe: 'Include optional seed migrations (excluded by default)' })
   .option('dry-run', { type: 'boolean', default: false, describe: 'Print plan, do not execute' })
   .option('from', { type: 'string', describe: 'Start from migration (inclusive)' })
   .option('to', { type: 'string', describe: 'End at migration (inclusive)' })
@@ -30,6 +31,11 @@ const argv = yargs
   .argv;
 
 const CMD = argv._[0] || 'up';
+const OPTIONAL_SEED_MIGRATIONS = new Set([
+  // Seeds are intentionally excluded from normal migration runs to keep
+  // upgrades deterministic on already-initialized databases.
+  '20250821_seed_documents.sql',
+]);
 
 // Resolve repo root from this script
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -81,7 +87,12 @@ function loadMigrations() {
   };
 
   const skipList = normalizeSkipList(argv.skip);
-  const filteredFiles = files.filter(f => !skipList.includes(f));
+  const includeSeeds = argv['include-seeds'] === true || process.env.MIGRATE_INCLUDE_SEEDS === 'true';
+  const filteredFiles = files.filter((f) => {
+    if (skipList.includes(f)) return false;
+    if (!includeSeeds && OPTIONAL_SEED_MIGRATIONS.has(f)) return false;
+    return true;
+  });
 
   const ensureMarkerExists = (name, type) => {
     if (!name) return;
