@@ -3,6 +3,46 @@ const db = require('../db');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
 const router = express.Router();
 
+const getSearchSyncHealth = async () => {
+    try {
+        const [statusRes, lagRes] = await Promise.all([
+            db.query(`
+                SELECT status, COUNT(*)::int AS count
+                FROM meili_sync_outbox
+                GROUP BY status
+            `),
+            db.query(`
+                SELECT
+                    EXTRACT(EPOCH FROM (NOW() - MIN(created_at)))::int AS oldest_pending_seconds
+                FROM meili_sync_outbox
+                WHERE status = 'pending'
+            `)
+        ]);
+
+        const counts = { pending: 0, processing: 0, done: 0, dead: 0 };
+        statusRes.rows.forEach((row) => {
+            counts[row.status] = row.count;
+        });
+
+        return {
+            enabled: true,
+            queueCounts: counts,
+            oldestPendingSeconds: lagRes.rows[0].oldest_pending_seconds || 0,
+            hasBacklog: counts.pending > 0 || counts.processing > 0,
+            hasDeadLetters: counts.dead > 0
+        };
+    } catch (err) {
+        // If the outbox table does not exist yet, keep dashboard functional.
+        if (err && err.code === '42P01') {
+            return {
+                enabled: false,
+                reason: 'meili_sync_outbox table not found (migration not applied)'
+            };
+        }
+        throw err;
+    }
+};
+
 // GET /dashboard/stats - Fetch dashboard statistics
 router.get('/dashboard/stats', async (req, res) => {
   try {
@@ -71,7 +111,8 @@ router.get('/dashboard/enhanced-stats', async (req, res) => {
             inventoryValueRes,
             lowStockCountRes,
             recentSalesRes,
-            topProductsRes
+            topProductsRes,
+            searchSyncHealth
         ] = await Promise.all([
             // Today's revenue
             db.query(`
@@ -149,7 +190,8 @@ router.get('/dashboard/enhanced-stats', async (req, res) => {
                 GROUP BY p.part_id, p.detail, p.internal_sku, g.group_name, b.brand_name
                 ORDER BY total_revenue DESC
                 LIMIT 10
-            `)
+            `),
+            getSearchSyncHealth()
         ]);
 
         // Calculate percentage changes
@@ -183,13 +225,25 @@ router.get('/dashboard/enhanced-stats', async (req, res) => {
             topProducts: topProductsRes.rows.map(product => ({
                 ...product,
                 product_name: constructDisplayName(product)
-            }))
+            })),
+            searchSyncHealth
         };
 
         res.json(enhancedStats);
     } catch (err) {
         console.error('Enhanced dashboard stats error:', err);
         res.status(500).json({ message: 'Failed to fetch enhanced dashboard stats' });
+    }
+});
+
+// GET /dashboard/search-sync-health - Metrics endpoint for search sync outbox health
+router.get('/dashboard/search-sync-health', async (req, res) => {
+    try {
+        const searchSyncHealth = await getSearchSyncHealth();
+        res.json(searchSyncHealth);
+    } catch (err) {
+        console.error('Search sync health error:', err);
+        res.status(500).json({ message: 'Failed to fetch search sync health' });
     }
 });
 

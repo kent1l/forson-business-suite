@@ -22,6 +22,8 @@ const argv = yargs
   .option('db', { type: 'string', describe: 'DB name' })
   .option('user', { type: 'string', describe: 'DB user' })
   .option('password', { type: 'string', describe: 'DB password' })
+  .option('skip', { type: 'array', describe: 'Migration filename(s) to skip; can be repeated or comma-separated' })
+  .option('include-seeds', { type: 'boolean', default: false, describe: 'Include optional seed migrations (excluded by default)' })
   .option('dry-run', { type: 'boolean', default: false, describe: 'Print plan, do not execute' })
   .option('from', { type: 'string', describe: 'Start from migration (inclusive)' })
   .option('to', { type: 'string', describe: 'End at migration (inclusive)' })
@@ -29,6 +31,11 @@ const argv = yargs
   .argv;
 
 const CMD = argv._[0] || 'up';
+const OPTIONAL_SEED_MIGRATIONS = new Set([
+  // Seeds are intentionally excluded from normal migration runs to keep
+  // upgrades deterministic on already-initialized databases.
+  '20250821_seed_documents.sql',
+]);
 
 // Resolve repo root from this script
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -69,13 +76,44 @@ function loadMigrations() {
   const files = fs.readdirSync(migrationsDir)
     .filter(f => f.endsWith('.sql'))
     .sort();
+
+  const normalizeSkipList = (raw) => {
+    if (!raw) return [];
+    const values = Array.isArray(raw) ? raw : [raw];
+    return values
+      .flatMap(v => String(v).split(','))
+      .map(v => v.trim())
+      .filter(Boolean);
+  };
+
+  const skipList = normalizeSkipList(argv.skip);
+  const includeSeeds = argv['include-seeds'] === true || process.env.MIGRATE_INCLUDE_SEEDS === 'true';
+  const filteredFiles = files.filter((f) => {
+    if (skipList.includes(f)) return false;
+    if (!includeSeeds && OPTIONAL_SEED_MIGRATIONS.has(f)) return false;
+    return true;
+  });
+
+  const ensureMarkerExists = (name, type) => {
+    if (!name) return;
+    if (!filteredFiles.includes(name)) {
+      const reason = files.includes(name)
+        ? `${type} migration "${name}" is present but excluded by --skip`
+        : `${type} migration "${name}" was not found in ${migrationsDir}`;
+      throw new Error(reason);
+    }
+  };
+
+  ensureMarkerExists(argv.from, '--from');
+  ensureMarkerExists(argv.to, '--to');
+
   const slice = (list) => {
     let out = list;
     if (argv.from) out = out.slice(out.indexOf(argv.from));
     if (argv.to) out = out.slice(0, out.indexOf(argv.to) + 1);
     return out;
   };
-  return slice(files).map(f => {
+  return slice(filteredFiles).map(f => {
     const full = path.join(migrationsDir, f);
     const content = fs.readFileSync(full);
     return { name: f, full, content, checksum: sha256(content) };

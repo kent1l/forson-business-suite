@@ -8,8 +8,14 @@ The Meilisearch setup has been enhanced with configurable options via environmen
 # Environment (affects default settings)
 NODE_ENV=development|staging|production
 
-# Disable Meilisearch listeners for debugging
-DISABLE_MEILI_LISTENERS=true
+# Disable parts outbox worker for debugging
+DISABLE_MEILI_OUTBOX_WORKER=true
+
+# Disable applications LISTEN/NOTIFY listener for debugging
+DISABLE_MEILI_APPLICATIONS_LISTENER=true
+
+# Enable legacy parts LISTEN/NOTIFY listener (normally false when outbox is enabled)
+ENABLE_LEGACY_MEILI_PART_LISTENER=true
 ```
 
 ## Setup Retry Configuration
@@ -86,7 +92,9 @@ The following health check endpoints are now available:
 NODE_ENV=development
 MEILI_TYPO_ENABLED=false
 MEILI_SETUP_MAX_RETRIES=2
-DISABLE_MEILI_LISTENERS=true
+DISABLE_MEILI_OUTBOX_WORKER=false
+DISABLE_MEILI_APPLICATIONS_LISTENER=false
+ENABLE_LEGACY_MEILI_PART_LISTENER=false
 
 # Production environment with optimized settings
 NODE_ENV=production
