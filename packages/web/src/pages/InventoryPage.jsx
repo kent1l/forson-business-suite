@@ -83,6 +83,10 @@ const InventoryPage = () => {
     
     // Use inventory directly to preserve server-provided ranking (MeiliSearch)
     const sortedInventory = inventory;
+    const toSafeNumber = (value) => {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? numeric : 0;
+    };
 
     return (
         <div>
@@ -116,13 +120,20 @@ const InventoryPage = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {sortedInventory.map(item => (
+                                {sortedInventory.map(item => {
+                                    const stockOnHand = toSafeNumber(item.stock_on_hand);
+                                    const wacCost = toSafeNumber(item.wac_cost);
+                                    const totalValue = Number.isFinite(Number(item.total_value))
+                                        ? Number(item.total_value)
+                                        : stockOnHand * wacCost;
+
+                                    return (
                                     <tr key={item.part_id} className="border-b hover:bg-gray-50">
                                         <td className="p-3 text-sm font-mono">{item.internal_sku}</td>
                                         <td className="p-3 text-sm font-medium text-gray-800">{item.display_name}</td>
-                                        <td className="p-3 text-sm text-center font-semibold">{Number(item.stock_on_hand).toLocaleString()}</td>
-                                        <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '$'}{parseFloat(item.wac_cost).toFixed(2)}</td>
-                                        <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '$'}{parseFloat(item.total_value).toFixed(2)}</td>
+                                        <td className="p-3 text-sm text-center font-semibold">{stockOnHand.toLocaleString()}</td>
+                                        <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '$'}{wacCost.toFixed(2)}</td>
+                                        <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '$'}{totalValue.toFixed(2)}</td>
                                         <td className="p-3 text-sm text-right">
                                             {hasPermission('inventory:adjust') && (
                                                 <button onClick={() => handleOpenAdjustmentModal(item)} className="text-blue-600 hover:text-blue-800 mr-4" title="Adjust Stock">
@@ -134,7 +145,7 @@ const InventoryPage = () => {
                                             </button>
                                         </td>
                                     </tr>
-                                ))}
+                                )})}
                             </tbody>
                         </table>
                     </div>
