@@ -3,7 +3,9 @@ import api from '../../api';
 import toast from 'react-hot-toast';
 import { useSettings } from '../../contexts/SettingsContext';
 import PaginationControls from '../ui/PaginationControls';
+import SortableHeader from '../ui/SortableHeader';
 import { getPaginatedPayload } from '../../utils/paginatedResponse';
+import { sortData } from '../../utils/sortData';
 
 const InventoryValuationReport = () => {
     const { settings } = useSettings();
@@ -12,6 +14,7 @@ const InventoryValuationReport = () => {
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
     const [total, setTotal] = useState(0);
+    const [sortConfig, setSortConfig] = useState({ key: 'total_value', direction: 'DESC' });
 
     const fetchReport = async (format = 'json') => {
         if (format === 'json') setLoading(true);
@@ -46,7 +49,8 @@ const InventoryValuationReport = () => {
         fetchReport();
     }, [page, pageSize]);
 
-    const grandTotal = reportData.reduce((acc, row) => acc + parseFloat(row.total_value), 0);
+    const sortedReportData = sortData(reportData, sortConfig);
+    const grandTotal = sortedReportData.reduce((acc, row) => acc + parseFloat(row.total_value), 0);
 
     return (
         <>
@@ -63,15 +67,15 @@ const InventoryValuationReport = () => {
                         <table className="w-full text-left">
                             <thead className="border-b">
                                 <tr>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-center">Stock on Hand</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-right">WAC</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total Value</th>
+                                    <SortableHeader column="internal_sku" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>SKU</SortableHeader>
+                                    <SortableHeader column="display_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Item</SortableHeader>
+                                    <SortableHeader className="text-center" column="stock_on_hand" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Stock on Hand</SortableHeader>
+                                    <SortableHeader className="text-right" column="wac_cost" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>WAC</SortableHeader>
+                                    <SortableHeader className="text-right" column="total_value" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Total Value</SortableHeader>
                                 </tr>
                             </thead>
                             <tbody>
-                                {reportData.map((row, index) => (
+                                {sortedReportData.map((row, index) => (
                                     <tr key={index} className="border-b hover:bg-gray-50">
                                         <td className="p-3 text-sm font-mono">{row.internal_sku}</td>
                                         <td className="p-3 text-sm">{row.display_name}</td>

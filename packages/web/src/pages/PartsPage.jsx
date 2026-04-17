@@ -9,10 +9,12 @@ import PartForm from '../components/forms/PartForm';
 import FilterBar from '../components/ui/FilterBar';
 import TagPopover from '../components/ui/TagPopover';
 import PaginationControls from '../components/ui/PaginationControls';
+import SortableHeader from '../components/ui/SortableHeader';
 import { useAuth } from '../contexts/AuthContext';
 import PartNumberManager from './PartNumberManager';
 import PartApplicationManager from './PartApplicationManager';
 import { formatApplicationText } from '../helpers/applicationTextHelper';
+import { sortData } from '../utils/sortData';
 
 const PartsPage = ({ user, onNavigate }) => {
     const { hasPermission } = useAuth();
@@ -31,6 +33,7 @@ const PartsPage = ({ user, onNavigate }) => {
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
     const [total, setTotal] = useState(0);
+    const [sortConfig, setSortConfig] = useState({ key: 'internal_sku', direction: 'ASC' });
 
     const fetchInitialData = useCallback(async () => {
         try {
@@ -180,8 +183,9 @@ const PartsPage = ({ user, onNavigate }) => {
         }
     };
 
-    // Use parts directly to preserve MeiliSearch's relevance ranking
-    const sortedParts = parts;
+    const sortedParts = sortData(parts, sortConfig, {
+        application_text: (row) => row.applications || ''
+    });
 
     const filterTabs = [
         { key: 'active', label: 'Active' },
@@ -239,9 +243,9 @@ const PartsPage = ({ user, onNavigate }) => {
                             <thead>
                                 <tr>
                                     <th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={selectedParts.length === sortedParts.length && sortedParts.length > 0} /></th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Application</th>
+                                    <SortableHeader column="internal_sku" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>SKU</SortableHeader>
+                                    <SortableHeader column="display_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Item</SortableHeader>
+                                    <SortableHeader column="application_text" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Application</SortableHeader>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>

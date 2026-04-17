@@ -4,7 +4,9 @@ import toast from 'react-hot-toast';
 import { useSettings } from '../../contexts/SettingsContext';
 import Combobox from '../ui/Combobox';
 import PaginationControls from '../ui/PaginationControls';
+import SortableHeader from '../ui/SortableHeader';
 import { getPaginatedPayload } from '../../utils/paginatedResponse';
+import { sortData } from '../../utils/sortData';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
@@ -16,6 +18,7 @@ const SalesByCustomerReport = () => {
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
     const [total, setTotal] = useState(0);
+    const [sortConfig, setSortConfig] = useState({ key: 'total_sales', direction: 'DESC' });
     const [filters, setFilters] = useState(() => {
         const now = toZonedTime(new Date(), 'Asia/Manila');
         const dateStr = format(now, 'yyyy-MM-dd');
@@ -73,6 +76,10 @@ const SalesByCustomerReport = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [page, pageSize]);
 
+    const sortedReportData = sortData(reportData, sortConfig, {
+        customer_name: (row) => `${row.first_name || ''} ${row.last_name || ''}`.trim()
+    });
+
     return (
         <>
             <div className="bg-white p-6 rounded-xl border border-gray-200 mb-6">
@@ -107,13 +114,13 @@ const SalesByCustomerReport = () => {
                         <table className="w-full text-left">
                             <thead className="border-b">
                                 <tr>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Customer</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-center">Total Invoices</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total Sales</th>
+                                    <SortableHeader column="customer_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Customer</SortableHeader>
+                                    <SortableHeader className="text-center" column="total_invoices" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Total Invoices</SortableHeader>
+                                    <SortableHeader className="text-right" column="total_sales" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Total Sales</SortableHeader>
                                 </tr>
                             </thead>
                             <tbody>
-                                {reportData.map((row) => (
+                                {sortedReportData.map((row) => (
                                     <tr key={row.customer_id} className="border-b hover:bg-gray-50">
                                         <td className="p-3 text-sm font-medium text-gray-800">{row.first_name} {row.last_name}</td>
                                         <td className="p-3 text-sm text-center">{row.total_invoices}</td>

@@ -5,7 +5,9 @@ import { useSettings } from '../../contexts/SettingsContext';
 import { ICONS } from '../../constants';
 import ReportCard from './ReportCard';
 import PaginationControls from '../ui/PaginationControls';
+import SortableHeader from '../ui/SortableHeader';
 import { getPaginatedPayload } from '../../utils/paginatedResponse';
+import { sortData } from '../../utils/sortData';
 import { format, parseISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
@@ -17,6 +19,7 @@ const SalesReport = () => {
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
     const [total, setTotal] = useState(0);
+    const [sortConfig, setSortConfig] = useState({ key: 'invoice_date', direction: 'ASC' });
     const [dates, setDates] = useState(() => {
         const now = toZonedTime(new Date(), 'Asia/Manila');
         const dateStr = format(now, 'yyyy-MM-dd');
@@ -74,6 +77,8 @@ const SalesReport = () => {
         setPage(1);
     }, [dates.startDate, dates.endDate]);
 
+    const sortedReportData = sortData(reportData, sortConfig);
+
     return (
         <>
             <div className="bg-white p-6 rounded-xl border border-gray-200 mb-6">
@@ -111,14 +116,14 @@ const SalesReport = () => {
                     <table className="w-full text-left">
                         <thead className="border-b">
                             <tr>
-                                <th className="p-3 text-sm font-semibold text-gray-600">Date</th>
-                                <th className="p-3 text-sm font-semibold text-gray-600">Invoice #</th>
-                                <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
-                                <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total</th>
+                                <SortableHeader column="invoice_date" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Date</SortableHeader>
+                                <SortableHeader column="invoice_number" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Invoice #</SortableHeader>
+                                <SortableHeader column="display_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Item</SortableHeader>
+                                <SortableHeader className="text-right" column="line_total" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Total</SortableHeader>
                             </tr>
                         </thead>
                         <tbody>
-                            {reportData.map((row, index) => (
+                            {sortedReportData.map((row, index) => (
                                 <tr key={index} className="border-b hover:bg-gray-50">
                                     <td className="p-3 text-sm">{format(toZonedTime(parseISO(row.invoice_date), 'Asia/Manila'), 'MM/dd/yyyy')}</td>
                                     <td className="p-3 text-sm font-mono">{row.invoice_number}</td>

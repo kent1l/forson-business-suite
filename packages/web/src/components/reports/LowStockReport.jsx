@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import PaginationControls from '../ui/PaginationControls';
+import SortableHeader from '../ui/SortableHeader';
 import { getPaginatedPayload } from '../../utils/paginatedResponse';
+import { sortData } from '../../utils/sortData';
 
 const LowStockReport = () => {
     const [reportData, setReportData] = useState([]);
@@ -10,6 +12,7 @@ const LowStockReport = () => {
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
     const [total, setTotal] = useState(0);
+    const [sortConfig, setSortConfig] = useState({ key: 'stock_on_hand', direction: 'ASC' });
 
     const fetchReport = async (format = 'json') => {
         if (format === 'json') setLoading(true);
@@ -44,6 +47,7 @@ const LowStockReport = () => {
         fetchReport();
     }, [page, pageSize]);
 
+    const sortedReportData = sortData(reportData, sortConfig);
     return (
         <>
             <div className="bg-white p-6 rounded-xl border border-gray-200 mb-6 flex justify-between items-center">
@@ -59,14 +63,14 @@ const LowStockReport = () => {
                         <table className="w-full text-left">
                             <thead className="border-b">
                                 <tr>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Item Name</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-center">Stock on Hand</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-center">Reorder Point</th>
+                                    <SortableHeader column="internal_sku" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>SKU</SortableHeader>
+                                    <SortableHeader column="display_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Item Name</SortableHeader>
+                                    <SortableHeader className="text-center" column="stock_on_hand" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Stock on Hand</SortableHeader>
+                                    <SortableHeader className="text-center" column="reorder_point" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Reorder Point</SortableHeader>
                                 </tr>
                             </thead>
                             <tbody>
-                                {reportData.map((row, index) => (
+                                {sortedReportData.map((row, index) => (
                                     <tr key={index} className="border-b hover:bg-gray-50">
                                         <td className="p-3 text-sm font-mono">{row.internal_sku}</td>
                                         <td className="p-3 text-sm">{row.display_name}</td>

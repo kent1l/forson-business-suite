@@ -7,7 +7,9 @@ import { ICONS } from '../constants';
 import SupplierForm from '../components/forms/SupplierForm';
 import FilterBar from '../components/ui/FilterBar';
 import PaginationControls from '../components/ui/PaginationControls';
+import SortableHeader from '../components/ui/SortableHeader';
 import { useAuth } from '../contexts/AuthContext'; // <-- NEW: Import useAuth
+import { sortData } from '../utils/sortData';
 
 const SuppliersPage = () => {
     const { hasPermission } = useAuth(); // <-- NEW: Use the auth context
@@ -17,6 +19,7 @@ const SuppliersPage = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentSupplier, setCurrentSupplier] = useState(null);
     const [statusFilter, setStatusFilter] = useState('active');
+    const [sortConfig, setSortConfig] = useState({ key: 'supplier_name', direction: 'ASC' });
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
     const [total, setTotal] = useState(0);
@@ -96,6 +99,10 @@ const SuppliersPage = () => {
         });
     };
 
+    const sortedSuppliers = sortData(suppliers, sortConfig, {
+        status: (row) => (row.is_active ? 1 : 0)
+    });
+
     return (
         <div>
             <div className="flex justify-between items-center mb-6">
@@ -122,15 +129,15 @@ const SuppliersPage = () => {
                         <table className="w-full text-left">
                             <thead className="border-b">
                                 <tr>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Name</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 hidden sm:table-cell">Contact Person</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 hidden md:table-cell">Phone</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-center">Status</th>
+                                    <SortableHeader column="supplier_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Name</SortableHeader>
+                                    <SortableHeader className="hidden sm:table-cell" column="contact_person" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Contact Person</SortableHeader>
+                                    <SortableHeader className="hidden md:table-cell" column="phone" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Phone</SortableHeader>
+                                    <SortableHeader className="text-center" column="status" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Status</SortableHeader>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {suppliers.map(supplier => (
+                                {sortedSuppliers.map(supplier => (
                                     <tr key={supplier.supplier_id} className="border-b hover:bg-gray-50">
                                         <td className="p-3 text-sm font-medium text-gray-800">{supplier.supplier_name}</td>
                                         <td className="p-3 text-sm hidden sm:table-cell">{supplier.contact_person}</td>

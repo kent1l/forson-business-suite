@@ -6,7 +6,9 @@ import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import FilterBar from '../components/ui/FilterBar';
 import PaginationControls from '../components/ui/PaginationControls';
+import SortableHeader from '../components/ui/SortableHeader';
 import { useAuth } from '../contexts/AuthContext';
+import { sortData } from '../utils/sortData';
 
 const EmployeeForm = ({ employee, onSave, onCancel, roles }) => { // <-- NEW: roles prop
     const [formData, setFormData] = useState({
@@ -152,6 +154,7 @@ const EmployeesPage = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentEmployee, setCurrentEmployee] = useState(null);
     const [statusFilter, setStatusFilter] = useState('active');
+    const [sortConfig, setSortConfig] = useState({ key: 'full_name', direction: 'ASC' });
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
     const [total, setTotal] = useState(0);
@@ -220,6 +223,11 @@ const EmployeesPage = () => {
             error: (err) => err.response?.data?.message || 'Failed to save employee.',
         });
     };
+
+    const sortedEmployees = sortData(employees, sortConfig, {
+        full_name: (row) => `${row.first_name || ''} ${row.last_name || ''}`.trim(),
+        status: (row) => (row.is_active ? 1 : 0)
+    });
     
     if (!hasPermission('employees:view')) {
         return (
@@ -256,15 +264,15 @@ const EmployeesPage = () => {
                         <table className="w-full text-left">
                             <thead className="border-b">
                                 <tr>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Name</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Username</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Position</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-center">Status</th>
+                                    <SortableHeader column="full_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Name</SortableHeader>
+                                    <SortableHeader column="username" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Username</SortableHeader>
+                                    <SortableHeader column="position_title" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Position</SortableHeader>
+                                    <SortableHeader className="text-center" column="status" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Status</SortableHeader>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {employees.map(emp => (
+                                {sortedEmployees.map(emp => (
                                     <tr key={emp.employee_id} className="border-b hover:bg-gray-50">
                                         <td className="p-3 text-sm font-medium text-gray-800">{emp.first_name} {emp.last_name}</td>
                                         <td className="p-3 text-sm">{emp.username}</td>

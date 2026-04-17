@@ -3,7 +3,9 @@ import api from '../../api';
 import toast from 'react-hot-toast';
 import Combobox from '../ui/Combobox';
 import PaginationControls from '../ui/PaginationControls';
+import SortableHeader from '../ui/SortableHeader';
 import { getPaginatedPayload } from '../../utils/paginatedResponse';
+import { sortData } from '../../utils/sortData';
 import { format, parseISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
@@ -14,6 +16,7 @@ const InventoryMovementReport = () => {
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
     const [total, setTotal] = useState(0);
+    const [sortConfig, setSortConfig] = useState({ key: 'transaction_date', direction: 'DESC' });
     const [filters, setFilters] = useState(() => {
         const now = toZonedTime(new Date(), 'Asia/Manila');
         const dateStr = format(now, 'yyyy-MM-dd');
@@ -71,6 +74,7 @@ const InventoryMovementReport = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [page, pageSize]);
     
+    const sortedReportData = sortData(reportData, sortConfig);
     return (
         <>
             <div className="bg-white p-6 rounded-xl border border-gray-200 mb-6">
@@ -105,16 +109,16 @@ const InventoryMovementReport = () => {
                         <table className="w-full text-left">
                             <thead className="border-b">
                                 <tr>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Date</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Type</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-center">Quantity</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Reference</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">User</th>
+                                    <SortableHeader column="transaction_date" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Date</SortableHeader>
+                                    <SortableHeader column="display_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Item</SortableHeader>
+                                    <SortableHeader column="trans_type" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Type</SortableHeader>
+                                    <SortableHeader className="text-center" column="quantity" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Quantity</SortableHeader>
+                                    <SortableHeader column="reference_no" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Reference</SortableHeader>
+                                    <SortableHeader column="employee_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>User</SortableHeader>
                                 </tr>
                             </thead>
                             <tbody>
-                                {reportData.map((row, index) => (
+                                {sortedReportData.map((row, index) => (
                                     <tr key={index} className="border-b hover:bg-gray-50">
                                         <td className="p-3 text-sm whitespace-nowrap">{format(toZonedTime(parseISO(row.transaction_date), 'Asia/Manila'), 'MM/dd/yyyy hh:mm a')}</td>
                                         <td className="p-3 text-sm font-medium text-gray-800">{row.display_name}</td>
