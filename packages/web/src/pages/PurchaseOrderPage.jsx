@@ -229,6 +229,7 @@ const PurchaseOrderPage = () => {
 
             <div className="bg-white p-6 rounded-xl border border-gray-200">
                 {loading ? <p>Loading...</p> : (
+                    <>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
                             <thead className="border-b">
@@ -314,6 +315,7 @@ const PurchaseOrderPage = () => {
                             setPage(1);
                         }}
                     />
+                    </>
                 )}
             </div>
 
