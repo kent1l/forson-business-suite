@@ -3,9 +3,15 @@ const db = require('../db');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
 const router = express.Router();
 
+const OUTBOX_ALERTS_DEFAULTS = Object.freeze({
+    deadGrowthThreshold: Number(process.env.MEILI_OUTBOX_ALERT_DEAD_GROWTH || 10),
+    backlogAgeThresholdSeconds: Number(process.env.MEILI_OUTBOX_ALERT_BACKLOG_AGE_SECONDS || 120),
+    workerIdleThresholdSeconds: Number(process.env.MEILI_OUTBOX_ALERT_WORKER_IDLE_SECONDS || 300)
+});
+
 const getSearchSyncHealth = async () => {
     try {
-        const [statusRes, lagRes] = await Promise.all([
+        const [statusRes, lagRes, processedRes] = await Promise.all([
             db.query(`
                 SELECT status, COUNT(*)::int AS count
                 FROM meili_sync_outbox
@@ -16,6 +22,12 @@ const getSearchSyncHealth = async () => {
                     EXTRACT(EPOCH FROM (NOW() - MIN(created_at)))::int AS oldest_pending_seconds
                 FROM meili_sync_outbox
                 WHERE status = 'pending'
+            `),
+            db.query(`
+                SELECT
+                    EXTRACT(EPOCH FROM (NOW() - MAX(processed_at)))::int AS seconds_since_last_processed
+                FROM meili_sync_outbox
+                WHERE processed_at IS NOT NULL
             `)
         ]);
 
@@ -28,6 +40,7 @@ const getSearchSyncHealth = async () => {
             enabled: true,
             queueCounts: counts,
             oldestPendingSeconds: lagRes.rows[0].oldest_pending_seconds || 0,
+            secondsSinceLastProcessed: processedRes.rows[0].seconds_since_last_processed,
             hasBacklog: counts.pending > 0 || counts.processing > 0,
             hasDeadLetters: counts.dead > 0
         };
@@ -41,6 +54,71 @@ const getSearchSyncHealth = async () => {
         }
         throw err;
     }
+};
+
+const getSearchSyncAlerts = async () => {
+    const health = await getSearchSyncHealth();
+    if (!health.enabled) {
+        return { enabled: false, reason: health.reason, alerts: [] };
+    }
+
+    const [deadDeltaRes] = await Promise.all([
+        db.query(`
+            SELECT
+                GREATEST(
+                    0,
+                    COUNT(*) FILTER (WHERE status = 'dead' AND updated_at >= NOW() - INTERVAL '10 minutes')
+                    -
+                    COUNT(*) FILTER (WHERE status = 'dead' AND updated_at >= NOW() - INTERVAL '20 minutes' AND updated_at < NOW() - INTERVAL '10 minutes')
+                )::int AS dead_growth_10m
+            FROM meili_sync_outbox
+        `)
+    ]);
+
+    const deadGrowth10m = deadDeltaRes.rows[0]?.dead_growth_10m || 0;
+    const alerts = [];
+
+    if (deadGrowth10m >= OUTBOX_ALERTS_DEFAULTS.deadGrowthThreshold) {
+        alerts.push({
+            type: 'dead_queue_growth',
+            severity: 'critical',
+            message: `Dead queue grew by ${deadGrowth10m} in the last 10 minutes.`,
+            value: deadGrowth10m,
+            threshold: OUTBOX_ALERTS_DEFAULTS.deadGrowthThreshold
+        });
+    }
+
+    if ((health.oldestPendingSeconds || 0) >= OUTBOX_ALERTS_DEFAULTS.backlogAgeThresholdSeconds) {
+        alerts.push({
+            type: 'pending_backlog_age',
+            severity: 'critical',
+            message: `Oldest pending event age is ${health.oldestPendingSeconds}s.`,
+            value: health.oldestPendingSeconds || 0,
+            threshold: OUTBOX_ALERTS_DEFAULTS.backlogAgeThresholdSeconds
+        });
+    }
+
+    if (
+        (health.queueCounts?.pending || 0) > 0
+        && health.secondsSinceLastProcessed !== null
+        && health.secondsSinceLastProcessed >= OUTBOX_ALERTS_DEFAULTS.workerIdleThresholdSeconds
+    ) {
+        alerts.push({
+            type: 'worker_idle',
+            severity: 'critical',
+            message: `No outbox event has been processed for ${health.secondsSinceLastProcessed}s while backlog exists.`,
+            value: health.secondsSinceLastProcessed,
+            threshold: OUTBOX_ALERTS_DEFAULTS.workerIdleThresholdSeconds
+        });
+    }
+
+    return {
+        enabled: true,
+        generated_at: new Date().toISOString(),
+        alerts,
+        thresholds: OUTBOX_ALERTS_DEFAULTS,
+        health
+    };
 };
 
 // GET /dashboard/stats - Fetch dashboard statistics
@@ -244,6 +322,17 @@ router.get('/dashboard/search-sync-health', async (req, res) => {
     } catch (err) {
         console.error('Search sync health error:', err);
         res.status(500).json({ message: 'Failed to fetch search sync health' });
+    }
+});
+
+// GET /dashboard/search-sync-alerts - Alert state endpoint for search sync outbox health
+router.get('/dashboard/search-sync-alerts', async (req, res) => {
+    try {
+        const payload = await getSearchSyncAlerts();
+        res.json(payload);
+    } catch (err) {
+        console.error('Search sync alerts error:', err);
+        res.status(500).json({ message: 'Failed to fetch search sync alerts' });
     }
 });
 

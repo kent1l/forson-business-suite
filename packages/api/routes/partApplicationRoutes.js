@@ -129,7 +129,10 @@ router.post('/parts/:partId/applications', async (req, res) => {
     // Re-sync part with Meilisearch
     const partForMeili = await getPartDataForMeili(db, partId);
     if (partForMeili) {
-        await enqueuePartUpsert(partForMeili.part_id, { source: 'partApplicationRoutes.create' });
+        await enqueuePartUpsert(partForMeili.part_id, {
+            source: 'partApplicationRoutes.create',
+            version_ts: partForMeili.date_modified || partForMeili.date_created || new Date().toISOString()
+        });
     }
     
     res.status(201).json(result.rows[0]);
@@ -158,7 +161,10 @@ router.put('/part-applications/:partAppId', async (req, res) => {
         const partId = updatedLink.rows[0].part_id;
         const partForMeili = await getPartDataForMeili(db, partId);
         if (partForMeili) {
-            await enqueuePartUpsert(partForMeili.part_id, { source: 'partApplicationRoutes.update' });
+            await enqueuePartUpsert(partForMeili.part_id, {
+                source: 'partApplicationRoutes.update',
+                version_ts: partForMeili.date_modified || partForMeili.date_created || new Date().toISOString()
+            });
         }
 
         res.json(updatedLink.rows[0]);
@@ -184,7 +190,10 @@ router.delete('/parts/:partId/applications/:appId', async (req, res) => {
         // Re-sync part with Meilisearch
         const partForMeili = await getPartDataForMeili(db, partId);
         if (partForMeili) {
-            await enqueuePartUpsert(partForMeili.part_id, { source: 'partApplicationRoutes.delete' });
+            await enqueuePartUpsert(partForMeili.part_id, {
+                source: 'partApplicationRoutes.delete',
+                version_ts: partForMeili.date_modified || partForMeili.date_created || new Date().toISOString()
+            });
         }
 
         res.json({ message: 'Application link deleted successfully.' });

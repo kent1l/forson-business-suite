@@ -5,6 +5,14 @@ const ACTIONS = Object.freeze({
   DELETE_PART: 'delete_part'
 });
 
+const enrichMetadata = (metadata = null) => {
+  const base = metadata && typeof metadata === 'object' ? { ...metadata } : {};
+  if (!base.event_created_at) {
+    base.event_created_at = new Date().toISOString();
+  }
+  return base;
+};
+
 const enqueueEvent = async (action, entityId, metadata = null) => {
   if (!Object.values(ACTIONS).includes(action)) {
     throw new Error(`Invalid meili outbox action: ${action}`);
@@ -16,7 +24,7 @@ const enqueueEvent = async (action, entityId, metadata = null) => {
     RETURNING outbox_id
   `;
 
-  const payload = metadata ? JSON.stringify(metadata) : null;
+  const payload = JSON.stringify(enrichMetadata(metadata));
   const { rows } = await db.query(sql, [action, entityId, payload]);
   return rows[0]?.outbox_id;
 };
