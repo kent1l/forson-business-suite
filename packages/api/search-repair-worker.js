@@ -27,7 +27,43 @@ const DEFAULTS = Object.freeze({
   reconcileSampleSize: Number(process.env.SEARCH_REPAIR_RECONCILE_SAMPLE_SIZE || 50)
 });
 
+let schemaReadyPromise = null;
+
+const ensureSearchRepairSchema = async () => {
+  if (!schemaReadyPromise) {
+    schemaReadyPromise = (async () => {
+      await db.query(
+        `CREATE TABLE IF NOT EXISTS search_repair_jobs (
+          job_id BIGSERIAL PRIMARY KEY,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed', 'cancelled', 'cancelling')),
+          mode TEXT NOT NULL DEFAULT 'full' CHECK (mode IN ('dry', 'full', 'reconcile')),
+          created_by TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          started_at TIMESTAMPTZ,
+          finished_at TIMESTAMPTZ,
+          total INTEGER NOT NULL DEFAULT 0,
+          processed INTEGER NOT NULL DEFAULT 0,
+          success INTEGER NOT NULL DEFAULT 0,
+          failed INTEGER NOT NULL DEFAULT 0,
+          error TEXT
+        )`
+      );
+
+      await db.query(
+        `CREATE INDEX IF NOT EXISTS idx_search_repair_jobs_poll
+         ON search_repair_jobs (status, created_at)`
+      );
+    })().catch((error) => {
+      schemaReadyPromise = null;
+      throw error;
+    });
+  }
+
+  return schemaReadyPromise;
+};
+
 const createRepairJob = async ({ mode = JOB_MODES.FULL, createdBy = null }) => {
+  await ensureSearchRepairSchema();
   const { rows } = await db.query(
     `INSERT INTO search_repair_jobs (mode, created_by, status)
      VALUES ($1, $2, $3)
@@ -38,11 +74,13 @@ const createRepairJob = async ({ mode = JOB_MODES.FULL, createdBy = null }) => {
 };
 
 const getRepairJob = async (jobId) => {
+  await ensureSearchRepairSchema();
   const { rows } = await db.query('SELECT * FROM search_repair_jobs WHERE job_id = $1', [jobId]);
   return rows[0] || null;
 };
 
 const cancelRepairJob = async (jobId) => {
+  await ensureSearchRepairSchema();
   const { rows } = await db.query(
     `UPDATE search_repair_jobs
      SET status = CASE
@@ -82,6 +120,7 @@ const fetchJobStatusPayload = async (jobId) => {
 };
 
 const claimNextPendingJob = async () => {
+  await ensureSearchRepairSchema();
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
@@ -245,6 +284,7 @@ const samplePartIds = async (sampleSize) => {
 };
 
 const runNightlyReconciliation = async (config = DEFAULTS) => {
+  await ensureSearchRepairSchema();
   const [{ rows: dbRows }, { rows: meiliRows }] = await Promise.all([
     db.query('SELECT COUNT(*)::int AS count FROM part'),
     meiliClient.index('parts').getStats().then((stats) => ({ rows: [{ count: stats.numberOfDocuments || 0 }] }))
