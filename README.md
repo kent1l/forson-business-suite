@@ -11,6 +11,7 @@ An integrated ERP/Point-of-Sale solution for auto parts businesses.
 [Installation](#-installation--setup) •
 [Architecture](#-architecture-overview) •
 [Usage](#-usage) •
+[Versioning & Releases](docs/APPLICATION_VERSIONING_AND_RELEASE_GUIDE.md) •
 [API Samples](#-sample-api-calls) •
 [Troubleshooting](#-troubleshooting) •
 [Deployment](#-deployment) •
