@@ -28,6 +28,7 @@ const InventoryPage = () => {
     const [pageSize, setPageSize] = useState(25);
     const [total, setTotal] = useState(0);
     const [sortConfig, setSortConfig] = useState({ key: 'internal_sku', direction: 'ASC' });
+    const [globalSortDirection, setGlobalSortDirection] = useState('ASC');
     // No client-side sort: preserve backend / MeiliSearch ordering
 
     const fetchInventory = useCallback(async () => {
@@ -36,12 +37,12 @@ const InventoryPage = () => {
             setLoading(true);
             // If there's no search term, use the inventory endpoint (full list)
             if (!searchTerm || !searchTerm.trim()) {
-                const response = await api.get('/inventory', { params: { page, pageSize, paginated: 1 } });
+                const response = await api.get('/inventory', { params: { page, pageSize, paginated: 1, sortBy: 'name', sortDirection: globalSortDirection } });
                 setInventory(response.data?.data || []);
                 setTotal(response.data?.total || 0);
             } else {
                 // Use MeiliSearch-backed endpoint for smart searching (same as POS/Invoicing)
-                const response = await api.get('/inventory', { params: { search: searchTerm, page, pageSize, paginated: 1 } });
+                const response = await api.get('/inventory', { params: { search: searchTerm, page, pageSize, paginated: 1, sortBy: 'name', sortDirection: globalSortDirection } });
                 const enriched = await enrichPartsArray(response.data?.data || []);
                 setInventory(enriched);
                 setTotal(response.data?.total || 0);
@@ -52,7 +53,7 @@ const InventoryPage = () => {
         } finally {
             setLoading(false);
         }
-    }, [searchTerm, page, pageSize]);
+    }, [searchTerm, page, pageSize, globalSortDirection]);
 
     useEffect(() => {
         const debounceTimer = setTimeout(() => {
@@ -64,7 +65,7 @@ const InventoryPage = () => {
 
     useEffect(() => {
         setPage(1);
-    }, [searchTerm]);
+    }, [searchTerm, globalSortDirection]);
 
     const handleOpenAdjustmentModal = (part) => {
         setSelectedPart(part);
@@ -104,14 +105,27 @@ const InventoryPage = () => {
         <div>
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-semibold text-gray-800">Inventory Management</h1>
-                <div className="relative w-full max-w-xs">
-                    <SearchBar
-                        value={searchTerm}
-                        onChange={setSearchTerm}
-                        onClear={() => setSearchTerm('')}
-                        placeholder="Search inventory..."
-                    />
-                    
+                <div className="flex items-center gap-3">
+                    <div className="relative w-full max-w-xs">
+                        <SearchBar
+                            value={searchTerm}
+                            onChange={setSearchTerm}
+                            onClear={() => setSearchTerm('')}
+                            placeholder="Search inventory..."
+                        />
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <label htmlFor="inventory-global-sort" className="text-sm text-gray-600 whitespace-nowrap">Sort all:</label>
+                        <select
+                            id="inventory-global-sort"
+                            value={globalSortDirection}
+                            onChange={(e) => setGlobalSortDirection(e.target.value)}
+                            className="rounded-md border border-gray-300 px-2 py-2 text-sm"
+                        >
+                            <option value="ASC">Name (A-Z)</option>
+                            <option value="DESC">Name (Z-A)</option>
+                        </select>
+                    </div>
                 </div>
             </div>
 

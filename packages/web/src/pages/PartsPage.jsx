@@ -34,12 +34,13 @@ const PartsPage = ({ user, onNavigate }) => {
     const [pageSize, setPageSize] = useState(25);
     const [total, setTotal] = useState(0);
     const [sortConfig, setSortConfig] = useState({ key: 'internal_sku', direction: 'ASC' });
+    const [globalSortDirection, setGlobalSortDirection] = useState('ASC');
 
     const fetchInitialData = useCallback(async () => {
         try {
             setLoading(true);
             const [partsRes, brandsRes, groupsRes] = await Promise.all([
-                api.get('/parts', { params: { status: statusFilter, search: searchTerm, page, pageSize, paginated: 1 } }),
+                api.get('/parts', { params: { status: statusFilter, search: searchTerm, page, pageSize, paginated: 1, sortBy: 'name', sortDirection: globalSortDirection } }),
                 api.get('/brands'),
                 api.get('/groups')
             ]);
@@ -52,7 +53,7 @@ const PartsPage = ({ user, onNavigate }) => {
         } finally {
             setLoading(false);
         }
-    }, [statusFilter, searchTerm, page, pageSize]);
+    }, [statusFilter, searchTerm, page, pageSize, globalSortDirection]);
 
     useEffect(() => {
         const debounceTimer = setTimeout(() => {
@@ -63,7 +64,7 @@ const PartsPage = ({ user, onNavigate }) => {
 
     useEffect(() => {
         setPage(1);
-    }, [statusFilter, searchTerm]);
+    }, [statusFilter, searchTerm, globalSortDirection]);
 
     const handleSave = (partData) => {
         const promise = currentPart
@@ -230,6 +231,18 @@ const PartsPage = ({ user, onNavigate }) => {
                             onClear={() => setSearchTerm('')}
                             placeholder="Search by detail, SKU, or part number..."
                         />
+                    </div>
+                    <div className="ml-3 flex items-center gap-2">
+                        <label htmlFor="parts-global-sort" className="text-sm text-gray-600 whitespace-nowrap">Sort all:</label>
+                        <select
+                            id="parts-global-sort"
+                            value={globalSortDirection}
+                            onChange={(e) => setGlobalSortDirection(e.target.value)}
+                            className="rounded-md border border-gray-300 px-2 py-2 text-sm"
+                        >
+                            <option value="ASC">Name (A-Z)</option>
+                            <option value="DESC">Name (Z-A)</option>
+                        </select>
                     </div>
                 </div>
             </div>
