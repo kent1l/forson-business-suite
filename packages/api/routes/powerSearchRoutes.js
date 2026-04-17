@@ -42,6 +42,7 @@ router.get('/power-search/parts', async (req, res) => {
                 p.detail,
                 p.last_sale_price,
                 p.last_cost,
+                COALESCE(p.wac_cost, 0) AS wac_cost,
                 p.tax_rate_id,
                 p.is_tax_inclusive_price,
                 b.brand_name,
