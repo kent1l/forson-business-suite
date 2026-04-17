@@ -1,5 +1,5 @@
 /* eslint-disable no-unused-vars */
-import { useState, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -10,7 +10,7 @@ const ExportCard = ({ entity, title, fields }) => {
     const handleExport = async () => {
         try {
             const response = await api.get(`/data/export/${entity}`, {
-                responseType: 'blob', // Important for file downloads
+                responseType: 'blob',
             });
             const url = window.URL.createObjectURL(new Blob([response.data]));
             const link = document.createElement('a');
@@ -25,7 +25,7 @@ const ExportCard = ({ entity, title, fields }) => {
             console.error(error);
         }
     };
-    
+
     const handleDownloadTemplate = () => {
         const csvHeader = fields.join(',');
         const blob = new Blob([csvHeader], { type: 'text/csv;charset=utf-8;' });
@@ -81,7 +81,7 @@ const ImportCard = ({ entity, title }) => {
                 if (fileInputRef.current) {
                     fileInputRef.current.value = '';
                 }
-                return res.data.message; // Display the detailed message from the backend
+                return res.data.message;
             },
             error: (err) => {
                 setIsUploading(false);
@@ -115,34 +115,98 @@ const ImportCard = ({ entity, title }) => {
     );
 };
 
+const formatEta = (seconds) => {
+    if (seconds == null) return 'Estimating…';
+    if (seconds <= 60) return `${seconds}s remaining`;
+    const minutes = Math.ceil(seconds / 60);
+    if (minutes < 60) return `${minutes}m remaining`;
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return `${hours}h ${remainingMinutes}m remaining`;
+};
+
+const TERMINAL_STATUSES = ['completed', 'failed', 'cancelled'];
 
 const DataUtilsSettings = () => {
-    const [isSyncing, setIsSyncing] = useState(false);
     const [showConfirmModal, setShowConfirmModal] = useState(false);
+    const [showProgressModal, setShowProgressModal] = useState(false);
     const [selectedMode, setSelectedMode] = useState('full');
+    const [activeJobId, setActiveJobId] = useState(null);
+    const [jobStatus, setJobStatus] = useState(null);
+    const [isCancelling, setIsCancelling] = useState(false);
 
-    const handleSync = () => {
-        setIsSyncing(true);
-        const promise = api.post(`/data/repair-search-index?mode=${selectedMode}`);
+    const isSyncing = useMemo(() => {
+        if (!jobStatus) return false;
+        return ['pending', 'processing', 'cancelling'].includes(jobStatus.status);
+    }, [jobStatus]);
 
-        toast.promise(promise, {
-            loading: selectedMode === 'dry' ? 'Running dry-run check...' : 'Repairing search index (apply settings + sync parts)...',
-            success: (res) => {
-                setIsSyncing(false);
-                setShowConfirmModal(false);
-                return res.data.message || 'Operation completed successfully!';
-            },
-            error: (err) => {
-                setIsSyncing(false);
-                setShowConfirmModal(false);
-                return err.response?.data?.message || 'Failed to repair search index.';
+    useEffect(() => {
+        if (!activeJobId) return undefined;
+
+        let mounted = true;
+        let timer;
+
+        const poll = async () => {
+            try {
+                const res = await api.get(`/data/repair-search-index/${activeJobId}`);
+                if (!mounted) return;
+                setJobStatus(res.data);
+
+                if (TERMINAL_STATUSES.includes(res.data.status)) {
+                    if (res.data.status === 'completed') {
+                        toast.success('Search repair completed successfully.');
+                    } else if (res.data.status === 'failed') {
+                        toast.error(res.data.error || 'Search repair failed.');
+                    } else if (res.data.status === 'cancelled') {
+                        toast('Search repair cancelled.');
+                    }
+                    return;
+                }
+            } catch (err) {
+                if (!mounted) return;
+                toast.error(err.response?.data?.message || 'Failed to load repair progress.');
             }
-        });
+
+            timer = setTimeout(poll, 3000);
+        };
+
+        poll();
+
+        return () => {
+            mounted = false;
+            if (timer) clearTimeout(timer);
+        };
+    }, [activeJobId]);
+
+    const handleStartRepair = async () => {
+        try {
+            const res = await api.post(`/data/repair-search-index?mode=${selectedMode}`);
+            setShowConfirmModal(false);
+            setActiveJobId(res.data.job_id);
+            setShowProgressModal(true);
+            toast.success(`Repair job #${res.data.job_id} queued.`);
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to enqueue repair job.');
+        }
     };
 
-    const handleConfirm = () => {
-        handleSync();
+    const handleCancelJob = async () => {
+        if (!activeJobId) return;
+        try {
+            setIsCancelling(true);
+            const res = await api.post(`/data/repair-search-index/${activeJobId}/cancel`);
+            toast.success(res.data.message || 'Cancellation requested.');
+            const statusRes = await api.get(`/data/repair-search-index/${activeJobId}`);
+            setJobStatus(statusRes.data);
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to cancel repair job.');
+        } finally {
+            setIsCancelling(false);
+        }
     };
+
+    const progressPct = jobStatus?.progress_pct || 0;
+    const canRetry = TERMINAL_STATUSES.includes(jobStatus?.status) && jobStatus?.status !== 'processing';
 
     return (
         <div className="space-y-8">
@@ -158,7 +222,7 @@ const DataUtilsSettings = () => {
 
             <div>
                 <h3 className="text-lg font-medium text-gray-900">Import Data</h3>
-                 <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800 mt-2">
+                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800 mt-2">
                     <strong>Warning:</strong> Importing a file will update existing records that match the unique key (e.g., SKU, Email) and create new records for those that don't. Please use the templates provided.
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
@@ -171,21 +235,31 @@ const DataUtilsSettings = () => {
             <div>
                 <h3 className="text-lg font-medium text-gray-900">Search Index</h3>
                 <div className="p-4 border rounded-lg mt-4">
-                    <p className="text-sm text-gray-600 mb-3">Fix search issues by applying index settings and re-syncing all parts to Meilisearch.</p>
-                    <button
-                        onClick={() => setShowConfirmModal(true)}
-                        disabled={isSyncing}
-                        className="bg-purple-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-700 transition disabled:bg-purple-300"
-                    >
-                        {isSyncing ? 'Processing...' : 'Repair Search Index'}
-                    </button>
+                    <p className="text-sm text-gray-600 mb-3">Repair search index via background jobs with live progress tracking and cancellation.</p>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => setShowConfirmModal(true)}
+                            disabled={isSyncing}
+                            className="bg-purple-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-700 transition disabled:bg-purple-300"
+                        >
+                            {isSyncing ? 'Processing...' : 'Repair Search Index'}
+                        </button>
+                        {activeJobId && (
+                            <button
+                                onClick={() => setShowProgressModal(true)}
+                                className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-semibold hover:bg-gray-300"
+                            >
+                                View Progress
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
 
             <Modal isOpen={showConfirmModal} onClose={() => setShowConfirmModal(false)} title="Confirm Search Index Repair">
                 <div className="space-y-4">
                     <p className="text-sm text-gray-600">
-                        This will repair the search index by applying settings and re-syncing parts. Choose the mode:
+                        This runs a background repair job. You can monitor progress and cancel it at any time.
                     </p>
                     <div className="space-y-2">
                         <label className="flex items-center">
@@ -196,7 +270,7 @@ const DataUtilsSettings = () => {
                                 onChange={(e) => setSelectedMode(e.target.value)}
                                 className="mr-2"
                             />
-                            <span className="text-sm">Dry-run: Check connectivity and count parts (no changes)</span>
+                            <span className="text-sm">Dry-run: Check connectivity and counts only</span>
                         </label>
                         <label className="flex items-center">
                             <input
@@ -214,16 +288,68 @@ const DataUtilsSettings = () => {
                             onClick={() => setShowConfirmModal(false)}
                             className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg"
                         >
-                            Cancel
+                            Close
                         </button>
                         <button
-                            onClick={handleConfirm}
+                            onClick={handleStartRepair}
                             className="px-4 py-2 bg-purple-600 text-white rounded-lg"
                         >
-                            {selectedMode === 'dry' ? 'Run Dry-run' : 'Start Repair'}
+                            {selectedMode === 'dry' ? 'Queue Dry-run' : 'Queue Repair'}
                         </button>
                     </div>
                 </div>
+            </Modal>
+
+            <Modal
+                isOpen={showProgressModal}
+                onClose={() => setShowProgressModal(false)}
+                title={`Search Repair Progress${activeJobId ? ` #${activeJobId}` : ''}`}
+                maxWidth="max-w-xl"
+            >
+                {!jobStatus && <p className="text-sm text-gray-600">Waiting for status...</p>}
+                {jobStatus && (
+                    <div className="space-y-4">
+                        <div>
+                            <div className="flex justify-between text-sm text-gray-600 mb-1">
+                                <span>Status: <strong className="capitalize">{jobStatus.status}</strong></span>
+                                <span>{progressPct}%</span>
+                            </div>
+                            <div className="w-full h-2 bg-gray-200 rounded">
+                                <div className="h-2 bg-purple-600 rounded" style={{ width: `${Math.min(100, progressPct)}%` }} />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                            <p>Total: <strong>{jobStatus.total}</strong></p>
+                            <p>Processed: <strong>{jobStatus.processed}</strong></p>
+                            <p>Success: <strong>{jobStatus.success}</strong></p>
+                            <p>Failed: <strong>{jobStatus.failed}</strong></p>
+                        </div>
+                        <p className="text-sm text-gray-600">ETA: {formatEta(jobStatus.estimated_remaining_seconds)}</p>
+                        {jobStatus.error && <p className="text-sm text-red-600">{jobStatus.error}</p>}
+                        <div className="flex justify-end gap-2">
+                            {isSyncing && (
+                                <button
+                                    onClick={handleCancelJob}
+                                    disabled={isCancelling}
+                                    className="px-3 py-2 bg-red-600 text-white rounded-lg disabled:bg-red-300"
+                                >
+                                    {isCancelling ? 'Cancelling...' : 'Cancel Job'}
+                                </button>
+                            )}
+                            {canRetry && (
+                                <button
+                                    onClick={() => {
+                                        setShowProgressModal(false);
+                                        setShowConfirmModal(true);
+                                    }}
+                                    className="px-3 py-2 bg-purple-600 text-white rounded-lg"
+                                >
+                                    Retry Repair
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                )}
             </Modal>
         </div>
     );
