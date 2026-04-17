@@ -7,7 +7,11 @@ import { useAuth } from '../contexts/AuthContext';
 // Modal removed in favor of dedicated full-page editor
 import PurchaseOrderEditorPage from './PurchaseOrderEditorPage';
 import FilterBar from '../components/ui/FilterBar';
+import PaginationControls from '../components/ui/PaginationControls';
+import SortableHeader from '../components/ui/SortableHeader';
 import { downloadFile } from '../utils/downloadFile';
+import { getPaginatedPayload } from '../utils/paginatedResponse';
+import { sortData } from '../utils/sortData';
 import { format, parseISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
@@ -72,6 +76,10 @@ const PurchaseOrderPage = () => {
     const [isEditing, setIsEditing] = useState(false);
     const [statusFilter, setStatusFilter] = useState('Pending');
     const [expandedRows, setExpandedRows] = useState(new Set());
+    const [sortConfig, setSortConfig] = useState({ key: 'order_date', direction: 'DESC' });
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(25);
+    const [total, setTotal] = useState(0);
 
     const filterTabs = [
         { key: 'Pending', label: 'Pending' },
@@ -86,23 +94,32 @@ const PurchaseOrderPage = () => {
         if (hasPermission('purchase_orders:view')) {
             try {
                 setLoading(true);
-                const response = await api.get('/purchase-orders', { params: { status: statusFilter } });
-                setPurchaseOrders(response.data);
+                const response = await api.get('/purchase-orders', { params: { status: statusFilter, page, pageSize, paginated: 1 } });
+                const payload = getPaginatedPayload(response.data, 0);
+                setPurchaseOrders(payload.data);
+                setTotal(payload.total);
             } catch {
                 toast.error('Failed to fetch purchase orders.');
             } finally {
                 setLoading(false);
             }
         }
-    }, [hasPermission, statusFilter]);
+    }, [hasPermission, statusFilter, page, pageSize]);
 
     useEffect(() => {
         fetchPOs();
     }, [fetchPOs]);
+
+    useEffect(() => {
+        setPage(1);
+        setExpandedRows(new Set());
+    }, [statusFilter]);
     
     const showActionsColumn = useMemo(() => {
         return hasPermission('purchase_orders:edit') && purchaseOrders.some(po => po.status === 'Pending');
     }, [purchaseOrders, hasPermission]);
+
+    const sortedPurchaseOrders = useMemo(() => sortData(purchaseOrders, sortConfig), [purchaseOrders, sortConfig]);
 
 
     const exitEditor = useCallback(() => {
@@ -216,11 +233,11 @@ const PurchaseOrderPage = () => {
                         <table className="w-full text-left">
                             <thead className="border-b">
                                 <tr>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">PO Number</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Supplier</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Status</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Order Date</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total</th>
+                                    <SortableHeader column="po_number" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>PO Number</SortableHeader>
+                                    <SortableHeader column="supplier_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Supplier</SortableHeader>
+                                    <SortableHeader column="status" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Status</SortableHeader>
+                                    <SortableHeader column="order_date" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Order Date</SortableHeader>
+                                    <SortableHeader column="total_amount" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })} className="text-right">Total</SortableHeader>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-center">Details</th>
                                     {/* --- NEW: Download Column Header --- */}
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-center">Download</th>
@@ -228,7 +245,7 @@ const PurchaseOrderPage = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {purchaseOrders.map(po => (
+                                {sortedPurchaseOrders.map(po => (
                                         <React.Fragment key={po.po_id}>
                                         <tr className="border-b hover:bg-gray-50">
                                             <td className="p-3 text-sm font-mono">{po.po_number}</td>
@@ -287,6 +304,16 @@ const PurchaseOrderPage = () => {
                             </tbody>
                         </table>
                     </div>
+                    <PaginationControls
+                        page={page}
+                        pageSize={pageSize}
+                        total={total}
+                        onPageChange={setPage}
+                        onPageSizeChange={(value) => {
+                            setPageSize(value);
+                            setPage(1);
+                        }}
+                    />
                 )}
             </div>
 
