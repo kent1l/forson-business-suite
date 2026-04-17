@@ -3,6 +3,8 @@ import api from '../../api';
 import toast from 'react-hot-toast';
 import { useSettings } from '../../contexts/SettingsContext';
 import DateRangeShortcuts from '../ui/DateRangeShortcuts';
+import PaginationControls from '../ui/PaginationControls';
+import { getPaginatedPayload } from '../../utils/paginatedResponse';
 import { format, parseISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
@@ -10,6 +12,9 @@ const RefundsReport = () => {
     const { settings } = useSettings();
     const [reportData, setReportData] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(25);
+    const [total, setTotal] = useState(0);
     const [dates, setDates] = useState(() => {
         const now = toZonedTime(new Date(), 'Asia/Manila');
         const dateStr = format(now, 'yyyy-MM-dd');
@@ -22,18 +27,20 @@ const RefundsReport = () => {
     const fetchReport = useCallback(async () => {
         setLoading(true);
         try {
-            // Note: This endpoint will be created in the backend reportingRoutes.js
-            const response = await api.get('/reports/refunds', { params: dates });
-            setReportData(response.data);
+            const response = await api.get('/reports/refunds', { params: { ...dates, page, pageSize, paginated: 1 } });
+            const paginated = getPaginatedPayload(response.data);
+            setReportData(paginated.data);
+            setTotal(paginated.total);
         } catch {
             toast.error('Failed to generate refunds report.');
         } finally {
             setLoading(false);
         }
-    }, [dates]);
+    }, [dates, page, pageSize]);
 
     const handleDateChange = (e) => {
         setDates(prev => ({ ...prev, [e.target.name]: e.target.value }));
+        setPage(1);
     };
 
     // Fetch report when dates change
@@ -60,6 +67,7 @@ const RefundsReport = () => {
             </div>
             <div className="bg-white p-6 rounded-xl border border-gray-200">
                 {loading ? <p>Loading report...</p> : (
+                    <>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
                             <thead className="border-b">
@@ -87,8 +95,19 @@ const RefundsReport = () => {
                                     </tr>
                                 )}
                             </tbody>
-                        </table>
-                    </div>
+                    </table>
+                </div>
+                <PaginationControls
+                    page={page}
+                    pageSize={pageSize}
+                    total={total}
+                    onPageChange={setPage}
+                    onPageSizeChange={(size) => {
+                        setPageSize(size);
+                        setPage(1);
+                    }}
+                />
+                </>
                 )}
             </div>
         </>

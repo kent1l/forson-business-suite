@@ -22,6 +22,7 @@ import EditHistory from '../EditHistory';
 import { formatCurrency } from '../../utils/currency';
 import api from '../../api';
 import toast from 'react-hot-toast';
+import PaginationControls from '../ui/PaginationControls';
 
 const CustomerInvoiceDetailsModal = ({
     isOpen,
@@ -29,7 +30,12 @@ const CustomerInvoiceDetailsModal = ({
     title,
     invoices = [],
     loading = false,
-    onAfterDueDateUpdate
+    onAfterDueDateUpdate,
+    page = 1,
+    pageSize = 25,
+    total = 0,
+    onPageChange,
+    onPageSizeChange
 }) => {
     const [selectedInvoice, setSelectedInvoice] = useState(null);
     const [drawerOpen, setDrawerOpen] = useState(false);
@@ -77,8 +83,10 @@ const CustomerInvoiceDetailsModal = ({
             (async () => {
                 try {
                     setRefreshing(true);
-                    const { data } = await api.get(`/ar/customer-invoices/${customerId}`);
-                    setInvoiceData(Array.isArray(data) ? data : []);
+                    const { data } = await api.get(`/ar/customer-invoices/${customerId}`, {
+                        params: { page, pageSize, paginated: 1 }
+                    });
+                    setInvoiceData(Array.isArray(data) ? data : (data?.data || []));
                 } catch (err) {
                     console.error('Failed to refresh invoices after due date update:', err);
                     toast.error('Updated due date, but failed to refresh list');
@@ -240,6 +248,15 @@ const CustomerInvoiceDetailsModal = ({
                                 </tbody>
                             </table>
                         </div>
+                    )}
+                    {!loading && typeof onPageChange === 'function' && typeof onPageSizeChange === 'function' && (
+                        <PaginationControls
+                            page={page}
+                            pageSize={pageSize}
+                            total={total}
+                            onPageChange={onPageChange}
+                            onPageSizeChange={onPageSizeChange}
+                        />
                     )}
                 </div>
             </Modal>

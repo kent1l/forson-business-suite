@@ -70,6 +70,9 @@ const AccountsReceivablePage = () => {
     const [customerInvoices, setCustomerInvoices] = useState([]);
     const [customerInvoicesLoading, setCustomerInvoicesLoading] = useState(false);
     const [selectedCustomerForInvoices, setSelectedCustomerForInvoices] = useState(null);
+    const [customerInvoicesPage, setCustomerInvoicesPage] = useState(1);
+    const [customerInvoicesPageSize, setCustomerInvoicesPageSize] = useState(25);
+    const [customerInvoicesTotal, setCustomerInvoicesTotal] = useState(0);
     const [customerSummaryPage, setCustomerSummaryPage] = useState(1);
     const [customerSummaryPageSize, setCustomerSummaryPageSize] = useState(25);
     const [customerSummaryTotal, setCustomerSummaryTotal] = useState(0);
@@ -167,7 +170,7 @@ const AccountsReceivablePage = () => {
                 setAgingData(agingRes.data);
             } else {
                 // Calculate mock aging data based on total receivables
-                const totalReceivables = dashboardStats.totalReceivables || customersRes.data.reduce((sum, customer) => sum + Number(customer.balance_due || 0), 0);
+                const totalReceivables = dashboardStats.totalReceivables || customersWithBalances.reduce((sum, customer) => sum + Number(customer.balance_due || 0), 0);
                 const current = totalReceivables * 0.6;
                 const days1to30 = totalReceivables * 0.2;
                 const days31to60 = totalReceivables * 0.1;
@@ -226,11 +229,16 @@ const AccountsReceivablePage = () => {
         try {
             setCustomerInvoicesLoading(true);
             setSelectedCustomerForInvoices(customer);
+            setCustomerInvoicesPage(1);
             
-            const response = await api.get(`/ar/customer-invoices/${customer.customer_id}`);
+            const response = await api.get(`/ar/customer-invoices/${customer.customer_id}`, {
+                params: { page: 1, pageSize: customerInvoicesPageSize, paginated: 1 }
+            });
             // Filter only payable invoices (balance_due > 0)
-            const payableInvoices = response.data.filter(invoice => Number(invoice.balance_due) > 0) || [];
+            const invoiceRows = response.data?.data || response.data || [];
+            const payableInvoices = invoiceRows.filter(invoice => Number(invoice.balance_due) > 0) || [];
             setCustomerInvoices(payableInvoices);
+            setCustomerInvoicesTotal(response.data?.total || payableInvoices.length);
             
         } catch (error) {
             console.error('Failed to fetch customer invoices:', error);
@@ -238,7 +246,29 @@ const AccountsReceivablePage = () => {
         } finally {
             setCustomerInvoicesLoading(false);
         }
-    }, []);
+    }, [customerInvoicesPageSize]);
+
+    useEffect(() => {
+        const fetchInvoicesPage = async () => {
+            if (!selectedCustomerForInvoices?.customer_id) return;
+            try {
+                setCustomerInvoicesLoading(true);
+                const response = await api.get(`/ar/customer-invoices/${selectedCustomerForInvoices.customer_id}`, {
+                    params: { page: customerInvoicesPage, pageSize: customerInvoicesPageSize, paginated: 1 }
+                });
+                const invoiceRows = response.data?.data || response.data || [];
+                const payableInvoices = invoiceRows.filter(invoice => Number(invoice.balance_due) > 0) || [];
+                setCustomerInvoices(payableInvoices);
+                setCustomerInvoicesTotal(response.data?.total || payableInvoices.length);
+            } catch (error) {
+                console.error('Failed to fetch customer invoices:', error);
+                toast.error('Failed to load customer invoice details');
+            } finally {
+                setCustomerInvoicesLoading(false);
+            }
+        };
+        fetchInvoicesPage();
+    }, [selectedCustomerForInvoices, customerInvoicesPage, customerInvoicesPageSize]);
 
     // Handle receive payment for individual invoices
     const handleReceivePaymentClick = useCallback((invoice) => {
@@ -575,6 +605,14 @@ const AccountsReceivablePage = () => {
                 title={`Payable Invoices for ${selectedCustomerForInvoices?.company_name || `${selectedCustomerForInvoices?.first_name || ''} ${selectedCustomerForInvoices?.last_name || ''}`.trim()}`}
                 invoices={customerInvoices}
                 loading={customerInvoicesLoading}
+                page={customerInvoicesPage}
+                pageSize={customerInvoicesPageSize}
+                total={customerInvoicesTotal}
+                onPageChange={setCustomerInvoicesPage}
+                onPageSizeChange={(size) => {
+                    setCustomerInvoicesPageSize(size);
+                    setCustomerInvoicesPage(1);
+                }}
                 onAfterDueDateUpdate={async () => {
                     // Refresh overall dashboard and summaries
                     await fetchDashboardData();
@@ -583,9 +621,13 @@ const AccountsReceivablePage = () => {
                     if (selectedCustomerForInvoices?.customer_id) {
                         try {
                             setCustomerInvoicesLoading(true);
-                            const response = await api.get(`/ar/customer-invoices/${selectedCustomerForInvoices.customer_id}`);
-                            const payableInvoices = response.data.filter(invoice => Number(invoice.balance_due) > 0) || [];
+                            const response = await api.get(`/ar/customer-invoices/${selectedCustomerForInvoices.customer_id}`, {
+                                params: { page: customerInvoicesPage, pageSize: customerInvoicesPageSize, paginated: 1 }
+                            });
+                            const invoiceRows = response.data?.data || response.data || [];
+                            const payableInvoices = invoiceRows.filter(invoice => Number(invoice.balance_due) > 0) || [];
                             setCustomerInvoices(payableInvoices);
+                            setCustomerInvoicesTotal(response.data?.total || payableInvoices.length);
                         } catch (e) {
                             console.error('Failed to refresh customer invoices after due date update:', e);
                         } finally {

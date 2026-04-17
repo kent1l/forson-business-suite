@@ -4,6 +4,8 @@ import toast from 'react-hot-toast';
 import { useSettings } from '../../contexts/SettingsContext';
 import { ICONS } from '../../constants';
 import ReportCard from './ReportCard';
+import PaginationControls from '../ui/PaginationControls';
+import { getPaginatedPayload } from '../../utils/paginatedResponse';
 import { format, parseISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
@@ -12,6 +14,9 @@ const SalesReport = () => {
     const [reportData, setReportData] = useState([]);
     const [summary, setSummary] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(25);
+    const [total, setTotal] = useState(0);
     const [dates, setDates] = useState(() => {
         const now = toZonedTime(new Date(), 'Asia/Manila');
         const dateStr = format(now, 'yyyy-MM-dd');
@@ -35,7 +40,7 @@ const SalesReport = () => {
 
         try {
             const response = await api.get('/reports/sales-summary', {
-                params: { ...dates, format },
+                params: { ...dates, format, page, pageSize, paginated: 1 },
                 responseType: format === 'csv' ? 'blob' : 'json',
             });
 
@@ -49,19 +54,25 @@ const SalesReport = () => {
                 link.remove();
                 toast.success('Report exported successfully!');
             } else {
-                setReportData(response.data.details);
+                const paginated = getPaginatedPayload(response.data, response.data?.details?.length || 0);
+                setReportData(response.data.details || paginated.data);
                 setSummary(response.data.summary);
+                setTotal(response.data?.total || paginated.total || 0);
             }
         } catch {
             toast.error('Failed to generate report.');
         } finally {
             if (format === 'json') setLoading(false);
         }
-    }, [dates]);
+    }, [dates, page, pageSize]);
 
     useEffect(() => {
         fetchReport();
     }, [fetchReport]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [dates.startDate, dates.endDate]);
 
     return (
         <>
@@ -123,6 +134,16 @@ const SalesReport = () => {
                         </tbody>
                     </table>
                 </div>
+                <PaginationControls
+                    page={page}
+                    pageSize={pageSize}
+                    total={total}
+                    onPageChange={setPage}
+                    onPageSizeChange={(size) => {
+                        setPageSize(size);
+                        setPage(1);
+                    }}
+                />
             </div>
         </>
     );

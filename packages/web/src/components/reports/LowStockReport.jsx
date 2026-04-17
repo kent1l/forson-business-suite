@@ -1,16 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
+import PaginationControls from '../ui/PaginationControls';
+import { getPaginatedPayload } from '../../utils/paginatedResponse';
 
 const LowStockReport = () => {
     const [reportData, setReportData] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(25);
+    const [total, setTotal] = useState(0);
 
     const fetchReport = async (format = 'json') => {
         if (format === 'json') setLoading(true);
         try {
             const response = await api.get('/reports/low-stock', {
-                params: { format },
+                params: { format, page, pageSize, paginated: 1 },
                 responseType: format === 'csv' ? 'blob' : 'json',
             });
 
@@ -24,7 +29,9 @@ const LowStockReport = () => {
                 link.remove();
                 toast.success('Report exported successfully!');
             } else {
-                setReportData(response.data);
+                const paginated = getPaginatedPayload(response.data);
+                setReportData(paginated.data);
+                setTotal(paginated.total);
             }
         } catch (err) {
             toast.error('Failed to generate report.');
@@ -35,7 +42,7 @@ const LowStockReport = () => {
 
     useEffect(() => {
         fetchReport();
-    }, []);
+    }, [page, pageSize]);
 
     return (
         <>
@@ -47,6 +54,7 @@ const LowStockReport = () => {
             </div>
             <div className="bg-white p-6 rounded-xl border border-gray-200">
                 {loading ? <p>Loading report...</p> : (
+                    <>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
                             <thead className="border-b">
@@ -72,8 +80,19 @@ const LowStockReport = () => {
                                     </tr>
                                 )}
                             </tbody>
-                        </table>
-                    </div>
+                    </table>
+                </div>
+                <PaginationControls
+                    page={page}
+                    pageSize={pageSize}
+                    total={total}
+                    onPageChange={setPage}
+                    onPageSizeChange={(size) => {
+                        setPageSize(size);
+                        setPage(1);
+                    }}
+                />
+                </>
                 )}
             </div>
         </>

@@ -3,6 +3,8 @@ import api from '../../api';
 import toast from 'react-hot-toast';
 import { useSettings } from '../../contexts/SettingsContext';
 import Combobox from '../ui/Combobox';
+import PaginationControls from '../ui/PaginationControls';
+import { getPaginatedPayload } from '../../utils/paginatedResponse';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
@@ -11,6 +13,9 @@ const SalesByCustomerReport = () => {
     const [reportData, setReportData] = useState([]);
     const [customers, setCustomers] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(25);
+    const [total, setTotal] = useState(0);
     const [filters, setFilters] = useState(() => {
         const now = toZonedTime(new Date(), 'Asia/Manila');
         const dateStr = format(now, 'yyyy-MM-dd');
@@ -29,6 +34,7 @@ const SalesByCustomerReport = () => {
 
     const handleFilterChange = (name, value) => {
         setFilters(prev => ({ ...prev, [name]: value }));
+        setPage(1);
     };
 
     const fetchReport = async (format = 'json') => {
@@ -36,7 +42,7 @@ const SalesByCustomerReport = () => {
         if (format === 'json') setLoading(true);
         try {
             const response = await api.get('/reports/sales-by-customer', {
-                params: { ...filters, format },
+                params: { ...filters, format, page, pageSize, paginated: 1 },
                 responseType: format === 'csv' ? 'blob' : 'json',
             });
             if (format === 'csv') {
@@ -49,7 +55,9 @@ const SalesByCustomerReport = () => {
                 link.remove();
                 toast.success('Report exported successfully!');
             } else {
-                setReportData(response.data);
+                const paginated = getPaginatedPayload(response.data);
+                setReportData(paginated.data);
+                setTotal(paginated.total);
             }
         } catch {
             toast.error('Failed to generate report.');
@@ -57,6 +65,13 @@ const SalesByCustomerReport = () => {
             if (format === 'json') setLoading(false);
         }
     };
+
+    useEffect(() => {
+        if (reportData.length > 0) {
+            fetchReport('json');
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [page, pageSize]);
 
     return (
         <>
@@ -87,6 +102,7 @@ const SalesByCustomerReport = () => {
             </div>
             <div className="bg-white p-6 rounded-xl border border-gray-200">
                 {loading ? <p>Loading report...</p> : (
+                    <>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
                             <thead className="border-b">
@@ -105,8 +121,19 @@ const SalesByCustomerReport = () => {
                                     </tr>
                                 ))}
                             </tbody>
-                        </table>
-                    </div>
+                    </table>
+                </div>
+                <PaginationControls
+                    page={page}
+                    pageSize={pageSize}
+                    total={total}
+                    onPageChange={setPage}
+                    onPageSizeChange={(size) => {
+                        setPageSize(size);
+                        setPage(1);
+                    }}
+                />
+                </>
                 )}
             </div>
         </>
