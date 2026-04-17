@@ -27,7 +27,7 @@ const InventoryPage = () => {
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
     const [total, setTotal] = useState(0);
-    const [sortConfig, setSortConfig] = useState({ key: 'internal_sku', direction: 'ASC' });
+    const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ASC' });
     const [globalSortBy, setGlobalSortBy] = useState('name');
     const [globalSortDirection, setGlobalSortDirection] = useState('ASC');
     // No client-side sort: preserve backend / MeiliSearch ordering
@@ -68,6 +68,10 @@ const InventoryPage = () => {
         setPage(1);
     }, [searchTerm, globalSortBy, globalSortDirection]);
 
+    useEffect(() => {
+        setSortConfig({ key: null, direction: 'ASC' });
+    }, [globalSortBy, globalSortDirection]);
+
     const handleOpenAdjustmentModal = (part) => {
         setSelectedPart(part);
         setIsModalOpen(true);
@@ -96,11 +100,15 @@ const InventoryPage = () => {
         });
     };
     
-    const sortedInventory = sortData(inventory, sortConfig);
     const toSafeNumber = (value) => {
         const numeric = Number(value);
         return Number.isFinite(numeric) ? numeric : 0;
     };
+    const sortedInventory = sortData(inventory, sortConfig, {
+        stock_on_hand: (row) => toSafeNumber(row.stock_on_hand),
+        wac_cost: (row) => toSafeNumber(row.wac_cost),
+        total_value: (row) => toSafeNumber(row.total_value)
+    });
 
     return (
         <div>
