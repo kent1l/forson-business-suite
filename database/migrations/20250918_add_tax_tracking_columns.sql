@@ -53,14 +53,70 @@ CREATE INDEX IF NOT EXISTS idx_tax_backfill_log_invoice_id ON public.tax_backfil
 CREATE INDEX IF NOT EXISTS idx_tax_backfill_log_run_id ON public.tax_backfill_log(backfill_run_id);
 
 -- Add constraints
-ALTER TABLE public.invoice_line
-ADD CONSTRAINT chk_tax_amount_non_negative CHECK (tax_amount >= 0),
-ADD CONSTRAINT chk_tax_base_non_negative CHECK (tax_base >= 0);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'chk_tax_amount_non_negative'
+  ) THEN
+    ALTER TABLE public.invoice_line
+      ADD CONSTRAINT chk_tax_amount_non_negative
+      CHECK (tax_amount >= 0);
+  END IF;
+END $$;
 
-ALTER TABLE public.invoice_tax_breakdown
-ADD CONSTRAINT chk_breakdown_tax_amount_non_negative CHECK (tax_amount >= 0),
-ADD CONSTRAINT chk_breakdown_tax_base_non_negative CHECK (tax_base >= 0),
-ADD CONSTRAINT chk_breakdown_line_count_positive CHECK (line_count > 0);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'chk_tax_base_non_negative'
+  ) THEN
+    ALTER TABLE public.invoice_line
+      ADD CONSTRAINT chk_tax_base_non_negative
+      CHECK (tax_base >= 0);
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'chk_breakdown_tax_amount_non_negative'
+  ) THEN
+    ALTER TABLE public.invoice_tax_breakdown
+      ADD CONSTRAINT chk_breakdown_tax_amount_non_negative
+      CHECK (tax_amount >= 0);
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'chk_breakdown_tax_base_non_negative'
+  ) THEN
+    ALTER TABLE public.invoice_tax_breakdown
+      ADD CONSTRAINT chk_breakdown_tax_base_non_negative
+      CHECK (tax_base >= 0);
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'chk_breakdown_line_count_positive'
+  ) THEN
+    ALTER TABLE public.invoice_tax_breakdown
+      ADD CONSTRAINT chk_breakdown_line_count_positive
+      CHECK (line_count > 0);
+  END IF;
+END $$;
 
 -- Add comments for documentation
 COMMENT ON COLUMN public.invoice.subtotal_ex_tax IS 'Invoice subtotal excluding tax (sum of line tax_base amounts)';
