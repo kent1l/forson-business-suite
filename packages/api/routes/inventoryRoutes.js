@@ -11,21 +11,21 @@ router.get('/inventory', async (req, res) => {
     const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
     const sortBy = String(req.query.sortBy || 'name').toLowerCase();
     const sortDirection = String(req.query.sortDirection || 'ASC').toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
-    const shouldSortByName = sortBy === 'name' || sortBy === 'display_name';
+    const isGlobalSort = ['sku', 'name', 'display_name', 'stock_on_hand', 'wac', 'total_value'].includes(sortBy);
 
     try {
         // --- NEW: Hybrid Meilisearch + DB Query ---
 
         // 1. Get a list of part IDs from Meilisearch
         const index = meiliClient.index('parts');
-        const metadataResults = paginated && shouldSortByName
+        const metadataResults = paginated && isGlobalSort
             ? await index.search(search, { limit: 0, offset: 0, attributesToRetrieve: ['part_id'] })
             : null;
         const totalHits = metadataResults?.estimatedTotalHits || metadataResults?.totalHits || 0;
-        const fetchLimit = paginated && shouldSortByName
+        const fetchLimit = paginated && isGlobalSort
             ? Math.min(totalHits, 20000)
             : (paginated ? limit : 200);
-        const fetchOffset = paginated && shouldSortByName ? 0 : (paginated ? offset : 0);
+        const fetchOffset = paginated && isGlobalSort ? 0 : (paginated ? offset : 0);
 
         const searchResults = await index.search(search, {
             limit: fetchLimit,
@@ -49,13 +49,24 @@ router.get('/inventory', async (req, res) => {
         // Compute stock_on_hand once in a CTE to avoid duplicate subqueries and
         // coalesce wac_cost to 0 so total_value is deterministic.
         const queryParams = [partIds];
-        const sqlOffset = shouldSortByName && paginated ? 'LIMIT $2 OFFSET $3' : '';
-        if (shouldSortByName && paginated) {
+        const sqlOffset = isGlobalSort && paginated ? 'LIMIT $2 OFFSET $3' : '';
+        if (isGlobalSort && paginated) {
             queryParams.push(limit, offset);
         }
-        const orderByClause = shouldSortByName
-            ? `ORDER BY LOWER(COALESCE(g.group_name, '') || ' ' || COALESCE(b.brand_name, '') || ' ' || COALESCE(p.detail, '')) ${sortDirection}, p.part_id ${sortDirection}`
-            : 'ORDER BY p.detail ASC';
+        let orderByClause = 'ORDER BY p.detail ASC';
+        if (isGlobalSort) {
+            if (sortBy === 'sku') {
+                orderByClause = `ORDER BY LOWER(COALESCE(p.internal_sku, '')) ${sortDirection}, p.part_id ${sortDirection}`;
+            } else if (sortBy === 'stock_on_hand') {
+                orderByClause = `ORDER BY COALESCE(s.stock_on_hand, 0) ${sortDirection}, p.part_id ${sortDirection}`;
+            } else if (sortBy === 'wac') {
+                orderByClause = `ORDER BY COALESCE(p.wac_cost, 0) ${sortDirection}, p.part_id ${sortDirection}`;
+            } else if (sortBy === 'total_value') {
+                orderByClause = `ORDER BY (COALESCE(p.wac_cost, 0) * COALESCE(s.stock_on_hand, 0)) ${sortDirection}, p.part_id ${sortDirection}`;
+            } else {
+                orderByClause = `ORDER BY LOWER(COALESCE(g.group_name, '') || ' ' || COALESCE(b.brand_name, '') || ' ' || COALESCE(p.detail, '')) ${sortDirection}, p.part_id ${sortDirection}`;
+            }
+        }
 
         const query = `
             WITH stock AS (
@@ -98,7 +109,7 @@ router.get('/inventory', async (req, res) => {
         if (!paginated) {
             return res.json(inventoryWithDisplayName);
         }
-        const total = shouldSortByName
+        const total = isGlobalSort
             ? (totalHits || inventoryWithDisplayName.length)
             : (searchResults.estimatedTotalHits || searchResults.totalHits || inventoryWithDisplayName.length);
         res.json(paginatedResponse({ data: inventoryWithDisplayName, page, pageSize, total }));

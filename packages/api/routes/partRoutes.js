@@ -111,9 +111,9 @@ const manageTags = async (client, tags, partId) => {
 router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
     const { status = 'active', search = '', tags = '' } = req.query;
     const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
-    const sortBy = String(req.query.sortBy || 'relevance').toLowerCase();
+    const sortBy = String(req.query.sortBy || 'name').toLowerCase();
     const sortDirection = String(req.query.sortDirection || 'ASC').toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
-    const shouldSortByName = sortBy === 'name' || sortBy === 'display_name';
+    const isGlobalSort = ['name', 'display_name', 'sku', 'application'].includes(sortBy);
     try {
         const index = meiliClient.index('parts');
         const searchOptions = {
@@ -134,14 +134,14 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
 
         if (filter.length > 0) searchOptions.filter = filter.join(' AND ');
 
-        const metadataResults = paginated && shouldSortByName
+        const metadataResults = paginated && isGlobalSort
             ? await index.search(search, { ...searchOptions, limit: 0, offset: 0 })
             : null;
         const totalHits = metadataResults?.estimatedTotalHits || metadataResults?.totalHits || 0;
-        const fetchLimit = paginated && shouldSortByName
+        const fetchLimit = paginated && isGlobalSort
             ? Math.min(totalHits, 20000)
             : (paginated ? limit : 200);
-        const fetchOffset = paginated && shouldSortByName ? 0 : (paginated ? offset : 0);
+        const fetchOffset = paginated && isGlobalSort ? 0 : (paginated ? offset : 0);
 
         const searchResults = await index.search(search, { ...searchOptions, limit: fetchLimit, offset: fetchOffset });
         const partIds = searchResults.hits.map(hit => hit.part_id);
@@ -151,13 +151,20 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
         }
 
         const queryParams = [partIds];
-        const sqlOffset = shouldSortByName && paginated ? `LIMIT $2 OFFSET $3` : '';
-        if (shouldSortByName && paginated) {
+        const sqlOffset = isGlobalSort && paginated ? `LIMIT $2 OFFSET $3` : '';
+        if (isGlobalSort && paginated) {
             queryParams.push(limit, offset);
         }
-        const orderByClause = shouldSortByName
-            ? `ORDER BY LOWER(COALESCE(g.group_name, '') || ' ' || COALESCE(b.brand_name, '') || ' ' || COALESCE(p.detail, '')) ${sortDirection}, p.part_id ${sortDirection}`
-            : 'ORDER BY array_position($1::int[], p.part_id)';
+        let orderByClause = 'ORDER BY array_position($1::int[], p.part_id)';
+        if (isGlobalSort) {
+            if (sortBy === 'sku') {
+                orderByClause = `ORDER BY LOWER(COALESCE(p.internal_sku, '')) ${sortDirection}, p.part_id ${sortDirection}`;
+            } else if (sortBy === 'application') {
+                orderByClause = `ORDER BY LOWER(COALESCE(applications, '')) ${sortDirection}, p.part_id ${sortDirection}`;
+            } else {
+                orderByClause = `ORDER BY LOWER(COALESCE(g.group_name, '') || ' ' || COALESCE(b.brand_name, '') || ' ' || COALESCE(p.detail, '')) ${sortDirection}, p.part_id ${sortDirection}`;
+            }
+        }
 
         const query = `
             SELECT
@@ -193,7 +200,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
         if (!paginated) {
             return res.json(partsWithDisplayName);
         }
-        const total = shouldSortByName
+        const total = isGlobalSort
             ? (totalHits || partsWithDisplayName.length)
             : (searchResults.estimatedTotalHits || searchResults.totalHits || partsWithDisplayName.length);
         res.json(paginatedResponse({ data: partsWithDisplayName, page, pageSize, total }));

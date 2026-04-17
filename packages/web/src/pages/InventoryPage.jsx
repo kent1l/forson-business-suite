@@ -28,6 +28,7 @@ const InventoryPage = () => {
     const [pageSize, setPageSize] = useState(25);
     const [total, setTotal] = useState(0);
     const [sortConfig, setSortConfig] = useState({ key: 'internal_sku', direction: 'ASC' });
+    const [globalSortBy, setGlobalSortBy] = useState('name');
     const [globalSortDirection, setGlobalSortDirection] = useState('ASC');
     // No client-side sort: preserve backend / MeiliSearch ordering
 
@@ -37,12 +38,12 @@ const InventoryPage = () => {
             setLoading(true);
             // If there's no search term, use the inventory endpoint (full list)
             if (!searchTerm || !searchTerm.trim()) {
-                const response = await api.get('/inventory', { params: { page, pageSize, paginated: 1, sortBy: 'name', sortDirection: globalSortDirection } });
+                const response = await api.get('/inventory', { params: { page, pageSize, paginated: 1, sortBy: globalSortBy, sortDirection: globalSortDirection } });
                 setInventory(response.data?.data || []);
                 setTotal(response.data?.total || 0);
             } else {
                 // Use MeiliSearch-backed endpoint for smart searching (same as POS/Invoicing)
-                const response = await api.get('/inventory', { params: { search: searchTerm, page, pageSize, paginated: 1, sortBy: 'name', sortDirection: globalSortDirection } });
+                const response = await api.get('/inventory', { params: { search: searchTerm, page, pageSize, paginated: 1, sortBy: globalSortBy, sortDirection: globalSortDirection } });
                 const enriched = await enrichPartsArray(response.data?.data || []);
                 setInventory(enriched);
                 setTotal(response.data?.total || 0);
@@ -53,7 +54,7 @@ const InventoryPage = () => {
         } finally {
             setLoading(false);
         }
-    }, [searchTerm, page, pageSize, globalSortDirection]);
+    }, [searchTerm, page, pageSize, globalSortBy, globalSortDirection]);
 
     useEffect(() => {
         const debounceTimer = setTimeout(() => {
@@ -65,7 +66,7 @@ const InventoryPage = () => {
 
     useEffect(() => {
         setPage(1);
-    }, [searchTerm, globalSortDirection]);
+    }, [searchTerm, globalSortBy, globalSortDirection]);
 
     const handleOpenAdjustmentModal = (part) => {
         setSelectedPart(part);
@@ -103,10 +104,10 @@ const InventoryPage = () => {
 
     return (
         <div>
-            <div className="flex justify-between items-center mb-6">
+            <div className="mb-6">
                 <h1 className="text-2xl font-semibold text-gray-800">Inventory Management</h1>
-                <div className="flex items-center gap-3">
-                    <div className="relative w-full max-w-xs">
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <div className="relative w-full max-w-md">
                         <SearchBar
                             value={searchTerm}
                             onChange={setSearchTerm}
@@ -115,15 +116,30 @@ const InventoryPage = () => {
                         />
                     </div>
                     <div className="flex items-center gap-2">
-                        <label htmlFor="inventory-global-sort" className="text-sm text-gray-600 whitespace-nowrap">Sort all:</label>
+                        <label htmlFor="inventory-global-sort-by" className="text-sm text-gray-600 whitespace-nowrap">Sort all by</label>
                         <select
-                            id="inventory-global-sort"
+                            id="inventory-global-sort-by"
+                            value={globalSortBy}
+                            onChange={(e) => setGlobalSortBy(e.target.value)}
+                            className="rounded-md border border-gray-300 px-2 py-2 text-sm"
+                        >
+                            <option value="sku">SKU</option>
+                            <option value="name">Name</option>
+                            <option value="stock_on_hand">Stock on Hand</option>
+                            <option value="wac">WAC</option>
+                            <option value="total_value">Total Value</option>
+                        </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <label htmlFor="inventory-global-sort-direction" className="text-sm text-gray-600 whitespace-nowrap">Order</label>
+                        <select
+                            id="inventory-global-sort-direction"
                             value={globalSortDirection}
                             onChange={(e) => setGlobalSortDirection(e.target.value)}
                             className="rounded-md border border-gray-300 px-2 py-2 text-sm"
                         >
-                            <option value="ASC">Name (A-Z)</option>
-                            <option value="DESC">Name (Z-A)</option>
+                            <option value="ASC">Ascending</option>
+                            <option value="DESC">Descending</option>
                         </select>
                     </div>
                 </div>

@@ -34,13 +34,14 @@ const PartsPage = ({ user, onNavigate }) => {
     const [pageSize, setPageSize] = useState(25);
     const [total, setTotal] = useState(0);
     const [sortConfig, setSortConfig] = useState({ key: 'internal_sku', direction: 'ASC' });
+    const [globalSortBy, setGlobalSortBy] = useState('name');
     const [globalSortDirection, setGlobalSortDirection] = useState('ASC');
 
     const fetchInitialData = useCallback(async () => {
         try {
             setLoading(true);
             const [partsRes, brandsRes, groupsRes] = await Promise.all([
-                api.get('/parts', { params: { status: statusFilter, search: searchTerm, page, pageSize, paginated: 1, sortBy: 'name', sortDirection: globalSortDirection } }),
+                api.get('/parts', { params: { status: statusFilter, search: searchTerm, page, pageSize, paginated: 1, sortBy: globalSortBy, sortDirection: globalSortDirection } }),
                 api.get('/brands'),
                 api.get('/groups')
             ]);
@@ -53,7 +54,7 @@ const PartsPage = ({ user, onNavigate }) => {
         } finally {
             setLoading(false);
         }
-    }, [statusFilter, searchTerm, page, pageSize, globalSortDirection]);
+    }, [statusFilter, searchTerm, page, pageSize, globalSortBy, globalSortDirection]);
 
     useEffect(() => {
         const debounceTimer = setTimeout(() => {
@@ -64,7 +65,7 @@ const PartsPage = ({ user, onNavigate }) => {
 
     useEffect(() => {
         setPage(1);
-    }, [statusFilter, searchTerm, globalSortDirection]);
+    }, [statusFilter, searchTerm, globalSortBy, globalSortDirection]);
 
     const handleSave = (partData) => {
         const promise = currentPart
@@ -217,14 +218,14 @@ const PartsPage = ({ user, onNavigate }) => {
                 </div>
             </div>
 
-            <div className="mb-4">
-                <div className="flex justify-between items-center">
-                    <FilterBar
-                        tabs={filterTabs}
-                        activeTab={statusFilter}
-                        onTabClick={setStatusFilter}
-                    />
-                    <div className="relative w-full max-w-xs">
+            <div className="mb-4 space-y-3">
+                <FilterBar
+                    tabs={filterTabs}
+                    activeTab={statusFilter}
+                    onTabClick={setStatusFilter}
+                />
+                <div className="flex flex-wrap items-center gap-3">
+                    <div className="relative w-full max-w-md">
                         <SearchBar
                             value={searchTerm}
                             onChange={setSearchTerm}
@@ -232,16 +233,29 @@ const PartsPage = ({ user, onNavigate }) => {
                             placeholder="Search by detail, SKU, or part number..."
                         />
                     </div>
-                    <div className="ml-3 flex items-center gap-2">
-                        <label htmlFor="parts-global-sort" className="text-sm text-gray-600 whitespace-nowrap">Sort all:</label>
+                    <div className="flex items-center gap-2">
+                        <label htmlFor="parts-global-sort-by" className="text-sm text-gray-600 whitespace-nowrap">Sort all by</label>
                         <select
-                            id="parts-global-sort"
+                            id="parts-global-sort-by"
+                            value={globalSortBy}
+                            onChange={(e) => setGlobalSortBy(e.target.value)}
+                            className="rounded-md border border-gray-300 px-2 py-2 text-sm"
+                        >
+                            <option value="name">Name</option>
+                            <option value="sku">SKU</option>
+                            <option value="application">Application</option>
+                        </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <label htmlFor="parts-global-sort-direction" className="text-sm text-gray-600 whitespace-nowrap">Order</label>
+                        <select
+                            id="parts-global-sort-direction"
                             value={globalSortDirection}
                             onChange={(e) => setGlobalSortDirection(e.target.value)}
                             className="rounded-md border border-gray-300 px-2 py-2 text-sm"
                         >
-                            <option value="ASC">Name (A-Z)</option>
-                            <option value="DESC">Name (Z-A)</option>
+                            <option value="ASC">Ascending</option>
+                            <option value="DESC">Descending</option>
                         </select>
                     </div>
                 </div>
