@@ -293,7 +293,10 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
         const partForMeili = await getPartDataForMeili(db, newPartData.part_id);
         if (partForMeili) {
             // Queue durable background sync and return enriched payload including display_name
-            await enqueuePartUpsert(partForMeili.part_id, { source: 'partRoutes.create' });
+            await enqueuePartUpsert(partForMeili.part_id, {
+                source: 'partRoutes.create',
+                version_ts: partForMeili.date_modified || partForMeili.date_created || new Date().toISOString()
+            });
             return res.status(201).json(partForMeili);
         }
 
@@ -361,7 +364,10 @@ router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) 
 
         const partForMeili = await getPartDataForMeili(db, id);
         if (partForMeili) {
-            await enqueuePartUpsert(partForMeili.part_id, { source: 'partRoutes.update' });
+            await enqueuePartUpsert(partForMeili.part_id, {
+                source: 'partRoutes.update',
+                version_ts: partForMeili.date_modified || partForMeili.date_created || new Date().toISOString()
+            });
             return res.json(partForMeili);
         }
         
@@ -384,7 +390,10 @@ router.delete('/parts/:id', protect, hasPermission('parts:delete'), async (req, 
         if (deleteOp.rowCount === 0) {
             return res.status(404).json({ message: 'Part not found' });
         }
-        await enqueuePartDelete(id, { source: 'partRoutes.delete' });
+        await enqueuePartDelete(id, {
+            source: 'partRoutes.delete',
+            version_ts: new Date().toISOString()
+        });
         res.json({ message: 'Part deleted successfully' });
     } catch (err) {
         console.error(err.message);
