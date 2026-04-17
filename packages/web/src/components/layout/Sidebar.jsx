@@ -1,6 +1,7 @@
 import React from 'react';
 import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
+import { APP_VERSION_LABEL } from '../../constants/version';
 import { useAuth } from '../../contexts/AuthContext'; // <-- NEW: Import useAuth
 
 const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
@@ -46,6 +47,9 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
                         )
                     ))}
                 </nav>
+                <div className="px-6 py-4 text-[11px] text-gray-400 border-t border-gray-100">
+                    {APP_VERSION_LABEL}
+                </div>
             </div>
         </>
     );
