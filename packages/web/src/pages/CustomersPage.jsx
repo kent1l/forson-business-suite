@@ -6,7 +6,10 @@ import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import CustomerForm from '../components/forms/CustomerForm';
 import FilterBar from '../components/ui/FilterBar';
+import PaginationControls from '../components/ui/PaginationControls';
+import SortableHeader from '../components/ui/SortableHeader';
 import { useAuth } from '../contexts/AuthContext'; // <-- NEW: Import useAuth
+import { sortData } from '../utils/sortData';
 
 const CustomersPage = () => {
     const { hasPermission } = useAuth(); // <-- NEW: Use the auth context
@@ -16,6 +19,10 @@ const CustomersPage = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentCustomer, setCurrentCustomer] = useState(null);
     const [statusFilter, setStatusFilter] = useState('active');
+    const [sortConfig, setSortConfig] = useState({ key: 'first_name', direction: 'ASC' });
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(25);
+    const [total, setTotal] = useState(0);
 
     const filterTabs = [
         { key: 'active', label: 'Active' },
@@ -27,8 +34,9 @@ const CustomersPage = () => {
         try {
             setError('');
             setLoading(true);
-            const response = await api.get(`/customers?status=${statusFilter}`);
-            setCustomers(response.data);
+            const response = await api.get('/customers', { params: { status: statusFilter, page, pageSize, paginated: 1 } });
+            setCustomers(response.data?.data || []);
+            setTotal(response.data?.total || 0);
         } catch (err) {
             setError('Failed to fetch customers.');
         } finally {
@@ -38,6 +46,10 @@ const CustomersPage = () => {
 
     useEffect(() => {
         fetchCustomers();
+    }, [statusFilter, page, pageSize]);
+
+    useEffect(() => {
+        setPage(1);
     }, [statusFilter]);
 
     const handleAdd = () => {
@@ -87,6 +99,11 @@ const CustomersPage = () => {
         });
     };
 
+    const sortedCustomers = sortData(customers, sortConfig, {
+        full_name: (row) => `${row.first_name || ''} ${row.last_name || ''}`.trim(),
+        status: (row) => (row.is_active ? 1 : 0)
+    });
+
     return (
         <div>
             <div className="flex justify-between items-center mb-6">
@@ -108,19 +125,20 @@ const CustomersPage = () => {
                 {loading && <p>Loading customers...</p>}
                 {error && <p className="text-red-500">{error}</p>}
                 {!loading && !error && (
+                    <>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
                             <thead className="border-b">
                                 <tr>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Name</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Company</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 hidden sm:table-cell">Phone</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-center">Status</th>
+                                    <SortableHeader column="full_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Name</SortableHeader>
+                                    <SortableHeader column="company_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Company</SortableHeader>
+                                    <SortableHeader className="hidden sm:table-cell" column="phone" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Phone</SortableHeader>
+                                    <SortableHeader className="text-center" column="status" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Status</SortableHeader>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {customers.map(customer => (
+                                {sortedCustomers.map(customer => (
                                     <tr key={customer.customer_id} className="border-b hover:bg-gray-50">
                                         <td className="p-3 text-sm font-medium text-gray-800">{customer.first_name} {customer.last_name}</td>
                                         <td className="p-3 text-sm">{customer.company_name}</td>
@@ -143,6 +161,17 @@ const CustomersPage = () => {
                             </tbody>
                         </table>
                     </div>
+                    <PaginationControls
+                        page={page}
+                        pageSize={pageSize}
+                        total={total}
+                        onPageChange={setPage}
+                        onPageSizeChange={(value) => {
+                            setPageSize(value);
+                            setPage(1);
+                        }}
+                    />
+                    </>
                 )}
             </div>
             <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={currentCustomer ? 'Edit Customer' : 'Add New Customer'}>

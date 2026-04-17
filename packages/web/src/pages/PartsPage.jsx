@@ -8,10 +8,13 @@ import Modal from '../components/ui/Modal';
 import PartForm from '../components/forms/PartForm';
 import FilterBar from '../components/ui/FilterBar';
 import TagPopover from '../components/ui/TagPopover';
+import PaginationControls from '../components/ui/PaginationControls';
+import SortableHeader from '../components/ui/SortableHeader';
 import { useAuth } from '../contexts/AuthContext';
 import PartNumberManager from './PartNumberManager';
 import PartApplicationManager from './PartApplicationManager';
 import { formatApplicationText } from '../helpers/applicationTextHelper';
+import { sortData } from '../utils/sortData';
 
 const PartsPage = ({ user, onNavigate }) => {
     const { hasPermission } = useAuth();
@@ -27,16 +30,23 @@ const PartsPage = ({ user, onNavigate }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedParts, setSelectedParts] = useState([]);
     const [isBulkEditModalOpen, setIsBulkEditModalOpen] = useState(false);
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(25);
+    const [total, setTotal] = useState(0);
+    const [sortConfig, setSortConfig] = useState({ key: 'internal_sku', direction: 'ASC' });
+    const [globalSortBy, setGlobalSortBy] = useState('name');
+    const [globalSortDirection, setGlobalSortDirection] = useState('ASC');
 
     const fetchInitialData = useCallback(async () => {
         try {
             setLoading(true);
             const [partsRes, brandsRes, groupsRes] = await Promise.all([
-                api.get('/parts', { params: { status: statusFilter, search: searchTerm } }),
+                api.get('/parts', { params: { status: statusFilter, search: searchTerm, page, pageSize, paginated: 1, sortBy: globalSortBy, sortDirection: globalSortDirection } }),
                 api.get('/brands'),
                 api.get('/groups')
             ]);
-            setParts(partsRes.data);
+            setParts(partsRes.data?.data || []);
+            setTotal(partsRes.data?.total || 0);
             setBrands(brandsRes.data);
             setGroups(groupsRes.data);
         } catch (error) {
@@ -44,7 +54,7 @@ const PartsPage = ({ user, onNavigate }) => {
         } finally {
             setLoading(false);
         }
-    }, [statusFilter, searchTerm]);
+    }, [statusFilter, searchTerm, page, pageSize, globalSortBy, globalSortDirection]);
 
     useEffect(() => {
         const debounceTimer = setTimeout(() => {
@@ -52,6 +62,10 @@ const PartsPage = ({ user, onNavigate }) => {
         }, 300);
         return () => clearTimeout(debounceTimer);
     }, [fetchInitialData]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [statusFilter, searchTerm, globalSortBy, globalSortDirection]);
 
     const handleSave = (partData) => {
         const promise = currentPart
@@ -171,8 +185,9 @@ const PartsPage = ({ user, onNavigate }) => {
         }
     };
 
-    // Use parts directly to preserve MeiliSearch's relevance ranking
-    const sortedParts = parts;
+    const sortedParts = sortData(parts, sortConfig, {
+        application_text: (row) => row.applications || ''
+    });
 
     const filterTabs = [
         { key: 'active', label: 'Active' },
@@ -203,14 +218,14 @@ const PartsPage = ({ user, onNavigate }) => {
                 </div>
             </div>
 
-            <div className="mb-4">
-                <div className="flex justify-between items-center">
-                    <FilterBar
-                        tabs={filterTabs}
-                        activeTab={statusFilter}
-                        onTabClick={setStatusFilter}
-                    />
-                    <div className="relative w-full max-w-xs">
+            <div className="mb-4 space-y-3">
+                <FilterBar
+                    tabs={filterTabs}
+                    activeTab={statusFilter}
+                    onTabClick={setStatusFilter}
+                />
+                <div className="flex flex-wrap items-center gap-3">
+                    <div className="relative w-full max-w-md">
                         <SearchBar
                             value={searchTerm}
                             onChange={setSearchTerm}
@@ -218,20 +233,46 @@ const PartsPage = ({ user, onNavigate }) => {
                             placeholder="Search by detail, SKU, or part number..."
                         />
                     </div>
+                    <div className="flex items-center gap-2">
+                        <label htmlFor="parts-global-sort-by" className="text-sm text-gray-600 whitespace-nowrap">Sort all by</label>
+                        <select
+                            id="parts-global-sort-by"
+                            value={globalSortBy}
+                            onChange={(e) => setGlobalSortBy(e.target.value)}
+                            className="rounded-md border border-gray-300 px-2 py-2 text-sm"
+                        >
+                            <option value="name">Name</option>
+                            <option value="sku">SKU</option>
+                            <option value="application">Application</option>
+                        </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <label htmlFor="parts-global-sort-direction" className="text-sm text-gray-600 whitespace-nowrap">Order</label>
+                        <select
+                            id="parts-global-sort-direction"
+                            value={globalSortDirection}
+                            onChange={(e) => setGlobalSortDirection(e.target.value)}
+                            className="rounded-md border border-gray-300 px-2 py-2 text-sm"
+                        >
+                            <option value="ASC">Ascending</option>
+                            <option value="DESC">Descending</option>
+                        </select>
+                    </div>
                 </div>
             </div>
 
 
             <div className="bg-white p-6 rounded-xl border border-gray-200">
                 {loading ? <p>Loading...</p> : (
+                    <>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
                             <thead>
                                 <tr>
                                     <th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={selectedParts.length === sortedParts.length && sortedParts.length > 0} /></th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Application</th>
+                                    <SortableHeader column="internal_sku" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>SKU</SortableHeader>
+                                    <SortableHeader column="display_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Item</SortableHeader>
+                                    <SortableHeader column="application_text" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Application</SortableHeader>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>
@@ -260,6 +301,18 @@ const PartsPage = ({ user, onNavigate }) => {
                             </tbody>
                         </table>
                     </div>
+                    <PaginationControls
+                        page={page}
+                        pageSize={pageSize}
+                        total={total}
+                        onPageChange={setPage}
+                        onPageSizeChange={(value) => {
+                            setPageSize(value);
+                            setPage(1);
+                            setSelectedParts([]);
+                        }}
+                    />
+                    </>
                 )}
             </div>
             <Modal isOpen={isFormModalOpen} onClose={() => setIsFormModalOpen(false)} title={currentPart ? 'Edit Part' : 'New Part'}>

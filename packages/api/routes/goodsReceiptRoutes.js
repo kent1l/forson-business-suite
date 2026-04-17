@@ -2,11 +2,13 @@ const express = require('express');
 const db = require('../db');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { hasPermission, protect } = require('../middleware/authMiddleware');
+const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const router = express.Router();
 
 // GET /goods-receipts - Fetch list of posted GRNs with search and sorting
 router.get('/goods-receipts', protect, async (req, res) => {
   const { q: search = '', sortBy = 'receipt_date', sortOrder = 'desc' } = req.query;
+  const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
 
   // Validate sortBy and sortOrder
   const allowedSortBy = ['receipt_date', 'supplier_name', 'grn_number'];
@@ -58,8 +60,18 @@ router.get('/goods-receipts', protect, async (req, res) => {
 
     query += ` ORDER BY ${sortBy} ${sortOrder}`;
 
-    const { rows } = await db.query(query, params);
-    res.json(rows);
+    if (!paginated) {
+      const { rows } = await db.query(query, params);
+      return res.json(rows);
+    }
+
+    const countQuery = `SELECT COUNT(*)::int AS total FROM (${query}) as grn_results`;
+    const countRes = await db.query(countQuery, params);
+    const total = countRes.rows[0]?.total || 0;
+    query += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    const paginatedParams = [...params, limit, offset];
+    const { rows } = await db.query(query, paginatedParams);
+    res.json(paginatedResponse({ data: rows, page, pageSize, total }));
   } catch (err) {
     console.error('Error fetching goods receipts:', err.message);
     res.status(500).json({ message: 'Server error', error: err.message });

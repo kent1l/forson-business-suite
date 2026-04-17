@@ -2,19 +2,34 @@ const express = require('express');
 const db = require('../db');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
 const { meiliClient } = require('../meilisearch'); // <-- 1. Import Meili client
+const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const router = express.Router();
 
 // GET /api/inventory - Get current stock levels with search
 router.get('/inventory', async (req, res) => {
     const { search = '' } = req.query;
+    const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
+    const sortBy = String(req.query.sortBy || 'name').toLowerCase();
+    const sortDirection = String(req.query.sortDirection || 'ASC').toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+    const isGlobalSort = ['sku', 'name', 'display_name', 'stock_on_hand', 'wac', 'total_value'].includes(sortBy);
 
     try {
         // --- NEW: Hybrid Meilisearch + DB Query ---
 
         // 1. Get a list of part IDs from Meilisearch
         const index = meiliClient.index('parts');
+        const metadataResults = paginated && isGlobalSort
+            ? await index.search(search, { limit: 0, offset: 0, attributesToRetrieve: ['part_id'] })
+            : null;
+        const totalHits = metadataResults?.estimatedTotalHits || metadataResults?.totalHits || 0;
+        const fetchLimit = paginated && isGlobalSort
+            ? Math.min(totalHits, 20000)
+            : (paginated ? limit : 200);
+        const fetchOffset = paginated && isGlobalSort ? 0 : (paginated ? offset : 0);
+
         const searchResults = await index.search(search, {
-            limit: 200, // Limit the number of results for performance
+            limit: fetchLimit,
+            offset: fetchOffset,
             attributesToRetrieve: ['part_id'], // We only need the ID
         });
         // Ensure we send integer IDs to Postgres (Meili may return strings)
@@ -24,12 +39,35 @@ router.get('/inventory', async (req, res) => {
 
         // If Meilisearch returns no results, we can stop here.
         if (partIds.length === 0) {
+            if (paginated) {
+                return res.json(paginatedResponse({ data: [], page, pageSize, total: 0 }));
+            }
             return res.json([]);
         }
 
         // 2. Use those IDs to get the full inventory data from PostgreSQL
         // Compute stock_on_hand once in a CTE to avoid duplicate subqueries and
         // coalesce wac_cost to 0 so total_value is deterministic.
+        const queryParams = [partIds];
+        const sqlOffset = isGlobalSort && paginated ? 'LIMIT $2 OFFSET $3' : '';
+        if (isGlobalSort && paginated) {
+            queryParams.push(limit, offset);
+        }
+        let orderByClause = 'ORDER BY p.detail ASC';
+        if (isGlobalSort) {
+            if (sortBy === 'sku') {
+                orderByClause = `ORDER BY LOWER(COALESCE(p.internal_sku, '')) ${sortDirection}, p.part_id ${sortDirection}`;
+            } else if (sortBy === 'stock_on_hand') {
+                orderByClause = `ORDER BY COALESCE(s.stock_on_hand, 0) ${sortDirection}, p.part_id ${sortDirection}`;
+            } else if (sortBy === 'wac') {
+                orderByClause = `ORDER BY COALESCE(p.wac_cost, 0) ${sortDirection}, p.part_id ${sortDirection}`;
+            } else if (sortBy === 'total_value') {
+                orderByClause = `ORDER BY (COALESCE(p.wac_cost, 0) * COALESCE(s.stock_on_hand, 0)) ${sortDirection}, p.part_id ${sortDirection}`;
+            } else {
+                orderByClause = `ORDER BY LOWER(COALESCE(g.group_name, '') || ' ' || COALESCE(b.brand_name, '') || ' ' || COALESCE(p.detail, '')) ${sortDirection}, p.part_id ${sortDirection}`;
+            }
+        }
+
         const query = `
             WITH stock AS (
                 SELECT part_id, COALESCE(SUM(quantity), 0) AS stock_on_hand
@@ -57,17 +95,24 @@ router.get('/inventory', async (req, res) => {
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
             WHERE p.part_id = ANY($1::int[])
-            ORDER BY p.detail ASC;
+            ${orderByClause}
+            ${sqlOffset};
         `;
 
-        const { rows } = await db.query(query, [partIds]);
+        const { rows } = await db.query(query, queryParams);
         
         const inventoryWithDisplayName = rows.map(item => ({
             ...item,
             display_name: constructDisplayName(item)
         }));
 
-        res.json(inventoryWithDisplayName);
+        if (!paginated) {
+            return res.json(inventoryWithDisplayName);
+        }
+        const total = isGlobalSort
+            ? (totalHits || inventoryWithDisplayName.length)
+            : (searchResults.estimatedTotalHits || searchResults.totalHits || inventoryWithDisplayName.length);
+        res.json(paginatedResponse({ data: inventoryWithDisplayName, page, pageSize, total }));
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');

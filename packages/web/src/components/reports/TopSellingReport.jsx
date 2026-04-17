@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import { useSettings } from '../../contexts/SettingsContext';
+import PaginationControls from '../ui/PaginationControls';
+import SortableHeader from '../ui/SortableHeader';
+import { getPaginatedPayload } from '../../utils/paginatedResponse';
+import { sortData } from '../../utils/sortData';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
@@ -9,6 +13,11 @@ const TopSellingReport = () => {
     const { settings } = useSettings();
     const [reportData, setReportData] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(25);
+    const [total, setTotal] = useState(0);
+    const [hasLoaded, setHasLoaded] = useState(false);
+    const [sortConfig, setSortConfig] = useState({ key: 'total_revenue', direction: 'DESC' });
     const [dates, setDates] = useState(() => {
         const now = toZonedTime(new Date(), 'Asia/Manila');
         const dateStr = format(now, 'yyyy-MM-dd');
@@ -33,7 +42,7 @@ const TopSellingReport = () => {
 
         try {
             const response = await api.get('/reports/top-selling', {
-                params: { ...dates, sortBy, format },
+                params: { ...dates, sortBy, format, page, pageSize, paginated: 1 },
                 responseType: format === 'csv' ? 'blob' : 'json',
             });
 
@@ -47,7 +56,10 @@ const TopSellingReport = () => {
                 link.remove();
                 toast.success('Report exported successfully!');
             } else {
-                setReportData(response.data);
+                const paginated = getPaginatedPayload(response.data);
+                setReportData(paginated.data);
+                setTotal(paginated.total);
+                setHasLoaded(true);
             }
         } catch {
             toast.error('Failed to generate report.');
@@ -56,6 +68,18 @@ const TopSellingReport = () => {
         }
     };
 
+    useEffect(() => {
+        setPage(1);
+    }, [dates.startDate, dates.endDate, sortBy]);
+
+    useEffect(() => {
+        if (hasLoaded) {
+            fetchReport('json');
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [page, pageSize]);
+
+    const sortedReportData = sortData(reportData, sortConfig);
     return (
         <>
             <div className="bg-white p-6 rounded-xl border border-gray-200 mb-6">
@@ -90,14 +114,14 @@ const TopSellingReport = () => {
                     <table className="w-full text-left">
                         <thead className="border-b">
                             <tr>
-                                <th className="p-3 text-sm font-semibold text-gray-600">SKU</th>
-                                <th className="p-3 text-sm font-semibold text-gray-600">Item Name</th>
-                                <th className="p-3 text-sm font-semibold text-gray-600 text-center">Qty Sold</th>
-                                <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total Revenue</th>
+                                <SortableHeader column="internal_sku" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>SKU</SortableHeader>
+                                <SortableHeader column="display_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Item Name</SortableHeader>
+                                <SortableHeader className="text-center" column="total_quantity_sold" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Qty Sold</SortableHeader>
+                                <SortableHeader className="text-right" column="total_revenue" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Total Revenue</SortableHeader>
                             </tr>
                         </thead>
                         <tbody>
-                            {reportData.map((row, index) => (
+                            {sortedReportData.map((row, index) => (
                                 <tr key={index} className="border-b hover:bg-gray-50">
                                     <td className="p-3 text-sm font-mono">{row.internal_sku}</td>
                                     <td className="p-3 text-sm">{row.display_name}</td>
@@ -113,6 +137,16 @@ const TopSellingReport = () => {
                         </tbody>
                     </table>
                 </div>
+                <PaginationControls
+                    page={page}
+                    pageSize={pageSize}
+                    total={total}
+                    onPageChange={setPage}
+                    onPageSizeChange={(size) => {
+                        setPageSize(size);
+                        setPage(1);
+                    }}
+                />
             </div>
         </>
     );

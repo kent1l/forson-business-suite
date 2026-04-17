@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
+const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const fs = require('fs');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const router = express.Router();
@@ -9,6 +10,7 @@ const router = express.Router();
 // GET /api/purchase-orders - Get all purchase orders with status filter
 router.get('/purchase-orders', protect, hasPermission('purchase_orders:view'), async (req, res) => {
     const { status = 'Pending' } = req.query; // Default to Pending
+    const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
     let whereClause = '';
     const queryParams = [];
 
@@ -18,16 +20,41 @@ router.get('/purchase-orders', protect, hasPermission('purchase_orders:view'), a
     }
 
     try {
-        const query = `
+        const baseQuery = `
             SELECT po.*, s.supplier_name, e.first_name, e.last_name
             FROM purchase_order po
             JOIN supplier s ON po.supplier_id = s.supplier_id
             JOIN employee e ON po.employee_id = e.employee_id
             ${whereClause}
-            ORDER BY po.order_date DESC
         `;
-        const { rows } = await db.query(query, queryParams);
-        res.json(rows);
+
+        if (!paginated) {
+            const { rows } = await db.query(
+                `${baseQuery}
+                 ORDER BY po.order_date DESC, po.po_id DESC`,
+                queryParams
+            );
+            return res.json(rows);
+        }
+
+        const countQuery = `
+            SELECT COUNT(*)::int AS total
+            FROM purchase_order po
+            ${whereClause}
+        `;
+        const countRes = await db.query(countQuery, queryParams);
+        const total = countRes.rows[0]?.total || 0;
+
+        const paginatedParams = [...queryParams, limit, offset];
+        const paginationPlaceholderStart = queryParams.length + 1;
+        const { rows } = await db.query(
+            `${baseQuery}
+             ORDER BY po.order_date DESC, po.po_id DESC
+             LIMIT $${paginationPlaceholderStart} OFFSET $${paginationPlaceholderStart + 1}`,
+            paginatedParams
+        );
+
+        res.json(paginatedResponse({ data: rows, page, pageSize, total }));
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');

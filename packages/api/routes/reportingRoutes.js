@@ -3,16 +3,18 @@ const db = require('../db');
 const { Parser } = require('json2csv');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
+const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const router = express.Router();
 
 // GET /api/reports/sales-summary
 router.get('/reports/sales-summary', protect, hasPermission('reports:view'), async (req, res) => {
     const { startDate, endDate, format = 'json' } = req.query;
+    const { paginated, page, pageSize, limit, offset } = parsePaginationQuery(req.query);
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
     
     const client = await db.getClient();
     try {
-        const detailsQuery = `
+        const detailsBaseQuery = `
             SELECT 
                 i.invoice_date, i.invoice_number, p.detail,
                 g.group_name, b.brand_name,
@@ -26,7 +28,7 @@ router.get('/reports/sales-summary', protect, hasPermission('reports:view'), asy
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
             WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
-            ORDER BY i.invoice_date;
+            ORDER BY i.invoice_date
         `;
         
         const summaryQuery = `
@@ -38,10 +40,24 @@ router.get('/reports/sales-summary', protect, hasPermission('reports:view'), asy
                 (SELECT COUNT(*) FROM invoice WHERE (invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2) AS total_invoices
         `;
 
-        const [detailsRes, summaryRes] = await Promise.all([
-            client.query(detailsQuery, [startDate, endDate]),
-            client.query(summaryQuery, [startDate, endDate])
-        ]);
+        const summaryPromise = client.query(summaryQuery, [startDate, endDate]);
+        const detailsPromise = (() => {
+            if (format === 'csv' || !paginated) {
+                return client.query(detailsBaseQuery, [startDate, endDate]);
+            }
+            const paginatedQuery = `${detailsBaseQuery} LIMIT $3 OFFSET $4`;
+            return client.query(paginatedQuery, [startDate, endDate, limit, offset]);
+        })();
+        const countPromise = (format === 'json' && paginated)
+            ? client.query(`
+                SELECT COUNT(*)::int AS total
+                FROM invoice i
+                JOIN invoice_line il ON i.invoice_id = il.invoice_id
+                WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
+            `, [startDate, endDate])
+            : Promise.resolve({ rows: [{ total: 0 }] });
+
+        const [detailsRes, summaryRes, countRes] = await Promise.all([detailsPromise, summaryPromise, countPromise]);
 
         const details = detailsRes.rows.map(row => ({ ...row, display_name: constructDisplayName(row) }));
         
@@ -60,6 +76,9 @@ router.get('/reports/sales-summary', protect, hasPermission('reports:view'), asy
             const json2csvParser = new Parser();
             const csv = json2csvParser.parse(details);
             res.header('Content-Type', 'text/csv').attachment(`sales-report-${startDate}-to-${endDate}.csv`).send(csv);
+        } else if (paginated) {
+            const total = countRes.rows[0]?.total || 0;
+            res.json({ summary, ...paginatedResponse({ data: details, page, pageSize, total }) });
         } else {
             res.json({ summary, details });
         }
@@ -74,11 +93,12 @@ router.get('/reports/sales-summary', protect, hasPermission('reports:view'), asy
 // GET /api/reports/top-selling - (No change needed here as it doesn't calculate profit)
 router.get('/reports/top-selling', protect, hasPermission('reports:view'), async (req, res) => {
     const { startDate, endDate, sortBy = 'revenue', format = 'json' } = req.query;
+    const { paginated, page, pageSize, limit, offset } = parsePaginationQuery(req.query);
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
 
     const orderByClause = sortBy === 'quantity' ? 'total_quantity_sold DESC' : 'total_revenue DESC';
     try {
-        const query = `
+        let query = `
             SELECT
                 p.part_id, p.internal_sku, p.detail,
                 b.brand_name, g.group_name,
@@ -93,15 +113,41 @@ router.get('/reports/top-selling', protect, hasPermission('reports:view'), async
             WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
             GROUP BY p.part_id, b.brand_name, g.group_name
             ORDER BY ${orderByClause}
-            LIMIT 100;
         `;
-        const { rows } = await db.query(query, [startDate, endDate]);
+        const params = [startDate, endDate];
+        if (format === 'json' && paginated) {
+            query += ` LIMIT $3 OFFSET $4`;
+            params.push(limit, offset);
+        } else {
+            query += ` LIMIT 100`;
+        }
+
+        const [rowsRes, countRes] = await Promise.all([
+            db.query(query, params),
+            (format === 'json' && paginated) ? db.query(`
+                SELECT COUNT(*)::int AS total
+                FROM (
+                    SELECT p.part_id
+                    FROM invoice_line il
+                    JOIN part p ON il.part_id = p.part_id
+                    JOIN invoice i ON il.invoice_id = i.invoice_id
+                    LEFT JOIN brand b ON p.brand_id = b.brand_id
+                    LEFT JOIN "group" g ON p.group_id = g.group_id
+                    WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
+                    GROUP BY p.part_id, b.brand_name, g.group_name
+                ) ranked_parts
+            `, [startDate, endDate]) : Promise.resolve({ rows: [{ total: 0 }] })
+        ]);
+        const { rows } = rowsRes;
         const data = rows.map(row => ({ ...row, display_name: constructDisplayName(row) }));
 
         if (format === 'csv') {
             const json2csvParser = new Parser();
             const csv = json2csvParser.parse(data);
             res.header('Content-Type', 'text/csv').attachment(`top-selling-report-${startDate}-to-${endDate}.csv`).send(csv);
+        } else if (paginated) {
+            const total = countRes.rows[0]?.total || 0;
+            res.json(paginatedResponse({ data, page, pageSize, total }));
         } else {
             res.json(data);
         }
@@ -114,8 +160,9 @@ router.get('/reports/top-selling', protect, hasPermission('reports:view'), async
 // GET /api/reports/inventory-valuation
 router.get('/reports/inventory-valuation', protect, hasPermission('reports:view'), async (req, res) => {
     const { format = 'json' } = req.query;
+    const { paginated, page, pageSize, limit, offset } = parsePaginationQuery(req.query);
     try {
-        const query = `
+        let query = `
             SELECT
                 p.internal_sku,
                 p.detail,
@@ -144,10 +191,23 @@ router.get('/reports/inventory-valuation', protect, hasPermission('reports:view'
             LEFT JOIN "group" g ON p.group_id = g.group_id
             WHERE p.is_service = FALSE AND p.is_active = TRUE
             GROUP BY p.part_id, b.brand_name, g.group_name
-            ORDER BY p.detail;
+            ORDER BY p.detail
         `;
 
-        const { rows } = await db.query(query);
+        const params = [];
+        if (format === 'json' && paginated) {
+            query += ` LIMIT $1 OFFSET $2`;
+            params.push(limit, offset);
+        }
+        const [rowsRes, countRes] = await Promise.all([
+            db.query(query, params),
+            (format === 'json' && paginated) ? db.query(`
+                SELECT COUNT(*)::int AS total
+                FROM part p
+                WHERE p.is_service = FALSE AND p.is_active = TRUE
+            `) : Promise.resolve({ rows: [{ total: 0 }] })
+        ]);
+        const { rows } = rowsRes;
         const data = rows.map(row => ({ ...row, display_name: constructDisplayName(row) }));
 
         if (format === 'csv') {
@@ -158,6 +218,10 @@ router.get('/reports/inventory-valuation', protect, hasPermission('reports:view'
             return res.send(csv);
         }
 
+        if (paginated) {
+            const total = countRes.rows[0]?.total || 0;
+            return res.json(paginatedResponse({ data, page, pageSize, total }));
+        }
         res.json(data);
     } catch (err) {
         console.error(err.message);
@@ -168,8 +232,9 @@ router.get('/reports/inventory-valuation', protect, hasPermission('reports:view'
 // GET /api/reports/low-stock - (No change needed)
 router.get('/reports/low-stock', protect, hasPermission('reports:view'), async (req, res) => {
     const { format = 'json' } = req.query;
+    const { paginated, page, pageSize, limit, offset } = parsePaginationQuery(req.query);
     try {
-        const query = `
+        let query = `
             SELECT 
                 p.internal_sku,
                 p.detail,
@@ -192,15 +257,38 @@ router.get('/reports/low-stock', protect, hasPermission('reports:view'), async (
             WHERE p.is_active = TRUE AND p.low_stock_warning = TRUE
             GROUP BY p.part_id, b.brand_name, g.group_name
             HAVING COALESCE(SUM( (SELECT SUM(it.quantity) FROM inventory_transaction it WHERE it.part_id = p.part_id) ), 0) <= p.reorder_point
-            ORDER BY p.detail;
+            ORDER BY p.detail
         `;
-        const { rows } = await db.query(query);
+        const params = [];
+        if (format === 'json' && paginated) {
+            query += ` LIMIT $1 OFFSET $2`;
+            params.push(limit, offset);
+        }
+        const [rowsRes, countRes] = await Promise.all([
+            db.query(query, params),
+            (format === 'json' && paginated) ? db.query(`
+                SELECT COUNT(*)::int AS total
+                FROM (
+                    SELECT p.part_id
+                    FROM part p
+                    LEFT JOIN brand b ON p.brand_id = b.brand_id
+                    LEFT JOIN "group" g ON p.group_id = g.group_id
+                    WHERE p.is_active = TRUE AND p.low_stock_warning = TRUE
+                    GROUP BY p.part_id, b.brand_name, g.group_name
+                    HAVING COALESCE(SUM((SELECT SUM(it.quantity) FROM inventory_transaction it WHERE it.part_id = p.part_id)), 0) <= p.reorder_point
+                ) low_stock_parts
+            `) : Promise.resolve({ rows: [{ total: 0 }] })
+        ]);
+        const { rows } = rowsRes;
         const data = rows.map(row => ({ ...row, display_name: constructDisplayName(row) }));
 
         if (format === 'csv') {
             const json2csvParser = new Parser();
             const csv = json2csvParser.parse(data);
             res.header('Content-Type', 'text/csv').attachment('low-stock-report.csv').send(csv);
+        } else if (paginated) {
+            const total = countRes.rows[0]?.total || 0;
+            res.json(paginatedResponse({ data, page, pageSize, total }));
         } else {
             res.json(data);
         }
@@ -214,6 +302,7 @@ router.get('/reports/low-stock', protect, hasPermission('reports:view'), async (
 // GET /api/reports/sales-by-customer - (No change needed)
 router.get('/reports/sales-by-customer', protect, hasPermission('reports:view'), async (req, res) => {
     const { startDate, endDate, customerId, format = 'json' } = req.query;
+    const { paginated, page, pageSize, limit, offset } = parsePaginationQuery(req.query);
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
 
     let whereClauses = ["(i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2"];
@@ -225,7 +314,7 @@ router.get('/reports/sales-by-customer', protect, hasPermission('reports:view'),
     }
 
     try {
-        const query = `
+        let query = `
             SELECT
                 c.customer_id,
                 c.first_name,
@@ -237,13 +326,34 @@ router.get('/reports/sales-by-customer', protect, hasPermission('reports:view'),
             JOIN invoice i ON c.customer_id = i.customer_id
             WHERE ${whereClauses.join(' AND ')}
             GROUP BY c.customer_id
-            ORDER BY total_sales DESC;
+            ORDER BY total_sales DESC
         `;
-        const { rows } = await db.query(query, queryParams);
+        const params = [...queryParams];
+        if (format === 'json' && paginated) {
+            query += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+            params.push(limit, offset);
+        }
+        const [rowsRes, countRes] = await Promise.all([
+            db.query(query, params),
+            (format === 'json' && paginated) ? db.query(`
+                SELECT COUNT(*)::int AS total
+                FROM (
+                    SELECT c.customer_id
+                    FROM customer c
+                    JOIN invoice i ON c.customer_id = i.customer_id
+                    WHERE ${whereClauses.join(' AND ')}
+                    GROUP BY c.customer_id
+                ) customer_totals
+            `, queryParams) : Promise.resolve({ rows: [{ total: 0 }] })
+        ]);
+        const { rows } = rowsRes;
         if (format === 'csv') {
             const json2csvParser = new Parser();
             const csv = json2csvParser.parse(rows);
             res.header('Content-Type', 'text/csv').attachment('sales-by-customer.csv').send(csv);
+        } else if (paginated) {
+            const total = countRes.rows[0]?.total || 0;
+            res.json(paginatedResponse({ data: rows, page, pageSize, total }));
         } else {
             res.json(rows);
         }
@@ -256,6 +366,7 @@ router.get('/reports/sales-by-customer', protect, hasPermission('reports:view'),
 // GET /api/reports/inventory-movement - (No change needed)
 router.get('/reports/inventory-movement', protect, hasPermission('reports:view'), async (req, res) => {
     const { startDate, endDate, partId, format = 'json' } = req.query;
+    const { paginated, page, pageSize, limit, offset } = parsePaginationQuery(req.query);
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
 
     let whereClauses = ["(it.transaction_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2"];
@@ -267,7 +378,7 @@ router.get('/reports/inventory-movement', protect, hasPermission('reports:view')
     }
 
     try {
-        const query = `
+        let query = `
             SELECT
                 it.transaction_date,
                 p.internal_sku,
@@ -285,15 +396,31 @@ router.get('/reports/inventory-movement', protect, hasPermission('reports:view')
             LEFT JOIN "group" g ON p.group_id = g.group_id
             LEFT JOIN employee e ON it.employee_id = e.employee_id
             WHERE ${whereClauses.join(' AND ')}
-            ORDER BY it.transaction_date DESC;
+            ORDER BY it.transaction_date DESC
         `;
-        const { rows } = await db.query(query, queryParams);
+        const params = [...queryParams];
+        if (format === 'json' && paginated) {
+            query += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+            params.push(limit, offset);
+        }
+        const [rowsRes, countRes] = await Promise.all([
+            db.query(query, params),
+            (format === 'json' && paginated) ? db.query(`
+                SELECT COUNT(*)::int AS total
+                FROM inventory_transaction it
+                WHERE ${whereClauses.join(' AND ')}
+            `, queryParams) : Promise.resolve({ rows: [{ total: 0 }] })
+        ]);
+        const { rows } = rowsRes;
         const data = rows.map(row => ({ ...row, display_name: constructDisplayName(row) }));
         
         if (format === 'csv') {
             const json2csvParser = new Parser();
             const csv = json2csvParser.parse(data);
             res.header('Content-Type', 'text/csv').attachment('inventory-movement.csv').send(csv);
+        } else if (paginated) {
+            const total = countRes.rows[0]?.total || 0;
+            res.json(paginatedResponse({ data, page, pageSize, total }));
         } else {
             res.json(data);
         }
@@ -306,6 +433,7 @@ router.get('/reports/inventory-movement', protect, hasPermission('reports:view')
 // GET /api/reports/profitability-by-product
 router.get('/reports/profitability-by-product', protect, hasPermission('reports:view'), async (req, res) => {
     const { startDate, endDate, brandId, groupId, format = 'json' } = req.query;
+    const { paginated, page, pageSize, limit, offset } = parsePaginationQuery(req.query);
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
     
     let whereClauses = ["(i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2"];
@@ -321,7 +449,7 @@ router.get('/reports/profitability-by-product', protect, hasPermission('reports:
     }
 
     try {
-        const query = `
+        let query = `
             SELECT
                 p.internal_sku,
                 p.detail,
@@ -339,15 +467,39 @@ router.get('/reports/profitability-by-product', protect, hasPermission('reports:
             LEFT JOIN "group" g ON p.group_id = g.group_id
             WHERE ${whereClauses.join(' AND ')}
             GROUP BY p.part_id, b.brand_name, g.group_name
-            ORDER BY total_profit DESC;
+            ORDER BY total_profit DESC
         `;
-        const { rows } = await db.query(query, queryParams);
+        const params = [...queryParams];
+        if (format === 'json' && paginated) {
+            query += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+            params.push(limit, offset);
+        }
+        const [rowsRes, countRes] = await Promise.all([
+            db.query(query, params),
+            (format === 'json' && paginated) ? db.query(`
+                SELECT COUNT(*)::int AS total
+                FROM (
+                    SELECT p.part_id
+                    FROM invoice_line il
+                    JOIN part p ON il.part_id = p.part_id
+                    JOIN invoice i ON il.invoice_id = i.invoice_id
+                    LEFT JOIN brand b ON p.brand_id = b.brand_id
+                    LEFT JOIN "group" g ON p.group_id = g.group_id
+                    WHERE ${whereClauses.join(' AND ')}
+                    GROUP BY p.part_id, b.brand_name, g.group_name
+                ) profitability_rows
+            `, queryParams) : Promise.resolve({ rows: [{ total: 0 }] })
+        ]);
+        const { rows } = rowsRes;
         const data = rows.map(row => ({ ...row, display_name: constructDisplayName(row) }));
 
         if (format === 'csv') {
             const json2csvParser = new Parser();
             const csv = json2csvParser.parse(data);
             res.header('Content-Type', 'text/csv').attachment('profitability-by-product.csv').send(csv);
+        } else if (paginated) {
+            const total = countRes.rows[0]?.total || 0;
+            res.json(paginatedResponse({ data, page, pageSize, total }));
         } else {
             res.json(data);
         }
@@ -359,12 +511,13 @@ router.get('/reports/profitability-by-product', protect, hasPermission('reports:
 
 // NEW ENDPOINT: Get refunds report
 router.get('/reports/refunds', protect, hasPermission('reports:view'), async (req, res) => {
-    const { startDate, endDate } = req.query;
+    const { startDate, endDate, format = 'json' } = req.query;
+    const { paginated, page, pageSize, limit, offset } = parsePaginationQuery(req.query);
     if (!startDate || !endDate) {
         return res.status(400).json({ message: 'Start date and end date are required.' });
     }
     try {
-        const query = `
+        let query = `
             SELECT 
                 cn.cn_id,
                 cn.cn_number,
@@ -376,9 +529,32 @@ router.get('/reports/refunds', protect, hasPermission('reports:view'), async (re
             JOIN invoice i ON cn.invoice_id = i.invoice_id
             JOIN customer c ON i.customer_id = c.customer_id
             WHERE (cn.refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
-            ORDER BY cn.refund_date DESC;
+            ORDER BY cn.refund_date DESC
         `;
-        const { rows } = await db.query(query, [startDate, endDate]);
+        const params = [startDate, endDate];
+        if (format === 'json' && paginated) {
+            query += ` LIMIT $3 OFFSET $4`;
+            params.push(limit, offset);
+        }
+        const [rowsRes, countRes] = await Promise.all([
+            db.query(query, params),
+            (format === 'json' && paginated) ? db.query(`
+                SELECT COUNT(*)::int AS total
+                FROM credit_note cn
+                WHERE (cn.refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
+            `, [startDate, endDate]) : Promise.resolve({ rows: [{ total: 0 }] })
+        ]);
+        const { rows } = rowsRes;
+
+        if (format === 'csv') {
+            const json2csvParser = new Parser();
+            const csv = json2csvParser.parse(rows);
+            return res.header('Content-Type', 'text/csv').attachment('refunds-report.csv').send(csv);
+        }
+        if (paginated) {
+            const total = countRes.rows[0]?.total || 0;
+            return res.json(paginatedResponse({ data: rows, page, pageSize, total }));
+        }
         res.json(rows);
     } catch (err) {
         console.error(err.message);

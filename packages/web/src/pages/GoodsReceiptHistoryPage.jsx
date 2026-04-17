@@ -6,6 +6,7 @@ import SortableHeader from '../components/ui/SortableHeader';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
+import PaginationControls from '../components/ui/PaginationControls';
 import { useAuth } from '../contexts/AuthContext';
 
 const GoodsReceiptHistoryPage = ({ user: _user }) => {
@@ -21,6 +22,9 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
     const [modalLoading, setModalLoading] = useState(false);
     const [isEditMode, setIsEditMode] = useState(false);
     const [editedLines, setEditedLines] = useState([]);
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(25);
+    const [total, setTotal] = useState(0);
 
     const fetchGrns = useCallback(async () => {
         try {
@@ -28,17 +32,21 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
             const params = {
                 q: debouncedQuery || undefined,
                 sortBy: sortConfig.key,
-                sortOrder: sortConfig.direction.toLowerCase()
+                sortOrder: sortConfig.direction.toLowerCase(),
+                page,
+                pageSize,
+                paginated: 1
             };
             const response = await api.get('/goods-receipts', { params });
-            setGrns(response.data);
+            setGrns(response.data?.data || []);
+            setTotal(response.data?.total || 0);
         } catch (error) {
             console.error('Error fetching GRNs:', error);
             toast.error('Failed to load goods receipt history');
         } finally {
             setLoading(false);
         }
-    }, [debouncedQuery, sortConfig]);
+    }, [debouncedQuery, sortConfig, page, pageSize]);
 
     useEffect(() => {
         fetchGrns();
@@ -55,7 +63,12 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
 
     const handleSort = (key, direction) => {
         setSortConfig({ key, direction });
+        setPage(1);
     };
+
+    useEffect(() => {
+        setPage(1);
+    }, [debouncedQuery]);
 
     const handleRowClick = async (grn) => {
         setSelectedGrn(grn);
@@ -256,6 +269,16 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                         </tbody>
                     </table>
                 </div>
+                <PaginationControls
+                    page={page}
+                    pageSize={pageSize}
+                    total={total}
+                    onPageChange={setPage}
+                    onPageSizeChange={(value) => {
+                        setPageSize(value);
+                        setPage(1);
+                    }}
+                />
             </div>
 
             <Modal

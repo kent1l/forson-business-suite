@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
+const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const router = express.Router();
 
 // Helper function to handle tag logic
@@ -24,6 +25,7 @@ const manageTags = async (client, tags, customerId) => {
 router.get('/customers', protect, hasPermission('customers:view'), async (req, res) => {
     // Adding a filter for active/inactive/all customers
     const { status = 'active' } = req.query;
+    const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
     let whereClause = "WHERE is_active = TRUE";
     if (status === 'inactive') {
       whereClause = "WHERE is_active = FALSE";
@@ -31,8 +33,18 @@ router.get('/customers', protect, hasPermission('customers:view'), async (req, r
       whereClause = "";
     }
     try {
-        const { rows } = await db.query(`SELECT * FROM customer ${whereClause} ORDER BY first_name, last_name`);
-        res.json(rows);
+        if (!paginated) {
+            const { rows } = await db.query(`SELECT * FROM customer ${whereClause} ORDER BY first_name, last_name`);
+            return res.json(rows);
+        }
+
+        const countRes = await db.query(`SELECT COUNT(*)::int AS total FROM customer ${whereClause}`);
+        const total = countRes.rows[0]?.total || 0;
+        const { rows } = await db.query(
+            `SELECT * FROM customer ${whereClause} ORDER BY first_name, last_name LIMIT $1 OFFSET $2`,
+            [limit, offset]
+        );
+        res.json(paginatedResponse({ data: rows, page, pageSize, total }));
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
@@ -62,6 +74,7 @@ router.get('/customers/:id/tags', protect, hasPermission('customers:view'), asyn
 // GET /api/customers/with-balances
 router.get('/customers/with-balances', protect, hasPermission('ar:view'), async (req, res) => {
     try {
+        const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
         const query = `
             SELECT
                 c.customer_id,
@@ -76,8 +89,25 @@ router.get('/customers/with-balances', protect, hasPermission('ar:view'), async 
             HAVING COALESCE(SUM(CASE WHEN i.status IN ('Unpaid', 'Partially Paid') THEN i.total_amount - i.amount_paid ELSE 0 END), 0) > 0
             ORDER BY c.first_name, c.last_name;
         `;
-        const { rows } = await db.query(query);
-        res.json(rows);
+        if (!paginated) {
+            const { rows } = await db.query(query);
+            return res.json(rows);
+        }
+
+        const countQuery = `
+            SELECT COUNT(*)::int AS total FROM (
+                SELECT c.customer_id
+                FROM customer c
+                LEFT JOIN invoice i ON i.customer_id = c.customer_id
+                GROUP BY c.customer_id
+                HAVING COALESCE(SUM(CASE WHEN i.status IN ('Unpaid', 'Partially Paid') THEN i.total_amount - i.amount_paid ELSE 0 END), 0) > 0
+            ) grouped_customers;
+        `;
+        const countRes = await db.query(countQuery);
+        const total = countRes.rows[0]?.total || 0;
+        const paginatedQuery = query.replace(/;\s*$/, ' LIMIT $1 OFFSET $2;');
+        const { rows } = await db.query(paginatedQuery, [limit, offset]);
+        res.json(paginatedResponse({ data: rows, page, pageSize, total }));
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');

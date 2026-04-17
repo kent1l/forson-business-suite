@@ -44,6 +44,9 @@
  */
 import { formatCurrency } from '../../utils/currency';
 import { getCustomerStatusBadge } from '../../utils/status';
+import { useMemo, useState } from 'react';
+import SortableHeader from '../ui/SortableHeader';
+import { sortData } from '../../utils/sortData';
 
 // Enhanced Loading Skeleton Components
 const _TableSkeleton = () => (
@@ -77,6 +80,11 @@ const CustomerSummaryTable = ({
     loading = false,
     onExport
 }) => {
+    const [sortConfig, setSortConfig] = useState({ key: 'earliest_due_date', direction: 'ASC' });
+    const sortedCustomers = useMemo(() => sortData(customers, sortConfig, {
+        customer_name: (row) => row.company_name || `${row.first_name || ''} ${row.last_name || ''}`.trim(),
+        status: (row) => getCustomerStatusBadge(row)?.text || ''
+    }), [customers, sortConfig]);
     if (loading) return <_TableSkeleton />;
 
     return (
@@ -96,16 +104,16 @@ const CustomerSummaryTable = ({
                 <table className="w-full text-sm text-left text-gray-500">
                     <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b">
                         <tr>
-                            <th scope="col" className="px-6 py-3">Customer</th>
-                            <th scope="col" className="px-6 py-3">Invoice Count</th>
-                            <th scope="col" className="px-6 py-3">Next Due Date</th>
-                            <th scope="col" className="px-6 py-3">Total Balance</th>
-                            <th scope="col" className="px-6 py-3">Status</th>
+                            <SortableHeader column="customer_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Customer</SortableHeader>
+                            <SortableHeader column="invoice_count" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Invoice Count</SortableHeader>
+                            <SortableHeader column="earliest_due_date" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Next Due Date</SortableHeader>
+                            <SortableHeader column="total_balance_due" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Total Balance</SortableHeader>
+                            <SortableHeader column="status" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Status</SortableHeader>
                             {hasPaymentPermission && <th scope="col" className="px-6 py-3">Actions</th>}
                         </tr>
                     </thead>
                     <tbody>
-                        {customers.map((customer, index) => {
+                        {sortedCustomers.map((customer, index) => {
                             const statusBadge = getCustomerStatusBadge(customer);
                             return (
                                 <tr
