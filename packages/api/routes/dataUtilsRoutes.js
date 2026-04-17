@@ -247,77 +247,80 @@ router.get('/sync-parts-to-meili', protect, isAdmin, async (req, res) => {
     }
 });
 
-module.exports = router;
+// --- NEW: Repair search // Search repair index jobs (async)
+const {
+    JOB_MODES,
+    createRepairJob,
+    fetchJobStatusPayload,
+    cancelRepairJob
+} = require('../search-repair-worker');
 
-// --- NEW: Repair search index (apply settings + full reindex) ---
 // POST /api/data/repair-search-index?mode=dry|full
-// Modes:
-// - dry: Check connectivity, count parts, verify permissions (no changes).
-// - full: Apply Meili settings and fully reindex parts.
 router.post('/repair-search-index', protect, isAdmin, async (req, res) => {
-    const { mode = 'full' } = req.query;
-    if (!['dry', 'full'].includes(mode)) {
+    const { mode = JOB_MODES.FULL } = req.query;
+    if (![JOB_MODES.DRY, JOB_MODES.FULL].includes(mode)) {
         return res.status(400).json({ message: 'Invalid mode. Use mode=dry or mode=full.' });
     }
 
     try {
-        console.log(`[RepairSearch] Starting mode=${mode}...`);
+        const createdBy = req.user?.username || req.user?.user || req.user?.employee_id || 'unknown-admin';
+        const job = await createRepairJob({ mode, createdBy: String(createdBy) });
 
-        // Always check part count
-        const idsRes = await db.query('SELECT COUNT(*) as count FROM part');
-        const partCount = parseInt(idsRes.rows[0].count, 10);
-        console.log(`[RepairSearch] Found ${partCount} parts.`);
-
-        if (mode === 'dry') {
-            // Dry-run: just return info without changes
-            return res.status(200).json({
-                message: `Dry-run complete. Found ${partCount} parts. No changes made.`,
-                partCount,
-                mode: 'dry'
-            });
-        }
-
-        // Full mode: apply settings and reindex
-        console.log('[RepairSearch] Applying Meilisearch settings...');
-        await setupMeiliSearch();
-
-        console.log('[RepairSearch] Fetching all part IDs for reindex...');
-        const idsQueryRes = await db.query('SELECT part_id FROM part ORDER BY part_id ASC');
-        const ids = idsQueryRes.rows.map(r => r.part_id);
-        if (ids.length === 0) {
-            return res.status(200).json({ message: 'No parts found. Meilisearch settings applied.' });
-        }
-
-        let success = 0; let skipped = 0; let failed = 0;
-        const batchSize = 500;
-        let batch = [];
-
-        console.log(`[RepairSearch] Reindexing ${ids.length} parts in batches of ${batchSize}...`);
-        for (const id of ids) {
-            try {
-                const doc = await getPartDataForMeili(db, id);
-                if (doc) { batch.push(doc); success++; } else { skipped++; }
-            } catch (e) {
-                failed++;
-                console.error(`[RepairSearch] Failed to build document for part ${id}:`, e && e.message ? e.message : e);
-            }
-
-            if (batch.length >= batchSize) {
-                await syncPartWithMeili(batch);
-                batch = [];
-            }
-        }
-        if (batch.length > 0) {
-            await syncPartWithMeili(batch);
-        }
-
-        console.log(`[RepairSearch] Reindex complete. success=${success} skipped=${skipped} failed=${failed}`);
-        return res.status(200).json({
-            message: `Search index repaired. Reindexed ${success} parts. Skipped ${skipped}. Failed ${failed}.`,
-            reindexed: success, skipped, failed, partCount, mode: 'full'
+        return res.status(202).json({
+            message: 'Repair job accepted and queued.',
+            job_id: job.job_id,
+            status: job.status,
+            mode: job.mode,
+            created_at: job.created_at
         });
     } catch (error) {
-        console.error('[RepairSearch] Fatal error:', error);
-        return res.status(500).json({ message: 'Failed to repair search index.', error: error && error.message ? error.message : String(error) });
+        console.error('[RepairSearch] failed to enqueue:', error);
+        return res.status(500).json({ message: 'Failed to enqueue repair job.', error: error?.message || String(error) });
     }
 });
+
+// GET /api/data/repair-search-index/:job_id
+router.get('/repair-search-index/:job_id', protect, isAdmin, async (req, res) => {
+    try {
+        const jobId = Number(req.params.job_id);
+        if (!Number.isInteger(jobId) || jobId <= 0) {
+            return res.status(400).json({ message: 'Invalid job_id.' });
+        }
+
+        const job = await fetchJobStatusPayload(jobId);
+        if (!job) {
+            return res.status(404).json({ message: 'Repair job not found.' });
+        }
+
+        return res.status(200).json(job);
+    } catch (error) {
+        console.error('[RepairSearch] failed to fetch job status:', error);
+        return res.status(500).json({ message: 'Failed to fetch repair job status.', error: error?.message || String(error) });
+    }
+});
+
+// POST /api/data/repair-search-index/:job_id/cancel
+router.post('/repair-search-index/:job_id/cancel', protect, isAdmin, async (req, res) => {
+    try {
+        const jobId = Number(req.params.job_id);
+        if (!Number.isInteger(jobId) || jobId <= 0) {
+            return res.status(400).json({ message: 'Invalid job_id.' });
+        }
+
+        const job = await cancelRepairJob(jobId);
+        if (!job) {
+            return res.status(404).json({ message: 'Repair job not found.' });
+        }
+
+        return res.status(200).json({
+            message: job.status === 'cancelling' ? 'Cancellation requested.' : 'Job cancelled.',
+            job_id: job.job_id,
+            status: job.status
+        });
+    } catch (error) {
+        console.error('[RepairSearch] failed to cancel job:', error);
+        return res.status(500).json({ message: 'Failed to cancel repair job.', error: error?.message || String(error) });
+    }
+});
+
+module.exports = router;

@@ -6,6 +6,7 @@ const { setupMeiliSearch } = require('./meilisearch-setup');
 const { startMeiliListener } = require('./meili-listener');
 const { startMeiliApplicationsListener } = require('./meili-app-listener');
 const { startMeiliOutboxWorker } = require('./meili-outbox-worker');
+const { startSearchRepairWorker } = require('./search-repair-worker');
 
 // Set default timezone to Philippine Time
 process.env.TZ = 'Asia/Manila';
@@ -138,6 +139,13 @@ app.listen(PORT, async () => {
     startMeiliOutboxWorker();
   } else {
     console.log('Meili outbox worker disabled by DISABLE_MEILI_OUTBOX_WORKER=true');
+  }
+
+
+  if (process.env.DISABLE_SEARCH_REPAIR_WORKER !== 'true') {
+    startSearchRepairWorker();
+  } else {
+    console.log('Search repair worker disabled by DISABLE_SEARCH_REPAIR_WORKER=true');
   }
 
   // Keep applications listener enabled by default so the `applications` Meilisearch index
