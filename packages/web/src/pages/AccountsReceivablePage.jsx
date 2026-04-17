@@ -18,6 +18,7 @@ import KPICard from '../components/ui/KPICard';
 import InvoiceAgingSummaryChart from '../components/accounts-receivable/InvoiceAgingSummaryChart';
 import CustomerSummaryTable from '../components/accounts-receivable/CustomerSummaryTable';
 import CustomerInvoiceDetailsModal from '../components/accounts-receivable/CustomerInvoiceDetailsModal';
+import PaginationControls from '../components/ui/PaginationControls';
 
 // Utility for currency formatting - now imported from utils/currency.js
 
@@ -69,6 +70,12 @@ const AccountsReceivablePage = () => {
     const [customerInvoices, setCustomerInvoices] = useState([]);
     const [customerInvoicesLoading, setCustomerInvoicesLoading] = useState(false);
     const [selectedCustomerForInvoices, setSelectedCustomerForInvoices] = useState(null);
+    const [customerSummaryPage, setCustomerSummaryPage] = useState(1);
+    const [customerSummaryPageSize, setCustomerSummaryPageSize] = useState(25);
+    const [customerSummaryTotal, setCustomerSummaryTotal] = useState(0);
+    const [drillDownPage, setDrillDownPage] = useState(1);
+    const [drillDownPageSize, setDrillDownPageSize] = useState(25);
+    const [drillDownTotal, setDrillDownTotal] = useState(0);
 
     const MAX_RETRIES = 3;
 
@@ -98,11 +105,15 @@ const AccountsReceivablePage = () => {
             const dateParams = {
                 startDate: dateRange.startDate.toISOString(),
                 endDate: dateRange.endDate.toISOString(),
-                bucket: bucketParam
+                bucket: bucketParam,
+                page: drillDownPage,
+                pageSize: drillDownPageSize,
+                paginated: 1
             };
             
             const response = await api.get('/ar/drill-down-invoices', { params: dateParams });
-            setDrillDownInvoices(response.data || []);
+            setDrillDownInvoices(response.data?.data || []);
+            setDrillDownTotal(response.data?.total || 0);
             
         } catch (error) {
             console.error('Failed to fetch drill-down invoices:', error);
@@ -110,7 +121,7 @@ const AccountsReceivablePage = () => {
         } finally {
             setDrillDownLoading(false);
         }
-    }, [dateRange]);
+    }, [dateRange, drillDownPage, drillDownPageSize]);
 
     // Enhanced data fetching with retry logic
     const fetchDashboardData = useCallback(async (isRetry = false) => {
@@ -124,14 +135,15 @@ const AccountsReceivablePage = () => {
             
             // Fetch all data in parallel with proper error handling
             const [customersRes, dashboardRes, agingRes, customerSummaryRes, trendsRes] = await Promise.all([
-                api.get('/customers/with-balances'),
+                api.get('/customers/with-balances', { params: { paginated: 1, page: 1, pageSize: 100 } }),
                 api.get('/ar/dashboard-stats', { params: dateParams }).catch(() => ({ data: {} })),
                 api.get('/ar/aging-summary').catch(() => ({ data: [] })),
-                api.get('/ar/customer-summary').catch(() => ({ data: [] })),
+                api.get('/ar/customer-summary', { params: { page: customerSummaryPage, pageSize: customerSummaryPageSize, paginated: 1 } }).catch(() => ({ data: { data: [], total: 0 } })),
                 api.get('/ar/trends').catch(() => ({ data: {} }))
             ]);
 
-            setCustomers(customersRes.data || []);
+            const customersWithBalances = customersRes.data?.data || customersRes.data || [];
+            setCustomers(customersWithBalances);
             setTrends(trendsRes.data || {});
 
             // Use API data if available, otherwise calculate from customers data
@@ -139,8 +151,8 @@ const AccountsReceivablePage = () => {
                 setDashboardStats(dashboardRes.data);
             } else {
                 // Fallback calculation from customers data
-                const totalReceivables = customersRes.data.reduce((sum, customer) => sum + Number(customer.balance_due || 0), 0);
-                const overdueCount = customerSummaryRes.data.length || customersRes.data.filter(c => Number(c.balance_due || 0) > 0).length;
+                const totalReceivables = customersWithBalances.reduce((sum, customer) => sum + Number(customer.balance_due || 0), 0);
+                const overdueCount = (customerSummaryRes.data?.data || []).length || customersWithBalances.filter(c => Number(c.balance_due || 0) > 0).length;
 
                 setDashboardStats({
                     totalReceivables: totalReceivables,
@@ -172,7 +184,8 @@ const AccountsReceivablePage = () => {
             }
 
             // Set customer summary data
-            setCustomerSummary(customerSummaryRes.data || []);
+            setCustomerSummary(customerSummaryRes.data?.data || []);
+            setCustomerSummaryTotal(customerSummaryRes.data?.total || 0);
             setRetryCount(0); // Reset retry count on success
 
         } catch (err) {
@@ -188,7 +201,7 @@ const AccountsReceivablePage = () => {
         } finally {
             setLoading(false);
         }
-    }, [dateRange, retryCount, dashboardStats.totalReceivables]);
+    }, [dateRange, retryCount, dashboardStats.totalReceivables, customerSummaryPage, customerSummaryPageSize]);
 
     // Auto-refresh functionality
     useEffect(() => {
@@ -440,6 +453,16 @@ const AccountsReceivablePage = () => {
                 loading={loading}
                 onExport={handleExportCustomerSummary}
             />
+            <PaginationControls
+                page={customerSummaryPage}
+                pageSize={customerSummaryPageSize}
+                total={customerSummaryTotal}
+                onPageChange={setCustomerSummaryPage}
+                onPageSizeChange={(value) => {
+                    setCustomerSummaryPageSize(value);
+                    setCustomerSummaryPage(1);
+                }}
+            />
 
             <Modal 
                 isOpen={isPaymentModalOpen} 
@@ -529,6 +552,18 @@ const AccountsReceivablePage = () => {
                                 </tbody>
                             </table>
                         </div>
+                    )}
+                    {!drillDownLoading && (
+                        <PaginationControls
+                            page={drillDownPage}
+                            pageSize={drillDownPageSize}
+                            total={drillDownTotal}
+                            onPageChange={setDrillDownPage}
+                            onPageSizeChange={(value) => {
+                                setDrillDownPageSize(value);
+                                setDrillDownPage(1);
+                            }}
+                        />
                     )}
                 </div>
             </Modal>

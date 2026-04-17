@@ -8,6 +8,7 @@ import { enrichPartsArray } from '../helpers/applicationCache';
 import Modal from '../components/ui/Modal';
 import StockAdjustmentForm from '../components/forms/StockAdjustmentForm';
 import TransactionHistoryModal from '../components/ui/TransactionHistoryModal';
+import PaginationControls from '../components/ui/PaginationControls';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
 
@@ -21,6 +22,9 @@ const InventoryPage = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
     const [selectedPart, setSelectedPart] = useState(null);
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(25);
+    const [total, setTotal] = useState(0);
     // No client-side sort: preserve backend / MeiliSearch ordering
 
     const fetchInventory = useCallback(async () => {
@@ -29,13 +33,15 @@ const InventoryPage = () => {
             setLoading(true);
             // If there's no search term, use the inventory endpoint (full list)
             if (!searchTerm || !searchTerm.trim()) {
-                const response = await api.get(`/inventory`);
-                setInventory(response.data);
+                const response = await api.get('/inventory', { params: { page, pageSize, paginated: 1 } });
+                setInventory(response.data?.data || []);
+                setTotal(response.data?.total || 0);
             } else {
                 // Use MeiliSearch-backed endpoint for smart searching (same as POS/Invoicing)
-                const response = await api.get('/power-search/parts', { params: { keyword: searchTerm } });
-                const enriched = await enrichPartsArray(response.data || []);
+                const response = await api.get('/inventory', { params: { search: searchTerm, page, pageSize, paginated: 1 } });
+                const enriched = await enrichPartsArray(response.data?.data || []);
                 setInventory(enriched);
+                setTotal(response.data?.total || 0);
             }
         } catch (error) {
             console.error('Failed to fetch inventory', error);
@@ -43,7 +49,7 @@ const InventoryPage = () => {
         } finally {
             setLoading(false);
         }
-    }, [searchTerm]);
+    }, [searchTerm, page, pageSize]);
 
     useEffect(() => {
         const debounceTimer = setTimeout(() => {
@@ -52,6 +58,10 @@ const InventoryPage = () => {
 
         return () => clearTimeout(debounceTimer);
     }, [fetchInventory]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [searchTerm]);
 
     const handleOpenAdjustmentModal = (part) => {
         setSelectedPart(part);
@@ -107,6 +117,7 @@ const InventoryPage = () => {
                 {loading && <p>Loading inventory...</p>}
                 {error && <p className="text-red-500">{error}</p>}
                 {!loading && !error && (
+                    <>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
                             <thead>
@@ -149,6 +160,17 @@ const InventoryPage = () => {
                             </tbody>
                         </table>
                     </div>
+                    <PaginationControls
+                        page={page}
+                        pageSize={pageSize}
+                        total={total}
+                        onPageChange={setPage}
+                        onPageSizeChange={(value) => {
+                            setPageSize(value);
+                            setPage(1);
+                        }}
+                    />
+                    </>
                 )}
             </div>
 

@@ -1,10 +1,12 @@
 const express = require('express');
 const db = require('../db');
+const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const router = express.Router();
 
 // GET all vehicle applications using the view
 router.get('/applications', async (req, res) => {
     console.log('[DEBUG] Handling GET /applications request');
+    const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
     try {
         // Ensure the view has the expected columns (including *_id). If not, drop and recreate.
         const colCheck = await db.query(`
@@ -34,7 +36,7 @@ router.get('/applications', async (req, res) => {
         }
 
         console.log('[DEBUG] Executing applications query');
-        const query = `
+        const baseQuery = `
             SELECT 
                 application_id,
                 make_id,
@@ -46,9 +48,17 @@ router.get('/applications', async (req, res) => {
             FROM application_view
             ORDER BY make NULLS LAST, model NULLS LAST, engine NULLS LAST
         `;
-        const { rows } = await db.query(query);
+        if (!paginated) {
+            const { rows } = await db.query(baseQuery);
+            console.log('[DEBUG] Query successful, returning', rows.length, 'rows');
+            return res.json(rows);
+        }
+        const countRes = await db.query('SELECT COUNT(*)::int AS total FROM application_view');
+        const total = countRes.rows[0]?.total || 0;
+        const query = `${baseQuery} LIMIT $1 OFFSET $2`;
+        const { rows } = await db.query(query, [limit, offset]);
         console.log('[DEBUG] Query successful, returning', rows.length, 'rows');
-        res.json(rows);
+        res.json(paginatedResponse({ data: rows, page, pageSize, total }));
     } catch (err) {
         console.error('[DEBUG] Error in GET /applications:', err.message);
         console.error('[DEBUG] Full error:', err);

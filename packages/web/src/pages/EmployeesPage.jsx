@@ -5,6 +5,7 @@ import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import FilterBar from '../components/ui/FilterBar';
+import PaginationControls from '../components/ui/PaginationControls';
 import { useAuth } from '../contexts/AuthContext';
 
 const EmployeeForm = ({ employee, onSave, onCancel, roles }) => { // <-- NEW: roles prop
@@ -151,6 +152,9 @@ const EmployeesPage = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentEmployee, setCurrentEmployee] = useState(null);
     const [statusFilter, setStatusFilter] = useState('active');
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(25);
+    const [total, setTotal] = useState(0);
 
     const filterTabs = [
         { key: 'active', label: 'Active' },
@@ -165,10 +169,11 @@ const EmployeesPage = () => {
                     setLoading(true);
                     // Fetch both employees and roles
                     const [employeesRes, rolesRes] = await Promise.all([
-                        api.get('/employees', { params: { status: statusFilter } }),
+                        api.get('/employees', { params: { status: statusFilter, page, pageSize, paginated: 1 } }),
                         api.get('/roles') // <-- NEW: Fetch roles
                     ]);
-                    setEmployees(employeesRes.data);
+                    setEmployees(employeesRes.data?.data || []);
+                    setTotal(employeesRes.data?.total || 0);
                     setRoles(rolesRes.data); // <-- NEW: Set roles state
                 } catch {
                     setError('Failed to fetch data.');
@@ -179,7 +184,11 @@ const EmployeesPage = () => {
             }
         };
         fetchData();
-    }, [statusFilter, hasPermission]);
+    }, [statusFilter, page, pageSize, hasPermission]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [statusFilter]);
 
 
     const handleAdd = () => {
@@ -201,7 +210,11 @@ const EmployeesPage = () => {
             loading: 'Saving employee...',
             success: () => {
                 setIsModalOpen(false);
-                api.get('/employees', { params: { status: statusFilter } }).then(res => setEmployees(res.data));
+                api.get('/employees', { params: { status: statusFilter, page, pageSize, paginated: 1 } })
+                    .then(res => {
+                        setEmployees(res.data?.data || []);
+                        setTotal(res.data?.total || 0);
+                    });
                 return 'Employee saved successfully!';
             },
             error: (err) => err.response?.data?.message || 'Failed to save employee.',
@@ -238,6 +251,7 @@ const EmployeesPage = () => {
                 {loading && <p>Loading employees...</p>}
                 {error && <p className="text-red-500">{error}</p>}
                 {!loading && !error && (
+                    <>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
                             <thead className="border-b">
@@ -270,6 +284,17 @@ const EmployeesPage = () => {
                             </tbody>
                         </table>
                     </div>
+                    <PaginationControls
+                        page={page}
+                        pageSize={pageSize}
+                        total={total}
+                        onPageChange={setPage}
+                        onPageSizeChange={(value) => {
+                            setPageSize(value);
+                            setPage(1);
+                        }}
+                    />
+                    </>
                 )}
             </div>
             <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={currentEmployee ? 'Edit Employee' : 'Add New Employee'}>

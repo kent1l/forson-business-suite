@@ -1,10 +1,12 @@
 const express = require('express');
 const db = require('../db');
+const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const router = express.Router();
 
 // GET all suppliers with status filter
 router.get('/suppliers', async (req, res) => {
   const { status = 'active' } = req.query; // Default to 'active'
+  const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
 
   let whereClause = "WHERE is_active = TRUE";
   if (status === 'inactive') {
@@ -14,8 +16,18 @@ router.get('/suppliers', async (req, res) => {
   }
 
   try {
-    const { rows } = await db.query(`SELECT * FROM supplier ${whereClause} ORDER BY supplier_name`);
-    res.json(rows);
+    if (!paginated) {
+      const { rows } = await db.query(`SELECT * FROM supplier ${whereClause} ORDER BY supplier_name`);
+      return res.json(rows);
+    }
+
+    const countRes = await db.query(`SELECT COUNT(*)::int AS total FROM supplier ${whereClause}`);
+    const total = countRes.rows[0]?.total || 0;
+    const { rows } = await db.query(
+      `SELECT * FROM supplier ${whereClause} ORDER BY supplier_name LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+    res.json(paginatedResponse({ data: rows, page, pageSize, total }));
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server Error');

@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
+const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const router = express.Router();
 
 // GET /ar/dashboard-stats - Get AR dashboard statistics
@@ -127,7 +128,7 @@ router.get('/ar/aging-summary', protect, hasPermission('ar:view'), async (req, r
 // GET /ar/customer-summary - Get customer-level AR summary
 router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req, res) => {
     try {
-        const { limit = 50, offset = 0 } = req.query;
+        const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
         
         const query = `
             SELECT 
@@ -156,7 +157,21 @@ router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req
         `;
         
         const { rows } = await db.query(query, [limit, offset]);
-        res.json(rows);
+        if (!paginated) return res.json(rows);
+        const countRes = await db.query(`
+            SELECT COUNT(*)::int AS total
+            FROM (
+                SELECT c.customer_id
+                FROM customer c
+                JOIN invoice i ON c.customer_id = i.customer_id
+                WHERE i.status IN ('Unpaid', 'Partially Paid')
+                AND (i.total_amount - i.amount_paid) > 0
+                GROUP BY c.customer_id, c.company_name, c.first_name, c.last_name
+                HAVING COALESCE(SUM(i.total_amount - i.amount_paid), 0) > 0
+            ) summary
+        `);
+        const total = countRes.rows[0]?.total || 0;
+        res.json(paginatedResponse({ data: rows, page, pageSize, total }));
     } catch (err) {
         console.error('AR Customer Summary Error:', err.message);
         res.status(500).json({ message: 'Failed to fetch customer summary' });
@@ -167,7 +182,7 @@ router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req
 router.get('/ar/customer-invoices/:customerId', protect, hasPermission('ar:view'), async (req, res) => {
     try {
         const { customerId } = req.params;
-        const { limit = 100, offset = 0 } = req.query;
+        const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
         
         const query = `
             SELECT 
@@ -201,7 +216,16 @@ router.get('/ar/customer-invoices/:customerId', protect, hasPermission('ar:view'
         `;
         
         const { rows } = await db.query(query, [customerId, limit, offset]);
-        res.json(rows);
+        if (!paginated) return res.json(rows);
+        const countRes = await db.query(`
+            SELECT COUNT(*)::int AS total
+            FROM invoice i
+            WHERE i.customer_id = $1
+            AND i.status IN ('Unpaid', 'Partially Paid')
+            AND (i.total_amount - i.amount_paid) > 0
+        `, [customerId]);
+        const total = countRes.rows[0]?.total || 0;
+        res.json(paginatedResponse({ data: rows, page, pageSize, total }));
     } catch (err) {
         console.error('AR Customer Invoices Error:', err.message);
         res.status(500).json({ message: 'Failed to fetch customer invoices' });
@@ -254,7 +278,8 @@ router.get('/ar/trends', protect, hasPermission('ar:view'), async (req, res) => 
 // GET /ar/drill-down-invoices - Get invoices for a specific aging bucket
 router.get('/ar/drill-down-invoices', protect, hasPermission('ar:view'), async (req, res) => {
     try {
-        const { bucket, startDate, endDate, limit = 100, offset = 0 } = req.query;
+        const { bucket, startDate, endDate } = req.query;
+        const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
 
         if (!bucket) {
             return res.status(400).json({ message: 'Bucket parameter is required' });
@@ -276,15 +301,16 @@ router.get('/ar/drill-down-invoices', protect, hasPermission('ar:view'), async (
 
         // Build the query with date range filter if provided
         let dateRangeCondition = '';
-        let queryParams = [limit, offset];
-        let paramIndex = 3;
+        let queryParams = [];
+        let paramIndex = 1;
 
         if (startDate && endDate) {
             dateRangeCondition = ` AND i.invoice_date >= $${paramIndex} AND i.invoice_date <= $${paramIndex + 1}`;
             queryParams.push(startDate, endDate);
+            paramIndex += 2;
         }
 
-        const query = `
+        let query = `
             SELECT
                 i.invoice_id,
                 i.invoice_number,
@@ -306,11 +332,17 @@ router.get('/ar/drill-down-invoices', protect, hasPermission('ar:view'), async (
             AND ${dateCondition}
             ${dateRangeCondition}
             ORDER BY i.due_date ASC, (i.total_amount - i.amount_paid) DESC
-            LIMIT $1 OFFSET $2;
         `;
-
+        if (!paginated) {
+            const { rows } = await db.query(query, queryParams);
+            return res.json(rows);
+        }
+        const countRes = await db.query(`SELECT COUNT(*)::int AS total FROM (${query}) drilldown`, queryParams);
+        const total = countRes.rows[0]?.total || 0;
+        query += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+        queryParams.push(limit, offset);
         const { rows } = await db.query(query, queryParams);
-        res.json(rows);
+        res.json(paginatedResponse({ data: rows, page, pageSize, total }));
     } catch (err) {
         console.error('AR Drill-down Invoices Error:', err.message);
         res.status(500).json({ message: 'Failed to fetch drill-down invoices' });

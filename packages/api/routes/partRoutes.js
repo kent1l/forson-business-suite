@@ -6,6 +6,7 @@ const { meiliClient } = require('../meilisearch');
 const { enqueuePartUpsert, enqueuePartDelete } = require('../services/meiliOutboxService');
 const { activeAliasCondition } = require('../helpers/partNumberSoftDelete');
 const { normalizePartData } = require('../helpers/normalizePart');
+const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const router = express.Router();
 
 // Helper function to get all data for a part for Meilisearch indexing
@@ -109,10 +110,12 @@ const manageTags = async (client, tags, partId) => {
 // GET all parts with status filter, search, and sorting (POWERED BY MEILISEARCH)
 router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
     const { status = 'active', search = '', tags = '' } = req.query;
+    const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
     try {
         const index = meiliClient.index('parts');
         const searchOptions = { 
-            limit: 200, 
+            limit: paginated ? limit : 200,
+            offset: paginated ? offset : 0,
             attributesToRetrieve: ['part_id'],
             // Prioritize exact normalized matches, then fall back to fuzzy search
             attributesToSearchOn: ['normalized_internal_sku', 'normalized_part_numbers', 'internal_sku', 'part_numbers', 'display_name', 'detail', 'brand_name', 'group_name', 'searchable_applications', 'tags']
@@ -132,7 +135,10 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
 
         const searchResults = await index.search(search, searchOptions);
         const partIds = searchResults.hits.map(hit => hit.part_id);
-        if (partIds.length === 0) return res.json([]);
+        if (partIds.length === 0) {
+            if (paginated) return res.json(paginatedResponse({ data: [], page, pageSize, total: 0 }));
+            return res.json([]);
+        }
 
         const query = `
             SELECT
@@ -164,7 +170,11 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
         `;
         const { rows } = await db.query(query, [partIds]);
         const partsWithDisplayName = rows.map(part => ({ ...part, display_name: constructDisplayName(part) }));
-        res.json(partsWithDisplayName);
+        if (!paginated) {
+            return res.json(partsWithDisplayName);
+        }
+        const total = searchResults.estimatedTotalHits || searchResults.totalHits || partsWithDisplayName.length;
+        res.json(paginatedResponse({ data: partsWithDisplayName, page, pageSize, total }));
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');

@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const db = require('../db');
 const { protect, isAdmin } = require('../middleware/authMiddleware');
+const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const router = express.Router();
 
 // Helper to generate a token
@@ -63,6 +64,7 @@ router.post('/login', async (req, res) => {
 // GET /employees - list employees with status filter
 router.get('/employees', protect, isAdmin, async (req, res) => {
     const { status = 'active' } = req.query;
+    const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
 
     let whereClause = "WHERE is_active = TRUE";
     if (status === 'inactive') {
@@ -72,14 +74,23 @@ router.get('/employees', protect, isAdmin, async (req, res) => {
     }
 
     try {
-        const query = `
+        const baseQuery = `
             SELECT employee_id, employee_code, first_name, last_name, position_title, permission_level_id, username, is_active 
             FROM employee 
             ${whereClause} 
             ORDER BY last_name, first_name
         `;
-        const { rows } = await db.query(query);
-        res.json(rows);
+        if (!paginated) {
+            const { rows } = await db.query(baseQuery);
+            return res.json(rows);
+        }
+
+        const countQuery = `SELECT COUNT(*)::int AS total FROM employee ${whereClause}`;
+        const countRes = await db.query(countQuery);
+        const total = countRes.rows[0]?.total || 0;
+        const query = `${baseQuery} LIMIT $1 OFFSET $2`;
+        const { rows } = await db.query(query, [limit, offset]);
+        res.json(paginatedResponse({ data: rows, page, pageSize, total }));
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');

@@ -2,11 +2,13 @@ const express = require('express');
 const db = require('../db');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
 const { meiliClient } = require('../meilisearch'); // <-- 1. Import Meili client
+const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const router = express.Router();
 
 // GET /api/inventory - Get current stock levels with search
 router.get('/inventory', async (req, res) => {
     const { search = '' } = req.query;
+    const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
 
     try {
         // --- NEW: Hybrid Meilisearch + DB Query ---
@@ -14,7 +16,8 @@ router.get('/inventory', async (req, res) => {
         // 1. Get a list of part IDs from Meilisearch
         const index = meiliClient.index('parts');
         const searchResults = await index.search(search, {
-            limit: 200, // Limit the number of results for performance
+            limit: paginated ? limit : 200, // Limit the number of results for performance
+            offset: paginated ? offset : 0,
             attributesToRetrieve: ['part_id'], // We only need the ID
         });
         // Ensure we send integer IDs to Postgres (Meili may return strings)
@@ -24,6 +27,9 @@ router.get('/inventory', async (req, res) => {
 
         // If Meilisearch returns no results, we can stop here.
         if (partIds.length === 0) {
+            if (paginated) {
+                return res.json(paginatedResponse({ data: [], page, pageSize, total: 0 }));
+            }
             return res.json([]);
         }
 
@@ -67,7 +73,11 @@ router.get('/inventory', async (req, res) => {
             display_name: constructDisplayName(item)
         }));
 
-        res.json(inventoryWithDisplayName);
+        if (!paginated) {
+            return res.json(inventoryWithDisplayName);
+        }
+        const total = searchResults.estimatedTotalHits || searchResults.totalHits || inventoryWithDisplayName.length;
+        res.json(paginatedResponse({ data: inventoryWithDisplayName, page, pageSize, total }));
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');

@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
+import PaginationControls from '../components/ui/PaginationControls';
 import { useAuth } from '../contexts/AuthContext'; // <-- NEW: Import useAuth
 
 const ApplicationForm = ({ application, onSave, onCancel }) => {
@@ -406,13 +407,17 @@ const ApplicationsPage = () => {
     const [error, setError] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentApp, setCurrentApp] = useState(null);
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(25);
+    const [total, setTotal] = useState(0);
 
     const fetchApplications = async () => {
         try {
             setError('');
             setLoading(true);
-            const response = await api.get('/applications');
-            setApplications(response.data);
+            const response = await api.get('/applications', { params: { page, pageSize, paginated: 1 } });
+            setApplications(response.data?.data || []);
+            setTotal(response.data?.total || 0);
         } catch (error) {
             console.error('Failed to fetch applications:', error);
             setError('Failed to fetch applications.');
@@ -423,7 +428,7 @@ const ApplicationsPage = () => {
 
     useEffect(() => {
         fetchApplications();
-    }, []);
+    }, [page, pageSize]);
 
     const handleAdd = () => {
         setCurrentApp(null);
@@ -503,6 +508,7 @@ const ApplicationsPage = () => {
                 {loading && <p>Loading applications...</p>}
                 {error && <p className="text-red-500">{error}</p>}
                 {!loading && !error && (
+                    <>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
                             <thead className="border-b">
@@ -532,6 +538,17 @@ const ApplicationsPage = () => {
                             </tbody>
                         </table>
                     </div>
+                    <PaginationControls
+                        page={page}
+                        pageSize={pageSize}
+                        total={total}
+                        onPageChange={setPage}
+                        onPageSizeChange={(value) => {
+                            setPageSize(value);
+                            setPage(1);
+                        }}
+                    />
+                    </>
                 )}
             </div>
             <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={currentApp ? 'Edit Application' : 'Add New Application'}>
@@ -542,4 +559,3 @@ const ApplicationsPage = () => {
 };
 
 export default ApplicationsPage;
-

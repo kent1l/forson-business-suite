@@ -8,6 +8,7 @@ import Modal from '../components/ui/Modal';
 import PartForm from '../components/forms/PartForm';
 import FilterBar from '../components/ui/FilterBar';
 import TagPopover from '../components/ui/TagPopover';
+import PaginationControls from '../components/ui/PaginationControls';
 import { useAuth } from '../contexts/AuthContext';
 import PartNumberManager from './PartNumberManager';
 import PartApplicationManager from './PartApplicationManager';
@@ -27,16 +28,20 @@ const PartsPage = ({ user, onNavigate }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedParts, setSelectedParts] = useState([]);
     const [isBulkEditModalOpen, setIsBulkEditModalOpen] = useState(false);
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(25);
+    const [total, setTotal] = useState(0);
 
     const fetchInitialData = useCallback(async () => {
         try {
             setLoading(true);
             const [partsRes, brandsRes, groupsRes] = await Promise.all([
-                api.get('/parts', { params: { status: statusFilter, search: searchTerm } }),
+                api.get('/parts', { params: { status: statusFilter, search: searchTerm, page, pageSize, paginated: 1 } }),
                 api.get('/brands'),
                 api.get('/groups')
             ]);
-            setParts(partsRes.data);
+            setParts(partsRes.data?.data || []);
+            setTotal(partsRes.data?.total || 0);
             setBrands(brandsRes.data);
             setGroups(groupsRes.data);
         } catch (error) {
@@ -44,7 +49,7 @@ const PartsPage = ({ user, onNavigate }) => {
         } finally {
             setLoading(false);
         }
-    }, [statusFilter, searchTerm]);
+    }, [statusFilter, searchTerm, page, pageSize]);
 
     useEffect(() => {
         const debounceTimer = setTimeout(() => {
@@ -52,6 +57,10 @@ const PartsPage = ({ user, onNavigate }) => {
         }, 300);
         return () => clearTimeout(debounceTimer);
     }, [fetchInitialData]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [statusFilter, searchTerm]);
 
     const handleSave = (partData) => {
         const promise = currentPart
@@ -224,6 +233,7 @@ const PartsPage = ({ user, onNavigate }) => {
 
             <div className="bg-white p-6 rounded-xl border border-gray-200">
                 {loading ? <p>Loading...</p> : (
+                    <>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
                             <thead>
@@ -260,6 +270,18 @@ const PartsPage = ({ user, onNavigate }) => {
                             </tbody>
                         </table>
                     </div>
+                    <PaginationControls
+                        page={page}
+                        pageSize={pageSize}
+                        total={total}
+                        onPageChange={setPage}
+                        onPageSizeChange={(value) => {
+                            setPageSize(value);
+                            setPage(1);
+                            setSelectedParts([]);
+                        }}
+                    />
+                    </>
                 )}
             </div>
             <Modal isOpen={isFormModalOpen} onClose={() => setIsFormModalOpen(false)} title={currentPart ? 'Edit Part' : 'New Part'}>
