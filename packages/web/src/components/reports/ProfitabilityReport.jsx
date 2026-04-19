@@ -10,6 +10,8 @@ import { sortData } from '../../utils/sortData';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
+const asArray = (value) => (Array.isArray(value) ? value : []);
+
 const ProfitabilityReport = () => {
     const { settings } = useSettings();
     const [reportData, setReportData] = useState([]);
@@ -32,12 +34,12 @@ const ProfitabilityReport = () => {
     });
 
     useEffect(() => {
-        api.get('/brands').then(res => setBrands(res.data));
-        api.get('/groups').then(res => setGroups(res.data));
+        api.get('/brands').then(res => setBrands(asArray(res.data?.data ?? res.data)));
+        api.get('/groups').then(res => setGroups(asArray(res.data?.data ?? res.data)));
     }, []);
     
-    const brandOptions = brands.map(b => ({ value: b.brand_id, label: b.brand_name }));
-    const groupOptions = groups.map(g => ({ value: g.group_id, label: g.group_name }));
+    const brandOptions = asArray(brands).map(b => ({ value: b.brand_id, label: b.brand_name }));
+    const groupOptions = asArray(groups).map(g => ({ value: g.group_id, label: g.group_name }));
 
     const handleFilterChange = (name, value) => {
         setFilters(prev => ({ ...prev, [name]: value }));
@@ -63,7 +65,7 @@ const ProfitabilityReport = () => {
                 toast.success('Report exported successfully!');
             } else {
                 const paginated = getPaginatedPayload(response.data);
-                setReportData(paginated.data);
+                setReportData(asArray(paginated.data));
                 setTotal(paginated.total);
             }
         } catch {
@@ -140,6 +142,11 @@ const ProfitabilityReport = () => {
                                         <td className="p-3 text-sm text-right font-mono font-bold text-blue-600">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.total_profit).toFixed(2)}</td>
                                     </tr>
                                 ))}
+                                {sortedReportData.length === 0 && (
+                                    <tr>
+                                        <td colSpan="4" className="p-4 text-center text-gray-500">No data to display.</td>
+                                    </tr>
+                                )}
                             </tbody>
                     </table>
                 </div>
