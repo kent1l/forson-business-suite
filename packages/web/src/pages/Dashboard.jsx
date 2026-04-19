@@ -162,6 +162,7 @@ const Dashboard = ({ onNavigate }) => {
                             color="green"
                             loading={loading}
                             onClick={() => handleNavigation('sales_history')}
+                            isMonetary
                         />
                     )}
                     {hasPermission('ar:view') && (
@@ -173,6 +174,7 @@ const Dashboard = ({ onNavigate }) => {
                             loading={loading}
                             onClick={() => handleNavigation('ar')}
                             subtitle="Unpaid invoices"
+                            isMonetary
                         />
                     )}
                     {hasPermission('inventory:view') && (
@@ -184,6 +186,7 @@ const Dashboard = ({ onNavigate }) => {
                             loading={loading}
                             onClick={() => handleNavigation('inventory')}
                             subtitle="Total stock value"
+                            isMonetary
                         />
                     )}
                     {hasPermission('inventory:view') && (

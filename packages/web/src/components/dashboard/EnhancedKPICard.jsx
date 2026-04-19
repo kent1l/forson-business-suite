@@ -63,7 +63,8 @@ const EnhancedKPICard = ({
     urgent = false,
     loading = false,
     onClick,
-    subtitle
+    subtitle,
+    isMonetary = false
 }) => {
     const colors = colorVariants[color];
     
@@ -73,18 +74,27 @@ const EnhancedKPICard = ({
         bg-white p-6 rounded-xl border ${colors.accent} shadow-sm hover:shadow-md transition-shadow duration-200
     `;
 
+    const compactFormatter = new Intl.NumberFormat('en-US', {
+        notation: 'compact',
+        compactDisplay: 'short',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 3
+    });
+
+    const decimalFormatter = new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 3
+    });
+
     const formatValue = (val) => {
-        if (typeof val === 'number') {
-            if (val >= 1000000) {
-                return `₱${(val / 1000000).toFixed(1)}M`;
-            } else if (val >= 1000) {
-                return `₱${(val / 1000).toFixed(0)}K`;
-            } else if (val < 1000 && val > 0 && icon === 'currency') {
-                return `₱${val.toLocaleString()}`;
-            }
-            return val.toLocaleString();
-        }
-        return val;
+        if (typeof val !== 'number') return val;
+
+        const absoluteValue = Math.abs(val);
+        const formattedNumber = absoluteValue >= 1000
+            ? compactFormatter.format(val)
+            : decimalFormatter.format(val);
+
+        return isMonetary ? `₱${formattedNumber}` : formattedNumber;
     };
 
     return (
