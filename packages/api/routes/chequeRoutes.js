@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { protect } = require('../middleware/authMiddleware');
+const { createChequePdf } = require('../helpers/pdf/chequePdf');
 
 const router = express.Router();
 
@@ -109,6 +110,74 @@ router.get('/cheques/history', protect, async (_req, res) => {
     }
 });
 
+
+
+router.post('/cheques/generate-pdf', protect, async (req, res) => {
+    const { template_id, records = [], printer_profile_id = null } = req.body;
+
+    if (!template_id) {
+        return res.status(400).json({ message: 'template_id is required' });
+    }
+    if (!Array.isArray(records) || records.length === 0) {
+        return res.status(400).json({ message: 'At least one cheque record is required' });
+    }
+
+    try {
+        const templateRes = await db.query(
+            `SELECT id, bank_name, field_positions, date_format, amount_format, currency_settings
+             FROM cheque_templates
+             WHERE id = $1 AND is_deleted = FALSE`,
+            [template_id]
+        );
+
+        if (!templateRes.rows.length) {
+            return res.status(404).json({ message: 'Template not found' });
+        }
+
+        let profile = { offset_x: 0, offset_y: 0 };
+        if (printer_profile_id) {
+            const profileRes = await db.query(
+                `SELECT id, offset_x, offset_y
+                 FROM printer_profiles
+                 WHERE id = $1`,
+                [printer_profile_id]
+            );
+            if (profileRes.rows.length) {
+                profile = profileRes.rows[0];
+            }
+        }
+
+        const normalizedRows = records.map((record) => {
+            const amount = Math.round(Number(record.amount || 0) * 100) / 100;
+            if (!record.payee || !String(record.payee).trim()) {
+                throw new Error('Payee is required for every cheque');
+            }
+            if (Number.isNaN(amount)) {
+                throw new Error('Amount must be numeric');
+            }
+            return {
+                date: record.date,
+                payee: String(record.payee).trim(),
+                amount: amount.toFixed(2),
+                memo: record.memo || ''
+            };
+        });
+
+        const pdfBuffer = createChequePdf({
+            rows: normalizedRows,
+            template: templateRes.rows[0],
+            printerProfile: profile
+        });
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'inline; filename="cheques.pdf"');
+        return res.send(pdfBuffer);
+    } catch (error) {
+        console.error('Failed to generate cheque PDF', error);
+        const status = /required|numeric/i.test(error.message) ? 400 : 500;
+        return res.status(status).json({ message: error.message || 'Unable to generate cheque PDF' });
+    }
+});
 router.post('/cheques/records', protect, async (req, res) => {
     const { records = [], template_id } = req.body;
 
