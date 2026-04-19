@@ -16,12 +16,15 @@ import PartApplicationManager from './PartApplicationManager';
 import { formatApplicationText } from '../helpers/applicationTextHelper';
 import { sortData } from '../utils/sortData';
 
+const asArray = (value) => (Array.isArray(value) ? value : []);
+
 const PartsPage = ({ user, onNavigate }) => {
     const { hasPermission } = useAuth();
     const [parts, setParts] = useState([]);
     const [brands, setBrands] = useState([]);
     const [groups, setGroups] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [listError, setListError] = useState('');
     const [isFormModalOpen, setIsFormModalOpen] = useState(false);
     const [isNumberModalOpen, setIsNumberModalOpen] = useState(false);
     const [isAppModalOpen, setIsAppModalOpen] = useState(false);
@@ -40,16 +43,20 @@ const PartsPage = ({ user, onNavigate }) => {
     const fetchInitialData = useCallback(async () => {
         try {
             setLoading(true);
+            setListError('');
             const [partsRes, brandsRes, groupsRes] = await Promise.all([
                 api.get('/parts', { params: { status: statusFilter, search: searchTerm, page, pageSize, paginated: 1, sortBy: globalSortBy, sortDirection: globalSortDirection } }),
                 api.get('/brands'),
                 api.get('/groups')
             ]);
-            setParts(partsRes.data?.data || []);
+            setParts(asArray(partsRes.data?.data));
             setTotal(partsRes.data?.total || 0);
-            setBrands(brandsRes.data);
-            setGroups(groupsRes.data);
+            setBrands(asArray(brandsRes.data?.data ?? brandsRes.data));
+            setGroups(asArray(groupsRes.data?.data ?? groupsRes.data));
         } catch (error) {
+            setParts([]);
+            setTotal(0);
+            setListError(error.response?.data?.message || 'Unable to load parts right now.');
             toast.error("Failed to load data: " + (error.response?.data?.message || error.message));
         } finally {
             setLoading(false);
@@ -265,6 +272,11 @@ const PartsPage = ({ user, onNavigate }) => {
             <div className="bg-white p-6 rounded-xl border border-gray-200">
                 {loading ? <p>Loading...</p> : (
                     <>
+                    {listError && (
+                        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                            {listError}
+                        </div>
+                    )}
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
                             <thead>
@@ -298,6 +310,11 @@ const PartsPage = ({ user, onNavigate }) => {
                                         </td>
                                     </tr>
                                 ))}
+                                {sortedParts.length === 0 && (
+                                    <tr>
+                                        <td colSpan="5" className="p-4 text-center text-gray-500">No data to display.</td>
+                                    </tr>
+                                )}
                             </tbody>
                         </table>
                     </div>

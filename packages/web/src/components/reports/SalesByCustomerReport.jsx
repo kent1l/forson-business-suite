@@ -10,6 +10,8 @@ import { sortData } from '../../utils/sortData';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
+const asArray = (value) => (Array.isArray(value) ? value : []);
+
 const SalesByCustomerReport = () => {
     const { settings } = useSettings();
     const [reportData, setReportData] = useState([]);
@@ -30,10 +32,10 @@ const SalesByCustomerReport = () => {
     });
 
     useEffect(() => {
-        api.get('/customers').then(res => setCustomers(res.data));
+        api.get('/customers').then(res => setCustomers(asArray(res.data?.data ?? res.data)));
     }, []);
 
-    const customerOptions = customers.map(c => ({ value: c.customer_id, label: `${c.first_name} ${c.last_name}` }));
+    const customerOptions = asArray(customers).map(c => ({ value: c.customer_id, label: `${c.first_name} ${c.last_name}` }));
 
     const handleFilterChange = (name, value) => {
         setFilters(prev => ({ ...prev, [name]: value }));
@@ -59,7 +61,7 @@ const SalesByCustomerReport = () => {
                 toast.success('Report exported successfully!');
             } else {
                 const paginated = getPaginatedPayload(response.data);
-                setReportData(paginated.data);
+                setReportData(asArray(paginated.data));
                 setTotal(paginated.total);
             }
         } catch {
@@ -127,6 +129,11 @@ const SalesByCustomerReport = () => {
                                         <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.total_sales).toFixed(2)}</td>
                                     </tr>
                                 ))}
+                                {sortedReportData.length === 0 && (
+                                    <tr>
+                                        <td colSpan="3" className="p-4 text-center text-gray-500">No data to display.</td>
+                                    </tr>
+                                )}
                             </tbody>
                     </table>
                 </div>

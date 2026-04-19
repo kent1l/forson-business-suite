@@ -9,6 +9,8 @@ import { sortData } from '../../utils/sortData';
 import { format, parseISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
+const asArray = (value) => (Array.isArray(value) ? value : []);
+
 const InventoryMovementReport = () => {
     const [reportData, setReportData] = useState([]);
     const [parts, setParts] = useState([]);
@@ -28,10 +30,10 @@ const InventoryMovementReport = () => {
     });
 
     useEffect(() => {
-        api.get('/parts?status=all').then(res => setParts(res.data));
+        api.get('/parts?status=all').then(res => setParts(asArray(res.data?.data ?? res.data)));
     }, []);
     
-    const partOptions = parts.map(p => ({ value: p.part_id, label: p.display_name }));
+    const partOptions = asArray(parts).map(p => ({ value: p.part_id, label: p.display_name }));
 
     const handleFilterChange = (name, value) => {
         setFilters(prev => ({ ...prev, [name]: value }));
@@ -57,7 +59,7 @@ const InventoryMovementReport = () => {
                 toast.success('Report exported successfully!');
             } else {
                 const paginated = getPaginatedPayload(response.data);
-                setReportData(paginated.data);
+                setReportData(asArray(paginated.data));
                 setTotal(paginated.total);
             }
         } catch {
@@ -128,6 +130,11 @@ const InventoryMovementReport = () => {
                                         <td className="p-3 text-sm">{row.employee_name}</td>
                                     </tr>
                                 ))}
+                                {sortedReportData.length === 0 && (
+                                    <tr>
+                                        <td colSpan="6" className="p-4 text-center text-gray-500">No data to display.</td>
+                                    </tr>
+                                )}
                             </tbody>
                     </table>
                 </div>
