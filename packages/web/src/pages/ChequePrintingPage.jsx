@@ -9,6 +9,8 @@ const SETTINGS_TABS = ['layout', 'date', 'amount', 'currency', 'text', 'calibrat
 
 const ChequePrintingPage = () => {
     const [templates, setTemplates] = useState([]);
+    const [printerProfiles, setPrinterProfiles] = useState([]);
+    const [selectedProfileId, setSelectedProfileId] = useState('');
     const [selectedTemplateId, setSelectedTemplateId] = useState('');
     const [rows, setRows] = useState([blankRow()]);
     const [history, setHistory] = useState([]);
@@ -18,14 +20,21 @@ const ChequePrintingPage = () => {
     const [saving, setSaving] = useState(false);
 
     const selectedTemplate = useMemo(() => templates.find((tpl) => String(tpl.id) === String(selectedTemplateId)), [templates, selectedTemplateId]);
+    const selectedProfile = useMemo(() => printerProfiles.find((profile) => String(profile.id) === String(selectedProfileId)), [printerProfiles, selectedProfileId]);
 
     const loadData = async () => {
         try {
-            const [templatesRes, historyRes] = await Promise.all([api.get('/cheques/templates'), api.get('/cheques/history')]);
+            const [templatesRes, historyRes, profilesRes] = await Promise.all([api.get('/cheques/templates'), api.get('/cheques/history'), api.get('/cheques/printer-profiles')]);
             const templateRows = templatesRes.data || [];
+            const profileRows = profilesRes.data || [];
             setTemplates(templateRows);
             setHistory(historyRes.data || []);
+            setPrinterProfiles(profileRows);
             if (!selectedTemplateId && templateRows.length) setSelectedTemplateId(String(templateRows[0].id));
+            if (!selectedProfileId && profileRows.length) {
+                const defaultProfile = profileRows.find((profile) => profile.is_default) || profileRows[0];
+                setSelectedProfileId(String(defaultProfile.id));
+            }
         } catch (error) {
             toast.error(error?.response?.data?.message || 'Failed to load cheque module.');
         }
@@ -76,6 +85,7 @@ const ChequePrintingPage = () => {
 
             const pdfResponse = await api.post('/cheques/generate-pdf', {
                 template_id: Number(selectedTemplateId),
+                printer_profile_id: selectedProfileId ? Number(selectedProfileId) : null,
                 records: payloadRows
             }, {
                 responseType: 'blob'
@@ -135,6 +145,31 @@ const ChequePrintingPage = () => {
         }
     };
 
+    const upsertProfile = async (patch) => {
+        try {
+            if (!selectedProfile) {
+                const created = await api.post('/cheques/printer-profiles', {
+                    profile_name: patch.profile_name || `Profile ${printerProfiles.length + 1}`,
+                    offset_x: patch.offset_x || 0,
+                    offset_y: patch.offset_y || 0,
+                    is_default: patch.is_default || false
+                });
+                setPrinterProfiles((prev) => [...prev, created.data]);
+                setSelectedProfileId(String(created.data.id));
+                return;
+            }
+
+            const response = await api.put(`/cheques/printer-profiles/${selectedProfile.id}`, {
+                ...selectedProfile,
+                ...patch
+            });
+
+            setPrinterProfiles((prev) => prev.map((profile) => (profile.id === response.data.id ? response.data : profile)));
+        } catch (error) {
+            toast.error(error?.response?.data?.message || 'Printer profile update failed.');
+        }
+    };
+
     const onRowKeyDown = (event, rowIndex, fieldIndex) => {
         if (event.key !== 'Enter') return;
         event.preventDefault();
@@ -150,6 +185,13 @@ const ChequePrintingPage = () => {
                     <span className="text-sm font-medium">Bank Preset</span>
                     <select className="border rounded-lg px-3 py-2 text-sm" value={selectedTemplateId} onChange={(e) => setSelectedTemplateId(e.target.value)}>
                         {templates.map((template) => <option key={template.id} value={template.id}>{template.bank_name}</option>)}
+                    </select>
+                </div>
+                <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">Printer Profile</span>
+                    <select className="border rounded-lg px-3 py-2 text-sm" value={selectedProfileId} onChange={(e) => setSelectedProfileId(e.target.value)}>
+                        <option value="">None</option>
+                        {printerProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.profile_name}{profile.is_default ? ' (Default)' : ''}</option>)}
                     </select>
                 </div>
                 <div className="flex gap-2">
@@ -222,7 +264,43 @@ const ChequePrintingPage = () => {
                                 </div>
                             )}
                             {activeTab === 'text' && <p className="text-gray-600">Payee overflow mitigation uses template font size and width values; no line wrapping is applied.</p>}
-                            {activeTab === 'calibration' && <p className="text-gray-600">Printer profile offsets are supported by the PDF generator endpoint and can be connected to profile selection in the next iteration.</p>}
+                            {activeTab === 'calibration' && (
+                                <div className="space-y-3">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                        <input
+                                            className="border rounded px-3 py-2"
+                                            placeholder="Profile name"
+                                            value={selectedProfile?.profile_name || ''}
+                                            onChange={(e) => upsertProfile({ profile_name: e.target.value })}
+                                        />
+                                        <input
+                                            type="number"
+                                            step="0.1"
+                                            className="border rounded px-3 py-2"
+                                            placeholder="Offset X"
+                                            value={selectedProfile?.offset_x ?? 0}
+                                            onChange={(e) => upsertProfile({ offset_x: Number(e.target.value) || 0 })}
+                                        />
+                                        <input
+                                            type="number"
+                                            step="0.1"
+                                            className="border rounded px-3 py-2"
+                                            placeholder="Offset Y"
+                                            value={selectedProfile?.offset_y ?? 0}
+                                            onChange={(e) => upsertProfile({ offset_y: Number(e.target.value) || 0 })}
+                                        />
+                                    </div>
+                                    <label className="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            checked={Boolean(selectedProfile?.is_default)}
+                                            onChange={(e) => upsertProfile({ is_default: e.target.checked })}
+                                        />
+                                        Set as default profile
+                                    </label>
+                                    <p className="text-gray-600">Offsets are automatically applied to generated PDFs when this profile is selected.</p>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

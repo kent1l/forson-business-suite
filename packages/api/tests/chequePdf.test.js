@@ -1,8 +1,8 @@
 const { createChequePdf } = require('../helpers/pdf/chequePdf');
 
 describe('createChequePdf', () => {
-    it('builds a non-empty PDF buffer', () => {
-        const pdf = createChequePdf({
+    it('builds a non-empty PDF buffer', async () => {
+        const pdf = await createChequePdf({
             rows: [{ date: '04/19/2026', payee: 'Test Payee', amount: '123.45', memo: 'Invoice 55' }],
             template: {
                 field_positions: {},
@@ -17,7 +17,7 @@ describe('createChequePdf', () => {
         expect(pdf.toString('utf8', 0, 8)).toContain('%PDF-1.4');
     });
 
-    it('throws when rows are missing', () => {
-        expect(() => createChequePdf({ rows: [], template: {} })).toThrow('At least one cheque row is required');
+    it('throws when rows are missing', async () => {
+        await expect(createChequePdf({ rows: [], template: {} })).rejects.toThrow('At least one cheque row is required');
     });
 });

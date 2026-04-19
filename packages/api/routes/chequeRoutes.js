@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { protect } = require('../middleware/authMiddleware');
 const { createChequePdf } = require('../helpers/pdf/chequePdf');
+const { parse, isValid } = require('date-fns');
 
 const router = express.Router();
 
@@ -110,6 +111,91 @@ router.get('/cheques/history', protect, async (_req, res) => {
     }
 });
 
+router.get('/cheques/printer-profiles', protect, async (_req, res) => {
+    try {
+        const { rows } = await db.query(
+            `SELECT id, profile_name, offset_x, offset_y, is_default, created_at, updated_at
+             FROM printer_profiles
+             ORDER BY is_default DESC, profile_name ASC`
+        );
+        res.json(rows);
+    } catch (error) {
+        console.error('Failed to fetch printer profiles', error);
+        res.status(500).json({ message: 'Unable to fetch printer profiles' });
+    }
+});
+
+router.post('/cheques/printer-profiles', protect, async (req, res) => {
+    const { profile_name, offset_x = 0, offset_y = 0, is_default = false } = req.body;
+    if (!profile_name || !String(profile_name).trim()) {
+        return res.status(400).json({ message: 'profile_name is required' });
+    }
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        if (is_default) {
+            await client.query('UPDATE printer_profiles SET is_default = FALSE WHERE is_default = TRUE');
+        }
+        const { rows } = await client.query(
+            `INSERT INTO printer_profiles (profile_name, offset_x, offset_y, is_default)
+             VALUES ($1, $2, $3, $4)
+             RETURNING id, profile_name, offset_x, offset_y, is_default, created_at, updated_at`,
+            [String(profile_name).trim(), Number(offset_x) || 0, Number(offset_y) || 0, Boolean(is_default)]
+        );
+        await client.query('COMMIT');
+        res.status(201).json(rows[0]);
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Failed to create printer profile', error);
+        res.status(500).json({ message: 'Unable to create printer profile' });
+    } finally {
+        client.release();
+    }
+});
+
+router.put('/cheques/printer-profiles/:id', protect, async (req, res) => {
+    const { id } = req.params;
+    const { profile_name, offset_x, offset_y, is_default } = req.body;
+    const client = await db.getClient();
+
+    try {
+        await client.query('BEGIN');
+        if (is_default === true) {
+            await client.query('UPDATE printer_profiles SET is_default = FALSE WHERE is_default = TRUE');
+        }
+        const { rows } = await client.query(
+            `UPDATE printer_profiles
+             SET profile_name = COALESCE($1, profile_name),
+                 offset_x = COALESCE($2, offset_x),
+                 offset_y = COALESCE($3, offset_y),
+                 is_default = COALESCE($4, is_default),
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $5
+             RETURNING id, profile_name, offset_x, offset_y, is_default, created_at, updated_at`,
+            [
+                profile_name ? String(profile_name).trim() : null,
+                offset_x !== undefined ? Number(offset_x) || 0 : null,
+                offset_y !== undefined ? Number(offset_y) || 0 : null,
+                is_default !== undefined ? Boolean(is_default) : null,
+                id
+            ]
+        );
+        if (!rows.length) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: 'Printer profile not found' });
+        }
+        await client.query('COMMIT');
+        res.json(rows[0]);
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Failed to update printer profile', error);
+        res.status(500).json({ message: 'Unable to update printer profile' });
+    } finally {
+        client.release();
+    }
+});
+
 
 
 router.post('/cheques/generate-pdf', protect, async (req, res) => {
@@ -155,15 +241,20 @@ router.post('/cheques/generate-pdf', protect, async (req, res) => {
             if (Number.isNaN(amount)) {
                 throw new Error('Amount must be numeric');
             }
+            const dateValue = String(record.date || '');
+            const fmt = templateRes.rows[0].date_format || 'MM/dd/yyyy';
+            if (!isValid(parse(dateValue, fmt, new Date()))) {
+                throw new Error(`Date must follow ${fmt}`);
+            }
             return {
-                date: record.date,
+                date: dateValue,
                 payee: String(record.payee).trim(),
                 amount: amount.toFixed(2),
                 memo: record.memo || ''
             };
         });
 
-        const pdfBuffer = createChequePdf({
+        const pdfBuffer = await createChequePdf({
             rows: normalizedRows,
             template: templateRes.rows[0],
             printerProfile: profile
