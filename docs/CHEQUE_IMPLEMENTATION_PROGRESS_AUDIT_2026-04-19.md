@@ -6,7 +6,8 @@ Audit against the Developer Handoff Document (DHD) requirements for cheque print
 ## Overall Progress Snapshot
 - **Implementation status: Complete for the defined v1 scope in code.**
 - Core cheque flows (template setup, entry, generation, calibration offsets, history, reprint, soft delete) are implemented end-to-end.
-- Remaining work is primarily operational hardening (environment install/test execution and production rollout checks).
+- Route loading is hardened to avoid optional/dependency-related endpoint registration failure in constrained environments.
+- Remaining work is primarily operational hardening (full environment test execution and production rollout checks).
 
 ---
 
