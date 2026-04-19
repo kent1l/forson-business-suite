@@ -18,6 +18,9 @@ const ChequePrintingPage = () => {
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [activeTab, setActiveTab] = useState('layout');
     const [saving, setSaving] = useState(false);
+    const [persistRecords, setPersistRecords] = useState(true);
+    const [testPrintMode, setTestPrintMode] = useState(false);
+    const [draftProfile, setDraftProfile] = useState({ profile_name: '', offset_x: 0, offset_y: 0, is_default: false });
 
     const selectedTemplate = useMemo(() => templates.find((tpl) => String(tpl.id) === String(selectedTemplateId)), [templates, selectedTemplateId]);
     const selectedProfile = useMemo(() => printerProfiles.find((profile) => String(profile.id) === String(selectedProfileId)), [printerProfiles, selectedProfileId]);
@@ -41,6 +44,18 @@ const ChequePrintingPage = () => {
     };
 
     useEffect(() => { loadData(); }, []);
+    useEffect(() => {
+        if (!selectedProfile) {
+            setDraftProfile({ profile_name: '', offset_x: 0, offset_y: 0, is_default: false });
+            return;
+        }
+        setDraftProfile({
+            profile_name: selectedProfile.profile_name || '',
+            offset_x: Number(selectedProfile.offset_x || 0),
+            offset_y: Number(selectedProfile.offset_y || 0),
+            is_default: Boolean(selectedProfile.is_default)
+        });
+    }, [selectedProfileId]);
 
     const updateRow = (idx, field, value) => {
         setRows((prev) => {
@@ -67,7 +82,7 @@ const ChequePrintingPage = () => {
         amount: (Math.round(Number(row.amount || 0) * 100) / 100).toFixed(2)
     }));
 
-    const generatePdf = async (sourceRows = activeRows, persist = true) => {
+    const generatePdf = async (sourceRows = activeRows, persist = persistRecords) => {
         if (!selectedTemplate) return toast.error('Select a bank preset first.');
         if (!sourceRows.length) return toast.error('Add at least one cheque line.');
 
@@ -86,6 +101,7 @@ const ChequePrintingPage = () => {
             const pdfResponse = await api.post('/cheques/generate-pdf', {
                 template_id: Number(selectedTemplateId),
                 printer_profile_id: selectedProfileId ? Number(selectedProfileId) : null,
+                test_print: testPrintMode,
                 records: payloadRows
             }, {
                 responseType: 'blob'
@@ -94,6 +110,11 @@ const ChequePrintingPage = () => {
             const pdfBlob = new Blob([pdfResponse.data], { type: 'application/pdf' });
             const url = URL.createObjectURL(pdfBlob);
             window.open(url, '_blank', 'noopener,noreferrer');
+            const printOk = window.confirm('PDF opened. Print using 100% scale.\nDid the print preview open correctly?');
+            if (!printOk) {
+                toast.error('Print confirmation failed. Please check popup permissions or browser print settings.');
+                return;
+            }
 
             if (persist) {
                 await api.post('/cheques/records', {
@@ -200,6 +221,16 @@ const ChequePrintingPage = () => {
                     <button className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-50" disabled={saving} onClick={() => generatePdf()}>{saving ? 'Generating…' : 'Generate PDF'}</button>
                 </div>
             </div>
+            <div className="bg-white border rounded-xl p-3 flex flex-wrap items-center gap-4 text-sm">
+                <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={persistRecords} onChange={(e) => setPersistRecords(e.target.checked)} />
+                    Save generated cheques to history
+                </label>
+                <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={testPrintMode} onChange={(e) => setTestPrintMode(e.target.checked)} />
+                    Test print mode
+                </label>
+            </div>
 
             {rows.map((row, idx) => (
                 <div key={idx} className="bg-white border rounded-xl p-4 grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -245,11 +276,41 @@ const ChequePrintingPage = () => {
                                 </div>
                             ))}
                             {activeTab === 'date' && (
-                                <select className="border rounded px-3 py-2" value={selectedTemplate.date_format || 'MM/dd/yyyy'} onChange={(e) => updateTemplate({ date_format: e.target.value })}>
-                                    <option value="MM/dd/yyyy">MM/dd/yyyy</option>
-                                    <option value="dd/MM/yyyy">dd/MM/yyyy</option>
-                                    <option value="MMM dd, yyyy">MMM dd, yyyy</option>
-                                </select>
+                                <div className="space-y-3">
+                                    <select className="border rounded px-3 py-2" value={selectedTemplate.date_format || 'MM/dd/yyyy'} onChange={(e) => updateTemplate({ date_format: e.target.value })}>
+                                        <option value="MM/dd/yyyy">MM/dd/yyyy</option>
+                                        <option value="dd/MM/yyyy">dd/MM/yyyy</option>
+                                        <option value="MMM dd, yyyy">MMM dd, yyyy</option>
+                                    </select>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                        <select
+                                            className="border rounded px-3 py-2"
+                                            value={selectedTemplate.field_positions?.date?.mode || 'single'}
+                                            onChange={(e) => updateTemplate({
+                                                field_positions: {
+                                                    ...selectedTemplate.field_positions,
+                                                    date: { ...(selectedTemplate.field_positions?.date || {}), mode: e.target.value }
+                                                }
+                                            })}
+                                        >
+                                            <option value="single">Single-line date mode</option>
+                                            <option value="boxed">Boxed date mode</option>
+                                        </select>
+                                        <input
+                                            type="number"
+                                            step="0.5"
+                                            className="border rounded px-3 py-2"
+                                            placeholder="Character spacing"
+                                            value={selectedTemplate.field_positions?.date?.charSpacing ?? 0}
+                                            onChange={(e) => updateTemplate({
+                                                field_positions: {
+                                                    ...selectedTemplate.field_positions,
+                                                    date: { ...(selectedTemplate.field_positions?.date || {}), charSpacing: Number(e.target.value) || 0 }
+                                                }
+                                            })}
+                                        />
+                                    </div>
+                                </div>
                             )}
                             {activeTab === 'amount' && (
                                 <select className="border rounded px-3 py-2" value={selectedTemplate.amount_format || 'title_case'} onChange={(e) => updateTemplate({ amount_format: e.target.value })}>
@@ -270,34 +331,44 @@ const ChequePrintingPage = () => {
                                         <input
                                             className="border rounded px-3 py-2"
                                             placeholder="Profile name"
-                                            value={selectedProfile?.profile_name || ''}
-                                            onChange={(e) => upsertProfile({ profile_name: e.target.value })}
+                                            value={draftProfile.profile_name}
+                                            onChange={(e) => setDraftProfile((prev) => ({ ...prev, profile_name: e.target.value }))}
                                         />
                                         <input
                                             type="number"
                                             step="0.1"
                                             className="border rounded px-3 py-2"
                                             placeholder="Offset X"
-                                            value={selectedProfile?.offset_x ?? 0}
-                                            onChange={(e) => upsertProfile({ offset_x: Number(e.target.value) || 0 })}
+                                            value={draftProfile.offset_x}
+                                            onChange={(e) => setDraftProfile((prev) => ({ ...prev, offset_x: Number(e.target.value) || 0 }))}
                                         />
                                         <input
                                             type="number"
                                             step="0.1"
                                             className="border rounded px-3 py-2"
                                             placeholder="Offset Y"
-                                            value={selectedProfile?.offset_y ?? 0}
-                                            onChange={(e) => upsertProfile({ offset_y: Number(e.target.value) || 0 })}
+                                            value={draftProfile.offset_y}
+                                            onChange={(e) => setDraftProfile((prev) => ({ ...prev, offset_y: Number(e.target.value) || 0 }))}
                                         />
                                     </div>
                                     <label className="flex items-center gap-2">
                                         <input
                                             type="checkbox"
-                                            checked={Boolean(selectedProfile?.is_default)}
-                                            onChange={(e) => upsertProfile({ is_default: e.target.checked })}
+                                            checked={Boolean(draftProfile.is_default)}
+                                            onChange={(e) => setDraftProfile((prev) => ({ ...prev, is_default: e.target.checked }))}
                                         />
                                         Set as default profile
                                     </label>
+                                    <div className="flex gap-2">
+                                        <button className="px-3 py-2 border rounded" onClick={() => upsertProfile(draftProfile)}>
+                                            {selectedProfile ? 'Save Profile' : 'Create Profile'}
+                                        </button>
+                                        {!selectedProfile && (
+                                            <button className="px-3 py-2 border rounded" onClick={() => setDraftProfile({ profile_name: `Profile ${printerProfiles.length + 1}`, offset_x: 0, offset_y: 0, is_default: false })}>
+                                                Quick Fill
+                                            </button>
+                                        )}
+                                    </div>
                                     <p className="text-gray-600">Offsets are automatically applied to generated PDFs when this profile is selected.</p>
                                 </div>
                             )}

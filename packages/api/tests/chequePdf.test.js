@@ -20,4 +20,22 @@ describe('createChequePdf', () => {
     it('throws when rows are missing', async () => {
         await expect(createChequePdf({ rows: [], template: {} })).rejects.toThrow('At least one cheque row is required');
     });
+
+    it('supports test print and boxed date options', async () => {
+        const pdf = await createChequePdf({
+            rows: [{ date: '04/19/2026', payee: 'Long Payee Name For Fit Testing', amount: '98765.43', memo: 'Calibrate' }],
+            template: {
+                field_positions: {
+                    date: { x: 430, y: 700, fontSize: 11, mode: 'boxed', charSpacing: 12 },
+                    payee: { x: 90, y: 655, fontSize: 12, maxWidth: 120, minFontSize: 8 }
+                },
+                amount_format: 'upper',
+                currency_settings: { enabled: true, label: 'USD' }
+            },
+            printerProfile: { offset_x: 1, offset_y: -1 },
+            testPrint: true
+        });
+        expect(Buffer.isBuffer(pdf)).toBe(true);
+        expect(pdf.length).toBeGreaterThan(100);
+    });
 });

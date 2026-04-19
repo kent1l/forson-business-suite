@@ -199,7 +199,7 @@ router.put('/cheques/printer-profiles/:id', protect, async (req, res) => {
 
 
 router.post('/cheques/generate-pdf', protect, async (req, res) => {
-    const { template_id, records = [], printer_profile_id = null } = req.body;
+    const { template_id, records = [], printer_profile_id = null, test_print = false } = req.body;
 
     if (!template_id) {
         return res.status(400).json({ message: 'template_id is required' });
@@ -257,7 +257,8 @@ router.post('/cheques/generate-pdf', protect, async (req, res) => {
         const pdfBuffer = await createChequePdf({
             rows: normalizedRows,
             template: templateRes.rows[0],
-            printerProfile: profile
+            printerProfile: profile,
+            testPrint: Boolean(test_print)
         });
 
         res.setHeader('Content-Type', 'application/pdf');

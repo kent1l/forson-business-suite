@@ -42,7 +42,7 @@ function fitFontSize({
     return Math.max(size, minFontSize);
 }
 
-async function createChequePdf({ rows, template, printerProfile = { offset_x: 0, offset_y: 0 } }) {
+async function createChequePdf({ rows, template, printerProfile = { offset_x: 0, offset_y: 0 }, testPrint = false }) {
     if (!Array.isArray(rows) || rows.length === 0) {
         throw new Error('At least one cheque row is required');
     }
@@ -72,6 +72,9 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
             ];
             if (currencySettings.enabled !== false) {
                 lines.push(drawText(currencySettings.label || 'USD', positions.currency, { x: 515, y: 655, fontSize: 11 }));
+            }
+            if (testPrint) {
+                lines.push(drawText('*** TEST PRINT ***', { x: 220, y: 760, fontSize: 11 }, { x: 220, y: 760, fontSize: 11 }));
             }
             return lines;
         });
@@ -139,10 +142,26 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
                 fontSize: renderedSize,
                 maxWidth
             });
-            page.drawText(String(text || ''), { x, y, size: renderedSize, font });
+            page.drawText(String(text || ''), { x, y, size: renderedSize, font, characterSpacing: Number(cfg?.charSpacing ?? fallback.charSpacing ?? 0) });
         };
 
-        drawText(row.date, positions.date, { x: 430, y: 700, fontSize: 11, alignment: 'left' });
+        const drawBoxedDate = (text, cfg, fallback) => {
+            const content = String(text || '');
+            const x = Number(cfg?.x ?? fallback.x) + xOffset;
+            const y = Number(cfg?.y ?? fallback.y) + yOffset;
+            const size = Number(cfg?.fontSize ?? fallback.fontSize);
+            const spacing = Number(cfg?.charSpacing ?? fallback.charSpacing ?? 14);
+            content.split('').forEach((char, index) => {
+                page.drawText(char, { x: x + (index * spacing), y, size, font });
+            });
+        };
+
+        const dateCfg = positions.date || {};
+        if (dateCfg.mode === 'boxed') {
+            drawBoxedDate(row.date, dateCfg, { x: 430, y: 700, fontSize: 11, charSpacing: 14 });
+        } else {
+            drawText(row.date, dateCfg, { x: 430, y: 700, fontSize: 11, alignment: 'left', charSpacing: 0 });
+        }
         drawText(row.payee, positions.payee, { x: 90, y: 655, fontSize: 12, alignment: 'left', maxWidth: 380, minFontSize: 8 });
         drawText(row.amount, positions.amountNumeric, { x: 490, y: 655, fontSize: 12, alignment: 'right' });
         drawText(words, positions.amountWords, { x: 90, y: 625, fontSize: 11, alignment: 'left', maxWidth: 420, minFontSize: 8 });
@@ -150,6 +169,9 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
 
         if (currencySettings.enabled !== false) {
             drawText(currencySettings.label || 'USD', positions.currency, { x: 515, y: 655, fontSize: 11, alignment: 'left' });
+        }
+        if (testPrint) {
+            page.drawText('*** TEST PRINT ***', { x: 220, y: 760, size: 11, font });
         }
     });
 
