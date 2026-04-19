@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../api';
 import { RefreshCw, Activity } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -10,6 +10,7 @@ import { RecentActivityFeed } from '../components/dashboard/RecentActivityFeed';
 const Dashboard = ({ onNavigate }) => {
     const { hasPermission } = useAuth();
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
     const [autoRefresh, setAutoRefresh] = useState(false);
     const [lastUpdated, setLastUpdated] = useState(new Date());
     const [error, setError] = useState('');
@@ -28,10 +29,15 @@ const Dashboard = ({ onNavigate }) => {
     });
     const [chartData, setChartData] = useState([]);
     const [lowStockItems, setLowStockItems] = useState([]);
+    const hasLoadedRef = useRef(false);
 
-    const fetchDashboardData = useCallback(async () => {
+    const fetchDashboardData = useCallback(async ({ silent = false } = {}) => {
         try {
-            setLoading(true);
+            if (silent) {
+                setRefreshing(true);
+            } else {
+                setLoading(true);
+            }
             setError('');
             
             const [enhancedRes, chartRes, lowStockRes] = await Promise.all([
@@ -48,12 +54,17 @@ const Dashboard = ({ onNavigate }) => {
             setError('Failed to load dashboard data.');
             console.error('Dashboard data fetch error:', err);
         } finally {
-            setLoading(false);
+            if (silent) {
+                setRefreshing(false);
+            } else {
+                setLoading(false);
+            }
         }
     }, [timeRange]);
 
     useEffect(() => {
-        fetchDashboardData();
+        fetchDashboardData({ silent: hasLoadedRef.current });
+        hasLoadedRef.current = true;
     }, [fetchDashboardData]);
 
     // Auto-refresh functionality
@@ -61,7 +72,7 @@ const Dashboard = ({ onNavigate }) => {
         let interval;
         if (autoRefresh) {
             interval = setInterval(() => {
-                fetchDashboardData();
+                fetchDashboardData({ silent: true });
             }, 30000); // Refresh every 30 seconds
         }
         return () => {
@@ -76,7 +87,7 @@ const Dashboard = ({ onNavigate }) => {
     };
 
     const handleRefresh = () => {
-        fetchDashboardData();
+        fetchDashboardData({ silent: true });
     };
 
     const formatLastUpdated = () => {
@@ -130,11 +141,11 @@ const Dashboard = ({ onNavigate }) => {
                         
                         <button
                             onClick={handleRefresh}
-                            disabled={loading}
+                            disabled={loading || refreshing}
                             className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg transition-colors"
                         >
-                            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                            <span>Refresh</span>
+                            <RefreshCw className={`h-4 w-4 ${(loading || refreshing) ? 'animate-spin' : ''}`} />
+                            <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
                         </button>
                     </div>
                 </div>

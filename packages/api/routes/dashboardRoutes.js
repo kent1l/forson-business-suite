@@ -152,11 +152,12 @@ router.get('/dashboard/stats', async (req, res) => {
 // GET /dashboard/sales-chart - Data for the last 30 days sales chart (now calculates NET sales)
 router.get('/dashboard/sales-chart', async (req, res) => {
     try {
-        const timeRange = req.query.days || 30;
+        const parsedDays = Number.parseInt(req.query.days, 10);
+        const timeRange = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 7), 365) : 30;
         const query = `
             WITH all_days AS (
                 SELECT generate_series(
-                    CURRENT_DATE - INTERVAL '${parseInt(timeRange) - 1} days',
+                    CURRENT_DATE - (($1::int - 1) * INTERVAL '1 day'),
                     CURRENT_DATE,
                     '1 day'
                 )::date AS day
@@ -172,7 +173,7 @@ router.get('/dashboard/sales-chart', async (req, res) => {
             GROUP BY d.day
             ORDER BY d.day;
         `;
-        const { rows } = await db.query(query);
+        const { rows } = await db.query(query, [timeRange]);
         res.json(rows);
     } catch (err) {
         console.error(err.message);
@@ -194,11 +195,11 @@ router.get('/dashboard/enhanced-stats', async (req, res) => {
         ] = await Promise.all([
             // Today's revenue
             db.query(`
-                SELECT COALESCE(SUM(total_amount), 0) as today_revenue,
-                       COALESCE(SUM(CASE WHEN invoice_date >= CURRENT_DATE - INTERVAL '1 day' AND invoice_date < CURRENT_DATE THEN total_amount ELSE 0 END), 0) as yesterday_revenue
+                SELECT
+                    COALESCE(SUM(total_amount) FILTER (WHERE invoice_date::date = CURRENT_DATE), 0) as today_revenue,
+                    COALESCE(SUM(total_amount) FILTER (WHERE invoice_date::date = CURRENT_DATE - INTERVAL '1 day'), 0) as yesterday_revenue
                 FROM invoice 
-                WHERE invoice_date::date >= CURRENT_DATE - INTERVAL '1 day'
-                AND status IN ('Paid', 'Partially Paid')
+                WHERE status IN ('Paid', 'Partially Paid')
             `),
             
             // Outstanding A/R
@@ -222,14 +223,17 @@ router.get('/dashboard/enhanced-stats', async (req, res) => {
             
             // Low stock count
             db.query(`
+                WITH stock_totals AS (
+                    SELECT part_id, SUM(quantity) as quantity
+                    FROM inventory_transaction
+                    GROUP BY part_id
+                )
                 SELECT COUNT(*) as low_stock_count
                 FROM part p
+                LEFT JOIN stock_totals st ON st.part_id = p.part_id
                 WHERE p.low_stock_warning = TRUE 
-                AND (
-                    SELECT COALESCE(SUM(it.quantity), 0) 
-                    FROM inventory_transaction it 
-                    WHERE it.part_id = p.part_id
-                ) <= p.warning_quantity
+                AND COALESCE(st.quantity, 0) <= p.warning_quantity
+                AND p.is_active = TRUE
             `),
             
             // Recent sales (last 5)
