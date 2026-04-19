@@ -23,7 +23,7 @@ export const RecentSalesPanel = ({ data = [], loading = false, onViewAll }) => {
     const { hasPermission } = useAuth();
     
     return (
-        <div className="bg-white p-6 rounded-xl border border-gray-200">
+        <div className="bg-white p-6 rounded-xl border border-gray-200 h-[420px] flex flex-col">
             <div className="flex justify-between items-center mb-4">
                 <div className="flex items-center space-x-2">
                     <FileText className="h-5 w-5 text-gray-600" />
@@ -41,7 +41,7 @@ export const RecentSalesPanel = ({ data = [], loading = false, onViewAll }) => {
             </div>
             
             {loading ? (
-                <div className="space-y-3">
+                <div className="space-y-3 overflow-y-auto pr-1 flex-1">
                     {[...Array(5)].map((_, i) => (
                         <div key={i} className="animate-pulse flex justify-between items-center p-3 bg-gray-50 rounded-lg">
                             <div className="flex-1">
@@ -56,12 +56,12 @@ export const RecentSalesPanel = ({ data = [], loading = false, onViewAll }) => {
                     ))}
                 </div>
             ) : data.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-8 text-gray-500 flex-1 flex flex-col justify-center">
                     <FileText className="h-12 w-12 mx-auto mb-3 text-gray-300" />
                     <p>No recent sales found</p>
                 </div>
             ) : (
-                <div className="space-y-3">
+                <div className="space-y-3 overflow-y-auto pr-1 flex-1">
                     {data.map((sale, index) => (
                         <div key={sale.invoice_number || index} 
                              className="flex justify-between items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer">
@@ -91,7 +91,7 @@ export const LowStockAlertsPanel = ({ data = [], loading = false, onManageStock 
     const { hasPermission } = useAuth();
     
     return (
-        <div className="bg-white p-6 rounded-xl border border-gray-200">
+        <div className="bg-white p-6 rounded-xl border border-gray-200 h-[420px] flex flex-col">
             <div className="flex justify-between items-center mb-4">
                 <div className="flex items-center space-x-2">
                     <AlertTriangle className="h-5 w-5 text-orange-600" />
@@ -109,7 +109,7 @@ export const LowStockAlertsPanel = ({ data = [], loading = false, onManageStock 
             </div>
             
             {loading ? (
-                <div className="space-y-3">
+                <div className="space-y-3 overflow-y-auto pr-1 flex-1">
                     {[...Array(5)].map((_, i) => (
                         <div key={i} className="animate-pulse flex justify-between items-center p-3 bg-orange-50 rounded-lg">
                             <div className="flex-1">
@@ -124,13 +124,13 @@ export const LowStockAlertsPanel = ({ data = [], loading = false, onManageStock 
                     ))}
                 </div>
             ) : data.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-8 text-gray-500 flex-1 flex flex-col justify-center">
                     <Package className="h-12 w-12 mx-auto mb-3 text-green-300" />
                     <p>All stock levels are healthy</p>
                     <p className="text-sm text-gray-400 mt-1">No low stock alerts</p>
                 </div>
             ) : (
-                <div className="space-y-3">
+                <div className="space-y-3 overflow-y-auto pr-1 flex-1">
                     {data.map((item, index) => (
                         <div key={item.part_id || index} 
                              className="flex justify-between items-center p-3 bg-orange-50 rounded-lg border-l-4 border-orange-400 hover:bg-orange-100 transition-colors cursor-pointer">
