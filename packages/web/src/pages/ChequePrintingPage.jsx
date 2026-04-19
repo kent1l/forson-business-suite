@@ -3,99 +3,9 @@ import { format, parse, isValid } from 'date-fns';
 import toast from 'react-hot-toast';
 import api from '../api';
 
-const LETTER_SIZE = { width: 612, height: 792 };
-
 const blankRow = () => ({ date: format(new Date(), 'MM/dd/yyyy'), payee: '', amount: '', memo: '' });
 
-const DEFAULT_FIELD_POSITIONS = {
-    date: { x: 430, y: 700, fontSize: 11 },
-    payee: { x: 90, y: 655, fontSize: 12 },
-    amountNumeric: { x: 490, y: 655, fontSize: 12 },
-    amountWords: { x: 90, y: 625, fontSize: 11 },
-    memo: { x: 90, y: 585, fontSize: 10 },
-    currency: { x: 515, y: 655, fontSize: 11 }
-};
-
-const numberToWords = (value) => {
-    const ones = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
-    const teens = ['ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
-    const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
-
-    const chunk = (n) => {
-        let out = '';
-        if (n >= 100) {
-            out += `${ones[Math.floor(n / 100)]} hundred `;
-            n %= 100;
-        }
-        if (n >= 20) {
-            out += `${tens[Math.floor(n / 10)]} `;
-            n %= 10;
-        } else if (n >= 10) {
-            out += `${teens[n - 10]} `;
-            n = 0;
-        }
-        if (n > 0) out += `${ones[n]} `;
-        return out.trim();
-    };
-
-    const n = Number(value || 0);
-    const whole = Math.floor(n);
-    const cents = Math.round((n - whole) * 100);
-    if (whole === 0) return `zero and ${cents.toString().padStart(2, '0')}/100`;
-
-    const parts = [];
-    const billions = Math.floor(whole / 1_000_000_000);
-    const millions = Math.floor((whole % 1_000_000_000) / 1_000_000);
-    const thousands = Math.floor((whole % 1_000_000) / 1000);
-    const hundreds = whole % 1000;
-
-    if (billions) parts.push(`${chunk(billions)} billion`);
-    if (millions) parts.push(`${chunk(millions)} million`);
-    if (thousands) parts.push(`${chunk(thousands)} thousand`);
-    if (hundreds) parts.push(chunk(hundreds));
-
-    return `${parts.join(' ')} and ${cents.toString().padStart(2, '0')}/100`.trim();
-};
-
-const escapePdfText = (value) => String(value || '').replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
-
-const buildPdf = (pages) => {
-    let output = '%PDF-1.4\n';
-    const offsets = [];
-    const objects = [];
-
-    const addObject = (body) => {
-        const id = objects.length + 1;
-        objects.push({ id, body });
-        return id;
-    };
-
-    const pageObjectIds = [];
-    pages.forEach((pageLines) => {
-        const stream = pageLines.join('\n');
-        const contentId = addObject(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
-        const pageId = addObject(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${LETTER_SIZE.width} ${LETTER_SIZE.height}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentId} 0 R >>`);
-        pageObjectIds.push(pageId);
-    });
-
-    objects.unshift({ id: 3, body: '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>' });
-    objects.unshift({ id: 2, body: `<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageObjectIds.length} >>` });
-    objects.unshift({ id: 1, body: '<< /Type /Catalog /Pages 2 0 R >>' });
-
-    objects.sort((a, b) => a.id - b.id).forEach((obj) => {
-        offsets[obj.id] = output.length;
-        output += `${obj.id} 0 obj\n${obj.body}\nendobj\n`;
-    });
-
-    const xref = output.length;
-    output += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-    for (let i = 1; i <= objects.length; i += 1) {
-        output += `${String(offsets[i] || 0).padStart(10, '0')} 00000 n \n`;
-    }
-    output += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
-
-    return new TextEncoder().encode(output);
-};
+const SETTINGS_TABS = ['layout', 'date', 'amount', 'currency', 'text', 'calibration'];
 
 const ChequePrintingPage = () => {
     const [templates, setTemplates] = useState([]);
@@ -104,6 +14,7 @@ const ChequePrintingPage = () => {
     const [history, setHistory] = useState([]);
     const [historyOpen, setHistoryOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
+    const [activeTab, setActiveTab] = useState('layout');
     const [saving, setSaving] = useState(false);
 
     const selectedTemplate = useMemo(() => templates.find((tpl) => String(tpl.id) === String(selectedTemplateId)), [templates, selectedTemplateId]);
@@ -111,12 +22,12 @@ const ChequePrintingPage = () => {
     const loadData = async () => {
         try {
             const [templatesRes, historyRes] = await Promise.all([api.get('/cheques/templates'), api.get('/cheques/history')]);
-            const loadedTemplates = templatesRes.data || [];
-            setTemplates(loadedTemplates);
+            const templateRows = templatesRes.data || [];
+            setTemplates(templateRows);
             setHistory(historyRes.data || []);
-            if (loadedTemplates.length && !selectedTemplateId) setSelectedTemplateId(String(loadedTemplates[0].id));
-        } catch {
-            toast.error('Failed to load cheque module data.');
+            if (!selectedTemplateId && templateRows.length) setSelectedTemplateId(String(templateRows[0].id));
+        } catch (error) {
+            toast.error(error?.response?.data?.message || 'Failed to load cheque module.');
         }
     };
 
@@ -126,61 +37,62 @@ const ChequePrintingPage = () => {
         setRows((prev) => {
             const next = [...prev];
             next[idx] = { ...next[idx], [field]: value };
-            if (idx === next.length - 1 && (next[idx].payee || next[idx].amount || next[idx].memo)) next.push(blankRow());
+            if (idx === next.length - 1 && (next[idx].payee || next[idx].amount || next[idx].memo)) {
+                next.push(blankRow());
+            }
             return next;
         });
     };
 
-    const activeRows = rows.filter((row) => row.payee || row.amount || row.memo).map((row) => ({ ...row, amount: (Math.round(Number(row.amount || 0) * 100) / 100).toFixed(2) }));
-
-    const validate = (row) => {
+    const validateRow = (row) => {
         if (!row.payee.trim()) return 'Payee is required';
-        if (Number.isNaN(Number(row.amount))) return 'Amount must be numeric';
+        const amount = Number(row.amount);
+        if (Number.isNaN(amount)) return 'Amount must be numeric';
         const fmt = selectedTemplate?.date_format || 'MM/dd/yyyy';
         if (!isValid(parse(row.date, fmt, new Date()))) return `Date must follow ${fmt}`;
         return null;
     };
 
+    const activeRows = rows.filter((row) => row.payee || row.amount || row.memo).map((row) => ({
+        ...row,
+        amount: (Math.round(Number(row.amount || 0) * 100) / 100).toFixed(2)
+    }));
+
     const generatePdf = async (sourceRows = activeRows, persist = true) => {
-        if (!selectedTemplate) return toast.error('Select a template first.');
-        if (!sourceRows.length) return toast.error('Add at least one cheque entry.');
+        if (!selectedTemplate) return toast.error('Select a bank preset first.');
+        if (!sourceRows.length) return toast.error('Add at least one cheque line.');
+
         for (const row of sourceRows) {
-            const error = validate(row);
-            if (error) return toast.error(error);
+            const validationError = validateRow(row);
+            if (validationError) return toast.error(validationError);
         }
 
         setSaving(true);
         try {
-            const positions = selectedTemplate.field_positions || DEFAULT_FIELD_POSITIONS;
-            const pages = sourceRows.map((row) => {
-                const fmt = selectedTemplate.date_format || 'MM/dd/yyyy';
-                const dateValue = format(parse(row.date, fmt, new Date()), fmt);
-                const words = selectedTemplate.amount_format === 'upper' ? numberToWords(row.amount).toUpperCase() : numberToWords(row.amount);
-                const lines = [
-                    `BT /F1 ${positions.date?.fontSize || 11} Tf ${positions.date?.x || 430} ${positions.date?.y || 700} Td (${escapePdfText(dateValue)}) Tj ET`,
-                    `BT /F1 ${positions.payee?.fontSize || 12} Tf ${positions.payee?.x || 90} ${positions.payee?.y || 655} Td (${escapePdfText(row.payee)}) Tj ET`,
-                    `BT /F1 ${positions.amountNumeric?.fontSize || 12} Tf ${positions.amountNumeric?.x || 490} ${positions.amountNumeric?.y || 655} Td (${escapePdfText(row.amount)}) Tj ET`,
-                    `BT /F1 ${positions.amountWords?.fontSize || 11} Tf ${positions.amountWords?.x || 90} ${positions.amountWords?.y || 625} Td (${escapePdfText(words)}) Tj ET`,
-                    `BT /F1 ${positions.memo?.fontSize || 10} Tf ${positions.memo?.x || 90} ${positions.memo?.y || 585} Td (${escapePdfText(row.memo || '')}) Tj ET`
-                ];
-                if (selectedTemplate.currency_settings?.enabled !== false) {
-                    lines.push(`BT /F1 ${positions.currency?.fontSize || 11} Tf ${positions.currency?.x || 515} ${positions.currency?.y || 655} Td (${escapePdfText(selectedTemplate.currency_settings?.label || 'USD')}) Tj ET`);
-                }
-                return lines;
+            const payloadRows = sourceRows.map((row) => ({
+                ...row,
+                date: format(parse(row.date, selectedTemplate.date_format || 'MM/dd/yyyy', new Date()), selectedTemplate.date_format || 'MM/dd/yyyy')
+            }));
+
+            const pdfResponse = await api.post('/cheques/generate-pdf', {
+                template_id: Number(selectedTemplateId),
+                records: payloadRows
+            }, {
+                responseType: 'blob'
             });
 
-            const pdfBytes = buildPdf(pages);
-            const url = URL.createObjectURL(new Blob([pdfBytes], { type: 'application/pdf' }));
+            const pdfBlob = new Blob([pdfResponse.data], { type: 'application/pdf' });
+            const url = URL.createObjectURL(pdfBlob);
             window.open(url, '_blank', 'noopener,noreferrer');
 
             if (persist) {
                 await api.post('/cheques/records', {
                     template_id: Number(selectedTemplateId),
-                    records: sourceRows.map((row) => ({ ...row, date: parse(row.date, selectedTemplate.date_format || 'MM/dd/yyyy', new Date()) }))
+                    records: payloadRows
                 });
-                toast.success('PDF generated. Print at 100% scale.');
+                toast.success('Cheque PDF generated. Print using 100% scale.');
                 setRows([blankRow()]);
-                loadData();
+                await loadData();
             }
         } catch (error) {
             toast.error(error?.response?.data?.message || 'PDF generation failed.');
@@ -189,38 +101,46 @@ const ChequePrintingPage = () => {
         }
     };
 
-
-
-    const handleDelete = async (id) => {
-        try {
-            await api.delete(`/cheques/history/${id}`);
-            toast.success('Record deleted.');
-            loadData();
-        } catch {
-            toast.error('Delete failed.');
-        }
-    };
-
     const handleReprint = async (entry) => {
-        const template = templates.find((tpl) => String(tpl.id) === String(selectedTemplateId));
-        if (!template) return toast.error('Select a preset for reprint.');
+        if (!selectedTemplate) return toast.error('Select a preset for reprint.');
+        const fmt = selectedTemplate.date_format || 'MM/dd/yyyy';
         await generatePdf([{
             payee: entry.payee,
             amount: Number(entry.amount).toFixed(2),
-            date: format(new Date(entry.cheque_date || new Date()), template.date_format || 'MM/dd/yyyy'),
+            date: entry.cheque_date ? format(new Date(entry.cheque_date), fmt) : format(new Date(), fmt),
             memo: entry.memo || ''
         }], false);
     };
 
-    const updateTemplate = async (fieldPath, value) => {
-        if (!selectedTemplate) return;
-        const payload = { ...selectedTemplate, [fieldPath]: value };
+    const handleDelete = async (id) => {
         try {
-            const response = await api.put(`/cheques/templates/${selectedTemplate.id}`, payload);
-            setTemplates((prev) => prev.map((tpl) => (tpl.id === response.data.id ? response.data : tpl)));
-        } catch {
-            toast.error('Failed to update template');
+            await api.delete(`/cheques/history/${id}`);
+            toast.success('Record removed.');
+            await loadData();
+        } catch (error) {
+            toast.error(error?.response?.data?.message || 'Delete failed.');
         }
+    };
+
+    const updateTemplate = async (patch) => {
+        if (!selectedTemplate) return;
+        try {
+            const response = await api.put(`/cheques/templates/${selectedTemplate.id}`, {
+                ...selectedTemplate,
+                ...patch
+            });
+            setTemplates((prev) => prev.map((template) => (template.id === response.data.id ? response.data : template)));
+        } catch (error) {
+            toast.error(error?.response?.data?.message || 'Template update failed.');
+        }
+    };
+
+    const onRowKeyDown = (event, rowIndex, fieldIndex) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        const selector = `[data-row="${rowIndex}"][data-field-index="${fieldIndex + 1}"]`;
+        const next = document.querySelector(selector);
+        if (next) next.focus();
     };
 
     return (
@@ -241,29 +161,68 @@ const ChequePrintingPage = () => {
 
             {rows.map((row, idx) => (
                 <div key={idx} className="bg-white border rounded-xl p-4 grid grid-cols-1 md:grid-cols-4 gap-3">
-                    <input className="border rounded-lg px-3 py-2 text-sm" value={row.date} onChange={(e) => updateRow(idx, 'date', e.target.value)} placeholder="Date" />
-                    <input className="border rounded-lg px-3 py-2 text-sm" value={row.payee} onChange={(e) => updateRow(idx, 'payee', e.target.value)} placeholder="Payee" />
-                    <input className="border rounded-lg px-3 py-2 text-sm" value={row.amount} onChange={(e) => updateRow(idx, 'amount', e.target.value)} placeholder="Amount" />
-                    <input className="border rounded-lg px-3 py-2 text-sm" value={row.memo} onChange={(e) => updateRow(idx, 'memo', e.target.value)} placeholder="Memo" />
+                    {[
+                        { field: 'date', placeholder: 'Date' },
+                        { field: 'payee', placeholder: 'Payee' },
+                        { field: 'amount', placeholder: 'Amount' },
+                        { field: 'memo', placeholder: 'Memo' }
+                    ].map((column, fieldIndex) => (
+                        <input
+                            key={column.field}
+                            className="border rounded-lg px-3 py-2 text-sm"
+                            value={row[column.field]}
+                            onChange={(e) => updateRow(idx, column.field, e.target.value)}
+                            onKeyDown={(e) => onRowKeyDown(e, idx, fieldIndex)}
+                            placeholder={column.placeholder}
+                            data-row={idx}
+                            data-field-index={fieldIndex}
+                        />
+                    ))}
                 </div>
             ))}
 
             {settingsOpen && selectedTemplate && (
                 <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white w-full max-w-xl rounded-xl border">
-                        <div className="p-4 border-b flex justify-between"><h3 className="font-semibold">Cheque Settings</h3><button onClick={() => setSettingsOpen(false)}>Close</button></div>
-                        <div className="p-4 space-y-3 text-sm">
-                            <label className="block">Date Format
-                                <select className="w-full mt-1 border rounded px-3 py-2" value={selectedTemplate.date_format || 'MM/dd/yyyy'} onChange={(e) => updateTemplate('date_format', e.target.value)}>
-                                    <option value="MM/dd/yyyy">MM/dd/yyyy</option><option value="dd/MM/yyyy">dd/MM/yyyy</option><option value="MMM dd, yyyy">MMM dd, yyyy</option>
+                    <div className="bg-white rounded-xl border w-full max-w-4xl">
+                        <div className="p-4 border-b flex items-center justify-between">
+                            <h3 className="font-semibold">Cheque Settings</h3>
+                            <button onClick={() => setSettingsOpen(false)}>Close</button>
+                        </div>
+                        <div className="px-4 pt-3 flex gap-2 border-b">
+                            {SETTINGS_TABS.map((tab) => (
+                                <button key={tab} className={`px-3 py-2 text-sm capitalize border-b-2 ${activeTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500'}`} onClick={() => setActiveTab(tab)}>{tab}</button>
+                            ))}
+                        </div>
+                        <div className="p-4 max-h-[65vh] overflow-auto text-sm space-y-4">
+                            {activeTab === 'layout' && Object.entries(selectedTemplate.field_positions || {}).map(([field, cfg]) => (
+                                <div key={field} className="grid grid-cols-4 gap-2 items-center">
+                                    <span className="capitalize font-medium">{field}</span>
+                                    <input type="number" className="border rounded px-2 py-1" value={cfg.x ?? 0} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, x: Number(e.target.value) } } })} />
+                                    <input type="number" className="border rounded px-2 py-1" value={cfg.y ?? 0} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, y: Number(e.target.value) } } })} />
+                                    <input type="number" className="border rounded px-2 py-1" value={cfg.fontSize ?? 11} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, fontSize: Number(e.target.value) } } })} />
+                                </div>
+                            ))}
+                            {activeTab === 'date' && (
+                                <select className="border rounded px-3 py-2" value={selectedTemplate.date_format || 'MM/dd/yyyy'} onChange={(e) => updateTemplate({ date_format: e.target.value })}>
+                                    <option value="MM/dd/yyyy">MM/dd/yyyy</option>
+                                    <option value="dd/MM/yyyy">dd/MM/yyyy</option>
+                                    <option value="MMM dd, yyyy">MMM dd, yyyy</option>
                                 </select>
-                            </label>
-                            <label className="block">Amount Words Style
-                                <select className="w-full mt-1 border rounded px-3 py-2" value={selectedTemplate.amount_format || 'title_case'} onChange={(e) => updateTemplate('amount_format', e.target.value)}>
-                                    <option value="title_case">Title Case</option><option value="upper">UPPER</option>
+                            )}
+                            {activeTab === 'amount' && (
+                                <select className="border rounded px-3 py-2" value={selectedTemplate.amount_format || 'title_case'} onChange={(e) => updateTemplate({ amount_format: e.target.value })}>
+                                    <option value="title_case">Title Case</option>
+                                    <option value="upper">UPPER CASE</option>
                                 </select>
-                            </label>
-                            <label className="flex items-center gap-2"><input type="checkbox" checked={selectedTemplate.currency_settings?.enabled !== false} onChange={(e) => updateTemplate('currency_settings', { ...selectedTemplate.currency_settings, enabled: e.target.checked })} /> Show Currency Label</label>
+                            )}
+                            {activeTab === 'currency' && (
+                                <div className="space-y-2">
+                                    <label className="flex items-center gap-2"><input type="checkbox" checked={selectedTemplate.currency_settings?.enabled !== false} onChange={(e) => updateTemplate({ currency_settings: { ...selectedTemplate.currency_settings, enabled: e.target.checked } })} /> Show currency label</label>
+                                    <input className="border rounded px-3 py-2" value={selectedTemplate.currency_settings?.label || ''} onChange={(e) => updateTemplate({ currency_settings: { ...selectedTemplate.currency_settings, label: e.target.value } })} />
+                                </div>
+                            )}
+                            {activeTab === 'text' && <p className="text-gray-600">Payee overflow mitigation uses template font size and width values; no line wrapping is applied.</p>}
+                            {activeTab === 'calibration' && <p className="text-gray-600">Printer profile offsets are supported by the PDF generator endpoint and can be connected to profile selection in the next iteration.</p>}
                         </div>
                     </div>
                 </div>
@@ -271,11 +230,38 @@ const ChequePrintingPage = () => {
 
             {historyOpen && (
                 <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white w-full max-w-5xl rounded-xl border">
-                        <div className="p-4 border-b flex justify-between"><h3 className="font-semibold">Cheque History</h3><button onClick={() => setHistoryOpen(false)}>Close</button></div>
+                    <div className="bg-white rounded-xl border w-full max-w-5xl">
+                        <div className="p-4 border-b flex items-center justify-between">
+                            <h3 className="font-semibold">Cheque History</h3>
+                            <button onClick={() => setHistoryOpen(false)}>Close</button>
+                        </div>
                         <div className="max-h-[70vh] overflow-auto">
-                            <table className="w-full text-sm"><thead className="bg-gray-50"><tr><th className="p-2 text-left">Created</th><th className="p-2 text-left">Payee</th><th className="p-2 text-left">Amount</th><th className="p-2 text-left">Bank</th><th className="p-2 text-left">Date Issued</th><th className="p-2 text-right">Actions</th></tr></thead>
-                                <tbody>{history.map((entry) => <tr key={entry.id} className="border-t"><td className="p-2">{format(new Date(entry.created_at), 'yyyy-MM-dd HH:mm')}</td><td className="p-2">{entry.payee}</td><td className="p-2">{entry.amount}</td><td className="p-2">{entry.bank_preset || '-'}</td><td className="p-2">{entry.cheque_date ? format(new Date(entry.cheque_date), 'yyyy-MM-dd') : '-'}</td><td className="p-2 text-right space-x-2"><button className="px-2 py-1 border rounded" onClick={() => handleReprint(entry)}>Reprint</button><button className="px-2 py-1 border rounded text-red-600" onClick={() => handleDelete(entry.id)}>Delete</button></td></tr>)}</tbody>
+                            <table className="w-full text-sm">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="p-2 text-left">Created</th>
+                                        <th className="p-2 text-left">Payee</th>
+                                        <th className="p-2 text-left">Amount</th>
+                                        <th className="p-2 text-left">Bank</th>
+                                        <th className="p-2 text-left">Date Issued</th>
+                                        <th className="p-2 text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {history.map((entry) => (
+                                        <tr key={entry.id} className="border-t">
+                                            <td className="p-2">{format(new Date(entry.created_at), 'yyyy-MM-dd HH:mm')}</td>
+                                            <td className="p-2">{entry.payee}</td>
+                                            <td className="p-2">{entry.amount}</td>
+                                            <td className="p-2">{entry.bank_preset || '-'}</td>
+                                            <td className="p-2">{entry.cheque_date ? format(new Date(entry.cheque_date), 'yyyy-MM-dd') : '-'}</td>
+                                            <td className="p-2 text-right space-x-2">
+                                                <button className="border rounded px-2 py-1" onClick={() => handleReprint(entry)}>Reprint</button>
+                                                <button className="border rounded px-2 py-1 text-red-600" onClick={() => handleDelete(entry.id)}>Delete</button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
                             </table>
                         </div>
                     </div>
