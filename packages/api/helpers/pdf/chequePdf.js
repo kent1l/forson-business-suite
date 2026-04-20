@@ -8,7 +8,15 @@ try {
     StandardFonts = null;
 }
 
-const LETTER = { width: 612, height: 792 };
+const DEFAULT_PAPER = { width: 576, height: 216 }; // 8in x 3in @ 72 DPI
+
+function resolvePaperSize(paperSettings = {}) {
+    const widthIn = Number(paperSettings.widthIn);
+    const heightIn = Number(paperSettings.heightIn);
+    const width = Number.isFinite(widthIn) && widthIn > 0 ? widthIn * 72 : DEFAULT_PAPER.width;
+    const height = Number.isFinite(heightIn) && heightIn > 0 ? heightIn * 72 : DEFAULT_PAPER.height;
+    return { width, height };
+}
 
 function resolveAlignedX({
     text,
@@ -44,10 +52,18 @@ function fitFontSize({
 
 function createFallbackPdf({ rows, template, xOffset, yOffset, testPrint }) {
     const positions = template?.field_positions || {};
-    const currencySettings = template?.currency_settings || { enabled: true, label: 'USD' };
+    const currencySettings = template?.currency_settings || { enabled: true, label: '₱' };
+    const paperSize = resolvePaperSize(template?.paper_settings);
+    const textSettings = template?.text_settings || {};
+    const amountSuffix = String(textSettings.amountSuffix || 'pesos').trim();
+    const payeeFiller = String(textSettings.payeeFiller || '').trim();
+    const amountWordsFiller = String(textSettings.amountWordsFiller || '').trim();
+    const applyFiller = (text, filler) => (filler ? `${filler} ${text} ${filler}`.trim() : text);
     const pages = rows.map((row) => {
-        const amountWords = amountToWords(row.amount);
+        const amountWords = amountToWords(row.amount, { suffix: amountSuffix });
         const words = template?.amount_format === 'upper' ? amountWords.toUpperCase() : amountWords;
+        const renderedPayee = applyFiller(row.payee, payeeFiller);
+        const renderedWords = applyFiller(words, amountWordsFiller);
         const drawText = (text, cfg, fallback) => {
             const x = Number(cfg?.x ?? fallback.x) + xOffset;
             const y = Number(cfg?.y ?? fallback.y) + yOffset;
@@ -56,16 +72,16 @@ function createFallbackPdf({ rows, template, xOffset, yOffset, testPrint }) {
             return `BT /F1 ${size} Tf ${x} ${y} Td (${escapedText}) Tj ET`;
         };
         const lines = [
-            drawText(row.date, positions.date, { x: 430, y: 700, fontSize: 11 }),
-            drawText(row.payee, positions.payee, { x: 90, y: 655, fontSize: 12 }),
-            drawText(row.amount, positions.amountNumeric, { x: 490, y: 655, fontSize: 12 }),
-            drawText(words, positions.amountWords, { x: 90, y: 625, fontSize: 11 })
+            drawText(row.date, positions.date, { x: 426, y: 178, fontSize: 11 }),
+            drawText(renderedPayee, positions.payee, { x: 72, y: 136, fontSize: 12 }),
+            drawText(row.amount, positions.amountNumeric, { x: 534, y: 136, fontSize: 12 }),
+            drawText(renderedWords, positions.amountWords, { x: 72, y: 104, fontSize: 11 })
         ];
         if (currencySettings.enabled !== false) {
-            lines.push(drawText(currencySettings.label || 'USD', positions.currency, { x: 515, y: 655, fontSize: 11 }));
+            lines.push(drawText(currencySettings.label || '₱', positions.currency, { x: 474, y: 136, fontSize: 11 }));
         }
         if (testPrint) {
-            lines.push(drawText('*** TEST PRINT ***', { x: 220, y: 760, fontSize: 11 }, { x: 220, y: 760, fontSize: 11 }));
+            lines.push(drawText('*** TEST PRINT ***', { x: 220, y: 198, fontSize: 11 }, { x: 220, y: 198, fontSize: 11 }));
         }
         return lines;
     });
@@ -81,7 +97,7 @@ function createFallbackPdf({ rows, template, xOffset, yOffset, testPrint }) {
     for (const lines of pages) {
         const stream = lines.join('\n');
         const contentId = addObject(`<< /Length ${Buffer.byteLength(stream, 'utf8')} >>\nstream\n${stream}\nendstream`);
-        const pageId = addObject(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${LETTER.width} ${LETTER.height}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentId} 0 R >>`);
+        const pageId = addObject(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${paperSize.width} ${paperSize.height}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentId} 0 R >>`);
         pageIds.push(pageId);
     }
     objects.unshift({ id: 3, body: '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>' });
@@ -109,9 +125,15 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
     }
 
     const positions = template?.field_positions || {};
-    const currencySettings = template?.currency_settings || { enabled: true, label: 'USD' };
+    const currencySettings = template?.currency_settings || { enabled: true, label: '₱' };
     const xOffset = Number(printerProfile.offset_x || 0);
     const yOffset = Number(printerProfile.offset_y || 0);
+    const paperSize = resolvePaperSize(template?.paper_settings);
+    const textSettings = template?.text_settings || {};
+    const amountSuffix = String(textSettings.amountSuffix || 'pesos').trim();
+    const payeeFiller = String(textSettings.payeeFiller || '').trim();
+    const amountWordsFiller = String(textSettings.amountWordsFiller || '').trim();
+    const applyFiller = (text, filler) => (filler ? `${filler} ${text} ${filler}`.trim() : text);
 
     if (!PDFDocument || !StandardFonts) {
         return {
@@ -126,9 +148,11 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
         const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
         rows.forEach((row) => {
-            const page = pdfDoc.addPage([LETTER.width, LETTER.height]);
-            const amountWords = amountToWords(row.amount);
+            const page = pdfDoc.addPage([paperSize.width, paperSize.height]);
+            const amountWords = amountToWords(row.amount, { suffix: amountSuffix });
             const words = template?.amount_format === 'upper' ? amountWords.toUpperCase() : amountWords;
+            const renderedPayee = applyFiller(row.payee, payeeFiller);
+            const renderedWords = applyFiller(words, amountWordsFiller);
 
         const drawText = (text, cfg, fallback) => {
             const baseX = Number(cfg?.x ?? fallback.x) + xOffset;
@@ -156,7 +180,7 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
         };
 
         const drawBoxedDate = (text, cfg, fallback) => {
-            const content = String(text || '');
+            const content = String(text || '').replace(/[^0-9]/g, '');
             const x = Number(cfg?.x ?? fallback.x) + xOffset;
             const y = Number(cfg?.y ?? fallback.y) + yOffset;
             const size = Number(cfg?.fontSize ?? fallback.fontSize);
@@ -168,19 +192,19 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
 
         const dateCfg = positions.date || {};
         if (dateCfg.mode === 'boxed') {
-            drawBoxedDate(row.date, dateCfg, { x: 430, y: 700, fontSize: 11, charSpacing: 14 });
+            drawBoxedDate(row.date, dateCfg, { x: 426, y: 178, fontSize: 11, charSpacing: 14 });
         } else {
-            drawText(row.date, dateCfg, { x: 430, y: 700, fontSize: 11, alignment: 'left', charSpacing: 0 });
+            drawText(row.date, dateCfg, { x: 426, y: 178, fontSize: 11, alignment: 'left', charSpacing: 0 });
         }
-        drawText(row.payee, positions.payee, { x: 90, y: 655, fontSize: 12, alignment: 'left', maxWidth: 380, minFontSize: 8 });
-        drawText(row.amount, positions.amountNumeric, { x: 490, y: 655, fontSize: 12, alignment: 'right' });
-        drawText(words, positions.amountWords, { x: 90, y: 625, fontSize: 11, alignment: 'left', maxWidth: 420, minFontSize: 8 });
+        drawText(renderedPayee, positions.payee, { x: 72, y: 136, fontSize: 12, alignment: 'left', maxWidth: 380, minFontSize: 8 });
+        drawText(row.amount, positions.amountNumeric, { x: 534, y: 136, fontSize: 12, alignment: 'right' });
+        drawText(renderedWords, positions.amountWords, { x: 72, y: 104, fontSize: 11, alignment: 'left', maxWidth: 420, minFontSize: 8 });
 
         if (currencySettings.enabled !== false) {
-            drawText(currencySettings.label || 'USD', positions.currency, { x: 515, y: 655, fontSize: 11, alignment: 'left' });
+            drawText(currencySettings.label || '₱', positions.currency, { x: 474, y: 136, fontSize: 11, alignment: 'left' });
         }
         if (testPrint) {
-            page.drawText('*** TEST PRINT ***', { x: 220, y: 760, size: 11, font });
+            page.drawText('*** TEST PRINT ***', { x: 220, y: 198, size: 11, font });
         }
         });
 

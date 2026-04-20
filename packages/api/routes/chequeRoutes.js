@@ -9,14 +9,16 @@ function isValidDateByFormat(value, format) {
     const input = String(value || '').trim();
     if (!input) return false;
 
-    if (format === 'MM/dd/yyyy' || format === 'dd/MM/yyyy') {
-        const match = input.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (format === 'MM/dd/yyyy' || format === 'dd/MM/yyyy' || format === 'MM-dd-yyyy') {
+        const separator = format.includes('-') ? '-' : '/';
+        const pattern = separator === '-' ? /^(\d{2})-(\d{2})-(\d{4})$/ : /^(\d{2})\/(\d{2})\/(\d{4})$/;
+        const match = input.match(pattern);
         if (!match) return false;
         const left = Number(match[1]);
         const right = Number(match[2]);
         const year = Number(match[3]);
-        const month = format === 'MM/dd/yyyy' ? left : right;
-        const day = format === 'MM/dd/yyyy' ? right : left;
+        const month = format === 'dd/MM/yyyy' ? right : left;
+        const day = format === 'dd/MM/yyyy' ? left : right;
         const date = new Date(year, month - 1, day);
         return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
     }
@@ -41,18 +43,21 @@ function toFileSafeSegment(value, fallback = 'cheques') {
 }
 
 const DEFAULT_TEMPLATE = {
-    date: { x: 430, y: 700, alignment: 'left', fontSize: 11 },
-    payee: { x: 90, y: 655, alignment: 'left', fontSize: 12, maxWidth: 380, minFontSize: 8 },
-    amountNumeric: { x: 490, y: 655, alignment: 'right', fontSize: 12 },
-    amountWords: { x: 90, y: 625, alignment: 'left', fontSize: 11, maxWidth: 420 },
-    memo: { x: 90, y: 585, alignment: 'left', fontSize: 10, maxWidth: 220 },
-    currency: { x: 515, y: 655, alignment: 'left', fontSize: 11 }
+    date: { x: 426, y: 178, alignment: 'left', fontSize: 11, mode: 'boxed', charSpacing: 14 },
+    payee: { x: 72, y: 136, alignment: 'left', fontSize: 12, maxWidth: 380, minFontSize: 8 },
+    amountNumeric: { x: 534, y: 136, alignment: 'right', fontSize: 12 },
+    amountWords: { x: 72, y: 104, alignment: 'left', fontSize: 11, maxWidth: 420 },
+    memo: { x: 72, y: 84, alignment: 'left', fontSize: 10, maxWidth: 220 },
+    currency: { x: 474, y: 136, alignment: 'left', fontSize: 11 }
 };
+
+const DEFAULT_PAPER_SETTINGS = { widthIn: 8, heightIn: 3, unit: 'in' };
+const DEFAULT_TEXT_SETTINGS = { amountSuffix: 'pesos', payeeFiller: '', amountWordsFiller: '' };
 
 router.get('/cheques/templates', protect, async (_req, res) => {
     try {
         const { rows } = await db.query(
-            `SELECT id, bank_name, field_positions, date_format, amount_format, currency_settings, created_at, updated_at
+            `SELECT id, bank_name, field_positions, date_format, amount_format, currency_settings, paper_settings, text_settings, created_at, updated_at
              FROM cheque_templates
              WHERE is_deleted = FALSE
              ORDER BY bank_name ASC`
@@ -68,9 +73,11 @@ router.post('/cheques/templates', protect, async (req, res) => {
     const {
         bank_name,
         field_positions = DEFAULT_TEMPLATE,
-        date_format = 'MM/dd/yyyy',
+        date_format = 'MM-dd-yyyy',
         amount_format = 'title_case',
-        currency_settings = { enabled: true, label: 'USD' }
+        currency_settings = { enabled: true, label: '₱' },
+        paper_settings = DEFAULT_PAPER_SETTINGS,
+        text_settings = DEFAULT_TEXT_SETTINGS
     } = req.body;
 
     if (!bank_name || !String(bank_name).trim()) {
@@ -79,10 +86,10 @@ router.post('/cheques/templates', protect, async (req, res) => {
 
     try {
         const { rows } = await db.query(
-            `INSERT INTO cheque_templates (bank_name, field_positions, date_format, amount_format, currency_settings)
-             VALUES ($1, $2::jsonb, $3, $4, $5::jsonb)
-             RETURNING id, bank_name, field_positions, date_format, amount_format, currency_settings, created_at, updated_at`,
-            [bank_name.trim(), JSON.stringify(field_positions), date_format, amount_format, JSON.stringify(currency_settings)]
+            `INSERT INTO cheque_templates (bank_name, field_positions, date_format, amount_format, currency_settings, paper_settings, text_settings)
+             VALUES ($1, $2::jsonb, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb)
+             RETURNING id, bank_name, field_positions, date_format, amount_format, currency_settings, paper_settings, text_settings, created_at, updated_at`,
+            [bank_name.trim(), JSON.stringify(field_positions), date_format, amount_format, JSON.stringify(currency_settings), JSON.stringify(paper_settings), JSON.stringify(text_settings)]
         );
         res.status(201).json(rows[0]);
     } catch (error) {
@@ -93,7 +100,7 @@ router.post('/cheques/templates', protect, async (req, res) => {
 
 router.put('/cheques/templates/:id', protect, async (req, res) => {
     const { id } = req.params;
-    const { field_positions, date_format, amount_format, currency_settings, bank_name } = req.body;
+    const { field_positions, date_format, amount_format, currency_settings, bank_name, paper_settings, text_settings } = req.body;
 
     try {
         const { rows } = await db.query(
@@ -103,15 +110,19 @@ router.put('/cheques/templates/:id', protect, async (req, res) => {
                  date_format = COALESCE($3, date_format),
                  amount_format = COALESCE($4, amount_format),
                  currency_settings = COALESCE($5::jsonb, currency_settings),
+                 paper_settings = COALESCE($6::jsonb, paper_settings),
+                 text_settings = COALESCE($7::jsonb, text_settings),
                  updated_at = CURRENT_TIMESTAMP
-             WHERE id = $6 AND is_deleted = FALSE
-             RETURNING id, bank_name, field_positions, date_format, amount_format, currency_settings, created_at, updated_at`,
+             WHERE id = $8 AND is_deleted = FALSE
+             RETURNING id, bank_name, field_positions, date_format, amount_format, currency_settings, paper_settings, text_settings, created_at, updated_at`,
             [
                 bank_name ?? null,
                 field_positions ? JSON.stringify(field_positions) : null,
                 date_format ?? null,
                 amount_format ?? null,
                 currency_settings ? JSON.stringify(currency_settings) : null,
+                paper_settings ? JSON.stringify(paper_settings) : null,
+                text_settings ? JSON.stringify(text_settings) : null,
                 id
             ]
         );
@@ -244,7 +255,7 @@ router.post('/cheques/generate-pdf', protect, async (req, res) => {
 
     try {
         const templateRes = await db.query(
-            `SELECT id, bank_name, field_positions, date_format, amount_format, currency_settings
+            `SELECT id, bank_name, field_positions, date_format, amount_format, currency_settings, paper_settings, text_settings
              FROM cheque_templates
              WHERE id = $1 AND is_deleted = FALSE`,
             [template_id]
@@ -276,7 +287,7 @@ router.post('/cheques/generate-pdf', protect, async (req, res) => {
                 throw new Error('Amount must be numeric');
             }
             const dateValue = String(record.date || '');
-            const fmt = templateRes.rows[0].date_format || 'MM/dd/yyyy';
+            const fmt = templateRes.rows[0].date_format || 'MM-dd-yyyy';
             if (!isValidDateByFormat(dateValue, fmt)) {
                 throw new Error(`Date must follow ${fmt}`);
             }

@@ -5,7 +5,16 @@ import api from '../api';
 
 const blankRow = () => ({ date: format(new Date(), 'yyyy-MM-dd'), payee: '', amount: '', memo: '' });
 
-const SETTINGS_TABS = ['layout', 'date', 'amount', 'currency', 'text', 'calibration'];
+const SETTINGS_TABS = ['layout', 'date', 'amount', 'currency', 'paper', 'text', 'calibration'];
+
+const FIELD_LABELS = {
+    date: 'Date',
+    payee: 'Payee',
+    amountNumeric: 'Amount in figures',
+    amountWords: 'Amount in words',
+    memo: 'Memo',
+    currency: 'Currency symbol'
+};
 
 const ChequePrintingPage = () => {
     const [templates, setTemplates] = useState([]);
@@ -92,9 +101,10 @@ const ChequePrintingPage = () => {
 
         setSaving(true);
         try {
+            const templateDateFormat = selectedTemplate.date_format || 'MM-dd-yyyy';
             const payloadRows = sourceRows.map((row) => ({
                 ...row,
-                date: format(parseISO(row.date), selectedTemplate.date_format || 'MM/dd/yyyy')
+                date: format(parseISO(row.date), templateDateFormat)
             }));
 
             const pdfResponse = await api.post('/cheques/generate-pdf', {
@@ -139,7 +149,6 @@ const ChequePrintingPage = () => {
 
     const handleReprint = async (entry) => {
         if (!selectedTemplate) return toast.error('Select a preset for reprint.');
-        const fmt = selectedTemplate.date_format || 'MM/dd/yyyy';
         await generatePdf([{
             payee: entry.payee,
             amount: Number(entry.amount).toFixed(2),
@@ -283,17 +292,29 @@ const ChequePrintingPage = () => {
                             ))}
                         </div>
                         <div className="p-4 max-h-[65vh] overflow-auto text-sm space-y-4">
-                            {activeTab === 'layout' && Object.entries(selectedTemplate.field_positions || {}).map(([field, cfg]) => (
-                                <div key={field} className="grid grid-cols-4 gap-2 items-center">
-                                    <span className="capitalize font-medium">{field}</span>
-                                    <input type="number" className="border rounded px-2 py-1" value={cfg.x ?? 0} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, x: Number(e.target.value) } } })} />
-                                    <input type="number" className="border rounded px-2 py-1" value={cfg.y ?? 0} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, y: Number(e.target.value) } } })} />
-                                    <input type="number" className="border rounded px-2 py-1" value={cfg.fontSize ?? 11} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, fontSize: Number(e.target.value) } } })} />
+                            {activeTab === 'layout' && (
+                                <div className="space-y-3">
+                                    <div className="grid grid-cols-4 gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                                        <span>Field</span>
+                                        <span>X Position</span>
+                                        <span>Y Position</span>
+                                        <span>Font Size</span>
+                                    </div>
+                                    {Object.entries(selectedTemplate.field_positions || {}).map(([field, cfg]) => (
+                                        <div key={field} className="grid grid-cols-4 gap-2 items-center">
+                                            <span className="font-medium">{FIELD_LABELS[field] || field}</span>
+                                            <input type="number" className="border rounded px-2 py-1" aria-label={`${field} X`} value={cfg.x ?? 0} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, x: Number(e.target.value) } } })} />
+                                            <input type="number" className="border rounded px-2 py-1" aria-label={`${field} Y`} value={cfg.y ?? 0} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, y: Number(e.target.value) } } })} />
+                                            <input type="number" className="border rounded px-2 py-1" aria-label={`${field} Font`} value={cfg.fontSize ?? 11} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, fontSize: Number(e.target.value) } } })} />
+                                        </div>
+                                    ))}
                                 </div>
-                            ))}
+                            )}
                             {activeTab === 'date' && (
                                 <div className="space-y-3">
-                                    <select className="border rounded px-3 py-2" value={selectedTemplate.date_format || 'MM/dd/yyyy'} onChange={(e) => updateTemplate({ date_format: e.target.value })}>
+                                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Date output format</label>
+                                    <select className="border rounded px-3 py-2" value={selectedTemplate.date_format || 'MM-dd-yyyy'} onChange={(e) => updateTemplate({ date_format: e.target.value })}>
+                                        <option value="MM-dd-yyyy">MM-DD-YYYY</option>
                                         <option value="MM/dd/yyyy">MM/dd/yyyy</option>
                                         <option value="dd/MM/yyyy">dd/MM/yyyy</option>
                                         <option value="MMM dd, yyyy">MMM dd, yyyy</option>
@@ -310,7 +331,7 @@ const ChequePrintingPage = () => {
                                             })}
                                         >
                                             <option value="single">Single-line date mode</option>
-                                            <option value="boxed">Boxed date mode</option>
+                                            <option value="boxed">Boxed date mode (MMDDYYYY without separators)</option>
                                         </select>
                                         <input
                                             type="number"
@@ -337,10 +358,90 @@ const ChequePrintingPage = () => {
                             {activeTab === 'currency' && (
                                 <div className="space-y-2">
                                     <label className="flex items-center gap-2"><input type="checkbox" checked={selectedTemplate.currency_settings?.enabled !== false} onChange={(e) => updateTemplate({ currency_settings: { ...selectedTemplate.currency_settings, enabled: e.target.checked } })} /> Show currency label</label>
+                                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Symbol outside amount box</label>
                                     <input className="border rounded px-3 py-2" value={selectedTemplate.currency_settings?.label || ''} onChange={(e) => updateTemplate({ currency_settings: { ...selectedTemplate.currency_settings, label: e.target.value } })} />
                                 </div>
                             )}
-                            {activeTab === 'text' && <p className="text-gray-600">Payee overflow mitigation uses template font size and width values; no line wrapping is applied.</p>}
+                            {activeTab === 'paper' && (
+                                <div className="space-y-3">
+                                    <p className="text-gray-600">Paper size is stored in the selected bank preset.</p>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                        <div>
+                                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Width (inches)</label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                step="0.1"
+                                                className="border rounded px-3 py-2 w-full"
+                                                value={selectedTemplate.paper_settings?.widthIn ?? 8}
+                                                onChange={(e) => updateTemplate({ paper_settings: { ...(selectedTemplate.paper_settings || {}), widthIn: Number(e.target.value) || 8, unit: 'in' } })}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Height (inches)</label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                step="0.1"
+                                                className="border rounded px-3 py-2 w-full"
+                                                value={selectedTemplate.paper_settings?.heightIn ?? 3}
+                                                onChange={(e) => updateTemplate({ paper_settings: { ...(selectedTemplate.paper_settings || {}), heightIn: Number(e.target.value) || 3, unit: 'in' } })}
+                                            />
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-gray-500">Recommended standardized size: 8" x 3".</p>
+                                </div>
+                            )}
+                            {activeTab === 'text' && (
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount suffix</label>
+                                        <input
+                                            className="border rounded px-3 py-2 w-full"
+                                            placeholder="pesos"
+                                            value={selectedTemplate.text_settings?.amountSuffix ?? 'pesos'}
+                                            onChange={(e) => updateTemplate({
+                                                text_settings: {
+                                                    ...(selectedTemplate.text_settings || {}),
+                                                    amountSuffix: e.target.value
+                                                }
+                                            })}
+                                        />
+                                        <p className="text-xs text-gray-500">Whole amounts print as "{'{amount}'} suffix". Decimal amounts print as "{'{amount}'} suffix and xx/100".</p>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div className="space-y-2">
+                                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Payee edge filler</label>
+                                            <input
+                                                className="border rounded px-3 py-2 w-full"
+                                                placeholder="*"
+                                                value={selectedTemplate.text_settings?.payeeFiller ?? ''}
+                                                onChange={(e) => updateTemplate({
+                                                    text_settings: {
+                                                        ...(selectedTemplate.text_settings || {}),
+                                                        payeeFiller: e.target.value
+                                                    }
+                                                })}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount words edge filler</label>
+                                            <input
+                                                className="border rounded px-3 py-2 w-full"
+                                                placeholder="*"
+                                                value={selectedTemplate.text_settings?.amountWordsFiller ?? ''}
+                                                onChange={(e) => updateTemplate({
+                                                    text_settings: {
+                                                        ...(selectedTemplate.text_settings || {}),
+                                                        amountWordsFiller: e.target.value
+                                                    }
+                                                })}
+                                            />
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-gray-500">Fillers are added at both ends of the rendered payee and amount-in-words text.</p>
+                                </div>
+                            )}
                             {activeTab === 'calibration' && (
                                 <div className="space-y-3">
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-2">

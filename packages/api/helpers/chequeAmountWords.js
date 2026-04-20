@@ -23,17 +23,19 @@ function chunkToWords(value) {
     return out.join(' ').trim();
 }
 
-function amountToWords(amount) {
+function amountToWords(amount, options = {}) {
     const numericAmount = Number(amount);
     if (Number.isNaN(numericAmount) || numericAmount < 0) {
         throw new Error('Amount must be a non-negative number');
     }
+    const suffix = String(options.suffix || 'pesos').trim();
 
     const rounded = Math.round(numericAmount * 100) / 100;
     const whole = Math.floor(rounded);
     const cents = Math.round((rounded - whole) * 100);
 
-    if (whole === 0) return `zero and ${String(cents).padStart(2, '0')}/100`;
+    if (whole === 0 && cents === 0) return suffix ? `zero ${suffix}` : 'zero';
+    if (whole === 0) return suffix ? `zero ${suffix} and ${String(cents).padStart(2, '0')}/100` : `zero and ${String(cents).padStart(2, '0')}/100`;
 
     const parts = [];
     const billions = Math.floor(whole / 1_000_000_000);
@@ -46,7 +48,9 @@ function amountToWords(amount) {
     if (thousands) parts.push(`${chunkToWords(thousands)} thousand`);
     if (remainder) parts.push(chunkToWords(remainder));
 
-    return `${parts.join(' ')} and ${String(cents).padStart(2, '0')}/100`.trim();
+    const base = suffix ? `${parts.join(' ')} ${suffix}`.trim() : parts.join(' ');
+    if (cents === 0) return base;
+    return `${base} and ${String(cents).padStart(2, '0')}/100`.trim();
 }
 
 module.exports = { amountToWords };
