@@ -2,9 +2,34 @@ const express = require('express');
 const db = require('../db');
 const { protect } = require('../middleware/authMiddleware');
 const { createChequePdf } = require('../helpers/pdf/chequePdf');
-const { parse, isValid } = require('date-fns');
 
 const router = express.Router();
+
+function isValidDateByFormat(value, format) {
+    const input = String(value || '').trim();
+    if (!input) return false;
+
+    if (format === 'MM/dd/yyyy' || format === 'dd/MM/yyyy') {
+        const match = input.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        if (!match) return false;
+        const left = Number(match[1]);
+        const right = Number(match[2]);
+        const year = Number(match[3]);
+        const month = format === 'MM/dd/yyyy' ? left : right;
+        const day = format === 'MM/dd/yyyy' ? right : left;
+        const date = new Date(year, month - 1, day);
+        return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+    }
+
+    if (format === 'MMM dd, yyyy') {
+        const date = new Date(input);
+        return !Number.isNaN(date.getTime());
+    }
+
+    // Fallback parser for custom formats
+    const date = new Date(input);
+    return !Number.isNaN(date.getTime());
+}
 
 const DEFAULT_TEMPLATE = {
     date: { x: 430, y: 700, alignment: 'left', fontSize: 11 },
@@ -243,7 +268,7 @@ router.post('/cheques/generate-pdf', protect, async (req, res) => {
             }
             const dateValue = String(record.date || '');
             const fmt = templateRes.rows[0].date_format || 'MM/dd/yyyy';
-            if (!isValid(parse(dateValue, fmt, new Date()))) {
+            if (!isValidDateByFormat(dateValue, fmt)) {
                 throw new Error(`Date must follow ${fmt}`);
             }
             return {
