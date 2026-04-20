@@ -379,20 +379,21 @@ const ChequePrintingPage = () => {
                             <button className={BUTTON_SECONDARY} onClick={() => setSettingsOpen(false)}><Icon path={ICONS.close} className="h-4 w-4" />Close</button>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] min-h-0 flex-1">
-                            <aside className="border-r p-3 bg-gray-50/70 overflow-auto">
-                                <div className="space-y-1">
+                        <div className="min-h-0 flex-1 flex flex-col">
+                            <div className="border-b px-4 md:px-5 overflow-x-auto">
+                                <div className="flex items-center gap-5 min-w-max">
                                     {SETTINGS_TABS.map((tab) => (
                                         <button
                                             key={tab.id}
-                                            className={`w-full text-left px-3 py-2 rounded-lg text-sm ${activeTab === tab.id ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-100'}`}
+                                            type="button"
+                                            className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === tab.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}
                                             onClick={() => setActiveTab(tab.id)}
                                         >
                                             {tab.label}
                                         </button>
                                     ))}
                                 </div>
-                            </aside>
+                            </div>
 
                             <div className="p-4 md:p-5 overflow-auto text-sm space-y-4">
                                 {activeTab === 'layout' && (
