@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { format, parse, isValid } from 'date-fns';
+import { format, parseISO, isValid } from 'date-fns';
 import toast from 'react-hot-toast';
 import api from '../api';
 
-const blankRow = () => ({ date: format(new Date(), 'MM/dd/yyyy'), payee: '', amount: '', memo: '' });
+const blankRow = () => ({ date: format(new Date(), 'yyyy-MM-dd'), payee: '', amount: '', memo: '' });
 
 const SETTINGS_TABS = ['layout', 'date', 'amount', 'currency', 'text', 'calibration'];
 
@@ -72,8 +72,7 @@ const ChequePrintingPage = () => {
         if (!row.payee.trim()) return 'Payee is required';
         const amount = Number(row.amount);
         if (Number.isNaN(amount)) return 'Amount must be numeric';
-        const fmt = selectedTemplate?.date_format || 'MM/dd/yyyy';
-        if (!isValid(parse(row.date, fmt, new Date()))) return `Date must follow ${fmt}`;
+        if (!isValid(parseISO(row.date))) return 'Due date is invalid';
         return null;
     };
 
@@ -95,7 +94,7 @@ const ChequePrintingPage = () => {
         try {
             const payloadRows = sourceRows.map((row) => ({
                 ...row,
-                date: format(parse(row.date, selectedTemplate.date_format || 'MM/dd/yyyy', new Date()), selectedTemplate.date_format || 'MM/dd/yyyy')
+                date: format(parseISO(row.date), selectedTemplate.date_format || 'MM/dd/yyyy')
             }));
 
             const pdfResponse = await api.post('/cheques/generate-pdf', {
@@ -144,7 +143,7 @@ const ChequePrintingPage = () => {
         await generatePdf([{
             payee: entry.payee,
             amount: Number(entry.amount).toFixed(2),
-            date: entry.cheque_date ? format(new Date(entry.cheque_date), fmt) : format(new Date(), fmt),
+            date: entry.cheque_date ? format(new Date(entry.cheque_date), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
             memo: entry.memo || ''
         }], false);
     };
@@ -238,24 +237,35 @@ const ChequePrintingPage = () => {
                 </label>
             </div>
 
+            <div className="hidden md:grid grid-cols-4 gap-3 px-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                <span>Due Date</span>
+                <span>Payee</span>
+                <span>Amount</span>
+                <span>Memo (Internal only)</span>
+            </div>
+
             {rows.map((row, idx) => (
                 <div key={idx} className="bg-white border rounded-xl p-4 grid grid-cols-1 md:grid-cols-4 gap-3">
                     {[
-                        { field: 'date', placeholder: 'Date' },
+                        { field: 'date', placeholder: 'Due Date' },
                         { field: 'payee', placeholder: 'Payee' },
                         { field: 'amount', placeholder: 'Amount' },
                         { field: 'memo', placeholder: 'Memo' }
                     ].map((column, fieldIndex) => (
-                        <input
-                            key={column.field}
-                            className="border rounded-lg px-3 py-2 text-sm"
-                            value={row[column.field]}
-                            onChange={(e) => updateRow(idx, column.field, e.target.value)}
-                            onKeyDown={(e) => onRowKeyDown(e, idx, fieldIndex)}
-                            placeholder={column.placeholder}
-                            data-row={idx}
-                            data-field-index={fieldIndex}
-                        />
+                        <div key={column.field} className="space-y-1">
+                            <label className="md:hidden text-xs font-semibold text-gray-500 uppercase tracking-wide">{column.placeholder}</label>
+                            <input
+                                type={column.field === 'date' ? 'date' : 'text'}
+                                key={column.field}
+                                className="border rounded-lg px-3 py-2 text-sm w-full"
+                                value={row[column.field]}
+                                onChange={(e) => updateRow(idx, column.field, e.target.value)}
+                                onKeyDown={(e) => onRowKeyDown(e, idx, fieldIndex)}
+                                placeholder={column.placeholder}
+                                data-row={idx}
+                                data-field-index={fieldIndex}
+                            />
+                        </div>
                     ))}
                 </div>
             ))}

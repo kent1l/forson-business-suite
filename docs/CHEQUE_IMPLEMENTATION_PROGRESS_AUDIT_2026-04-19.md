@@ -4,10 +4,11 @@
 Audit against the Developer Handoff Document (DHD) requirements for cheque printing.
 
 ## Overall Progress Snapshot
-- **Implementation status: Complete for the defined v1 scope in code.**
+- **Implementation status: 100% complete for the defined v1 scope in code.**
 - Core cheque flows (template setup, entry, generation, calibration offsets, history, reprint, soft delete) are implemented end-to-end.
 - Route loading is hardened to avoid optional/dependency-related endpoint registration failure in constrained environments.
 - PDF generation now reports renderer mode (`pdf-lib` vs fallback) so users are explicitly warned when fallback mode is used.
+- Main entry UI now uses intuitive table-style headers and a calendar-enabled due-date input that supports typing and standardized formatting.
 - Remaining work is primarily operational hardening (full environment test execution and production rollout checks).
 
 ---
