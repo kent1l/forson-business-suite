@@ -264,7 +264,7 @@ router.post('/cheques/generate-pdf', protect, async (req, res) => {
 
     try {
         const templateRes = await db.query(
-            `SELECT id, bank_name, field_positions, date_format, amount_format, currency_settings, paper_settings
+            `SELECT id, bank_name, field_positions, date_format, amount_format, currency_settings, paper_settings, amount_words_settings, text_settings
              FROM cheque_templates
              WHERE id = $1 AND is_deleted = FALSE`,
             [template_id]
