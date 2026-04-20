@@ -5,7 +5,15 @@ import api from '../api';
 
 const blankRow = () => ({ date: format(new Date(), 'yyyy-MM-dd'), payee: '', amount: '', memo: '' });
 
-const SETTINGS_TABS = ['layout', 'date', 'amount', 'currency', 'paper', 'text', 'calibration'];
+const SETTINGS_TABS = [
+    { id: 'layout', label: 'Layout' },
+    { id: 'date', label: 'Date' },
+    { id: 'amount', label: 'Amount' },
+    { id: 'currency', label: 'Currency' },
+    { id: 'paper', label: 'Paper' },
+    { id: 'text', label: 'Text' },
+    { id: 'calibration', label: 'Calibration' }
+];
 
 const FIELD_LABELS = {
     date: 'Date',
@@ -29,6 +37,8 @@ const ChequePrintingPage = () => {
     const [saving, setSaving] = useState(false);
     const [persistRecords, setPersistRecords] = useState(true);
     const [testPrintMode, setTestPrintMode] = useState(false);
+    const [historyQuery, setHistoryQuery] = useState('');
+    const [historyBankFilter, setHistoryBankFilter] = useState('all');
     const [draftProfile, setDraftProfile] = useState({ profile_name: '', offset_x: 0, offset_y: 0, is_default: false });
 
     const selectedTemplate = useMemo(() => templates.find((tpl) => String(tpl.id) === String(selectedTemplateId)), [templates, selectedTemplateId]);
@@ -77,6 +87,14 @@ const ChequePrintingPage = () => {
         });
     };
 
+    const removeRow = (idx) => {
+        setRows((prev) => {
+            if (prev.length === 1) return [blankRow()];
+            const next = prev.filter((_, rowIndex) => rowIndex !== idx);
+            return next.length ? next : [blankRow()];
+        });
+    };
+
     const validateRow = (row) => {
         if (!row.payee.trim()) return 'Payee is required';
         const amount = Number(row.amount);
@@ -89,6 +107,24 @@ const ChequePrintingPage = () => {
         ...row,
         amount: String(Math.round(Number(row.amount || 0) * 100) / 100)
     }));
+
+    const filteredHistory = useMemo(() => {
+        const query = historyQuery.trim().toLowerCase();
+        return history.filter((entry) => {
+            const bank = entry.bank_preset || 'Unassigned';
+            const matchesBank = historyBankFilter === 'all' || bank === historyBankFilter;
+            if (!matchesBank) return false;
+            if (!query) return true;
+            return [entry.payee, entry.memo, bank, String(entry.amount)]
+                .filter(Boolean)
+                .some((value) => String(value).toLowerCase().includes(query));
+        });
+    }, [history, historyQuery, historyBankFilter]);
+
+    const historyBankOptions = useMemo(() => {
+        const banks = Array.from(new Set(history.map((entry) => entry.bank_preset).filter(Boolean)));
+        return banks.sort((a, b) => a.localeCompare(b));
+    }, [history]);
 
     const generatePdf = async (sourceRows = activeRows, persist = persistRecords) => {
         if (!selectedTemplate) return toast.error('Select a bank preset first.');
@@ -214,308 +250,364 @@ const ChequePrintingPage = () => {
     };
 
     return (
-        <div className="space-y-4">
-            <div className="bg-white border rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">Bank Preset</span>
-                    <select className="border rounded-lg px-3 py-2 text-sm" value={selectedTemplateId} onChange={(e) => setSelectedTemplateId(e.target.value)}>
-                        {templates.map((template) => <option key={template.id} value={template.id}>{template.bank_name}</option>)}
-                    </select>
+        <div className="space-y-4 pb-4">
+            <div className="bg-white border rounded-xl p-4 md:p-5">
+                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                    <div>
+                        <h1 className="text-lg md:text-xl font-semibold text-gray-900">Cheque Printing</h1>
+                        <p className="text-sm text-gray-500 mt-1">Prepare cheques, manage print calibration, and review printed cheque history in one place.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        <button className="px-3 py-2 border rounded-lg text-sm font-medium hover:bg-gray-50" onClick={() => setSettingsOpen(true)}>Open Settings</button>
+                        <button className="px-3 py-2 border rounded-lg text-sm font-medium hover:bg-gray-50" onClick={() => setHistoryOpen(true)}>View History</button>
+                        <button className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg disabled:opacity-50" disabled={saving} onClick={() => generatePdf()}>{saving ? 'Generating…' : 'Generate PDF'}</button>
+                    </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">Printer Profile</span>
-                    <select className="border rounded-lg px-3 py-2 text-sm" value={selectedProfileId} onChange={(e) => setSelectedProfileId(e.target.value)}>
-                        <option value="">None</option>
-                        {printerProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.profile_name}{profile.is_default ? ' (Default)' : ''}</option>)}
-                    </select>
-                </div>
-                <div className="flex gap-2">
-                    <button className="px-3 py-2 border rounded-lg text-sm" onClick={() => setSettingsOpen(true)}>Settings</button>
-                    <button className="px-3 py-2 border rounded-lg text-sm" onClick={() => setHistoryOpen(true)}>History</button>
-                    <button className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-50" disabled={saving} onClick={() => generatePdf()}>{saving ? 'Generating…' : 'Generate PDF'}</button>
-                </div>
-            </div>
-            <div className="bg-white border rounded-xl p-3 flex flex-wrap items-center gap-4 text-sm">
-                <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={persistRecords} onChange={(e) => setPersistRecords(e.target.checked)} />
-                    Save generated cheques to history
-                </label>
-                <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={testPrintMode} onChange={(e) => setTestPrintMode(e.target.checked)} />
-                    Test print mode
-                </label>
             </div>
 
-            <div className="hidden md:grid grid-cols-4 gap-3 px-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                <span>Due Date</span>
-                <span>Payee</span>
-                <span>Amount</span>
-                <span>Memo (Internal only)</span>
-            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                <div className="xl:col-span-2 bg-white border rounded-xl p-4 space-y-4">
+                    <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Print Queue</h2>
+                    <div className="hidden md:grid grid-cols-[120px_1fr_160px_1fr_80px] gap-3 px-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                        <span>Date</span>
+                        <span>Payee</span>
+                        <span>Amount</span>
+                        <span>Memo</span>
+                        <span className="text-right">Actions</span>
+                    </div>
 
-            {rows.map((row, idx) => (
-                <div key={idx} className="bg-white border rounded-xl p-4 grid grid-cols-1 md:grid-cols-4 gap-3">
-                    {[
-                        { field: 'date', placeholder: 'Due Date' },
-                        { field: 'payee', placeholder: 'Payee' },
-                        { field: 'amount', placeholder: 'Amount' },
-                        { field: 'memo', placeholder: 'Memo' }
-                    ].map((column, fieldIndex) => (
-                        <div key={column.field} className="space-y-1">
-                            <label className="md:hidden text-xs font-semibold text-gray-500 uppercase tracking-wide">{column.placeholder}</label>
-                            <input
-                                type={column.field === 'date' ? 'date' : 'text'}
-                                key={column.field}
-                                className="border rounded-lg px-3 py-2 text-sm w-full"
-                                value={row[column.field]}
-                                onChange={(e) => updateRow(idx, column.field, e.target.value)}
-                                onKeyDown={(e) => onRowKeyDown(e, idx, fieldIndex)}
-                                placeholder={column.placeholder}
-                                data-row={idx}
-                                data-field-index={fieldIndex}
-                            />
+                    {rows.map((row, idx) => {
+                        const isTrailingBlank = idx === rows.length - 1 && !row.payee && !row.amount && !row.memo;
+                        return (
+                            <div key={idx} className="bg-gray-50/70 border rounded-xl p-3 grid grid-cols-1 md:grid-cols-[120px_1fr_160px_1fr_80px] gap-3 items-start">
+                                {[
+                                    { field: 'date', placeholder: 'Date' },
+                                    { field: 'payee', placeholder: 'Payee' },
+                                    { field: 'amount', placeholder: 'Amount' },
+                                    { field: 'memo', placeholder: 'Memo' }
+                                ].map((column, fieldIndex) => (
+                                    <div key={column.field} className="space-y-1">
+                                        <label className="md:hidden text-xs font-semibold text-gray-500 uppercase tracking-wide">{column.placeholder}</label>
+                                        <input
+                                            type={column.field === 'date' ? 'date' : 'text'}
+                                            className="border rounded-lg px-3 py-2 text-sm w-full bg-white"
+                                            value={row[column.field]}
+                                            onChange={(e) => updateRow(idx, column.field, e.target.value)}
+                                            onKeyDown={(e) => onRowKeyDown(e, idx, fieldIndex)}
+                                            placeholder={column.placeholder}
+                                            data-row={idx}
+                                            data-field-index={fieldIndex}
+                                        />
+                                    </div>
+                                ))}
+                                <div className="flex md:justify-end">
+                                    <button
+                                        className="border rounded-lg px-2.5 py-2 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                        onClick={() => removeRow(idx)}
+                                        disabled={rows.length === 1 || isTrailingBlank}
+                                    >
+                                        Remove
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                <div className="bg-white border rounded-xl p-4 space-y-4">
+                    <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Print Controls</h2>
+                    <div className="space-y-3">
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Bank preset</label>
+                            <select className="border rounded-lg px-3 py-2 text-sm w-full" value={selectedTemplateId} onChange={(e) => setSelectedTemplateId(e.target.value)}>
+                                {templates.map((template) => <option key={template.id} value={template.id}>{template.bank_name}</option>)}
+                            </select>
                         </div>
-                    ))}
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Printer profile</label>
+                            <select className="border rounded-lg px-3 py-2 text-sm w-full" value={selectedProfileId} onChange={(e) => setSelectedProfileId(e.target.value)}>
+                                <option value="">None</option>
+                                {printerProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.profile_name}{profile.is_default ? ' (Default)' : ''}</option>)}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2 border-t pt-3">
+                        <label className="flex items-center gap-2 text-sm">
+                            <input type="checkbox" checked={persistRecords} onChange={(e) => setPersistRecords(e.target.checked)} />
+                            Save generated cheques to history
+                        </label>
+                        <label className="flex items-center gap-2 text-sm">
+                            <input type="checkbox" checked={testPrintMode} onChange={(e) => setTestPrintMode(e.target.checked)} />
+                            Test print mode
+                        </label>
+                    </div>
+
+                    <div className="text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-lg p-3">
+                        Tip: Use <span className="font-semibold">100% print scale</span> for proper cheque alignment.
+                    </div>
                 </div>
-            ))}
+            </div>
 
             {settingsOpen && selectedTemplate && (
                 <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-xl border w-full max-w-4xl">
+                    <div className="bg-white rounded-xl border w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
                         <div className="p-4 border-b flex items-center justify-between">
-                            <h3 className="font-semibold">Cheque Settings</h3>
-                            <button onClick={() => setSettingsOpen(false)}>Close</button>
+                            <div>
+                                <h3 className="font-semibold text-gray-900">Cheque Settings</h3>
+                                <p className="text-xs text-gray-500 mt-0.5">Preset: {selectedTemplate.bank_name}</p>
+                            </div>
+                            <button className="px-3 py-1.5 border rounded-lg text-sm" onClick={() => setSettingsOpen(false)}>Close</button>
                         </div>
-                        <div className="px-4 pt-3 flex gap-2 border-b">
-                            {SETTINGS_TABS.map((tab) => (
-                                <button key={tab} className={`px-3 py-2 text-sm capitalize border-b-2 ${activeTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500'}`} onClick={() => setActiveTab(tab)}>{tab}</button>
-                            ))}
-                        </div>
-                        <div className="p-4 max-h-[65vh] overflow-auto text-sm space-y-4">
-                            {activeTab === 'layout' && (
-                                <div className="space-y-3">
-                                    <div className="grid grid-cols-4 gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                                        <span>Field</span>
-                                        <span>X Position</span>
-                                        <span>Y Position</span>
-                                        <span>Font Size</span>
-                                    </div>
-                                    {Object.entries(selectedTemplate.field_positions || {}).map(([field, cfg]) => (
-                                        <div key={field} className="grid grid-cols-4 gap-2 items-center">
-                                            <span className="font-medium">{FIELD_LABELS[field] || field}</span>
-                                            <input type="number" className="border rounded px-2 py-1" aria-label={`${field} X`} value={cfg.x ?? 0} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, x: Number(e.target.value) } } })} />
-                                            <input type="number" className="border rounded px-2 py-1" aria-label={`${field} Y`} value={cfg.y ?? 0} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, y: Number(e.target.value) } } })} />
-                                            <input type="number" className="border rounded px-2 py-1" aria-label={`${field} Font`} value={cfg.fontSize ?? 11} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, fontSize: Number(e.target.value) } } })} />
-                                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] min-h-0 flex-1">
+                            <aside className="border-r p-3 bg-gray-50/70 overflow-auto">
+                                <div className="space-y-1">
+                                    {SETTINGS_TABS.map((tab) => (
+                                        <button
+                                            key={tab.id}
+                                            className={`w-full text-left px-3 py-2 rounded-lg text-sm ${activeTab === tab.id ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-100'}`}
+                                            onClick={() => setActiveTab(tab.id)}
+                                        >
+                                            {tab.label}
+                                        </button>
                                     ))}
                                 </div>
-                            )}
-                            {activeTab === 'date' && (
-                                <div className="space-y-3">
-                                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Date output format</label>
-                                    <select className="border rounded px-3 py-2" value={selectedTemplate.date_format || 'MM-dd-yyyy'} onChange={(e) => updateTemplate({ date_format: e.target.value })}>
-                                        <option value="MM-dd-yyyy">MM-DD-YYYY</option>
-                                        <option value="MM/dd/yyyy">MM/dd/yyyy</option>
-                                        <option value="dd/MM/yyyy">dd/MM/yyyy</option>
-                                        <option value="MMM dd, yyyy">MMM dd, yyyy</option>
-                                    </select>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                        <select
-                                            className="border rounded px-3 py-2"
-                                            value={selectedTemplate.field_positions?.date?.mode || 'single'}
-                                            onChange={(e) => updateTemplate({
-                                                field_positions: {
-                                                    ...selectedTemplate.field_positions,
-                                                    date: { ...(selectedTemplate.field_positions?.date || {}), mode: e.target.value }
-                                                }
-                                            })}
-                                        >
-                                            <option value="single">Single-line date mode</option>
-                                            <option value="boxed">Boxed date mode (MMDDYYYY without separators)</option>
-                                        </select>
-                                        <input
-                                            type="number"
-                                            step="0.5"
-                                            className="border rounded px-3 py-2"
-                                            placeholder="Character spacing"
-                                            value={selectedTemplate.field_positions?.date?.charSpacing ?? 0}
-                                            onChange={(e) => updateTemplate({
-                                                field_positions: {
-                                                    ...selectedTemplate.field_positions,
-                                                    date: { ...(selectedTemplate.field_positions?.date || {}), charSpacing: Number(e.target.value) || 0 }
-                                                }
-                                            })}
-                                        />
-                                    </div>
-                                </div>
-                            )}
-                            {activeTab === 'amount' && (
-                                <div className="space-y-3">
-                                    <div>
-                                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Amount words casing</label>
-                                        <select className="border rounded px-3 py-2" value={selectedTemplate.amount_format || 'title_case'} onChange={(e) => updateTemplate({ amount_format: e.target.value })}>
-                                            <option value="title_case">Title Case</option>
-                                            <option value="upper">UPPER CASE</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Amount suffix</label>
-                                        <input
-                                            className="border rounded px-3 py-2 w-full"
-                                            placeholder="pesos"
-                                            value={selectedTemplate.amount_words_settings?.suffix || 'pesos'}
-                                            onChange={(e) => updateTemplate({
-                                                amount_words_settings: {
-                                                    ...(selectedTemplate.amount_words_settings || {}),
-                                                    suffix: e.target.value
-                                                }
-                                            })}
-                                        />
-                                        <p className="text-xs text-gray-500 mt-1">Whole numbers render as “&lt;amount&gt; suffix only”. Decimal amounts render as “&lt;amount&gt; suffix and xx/100”.</p>
-                                    </div>
-                                </div>
-                            )}
-                            {activeTab === 'currency' && (
-                                <div className="space-y-2">
-                                    <label className="flex items-center gap-2"><input type="checkbox" checked={selectedTemplate.currency_settings?.enabled !== false} onChange={(e) => updateTemplate({ currency_settings: { ...selectedTemplate.currency_settings, enabled: e.target.checked } })} /> Show currency label</label>
-                                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Symbol outside amount box</label>
-                                    <input className="border rounded px-3 py-2" value={selectedTemplate.currency_settings?.label || ''} onChange={(e) => updateTemplate({ currency_settings: { ...selectedTemplate.currency_settings, label: e.target.value } })} />
-                                </div>
-                            )}
-                            {activeTab === 'paper' && (
-                                <div className="space-y-3">
-                                    <p className="text-gray-600">Paper size is stored in the selected bank preset.</p>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                        <div>
-                                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Width (inches)</label>
-                                            <input
-                                                type="number"
-                                                min="1"
-                                                step="0.1"
-                                                className="border rounded px-3 py-2 w-full"
-                                                value={selectedTemplate.paper_settings?.widthIn ?? 8}
-                                                onChange={(e) => updateTemplate({ paper_settings: { ...(selectedTemplate.paper_settings || {}), widthIn: Number(e.target.value) || 8, unit: 'in' } })}
-                                            />
+                            </aside>
+
+                            <div className="p-4 md:p-5 overflow-auto text-sm space-y-4">
+                                {activeTab === 'layout' && (
+                                    <div className="space-y-3">
+                                        <p className="text-gray-600">Fine-tune field placements and sizes for this cheque template.</p>
+                                        <div className="grid grid-cols-4 gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                                            <span>Field</span>
+                                            <span>X Position</span>
+                                            <span>Y Position</span>
+                                            <span>Font Size</span>
                                         </div>
-                                        <div>
-                                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Height (inches)</label>
-                                            <input
-                                                type="number"
-                                                min="1"
-                                                step="0.1"
-                                                className="border rounded px-3 py-2 w-full"
-                                                value={selectedTemplate.paper_settings?.heightIn ?? 3}
-                                                onChange={(e) => updateTemplate({ paper_settings: { ...(selectedTemplate.paper_settings || {}), heightIn: Number(e.target.value) || 3, unit: 'in' } })}
-                                            />
-                                        </div>
+                                        {Object.entries(selectedTemplate.field_positions || {}).map(([field, cfg]) => (
+                                            <div key={field} className="grid grid-cols-4 gap-2 items-center border rounded-lg p-2">
+                                                <span className="font-medium">{FIELD_LABELS[field] || field}</span>
+                                                <input type="number" className="border rounded px-2 py-1" aria-label={`${field} X`} value={cfg.x ?? 0} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, x: Number(e.target.value) } } })} />
+                                                <input type="number" className="border rounded px-2 py-1" aria-label={`${field} Y`} value={cfg.y ?? 0} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, y: Number(e.target.value) } } })} />
+                                                <input type="number" className="border rounded px-2 py-1" aria-label={`${field} Font`} value={cfg.fontSize ?? 11} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, fontSize: Number(e.target.value) } } })} />
+                                            </div>
+                                        ))}
                                     </div>
-                                    <p className="text-xs text-gray-500">Recommended standardized size: 8" x 3".</p>
-                                </div>
-                            )}
-                            {activeTab === 'text' && (
-                                <div className="space-y-3">
-                                    <p className="text-gray-600">Payee overflow mitigation uses template font size and width values; no line wrapping is applied.</p>
-                                    <div className="border rounded-lg p-3 space-y-2">
-                                        <label className="flex items-center gap-2">
-                                            <input
-                                                type="checkbox"
-                                                checked={Boolean(selectedTemplate.text_settings?.payeeFillerEnabled)}
+                                )}
+
+                                {activeTab === 'date' && (
+                                    <div className="space-y-3">
+                                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Date output format</label>
+                                        <select className="border rounded px-3 py-2" value={selectedTemplate.date_format || 'MM-dd-yyyy'} onChange={(e) => updateTemplate({ date_format: e.target.value })}>
+                                            <option value="MM-dd-yyyy">MM-DD-YYYY</option>
+                                            <option value="MM/dd/yyyy">MM/dd/yyyy</option>
+                                            <option value="dd/MM/yyyy">dd/MM/yyyy</option>
+                                            <option value="MMM dd, yyyy">MMM dd, yyyy</option>
+                                        </select>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                            <select
+                                                className="border rounded px-3 py-2"
+                                                value={selectedTemplate.field_positions?.date?.mode || 'single'}
                                                 onChange={(e) => updateTemplate({
-                                                    text_settings: {
-                                                        ...(selectedTemplate.text_settings || {}),
-                                                        payeeFillerEnabled: e.target.checked
+                                                    field_positions: {
+                                                        ...selectedTemplate.field_positions,
+                                                        date: { ...(selectedTemplate.field_positions?.date || {}), mode: e.target.value }
+                                                    }
+                                                })}
+                                            >
+                                                <option value="single">Single-line date mode</option>
+                                                <option value="boxed">Boxed date mode (MMDDYYYY without separators)</option>
+                                            </select>
+                                            <input
+                                                type="number"
+                                                step="0.5"
+                                                className="border rounded px-3 py-2"
+                                                placeholder="Character spacing"
+                                                value={selectedTemplate.field_positions?.date?.charSpacing ?? 0}
+                                                onChange={(e) => updateTemplate({
+                                                    field_positions: {
+                                                        ...selectedTemplate.field_positions,
+                                                        date: { ...(selectedTemplate.field_positions?.date || {}), charSpacing: Number(e.target.value) || 0 }
                                                     }
                                                 })}
                                             />
-                                            Add filler at both ends of payee text
-                                        </label>
-                                        <input
-                                            className="border rounded px-3 py-2 w-full"
-                                            placeholder="***"
-                                            value={selectedTemplate.text_settings?.payeeFiller || '***'}
-                                            onChange={(e) => updateTemplate({
-                                                text_settings: {
-                                                    ...(selectedTemplate.text_settings || {}),
-                                                    payeeFiller: e.target.value
-                                                }
-                                            })}
-                                        />
+                                        </div>
                                     </div>
-                                    <div className="border rounded-lg p-3 space-y-2">
-                                        <label className="flex items-center gap-2">
+                                )}
+
+                                {activeTab === 'amount' && (
+                                    <div className="space-y-3">
+                                        <div>
+                                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Amount words casing</label>
+                                            <select className="border rounded px-3 py-2" value={selectedTemplate.amount_format || 'title_case'} onChange={(e) => updateTemplate({ amount_format: e.target.value })}>
+                                                <option value="title_case">Title Case</option>
+                                                <option value="upper">UPPER CASE</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Amount suffix</label>
                                             <input
-                                                type="checkbox"
-                                                checked={Boolean(selectedTemplate.text_settings?.amountWordsFillerEnabled)}
+                                                className="border rounded px-3 py-2 w-full"
+                                                placeholder="pesos"
+                                                value={selectedTemplate.amount_words_settings?.suffix || 'pesos'}
                                                 onChange={(e) => updateTemplate({
-                                                    text_settings: {
-                                                        ...(selectedTemplate.text_settings || {}),
-                                                        amountWordsFillerEnabled: e.target.checked
+                                                    amount_words_settings: {
+                                                        ...(selectedTemplate.amount_words_settings || {}),
+                                                        suffix: e.target.value
                                                     }
                                                 })}
                                             />
-                                            Add filler at both ends of amount-in-words
+                                            <p className="text-xs text-gray-500 mt-1">Whole numbers render as “&lt;amount&gt; suffix only”. Decimal amounts render as “&lt;amount&gt; suffix and xx/100”.</p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {activeTab === 'currency' && (
+                                    <div className="space-y-2">
+                                        <label className="flex items-center gap-2"><input type="checkbox" checked={selectedTemplate.currency_settings?.enabled !== false} onChange={(e) => updateTemplate({ currency_settings: { ...selectedTemplate.currency_settings, enabled: e.target.checked } })} /> Show currency label</label>
+                                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Symbol outside amount box</label>
+                                        <input className="border rounded px-3 py-2" value={selectedTemplate.currency_settings?.label || ''} onChange={(e) => updateTemplate({ currency_settings: { ...selectedTemplate.currency_settings, label: e.target.value } })} />
+                                    </div>
+                                )}
+
+                                {activeTab === 'paper' && (
+                                    <div className="space-y-3">
+                                        <p className="text-gray-600">Paper size is stored in the selected bank preset.</p>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                            <div>
+                                                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Width (inches)</label>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    step="0.1"
+                                                    className="border rounded px-3 py-2 w-full"
+                                                    value={selectedTemplate.paper_settings?.widthIn ?? 8}
+                                                    onChange={(e) => updateTemplate({ paper_settings: { ...(selectedTemplate.paper_settings || {}), widthIn: Number(e.target.value) || 8, unit: 'in' } })}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Height (inches)</label>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    step="0.1"
+                                                    className="border rounded px-3 py-2 w-full"
+                                                    value={selectedTemplate.paper_settings?.heightIn ?? 3}
+                                                    onChange={(e) => updateTemplate({ paper_settings: { ...(selectedTemplate.paper_settings || {}), heightIn: Number(e.target.value) || 3, unit: 'in' } })}
+                                                />
+                                            </div>
+                                        </div>
+                                        <p className="text-xs text-gray-500">Recommended standardized size: 8" x 3".</p>
+                                    </div>
+                                )}
+
+                                {activeTab === 'text' && (
+                                    <div className="space-y-3">
+                                        <p className="text-gray-600">Payee overflow mitigation uses template font size and width values; no line wrapping is applied.</p>
+                                        <div className="border rounded-lg p-3 space-y-2 bg-gray-50">
+                                            <label className="flex items-center gap-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={Boolean(selectedTemplate.text_settings?.payeeFillerEnabled)}
+                                                    onChange={(e) => updateTemplate({
+                                                        text_settings: {
+                                                            ...(selectedTemplate.text_settings || {}),
+                                                            payeeFillerEnabled: e.target.checked
+                                                        }
+                                                    })}
+                                                />
+                                                Add filler at both ends of payee text
+                                            </label>
+                                            <input
+                                                className="border rounded px-3 py-2 w-full"
+                                                placeholder="***"
+                                                value={selectedTemplate.text_settings?.payeeFiller || '***'}
+                                                onChange={(e) => updateTemplate({
+                                                    text_settings: {
+                                                        ...(selectedTemplate.text_settings || {}),
+                                                        payeeFiller: e.target.value
+                                                    }
+                                                })}
+                                            />
+                                        </div>
+                                        <div className="border rounded-lg p-3 space-y-2 bg-gray-50">
+                                            <label className="flex items-center gap-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={Boolean(selectedTemplate.text_settings?.amountWordsFillerEnabled)}
+                                                    onChange={(e) => updateTemplate({
+                                                        text_settings: {
+                                                            ...(selectedTemplate.text_settings || {}),
+                                                            amountWordsFillerEnabled: e.target.checked
+                                                        }
+                                                    })}
+                                                />
+                                                Add filler at both ends of amount-in-words
+                                            </label>
+                                            <input
+                                                className="border rounded px-3 py-2 w-full"
+                                                placeholder="***"
+                                                value={selectedTemplate.text_settings?.amountWordsFiller || '***'}
+                                                onChange={(e) => updateTemplate({
+                                                    text_settings: {
+                                                        ...(selectedTemplate.text_settings || {}),
+                                                        amountWordsFiller: e.target.value
+                                                    }
+                                                })}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {activeTab === 'calibration' && (
+                                    <div className="space-y-3">
+                                        <p className="text-gray-600">Save profile offsets to match your printer's physical output alignment.</p>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                            <input
+                                                className="border rounded px-3 py-2"
+                                                placeholder="Profile name"
+                                                value={draftProfile.profile_name}
+                                                onChange={(e) => setDraftProfile((prev) => ({ ...prev, profile_name: e.target.value }))}
+                                            />
+                                            <input
+                                                type="number"
+                                                step="0.1"
+                                                className="border rounded px-3 py-2"
+                                                placeholder="Offset X"
+                                                value={draftProfile.offset_x}
+                                                onChange={(e) => setDraftProfile((prev) => ({ ...prev, offset_x: Number(e.target.value) || 0 }))}
+                                            />
+                                            <input
+                                                type="number"
+                                                step="0.1"
+                                                className="border rounded px-3 py-2"
+                                                placeholder="Offset Y"
+                                                value={draftProfile.offset_y}
+                                                onChange={(e) => setDraftProfile((prev) => ({ ...prev, offset_y: Number(e.target.value) || 0 }))}
+                                            />
+                                        </div>
+                                        <label className="flex items-center gap-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={Boolean(draftProfile.is_default)}
+                                                onChange={(e) => setDraftProfile((prev) => ({ ...prev, is_default: e.target.checked }))}
+                                            />
+                                            Set as default profile
                                         </label>
-                                        <input
-                                            className="border rounded px-3 py-2 w-full"
-                                            placeholder="***"
-                                            value={selectedTemplate.text_settings?.amountWordsFiller || '***'}
-                                            onChange={(e) => updateTemplate({
-                                                text_settings: {
-                                                    ...(selectedTemplate.text_settings || {}),
-                                                    amountWordsFiller: e.target.value
-                                                }
-                                            })}
-                                        />
-                                    </div>
-                                </div>
-                            )}
-                            {activeTab === 'calibration' && (
-                                <div className="space-y-3">
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                                        <input
-                                            className="border rounded px-3 py-2"
-                                            placeholder="Profile name"
-                                            value={draftProfile.profile_name}
-                                            onChange={(e) => setDraftProfile((prev) => ({ ...prev, profile_name: e.target.value }))}
-                                        />
-                                        <input
-                                            type="number"
-                                            step="0.1"
-                                            className="border rounded px-3 py-2"
-                                            placeholder="Offset X"
-                                            value={draftProfile.offset_x}
-                                            onChange={(e) => setDraftProfile((prev) => ({ ...prev, offset_x: Number(e.target.value) || 0 }))}
-                                        />
-                                        <input
-                                            type="number"
-                                            step="0.1"
-                                            className="border rounded px-3 py-2"
-                                            placeholder="Offset Y"
-                                            value={draftProfile.offset_y}
-                                            onChange={(e) => setDraftProfile((prev) => ({ ...prev, offset_y: Number(e.target.value) || 0 }))}
-                                        />
-                                    </div>
-                                    <label className="flex items-center gap-2">
-                                        <input
-                                            type="checkbox"
-                                            checked={Boolean(draftProfile.is_default)}
-                                            onChange={(e) => setDraftProfile((prev) => ({ ...prev, is_default: e.target.checked }))}
-                                        />
-                                        Set as default profile
-                                    </label>
-                                    <div className="flex gap-2">
-                                        <button className="px-3 py-2 border rounded" onClick={() => upsertProfile(draftProfile)}>
-                                            {selectedProfile ? 'Save Profile' : 'Create Profile'}
-                                        </button>
-                                        {!selectedProfile && (
-                                            <button className="px-3 py-2 border rounded" onClick={() => setDraftProfile({ profile_name: `Profile ${printerProfiles.length + 1}`, offset_x: 0, offset_y: 0, is_default: false })}>
-                                                Quick Fill
+                                        <div className="flex gap-2">
+                                            <button className="px-3 py-2 border rounded" onClick={() => upsertProfile(draftProfile)}>
+                                                {selectedProfile ? 'Save Profile' : 'Create Profile'}
                                             </button>
-                                        )}
+                                            {!selectedProfile && (
+                                                <button className="px-3 py-2 border rounded" onClick={() => setDraftProfile({ profile_name: `Profile ${printerProfiles.length + 1}`, offset_x: 0, offset_y: 0, is_default: false })}>
+                                                    Quick Fill
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
-                                    <p className="text-gray-600">Offsets are automatically applied to generated PDFs when this profile is selected.</p>
-                                </div>
-                            )}
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -523,14 +615,38 @@ const ChequePrintingPage = () => {
 
             {historyOpen && (
                 <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-xl border w-full max-w-5xl">
-                        <div className="p-4 border-b flex items-center justify-between">
-                            <h3 className="font-semibold">Cheque History</h3>
-                            <button onClick={() => setHistoryOpen(false)}>Close</button>
+                    <div className="bg-white rounded-xl border w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+                        <div className="p-4 border-b flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                            <div>
+                                <h3 className="font-semibold text-gray-900">Cheque History</h3>
+                                <p className="text-xs text-gray-500">Review past cheque records and reprint as needed.</p>
+                            </div>
+                            <button className="px-3 py-1.5 border rounded-lg text-sm w-fit" onClick={() => setHistoryOpen(false)}>Close</button>
                         </div>
-                        <div className="max-h-[70vh] overflow-auto">
+
+                        <div className="p-4 border-b bg-gray-50/60 grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <input
+                                className="border rounded-lg px-3 py-2 text-sm"
+                                placeholder="Search payee, memo, amount or bank"
+                                value={historyQuery}
+                                onChange={(e) => setHistoryQuery(e.target.value)}
+                            />
+                            <select
+                                className="border rounded-lg px-3 py-2 text-sm"
+                                value={historyBankFilter}
+                                onChange={(e) => setHistoryBankFilter(e.target.value)}
+                            >
+                                <option value="all">All banks</option>
+                                {historyBankOptions.map((bank) => (
+                                    <option key={bank} value={bank}>{bank}</option>
+                                ))}
+                            </select>
+                            <div className="text-sm text-gray-600 flex items-center md:justify-end">{filteredHistory.length} of {history.length} records</div>
+                        </div>
+
+                        <div className="max-h-[65vh] overflow-auto">
                             <table className="w-full text-sm">
-                                <thead className="bg-gray-50">
+                                <thead className="bg-gray-50 sticky top-0">
                                     <tr>
                                         <th className="p-2 text-left">Created</th>
                                         <th className="p-2 text-left">Payee</th>
@@ -541,21 +657,24 @@ const ChequePrintingPage = () => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {history.map((entry) => (
-                                        <tr key={entry.id} className="border-t">
-                                            <td className="p-2">{format(new Date(entry.created_at), 'yyyy-MM-dd HH:mm')}</td>
+                                    {filteredHistory.map((entry) => (
+                                        <tr key={entry.id} className="border-t hover:bg-gray-50/70">
+                                            <td className="p-2 whitespace-nowrap">{format(new Date(entry.created_at), 'yyyy-MM-dd HH:mm')}</td>
                                             <td className="p-2">{entry.payee}</td>
                                             <td className="p-2">{entry.amount}</td>
                                             <td className="p-2">{entry.bank_preset || '-'}</td>
-                                            <td className="p-2">{entry.cheque_date ? format(new Date(entry.cheque_date), 'yyyy-MM-dd') : '-'}</td>
-                                            <td className="p-2 text-right space-x-2">
-                                                <button className="border rounded px-2 py-1" onClick={() => handleReprint(entry)}>Reprint</button>
-                                                <button className="border rounded px-2 py-1 text-red-600" onClick={() => handleDelete(entry.id)}>Delete</button>
+                                            <td className="p-2 whitespace-nowrap">{entry.cheque_date ? format(new Date(entry.cheque_date), 'yyyy-MM-dd') : '-'}</td>
+                                            <td className="p-2 text-right space-x-2 whitespace-nowrap">
+                                                <button className="border rounded px-2 py-1 hover:bg-gray-50" onClick={() => handleReprint(entry)}>Reprint</button>
+                                                <button className="border rounded px-2 py-1 text-red-600 hover:bg-red-50" onClick={() => handleDelete(entry.id)}>Delete</button>
                                             </td>
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
+                            {!filteredHistory.length && (
+                                <div className="py-10 text-center text-sm text-gray-500">No cheque history matches the current filters.</div>
+                            )}
                         </div>
                     </div>
                 </div>
