@@ -7,7 +7,9 @@ describe('createChequePdf', () => {
             template: {
                 field_positions: {},
                 amount_format: 'title_case',
-                currency_settings: { enabled: true, label: 'USD' }
+                currency_settings: { enabled: true, label: 'USD' },
+                amount_words_settings: { suffix: 'pesos' },
+                text_settings: { payeeFillerEnabled: true, payeeFiller: '***', amountWordsFillerEnabled: true, amountWordsFiller: '--' }
             },
             printerProfile: { offset_x: 0, offset_y: 0 }
         });
