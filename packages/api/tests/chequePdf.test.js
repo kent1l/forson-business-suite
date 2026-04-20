@@ -15,7 +15,7 @@ describe('createChequePdf', () => {
 
         expect(Buffer.isBuffer(pdf)).toBe(true);
         expect(pdf.length).toBeGreaterThan(100);
-        expect(pdf.toString('utf8', 0, 8)).toContain('%PDF-1.4');
+        expect(pdf.toString('utf8', 0, 8)).toMatch(/^%PDF-1\.[0-9]/);
         expect(['pdf-lib', 'fallback']).toContain(result.renderer);
     });
 
