@@ -87,7 +87,7 @@ const ChequePrintingPage = () => {
 
     const activeRows = rows.filter((row) => row.payee || row.amount || row.memo).map((row) => ({
         ...row,
-        amount: (Math.round(Number(row.amount || 0) * 100) / 100).toFixed(2)
+        amount: String(Math.round(Number(row.amount || 0) * 100) / 100)
     }));
 
     const generatePdf = async (sourceRows = activeRows, persist = persistRecords) => {
@@ -350,10 +350,30 @@ const ChequePrintingPage = () => {
                                 </div>
                             )}
                             {activeTab === 'amount' && (
-                                <select className="border rounded px-3 py-2" value={selectedTemplate.amount_format || 'title_case'} onChange={(e) => updateTemplate({ amount_format: e.target.value })}>
-                                    <option value="title_case">Title Case</option>
-                                    <option value="upper">UPPER CASE</option>
-                                </select>
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Amount words casing</label>
+                                        <select className="border rounded px-3 py-2" value={selectedTemplate.amount_format || 'title_case'} onChange={(e) => updateTemplate({ amount_format: e.target.value })}>
+                                            <option value="title_case">Title Case</option>
+                                            <option value="upper">UPPER CASE</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Amount suffix</label>
+                                        <input
+                                            className="border rounded px-3 py-2 w-full"
+                                            placeholder="pesos"
+                                            value={selectedTemplate.amount_words_settings?.suffix || 'pesos'}
+                                            onChange={(e) => updateTemplate({
+                                                amount_words_settings: {
+                                                    ...(selectedTemplate.amount_words_settings || {}),
+                                                    suffix: e.target.value
+                                                }
+                                            })}
+                                        />
+                                        <p className="text-xs text-gray-500 mt-1">Whole numbers render as “&lt;amount&gt; suffix only”. Decimal amounts render as “&lt;amount&gt; suffix and xx/100”.</p>
+                                    </div>
+                                </div>
                             )}
                             {activeTab === 'currency' && (
                                 <div className="space-y-2">
@@ -392,7 +412,63 @@ const ChequePrintingPage = () => {
                                     <p className="text-xs text-gray-500">Recommended standardized size: 8" x 3".</p>
                                 </div>
                             )}
-                            {activeTab === 'text' && <p className="text-gray-600">Payee overflow mitigation uses template font size and width values; no line wrapping is applied.</p>}
+                            {activeTab === 'text' && (
+                                <div className="space-y-3">
+                                    <p className="text-gray-600">Payee overflow mitigation uses template font size and width values; no line wrapping is applied.</p>
+                                    <div className="border rounded-lg p-3 space-y-2">
+                                        <label className="flex items-center gap-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={Boolean(selectedTemplate.text_settings?.payeeFillerEnabled)}
+                                                onChange={(e) => updateTemplate({
+                                                    text_settings: {
+                                                        ...(selectedTemplate.text_settings || {}),
+                                                        payeeFillerEnabled: e.target.checked
+                                                    }
+                                                })}
+                                            />
+                                            Add filler at both ends of payee text
+                                        </label>
+                                        <input
+                                            className="border rounded px-3 py-2 w-full"
+                                            placeholder="***"
+                                            value={selectedTemplate.text_settings?.payeeFiller || '***'}
+                                            onChange={(e) => updateTemplate({
+                                                text_settings: {
+                                                    ...(selectedTemplate.text_settings || {}),
+                                                    payeeFiller: e.target.value
+                                                }
+                                            })}
+                                        />
+                                    </div>
+                                    <div className="border rounded-lg p-3 space-y-2">
+                                        <label className="flex items-center gap-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={Boolean(selectedTemplate.text_settings?.amountWordsFillerEnabled)}
+                                                onChange={(e) => updateTemplate({
+                                                    text_settings: {
+                                                        ...(selectedTemplate.text_settings || {}),
+                                                        amountWordsFillerEnabled: e.target.checked
+                                                    }
+                                                })}
+                                            />
+                                            Add filler at both ends of amount-in-words
+                                        </label>
+                                        <input
+                                            className="border rounded px-3 py-2 w-full"
+                                            placeholder="***"
+                                            value={selectedTemplate.text_settings?.amountWordsFiller || '***'}
+                                            onChange={(e) => updateTemplate({
+                                                text_settings: {
+                                                    ...(selectedTemplate.text_settings || {}),
+                                                    amountWordsFiller: e.target.value
+                                                }
+                                            })}
+                                        />
+                                    </div>
+                                </div>
+                            )}
                             {activeTab === 'calibration' && (
                                 <div className="space-y-3">
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-2">

@@ -10,6 +10,14 @@ try {
 
 const DEFAULT_PAPER = { width: 576, height: 216 }; // 8in x 3in @ 72 DPI
 
+function applyEndFiller(text, filler, enabled) {
+    const content = String(text || '').trim();
+    if (!enabled) return content;
+    const token = String(filler || '').trim();
+    if (!token || !content) return content;
+    return `${token} ${content} ${token}`;
+}
+
 function resolvePaperSize(paperSettings = {}) {
     const widthIn = Number(paperSettings.widthIn);
     const heightIn = Number(paperSettings.heightIn);
@@ -53,10 +61,14 @@ function fitFontSize({
 function createFallbackPdf({ rows, template, xOffset, yOffset, testPrint }) {
     const positions = template?.field_positions || {};
     const currencySettings = template?.currency_settings || { enabled: true, label: '₱' };
+    const amountWordsSettings = template?.amount_words_settings || { suffix: 'pesos' };
+    const textSettings = template?.text_settings || {};
     const paperSize = resolvePaperSize(template?.paper_settings);
     const pages = rows.map((row) => {
-        const amountWords = amountToWords(row.amount);
+        const amountWords = amountToWords(row.amount, { suffix: amountWordsSettings?.suffix || 'pesos' });
         const words = template?.amount_format === 'upper' ? amountWords.toUpperCase() : amountWords;
+        const amountWordsText = applyEndFiller(words, textSettings?.amountWordsFiller, textSettings?.amountWordsFillerEnabled);
+        const payeeText = applyEndFiller(row.payee, textSettings?.payeeFiller, textSettings?.payeeFillerEnabled);
         const drawText = (text, cfg, fallback) => {
             const x = Number(cfg?.x ?? fallback.x) + xOffset;
             const y = Number(cfg?.y ?? fallback.y) + yOffset;
@@ -66,9 +78,9 @@ function createFallbackPdf({ rows, template, xOffset, yOffset, testPrint }) {
         };
         const lines = [
             drawText(row.date, positions.date, { x: 426, y: 178, fontSize: 11 }),
-            drawText(row.payee, positions.payee, { x: 72, y: 136, fontSize: 12 }),
+            drawText(payeeText, positions.payee, { x: 72, y: 136, fontSize: 12 }),
             drawText(row.amount, positions.amountNumeric, { x: 534, y: 136, fontSize: 12 }),
-            drawText(words, positions.amountWords, { x: 72, y: 104, fontSize: 11 })
+            drawText(amountWordsText, positions.amountWords, { x: 72, y: 104, fontSize: 11 })
         ];
         if (currencySettings.enabled !== false) {
             lines.push(drawText(currencySettings.label || '₱', positions.currency, { x: 474, y: 136, fontSize: 11 }));
@@ -119,6 +131,8 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
 
     const positions = template?.field_positions || {};
     const currencySettings = template?.currency_settings || { enabled: true, label: '₱' };
+    const amountWordsSettings = template?.amount_words_settings || { suffix: 'pesos' };
+    const textSettings = template?.text_settings || {};
     const xOffset = Number(printerProfile.offset_x || 0);
     const yOffset = Number(printerProfile.offset_y || 0);
     const paperSize = resolvePaperSize(template?.paper_settings);
@@ -137,8 +151,10 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
 
         rows.forEach((row) => {
             const page = pdfDoc.addPage([paperSize.width, paperSize.height]);
-            const amountWords = amountToWords(row.amount);
+            const amountWords = amountToWords(row.amount, { suffix: amountWordsSettings?.suffix || 'pesos' });
             const words = template?.amount_format === 'upper' ? amountWords.toUpperCase() : amountWords;
+            const amountWordsText = applyEndFiller(words, textSettings?.amountWordsFiller, textSettings?.amountWordsFillerEnabled);
+            const payeeText = applyEndFiller(row.payee, textSettings?.payeeFiller, textSettings?.payeeFillerEnabled);
 
         const drawText = (text, cfg, fallback) => {
             const baseX = Number(cfg?.x ?? fallback.x) + xOffset;
@@ -182,9 +198,9 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
         } else {
             drawText(row.date, dateCfg, { x: 426, y: 178, fontSize: 11, alignment: 'left', charSpacing: 0 });
         }
-        drawText(row.payee, positions.payee, { x: 72, y: 136, fontSize: 12, alignment: 'left', maxWidth: 380, minFontSize: 8 });
+        drawText(payeeText, positions.payee, { x: 72, y: 136, fontSize: 12, alignment: 'left', maxWidth: 380, minFontSize: 8 });
         drawText(row.amount, positions.amountNumeric, { x: 534, y: 136, fontSize: 12, alignment: 'right' });
-        drawText(words, positions.amountWords, { x: 72, y: 104, fontSize: 11, alignment: 'left', maxWidth: 420, minFontSize: 8 });
+        drawText(amountWordsText, positions.amountWords, { x: 72, y: 104, fontSize: 11, alignment: 'left', maxWidth: 420, minFontSize: 8 });
 
         if (currencySettings.enabled !== false) {
             drawText(currencySettings.label || '₱', positions.currency, { x: 474, y: 136, fontSize: 11, alignment: 'left' });

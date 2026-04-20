@@ -52,11 +52,18 @@ const DEFAULT_TEMPLATE = {
 };
 
 const DEFAULT_PAPER_SETTINGS = { widthIn: 8, heightIn: 3, unit: 'in' };
+const DEFAULT_AMOUNT_WORDS_SETTINGS = { suffix: 'pesos' };
+const DEFAULT_TEXT_SETTINGS = {
+    payeeFillerEnabled: false,
+    payeeFiller: '***',
+    amountWordsFillerEnabled: false,
+    amountWordsFiller: '***'
+};
 
 router.get('/cheques/templates', protect, async (_req, res) => {
     try {
         const { rows } = await db.query(
-            `SELECT id, bank_name, field_positions, date_format, amount_format, currency_settings, paper_settings, created_at, updated_at
+            `SELECT id, bank_name, field_positions, date_format, amount_format, currency_settings, paper_settings, amount_words_settings, text_settings, created_at, updated_at
              FROM cheque_templates
              WHERE is_deleted = FALSE
              ORDER BY bank_name ASC`
@@ -75,7 +82,9 @@ router.post('/cheques/templates', protect, async (req, res) => {
         date_format = 'MM-dd-yyyy',
         amount_format = 'title_case',
         currency_settings = { enabled: true, label: '₱' },
-        paper_settings = DEFAULT_PAPER_SETTINGS
+        paper_settings = DEFAULT_PAPER_SETTINGS,
+        amount_words_settings = DEFAULT_AMOUNT_WORDS_SETTINGS,
+        text_settings = DEFAULT_TEXT_SETTINGS
     } = req.body;
 
     if (!bank_name || !String(bank_name).trim()) {
@@ -84,10 +93,10 @@ router.post('/cheques/templates', protect, async (req, res) => {
 
     try {
         const { rows } = await db.query(
-            `INSERT INTO cheque_templates (bank_name, field_positions, date_format, amount_format, currency_settings, paper_settings)
-             VALUES ($1, $2::jsonb, $3, $4, $5::jsonb, $6::jsonb)
-             RETURNING id, bank_name, field_positions, date_format, amount_format, currency_settings, paper_settings, created_at, updated_at`,
-            [bank_name.trim(), JSON.stringify(field_positions), date_format, amount_format, JSON.stringify(currency_settings), JSON.stringify(paper_settings)]
+            `INSERT INTO cheque_templates (bank_name, field_positions, date_format, amount_format, currency_settings, paper_settings, amount_words_settings, text_settings)
+             VALUES ($1, $2::jsonb, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb)
+             RETURNING id, bank_name, field_positions, date_format, amount_format, currency_settings, paper_settings, amount_words_settings, text_settings, created_at, updated_at`,
+            [bank_name.trim(), JSON.stringify(field_positions), date_format, amount_format, JSON.stringify(currency_settings), JSON.stringify(paper_settings), JSON.stringify(amount_words_settings), JSON.stringify(text_settings)]
         );
         res.status(201).json(rows[0]);
     } catch (error) {
@@ -98,7 +107,7 @@ router.post('/cheques/templates', protect, async (req, res) => {
 
 router.put('/cheques/templates/:id', protect, async (req, res) => {
     const { id } = req.params;
-    const { field_positions, date_format, amount_format, currency_settings, bank_name, paper_settings } = req.body;
+    const { field_positions, date_format, amount_format, currency_settings, bank_name, paper_settings, amount_words_settings, text_settings } = req.body;
 
     try {
         const { rows } = await db.query(
@@ -109,9 +118,11 @@ router.put('/cheques/templates/:id', protect, async (req, res) => {
                  amount_format = COALESCE($4, amount_format),
                  currency_settings = COALESCE($5::jsonb, currency_settings),
                  paper_settings = COALESCE($6::jsonb, paper_settings),
+                 amount_words_settings = COALESCE($7::jsonb, amount_words_settings),
+                 text_settings = COALESCE($8::jsonb, text_settings),
                  updated_at = CURRENT_TIMESTAMP
-             WHERE id = $7 AND is_deleted = FALSE
-             RETURNING id, bank_name, field_positions, date_format, amount_format, currency_settings, paper_settings, created_at, updated_at`,
+             WHERE id = $9 AND is_deleted = FALSE
+             RETURNING id, bank_name, field_positions, date_format, amount_format, currency_settings, paper_settings, amount_words_settings, text_settings, created_at, updated_at`,
             [
                 bank_name ?? null,
                 field_positions ? JSON.stringify(field_positions) : null,
@@ -119,6 +130,8 @@ router.put('/cheques/templates/:id', protect, async (req, res) => {
                 amount_format ?? null,
                 currency_settings ? JSON.stringify(currency_settings) : null,
                 paper_settings ? JSON.stringify(paper_settings) : null,
+                amount_words_settings ? JSON.stringify(amount_words_settings) : null,
+                text_settings ? JSON.stringify(text_settings) : null,
                 id
             ]
         );
