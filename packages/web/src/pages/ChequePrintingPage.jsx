@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { format, parseISO, isValid } from 'date-fns';
 import toast from 'react-hot-toast';
 import api from '../api';
+// eslint-disable-next-line no-unused-vars
+import Icon from '../components/ui/Icon';
+import { ICONS } from '../constants';
 
 const blankRow = () => ({ date: format(new Date(), 'yyyy-MM-dd'), payee: '', amount: '', memo: '' });
 
@@ -23,6 +26,12 @@ const FIELD_LABELS = {
     memo: 'Memo',
     currency: 'Currency symbol'
 };
+
+const BUTTON_BASE = 'inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50';
+const BUTTON_SECONDARY = `${BUTTON_BASE} border border-gray-300 bg-white text-gray-700 hover:bg-gray-50`;
+const BUTTON_PRIMARY = `${BUTTON_BASE} bg-blue-600 text-white hover:bg-blue-700`;
+const BUTTON_DANGER = `${BUTTON_BASE} border border-red-200 bg-white text-red-600 hover:bg-red-50`;
+const INPUT_BASE = 'w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100';
 
 const ChequePrintingPage = () => {
     const [templates, setTemplates] = useState([]);
@@ -258,9 +267,18 @@ const ChequePrintingPage = () => {
                         <p className="text-sm text-gray-500 mt-1">Prepare cheques, manage print calibration, and review printed cheque history in one place.</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                        <button className="px-3 py-2 border rounded-lg text-sm font-medium hover:bg-gray-50" onClick={() => setSettingsOpen(true)}>Open Settings</button>
-                        <button className="px-3 py-2 border rounded-lg text-sm font-medium hover:bg-gray-50" onClick={() => setHistoryOpen(true)}>View History</button>
-                        <button className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg disabled:opacity-50" disabled={saving} onClick={() => generatePdf()}>{saving ? 'Generating…' : 'Generate PDF'}</button>
+                        <button className={BUTTON_SECONDARY} onClick={() => setSettingsOpen(true)}>
+                            <Icon path={ICONS.settings} className="h-4 w-4" />
+                            Open Settings
+                        </button>
+                        <button className={BUTTON_SECONDARY} onClick={() => setHistoryOpen(true)}>
+                            <Icon path={ICONS.history} className="h-4 w-4" />
+                            View History
+                        </button>
+                        <button className={BUTTON_PRIMARY} disabled={saving} onClick={() => generatePdf()}>
+                            <Icon path={ICONS.receipt} className="h-4 w-4" />
+                            {saving ? 'Generating…' : 'Generate PDF'}
+                        </button>
                     </div>
                 </div>
             </div>
@@ -290,7 +308,7 @@ const ChequePrintingPage = () => {
                                         <label className="md:hidden text-xs font-semibold text-gray-500 uppercase tracking-wide">{column.placeholder}</label>
                                         <input
                                             type={column.field === 'date' ? 'date' : 'text'}
-                                            className="border rounded-lg px-3 py-2 text-sm w-full bg-white"
+                                            className={INPUT_BASE}
                                             value={row[column.field]}
                                             onChange={(e) => updateRow(idx, column.field, e.target.value)}
                                             onKeyDown={(e) => onRowKeyDown(e, idx, fieldIndex)}
@@ -302,10 +320,11 @@ const ChequePrintingPage = () => {
                                 ))}
                                 <div className="flex md:justify-end">
                                     <button
-                                        className="border rounded-lg px-2.5 py-2 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                        className={BUTTON_DANGER}
                                         onClick={() => removeRow(idx)}
                                         disabled={rows.length === 1 || isTrailingBlank}
                                     >
+                                        <Icon path={ICONS.trash} className="h-4 w-4" />
                                         Remove
                                     </button>
                                 </div>
@@ -319,13 +338,13 @@ const ChequePrintingPage = () => {
                     <div className="space-y-3">
                         <div>
                             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Bank preset</label>
-                            <select className="border rounded-lg px-3 py-2 text-sm w-full" value={selectedTemplateId} onChange={(e) => setSelectedTemplateId(e.target.value)}>
+                            <select className={INPUT_BASE} value={selectedTemplateId} onChange={(e) => setSelectedTemplateId(e.target.value)}>
                                 {templates.map((template) => <option key={template.id} value={template.id}>{template.bank_name}</option>)}
                             </select>
                         </div>
                         <div>
                             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Printer profile</label>
-                            <select className="border rounded-lg px-3 py-2 text-sm w-full" value={selectedProfileId} onChange={(e) => setSelectedProfileId(e.target.value)}>
+                            <select className={INPUT_BASE} value={selectedProfileId} onChange={(e) => setSelectedProfileId(e.target.value)}>
                                 <option value="">None</option>
                                 {printerProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.profile_name}{profile.is_default ? ' (Default)' : ''}</option>)}
                             </select>
@@ -357,7 +376,7 @@ const ChequePrintingPage = () => {
                                 <h3 className="font-semibold text-gray-900">Cheque Settings</h3>
                                 <p className="text-xs text-gray-500 mt-0.5">Preset: {selectedTemplate.bank_name}</p>
                             </div>
-                            <button className="px-3 py-1.5 border rounded-lg text-sm" onClick={() => setSettingsOpen(false)}>Close</button>
+                            <button className={BUTTON_SECONDARY} onClick={() => setSettingsOpen(false)}><Icon path={ICONS.close} className="h-4 w-4" />Close</button>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] min-h-0 flex-1">
@@ -388,9 +407,9 @@ const ChequePrintingPage = () => {
                                         {Object.entries(selectedTemplate.field_positions || {}).map(([field, cfg]) => (
                                             <div key={field} className="grid grid-cols-4 gap-2 items-center border rounded-lg p-2">
                                                 <span className="font-medium">{FIELD_LABELS[field] || field}</span>
-                                                <input type="number" className="border rounded px-2 py-1" aria-label={`${field} X`} value={cfg.x ?? 0} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, x: Number(e.target.value) } } })} />
-                                                <input type="number" className="border rounded px-2 py-1" aria-label={`${field} Y`} value={cfg.y ?? 0} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, y: Number(e.target.value) } } })} />
-                                                <input type="number" className="border rounded px-2 py-1" aria-label={`${field} Font`} value={cfg.fontSize ?? 11} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, fontSize: Number(e.target.value) } } })} />
+                                                <input type="number" className={INPUT_BASE} aria-label={`${field} X`} value={cfg.x ?? 0} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, x: Number(e.target.value) } } })} />
+                                                <input type="number" className={INPUT_BASE} aria-label={`${field} Y`} value={cfg.y ?? 0} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, y: Number(e.target.value) } } })} />
+                                                <input type="number" className={INPUT_BASE} aria-label={`${field} Font`} value={cfg.fontSize ?? 11} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, fontSize: Number(e.target.value) } } })} />
                                             </div>
                                         ))}
                                     </div>
@@ -399,7 +418,7 @@ const ChequePrintingPage = () => {
                                 {activeTab === 'date' && (
                                     <div className="space-y-3">
                                         <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Date output format</label>
-                                        <select className="border rounded px-3 py-2" value={selectedTemplate.date_format || 'MM-dd-yyyy'} onChange={(e) => updateTemplate({ date_format: e.target.value })}>
+                                        <select className={INPUT_BASE} value={selectedTemplate.date_format || 'MM-dd-yyyy'} onChange={(e) => updateTemplate({ date_format: e.target.value })}>
                                             <option value="MM-dd-yyyy">MM-DD-YYYY</option>
                                             <option value="MM/dd/yyyy">MM/dd/yyyy</option>
                                             <option value="dd/MM/yyyy">dd/MM/yyyy</option>
@@ -407,7 +426,7 @@ const ChequePrintingPage = () => {
                                         </select>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                             <select
-                                                className="border rounded px-3 py-2"
+                                                className={INPUT_BASE}
                                                 value={selectedTemplate.field_positions?.date?.mode || 'single'}
                                                 onChange={(e) => updateTemplate({
                                                     field_positions: {
@@ -422,7 +441,7 @@ const ChequePrintingPage = () => {
                                             <input
                                                 type="number"
                                                 step="0.5"
-                                                className="border rounded px-3 py-2"
+                                                className={INPUT_BASE}
                                                 placeholder="Character spacing"
                                                 value={selectedTemplate.field_positions?.date?.charSpacing ?? 0}
                                                 onChange={(e) => updateTemplate({
@@ -440,7 +459,7 @@ const ChequePrintingPage = () => {
                                     <div className="space-y-3">
                                         <div>
                                             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Amount words casing</label>
-                                            <select className="border rounded px-3 py-2" value={selectedTemplate.amount_format || 'title_case'} onChange={(e) => updateTemplate({ amount_format: e.target.value })}>
+                                            <select className={INPUT_BASE} value={selectedTemplate.amount_format || 'title_case'} onChange={(e) => updateTemplate({ amount_format: e.target.value })}>
                                                 <option value="title_case">Title Case</option>
                                                 <option value="upper">UPPER CASE</option>
                                             </select>
@@ -448,7 +467,7 @@ const ChequePrintingPage = () => {
                                         <div>
                                             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Amount suffix</label>
                                             <input
-                                                className="border rounded px-3 py-2 w-full"
+                                                className={INPUT_BASE}
                                                 placeholder="pesos"
                                                 value={selectedTemplate.amount_words_settings?.suffix || 'pesos'}
                                                 onChange={(e) => updateTemplate({
@@ -467,7 +486,7 @@ const ChequePrintingPage = () => {
                                     <div className="space-y-2">
                                         <label className="flex items-center gap-2"><input type="checkbox" checked={selectedTemplate.currency_settings?.enabled !== false} onChange={(e) => updateTemplate({ currency_settings: { ...selectedTemplate.currency_settings, enabled: e.target.checked } })} /> Show currency label</label>
                                         <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Symbol outside amount box</label>
-                                        <input className="border rounded px-3 py-2" value={selectedTemplate.currency_settings?.label || ''} onChange={(e) => updateTemplate({ currency_settings: { ...selectedTemplate.currency_settings, label: e.target.value } })} />
+                                        <input className={INPUT_BASE} value={selectedTemplate.currency_settings?.label || ''} onChange={(e) => updateTemplate({ currency_settings: { ...selectedTemplate.currency_settings, label: e.target.value } })} />
                                     </div>
                                 )}
 
@@ -481,7 +500,7 @@ const ChequePrintingPage = () => {
                                                     type="number"
                                                     min="1"
                                                     step="0.1"
-                                                    className="border rounded px-3 py-2 w-full"
+                                                    className={INPUT_BASE}
                                                     value={selectedTemplate.paper_settings?.widthIn ?? 8}
                                                     onChange={(e) => updateTemplate({ paper_settings: { ...(selectedTemplate.paper_settings || {}), widthIn: Number(e.target.value) || 8, unit: 'in' } })}
                                                 />
@@ -492,7 +511,7 @@ const ChequePrintingPage = () => {
                                                     type="number"
                                                     min="1"
                                                     step="0.1"
-                                                    className="border rounded px-3 py-2 w-full"
+                                                    className={INPUT_BASE}
                                                     value={selectedTemplate.paper_settings?.heightIn ?? 3}
                                                     onChange={(e) => updateTemplate({ paper_settings: { ...(selectedTemplate.paper_settings || {}), heightIn: Number(e.target.value) || 3, unit: 'in' } })}
                                                 />
@@ -520,7 +539,7 @@ const ChequePrintingPage = () => {
                                                 Add filler at both ends of payee text
                                             </label>
                                             <input
-                                                className="border rounded px-3 py-2 w-full"
+                                                className={INPUT_BASE}
                                                 placeholder="***"
                                                 value={selectedTemplate.text_settings?.payeeFiller || '***'}
                                                 onChange={(e) => updateTemplate({
@@ -546,7 +565,7 @@ const ChequePrintingPage = () => {
                                                 Add filler at both ends of amount-in-words
                                             </label>
                                             <input
-                                                className="border rounded px-3 py-2 w-full"
+                                                className={INPUT_BASE}
                                                 placeholder="***"
                                                 value={selectedTemplate.text_settings?.amountWordsFiller || '***'}
                                                 onChange={(e) => updateTemplate({
@@ -565,7 +584,7 @@ const ChequePrintingPage = () => {
                                         <p className="text-gray-600">Save profile offsets to match your printer's physical output alignment.</p>
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                                             <input
-                                                className="border rounded px-3 py-2"
+                                                className={INPUT_BASE}
                                                 placeholder="Profile name"
                                                 value={draftProfile.profile_name}
                                                 onChange={(e) => setDraftProfile((prev) => ({ ...prev, profile_name: e.target.value }))}
@@ -573,7 +592,7 @@ const ChequePrintingPage = () => {
                                             <input
                                                 type="number"
                                                 step="0.1"
-                                                className="border rounded px-3 py-2"
+                                                className={INPUT_BASE}
                                                 placeholder="Offset X"
                                                 value={draftProfile.offset_x}
                                                 onChange={(e) => setDraftProfile((prev) => ({ ...prev, offset_x: Number(e.target.value) || 0 }))}
@@ -581,7 +600,7 @@ const ChequePrintingPage = () => {
                                             <input
                                                 type="number"
                                                 step="0.1"
-                                                className="border rounded px-3 py-2"
+                                                className={INPUT_BASE}
                                                 placeholder="Offset Y"
                                                 value={draftProfile.offset_y}
                                                 onChange={(e) => setDraftProfile((prev) => ({ ...prev, offset_y: Number(e.target.value) || 0 }))}
@@ -596,13 +615,9 @@ const ChequePrintingPage = () => {
                                             Set as default profile
                                         </label>
                                         <div className="flex gap-2">
-                                            <button className="px-3 py-2 border rounded" onClick={() => upsertProfile(draftProfile)}>
-                                                {selectedProfile ? 'Save Profile' : 'Create Profile'}
-                                            </button>
+                                            <button className={BUTTON_PRIMARY} onClick={() => upsertProfile(draftProfile)}><Icon path={ICONS.settings} className="h-4 w-4" />{selectedProfile ? 'Save Profile' : 'Create Profile'}</button>
                                             {!selectedProfile && (
-                                                <button className="px-3 py-2 border rounded" onClick={() => setDraftProfile({ profile_name: `Profile ${printerProfiles.length + 1}`, offset_x: 0, offset_y: 0, is_default: false })}>
-                                                    Quick Fill
-                                                </button>
+                                                <button className={BUTTON_SECONDARY} onClick={() => setDraftProfile({ profile_name: `Profile ${printerProfiles.length + 1}`, offset_x: 0, offset_y: 0, is_default: false })}><Icon path={ICONS.edit} className="h-4 w-4" />Quick Fill</button>
                                             )}
                                         </div>
                                     </div>
@@ -621,18 +636,18 @@ const ChequePrintingPage = () => {
                                 <h3 className="font-semibold text-gray-900">Cheque History</h3>
                                 <p className="text-xs text-gray-500">Review past cheque records and reprint as needed.</p>
                             </div>
-                            <button className="px-3 py-1.5 border rounded-lg text-sm w-fit" onClick={() => setHistoryOpen(false)}>Close</button>
+                            <button className={BUTTON_SECONDARY} onClick={() => setHistoryOpen(false)}><Icon path={ICONS.close} className="h-4 w-4" />Close</button>
                         </div>
 
                         <div className="p-4 border-b bg-gray-50/60 grid grid-cols-1 md:grid-cols-3 gap-3">
                             <input
-                                className="border rounded-lg px-3 py-2 text-sm"
+                                className={INPUT_BASE}
                                 placeholder="Search payee, memo, amount or bank"
                                 value={historyQuery}
                                 onChange={(e) => setHistoryQuery(e.target.value)}
                             />
                             <select
-                                className="border rounded-lg px-3 py-2 text-sm"
+                                className={INPUT_BASE}
                                 value={historyBankFilter}
                                 onChange={(e) => setHistoryBankFilter(e.target.value)}
                             >
@@ -665,8 +680,8 @@ const ChequePrintingPage = () => {
                                             <td className="p-2">{entry.bank_preset || '-'}</td>
                                             <td className="p-2 whitespace-nowrap">{entry.cheque_date ? format(new Date(entry.cheque_date), 'yyyy-MM-dd') : '-'}</td>
                                             <td className="p-2 text-right space-x-2 whitespace-nowrap">
-                                                <button className="border rounded px-2 py-1 hover:bg-gray-50" onClick={() => handleReprint(entry)}>Reprint</button>
-                                                <button className="border rounded px-2 py-1 text-red-600 hover:bg-red-50" onClick={() => handleDelete(entry.id)}>Delete</button>
+                                                <button className={BUTTON_SECONDARY} onClick={() => handleReprint(entry)}><Icon path={ICONS.history} className="h-4 w-4" />Reprint</button>
+                                                <button className={BUTTON_DANGER} onClick={() => handleDelete(entry.id)}><Icon path={ICONS.trash} className="h-4 w-4" />Delete</button>
                                             </td>
                                         </tr>
                                     ))}
