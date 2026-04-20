@@ -59,8 +59,7 @@ function createFallbackPdf({ rows, template, xOffset, yOffset, testPrint }) {
             drawText(row.date, positions.date, { x: 430, y: 700, fontSize: 11 }),
             drawText(row.payee, positions.payee, { x: 90, y: 655, fontSize: 12 }),
             drawText(row.amount, positions.amountNumeric, { x: 490, y: 655, fontSize: 12 }),
-            drawText(words, positions.amountWords, { x: 90, y: 625, fontSize: 11 }),
-            drawText(row.memo || '', positions.memo, { x: 90, y: 585, fontSize: 10 })
+            drawText(words, positions.amountWords, { x: 90, y: 625, fontSize: 11 })
         ];
         if (currencySettings.enabled !== false) {
             lines.push(drawText(currencySettings.label || 'USD', positions.currency, { x: 515, y: 655, fontSize: 11 }));
@@ -176,7 +175,6 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
         drawText(row.payee, positions.payee, { x: 90, y: 655, fontSize: 12, alignment: 'left', maxWidth: 380, minFontSize: 8 });
         drawText(row.amount, positions.amountNumeric, { x: 490, y: 655, fontSize: 12, alignment: 'right' });
         drawText(words, positions.amountWords, { x: 90, y: 625, fontSize: 11, alignment: 'left', maxWidth: 420, minFontSize: 8 });
-        drawText(row.memo || '', positions.memo, { x: 90, y: 585, fontSize: 10, alignment: 'left', maxWidth: 220, minFontSize: 8 });
 
         if (currencySettings.enabled !== false) {
             drawText(currencySettings.label || 'USD', positions.currency, { x: 515, y: 655, fontSize: 11, alignment: 'left' });

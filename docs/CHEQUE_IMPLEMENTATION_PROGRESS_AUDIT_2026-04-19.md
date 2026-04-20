@@ -20,6 +20,8 @@ Audit against the Developer Handoff Document (DHD) requirements for cheque print
 - Output contains text-only overlay fields.
 - `pdf-lib` rendering path is implemented with fallback behavior for restricted environments.
 - UI includes explicit 100% scale print confirmation flow.
+- Generated PDF filename now uses human-intuitive naming (`<bank>-<count>-<date>.pdf`).
+- Memo remains stored in records/history but is intentionally excluded from printed cheque output.
 
 ### 2) Input UI (main page)
 - **Status: Complete**

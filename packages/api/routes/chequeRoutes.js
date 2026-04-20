@@ -31,6 +31,15 @@ function isValidDateByFormat(value, format) {
     return !Number.isNaN(date.getTime());
 }
 
+function toFileSafeSegment(value, fallback = 'cheques') {
+    const normalized = String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    return normalized || fallback;
+}
+
 const DEFAULT_TEMPLATE = {
     date: { x: 430, y: 700, alignment: 'left', fontSize: 11 },
     payee: { x: 90, y: 655, alignment: 'left', fontSize: 12, maxWidth: 380, minFontSize: 8 },
@@ -286,8 +295,13 @@ router.post('/cheques/generate-pdf', protect, async (req, res) => {
             testPrint: Boolean(test_print)
         });
 
+        const bankSegment = toFileSafeSegment(templateRes.rows[0]?.bank_name, 'bank');
+        const dateSegment = new Date().toISOString().slice(0, 10);
+        const countSegment = `${normalizedRows.length}-cheque${normalizedRows.length > 1 ? 's' : ''}`;
+        const pdfFilename = `${bankSegment}-${countSegment}-${dateSegment}.pdf`;
+
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', 'inline; filename="cheques.pdf"');
+        res.setHeader('Content-Disposition', `inline; filename="${pdfFilename}"`);
         res.setHeader('X-Cheque-Pdf-Renderer', pdfResult.renderer || 'unknown');
         if (pdfResult.warning) {
             res.setHeader('X-Cheque-Pdf-Warning', pdfResult.warning);
