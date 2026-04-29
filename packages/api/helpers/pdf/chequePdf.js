@@ -201,9 +201,32 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
 
         const drawBoxedDate = (text, cfg, fallback) => {
             const content = String(text || '').replace(/[^0-9]/g, '');
-            const x = Number(cfg?.x ?? fallback.x) + xOffset;
             const y = Number(cfg?.y ?? fallback.y) + yOffset;
             const size = Number(cfg?.fontSize ?? fallback.fontSize);
+            const blocks = cfg?.blocks;
+
+            const parts = {
+                MM: content.slice(0, 2),
+                DD: content.slice(2, 4),
+                YYYY: content.slice(4, 8)
+            };
+
+            if (blocks && typeof blocks === 'object') {
+                ['MM', 'DD', 'YYYY'].forEach((key) => {
+                    const value = parts[key];
+                    if (!value) return;
+                    const blockCfg = blocks[key] || {};
+                    const startX = Number(blockCfg.startX);
+                    const spacing = Number(blockCfg.charSpacing ?? cfg?.charSpacing ?? fallback.charSpacing ?? 14);
+                    if (!Number.isFinite(startX)) return;
+                    value.split('').forEach((char, index) => {
+                        page.drawText(char, { x: startX + xOffset + (index * spacing), y, size, font });
+                    });
+                });
+                return;
+            }
+
+            const x = Number(cfg?.x ?? fallback.x) + xOffset;
             const spacing = Number(cfg?.charSpacing ?? fallback.charSpacing ?? 14);
             content.split('').forEach((char, index) => {
                 page.drawText(char, { x: x + (index * spacing), y, size, font });
