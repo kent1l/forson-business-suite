@@ -18,7 +18,16 @@ SET
                         jsonb_set(
                             COALESCE(field_positions, '{}'::jsonb),
                             '{date}',
-                            '{"x":426,"y":178,"alignment":"left","fontSize":11,"mode":"boxed","charSpacing":14}'::jsonb,
+                            '{
+                              "y": 178,
+                              "mode": "boxed",
+                              "fontSize": 11,
+                              "blocks": {
+                                "MM": { "startX": 426, "charSpacing": 14 },
+                                "DD": { "startX": 466, "charSpacing": 14 },
+                                "YYYY": { "startX": 506, "charSpacing": 14 }
+                              }
+                            }'::jsonb,
                             true
                         ),
                         '{payee}',
