@@ -399,20 +399,33 @@ const ChequePrintingPage = () => {
                                 {activeTab === 'layout' && (
                                     <div className="space-y-3">
                                         <p className="text-gray-600">Fine-tune field placements and sizes for this cheque template.</p>
-                                        <div className="grid grid-cols-4 gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                                        <div className="grid grid-cols-4 lg:grid-cols-6 gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                                             <span>Field</span>
                                             <span>X Position</span>
                                             <span>Y Position</span>
                                             <span>Font Size</span>
+                                            <span className="hidden lg:block">Max Width</span>
+                                            <span className="hidden lg:block">Min Font</span>
                                         </div>
-                                        {Object.entries(selectedTemplate.field_positions || {}).map(([field, cfg]) => (
-                                            <div key={field} className="grid grid-cols-4 gap-2 items-center border rounded-lg p-2">
-                                                <span className="font-medium">{FIELD_LABELS[field] || field}</span>
-                                                <input type="number" className={INPUT_BASE} aria-label={`${field} X`} value={cfg.x ?? 0} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, x: Number(e.target.value) } } })} />
-                                                <input type="number" className={INPUT_BASE} aria-label={`${field} Y`} value={cfg.y ?? 0} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, y: Number(e.target.value) } } })} />
-                                                <input type="number" className={INPUT_BASE} aria-label={`${field} Font`} value={cfg.fontSize ?? 11} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, fontSize: Number(e.target.value) } } })} />
-                                            </div>
-                                        ))}
+                                        {Object.entries(selectedTemplate.field_positions || {}).map(([field, cfg]) => {
+                                            const showExtras = ['payee', 'amountWords', 'memo'].includes(field);
+                                            return (
+                                                <div key={field} className="grid grid-cols-4 lg:grid-cols-6 gap-2 items-center border rounded-lg p-2">
+                                                    <span className="font-medium truncate" title={FIELD_LABELS[field] || field}>{FIELD_LABELS[field] || field}</span>
+                                                    <input type="number" className={INPUT_BASE} aria-label={`${field} X`} value={cfg.x ?? 0} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, x: Number(e.target.value) } } })} />
+                                                    <input type="number" className={INPUT_BASE} aria-label={`${field} Y`} value={cfg.y ?? 0} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, y: Number(e.target.value) } } })} />
+                                                    <input type="number" className={INPUT_BASE} aria-label={`${field} Font`} value={cfg.fontSize ?? 11} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, fontSize: Number(e.target.value) } } })} />
+                                                    {showExtras ? (
+                                                        <>
+                                                            <input type="number" className={`${INPUT_BASE} col-span-2 lg:col-span-1`} aria-label={`${field} Max Width`} placeholder="Max Width" value={cfg.maxWidth ?? ''} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, maxWidth: e.target.value ? Number(e.target.value) : null } } })} />
+                                                            <input type="number" className={`${INPUT_BASE} col-span-2 lg:col-span-1`} aria-label={`${field} Min Font`} placeholder="Min Font" value={cfg.minFontSize ?? ''} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, minFontSize: e.target.value ? Number(e.target.value) : null } } })} />
+                                                        </>
+                                                    ) : (
+                                                        <div className="hidden lg:block lg:col-span-2"></div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 )}
 
