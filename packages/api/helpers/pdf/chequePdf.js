@@ -272,7 +272,7 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
         return { buffer: Buffer.from(bytes), renderer: 'pdf-lib', warning: null };
     } catch (error) {
         return {
-            buffer: createFallbackPdf({ rows, template, xOffset, yOffset, testPrint }),
+            buffer: createFallbackPdf({ rows, template, xOffset: finalXOffset, yOffset: finalYOffset, testPrint }),
             renderer: 'fallback',
             warning: `pdf-lib failed (${error.message || 'unknown error'}); fallback renderer used`
         };
