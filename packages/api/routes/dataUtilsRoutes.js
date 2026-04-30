@@ -6,8 +6,6 @@ const db = require('../db');
 const { protect, isAdmin } = require('../middleware/authMiddleware');
 const { generateUniqueCode } = require('../helpers/codeGenerator');
 const { syncPartWithMeili } = require('../meilisearch');
-const { setupMeiliSearch } = require('../meilisearch-setup');
-const { getPartDataForMeili } = require('./partRoutes');
 const { constructDisplayName } = require('../helpers/displayNameHelper');
 const router = express.Router();
 

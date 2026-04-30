@@ -238,7 +238,7 @@ const processRepairJob = async (job, config) => {
           payload.push(doc);
           success += 1;
         }
-      } catch (error) {
+      } catch {
         failed += 1;
       }
 
@@ -301,7 +301,7 @@ const runNightlyReconciliation = async (config = DEFAULTS) => {
   for (const partId of sampleIds) {
     try {
       await meiliClient.index('parts').getDocument(partId);
-    } catch (_error) {
+    } catch {
       missingFromIndex += 1;
     }
   }
