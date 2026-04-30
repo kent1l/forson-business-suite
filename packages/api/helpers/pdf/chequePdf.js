@@ -150,13 +150,21 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
     const currencySettings = template?.currency_settings || { enabled: true, label: '₱' };
     const amountWordsSettings = template?.amount_words_settings || { suffix: 'pesos' };
     const textSettings = template?.text_settings || {};
-    const xOffset = Number(printerProfile.offset_x || 0);
-    const yOffset = Number(printerProfile.offset_y || 0);
     const paperSize = resolvePaperSize(template?.paper_settings);
+    const feedType = String(printerProfile?.feed_type || 'native');
+    const isLetterFeed = ['letter_center', 'letter_left', 'letter_right'].includes(feedType);
+    const baseYOffset = isLetterFeed ? (792 - paperSize.height) : 0;
+    const baseXOffset = feedType === 'letter_center'
+        ? ((612 - paperSize.width) / 2)
+        : feedType === 'letter_right'
+            ? (612 - paperSize.width)
+            : 0;
+    const finalXOffset = baseXOffset + Number(printerProfile.offset_x || 0);
+    const finalYOffset = baseYOffset + Number(printerProfile.offset_y || 0);
 
     if (!PDFDocument || !StandardFonts) {
         return {
-            buffer: createFallbackPdf({ rows, template, xOffset, yOffset, testPrint }),
+            buffer: createFallbackPdf({ rows, template, xOffset: finalXOffset, yOffset: finalYOffset, testPrint }),
             renderer: 'fallback',
             warning: 'pdf-lib unavailable; fallback renderer used'
         };
@@ -167,15 +175,16 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
         const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
         rows.forEach((row) => {
-            const page = pdfDoc.addPage([paperSize.width, paperSize.height]);
+            const pageDimensions = isLetterFeed ? [612, 792] : [paperSize.width, paperSize.height];
+            const page = pdfDoc.addPage(pageDimensions);
             const amountWords = amountToWords(row.amount, { suffix: amountWordsSettings?.suffix || 'pesos' });
             const words = template?.amount_format === 'upper' ? amountWords.toUpperCase() : amountWords;
             const amountWordsText = applyEndFiller(words, textSettings?.amountWordsFiller, textSettings?.amountWordsFillerEnabled);
             const payeeText = applyEndFiller(row.payee, textSettings?.payeeFiller, textSettings?.payeeFillerEnabled);
 
         const drawText = (text, cfg, fallback) => {
-            const baseX = Number(cfg?.x ?? fallback.x) + xOffset;
-            const y = Number(cfg?.y ?? fallback.y) + yOffset;
+            const baseX = Number(cfg?.x ?? fallback.x) + finalXOffset;
+            const y = Number(cfg?.y ?? fallback.y) + finalYOffset;
             const preferredSize = Number(cfg?.fontSize ?? fallback.fontSize);
             const minFontSize = Number(cfg?.minFontSize ?? fallback.minFontSize ?? 8);
             const maxWidth = Number(cfg?.maxWidth ?? fallback.maxWidth ?? NaN);
@@ -201,7 +210,7 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
 
         const drawBoxedDate = (text, cfg, fallback) => {
             const content = String(text || '').replace(/[^0-9]/g, '');
-            const y = Number(cfg?.y ?? fallback.y) + yOffset;
+            const y = Number(cfg?.y ?? fallback.y) + finalYOffset;
             const size = Number(cfg?.fontSize ?? fallback.fontSize);
             const blocks = cfg?.blocks;
 
@@ -220,13 +229,13 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
                     const spacing = Number(blockCfg.charSpacing ?? cfg?.charSpacing ?? fallback.charSpacing ?? 14);
                     if (!Number.isFinite(startX)) return;
                     value.split('').forEach((char, index) => {
-                        page.drawText(char, { x: startX + xOffset + (index * spacing), y, size, font });
+                        page.drawText(char, { x: startX + finalXOffset + (index * spacing), y, size, font });
                     });
                 });
                 return;
             }
 
-            const x = Number(cfg?.x ?? fallback.x) + xOffset;
+            const x = Number(cfg?.x ?? fallback.x) + finalXOffset;
             const spacing = Number(cfg?.charSpacing ?? fallback.charSpacing ?? 14);
             const blockSpacing = Number(cfg?.blockSpacing ?? spacing);
             
