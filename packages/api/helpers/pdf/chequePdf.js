@@ -228,8 +228,16 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
 
             const x = Number(cfg?.x ?? fallback.x) + xOffset;
             const spacing = Number(cfg?.charSpacing ?? fallback.charSpacing ?? 14);
+            const blockSpacing = Number(cfg?.blockSpacing ?? spacing);
+            
+            let currentX = x;
             content.split('').forEach((char, index) => {
-                page.drawText(char, { x: x + (index * spacing), y, size, font });
+                page.drawText(char, { x: currentX, y, size, font });
+                if (index === 1 || index === 3) {
+                    currentX += blockSpacing;
+                } else {
+                    currentX += spacing;
+                }
             });
         };
 

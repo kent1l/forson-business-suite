@@ -452,19 +452,42 @@ const ChequePrintingPage = () => {
                                                 <option value="single">Single-line date mode</option>
                                                 <option value="boxed">Boxed date mode (MMDDYYYY without separators)</option>
                                             </select>
-                                            <input
-                                                type="number"
-                                                step="0.5"
-                                                className={INPUT_BASE}
-                                                placeholder="Character spacing"
-                                                value={selectedTemplate.field_positions?.date?.charSpacing ?? 0}
-                                                onChange={(e) => updateTemplate({
-                                                    field_positions: {
-                                                        ...selectedTemplate.field_positions,
-                                                        date: { ...(selectedTemplate.field_positions?.date || {}), charSpacing: Number(e.target.value) || 0 }
-                                                    }
-                                                })}
-                                            />
+                                            <div className="flex gap-2">
+                                                <div className="flex-1">
+                                                    <input
+                                                        type="number"
+                                                        step="0.5"
+                                                        className={INPUT_BASE}
+                                                        placeholder="Character spacing"
+                                                        title="Character spacing"
+                                                        value={selectedTemplate.field_positions?.date?.charSpacing ?? 0}
+                                                        onChange={(e) => updateTemplate({
+                                                            field_positions: {
+                                                                ...selectedTemplate.field_positions,
+                                                                date: { ...(selectedTemplate.field_positions?.date || {}), charSpacing: Number(e.target.value) || 0 }
+                                                            }
+                                                        })}
+                                                    />
+                                                </div>
+                                                {selectedTemplate.field_positions?.date?.mode === 'boxed' && (
+                                                    <div className="flex-1">
+                                                        <input
+                                                            type="number"
+                                                            step="0.5"
+                                                            className={INPUT_BASE}
+                                                            placeholder="Block Spacing (pt)"
+                                                            title="Block Spacing (pt)"
+                                                            value={selectedTemplate.field_positions?.date?.blockSpacing ?? selectedTemplate.field_positions?.date?.charSpacing ?? 0}
+                                                            onChange={(e) => updateTemplate({
+                                                                field_positions: {
+                                                                    ...selectedTemplate.field_positions,
+                                                                    date: { ...(selectedTemplate.field_positions?.date || {}), blockSpacing: Number(e.target.value) || 0 }
+                                                                }
+                                                            })}
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 )}
