@@ -431,29 +431,35 @@ const ChequePrintingPage = () => {
 
                                 {activeTab === 'date' && (
                                     <div className="space-y-3">
-                                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Date output format</label>
-                                        <select className={INPUT_BASE} value={selectedTemplate.date_format || 'MM-dd-yyyy'} onChange={(e) => updateTemplate({ date_format: e.target.value })}>
-                                            <option value="MM-dd-yyyy">MM-DD-YYYY</option>
-                                            <option value="MM/dd/yyyy">MM/dd/yyyy</option>
-                                            <option value="dd/MM/yyyy">dd/MM/yyyy</option>
-                                            <option value="MMM dd, yyyy">MMM dd, yyyy</option>
-                                        </select>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                            <select
-                                                className={INPUT_BASE}
-                                                value={selectedTemplate.field_positions?.date?.mode || 'single'}
-                                                onChange={(e) => updateTemplate({
-                                                    field_positions: {
-                                                        ...selectedTemplate.field_positions,
-                                                        date: { ...(selectedTemplate.field_positions?.date || {}), mode: e.target.value }
-                                                    }
-                                                })}
-                                            >
-                                                <option value="single">Single-line date mode</option>
-                                                <option value="boxed">Boxed date mode (MMDDYYYY without separators)</option>
+                                        <div>
+                                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Date output format</label>
+                                            <select className={INPUT_BASE} value={selectedTemplate.date_format || 'MM-dd-yyyy'} onChange={(e) => updateTemplate({ date_format: e.target.value })}>
+                                                <option value="MM-dd-yyyy">MM-DD-YYYY</option>
+                                                <option value="MM/dd/yyyy">MM/dd/yyyy</option>
+                                                <option value="dd/MM/yyyy">dd/MM/yyyy</option>
+                                                <option value="MMM dd, yyyy">MMM dd, yyyy</option>
                                             </select>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                            <div>
+                                                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Date Mode</label>
+                                                <select
+                                                    className={INPUT_BASE}
+                                                    value={selectedTemplate.field_positions?.date?.mode || 'single'}
+                                                    onChange={(e) => updateTemplate({
+                                                        field_positions: {
+                                                            ...selectedTemplate.field_positions,
+                                                            date: { ...(selectedTemplate.field_positions?.date || {}), mode: e.target.value }
+                                                        }
+                                                    })}
+                                                >
+                                                    <option value="single">Single-line date mode</option>
+                                                    <option value="boxed">Boxed date mode (MMDDYYYY without separators)</option>
+                                                </select>
+                                            </div>
                                             <div className="flex gap-2">
                                                 <div className="flex-1">
+                                                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Char Spacing</label>
                                                     <input
                                                         type="number"
                                                         step="0.5"
@@ -471,6 +477,7 @@ const ChequePrintingPage = () => {
                                                 </div>
                                                 {selectedTemplate.field_positions?.date?.mode === 'boxed' && (
                                                     <div className="flex-1">
+                                                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Block Spacing</label>
                                                         <input
                                                             type="number"
                                                             step="0.5"
