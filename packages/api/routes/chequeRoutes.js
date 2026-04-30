@@ -4,6 +4,7 @@ const { protect } = require('../middleware/authMiddleware');
 const { createChequePdf } = require('../helpers/pdf/chequePdf');
 
 const router = express.Router();
+const ALLOWED_FEED_TYPES = ['native', 'letter_center', 'letter_left', 'letter_right'];
 
 function isValidDateByFormat(value, format) {
     const input = String(value || '').trim();
@@ -172,7 +173,7 @@ router.get('/cheques/history', protect, async (_req, res) => {
 router.get('/cheques/printer-profiles', protect, async (_req, res) => {
     try {
         const { rows } = await db.query(
-            `SELECT id, profile_name, offset_x, offset_y, is_default, created_at, updated_at
+            `SELECT id, profile_name, feed_type, offset_x, offset_y, is_default, created_at, updated_at
              FROM printer_profiles
              ORDER BY is_default DESC, profile_name ASC`
         );
@@ -184,9 +185,12 @@ router.get('/cheques/printer-profiles', protect, async (_req, res) => {
 });
 
 router.post('/cheques/printer-profiles', protect, async (req, res) => {
-    const { profile_name, offset_x = 0, offset_y = 0, is_default = false } = req.body;
+    const { profile_name, feed_type = 'native', offset_x = 0, offset_y = 0, is_default = false } = req.body;
     if (!profile_name || !String(profile_name).trim()) {
         return res.status(400).json({ message: 'profile_name is required' });
+    }
+    if (!ALLOWED_FEED_TYPES.includes(String(feed_type))) {
+        return res.status(400).json({ message: `feed_type must be one of: ${ALLOWED_FEED_TYPES.join(', ')}` });
     }
 
     const client = await db.getClient();
@@ -196,10 +200,10 @@ router.post('/cheques/printer-profiles', protect, async (req, res) => {
             await client.query('UPDATE printer_profiles SET is_default = FALSE WHERE is_default = TRUE');
         }
         const { rows } = await client.query(
-            `INSERT INTO printer_profiles (profile_name, offset_x, offset_y, is_default)
-             VALUES ($1, $2, $3, $4)
-             RETURNING id, profile_name, offset_x, offset_y, is_default, created_at, updated_at`,
-            [String(profile_name).trim(), Number(offset_x) || 0, Number(offset_y) || 0, Boolean(is_default)]
+            `INSERT INTO printer_profiles (profile_name, feed_type, offset_x, offset_y, is_default)
+             VALUES ($1, $2, $3, $4, $5)
+             RETURNING id, profile_name, feed_type, offset_x, offset_y, is_default, created_at, updated_at`,
+            [String(profile_name).trim(), String(feed_type), Number(offset_x) || 0, Number(offset_y) || 0, Boolean(is_default)]
         );
         await client.query('COMMIT');
         res.status(201).json(rows[0]);
@@ -214,7 +218,10 @@ router.post('/cheques/printer-profiles', protect, async (req, res) => {
 
 router.put('/cheques/printer-profiles/:id', protect, async (req, res) => {
     const { id } = req.params;
-    const { profile_name, offset_x, offset_y, is_default } = req.body;
+    const { profile_name, feed_type, offset_x, offset_y, is_default } = req.body;
+    if (feed_type !== undefined && !ALLOWED_FEED_TYPES.includes(String(feed_type))) {
+        return res.status(400).json({ message: `feed_type must be one of: ${ALLOWED_FEED_TYPES.join(', ')}` });
+    }
     const client = await db.getClient();
 
     try {
@@ -225,14 +232,16 @@ router.put('/cheques/printer-profiles/:id', protect, async (req, res) => {
         const { rows } = await client.query(
             `UPDATE printer_profiles
              SET profile_name = COALESCE($1, profile_name),
-                 offset_x = COALESCE($2, offset_x),
-                 offset_y = COALESCE($3, offset_y),
-                 is_default = COALESCE($4, is_default),
+                 feed_type = COALESCE($2, feed_type),
+                 offset_x = COALESCE($3, offset_x),
+                 offset_y = COALESCE($4, offset_y),
+                 is_default = COALESCE($5, is_default),
                  updated_at = CURRENT_TIMESTAMP
-             WHERE id = $5
-             RETURNING id, profile_name, offset_x, offset_y, is_default, created_at, updated_at`,
+             WHERE id = $6
+             RETURNING id, profile_name, feed_type, offset_x, offset_y, is_default, created_at, updated_at`,
             [
                 profile_name ? String(profile_name).trim() : null,
+                feed_type !== undefined ? String(feed_type) : null,
                 offset_x !== undefined ? Number(offset_x) || 0 : null,
                 offset_y !== undefined ? Number(offset_y) || 0 : null,
                 is_default !== undefined ? Boolean(is_default) : null,
@@ -278,10 +287,10 @@ router.post('/cheques/generate-pdf', protect, async (req, res) => {
             return res.status(404).json({ message: 'Template not found' });
         }
 
-        let profile = { offset_x: 0, offset_y: 0 };
+        let profile = { feed_type: 'native', offset_x: 0, offset_y: 0 };
         if (printer_profile_id) {
             const profileRes = await db.query(
-                `SELECT id, offset_x, offset_y
+                `SELECT id, feed_type, offset_x, offset_y
                  FROM printer_profiles
                  WHERE id = $1`,
                 [printer_profile_id]

@@ -48,7 +48,7 @@ const ChequePrintingPage = () => {
     const [testPrintMode, setTestPrintMode] = useState(false);
     const [historyQuery, setHistoryQuery] = useState('');
     const [historyBankFilter, setHistoryBankFilter] = useState('all');
-    const [draftProfile, setDraftProfile] = useState({ profile_name: '', offset_x: 0, offset_y: 0, is_default: false });
+    const [draftProfile, setDraftProfile] = useState({ profile_name: '', feed_type: 'native', offset_x: 0, offset_y: 0, is_default: false });
 
     const selectedTemplate = useMemo(() => templates.find((tpl) => String(tpl.id) === String(selectedTemplateId)), [templates, selectedTemplateId]);
     const selectedProfile = useMemo(() => printerProfiles.find((profile) => String(profile.id) === String(selectedProfileId)), [printerProfiles, selectedProfileId]);
@@ -74,11 +74,12 @@ const ChequePrintingPage = () => {
     useEffect(() => { loadData(); }, []);
     useEffect(() => {
         if (!selectedProfile) {
-            setDraftProfile({ profile_name: '', offset_x: 0, offset_y: 0, is_default: false });
+            setDraftProfile({ profile_name: '', feed_type: 'native', offset_x: 0, offset_y: 0, is_default: false });
             return;
         }
         setDraftProfile({
             profile_name: selectedProfile.profile_name || '',
+            feed_type: selectedProfile.feed_type || 'native',
             offset_x: Number(selectedProfile.offset_x || 0),
             offset_y: Number(selectedProfile.offset_y || 0),
             is_default: Boolean(selectedProfile.is_default)
@@ -230,6 +231,7 @@ const ChequePrintingPage = () => {
             if (!selectedProfile) {
                 const created = await api.post('/cheques/printer-profiles', {
                     profile_name: patch.profile_name || `Profile ${printerProfiles.length + 1}`,
+                    feed_type: patch.feed_type || 'native',
                     offset_x: patch.offset_x || 0,
                     offset_y: patch.offset_y || 0,
                     is_default: patch.is_default || false
@@ -626,13 +628,23 @@ const ChequePrintingPage = () => {
                                 {activeTab === 'calibration' && (
                                     <div className="space-y-3">
                                         <p className="text-gray-600">Save profile offsets to match your printer's physical output alignment.</p>
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                             <input
                                                 className={INPUT_BASE}
                                                 placeholder="Profile name"
                                                 value={draftProfile.profile_name}
                                                 onChange={(e) => setDraftProfile((prev) => ({ ...prev, profile_name: e.target.value }))}
                                             />
+                                            <select
+                                                className={INPUT_BASE}
+                                                value={draftProfile.feed_type || 'native'}
+                                                onChange={(e) => setDraftProfile((prev) => ({ ...prev, feed_type: e.target.value }))}
+                                            >
+                                                <option value="native">Native (Custom Paper Size)</option>
+                                                <option value="letter_center">Letter Size (Center Feed)</option>
+                                                <option value="letter_left">Letter Size (Left Feed)</option>
+                                                <option value="letter_right">Letter Size (Right Feed)</option>
+                                            </select>
                                             <input
                                                 type="number"
                                                 step="0.1"
@@ -650,6 +662,7 @@ const ChequePrintingPage = () => {
                                                 onChange={(e) => setDraftProfile((prev) => ({ ...prev, offset_y: Number(e.target.value) || 0 }))}
                                             />
                                         </div>
+                                        <p className="text-xs text-gray-500">If your printer rejects custom 8x3 paper sizes, select your manual tray&apos;s feed alignment. The system will print on a Letter canvas to bypass the error.</p>
                                         <label className="flex items-center gap-2">
                                             <input
                                                 type="checkbox"
@@ -661,7 +674,7 @@ const ChequePrintingPage = () => {
                                         <div className="flex gap-2">
                                             <button className={BUTTON_PRIMARY} onClick={() => upsertProfile(draftProfile)}><Icon path={ICONS.settings} className="h-4 w-4" />{selectedProfile ? 'Save Profile' : 'Create Profile'}</button>
                                             {!selectedProfile && (
-                                                <button className={BUTTON_SECONDARY} onClick={() => setDraftProfile({ profile_name: `Profile ${printerProfiles.length + 1}`, offset_x: 0, offset_y: 0, is_default: false })}><Icon path={ICONS.edit} className="h-4 w-4" />Quick Fill</button>
+                                                <button className={BUTTON_SECONDARY} onClick={() => setDraftProfile({ profile_name: `Profile ${printerProfiles.length + 1}`, feed_type: 'native', offset_x: 0, offset_y: 0, is_default: false })}><Icon path={ICONS.edit} className="h-4 w-4" />Quick Fill</button>
                                             )}
                                         </div>
                                     </div>

@@ -43,4 +43,15 @@ describe('createChequePdf', () => {
         expect(Buffer.isBuffer(pdf)).toBe(true);
         expect(pdf.length).toBeGreaterThan(100);
     });
+
+    it('uses letter canvas and feed alignment offsets when feed_type is letter_right', async () => {
+        const result = await createChequePdf({
+            rows: [{ date: '04/19/2026', payee: 'Feed Type Test', amount: '500.00', memo: '' }],
+            template: { field_positions: {}, amount_format: 'upper' },
+            printerProfile: { feed_type: 'letter_right', offset_x: 0, offset_y: 0 }
+        });
+
+        const pdfText = result.buffer.toString('latin1');
+        expect(pdfText).toContain('/MediaBox [0 0 612 792]');
+    });
 });

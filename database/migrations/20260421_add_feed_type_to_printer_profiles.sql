@@ -1,0 +1,2 @@
+ALTER TABLE printer_profiles
+ADD COLUMN IF NOT EXISTS feed_type VARCHAR(50) NOT NULL DEFAULT 'native';
