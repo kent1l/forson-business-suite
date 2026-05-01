@@ -3,7 +3,7 @@ let PDFDocument;
 let StandardFonts;
 try {
     ({ PDFDocument, StandardFonts } = require('pdf-lib'));
-} catch (_error) {
+} catch {
     PDFDocument = null;
     StandardFonts = null;
 }
@@ -63,12 +63,12 @@ function toPdfLibSafeText(text, font) {
     try {
         font.encodeText(content);
         return content;
-    } catch (_error) {
+    } catch {
         return Array.from(content).map((char) => {
             try {
                 font.encodeText(char);
                 return char;
-            } catch (_innerError) {
+            } catch {
                 return '?';
             }
         }).join('');
@@ -272,7 +272,7 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
         return { buffer: Buffer.from(bytes), renderer: 'pdf-lib', warning: null };
     } catch (error) {
         return {
-            buffer: createFallbackPdf({ rows, template, xOffset, yOffset, testPrint }),
+            buffer: createFallbackPdf({ rows, template, xOffset: finalXOffset, yOffset: finalYOffset, testPrint }),
             renderer: 'fallback',
             warning: `pdf-lib failed (${error.message || 'unknown error'}); fallback renderer used`
         };

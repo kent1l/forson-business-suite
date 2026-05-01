@@ -55,3 +55,30 @@ describe('createChequePdf', () => {
         expect(pdfText).toContain('/MediaBox [0 0 612 792]');
     });
 });
+
+
+describe('createChequePdf fallback renderer offsets', () => {
+    afterEach(() => {
+        jest.resetModules();
+        jest.dontMock('pdf-lib');
+    });
+
+    it('applies final printer offsets in fallback path when pdf-lib is unavailable', async () => {
+        jest.resetModules();
+        jest.doMock('pdf-lib', () => {
+            throw new Error('Simulated missing pdf-lib');
+        });
+
+        const { createChequePdf: createWithFallback } = require('../helpers/pdf/chequePdf');
+
+        const result = await createWithFallback({
+            rows: [{ date: '04/19/2026', payee: 'Offset Check', amount: '123.45', memo: '' }],
+            template: { field_positions: {} },
+            printerProfile: { offset_x: 10, offset_y: 20 }
+        });
+
+        expect(result.renderer).toBe('fallback');
+        const pdfText = result.buffer.toString('latin1');
+        expect(pdfText).toContain('436 198 Td');
+    });
+});
