@@ -177,7 +177,7 @@ router.get('/cheques/history', protect, async (_req, res) => {
                     ct.bank_name AS bank_preset
              FROM cheque_records cr
              LEFT JOIN cheque_templates ct ON ct.id = cr.template_id
-             WHERE cr.is_deleted = FALSE
+             WHERE COALESCE(cr.is_deleted, FALSE) = FALSE
              ORDER BY cr.created_at DESC
              LIMIT 300`
         );
