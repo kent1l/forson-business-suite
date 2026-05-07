@@ -7,6 +7,14 @@ import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 
 const blankRow = () => ({ date: format(new Date(), 'yyyy-MM-dd'), payee: '', amount: '', memo: '' });
+const DEFAULT_TEMPLATE = {
+    date: { x: 426, y: 178, alignment: 'left', fontSize: 11, mode: 'boxed', charSpacing: 14 },
+    payee: { x: 72, y: 136, alignment: 'left', fontSize: 12, maxWidth: 380, minFontSize: 8 },
+    amountNumeric: { x: 534, y: 136, alignment: 'right', fontSize: 12 },
+    amountWords: { x: 72, y: 104, alignment: 'left', fontSize: 11, maxWidth: 420 },
+    memo: { x: 72, y: 84, alignment: 'left', fontSize: 10, maxWidth: 220 },
+    currency: { x: 474, y: 136, alignment: 'left', fontSize: 11 }
+};
 
 const SETTINGS_TABS = [
     { id: 'layout', label: 'Layout' },
@@ -253,19 +261,21 @@ const ChequePrintingPage = () => {
     };
 
     const createTemplateFromCurrent = async () => {
-        if (!selectedTemplate) return;
-        const bankName = window.prompt('Enter name for duplicated bank preset:', `${selectedTemplate.bank_name} Copy`);
+        const baseName = selectedTemplate?.bank_name || 'New Bank Preset';
+        const bankName = window.prompt('Enter name for bank preset:', selectedTemplate ? `${baseName} Copy` : baseName);
         if (!bankName?.trim()) return;
         try {
             const res = await api.post('/cheques/templates', {
-                ...selectedTemplate,
+                ...(selectedTemplate || {}),
                 bank_name: bankName.trim()
+                ,
+                field_positions: selectedTemplate?.field_positions || DEFAULT_TEMPLATE
             });
             setTemplates((prev) => [...prev, res.data].sort((a, b) => a.bank_name.localeCompare(b.bank_name)));
             setSelectedTemplateId(String(res.data.id));
-            toast.success('Bank preset duplicated.');
+            toast.success(selectedTemplate ? 'Bank preset duplicated.' : 'Bank preset created.');
         } catch (error) {
-            toast.error(error?.response?.data?.message || 'Failed to duplicate bank preset.');
+            toast.error(error?.response?.data?.message || 'Failed to save bank preset.');
         }
     };
 
@@ -437,17 +447,18 @@ const ChequePrintingPage = () => {
                         <div>
                             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Bank preset</label>
                             <select className={INPUT_BASE} value={selectedTemplateId} onChange={(e) => setSelectedTemplateId(e.target.value)}>
+                                {!templates.length && <option value="">No bank preset yet</option>}
                                 {templates.map((template) => <option key={template.id} value={template.id}>{template.bank_name}</option>)}
                             </select>
                             <div className="flex gap-2 mt-2">
-                                <button className={BUTTON_SECONDARY} onClick={createTemplateFromCurrent}>Duplicate Preset</button>
-                                <button className={BUTTON_DANGER} onClick={deleteCurrentTemplate} disabled={templates.length <= 1}>Delete Preset</button>
+                                <button className={BUTTON_SECONDARY} onClick={createTemplateFromCurrent}>{selectedTemplate ? 'Duplicate Preset' : 'Create Preset'}</button>
+                                <button className={BUTTON_DANGER} onClick={deleteCurrentTemplate} disabled={!selectedTemplate || templates.length <= 1}>Delete Preset</button>
                             </div>
                         </div>
                         <div>
                             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Printer profile</label>
                             <select className={INPUT_BASE} value={selectedProfileId} onChange={(e) => setSelectedProfileId(e.target.value)}>
-                                <option value="">None</option>
+                                <option value="">{printerProfiles.length ? 'None' : 'No printer profile yet'}</option>
                                 {printerProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.profile_name}{profile.is_default ? ' (Default)' : ''}</option>)}
                             </select>
                             <div className="flex gap-2 mt-2">
@@ -458,6 +469,16 @@ const ChequePrintingPage = () => {
                     </div>
 
                     <div className="space-y-2 border-t pt-3">
+                        {!templates.length && (
+                            <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                                No bank preset found. Create one in Settings or import presets before generating cheques.
+                            </div>
+                        )}
+                        {!printerProfiles.length && (
+                            <div className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg p-2">
+                                No printer profile found. You can still generate a PDF, but creating a profile is recommended for proper alignment.
+                            </div>
+                        )}
                         <label className="flex items-center gap-2 text-sm">
                             <input type="checkbox" checked={persistRecords} onChange={(e) => setPersistRecords(e.target.checked)} />
                             Save generated cheques to history
@@ -474,13 +495,13 @@ const ChequePrintingPage = () => {
                 </div>
             </div>
 
-            {settingsOpen && selectedTemplate && (
+            {settingsOpen && (
                 <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-xl border w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
                         <div className="p-4 border-b flex items-center justify-between">
                             <div>
                                 <h3 className="font-semibold text-gray-900">Cheque Settings</h3>
-                                <p className="text-xs text-gray-500 mt-0.5">Preset: {selectedTemplate.bank_name}</p>
+                                <p className="text-xs text-gray-500 mt-0.5">Preset: {selectedTemplate?.bank_name || 'None selected'}</p>
                             </div>
                             <button className={BUTTON_SECONDARY} onClick={() => setSettingsOpen(false)}><Icon path={ICONS.close} className="h-4 w-4" />Close</button>
                         </div>
@@ -502,7 +523,7 @@ const ChequePrintingPage = () => {
                             </div>
 
                             <div className="p-4 md:p-5 overflow-auto text-sm space-y-4">
-                                {activeTab === 'layout' && (
+                                {activeTab === 'layout' && selectedTemplate && (
                                     <div className="space-y-3">
                                         <div className="flex flex-wrap items-center justify-between gap-2 border rounded-lg bg-gray-50 p-3">
                                             <div>
@@ -546,6 +567,18 @@ const ChequePrintingPage = () => {
                                                 </div>
                                             );
                                         })}
+                                    </div>
+                                )}
+                                {activeTab === 'layout' && !selectedTemplate && (
+                                    <div className="space-y-3">
+                                        <p className="text-gray-600">No bank preset exists yet. Create one or import settings to begin configuring cheque layout.</p>
+                                        <div className="flex gap-2">
+                                            <button className={BUTTON_PRIMARY} onClick={createTemplateFromCurrent}>Create Bank Preset</button>
+                                            <label className={`${BUTTON_SECONDARY} cursor-pointer`}>
+                                                Import Presets & Profiles
+                                                <input type="file" accept="application/json" className="hidden" onChange={importSettingsFile} />
+                                            </label>
+                                        </div>
                                     </div>
                                 )}
 
