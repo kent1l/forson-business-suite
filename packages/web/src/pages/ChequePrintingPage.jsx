@@ -56,6 +56,7 @@ const ChequePrintingPage = () => {
     const [testPrintMode, setTestPrintMode] = useState(false);
     const [historyQuery, setHistoryQuery] = useState('');
     const [historyBankFilter, setHistoryBankFilter] = useState('all');
+    const [pendingHistoryEntry, setPendingHistoryEntry] = useState(null);
     const [draftProfile, setDraftProfile] = useState({ profile_name: '', feed_type: 'native', offset_x: 0, offset_y: 0, is_default: false });
 
     const selectedTemplate = useMemo(() => templates.find((tpl) => String(tpl.id) === String(selectedTemplateId)), [templates, selectedTemplateId]);
@@ -219,6 +220,40 @@ const ChequePrintingPage = () => {
         } catch (error) {
             toast.error(error?.response?.data?.message || 'Delete failed.');
         }
+    };
+
+    const normalizeHistoryEntryToRow = (entry) => ({
+        payee: entry.payee || '',
+        amount: Number(entry.amount || 0).toFixed(2),
+        date: entry.cheque_date ? format(new Date(entry.cheque_date), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
+        memo: entry.memo || ''
+    });
+
+    const applyHistoryEntryToEditor = (entry, mode = 'overwrite') => {
+        const nextRow = normalizeHistoryEntryToRow(entry);
+        const currentRows = rows.filter((row) => row.payee || row.amount || row.memo);
+
+        if (entry.template_id && templates.some((tpl) => String(tpl.id) === String(entry.template_id))) {
+            setSelectedTemplateId(String(entry.template_id));
+        }
+
+        if (mode === 'append') {
+            setRows([...currentRows, nextRow, blankRow()]);
+        } else {
+            setRows([nextRow, blankRow()]);
+        }
+        setPendingHistoryEntry(null);
+        setHistoryOpen(false);
+        toast.success(mode === 'append' ? 'History cheque appended to editor.' : 'History cheque loaded to editor.');
+    };
+
+    const handleEditFromHistory = (entry) => {
+        const currentRows = rows.filter((row) => row.payee || row.amount || row.memo);
+        if (currentRows.length) {
+            setPendingHistoryEntry(entry);
+            return;
+        }
+        applyHistoryEntryToEditor(entry, 'overwrite');
     };
 
     const updateTemplate = async (patch) => {
@@ -899,6 +934,7 @@ const ChequePrintingPage = () => {
                                             <td className="p-2">{entry.bank_preset || '-'}</td>
                                             <td className="p-2 whitespace-nowrap">{entry.cheque_date ? format(new Date(entry.cheque_date), 'yyyy-MM-dd') : '-'}</td>
                                             <td className="p-2 text-right space-x-2 whitespace-nowrap">
+                                                <button className={BUTTON_PRIMARY} onClick={() => handleEditFromHistory(entry)}><Icon path={ICONS.edit} className="h-4 w-4" />Edit</button>
                                                 <button className={BUTTON_SECONDARY} onClick={() => handleReprint(entry)}><Icon path={ICONS.history} className="h-4 w-4" />Reprint</button>
                                                 <button className={BUTTON_DANGER} onClick={() => handleDelete(entry.id)}><Icon path={ICONS.trash} className="h-4 w-4" />Delete</button>
                                             </td>
@@ -909,6 +945,22 @@ const ChequePrintingPage = () => {
                             {!filteredHistory.length && (
                                 <div className="py-10 text-center text-sm text-gray-500">No cheque history matches the current filters.</div>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {pendingHistoryEntry && (
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4">
+                    <div className="bg-white rounded-xl border w-full max-w-lg overflow-hidden">
+                        <div className="p-4 border-b">
+                            <h3 className="font-semibold text-gray-900">Load cheque from history</h3>
+                            <p className="text-sm text-gray-600 mt-1">You already have entries in the editor. Would you like to overwrite them or append this history entry?</p>
+                        </div>
+                        <div className="p-4 flex flex-wrap gap-2 justify-end">
+                            <button className={BUTTON_SECONDARY} onClick={() => setPendingHistoryEntry(null)}>Cancel</button>
+                            <button className={BUTTON_SECONDARY} onClick={() => applyHistoryEntryToEditor(pendingHistoryEntry, 'append')}>Append</button>
+                            <button className={BUTTON_PRIMARY} onClick={() => applyHistoryEntryToEditor(pendingHistoryEntry, 'overwrite')}>Overwrite</button>
                         </div>
                     </div>
                 </div>
