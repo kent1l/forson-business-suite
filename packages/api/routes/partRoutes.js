@@ -55,9 +55,7 @@ const getPartDataForMeili = async (client, partId) => {
 
 // Helper function to handle tag logic
 const manageTags = async (client, tags, partId) => {
-    console.log('[DEBUG] manageTags - Starting with:', { tags, partId });
     if (!Array.isArray(tags)) {
-        console.log('[DEBUG] manageTags - Tags is not an array:', tags);
         return; // Skip tag processing if tags is not an array
     }
 
