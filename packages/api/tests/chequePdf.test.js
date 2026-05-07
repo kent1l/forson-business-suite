@@ -51,8 +51,18 @@ describe('createChequePdf', () => {
             printerProfile: { feed_type: 'letter_right', offset_x: 0, offset_y: 0 }
         });
 
-        const pdfText = result.buffer.toString('latin1');
-        expect(pdfText).toContain('/MediaBox [0 0 612 792]');
+        if (result.renderer === 'pdf-lib') {
+            const { PDFDocument } = require('pdf-lib');
+            const pdfDoc = await PDFDocument.load(result.buffer);
+            const pages = pdfDoc.getPages();
+            expect(pages.length).toBeGreaterThan(0);
+            const { width, height } = pages[0].getSize();
+            expect(width).toBeCloseTo(612, 0);
+            expect(height).toBeCloseTo(792, 0);
+        } else {
+            const pdfText = result.buffer.toString('latin1');
+            expect(pdfText).toContain('/MediaBox [0 0 612 792]');
+        }
     });
 });
 

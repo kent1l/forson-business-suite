@@ -10,6 +10,11 @@ const db = require('../db');
 describe('Tax Calculation Service', () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        console.error.mockRestore();
     });
 
     describe('calculateLineTax', () => {
@@ -166,6 +171,14 @@ describe('Tax Calculation Service', () => {
 
 // Integration test for database interactions
 describe('Tax Calculation Integration', () => {
+    beforeEach(() => {
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        console.error.mockRestore();
+    });
+
     test('should handle database errors gracefully', async () => {
         db.query.mockRejectedValue(new Error('Database connection failed'));
 
