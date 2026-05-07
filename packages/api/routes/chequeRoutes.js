@@ -265,6 +265,91 @@ router.put('/cheques/printer-profiles/:id', protect, async (req, res) => {
 
 
 
+
+router.get('/cheques/settings-export', protect, async (_req, res) => {
+    try {
+        const [templatesRes, profilesRes] = await Promise.all([
+            db.query(`SELECT id, bank_name, field_positions, date_format, amount_format, currency_settings, paper_settings, amount_words_settings, text_settings, created_at, updated_at FROM cheque_templates WHERE is_deleted = FALSE ORDER BY bank_name ASC`),
+            db.query(`SELECT id, profile_name, feed_type, offset_x, offset_y, is_default, created_at, updated_at FROM printer_profiles ORDER BY is_default DESC, profile_name ASC`)
+        ]);
+
+        const payload = {
+            schema_version: 1,
+            exported_at: new Date().toISOString(),
+            templates: templatesRes.rows,
+            printer_profiles: profilesRes.rows
+        };
+
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename="cheque-settings-${new Date().toISOString().slice(0,10)}.json"`);
+        res.status(200).send(JSON.stringify(payload, null, 2));
+    } catch (error) {
+        console.error('Failed to export cheque settings', error);
+        res.status(500).json({ message: 'Unable to export cheque settings' });
+    }
+});
+
+router.post('/cheques/settings-import', protect, async (req, res) => {
+    const { templates = [], printer_profiles = [], overwrite = false } = req.body || {};
+    if (!Array.isArray(templates) || !Array.isArray(printer_profiles)) {
+        return res.status(400).json({ message: 'templates and printer_profiles must be arrays' });
+    }
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+
+        let importedTemplates = 0;
+        for (const tpl of templates) {
+            if (!tpl?.bank_name || !String(tpl.bank_name).trim()) continue;
+            const bankName = String(tpl.bank_name).trim();
+            if (overwrite) {
+                await client.query('UPDATE cheque_templates SET is_deleted = TRUE WHERE bank_name = $1 AND is_deleted = FALSE', [bankName]);
+            }
+            await client.query(`INSERT INTO cheque_templates (bank_name, field_positions, date_format, amount_format, currency_settings, paper_settings, amount_words_settings, text_settings) VALUES ($1, $2::jsonb, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb)`, [
+                bankName,
+                JSON.stringify(tpl.field_positions || DEFAULT_TEMPLATE),
+                tpl.date_format || 'MM-dd-yyyy',
+                tpl.amount_format || 'title_case',
+                JSON.stringify(tpl.currency_settings || { enabled: true, label: '₱' }),
+                JSON.stringify(tpl.paper_settings || DEFAULT_PAPER_SETTINGS),
+                JSON.stringify(tpl.amount_words_settings || DEFAULT_AMOUNT_WORDS_SETTINGS),
+                JSON.stringify(tpl.text_settings || DEFAULT_TEXT_SETTINGS)
+            ]);
+            importedTemplates += 1;
+        }
+
+        let importedProfiles = 0;
+        if (overwrite && printer_profiles.some((p) => p?.is_default)) {
+            await client.query('UPDATE printer_profiles SET is_default = FALSE WHERE is_default = TRUE');
+        }
+        for (const profile of printer_profiles) {
+            if (!profile?.profile_name || !String(profile.profile_name).trim()) continue;
+            const name = String(profile.profile_name).trim();
+            if (overwrite) {
+                await client.query('DELETE FROM printer_profiles WHERE profile_name = $1', [name]);
+            }
+            await client.query(`INSERT INTO printer_profiles (profile_name, feed_type, offset_x, offset_y, is_default) VALUES ($1, $2, $3, $4, $5)`, [
+                name,
+                ALLOWED_FEED_TYPES.includes(String(profile.feed_type)) ? String(profile.feed_type) : 'native',
+                Number(profile.offset_x) || 0,
+                Number(profile.offset_y) || 0,
+                Boolean(profile.is_default)
+            ]);
+            importedProfiles += 1;
+        }
+
+        await client.query('COMMIT');
+        res.json({ imported_templates: importedTemplates, imported_printer_profiles: importedProfiles });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Failed to import cheque settings', error);
+        res.status(500).json({ message: 'Unable to import cheque settings' });
+    } finally {
+        client.release();
+    }
+});
+
 router.post('/cheques/generate-pdf', protect, async (req, res) => {
     const { template_id, records = [], printer_profile_id = null, test_print = false } = req.body;
 

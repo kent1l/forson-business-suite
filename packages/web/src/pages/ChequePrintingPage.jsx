@@ -260,6 +260,39 @@ const ChequePrintingPage = () => {
         if (next) next.focus();
     };
 
+    const downloadSettingsExport = async () => {
+        try {
+            const response = await api.get('/cheques/settings-export', { responseType: 'blob' });
+            const blobUrl = window.URL.createObjectURL(new Blob([response.data], { type: 'application/json' }));
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.setAttribute('download', `cheque-settings-${format(new Date(), 'yyyy-MM-dd')}.json`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(blobUrl);
+            toast.success('Cheque settings exported.');
+        } catch (error) {
+            toast.error(error?.response?.data?.message || 'Failed to export cheque settings.');
+        }
+    };
+
+    const importSettingsFile = async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        try {
+            const payload = JSON.parse(await file.text());
+            const overwrite = window.confirm('Overwrite existing presets/profiles with matching names? Click Cancel to append only.');
+            await api.post('/cheques/settings-import', { ...payload, overwrite });
+            toast.success('Cheque settings imported.');
+            await loadData();
+        } catch (error) {
+            toast.error(error?.response?.data?.message || 'Failed to import cheque settings file.');
+        } finally {
+            event.target.value = '';
+        }
+    };
+
     return (
         <div className="space-y-4 pb-4">
             <div className="bg-white border rounded-xl p-4 md:p-5">
@@ -400,6 +433,20 @@ const ChequePrintingPage = () => {
                             <div className="p-4 md:p-5 overflow-auto text-sm space-y-4">
                                 {activeTab === 'layout' && (
                                     <div className="space-y-3">
+                                        <div className="flex flex-wrap items-center justify-between gap-2 border rounded-lg bg-gray-50 p-3">
+                                            <div>
+                                                <p className="font-medium text-gray-900">Bank preset details</p>
+                                                <p className="text-xs text-gray-500">Save and share this bank preset including cheque layout variables.</p>
+                                            </div>
+                                            <button className={BUTTON_PRIMARY} onClick={() => updateTemplate({ ...selectedTemplate })}>
+                                                <Icon path={ICONS.settings} className="h-4 w-4" />
+                                                Save Bank Preset
+                                            </button>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Bank preset name</label>
+                                            <input className={INPUT_BASE} value={selectedTemplate.bank_name || ''} onChange={(e) => updateTemplate({ bank_name: e.target.value })} />
+                                        </div>
                                         <p className="text-gray-600">Fine-tune field placements and sizes for this cheque template.</p>
                                         <div className="grid grid-cols-4 lg:grid-cols-6 gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                                             <span>Field</span>
@@ -627,6 +674,17 @@ const ChequePrintingPage = () => {
 
                                 {activeTab === 'calibration' && (
                                     <div className="space-y-3">
+                                        <div className="border rounded-lg p-3 bg-gray-50 space-y-2">
+                                            <p className="font-medium text-gray-900">Import / Export Configuration</p>
+                                            <p className="text-xs text-gray-600">Export all bank presets and printer profiles to a JSON file for sharing or backup.</p>
+                                            <div className="flex flex-wrap gap-2">
+                                                <button className={BUTTON_SECONDARY} onClick={downloadSettingsExport}>Export Presets & Profiles</button>
+                                                <label className={`${BUTTON_SECONDARY} cursor-pointer`}>
+                                                    Import Presets & Profiles
+                                                    <input type="file" accept="application/json" className="hidden" onChange={importSettingsFile} />
+                                                </label>
+                                            </div>
+                                        </div>
                                         <p className="text-gray-600">Save profile offsets to match your printer's physical output alignment.</p>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                             <input
