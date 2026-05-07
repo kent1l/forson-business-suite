@@ -152,6 +152,24 @@ router.put('/cheques/templates/:id', protect, async (req, res) => {
     }
 });
 
+router.delete('/cheques/templates/:id', protect, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const { rows } = await db.query(
+            `UPDATE cheque_templates
+             SET is_deleted = TRUE, updated_at = CURRENT_TIMESTAMP
+             WHERE id = $1 AND is_deleted = FALSE
+             RETURNING id`,
+            [id]
+        );
+        if (!rows.length) return res.status(404).json({ message: 'Template not found' });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Failed to delete cheque template', error);
+        res.status(500).json({ message: 'Unable to delete cheque template' });
+    }
+});
+
 router.get('/cheques/history', protect, async (_req, res) => {
     try {
         const { rows } = await db.query(
@@ -260,6 +278,23 @@ router.put('/cheques/printer-profiles/:id', protect, async (req, res) => {
         res.status(500).json({ message: 'Unable to update printer profile' });
     } finally {
         client.release();
+    }
+});
+
+router.delete('/cheques/printer-profiles/:id', protect, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const { rows } = await db.query(
+            `DELETE FROM printer_profiles
+             WHERE id = $1
+             RETURNING id`,
+            [id]
+        );
+        if (!rows.length) return res.status(404).json({ message: 'Printer profile not found' });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Failed to delete printer profile', error);
+        res.status(500).json({ message: 'Unable to delete printer profile' });
     }
 });
 

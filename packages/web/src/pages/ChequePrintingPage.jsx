@@ -252,6 +252,69 @@ const ChequePrintingPage = () => {
         }
     };
 
+    const createTemplateFromCurrent = async () => {
+        if (!selectedTemplate) return;
+        const bankName = window.prompt('Enter name for duplicated bank preset:', `${selectedTemplate.bank_name} Copy`);
+        if (!bankName?.trim()) return;
+        try {
+            const res = await api.post('/cheques/templates', {
+                ...selectedTemplate,
+                bank_name: bankName.trim()
+            });
+            setTemplates((prev) => [...prev, res.data].sort((a, b) => a.bank_name.localeCompare(b.bank_name)));
+            setSelectedTemplateId(String(res.data.id));
+            toast.success('Bank preset duplicated.');
+        } catch (error) {
+            toast.error(error?.response?.data?.message || 'Failed to duplicate bank preset.');
+        }
+    };
+
+    const deleteCurrentTemplate = async () => {
+        if (!selectedTemplate) return;
+        if (!window.confirm(`Delete bank preset "${selectedTemplate.bank_name}"?`)) return;
+        try {
+            await api.delete(`/cheques/templates/${selectedTemplate.id}`);
+            toast.success('Bank preset deleted.');
+            await loadData();
+            setSelectedTemplateId('');
+        } catch (error) {
+            toast.error(error?.response?.data?.message || 'Failed to delete bank preset.');
+        }
+    };
+
+    const duplicateCurrentProfile = async () => {
+        if (!selectedProfile) return;
+        const profileName = window.prompt('Enter name for duplicated printer profile:', `${selectedProfile.profile_name} Copy`);
+        if (!profileName?.trim()) return;
+        try {
+            const created = await api.post('/cheques/printer-profiles', {
+                profile_name: profileName.trim(),
+                feed_type: selectedProfile.feed_type || 'native',
+                offset_x: Number(selectedProfile.offset_x || 0),
+                offset_y: Number(selectedProfile.offset_y || 0),
+                is_default: false
+            });
+            setPrinterProfiles((prev) => [...prev, created.data]);
+            setSelectedProfileId(String(created.data.id));
+            toast.success('Printer profile duplicated.');
+        } catch (error) {
+            toast.error(error?.response?.data?.message || 'Failed to duplicate printer profile.');
+        }
+    };
+
+    const deleteCurrentProfile = async () => {
+        if (!selectedProfile) return;
+        if (!window.confirm(`Delete printer profile "${selectedProfile.profile_name}"?`)) return;
+        try {
+            await api.delete(`/cheques/printer-profiles/${selectedProfile.id}`);
+            toast.success('Printer profile deleted.');
+            await loadData();
+            setSelectedProfileId('');
+        } catch (error) {
+            toast.error(error?.response?.data?.message || 'Failed to delete printer profile.');
+        }
+    };
+
     const onRowKeyDown = (event, rowIndex, fieldIndex) => {
         if (event.key !== 'Enter') return;
         event.preventDefault();
@@ -376,6 +439,10 @@ const ChequePrintingPage = () => {
                             <select className={INPUT_BASE} value={selectedTemplateId} onChange={(e) => setSelectedTemplateId(e.target.value)}>
                                 {templates.map((template) => <option key={template.id} value={template.id}>{template.bank_name}</option>)}
                             </select>
+                            <div className="flex gap-2 mt-2">
+                                <button className={BUTTON_SECONDARY} onClick={createTemplateFromCurrent}>Duplicate Preset</button>
+                                <button className={BUTTON_DANGER} onClick={deleteCurrentTemplate} disabled={templates.length <= 1}>Delete Preset</button>
+                            </div>
                         </div>
                         <div>
                             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Printer profile</label>
@@ -383,6 +450,10 @@ const ChequePrintingPage = () => {
                                 <option value="">None</option>
                                 {printerProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.profile_name}{profile.is_default ? ' (Default)' : ''}</option>)}
                             </select>
+                            <div className="flex gap-2 mt-2">
+                                <button className={BUTTON_SECONDARY} onClick={duplicateCurrentProfile} disabled={!selectedProfile}>Duplicate Profile</button>
+                                <button className={BUTTON_DANGER} onClick={deleteCurrentProfile} disabled={!selectedProfile}>Delete Profile</button>
+                            </div>
                         </div>
                     </div>
 
