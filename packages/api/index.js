@@ -76,6 +76,7 @@ registerRoute('/api', './routes/powerSearchRoutes');
 registerRoute('/api', './routes/applicationSearchRoutes');
 registerRoute('/api', './routes/reportingRoutes');
 registerRoute('/api', './routes/settingsRoutes');
+registerRoute('/api', './routes/chequeRoutes');
 registerRoute('/api/data', './routes/dataUtilsRoutes');
 registerRoute('/api/backups', './routes/backupRoutes');
 
