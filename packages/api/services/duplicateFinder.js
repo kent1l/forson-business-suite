@@ -103,6 +103,8 @@ class DuplicateFinder {
                    p2.part_id as part2_id, p2.internal_sku as part2_sku, p2.display_name as part2_name, p2.detail as part2_detail,
                    p2.brand_name as part2_brand, p2.group_name as part2_group,
                    CASE WHEN pn1.part_number IS NOT NULL AND pn2.part_number IS NOT NULL THEN 1 ELSE 0 END as shared_pn,
+                   COALESCE((SELECT json_agg(jsonb_build_object('part_number', pn.part_number)) FROM part_number pn WHERE pn.part_id = p1.part_id AND pn.deleted_at IS NULL), '[]'::json) as p1_part_numbers,
+                   COALESCE((SELECT json_agg(jsonb_build_object('part_number', pn.part_number)) FROM part_number pn WHERE pn.part_id = p2.part_id AND pn.deleted_at IS NULL), '[]'::json) as p2_part_numbers,
                    similarity(p1.detail, p2.detail) as detail_sim,
                    similarity(p1.display_name, p2.display_name) as name_sim
             FROM parts_view p1
@@ -134,7 +136,7 @@ class DuplicateFinder {
                 detail: row.part1_detail,
                 brand_name: row.part1_brand,
                 group_name: row.part1_group,
-                part_numbers: [] // placeholder, need to fetch
+                part_numbers: row.p1_part_numbers
             };
             const part2 = {
                 part_id: row.part2_id,
@@ -143,16 +145,8 @@ class DuplicateFinder {
                 detail: row.part2_detail,
                 brand_name: row.part2_brand,
                 group_name: row.part2_group,
-                part_numbers: [] // placeholder
+                part_numbers: row.p2_part_numbers
             };
-
-            // Fetch part numbers for scoring
-            const pnQuery = `SELECT part_id, part_number FROM part_number WHERE part_id IN ($1, $2) AND deleted_at IS NULL`;
-            const pnResult = await this.db.query(pnQuery, [row.part1_id, row.part2_id]);
-            pnResult.rows.forEach(pn => {
-                if (pn.part_id === row.part1_id) part1.part_numbers.push({ part_number: pn.part_number });
-                else part2.part_numbers.push({ part_number: pn.part_number });
-            });
 
             const { score, reasons } = this.constructor.calculateCompositeScore(part1, part2, row.detail_sim, row.name_sim);
 
