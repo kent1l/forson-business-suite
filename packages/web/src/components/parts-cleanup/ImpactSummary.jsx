@@ -205,8 +205,9 @@ const ImpactSummary = ({ mergePreview, loading }) => {
                                         {item.keepPart.internal_sku}
                                     </div>
                                 </div>
-                                <div className="text-xs text-gray-400">
-                                    Group {index + 1}
+                                <div className="text-xs text-gray-400 text-right">
+                                    <div>Group {index + 1}</div>
+                                    {item.confidence && <div className="font-semibold">{item.confidence} confidence</div>}
                                 </div>
                             </div>
                             

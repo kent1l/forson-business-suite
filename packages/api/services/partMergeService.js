@@ -18,11 +18,11 @@ class PartMergeService {
      * @returns {Object} Preview of the merge impact
      */
     async previewMerge(mergeRequest) {
-        const { keepPartId, mergePartIds, rules } = mergeRequest;
+        const { keepPartId, mergePartIds, rules = {} } = mergeRequest;
         
         console.log('DEBUG: Validating merge request...');
         // Validate input
-        await this.validateMergeRequest(keepPartId, mergePartIds);
+        await this.validateMergeRequest(keepPartId, mergePartIds, rules);
         
         console.log('DEBUG: Getting part details for keepPartId:', keepPartId);
         // Get detailed part data
@@ -55,10 +55,10 @@ class PartMergeService {
      * @returns {Object} Result of the merge operation
      */
     async executeMerge(mergeRequest, actorEmployeeId) {
-        const { keepPartId, mergePartIds, rules } = mergeRequest;
+        const { keepPartId, mergePartIds, rules = {} } = mergeRequest;
         
         // Validate again before execution
-        await this.validateMergeRequest(keepPartId, mergePartIds);
+        await this.validateMergeRequest(keepPartId, mergePartIds, rules);
         
         const client = await this.db.getClient();
         try {
@@ -66,6 +66,7 @@ class PartMergeService {
             
             // Lock the parts to prevent concurrent modifications
             await this.lockParts(client, [keepPartId, ...mergePartIds]);
+            await this.lockPartReferences(client, [keepPartId, ...mergePartIds]);
             
             // Get current part data
             const keepPart = await this.getPartDetails(keepPartId, client);
@@ -86,7 +87,7 @@ class PartMergeService {
             const fkUpdateCounts = await this.reassignForeignKeys(client, keepPartId, mergePartIds);
             
             // Handle inventory consolidation if applicable
-            const inventoryUpdateCounts = await this.consolidateInventory(client, keepPartId, mergePartIds);
+            const inventoryUpdateCounts = await this.consolidateInventory(client, keepPartId, mergePartIds, keepPart);
             
             // Create aliases for old SKUs/part numbers
             await this.createAliases(client, keepPartId, mergeParts, rules);
@@ -125,9 +126,10 @@ class PartMergeService {
         }
     }
 
-    async validateMergeRequest(keepPartId, mergePartIds) {
+    async validateMergeRequest(keepPartId, mergePartIds, rules = {}) {
         if (!Array.isArray(mergePartIds) || mergePartIds.length === 0) {
-            throw new Error('mergePartIds array is required and must not be empty');
+            if (!Number.isInteger(Number(keepPartId))) throw new Error('keepPartId must be an integer');
+        throw new Error('mergePartIds array is required and must not be empty');
         }
         
         // Check that all part IDs are valid
@@ -156,6 +158,11 @@ class PartMergeService {
         if (new Set(mergePartIds).size !== mergePartIds.length) {
             throw new Error('Duplicate part IDs in merge list');
         }
+
+        const allowedRuleKeys = new Set(['mergePartNumbers','mergeApplications','mergeTags','fieldOverrides']);
+        const badRuleKeys = Object.keys(rules || {}).filter(k => !allowedRuleKeys.has(k));
+        if (badRuleKeys.length) throw new Error(`Unsupported merge rules: ${badRuleKeys.join(', ')}`);
+
     }
 
     async getPartDetails(partId, client = null) {
@@ -351,10 +358,18 @@ class PartMergeService {
     }
 
     async lockParts(client, partIds) {
+        await client.query('SELECT pg_advisory_xact_lock($1)', [999001]);
         await client.query(
             'SELECT part_id FROM part WHERE part_id = ANY($1) ORDER BY part_id FOR UPDATE',
             [partIds]
         );
+    }
+
+    async lockPartReferences(client, partIds) {
+        const lockTables = ['inventory_transaction','goods_receipt_line','invoice_line','purchase_order_line','credit_note_line','part_number','part_application'];
+        for (const table of lockTables) {
+            await client.query(`SELECT 1 FROM ${table} WHERE part_id = ANY($1) FOR UPDATE`, [partIds]);
+        }
     }
 
     async updateKeepPart(client, keepPartId, resolvedPart, rules) {
@@ -478,9 +493,33 @@ class PartMergeService {
         return counts;
     }
 
-    async consolidateInventory(_client, _keepPartId, _mergePartIds) {
-        // No inventory_locations table; consolidation is achieved by FK reassignment on inventory_transaction
-        return { inventory_consolidated: 0 };
+    async consolidateInventory(client, keepPartId, mergePartIds, keepPart) {
+        const targetIds = [keepPartId, ...mergePartIds];
+        const stockResult = await client.query(
+            `SELECT part_id, COALESCE(SUM(quantity),0) qty FROM inventory_transaction WHERE part_id = ANY($1) GROUP BY part_id`,
+            [targetIds]
+        );
+        const stockByPart = Object.fromEntries(stockResult.rows.map(r => [Number(r.part_id), Number(r.qty)]));
+
+        const wacResult = await client.query(
+            `SELECT part_id, COALESCE(wac_cost,0) AS wac_cost FROM part WHERE part_id = ANY($1)`,
+            [targetIds]
+        );
+        const wacByPart = Object.fromEntries(wacResult.rows.map(r => [Number(r.part_id), Number(r.wac_cost)]));
+
+        let totalQty = 0; let totalCost = 0;
+        for (const id of targetIds) {
+            const qty = stockByPart[id] || 0;
+            const wac = wacByPart[id] || 0;
+            totalQty += qty;
+            totalCost += qty * wac;
+        }
+
+        const currentKeepWac = Number(keepPart?.wac_cost || 0);
+        const recalculatedWac = totalQty > 0 ? (totalCost / totalQty) : currentKeepWac;
+        await client.query(`UPDATE part SET wac_cost = $2, date_modified = NOW() WHERE part_id = $1`, [keepPartId, recalculatedWac]);
+
+        return { inventory_consolidated: totalQty, wac_recalculated: recalculatedWac };
     }
 
     async createAliases(client, keepPartId, mergeParts, _rules) {

@@ -179,9 +179,9 @@ router.post('/parts/merge/merge', protect, hasPermission('parts:merge'), async (
 
         // Convert IDs to integers to ensure proper database parameter types
         const targetPartIdInt = parseInt(targetPartId);
-        const sourcePartIdsInt = sourcePartIds.map(id => parseInt(id));
+        const sourcePartIdsInt = Array.isArray(sourcePartIds) ? sourcePartIds.map(id => parseInt(id, 10)).filter(n => Number.isInteger(n)) : [];
 
-        if (!sourcePartIdsInt || !Array.isArray(sourcePartIdsInt) || sourcePartIdsInt.length === 0) {
+        if (!Array.isArray(sourcePartIdsInt) || sourcePartIdsInt.length === 0) {
             console.log('DEBUG: sourcePartIds validation failed:', sourcePartIdsInt);
             return res.status(400).json({
                 success: false,
