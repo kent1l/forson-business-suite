@@ -118,7 +118,8 @@ class DuplicateFinder {
     }
 
     async findOptimizedDuplicateGroups(options = {}) {
-        const { query = '', limit = 50, minScore = 0.50 } = options;
+        const { query = '', limit = 50 } = options;
+        const minScore = options.minScore !== undefined ? options.minScore : (options.minSimilarity !== undefined ? options.minSimilarity : 0.50);
 
         const duplicateGroups = [];
         const processedPairs = new Set();
@@ -242,7 +243,7 @@ class DuplicateFinder {
                 GROUP BY part_number
                 HAVING COUNT(DISTINCT part_id) > 1
             )
-            SELECT DISTINCT p.*,
+            SELECT p.*,
                    COALESCE(
                        (SELECT json_agg(jsonb_build_object('part_number', pn_inner.part_number))
                         FROM part_number pn_inner
@@ -306,7 +307,6 @@ class DuplicateFinder {
 
             const searchRes = await index.search(searchQuery, {
                 limit: 5,
-                filter: ['merged_into_part_id IS NULL'],
                 attributesToRetrieve: ['part_id']
             });
 
