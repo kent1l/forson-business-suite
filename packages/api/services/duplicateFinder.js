@@ -121,7 +121,9 @@ class DuplicateFinder {
         const { query = '', limit = 50 } = options;
         const minScore = options.minScore !== undefined ? options.minScore : (options.minSimilarity !== undefined ? options.minSimilarity : 0.50);
 
-        const duplicateGroups = [];
+        const adjacency = new Map();
+        const partById = new Map();
+        const edgeDetails = new Map();
         const processedPairs = new Set();
         
         // Helper to generate a unique pair ID regardless of order
@@ -130,32 +132,39 @@ class DuplicateFinder {
             return `${a}_${b}`;
         };
 
+        const addEdge = (pair, baseScore) => {
+            const part1Id = parseInt(pair.part1.part_id);
+            const part2Id = parseInt(pair.part2.part_id);
+            const pairId = getPairId(part1Id, part2Id);
+
+            if (processedPairs.has(pairId)) return;
+            processedPairs.add(pairId);
+
+            const { score, reasons } = this.constructor.calculateCompositeScore(pair.part1, pair.part2, baseScore);
+            if (score < minScore) return;
+
+            partById.set(part1Id, pair.part1);
+            partById.set(part2Id, pair.part2);
+
+            if (!adjacency.has(part1Id)) adjacency.set(part1Id, new Set());
+            if (!adjacency.has(part2Id)) adjacency.set(part2Id, new Set());
+            adjacency.get(part1Id).add(part2Id);
+            adjacency.get(part2Id).add(part1Id);
+
+            edgeDetails.set(pairId, {
+                score,
+                reasons: [...(pair.reasons || []), ...reasons]
+            });
+        };
+
         // Phase 1: Deterministic Blocking (The Fast Net)
         // Group items that share exact, distinct identifiers (internal_sku or part_number)
         const deterministicPairs = await this.findDeterministicPairs(query, limit);
         
         for (const pair of deterministicPairs) {
-            const pairId = getPairId(pair.part1.part_id, pair.part2.part_id);
-            if (!processedPairs.has(pairId)) {
-                processedPairs.add(pairId);
-
-                // Phase 3: Hierarchical Penalty & Boost Scoring
-                // Start with a high base score (0.80) because they are deterministic matches.
-                // The prompt says "Items matching in this phase should be immediately flagged as 'High Confidence'"
-                // If they share part number but have different brands, etc., it could drop, or boost to 1.0.
-                const baseScore = 0.80;
-                const { score, reasons } = this.constructor.calculateCompositeScore(pair.part1, pair.part2, baseScore);
-
-                if (score >= minScore) {
-                    duplicateGroups.push({
-                        groupId: `deterministic_${pairId}`,
-                        score,
-                        confidence: this.constructor.getConfidenceLevel(score),
-                        reasons: [...pair.reasons, ...reasons],
-                        parts: [pair.part1, pair.part2]
-                    });
-                }
-            }
+            // Phase 3: Hierarchical Penalty & Boost Scoring
+            // Start with a high base score (0.80) because they are deterministic matches.
+            addEdge(pair, 0.80);
         }
 
         // Phase 2: Semantic/Fuzzy Blocking (The Wide Net) using Meilisearch
@@ -163,33 +172,73 @@ class DuplicateFinder {
             const fuzzyPairs = await this.findFuzzyMeilisearchPairs(query, limit);
 
             for (const pair of fuzzyPairs) {
-                const pairId = getPairId(pair.part1.part_id, pair.part2.part_id);
-                if (!processedPairs.has(pairId)) {
-                    processedPairs.add(pairId);
-
-                    // Phase 3: Hierarchical Penalty & Boost Scoring
-                    // Base score for a Meilisearch fuzzy match.
-                    const baseScore = 0.40;
-                    const { score, reasons } = this.constructor.calculateCompositeScore(pair.part1, pair.part2, baseScore);
-
-                    if (score >= minScore) {
-                        duplicateGroups.push({
-                            groupId: `fuzzy_${pairId}`,
-                            score,
-                            confidence: this.constructor.getConfidenceLevel(score),
-                            reasons: [...pair.reasons, ...reasons],
-                            parts: [pair.part1, pair.part2]
-                        });
-                    }
-                }
+                // Phase 3: Hierarchical Penalty & Boost Scoring
+                // Base score for a Meilisearch fuzzy match.
+                addEdge(pair, 0.40);
             }
         } catch (error) {
             console.error('Meilisearch fuzzy blocking failed, falling back/skipping:', error);
         }
 
-        // Deduplicate and sort by confidence score
-        const uniqueGroups = this.deduplicateGroups(duplicateGroups);
-        return uniqueGroups.sort((a, b) => b.score - a.score).slice(0, limit);
+        // Extract connected components (O(V+E))
+        const duplicateGroups = [];
+        const visited = new Set();
+
+        for (const partId of adjacency.keys()) {
+            if (visited.has(partId)) continue;
+
+            const stack = [partId];
+            const componentIds = [];
+            visited.add(partId);
+
+            while (stack.length > 0) {
+                const current = stack.pop();
+                componentIds.push(current);
+
+                for (const neighbor of adjacency.get(current) || []) {
+                    if (!visited.has(neighbor)) {
+                        visited.add(neighbor);
+                        stack.push(neighbor);
+                    }
+                }
+            }
+
+            if (componentIds.length <= 1) continue;
+
+            const componentSet = new Set(componentIds);
+            const componentParts = componentIds
+                .map(id => partById.get(id))
+                .filter(Boolean);
+
+            const componentScores = [];
+            const componentReasons = new Set();
+
+            for (const edgeId of edgeDetails.keys()) {
+                const [aStr, bStr] = edgeId.split('_');
+                const a = parseInt(aStr);
+                const b = parseInt(bStr);
+                if (!componentSet.has(a) || !componentSet.has(b)) continue;
+
+                const edge = edgeDetails.get(edgeId);
+                componentScores.push(edge.score);
+                for (const reason of edge.reasons) componentReasons.add(reason);
+            }
+
+            if (componentScores.length === 0) continue;
+
+            const averageScore = componentScores.reduce((sum, val) => sum + val, 0) / componentScores.length;
+            const normalizedIds = [...componentIds].sort((a, b) => a - b).join('_');
+
+            duplicateGroups.push({
+                groupId: `component_${normalizedIds}`,
+                score: averageScore,
+                confidence: this.constructor.getConfidenceLevel(averageScore),
+                reasons: Array.from(componentReasons),
+                parts: componentParts
+            });
+        }
+
+        return duplicateGroups.sort((a, b) => b.score - a.score).slice(0, limit);
     }
 
     async findDeterministicPairs(query, limit) {
