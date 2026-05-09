@@ -83,3 +83,9 @@ The Forson Business Suite is a modular application with distinct components for 
 ## Notes
 - Follow the existing patterns in the codebase to maintain consistency.
 - Refer to `README.md` for additional setup instructions.
+
+### Knowledge Graph Navigation (Graphify)
+Before planning codebase modifications, tracing bugs, or reading raw source files, you MUST consult the repository knowledge graph. 
+- Navigate dependencies by reading `graphify-out/graph.json` or executing the `/graphify query` command.
+- Use the graph to identify connected 'god nodes' (e.g., database schemas impacting both the API and Cheque Printing modules) to anticipate the cascading effects of your changes.
+- Do not blindly ingest large files if the graph can provide the specific structural context needed.
