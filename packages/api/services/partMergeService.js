@@ -630,7 +630,14 @@ class PartMergeService {
     }
 
     async syncMeilisearch(keepPartId, mergePartIds) {
-        const { syncPartWithMeili } = require('../meilisearch');
+        let syncPartWithMeili;
+
+        try {
+            ({ syncPartWithMeili } = require('../meilisearch'));
+        } catch (error) {
+            console.error('Error loading Meilisearch module during part merge sync:', error);
+            return;
+        }
 
         try {
             const keepPart = await this.getPartDetails(keepPartId);
