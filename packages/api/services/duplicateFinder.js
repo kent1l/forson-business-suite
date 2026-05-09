@@ -63,6 +63,22 @@ class DuplicateFinder {
 
         const sharedPns = pns1.filter(pn => pns2.includes(pn));
 
+        const normalizeBrandName = (brand) => {
+            if (typeof brand !== 'string') return '';
+            return brand.trim().toLowerCase();
+        };
+
+        const normalizedBrand1 = normalizeBrandName(part1.brand_name);
+        const normalizedBrand2 = normalizeBrandName(part2.brand_name);
+
+        // Strict Brand Disqualification Rule:
+        // If both parts have explicitly defined brand names and they conflict,
+        // immediately disqualify the pair regardless of deterministic/fuzzy base score.
+        if (normalizedBrand1 && normalizedBrand2 && normalizedBrand1 !== normalizedBrand2) {
+            score = -1.0;
+            reasons.push('different_brands_disqualification');
+        }
+
         // Massive Penalty/Disqualification: Candidates have *different*, explicitly defined part numbers
         // Only penalize if BOTH have defined part numbers and they DO NOT share any.
         if (pns1.length > 0 && pns2.length > 0 && sharedPns.length === 0) {
@@ -76,8 +92,8 @@ class DuplicateFinder {
         }
 
         // Boost: Candidates share the same `brand` and `group`. (+0.30)
-        if (part1.brand_name && part2.brand_name && part1.group_name && part2.group_name) {
-            if (part1.brand_name === part2.brand_name && part1.group_name === part2.group_name) {
+        if (normalizedBrand1 && normalizedBrand2 && part1.group_name && part2.group_name) {
+            if (normalizedBrand1 === normalizedBrand2 && part1.group_name === part2.group_name) {
                 score += 0.30;
                 reasons.push('same_brand_and_group');
             }
