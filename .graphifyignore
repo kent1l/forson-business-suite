@@ -1,0 +1,13 @@
+node_modules/
+packages/api/node_modules/
+packages/web/node_modules/
+dist/
+build/
+coverage/
+tmp/
+*.sql
+!database/migrations/*.sql
+!database/scripts/*.sql
+!database/validation/*.sql
+.env*
+graphify-out/

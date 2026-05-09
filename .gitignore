@@ -6,3 +6,7 @@ node_modules/
 
 # Backup Files
 backups/
+
+# Graphify artifacts
+graphify-out/
+.graphify/
