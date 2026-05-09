@@ -9,6 +9,12 @@ import PartCompareCard from '../components/parts-cleanup/PartCompareCard';
 import ConflictResolver from '../components/parts-cleanup/ConflictResolver';
 import ImpactSummary from '../components/parts-cleanup/ImpactSummary';
 import ConfirmMerge from '../components/parts-cleanup/ConfirmMerge';
+import SearchBar from '../components/SearchBar';
+
+const SELECTION_MODES = {
+    AUTOMATIC: 'automatic',
+    MANUAL: 'manual'
+};
 
 const STEPS = {
     FIND_DUPLICATES: 'find_duplicates',
@@ -52,6 +58,13 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
     const [hasStartedSearch, setHasStartedSearch] = useState(false);
     const [similarityThreshold, setSimilarityThreshold] = useState(0.8);
     const [useOptimized, setUseOptimized] = useState(false);
+    const [selectionMode, setSelectionMode] = useState(SELECTION_MODES.AUTOMATIC);
+    const [manualSearchQuery, setManualSearchQuery] = useState('');
+    const [manualSearchResults, setManualSearchResults] = useState([]);
+    const [manualSelectedParts, setManualSelectedParts] = useState([]);
+    const [manualLoading, setManualLoading] = useState(false);
+    const [manualHasSearched, setManualHasSearched] = useState(false);
+    const [manualError, setManualError] = useState('');
 
     // Step navigation helpers
     const stepOrder = [
@@ -188,6 +201,127 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
     const renderStepContent = () => {
         switch (currentStep) {
             case STEPS.FIND_DUPLICATES:
+                if (selectionMode === SELECTION_MODES.MANUAL) {
+                    const selectedPartIds = new Set(manualSelectedParts.map((part) => part.part_id));
+
+                    const toggleManualPart = (part, isSelected) => {
+                        setManualSelectedParts((prev) => {
+                            if (isSelected) {
+                                if (prev.some((selectedPart) => selectedPart.part_id === part.part_id)) {
+                                    return prev;
+                                }
+                                return [...prev, part];
+                            }
+                            return prev.filter((selectedPart) => selectedPart.part_id !== part.part_id);
+                        });
+                    };
+
+                    const proceedWithManualSelection = () => {
+                        if (manualSelectedParts.length < 2) {
+                            toast.error('Select at least 2 parts to continue');
+                            return;
+                        }
+
+                        const manualGroup = {
+                            groupId: `manual_merge_${Date.now()}`,
+                            score: 1.0,
+                            confidence: 'Manual',
+                            reasons: ['Manually selected by user'],
+                            parts: manualSelectedParts
+                        };
+
+                        setSelectedDuplicateGroups([manualGroup]);
+                        setKeepParts({});
+                        setMergePreview(null);
+                        setCurrentStep(STEPS.CHOOSE_CANONICAL);
+                    };
+
+                    return (
+                        <div className="space-y-6">
+                            <div className="bg-white border border-gray-200 rounded-lg p-4">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Search Parts
+                                </label>
+                                <SearchBar
+                                    value={manualSearchQuery}
+                                    onChange={setManualSearchQuery}
+                                    onClear={() => {
+                                        setManualSearchQuery('');
+                                        setManualSearchResults([]);
+                                        setManualHasSearched(false);
+                                        setManualError('');
+                                    }}
+                                    placeholder="Search by name, SKU, or part number..."
+                                />
+                                <p className="text-xs text-gray-500 mt-2">
+                                    Selection is preserved across searches.
+                                </p>
+                            </div>
+
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
+                                <p className="text-sm font-medium text-blue-900">
+                                    {manualSelectedParts.length} part{manualSelectedParts.length !== 1 ? 's' : ''} selected for merging
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={() => setManualSelectedParts([])}
+                                    disabled={manualSelectedParts.length === 0}
+                                    className="text-sm text-blue-700 hover:text-blue-900 disabled:text-blue-300"
+                                >
+                                    Clear selection
+                                </button>
+                            </div>
+
+                            <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                {manualLoading ? (
+                                    <div className="p-8 text-center text-gray-500">Searching parts...</div>
+                                ) : manualError ? (
+                                    <div className="p-8 text-center text-red-600">{manualError}</div>
+                                ) : manualHasSearched && manualSearchResults.length === 0 ? (
+                                    <div className="p-8 text-center text-gray-500">No parts found for this query.</div>
+                                ) : manualSearchResults.length === 0 ? (
+                                    <div className="p-8 text-center text-gray-500">Type in the search box to begin.</div>
+                                ) : (
+                                    <div className="divide-y divide-gray-200">
+                                        {manualSearchResults.map((part) => (
+                                            <label key={part.part_id} className="flex items-start gap-3 p-4 hover:bg-gray-50">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedPartIds.has(part.part_id)}
+                                                    onChange={(e) => toggleManualPart(part, e.target.checked)}
+                                                    className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                                />
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-semibold text-gray-900">{part.display_name || 'Unnamed Part'}</p>
+                                                    <p className="text-sm text-gray-700">SKU: {part.internal_sku || 'N/A'}</p>
+                                                    <p className="text-xs text-gray-500 truncate">
+                                                        Part numbers: {part.part_numbers || 'N/A'}
+                                                    </p>
+                                                </div>
+                                            </label>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex justify-end">
+                                <button
+                                    type="button"
+                                    onClick={proceedWithManualSelection}
+                                    disabled={manualSelectedParts.length < 2}
+                                    className={`px-4 py-2 rounded-lg font-semibold ${
+                                        manualSelectedParts.length >= 2
+                                            ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                            : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                    }`}
+                                >
+                                    Next: Choose Canonical
+                                </button>
+                            </div>
+                        </div>
+                    );
+                }
+
                 if (!hasStartedSearch) {
                     return (
                         <div className="space-y-6">
@@ -308,6 +442,43 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
         }
     };
 
+    useEffect(() => {
+        if (selectionMode !== SELECTION_MODES.MANUAL) {
+            return;
+        }
+
+        if (manualSearchQuery.trim() === '') {
+            setManualSearchResults([]);
+            setManualHasSearched(false);
+            setManualError('');
+            return;
+        }
+
+        const fetchManualResults = async () => {
+            try {
+                setManualLoading(true);
+                setManualError('');
+                setManualHasSearched(true);
+
+                const response = await api.get('/power-search/parts', {
+                    params: { keyword: manualSearchQuery }
+                });
+                setManualSearchResults(response.data || []);
+            } catch (error) {
+                console.error('Manual parts search failed:', error);
+                setManualError('Failed to search parts. Please try again.');
+            } finally {
+                setManualLoading(false);
+            }
+        };
+
+        const debounceTimer = setTimeout(() => {
+            fetchManualResults();
+        }, 300);
+
+        return () => clearTimeout(debounceTimer);
+    }, [manualSearchQuery, selectionMode]);
+
     return (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             {/* Header */}
@@ -366,6 +537,38 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
 
             {/* Step Content */}
             <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+                {currentStep === STEPS.FIND_DUPLICATES && (
+                    <div className="mb-6 border-b border-gray-200 pb-4">
+                        <div className="inline-flex rounded-lg bg-gray-100 p-1">
+                            <button
+                                type="button"
+                                onClick={() => setSelectionMode(SELECTION_MODES.AUTOMATIC)}
+                                className={`px-4 py-2 text-sm font-medium rounded-md ${
+                                    selectionMode === SELECTION_MODES.AUTOMATIC
+                                        ? 'bg-white text-blue-700 shadow'
+                                        : 'text-gray-700 hover:text-gray-900'
+                                }`}
+                            >
+                                Automatic Scan
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSelectionMode(SELECTION_MODES.MANUAL);
+                                    setHasStartedSearch(false);
+                                    setSelectedDuplicateGroups([]);
+                                }}
+                                className={`px-4 py-2 text-sm font-medium rounded-md ${
+                                    selectionMode === SELECTION_MODES.MANUAL
+                                        ? 'bg-white text-blue-700 shadow'
+                                        : 'text-gray-700 hover:text-gray-900'
+                                }`}
+                            >
+                                Manual Selection
+                            </button>
+                        </div>
+                    </div>
+                )}
                 {renderStepContent()}
             </div>
 
