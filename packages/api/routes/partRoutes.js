@@ -116,8 +116,20 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
         const index = meiliClient.index('parts');
         const searchOptions = {
             attributesToRetrieve: ['part_id'],
-            // Prioritize exact normalized matches, then fall back to fuzzy search
-            attributesToSearchOn: ['normalized_internal_sku', 'normalized_part_numbers', 'internal_sku', 'part_numbers', 'display_name', 'detail', 'brand_name', 'group_name', 'searchable_applications', 'tags']
+            // Strict Relevance with Exact-Match Priority
+            matchingStrategy: 'all',
+            attributesToSearchOn: [
+                'internal_sku',
+                'normalized_internal_sku',
+                'part_numbers',
+                'normalized_part_numbers',
+                'display_name',
+                'brand_name',
+                'group_name',
+                'searchable_applications',
+                'tags',
+                'detail'
+            ]
         };
         const filter = [];
 

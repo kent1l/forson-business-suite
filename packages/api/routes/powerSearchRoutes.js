@@ -14,6 +14,19 @@ router.get('/power-search/parts', async (req, res) => {
         const index = meiliClient.index('parts');
         const searchOptions = {
             limit: 200,
+            matchingStrategy: 'all',
+            attributesToSearchOn: [
+                'internal_sku',
+                'normalized_internal_sku',
+                'part_numbers',
+                'normalized_part_numbers',
+                'display_name',
+                'brand_name',
+                'group_name',
+                'searchable_applications',
+                'tags',
+                'detail'
+            ],
             attributesToRetrieve: [
                 'part_id',
                 'is_active',

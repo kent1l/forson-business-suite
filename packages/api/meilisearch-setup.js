@@ -166,25 +166,34 @@ const setupMeiliSearch = async () => {
     // Configure Parts Index
     try {
       const partsSettings = {
-        rankingRules: config.rankingRules,
+        rankingRules: ['words', 'exactness', 'attribute', 'typo', 'proximity', 'display_name:asc'],
         searchableAttributes: [
-          'display_name',
-          'detail',
           'internal_sku',
           'normalized_internal_sku',
+          'part_numbers',
+          'normalized_part_numbers',
+          'display_name',
           'brand_name',
           'group_name',
           'searchable_applications',
-          'part_numbers',
-          'normalized_part_numbers',
-          'tags'
+          'tags',
+          'detail'
         ],
         stopWords: [
           'a', 'an', 'and', 'the'
         ],
         synonyms: symmetricSynonyms,
         filterableAttributes: ['is_active', 'tags', 'applications'],
-        sortableAttributes: ['display_name', 'internal_sku', 'brand_name', 'group_name']
+        sortableAttributes: ['display_name', 'internal_sku', 'brand_name', 'group_name'],
+        typoTolerance: {
+          enabled: true,
+          disableOnAttributes: [
+            'internal_sku', 
+            'normalized_internal_sku', 
+            'part_numbers', 
+            'normalized_part_numbers'
+          ]
+        }
       };
 
       await retryAsync(
