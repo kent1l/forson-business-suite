@@ -630,18 +630,29 @@ class PartMergeService {
     }
 
     async syncMeilisearch(keepPartId, mergePartIds) {
+        let syncPartWithMeili;
+
         try {
-            const { syncPartWithMeili } = require('../meilisearch');
-            
-            // Sync the keep part
+            ({ syncPartWithMeili } = require('../meilisearch'));
+        } catch (error) {
+            console.error('Error loading Meilisearch module during part merge sync:', error);
+            return;
+        }
+
+        try {
             const keepPart = await this.getPartDetails(keepPartId);
             await syncPartWithMeili(keepPart);
-            
-            // Remove merged parts from Meilisearch
-            // This would depend on your Meilisearch setup
-            console.log(`Synced part ${keepPartId} with Meilisearch, removed parts ${mergePartIds.join(', ')}`);
         } catch (error) {
-            console.error('Error syncing with Meilisearch:', error);
+            console.error(`Error syncing keep part ${keepPartId} with Meilisearch:`, error);
+        }
+
+        for (const mergedPartId of mergePartIds) {
+            try {
+                const mergedPart = await this.getPartDetails(mergedPartId);
+                await syncPartWithMeili(mergedPart);
+            } catch (error) {
+                console.error(`Error syncing merged part ${mergedPartId} with Meilisearch:`, error);
+            }
         }
     }
 
