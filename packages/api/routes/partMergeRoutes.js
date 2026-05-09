@@ -197,10 +197,15 @@ router.post('/parts/merge/merge', protect, hasPermission('parts:merge'), async (
             });
         }
 
+        const finalRules = {
+            ...conflictResolutions,
+            preserveAliases
+        };
+
         const result = await partMergeService.executeMerge({
             keepPartId: targetPartIdInt,
             mergePartIds: sourcePartIdsInt,
-            rules: conflictResolutions
+            rules: finalRules
         }, req.user.employee_id);
 
         res.json({

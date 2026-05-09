@@ -77,7 +77,7 @@ class PartMergeService {
             const resolvedPart = this.calculateResolvedPart(keepPart, mergeParts, rules);
             
             // Update the keep part with merged data
-            await this.updateKeepPart(client, keepPartId, resolvedPart, rules);
+            await this.updateKeepPart(client, keepPartId, keepPart, mergeParts, rules);
             
             // Merge child records (part_numbers, applications, etc.)
             const childUpdateCounts = await this.mergeChildRecords(client, keepPartId, mergePartIds, rules);
@@ -89,7 +89,9 @@ class PartMergeService {
             const inventoryUpdateCounts = await this.consolidateInventory(client, keepPartId, mergePartIds);
             
             // Create aliases for old SKUs/part numbers
-            await this.createAliases(client, keepPartId, mergeParts, rules);
+            if (rules.preserveAliases !== false) {
+                await this.createAliases(client, keepPartId, mergeParts, rules);
+            }
             
             // Mark source parts as merged
             await this.markPartsAsMerged(client, mergePartIds, keepPartId);
@@ -357,7 +359,7 @@ class PartMergeService {
         );
     }
 
-    async updateKeepPart(client, keepPartId, resolvedPart, rules) {
+    async updateKeepPart(client, keepPartId, keepPart, mergeParts, rules) {
         const updateFields = [];
         const params = [keepPartId];
         let paramIndex = 2;
@@ -372,16 +374,34 @@ class PartMergeService {
                 brand_id: 'brand_id',
                 group_id: 'group_id',
                 is_active: 'is_active',
+                is_service: 'is_service',
                 cost_price: 'last_cost',
                 sale_price: 'last_sale_price',
                 internal_sku: 'internal_sku',
                 tax_rate_id: 'tax_rate_id'
             };
+            // Ensure field overrides actually match a part being merged
             for (const [field, value] of Object.entries(rules.fieldOverrides)) {
                 if (fieldMap[field]) {
-                    updateFields.push(`${fieldMap[field]} = $${paramIndex}`);
-                    params.push(value);
-                    paramIndex++;
+                    // Make sure the value actually exists on keepPart or mergeParts
+                    // Special case for boolean overrides since they aren't part-specific ID swaps
+                    let isValueValid = false;
+                    if (typeof value === 'boolean') {
+                        isValueValid = true;
+                    } else if (field === 'brand_id' || field === 'group_id' || field === 'tax_rate_id') {
+                        // For IDs, check if any of the merged parts or the keep part has this value
+                        isValueValid = (keepPart[fieldMap[field]] === value) ||
+                            mergeParts.some(p => p[fieldMap[field]] === value);
+                    } else {
+                        // For other fields like string and numbers
+                        isValueValid = true;
+                    }
+
+                    if (isValueValid) {
+                        updateFields.push(`${fieldMap[field]} = $${paramIndex}`);
+                        params.push(value);
+                        paramIndex++;
+                    }
                 }
             }
         }
@@ -414,12 +434,14 @@ class PartMergeService {
             counts.part_numbers = result.rowCount;
             // Remove duplicates after reassignment using unique(part_id, part_number)
             await client.query(`
-                DELETE FROM part_number pn
-                USING part_number pn2
+                UPDATE part_number pn
+                SET deleted_at = NOW()
+                FROM part_number pn2
                 WHERE pn.part_id = $1
                   AND pn.part_id = pn2.part_id
                   AND pn.part_number = pn2.part_number
                   AND pn.part_number_id > pn2.part_number_id
+                  AND pn.deleted_at IS NULL
             `, [keepPartId]);
         }
         
@@ -463,24 +485,54 @@ class PartMergeService {
         const counts = {};
         
         for (const table of tables) {
-            try {
-                const result = await client.query(
-                    `UPDATE ${table} SET part_id = $1 WHERE part_id = ANY($2)`,
-                    [keepPartId, mergePartIds]
-                );
-                counts[table] = result.rowCount;
-            } catch (error) {
-                console.warn(`Error updating ${table}:`, error.message);
-                counts[table] = 0;
-            }
+            const result = await client.query(
+                `UPDATE ${table} SET part_id = $1 WHERE part_id = ANY($2)`,
+                [keepPartId, mergePartIds]
+            );
+            counts[table] = result.rowCount;
         }
         
         return counts;
     }
 
-    async consolidateInventory(_client, _keepPartId, _mergePartIds) {
-        // No inventory_locations table; consolidation is achieved by FK reassignment on inventory_transaction
-        return { inventory_consolidated: 0 };
+    async consolidateInventory(client, keepPartId, mergePartIds) {
+        const allPartIds = [keepPartId, ...mergePartIds];
+
+        // Safely calculate new total quantities and WAC values in one pass
+        const wacQuery = `
+            WITH stock_qty AS (
+                SELECT part_id, COALESCE(SUM(quantity), 0) as stock_on_hand
+                FROM inventory_transaction
+                WHERE part_id = ANY($1)
+                GROUP BY part_id
+            )
+            SELECT p.part_id, COALESCE(p.wac_cost, 0) as wac_cost, COALESCE(sq.stock_on_hand, 0) as qty
+            FROM part p
+            LEFT JOIN stock_qty sq ON p.part_id = sq.part_id
+            WHERE p.part_id = ANY($1)
+        `;
+        const wacResult = await client.query(wacQuery, [allPartIds]);
+
+        let totalValue = 0;
+        let totalQty = 0;
+
+        for (const row of wacResult.rows) {
+            const qty = Number(row.qty);
+            const wac = Number(row.wac_cost);
+            if (qty > 0) {
+                totalValue += (qty * wac);
+                totalQty += qty;
+            }
+        }
+
+        const newWac = totalQty > 0 ? (totalValue / totalQty) : 0;
+
+        // Explicitly set the correctly weighted WAC for the master part
+        await client.query(`
+            UPDATE part SET wac_cost = $1 WHERE part_id = $2
+        `, [newWac, keepPartId]);
+
+        return { inventory_consolidated: totalQty, new_wac: newWac };
     }
 
     async createAliases(client, keepPartId, mergeParts, _rules) {
@@ -540,10 +592,9 @@ class PartMergeService {
             UPDATE part 
             SET merged_into_part_id = $1, 
                 is_active = false,
-                internal_sku = internal_sku || '-merged-' || $2,
                 date_modified = NOW()
-            WHERE part_id = ANY($3)
-        `, [keepPartId, keepPartId.toString(), mergePartIds]);
+            WHERE part_id = ANY($2)
+        `, [keepPartId, mergePartIds]);
         
         // Mark part_number records of merged parts as deleted
         await client.query(`
