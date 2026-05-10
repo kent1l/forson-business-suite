@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.4.2] - 2026-05-10
+### Fixed
+- Resolved a production 500 Internal Server Error on the Parts page caused by missing vehicle application tables.
+- Added recovery migration `20260510_ensure_vehicle_application_schema.sql` to synchronize production database schema with the development environment.
+
+### Changed
+- Improved error handling in `packages/api/routes/partRoutes.js` to log detailed stack traces privately to the server console while returning sanitized JSON responses to the client.
+
+### Docs
+- Updated `COMMANDS.md` with strict Developer Rules enforcing a "Migration-First" workflow and logging checks for production troubleshooting.
+
 ## v1.4.1
 - **Dependencies update**
 - **Cheque Printer updates:**

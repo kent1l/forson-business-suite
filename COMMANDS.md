@@ -1,5 +1,12 @@
 # Forson Business Suite - Commands
 
+DEVELOPER RULES
+MIGRATIONS: Never add a table/column to initial_schema.sql without also creating a new .sql file in database/migrations/.
+
+PROD UPDATES: Always run the migration loop after a git pull to ensure the live DB matches the code.
+
+LOGS FIRST: If a 500 error occurs in production, check logs immediately using sudo docker compose -f docker-compose.prod.yml logs -f backend.
+
 Simple, copy-paste-ready commands for development and production. Descriptions are outside the code blocks. Commands include sudo where appropriate.
 
 ---
@@ -97,7 +104,7 @@ Redeploy the stack.
 sudo docker compose -f docker-compose.prod.yml up -d --pull=always --remove-orphans
 ```
 
-Run migrations (Docker-only, robust on Ubuntu/VM/Proxmox).
+Run migrations (Docker-only, robust on Ubuntu/VM/Proxmox). *Mandatory for self-healing schema updates!*
 ```bash
 for f in $(ls database/migrations/*.sql | sort); do cat "$f" | sudo docker exec -i forson_db psql -U postgres -d forson_business_suite; done
 ```

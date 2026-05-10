@@ -144,6 +144,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
 
         if (filter.length > 0) searchOptions.filter = filter.join(' AND ');
 
+        console.log('[DEBUG] [GET /parts] Attempting Meilisearch query...');
         const metadataResults = paginated && isGlobalSort
             ? await index.search(search, { ...searchOptions, limit: 0, offset: 0 })
             : null;
@@ -205,6 +206,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
             ${orderByClause}
             ${sqlOffset}
         `;
+        console.log('[DEBUG] [GET /parts] Attempting Postgres query...');
         const { rows } = await db.query(query, queryParams);
         const partsWithDisplayName = rows.map(part => ({ ...part, display_name: constructDisplayName(part) }));
         if (!paginated) {
@@ -215,8 +217,8 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
             : (searchResults.estimatedTotalHits || searchResults.totalHits || partsWithDisplayName.length);
         res.json(paginatedResponse({ data: partsWithDisplayName, page, pageSize, total }));
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
+        console.error(`[${req.method} ${req.url}] Internal Error:`, err);
+        res.status(500).json({ message: 'Internal Server Error' });
     }
 });
 
@@ -238,8 +240,8 @@ router.get('/parts/:id', protect, hasPermission('parts:view'), async (req, res) 
         const part = { ...rows[0], display_name: constructDisplayName(rows[0]) };
         res.json(part);
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
+        console.error(`[${req.method} ${req.url}] Internal Error:`, err);
+        res.status(500).json({ message: 'Internal Server Error' });
     }
 });
 
@@ -257,8 +259,8 @@ router.get('/parts/:id/tags', protect, hasPermission('parts:view'), async (req, 
         const { rows } = await db.query(query, [id]);
         res.json(rows);
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
+        console.error(`[${req.method} ${req.url}] Internal Error:`, err);
+        res.status(500).json({ message: 'Internal Server Error' });
     }
 });
 
@@ -352,15 +354,9 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
         // Fallback to raw row if enrichment fails
         res.status(201).json(newPartData);
     } catch (err) {
-        console.log('[DEBUG] POST /parts - Error occurred:', err);
-        console.log('[DEBUG] POST /parts - Error stack:', err.stack);
         await client.query('ROLLBACK');
-        console.error(err.message);
-        res.status(500).json({ 
-            message: 'Server Error',
-            error: err.message,
-            stack: process.env.NODE_ENV !== 'production' ? err.stack : undefined
-        });
+        console.error(`[${req.method} ${req.url}] Internal Error:`, err);
+        res.status(500).json({ message: 'Internal Server Error' });
     } finally {
         console.log('[DEBUG] POST /parts - Releasing client');
         client.release();
@@ -424,8 +420,8 @@ router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) 
         res.json(updatedPart.rows[0]);
     } catch (err) {
         await client.query('ROLLBACK');
-        console.error(err.message);
-        res.status(500).send('Server Error');
+        console.error(`[${req.method} ${req.url}] Internal Error:`, err);
+        res.status(500).json({ message: 'Internal Server Error' });
     } finally {
         client.release();
     }
@@ -445,8 +441,8 @@ router.delete('/parts/:id', protect, hasPermission('parts:delete'), async (req, 
         });
         res.json({ message: 'Part deleted successfully' });
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
+        console.error(`[${req.method} ${req.url}] Internal Error:`, err);
+        res.status(500).json({ message: 'Internal Server Error' });
     }
 });
 
