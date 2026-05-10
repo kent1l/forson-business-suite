@@ -170,7 +170,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
             if (sortBy === 'sku') {
                 orderByClause = `ORDER BY LOWER(COALESCE(p.internal_sku, '')) ${sortDirection}, p.part_id ${sortDirection}`;
             } else if (sortBy === 'application') {
-                orderByClause = `ORDER BY LOWER(COALESCE(applications, '')) ${sortDirection}, p.part_id ${sortDirection}`;
+                orderByClause = `ORDER BY applications ${sortDirection}, p.part_id ${sortDirection}`;
             } else {
                 orderByClause = `ORDER BY LOWER(COALESCE(g.group_name, '') || ' ' || COALESCE(b.brand_name, '') || ' ' || COALESCE(p.detail, '')) ${sortDirection}, p.part_id ${sortDirection}`;
             }

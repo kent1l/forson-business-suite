@@ -193,6 +193,9 @@ const setupMeiliSearch = async () => {
             'part_numbers', 
             'normalized_part_numbers'
           ]
+        },
+        pagination: {
+          maxTotalHits: 20000
         }
       };
 
@@ -237,6 +240,9 @@ const setupMeiliSearch = async () => {
           'automatic': ['auto', 'at'],
           'transmission': ['trans', 'tranny'],
           'engine': ['eng', 'motor']
+        },
+        pagination: {
+          maxTotalHits: 20000
         }
       };
 
