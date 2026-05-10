@@ -1,14 +1,11 @@
 # Forson Business Suite - Commands
 
-DEVELOPER RULES
-MIGRATIONS: Never add a table/column to initial_schema.sql without also creating a new .sql file in database/migrations/.
-
-PROD UPDATES: Always run the migration loop after a git pull to ensure the live DB matches the code.
-
-LOGS FIRST: If a 500 error occurs in production, check logs immediately using sudo docker compose -f docker-compose.prod.yml logs -f backend.
-
 Simple, copy-paste-ready commands for development and production. Descriptions are outside the code blocks. Commands include sudo where appropriate.
 
+## 🚨 DEVELOPER RULES (CRITICAL)
+1. **SCHEMA CHANGES:** Never edit or add tables to `initial_schema.sql` without also creating a corresponding `.sql` script in `database/migrations/`.
+2. **PRODUCTION UPDATES:** Always run the migration loop after a deploy to ensure the live database matches the codebase. The migration loop is the *only* approved method for applying schema changes safely without losing data.
+3. **LOGS FIRST:** If a 500 error occurs in production, immediately check the logs using `sudo docker compose -f docker-compose.prod.yml logs -f backend` to see the exact root cause.
 ---
 
 ## 1) One-Time Setup
@@ -87,31 +84,39 @@ sudo docker compose -f docker-compose.prod.yml down
 
 ## 4) Update/Upgrade (Production)
 
+Deploying by release tags ensures the production server runs an exact, validated snapshot of the codebase. 
+
 Back up the database.
 ```bash
 mkdir -p backups
 ts=$(date +"%Y-%m-%dT%H-%M-%S")
 sudo docker exec -t forson_db pg_dump -U postgres forson_business_suite > backups/backup-$ts.sql
+echo "Backup saved: backups/backup-$ts.sql"
 ```
 
-Pull latest code.
+Fetch the newest release tags and check out the latest version (e.g., v1.4.2).
 ```bash
-git pull --ff-only
+git fetch --tags --force
+LATEST_TAG=$(git tag -l --sort=-v:refname | head -n 1)
+echo "Checking out latest release: $LATEST_TAG"
+git checkout $LATEST_TAG
 ```
 
-Redeploy the stack.
+Redeploy the stack with the newly checked-out code.
 ```bash
 sudo docker compose -f docker-compose.prod.yml up -d --pull=always --remove-orphans
 ```
 
-Run migrations (Docker-only, robust on Ubuntu/VM/Proxmox). *Mandatory for self-healing schema updates!*
+Run the mandatory migration loop to self-heal and update the schema.
 ```bash
+echo "Running database migrations..."
 for f in $(ls database/migrations/*.sql | sort); do cat "$f" | sudo docker exec -i forson_db psql -U postgres -d forson_business_suite; done
 ```
 
 Smoke test backend.
 ```bash
 curl -s http://localhost:3001/api/setup/status || true
+echo -e "\nUpdate complete!"
 ```
 
 ---
