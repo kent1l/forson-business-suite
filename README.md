@@ -256,12 +256,16 @@ git tag vX.X.X && git push --tags
 
 Configure the following repository secrets in **Settings → Secrets and variables → Actions**:
 
-- `STAGING_HOST`
+- `TS_OAUTH_CLIENT_ID`
+- `TS_OAUTH_SECRET`
+- `STAGING_HOST` (must be the internal Tailscale 100.x.x.x IP)
 - `STAGING_USER`
 - `STAGING_KEY`
-- `PROD_HOST`
+- `PROD_HOST` (must be the internal Tailscale 100.x.x.x IP)
 - `PROD_USER`
 - `PROD_KEY`
+
+> **Note:** The deployment pipeline relies on Tailscale to securely access the private Proxmox environment where the staging and production servers are hosted.
 
 Both staging and production deployments execute:
 
