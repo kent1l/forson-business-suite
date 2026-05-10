@@ -187,9 +187,14 @@ const ChequePrintingPage = () => {
             }
 
             if (persist) {
+                const dbPayloadRows = sourceRows.map((row) => ({
+                    ...row,
+                    payee: (row.payee || '').trim(),
+                    memo: (row.memo || '').trim()
+                }));
                 await api.post('/cheques/records', {
                     template_id: Number(selectedTemplateId),
-                    records: payloadRows
+                    records: dbPayloadRows
                 });
                 toast.success('Cheque PDF generated. Print using 100% scale.');
                 setRows([blankRow()]);
