@@ -144,6 +144,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
 
         if (filter.length > 0) searchOptions.filter = filter.join(' AND ');
 
+        console.log('[GET /parts] Attempting Meilisearch query...');
         const metadataResults = paginated && isGlobalSort
             ? await index.search(search, { ...searchOptions, limit: 0, offset: 0 })
             : null;
@@ -205,6 +206,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
             ${orderByClause}
             ${sqlOffset}
         `;
+        console.log('[GET /parts] Attempting Postgres query...');
         const { rows } = await db.query(query, queryParams);
         const partsWithDisplayName = rows.map(part => ({ ...part, display_name: constructDisplayName(part) }));
         if (!paginated) {
@@ -215,8 +217,13 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
             : (searchResults.estimatedTotalHits || searchResults.totalHits || partsWithDisplayName.length);
         res.json(paginatedResponse({ data: partsWithDisplayName, page, pageSize, total }));
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
+        console.error('[GET /parts] Full Error:', err);
+        res.status(500).json({ 
+            message: 'Server Error', 
+            error: err.message, 
+            type: err.name,
+            stack: err.stack 
+        });
     }
 });
 
