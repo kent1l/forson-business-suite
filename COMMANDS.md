@@ -60,9 +60,9 @@ sudo docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql
 sudo docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
 ```
 
-Apply migrations (Docker-only, no host Node/npm required).
+Apply migrations using the optimized production runner (includes 5GB disk check, batched WAL updates, and single-connection piping).
 ```bash
-for f in $(ls database/migrations/*.sql | sort); do cat "$f" | sudo docker exec -i forson_db psql -U postgres -d forson_business_suite; done
+./scripts/migrate-prod.sh
 ```
 
 Check service status.
@@ -107,10 +107,10 @@ Redeploy the stack with the newly checked-out code.
 sudo docker compose -f docker-compose.prod.yml up -d --pull=always --remove-orphans
 ```
 
-Run the mandatory migration loop to self-heal and update the schema.
+Run the mandatory migration loop to self-heal and update the schema safely. This uses the optimized production runner (disk checks, WAL batching).
 ```bash
 echo "Running database migrations..."
-for f in $(ls database/migrations/*.sql | sort); do cat "$f" | sudo docker exec -i forson_db psql -U postgres -d forson_business_suite; done
+./scripts/migrate-prod.sh
 ```
 
 Smoke test backend.

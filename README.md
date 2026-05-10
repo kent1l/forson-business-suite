@@ -228,9 +228,9 @@ sudo docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql
 sudo docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
 ```
 
-Apply migrations (recommended runner with history + checksums).
+Apply migrations (optimized runner with disk check and WAL batching).
 ```bash
-npm --prefix packages/api run migrate -- --host 127.0.0.1
+./scripts/migrate-prod.sh
 ```
 
 Verify services.
@@ -257,9 +257,9 @@ Redeploy stack with latest images.
 sudo docker compose -f docker-compose.prod.yml up -d --pull=always --remove-orphans
 ```
 
-Apply migrations.
+Apply migrations using the optimized production runner.
 ```bash
-npm --prefix packages/api run migrate -- --host 127.0.0.1
+./scripts/migrate-prod.sh
 ```
 
 Smoke test API.
@@ -289,9 +289,9 @@ npm --prefix packages/api run migrate:status -- --host localhost
 npm --prefix packages/api run migrate:verify -- --host localhost
 ```
 
-- Production (on the server where DB is bound to 127.0.0.1):
+- Production (optimized bash runner with disk/WAL safety):
 ```bash
-npm --prefix packages/api run migrate -- --host 127.0.0.1
+./scripts/migrate-prod.sh
 ```
 
 - Target a specific migration window (useful when you only need a single new migration):

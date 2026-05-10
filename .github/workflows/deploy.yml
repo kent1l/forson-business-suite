@@ -57,6 +57,14 @@ jobs:
           echo "Deploying to staging..."
           # Add your deployment script or commands here
 
+      - name: Ensure scripts are executable
+        if: github.ref == 'refs/heads/master'
+        run: chmod +x scripts/*.sh
+
+      - name: Run database migrations
+        if: github.ref == 'refs/heads/master'
+        run: ./scripts/migrate-prod.sh
+
       - name: Deploy to Production
         if: github.ref == 'refs/heads/master'
         run: |

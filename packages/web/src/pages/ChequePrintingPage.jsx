@@ -177,24 +177,29 @@ const ChequePrintingPage = () => {
                 toast((rendererWarning || 'Fallback PDF renderer was used because pdf-lib is unavailable.'), { icon: '⚠️' });
             }
 
+            if (persist) {
+                const dbPayloadRows = sourceRows.map((row) => ({
+                    ...row,
+                    payee: (row.payee || '').trim(),
+                    memo: (row.memo || '').trim()
+                }));
+                await api.post('/cheques/records', {
+                    template_id: Number(selectedTemplateId),
+                    records: dbPayloadRows
+                });
+                toast.success('Cheque generated and saved to history.');
+                setRows([blankRow()]);
+                await loadData();
+            }
+
             const pdfBlob = new Blob([pdfResponse.data], { type: 'application/pdf' });
             const url = URL.createObjectURL(pdfBlob);
             window.open(url, '_blank', 'noopener,noreferrer');
             const printOk = window.confirm('PDF opened. Print using 100% scale.\nDid the print preview open correctly?');
             if (!printOk) {
                 toast.error('Print confirmation failed. Please check popup permissions or browser print settings.');
-                return;
             }
 
-            if (persist) {
-                await api.post('/cheques/records', {
-                    template_id: Number(selectedTemplateId),
-                    records: payloadRows
-                });
-                toast.success('Cheque PDF generated. Print using 100% scale.');
-                setRows([blankRow()]);
-                await loadData();
-            }
         } catch (error) {
             toast.error(error?.response?.data?.message || 'PDF generation failed.');
         } finally {
