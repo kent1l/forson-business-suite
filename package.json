@@ -1,5 +1,6 @@
 {
 	"name": "forson-business-suite",
+	"version": "1.4.2",
 	"private": true,
 	"workspaces": [
 		"packages/*"
