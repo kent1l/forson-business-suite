@@ -239,6 +239,36 @@ sudo docker compose -f docker-compose.prod.yml ps
 sudo docker compose -f docker-compose.prod.yml logs -f backend
 ```
 
+
+### CI/CD Release-Based Flow
+
+The deployment pipeline is environment-separated in GitHub Actions:
+
+1. **Push to `master`** → automatically deploys to **Staging**.
+2. Validate staging behavior (app smoke tests, health checks, and logs).
+3. **Create and push a release tag** to promote to production:
+```bash
+git tag vX.X.X && git push --tags
+```
+4. Any tag matching `v*` automatically deploys to **Production**.
+
+### Required GitHub Secrets
+
+Configure the following repository secrets in **Settings → Secrets and variables → Actions**:
+
+- `STAGING_HOST`
+- `STAGING_USER`
+- `STAGING_KEY`
+- `PROD_HOST`
+- `PROD_USER`
+- `PROD_KEY`
+
+Both staging and production deployments execute:
+
+```bash
+cd ~/projects/forson-business-suite && chmod +x scripts/*.sh && ./scripts/update-prod.sh
+```
+
 ### Update/Upgrade (Production)
 Backup database.
 ```bash

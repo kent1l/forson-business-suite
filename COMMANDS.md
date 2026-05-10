@@ -142,3 +142,22 @@ Open a psql session in the db container.
 ```bash
 sudo docker exec -it forson_db psql -U postgres -d forson_business_suite
 ```
+---
+
+## 6) CI/CD & Release Workflow
+
+This repository uses a release-based deployment pipeline in GitHub Actions with separated staging and production targets:
+
+1. Push to `master` → GitHub Actions auto-deploys to **Staging** over SSH.
+2. Verify the staging environment (smoke tests, logs, and functional checks).
+3. Promote to production by creating and pushing a version tag:
+```bash
+git tag vX.X.X && git push --tags
+```
+4. Pushing a `v*` tag triggers GitHub Actions to auto-deploy to **Production** over SSH.
+
+Notes:
+- Staging uses repository secrets: `STAGING_HOST`, `STAGING_USER`, `STAGING_KEY`.
+- Production uses repository secrets: `PROD_HOST`, `PROD_USER`, `PROD_KEY`.
+- Both targets run: `cd ~/projects/forson-business-suite && chmod +x scripts/*.sh && ./scripts/update-prod.sh`.
+
