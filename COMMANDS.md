@@ -62,7 +62,7 @@ sudo docker exec -u postgres forson_db psql -d forson_business_suite -f /initial
 
 Apply migrations (Docker-only, no host Node/npm required).
 ```bash
-for f in $(ls database/migrations/*.sql | sort); do cat "$f" | sudo docker exec -i forson_db psql -U postgres -d forson_business_suite; done
+sudo docker exec -i forson_backend npm run migrate
 ```
 
 Check service status.
@@ -110,7 +110,7 @@ sudo docker compose -f docker-compose.prod.yml up -d --pull=always --remove-orph
 Run the mandatory migration loop to self-heal and update the schema.
 ```bash
 echo "Running database migrations..."
-for f in $(ls database/migrations/*.sql | sort); do cat "$f" | sudo docker exec -i forson_db psql -U postgres -d forson_business_suite; done
+sudo docker exec -i forson_backend npm run migrate
 ```
 
 Smoke test backend.

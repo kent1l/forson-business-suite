@@ -91,16 +91,10 @@ PowerShell (Windows) example with Docker:
 	 docker cp .\database\initial_schema.sql forson_db:/initial_schema.sql
 	 docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
 2) Apply migrations (recommended on all installs)
-	 Get-ChildItem .\database\migrations\*.sql | Sort-Object Name | ForEach-Object {
-		 docker cp $_.FullName forson_db:/m.sql
-		 docker exec -u postgres forson_db psql -d forson_business_suite -f /m.sql
-	 }
+	 docker exec -i forson_backend npm run migrate
 
 Linux/macOS (bash) example:
-	for f in database/migrations/*.sql; do
-		docker cp "$f" forson_db:/m.sql
-		docker exec -u postgres forson_db psql -d forson_business_suite -f /m.sql
-	done
+	docker exec -i forson_backend npm run migrate
 
 ## Backup and rollback
 - Backups: The compose stack includes a backup service. Validate backups before applying migrations.
