@@ -53,20 +53,21 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Deploy to Staging
-        run: |
-          echo "Deploying to staging..."
-          # Add your deployment script or commands here
-
-      - name: Ensure scripts are executable
         if: github.ref == 'refs/heads/master'
-        run: chmod +x scripts/*.sh
-
-      - name: Run database migrations
-        if: github.ref == 'refs/heads/master'
-        run: ./scripts/migrate-prod.sh
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_KEY }}
+          script: |
+            cd ~/projects/forson-business-suite && chmod +x scripts/*.sh && ./scripts/update-prod.sh
 
       - name: Deploy to Production
-        if: github.ref == 'refs/heads/master'
-        run: |
-          echo "Deploying to production..."
-          # Add your deployment script or commands here
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_KEY }}
+          script: |
+            cd ~/projects/forson-business-suite && chmod +x scripts/*.sh && ./scripts/update-prod.sh
