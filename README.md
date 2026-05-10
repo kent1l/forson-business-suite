@@ -247,19 +247,9 @@ ts=$(date +"%Y-%m-%dT%H-%M-%S")
 sudo docker exec -t forson_db pg_dump -U postgres forson_business_suite > backups/backup-$ts.sql
 ```
 
-Pull latest code or images.
+Run the unified production update script. This standard, supported script safely automates pulling code, building/pulling images, updating containers, migrating the database, and cleaning up dangling images to prevent disk bloat.
 ```bash
-git pull --ff-only
-```
-
-Redeploy stack with latest images.
-```bash
-sudo docker compose -f docker-compose.prod.yml up -d --pull=always --remove-orphans
-```
-
-Apply migrations using the optimized production runner.
-```bash
-./scripts/migrate-prod.sh
+./scripts/update-prod.sh
 ```
 
 Smoke test API.
