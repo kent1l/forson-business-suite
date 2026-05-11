@@ -26,7 +26,12 @@ fi
 echo "Disk space check passed."
 
 echo "[$(date +'%Y-%m-%dT%H:%M:%S%z')] Step 5: Executing database migrations..."
-sudo docker compose -f docker-compose.prod.yml exec -T backend node scripts/migrate.js up
+# Mount the local database directory and override MIGRATIONS_DIR via env variable
+# to execute migrations safely without modifying the container's file system state.
+sudo docker compose -f docker-compose.prod.yml run --rm \
+    -v "$(pwd)/database:/database:ro" \
+    -e MIGRATIONS_DIR=/database/migrations \
+    backend node scripts/migrate.js up
 
 echo "[$(date +'%Y-%m-%dT%H:%M:%S%z')] Step 6: Performing safe cleanup..."
 sudo docker image prune -f

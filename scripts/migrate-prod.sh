@@ -4,8 +4,9 @@ set -o pipefail
 
 echo "=================================================================================="
 echo "DEPRECATED: This script uses a naive concatenation approach and is unsafe."
-echo "Please do not use it anymore. Use the new Node.js state-aware runner via:"
-echo "sudo docker compose -f docker-compose.prod.yml exec -T backend node scripts/migrate.js up"
+echo "Please do not use it anymore. To run migrations in production, use the standard"
+echo "update pipeline (scripts/update-prod.sh) or execute:"
+echo "sudo docker compose -f docker-compose.prod.yml run --rm -v \"\$(pwd)/database:/database:ro\" -e MIGRATIONS_DIR=/database/migrations backend node scripts/migrate.js up"
 echo "=================================================================================="
 exit 1
 
