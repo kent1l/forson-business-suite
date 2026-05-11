@@ -52,29 +52,30 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Connect to Tailscale
-        uses: tailscale/github-action@v3
-        with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:ci
+      # Temporarily disabled due to Tailscale configuration issues
+      # - name: Connect to Tailscale
+      #   uses: tailscale/github-action@v3
+      #   with:
+      #     oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+      #     oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+      #     tags: tag:ci
 
-      - name: Deploy to Staging
-        if: github.ref == 'refs/heads/master'
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.STAGING_HOST }}
-          username: ${{ secrets.STAGING_USER }}
-          key: ${{ secrets.STAGING_KEY }}
-          script: |
-            cd ~/projects/forson-business-suite && chmod +x scripts/*.sh && ./scripts/update-prod.sh
+      # - name: Deploy to Staging
+      #   if: github.ref == 'refs/heads/master'
+      #   uses: appleboy/ssh-action@master
+      #   with:
+      #     host: ${{ secrets.STAGING_HOST }}
+      #     username: ${{ secrets.STAGING_USER }}
+      #     key: ${{ secrets.STAGING_KEY }}
+      #     script: |
+      #       cd ~/projects/forson-business-suite && chmod +x scripts/*.sh && ./scripts/update-prod.sh
 
-      - name: Deploy to Production
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.PROD_HOST }}
-          username: ${{ secrets.PROD_USER }}
-          key: ${{ secrets.PROD_KEY }}
-          script: |
-            cd ~/projects/forson-business-suite && chmod +x scripts/*.sh && ./scripts/update-prod.sh
+      # - name: Deploy to Production
+      #   if: startsWith(github.ref, 'refs/tags/v')
+      #   uses: appleboy/ssh-action@master
+      #   with:
+      #     host: ${{ secrets.PROD_HOST }}
+      #     username: ${{ secrets.PROD_USER }}
+      #     key: ${{ secrets.PROD_KEY }}
+      #     script: |
+      #       cd ~/projects/forson-business-suite && chmod +x scripts/*.sh && ./scripts/update-prod.sh
