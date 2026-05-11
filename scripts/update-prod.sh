@@ -15,10 +15,20 @@ sudo docker compose -f docker-compose.prod.yml pull
 echo "[$(date +'%Y-%m-%dT%H:%M:%S%z')] Step 3: Starting/Updating containers..."
 sudo docker compose -f docker-compose.prod.yml up -d
 
-echo "[$(date +'%Y-%m-%dT%H:%M:%S%z')] Step 4: Executing database migrations..."
-./scripts/migrate-prod.sh
+echo "[$(date +'%Y-%m-%dT%H:%M:%S%z')] Step 4: Pre-flight Disk Check (5GB minimum)..."
+REQUIRED_SPACE_KB=5242880
+FREE_SPACE_KB=$(df -k / | awk 'NR==2 {print $4}')
 
-echo "[$(date +'%Y-%m-%dT%H:%M:%S%z')] Step 5: Performing safe cleanup..."
+if [ "$FREE_SPACE_KB" -lt "$REQUIRED_SPACE_KB" ]; then
+    echo "ERROR: Insufficient disk space. Requires at least 5GB free."
+    exit 1
+fi
+echo "Disk space check passed."
+
+echo "[$(date +'%Y-%m-%dT%H:%M:%S%z')] Step 5: Executing database migrations..."
+sudo docker compose -f docker-compose.prod.yml exec -T backend node scripts/migrate.js up
+
+echo "[$(date +'%Y-%m-%dT%H:%M:%S%z')] Step 6: Performing safe cleanup..."
 sudo docker image prune -f
 
 echo "[$(date +'%Y-%m-%dT%H:%M:%S%z')] Production update completed successfully."

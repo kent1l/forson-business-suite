@@ -2,6 +2,13 @@
 set -e
 set -o pipefail
 
+echo "=================================================================================="
+echo "DEPRECATED: This script uses a naive concatenation approach and is unsafe."
+echo "Please do not use it anymore. Use the new Node.js state-aware runner via:"
+echo "sudo docker compose -f docker-compose.prod.yml exec -T backend node scripts/migrate.js up"
+echo "=================================================================================="
+exit 1
+
 # 1. Pre-flight Disk Check (5GB minimum)
 REQUIRED_SPACE_KB=5242880
 FREE_SPACE_KB=$(df -k / | awk 'NR==2 {print $4}')
