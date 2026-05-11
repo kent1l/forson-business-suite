@@ -58,6 +58,7 @@ jobs:
           oauth-client-id: "kACgGEVayt11CNTRL"
           oauth-secret: "tskey-client-kACgGEVayt11CNTRL-UnzxJkCc8eJXg49fR5QydJSXAdg9HEmh"
           version: 1.66.4
+          tags: tag:ci
 
       - name: Deploy to Staging
         if: github.ref == 'refs/heads/master'
