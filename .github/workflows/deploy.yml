@@ -55,9 +55,8 @@ jobs:
       - name: Connect to Tailscale
         uses: tailscale/github-action@v2
         with:
-          oauth-client-id: "kACgGEVayt11CNTRL"
-          oauth-secret: "tskey-client-kACgGEVayt11CNTRL-UnzxJkCc8eJXg49fR5QydJSXAdg9HEmh"
-          version: 1.66.4
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
 
       - name: Deploy to Staging
