@@ -27,59 +27,91 @@ SET settled_at = created_at
 WHERE settled_at IS NULL;
 
 -- 3) Replace payments_unified view to include settlement columns
-CREATE OR REPLACE VIEW public.payments_unified AS
-SELECT 
-    'customer_payment' as source_table,
-    cp.payment_id,
-    NULL as invoice_id,
-    cp.customer_id,
-    cp.employee_id,
-    cp.payment_date as created_at,
-    cp.amount as amount_paid,
-    cp.tendered_amount,
-    COALESCE(cp.tendered_amount - cp.amount, 0) as change_amount,
-    cp.payment_method as legacy_method,
-    cp.method_id,
-    pm.code as method_code,
-    pm.name as method_name,
-    pm.type as method_type,
-    pm.config as method_config,
-    cp.reference_number as reference,
-    jsonb_build_object('notes', cp.notes) as metadata,
-    'settled' as payment_status,
-    cp.payment_date as settled_at,
-    NULL::character varying as settlement_reference,
-    '{}'::jsonb as attempt_metadata
-FROM public.customer_payment cp
-LEFT JOIN public.payment_methods pm ON cp.method_id = pm.method_id
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'customer_payment') THEN
+        EXECUTE 'CREATE OR REPLACE VIEW public.payments_unified AS
+        SELECT
+            ''customer_payment'' as source_table,
+            cp.payment_id,
+            NULL::integer as invoice_id,
+            cp.customer_id,
+            cp.employee_id,
+            cp.payment_date as created_at,
+            cp.amount as amount_paid,
+            cp.tendered_amount,
+            COALESCE(cp.tendered_amount - cp.amount, 0) as change_amount,
+            cp.payment_method as legacy_method,
+            cp.method_id,
+            pm.code as method_code,
+            pm.name as method_name,
+            pm.type as method_type,
+            pm.config as method_config,
+            cp.reference_number as reference,
+            jsonb_build_object(''notes'', cp.notes) as metadata,
+            ''settled'' as payment_status,
+            cp.payment_date as settled_at,
+            NULL::character varying as settlement_reference,
+            ''{}''::jsonb as attempt_metadata
+        FROM public.customer_payment cp
+        LEFT JOIN public.payment_methods pm ON cp.method_id = pm.method_id
 
-UNION ALL
+        UNION ALL
 
-SELECT 
-    'invoice_payments' as source_table,
-    ip.payment_id,
-    ip.invoice_id,
-    i.customer_id,
-    ip.created_by as employee_id,
-    ip.created_at,
-    ip.amount_paid,
-    ip.tendered_amount,
-    ip.change_amount,
-    NULL as legacy_method,
-    ip.method_id,
-    pm.code as method_code,
-    pm.name as method_name,
-    pm.type as method_type,
-    pm.config as method_config,
-    ip.reference,
-    ip.metadata,
-    COALESCE(ip.payment_status, 'settled') as payment_status,
-    ip.settled_at,
-    ip.settlement_reference,
-    ip.attempt_metadata
-FROM public.invoice_payments ip
-JOIN public.invoice i ON ip.invoice_id = i.invoice_id
-JOIN public.payment_methods pm ON ip.method_id = pm.method_id;
+        SELECT
+            ''invoice_payments'' as source_table,
+            ip.payment_id,
+            ip.invoice_id,
+            i.customer_id,
+            ip.created_by as employee_id,
+            ip.created_at,
+            ip.amount_paid,
+            ip.tendered_amount,
+            ip.change_amount,
+            NULL as legacy_method,
+            ip.method_id,
+            pm.code as method_code,
+            pm.name as method_name,
+            pm.type as method_type,
+            pm.config as method_config,
+            ip.reference,
+            ip.metadata,
+            COALESCE(ip.payment_status, ''settled'') as payment_status,
+            ip.settled_at,
+            ip.settlement_reference,
+            ip.attempt_metadata
+        FROM public.invoice_payments ip
+        JOIN public.invoice i ON ip.invoice_id = i.invoice_id
+        JOIN public.payment_methods pm ON ip.method_id = pm.method_id;';
+    ELSE
+        EXECUTE 'CREATE OR REPLACE VIEW public.payments_unified AS
+        SELECT
+            ''invoice_payments'' as source_table,
+            ip.payment_id,
+            ip.invoice_id,
+            i.customer_id,
+            ip.created_by as employee_id,
+            ip.created_at,
+            ip.amount_paid,
+            ip.tendered_amount,
+            ip.change_amount,
+            NULL::varchar as legacy_method,
+            ip.method_id,
+            pm.code as method_code,
+            pm.name as method_name,
+            pm.type as method_type,
+            pm.config as method_config,
+            ip.reference,
+            ip.metadata,
+            COALESCE(ip.payment_status, ''settled'') as payment_status,
+            ip.settled_at,
+            ip.settlement_reference,
+            ip.attempt_metadata
+        FROM public.invoice_payments ip
+        JOIN public.invoice i ON ip.invoice_id = i.invoice_id
+        JOIN public.payment_methods pm ON ip.method_id = pm.method_id;';
+    END IF;
+END$$;
 
 -- 4) Replace update_invoice_balance_after_payment() to only SUM settled payments and consider refunds
 CREATE OR REPLACE FUNCTION update_invoice_balance_after_payment() RETURNS trigger AS $$
