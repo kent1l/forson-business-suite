@@ -3,15 +3,15 @@
 
 -- Add merged_into_part_id column to track which part this was merged into
 ALTER TABLE part 
-ADD COLUMN merged_into_part_id BIGINT REFERENCES part(part_id);
+ADD COLUMN IF NOT EXISTS merged_into_part_id BIGINT REFERENCES part(part_id);
 
 -- Add index for performance on merged parts queries
-CREATE INDEX idx_part_merged_into ON part(merged_into_part_id);
+CREATE INDEX IF NOT EXISTS idx_part_merged_into ON part(merged_into_part_id);
 
 -- Update unique constraint on internal_sku to allow merged parts to have duplicate SKUs
 -- by making it a partial unique index that only applies to non-merged parts
 ALTER TABLE part DROP CONSTRAINT IF EXISTS part_internal_sku_key;
-CREATE UNIQUE INDEX part_internal_sku_unique ON part(internal_sku) 
+CREATE UNIQUE INDEX IF NOT EXISTS part_internal_sku_unique ON part(internal_sku)
 WHERE merged_into_part_id IS NULL;
 
 -- Add comment for clarity
