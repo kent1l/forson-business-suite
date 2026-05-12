@@ -65,6 +65,8 @@ $$ LANGUAGE plpgsql;
 
 -- Add computed column helper for balance due (useful for views/reports)
 -- This is a view, not a computed column, to avoid storage overhead
+DROP VIEW IF EXISTS public.invoice_aging CASCADE;
+DROP VIEW IF EXISTS public.invoice_with_balance CASCADE;
 CREATE OR REPLACE VIEW public.invoice_with_balance AS
 SELECT 
     i.*,

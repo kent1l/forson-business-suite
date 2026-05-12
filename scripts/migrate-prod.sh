@@ -2,6 +2,9 @@
 set -e
 set -o pipefail
 
+echo "DEPRECATED: This script is deprecated. Please use the Node.js runner via 'docker compose exec api node scripts/migrate.js up' instead."
+exit 1
+
 # 1. Pre-flight Disk Check (5GB minimum)
 REQUIRED_SPACE_KB=5242880
 FREE_SPACE_KB=$(df -k / | awk 'NR==2 {print $4}')
