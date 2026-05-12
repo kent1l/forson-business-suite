@@ -8,12 +8,15 @@
 BEGIN;
 
 -- Add a comment to mark the table as deprecated
-COMMENT ON TABLE public.customer_payment IS 'DEPRECATED: This table is deprecated as of 2025-09-13. Use the payments_unified view instead. This table is maintained for legacy single-payment invoices only.';
-
--- Add deprecation comments to key columns
-COMMENT ON COLUMN public.customer_payment.payment_id IS 'DEPRECATED: Use payments_unified.payment_id instead';
-COMMENT ON COLUMN public.customer_payment.amount IS 'DEPRECATED: Use payments_unified.amount_paid instead';
-COMMENT ON COLUMN public.customer_payment.payment_method IS 'DEPRECATED: Use payments_unified.method_name instead';
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'customer_payment') THEN
+        EXECUTE 'COMMENT ON TABLE public.customer_payment IS ''DEPRECATED: This table is deprecated as of 2025-09-13. Use the payments_unified view instead. This table is maintained for legacy single-payment invoices only.''';
+        EXECUTE 'COMMENT ON COLUMN public.customer_payment.payment_id IS ''DEPRECATED: Use payments_unified.payment_id instead''';
+        EXECUTE 'COMMENT ON COLUMN public.customer_payment.amount IS ''DEPRECATED: Use payments_unified.amount_paid instead''';
+        EXECUTE 'COMMENT ON COLUMN public.customer_payment.payment_method IS ''DEPRECATED: Use payments_unified.method_name instead''';
+    END IF;
+END$$;
 
 -- Create a read-only function to discourage direct inserts (optional enforcement)
 CREATE OR REPLACE FUNCTION prevent_customer_payment_direct_insert()
@@ -30,11 +33,16 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Create trigger to warn on direct inserts (but still allow them for compatibility)
-DROP TRIGGER IF EXISTS customer_payment_deprecation_warning ON public.customer_payment;
-CREATE TRIGGER customer_payment_deprecation_warning
-    BEFORE INSERT ON public.customer_payment
-    FOR EACH ROW
-    EXECUTE FUNCTION prevent_customer_payment_direct_insert();
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'customer_payment') THEN
+        DROP TRIGGER IF EXISTS customer_payment_deprecation_warning ON public.customer_payment;
+        CREATE TRIGGER customer_payment_deprecation_warning
+            BEFORE INSERT ON public.customer_payment
+            FOR EACH ROW
+            EXECUTE FUNCTION prevent_customer_payment_direct_insert();
+    END IF;
+END$$;
 
 -- Log the deprecation
 DO $$

@@ -27,58 +27,92 @@ CREATE INDEX IF NOT EXISTS idx_invoice_payments_method_id ON public.invoice_paym
 CREATE INDEX IF NOT EXISTS idx_invoice_payments_created_at ON public.invoice_payments(created_at);
 
 -- Extend customer_payment table to support method_id (backward compatible)
-ALTER TABLE public.customer_payment 
-ADD COLUMN IF NOT EXISTS method_id integer REFERENCES public.payment_methods(method_id) ON DELETE SET NULL;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'customer_payment') THEN
+        ALTER TABLE public.customer_payment
+        ADD COLUMN IF NOT EXISTS method_id integer REFERENCES public.payment_methods(method_id) ON DELETE SET NULL;
 
--- Add index for the new column
-CREATE INDEX IF NOT EXISTS idx_customer_payment_method_id ON public.customer_payment(method_id);
+        -- Add index for the new column
+        CREATE INDEX IF NOT EXISTS idx_customer_payment_method_id ON public.customer_payment(method_id);
+    END IF;
+END$$;
 
 -- Create a view for unified payment reporting across both tables
-CREATE OR REPLACE VIEW public.payments_unified AS
-SELECT 
-    'customer_payment' as source_table,
-    cp.payment_id,
-    NULL as invoice_id,
-    cp.customer_id,
-    cp.employee_id,
-    cp.payment_date as created_at,
-    cp.amount as amount_paid,
-    cp.tendered_amount,
-    COALESCE(cp.tendered_amount - cp.amount, 0) as change_amount,
-    cp.payment_method as legacy_method,
-    cp.method_id,
-    pm.code as method_code,
-    pm.name as method_name,
-    pm.type as method_type,
-    pm.config as method_config,
-    cp.reference_number as reference,
-    jsonb_build_object('notes', cp.notes) as metadata
-FROM public.customer_payment cp
-LEFT JOIN public.payment_methods pm ON cp.method_id = pm.method_id
+-- We use DO block because the view creation depends on the existence of customer_payment table.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'customer_payment') THEN
+        EXECUTE 'CREATE OR REPLACE VIEW public.payments_unified AS
+        SELECT
+            ''customer_payment'' as source_table,
+            cp.payment_id,
+            NULL::integer as invoice_id,
+            cp.customer_id,
+            cp.employee_id,
+            cp.payment_date as created_at,
+            cp.amount as amount_paid,
+            cp.tendered_amount,
+            COALESCE(cp.tendered_amount - cp.amount, 0) as change_amount,
+            cp.payment_method as legacy_method,
+            cp.method_id,
+            pm.code as method_code,
+            pm.name as method_name,
+            pm.type as method_type,
+            pm.config as method_config,
+            cp.reference_number as reference,
+            jsonb_build_object(''notes'', cp.notes) as metadata
+        FROM public.customer_payment cp
+        LEFT JOIN public.payment_methods pm ON cp.method_id = pm.method_id
 
-UNION ALL
+        UNION ALL
 
-SELECT 
-    'invoice_payments' as source_table,
-    ip.payment_id,
-    ip.invoice_id,
-    i.customer_id,
-    ip.created_by as employee_id,
-    ip.created_at,
-    ip.amount_paid,
-    ip.tendered_amount,
-    ip.change_amount,
-    NULL as legacy_method,
-    ip.method_id,
-    pm.code as method_code,
-    pm.name as method_name,
-    pm.type as method_type,
-    pm.config as method_config,
-    ip.reference,
-    ip.metadata
-FROM public.invoice_payments ip
-JOIN public.invoice i ON ip.invoice_id = i.invoice_id
-JOIN public.payment_methods pm ON ip.method_id = pm.method_id;
+        SELECT
+            ''invoice_payments'' as source_table,
+            ip.payment_id,
+            ip.invoice_id,
+            i.customer_id,
+            ip.created_by as employee_id,
+            ip.created_at,
+            ip.amount_paid,
+            ip.tendered_amount,
+            ip.change_amount,
+            NULL as legacy_method,
+            ip.method_id,
+            pm.code as method_code,
+            pm.name as method_name,
+            pm.type as method_type,
+            pm.config as method_config,
+            ip.reference,
+            ip.metadata
+        FROM public.invoice_payments ip
+        JOIN public.invoice i ON ip.invoice_id = i.invoice_id
+        JOIN public.payment_methods pm ON ip.method_id = pm.method_id;';
+    ELSE
+        EXECUTE 'CREATE OR REPLACE VIEW public.payments_unified AS
+        SELECT
+            ''invoice_payments'' as source_table,
+            ip.payment_id,
+            ip.invoice_id,
+            i.customer_id,
+            ip.created_by as employee_id,
+            ip.created_at,
+            ip.amount_paid,
+            ip.tendered_amount,
+            ip.change_amount,
+            NULL::varchar as legacy_method,
+            ip.method_id,
+            pm.code as method_code,
+            pm.name as method_name,
+            pm.type as method_type,
+            pm.config as method_config,
+            ip.reference,
+            ip.metadata
+        FROM public.invoice_payments ip
+        JOIN public.invoice i ON ip.invoice_id = i.invoice_id
+        JOIN public.payment_methods pm ON ip.method_id = pm.method_id;';
+    END IF;
+END$$;
 
 -- Function to validate payment method constraints
 CREATE OR REPLACE FUNCTION validate_payment_constraints(

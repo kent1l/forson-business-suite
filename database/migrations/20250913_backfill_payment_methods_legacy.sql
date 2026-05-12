@@ -29,13 +29,16 @@ CREATE INDEX IF NOT EXISTS idx_payment_methods_type ON public.payment_methods(ty
 -- Step 3: Add method_id column to customer_payment if not exists
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                   WHERE table_name = 'customer_payment' 
-                   AND column_name = 'method_id') THEN
-        ALTER TABLE public.customer_payment 
-        ADD COLUMN method_id integer REFERENCES public.payment_methods(method_id) ON DELETE SET NULL;
-        
-        CREATE INDEX IF NOT EXISTS idx_customer_payment_method_id ON public.customer_payment(method_id);
+    -- Check if table exists before trying to alter it
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'customer_payment') THEN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name = 'customer_payment'
+                       AND column_name = 'method_id') THEN
+            ALTER TABLE public.customer_payment
+            ADD COLUMN method_id integer REFERENCES public.payment_methods(method_id) ON DELETE SET NULL;
+
+            CREATE INDEX IF NOT EXISTS idx_customer_payment_method_id ON public.customer_payment(method_id);
+        END IF;
     END IF;
 END$$;
 
@@ -172,6 +175,11 @@ DECLARE
     method_code text;
     method_type text;
 BEGIN
+    -- Only run if customer_payment table exists
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'customer_payment') THEN
+        RETURN;
+    END IF;
+
     -- Get distinct payment method names from existing payments
     FOR method_name IN 
         SELECT DISTINCT TRIM(payment_method) 
@@ -216,13 +224,18 @@ BEGIN
 END$$;
 
 -- Step 8: Link existing customer_payment records to payment_methods
-UPDATE public.customer_payment 
-SET method_id = pm.method_id
-FROM public.payment_methods pm
-WHERE customer_payment.method_id IS NULL
-AND customer_payment.payment_method IS NOT NULL
-AND TRIM(customer_payment.payment_method) != ''
-AND LOWER(pm.name) = LOWER(TRIM(customer_payment.payment_method));
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'customer_payment') THEN
+        UPDATE public.customer_payment
+        SET method_id = pm.method_id
+        FROM public.payment_methods pm
+        WHERE customer_payment.method_id IS NULL
+        AND customer_payment.payment_method IS NOT NULL
+        AND TRIM(customer_payment.payment_method) != ''
+        AND LOWER(pm.name) = LOWER(TRIM(customer_payment.payment_method));
+    END IF;
+END$$;
 
 -- Step 9: Add new settings for payment methods feature
 INSERT INTO public.settings (setting_key, setting_value, description) VALUES
@@ -234,12 +247,15 @@ ON CONFLICT (setting_key) DO NOTHING;
 DO $$
 DECLARE
     method_count integer;
-    linked_count integer;
-    unlinked_count integer;
+    linked_count integer := 0;
+    unlinked_count integer := 0;
 BEGIN
     SELECT COUNT(*) INTO method_count FROM public.payment_methods;
-    SELECT COUNT(*) INTO linked_count FROM public.customer_payment WHERE method_id IS NOT NULL;
-    SELECT COUNT(*) INTO unlinked_count FROM public.customer_payment WHERE method_id IS NULL AND payment_method IS NOT NULL;
+
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'customer_payment') THEN
+        SELECT COUNT(*) INTO linked_count FROM public.customer_payment WHERE method_id IS NOT NULL;
+        SELECT COUNT(*) INTO unlinked_count FROM public.customer_payment WHERE method_id IS NULL AND payment_method IS NOT NULL;
+    END IF;
     
     RAISE NOTICE 'Payment methods backfill completed:';
     RAISE NOTICE '- Total payment methods: %', method_count;
