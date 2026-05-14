@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.4.3 - 2026-05-14
+
+### Fixed
+- Parts page now works
+- Fixed missing tables and implemented permanent and future fix
+- Self-healing migration
+- Cheque print page fix
+- Cheque print history fixed. Now saves history regardless of actions after generating.
+
+### Optimization
+- Setup Graphify
+- Optimized the migration command in order to avoid getting the storage bloated.
+- Created a migration script for safer and healthier migration
+
+### CI/CD
+- Updated deploy.yml to run chmod for scripts
+- Added database migration script
+- Created a production update/upgrade script
+- Created the migrate.js instead for better update and migration pipeline
+
+
+
 ## [1.4.2] - 2026-05-10
 ### Fixed
 - Resolved a production 500 Internal Server Error on the Parts page caused by missing vehicle application tables.
