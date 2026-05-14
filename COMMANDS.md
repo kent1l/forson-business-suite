@@ -60,9 +60,9 @@ sudo docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql
 sudo docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
 ```
 
-Apply migrations using the optimized production runner (includes 5GB disk check, batched WAL updates, and single-connection piping).
+Apply migrations using the Node.js runner (idempotent, tracks checksums in `schema_migrations`, and handles drift detection).
 ```bash
-./scripts/migrate-prod.sh
+sudo docker compose -f docker-compose.prod.yml exec -T backend node scripts/migrate.js up
 ```
 
 Check service status.

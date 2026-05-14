@@ -56,7 +56,7 @@ Guidelines:
 Before releasing:
 
 1. Ensure all tests/checks pass.
-2. Confirm migrations are prepared, reviewed, and reversible when practical.
+2. Confirm migrations are prepared and reversible. Use `npm run -w packages/api migrate:status` or `migrate:verify` to ensure there is no schema drift before deploying.
 3. Update `packages/web/package.json` version.
 4. Update release notes/changelog.
 5. Create an annotated git tag (`vX.Y.Z`).

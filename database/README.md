@@ -91,10 +91,13 @@ PowerShell (Windows) example with Docker:
 	 docker cp .\database\initial_schema.sql forson_db:/initial_schema.sql
 	 docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
 2) Apply migrations (recommended on all installs)
-	 docker exec -i forson_backend npm run migrate
+	 npm --prefix packages/api run migrate -- --host localhost
 
 Linux/macOS (bash) example:
-	docker exec -i forson_backend npm run migrate
+	npm --prefix packages/api run migrate -- --host localhost
+
+Production (via Docker Compose):
+	sudo docker compose -f docker-compose.prod.yml exec -T backend node scripts/migrate.js up
 
 ## Backup and rollback
 - Backups: The compose stack includes a backup service. Validate backups before applying migrations.

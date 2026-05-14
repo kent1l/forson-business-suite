@@ -2,7 +2,7 @@
 set -e
 set -o pipefail
 
-echo "DEPRECATED: This script is deprecated. Please use the Node.js runner via 'docker compose exec api node scripts/migrate.js up' instead."
+echo "DEPRECATED: This script is deprecated. Please use the Node.js runner via 'docker compose exec backend node scripts/migrate.js up' instead."
 exit 1
 
 # 1. Pre-flight Disk Check (5GB minimum)

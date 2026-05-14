@@ -88,7 +88,7 @@ docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_sche
 
 5) Apply SQL migrations (recommended)
 ```bash
-docker exec -it forson_backend_dev sh -lc "node scripts/migrate.js --host db --user \"$DB_USER\" --password \"$DB_PASSWORD\" --db \"$DB_NAME\""
+npm --prefix packages/api run migrate -- --host localhost
 ```
 
 6) Access
@@ -208,7 +208,7 @@ docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_sche
 
 Apply migrations.
 ```bash
-docker exec -it forson_backend_dev sh -lc "node scripts/migrate.js --host db --user \"$DB_USER\" --password \"$DB_PASSWORD\" --db \"$DB_NAME\""
+npm --prefix packages/api run migrate -- --host localhost
 ```
 
 ### Production (Docker Compose, Linux server)
@@ -228,9 +228,9 @@ sudo docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql
 sudo docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
 ```
 
-Apply migrations (optimized runner with disk check and WAL batching).
+Apply migrations using the Node.js runner (idempotent, tracks checksums in `schema_migrations`, and handles drift detection).
 ```bash
-./scripts/migrate-prod.sh
+sudo docker compose -f docker-compose.prod.yml exec -T backend node scripts/migrate.js up
 ```
 
 Verify services.
@@ -313,9 +313,9 @@ npm --prefix packages/api run migrate:status -- --host localhost
 npm --prefix packages/api run migrate:verify -- --host localhost
 ```
 
-- Production (optimized bash runner with disk/WAL safety):
+- Production:
 ```bash
-./scripts/migrate-prod.sh
+sudo docker compose -f docker-compose.prod.yml exec -T backend node scripts/migrate.js up
 ```
 
 - Target a specific migration window (useful when you only need a single new migration):
