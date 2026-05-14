@@ -115,6 +115,8 @@ BEGIN
 END$$;
 
 -- Create compatibility view exposing application rows as strings
+DROP VIEW IF EXISTS public.application_view;
+
 CREATE OR REPLACE VIEW public.application_view AS
 SELECT a.application_id,
        vmk.make_name AS make,

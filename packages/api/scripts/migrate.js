@@ -17,6 +17,7 @@ const argv = yargs
   .command('status', 'Show applied and pending migrations')
   .command('verify', 'Verify checksums (drift detection)')
   .command('repair', 'Update stored checksums to match files')
+  .command('baseline', 'Mark all current migrations as applied without executing SQL (for adopting existing DBs)')
   .option('host', { type: 'string', describe: 'DB host' })
   .option('port', { type: 'number', describe: 'DB port' })
   .option('db', { type: 'string', describe: 'DB name' })
@@ -200,6 +201,27 @@ async function main() {
         }
       }
       console.log(`Repair done. Updated: ${updated}`);
+      return;
+    }
+
+    if (CMD === 'baseline') {
+      let baselinedCount = 0;
+
+      for (const m of migrations) {
+        if (!applied.has(m.name)) {
+          console.log(`Baselining ${m.name}...`);
+
+          // Insert the record to mark the migration as already applied
+          await client.query(
+            'INSERT INTO public.schema_migrations (filename, checksum, duration_ms) VALUES ($1,$2,$3)',
+            [m.name, m.checksum, 0]
+          );
+
+          baselinedCount++;
+        }
+      }
+
+      console.log(`Baseline complete. Marked ${baselinedCount} past migrations as applied.`);
       return;
     }
 

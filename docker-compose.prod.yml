@@ -51,6 +51,8 @@ services:
       NODE_ENV: production
     ports:
       - "3001:3001"
+    volumes:
+      - ./database/migrations:/usr/database/migrations:ro
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--spider", "http://localhost:3001/health"]
       interval: 30s
