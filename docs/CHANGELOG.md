@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.4.4 - 2026-05-14
+
+### Docs
+- Replaced all references to the deprecated `migrate-prod.sh` bash script with the new Node.js migration runner (`packages/api/scripts/migrate.js`) across `COMMANDS.md`, `README.md`, and `database/README.md`.
+- Updated production migration commands to use `docker compose exec -T backend node scripts/migrate.js up` with correct `backend` service name.
+- Standardized local dev migration commands to `npm --prefix packages/api run migrate -- --host localhost`.
+- Updated Release Best Practices Checklist in `APPLICATION_VERSIONING_AND_RELEASE_GUIDE.md` to reference `migrate:status` and `migrate:verify` for pre-deploy drift detection.
+- Highlighted new runner capabilities (idempotent execution, checksum tracking in `schema_migrations`, drift detection) in all relevant documentation.
+
+### Fixed
+- Fixed incorrect Docker service name (`api` → `backend`) in the deprecation warning of `scripts/migrate-prod.sh`.
+
 ## v1.4.3 - 2026-05-14
 
 ### Fixed
