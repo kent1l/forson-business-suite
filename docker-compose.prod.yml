@@ -107,8 +107,12 @@ services:
         sleep 2
       done;
       cp /scripts/backup.sh /tmp/backup.sh &&
-      chmod +x /tmp/backup.sh &&
-      /tmp/backup.sh
+      chmod +x /tmp/backup.sh;
+      while true; do
+        /tmp/backup.sh;
+        echo 'Backup completed successfully. Sleeping for 24 hours...';
+        sleep 86400;
+      done
       "
     healthcheck:
       test: ["CMD", "test", "-d", "/backups"]
