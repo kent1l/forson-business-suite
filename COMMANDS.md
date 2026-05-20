@@ -19,20 +19,9 @@ cp .env.example .env
 
 ## 2) Development
 
-Start dev stack with hot reload.
+Start dev stack (hot reload), automatic database initialization (first run on a fresh DB volume), and automatic migrations with one command.
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
-```
-
-Initialize the database (first run only).
-```bash
-docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql
-docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
-```
-
-Apply migrations.
-```bash
-npm --prefix packages/api run migrate -- --host localhost
+./scripts/start-dev.sh
 ```
 
 Open logs for backend.
@@ -45,6 +34,15 @@ Stop and remove dev containers.
 docker compose down
 ```
 
+### Resetting the Database
+
+If your local schema gets out of sync, corrupted, or you see migration drift warnings, reset to a clean-slate database that mirrors a fresh production-style install:
+```bash
+./scripts/reset-dev-db.sh
+```
+
+This reset script destroys local DB data, recreates `forson_business_suite`, reapplies baseline schema from `/docker-entrypoint-initdb.d/01_initial_schema.sql`, and runs all pending migrations inside containers.
+
 ---
 
 ## 3) Production
@@ -54,11 +52,7 @@ Start or update the production stack.
 sudo docker compose -f docker-compose.prod.yml up -d --pull=always --remove-orphans
 ```
 
-Initialize the database (first run only).
-```bash
-sudo docker cp ./database/initial_schema.sql forson_db:/initial_schema.sql
-sudo docker exec -u postgres forson_db psql -d forson_business_suite -f /initial_schema.sql
-```
+Database baseline schema initializes automatically on first run (fresh DB volume) via `/docker-entrypoint-initdb.d`.
 
 Apply migrations using the Node.js runner (idempotent, tracks checksums in `schema_migrations`, and handles drift detection).
 ```bash
