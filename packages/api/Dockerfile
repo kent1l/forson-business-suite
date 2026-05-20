@@ -45,16 +45,12 @@ RUN addgroup -S appgroup && \
 # Set working directory
 WORKDIR /usr/src/app
 
-# Copy node_modules and source from builder
-COPY --from=builder /usr/src/app/node_modules ./node_modules
-COPY --from=builder /usr/src/app .
+# Create node_modules directory with proper permissions first
+RUN mkdir -p /usr/src/app/node_modules && chown -R appuser:appgroup /usr/src/app
 
-# Set user
-USER root
-
-# Create node_modules directory with proper permissions
-RUN mkdir -p /usr/src/app/node_modules && \
-    chown -R appuser:appgroup /usr/src/app/node_modules
+# Copy node_modules and source from builder with in-flight ownership mapping
+COPY --chown=appuser:appgroup --from=builder /usr/src/app/node_modules ./node_modules
+COPY --chown=appuser:appgroup --from=builder /usr/src/app .
 
 USER appuser
 
