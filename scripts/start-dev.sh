@@ -6,6 +6,26 @@ log() {
   echo "[$(date +'%Y-%m-%dT%H:%M:%S%z')] $1"
 }
 
+# 1. Automatically copy template if .env doesn't exist
+if [ ! -f .env ]; then
+    echo "[Initialization] Creating .env file from template..."
+    cp .env.example .env
+fi
+
+# 2. Automatically replace blank or placeholder keys with secure tokens
+if grep -q "MEILISEARCH_MASTER_KEY=$" .env || grep -q "MEILISEARCH_MASTER_KEY=your_placeholder" .env || grep -q "eFg5mY4X54qmZiX30" .env; then
+    echo "[Initialization] Injecting secure, high-entropy keys into your .env file..."
+    
+    # Generate a cryptographically secure 64-character token
+    SECURE_MEILI_KEY=$(openssl rand -hex 32)
+    
+    # Clean up the malformed text and format it perfectly as KEY=VALUE
+    sed -i "s|^MEILISEARCH_MASTER_KEY=.*|MEILISEARCH_MASTER_KEY=${SECURE_MEILI_KEY}|g" .env
+    
+    # Clean out the floating text warning string if it was caught on its own line
+    sed -i "/^eFg5mY4X54qmZiX30$/d" .env
+fi
+
 log "Starting local development stack..."
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
