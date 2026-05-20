@@ -225,6 +225,25 @@ CREATE TABLE IF NOT EXISTS public.invoice_line (
     discount_amount numeric(12,2) DEFAULT 0.00
 );
 
+CREATE TABLE IF NOT EXISTS public.payment_methods (
+    method_id serial PRIMARY KEY,
+    code character varying(50) NOT NULL UNIQUE,
+    name character varying(100) NOT NULL,
+    type character varying(20) NOT NULL DEFAULT 'other',
+    enabled boolean NOT NULL DEFAULT true,
+    sort_order integer NOT NULL DEFAULT 0,
+    config jsonb NOT NULL DEFAULT '{}',
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    
+    -- Ensure valid payment method types
+    CONSTRAINT chk_payment_method_type CHECK (
+        type IN ('cash', 'card', 'bank', 'mobile', 'credit', 'voucher', 'other')
+    )
+);
+
 CREATE TABLE IF NOT EXISTS public.customer_payment (
     payment_id serial PRIMARY KEY,
     customer_id integer NOT NULL REFERENCES public.customer(customer_id) ON DELETE RESTRICT,
@@ -293,25 +312,6 @@ CREATE TABLE IF NOT EXISTS public.payment_term (
     UNIQUE (days_to_due)
 );
 
--- Payment methods for configurable payment processing (split payments)
-CREATE TABLE IF NOT EXISTS public.payment_methods (
-    method_id serial PRIMARY KEY,
-    code character varying(50) NOT NULL UNIQUE,
-    name character varying(100) NOT NULL,
-    type character varying(20) NOT NULL DEFAULT 'other',
-    enabled boolean NOT NULL DEFAULT true,
-    sort_order integer NOT NULL DEFAULT 0,
-    config jsonb NOT NULL DEFAULT '{}',
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-    created_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-    updated_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
-    
-    -- Ensure valid payment method types
-    CONSTRAINT chk_payment_method_type CHECK (
-        type IN ('cash', 'card', 'bank', 'mobile', 'credit', 'voucher', 'other')
-    )
-);
 
 CREATE TABLE IF NOT EXISTS public.purchase_order (
     po_id serial PRIMARY KEY,
