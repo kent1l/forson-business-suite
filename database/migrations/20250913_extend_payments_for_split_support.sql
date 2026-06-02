@@ -167,14 +167,19 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS invoice_payments_update_balance_insert ON public.invoice_payments;
 -- Create triggers for automatic balance updates
 CREATE TRIGGER invoice_payments_update_balance_insert
     AFTER INSERT ON public.invoice_payments
     FOR EACH ROW EXECUTE FUNCTION update_invoice_balance_after_payment();
 
+DROP TRIGGER IF EXISTS invoice_payments_update_balance_update ON public.invoice_payments;
+
 CREATE TRIGGER invoice_payments_update_balance_update
     AFTER UPDATE ON public.invoice_payments
     FOR EACH ROW EXECUTE FUNCTION update_invoice_balance_after_payment();
+
+DROP TRIGGER IF EXISTS invoice_payments_update_balance_delete ON public.invoice_payments;
 
 CREATE TRIGGER invoice_payments_update_balance_delete
     AFTER DELETE ON public.invoice_payments
