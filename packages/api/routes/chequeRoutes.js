@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { createChequePdf } = require('../helpers/pdf/chequePdf');
 
 const router = express.Router();
@@ -65,7 +65,7 @@ const DEFAULT_TEXT_SETTINGS = {
     amountWordsFiller: '***'
 };
 
-router.get('/cheques/templates', protect, async (_req, res) => {
+router.get('/cheques/templates', protect, hasPermission('cheques:view'), async (_req, res) => {
     try {
         const { rows } = await db.query(
             `SELECT id, bank_name, field_positions, date_format, amount_format, currency_settings, paper_settings, amount_words_settings, text_settings, created_at, updated_at
@@ -80,7 +80,7 @@ router.get('/cheques/templates', protect, async (_req, res) => {
     }
 });
 
-router.post('/cheques/templates', protect, async (req, res) => {
+router.post('/cheques/templates', protect, hasPermission('cheques:manage_settings'), async (req, res) => {
     const {
         bank_name,
         field_positions = DEFAULT_TEMPLATE,
@@ -110,7 +110,7 @@ router.post('/cheques/templates', protect, async (req, res) => {
     }
 });
 
-router.put('/cheques/templates/:id', protect, async (req, res) => {
+router.put('/cheques/templates/:id', protect, hasPermission('cheques:manage_settings'), async (req, res) => {
     const { id } = req.params;
     const { field_positions, date_format, amount_format, currency_settings, bank_name, paper_settings, amount_words_settings, text_settings } = req.body;
 
@@ -152,7 +152,7 @@ router.put('/cheques/templates/:id', protect, async (req, res) => {
     }
 });
 
-router.delete('/cheques/templates/:id', protect, async (req, res) => {
+router.delete('/cheques/templates/:id', protect, hasPermission('cheques:manage_settings'), async (req, res) => {
     const { id } = req.params;
     try {
         const { rows } = await db.query(
@@ -170,7 +170,7 @@ router.delete('/cheques/templates/:id', protect, async (req, res) => {
     }
 });
 
-router.get('/cheques/history', protect, async (_req, res) => {
+router.get('/cheques/history', protect, hasPermission('cheques:view'), async (_req, res) => {
     try {
         const { rows } = await db.query(
             `SELECT cr.id, cr.payee, cr.amount, cr.cheque_date, cr.memo, cr.created_at, cr.template_id,
@@ -188,7 +188,7 @@ router.get('/cheques/history', protect, async (_req, res) => {
     }
 });
 
-router.get('/cheques/printer-profiles', protect, async (_req, res) => {
+router.get('/cheques/printer-profiles', protect, hasPermission('cheques:view'), async (_req, res) => {
     try {
         const { rows } = await db.query(
             `SELECT id, profile_name, feed_type, offset_x, offset_y, is_default, created_at, updated_at
@@ -202,7 +202,7 @@ router.get('/cheques/printer-profiles', protect, async (_req, res) => {
     }
 });
 
-router.post('/cheques/printer-profiles', protect, async (req, res) => {
+router.post('/cheques/printer-profiles', protect, hasPermission('cheques:manage_settings'), async (req, res) => {
     const { profile_name, feed_type = 'native', offset_x = 0, offset_y = 0, is_default = false } = req.body;
     if (!profile_name || !String(profile_name).trim()) {
         return res.status(400).json({ message: 'profile_name is required' });
@@ -234,7 +234,7 @@ router.post('/cheques/printer-profiles', protect, async (req, res) => {
     }
 });
 
-router.put('/cheques/printer-profiles/:id', protect, async (req, res) => {
+router.put('/cheques/printer-profiles/:id', protect, hasPermission('cheques:manage_settings'), async (req, res) => {
     const { id } = req.params;
     const { profile_name, feed_type, offset_x, offset_y, is_default } = req.body;
     if (feed_type !== undefined && !ALLOWED_FEED_TYPES.includes(String(feed_type))) {
@@ -281,7 +281,7 @@ router.put('/cheques/printer-profiles/:id', protect, async (req, res) => {
     }
 });
 
-router.delete('/cheques/printer-profiles/:id', protect, async (req, res) => {
+router.delete('/cheques/printer-profiles/:id', protect, hasPermission('cheques:manage_settings'), async (req, res) => {
     const { id } = req.params;
     try {
         const { rows } = await db.query(
@@ -301,7 +301,7 @@ router.delete('/cheques/printer-profiles/:id', protect, async (req, res) => {
 
 
 
-router.get('/cheques/settings-export', protect, async (_req, res) => {
+router.get('/cheques/settings-export', protect, hasPermission('cheques:manage_settings'), async (_req, res) => {
     try {
         const [templatesRes, profilesRes] = await Promise.all([
             db.query(`SELECT id, bank_name, field_positions, date_format, amount_format, currency_settings, paper_settings, amount_words_settings, text_settings, created_at, updated_at FROM cheque_templates WHERE is_deleted = FALSE ORDER BY bank_name ASC`),
@@ -324,7 +324,7 @@ router.get('/cheques/settings-export', protect, async (_req, res) => {
     }
 });
 
-router.post('/cheques/settings-import', protect, async (req, res) => {
+router.post('/cheques/settings-import', protect, hasPermission('cheques:manage_settings'), async (req, res) => {
     const { templates = [], printer_profiles = [], overwrite = false } = req.body || {};
     if (!Array.isArray(templates) || !Array.isArray(printer_profiles)) {
         return res.status(400).json({ message: 'templates and printer_profiles must be arrays' });
@@ -385,7 +385,7 @@ router.post('/cheques/settings-import', protect, async (req, res) => {
     }
 });
 
-router.post('/cheques/generate-pdf', protect, async (req, res) => {
+router.post('/cheques/generate-pdf', protect, hasPermission('cheques:create'), async (req, res) => {
     const { template_id, records = [], printer_profile_id = null, test_print = false } = req.body;
 
     if (!template_id) {
@@ -469,7 +469,7 @@ router.post('/cheques/generate-pdf', protect, async (req, res) => {
         return res.status(status).json({ message: error.message || 'Unable to generate cheque PDF' });
     }
 });
-router.post('/cheques/records', protect, async (req, res) => {
+router.post('/cheques/records', protect, hasPermission('cheques:create'), async (req, res) => {
     const { records = [], template_id } = req.body;
 
     if (!Array.isArray(records) || records.length === 0) {
@@ -516,7 +516,7 @@ router.post('/cheques/records', protect, async (req, res) => {
     }
 });
 
-router.post('/cheques/reprint/:id', protect, async (req, res) => {
+router.post('/cheques/reprint/:id', protect, hasPermission('cheques:create'), async (req, res) => {
     const { id } = req.params;
     const { template_id } = req.body;
 
@@ -540,7 +540,7 @@ router.post('/cheques/reprint/:id', protect, async (req, res) => {
     }
 });
 
-router.delete('/cheques/history/:id', protect, async (req, res) => {
+router.delete('/cheques/history/:id', protect, hasPermission('cheques:manage_settings'), async (req, res) => {
     const { id } = req.params;
 
     try {
