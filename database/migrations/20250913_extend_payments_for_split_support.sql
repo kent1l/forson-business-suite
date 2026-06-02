@@ -130,6 +130,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS invoice_payments_validate ON invoice_payments;
+
 CREATE TRIGGER invoice_payments_validate
     BEFORE INSERT OR UPDATE ON public.invoice_payments
     FOR EACH ROW EXECUTE FUNCTION validate_invoice_payment_trigger();
