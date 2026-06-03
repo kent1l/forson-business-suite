@@ -22,6 +22,7 @@ import SalesHistoryPage from '../../pages/SalesHistoryPage'; // <-- Import new p
 import DocumentsPage from '../../pages/DocumentsPage';
 import ChequePrintingPage from '../../pages/ChequePrintingPage';
 import CycleCountExecutionPage from '../../pages/CycleCountExecutionPage';
+import ManagerReviewDesk from '../cycleCount/ManagerReviewDesk';
 
 const MainLayout = ({ user, onLogout, onNavigate, currentPage, posLines, setPosLines }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -47,6 +48,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, posLines, setPosL
             case 'ar': return <AccountsReceivablePage />;
             case 'inventory': return <InventoryPage user={user} />;
             case 'cycle_count': return <CycleCountExecutionPage />;
+            case 'manager_audit': return <ManagerReviewDesk />;
             case 'employees': return <EmployeesPage user={user} />;
             case 'settings': return <SettingsPage user={user} />;
             default: return <Dashboard />;

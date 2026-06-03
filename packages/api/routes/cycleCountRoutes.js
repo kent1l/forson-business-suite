@@ -183,7 +183,14 @@ router.post('/inventory/cycle-count/unassigned-find', protect, hasPermission('cy
 router.get('/inventory/cycle-count/manager/review', protect, hasPermission('cycle_count:manage'), async (req, res) => {
     try {
         const query = `
-            SELECT l.*, p.detail, p.internal_sku, b.employee_id
+            SELECT 
+                l.*, 
+                p.detail, 
+                p.internal_sku, 
+                p.wac_cost,
+                b.employee_id,
+                (l.counted_qty - l.system_qty_snapshot) AS variance_qty,
+                ((l.counted_qty - l.system_qty_snapshot) * p.wac_cost) AS financial_impact
             FROM cycle_count_line l
             JOIN cycle_count_batch b ON l.batch_id = b.batch_id
             JOIN part p ON l.part_id = p.part_id
@@ -198,9 +205,55 @@ router.get('/inventory/cycle-count/manager/review', protect, hasPermission('cycl
     }
 });
 
-// POST /api/inventory/cycle-count/manager/approve/:id
-router.post('/inventory/cycle-count/manager/approve/:id', protect, hasPermission('cycle_count:manage'), async (req, res) => {
-    res.status(501).send('Not Implemented Yet');
+// POST /api/inventory/cycle-count/lines/:line_id/approve
+router.post('/inventory/cycle-count/lines/:line_id/approve', protect, hasPermission('cycle_count:manage'), async (req, res) => {
+    const { line_id } = req.params;
+    const client = await db.getClient();
+
+    try {
+        await client.query('BEGIN');
+
+        const lineResult = await client.query(`
+            SELECT * FROM cycle_count_line 
+            WHERE line_id = $1 
+            FOR UPDATE
+        `, [line_id]);
+
+        if (lineResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: 'Line not found' });
+        }
+
+        const line = lineResult.rows[0];
+
+        if (line.status !== 'PENDING_MANAGER_REVIEW') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: 'Line is not pending manager review' });
+        }
+
+        const variance_qty = line.counted_qty - line.system_qty_snapshot;
+
+        // The Ledger Guardrail
+        await client.query(`
+            INSERT INTO inventory_transaction (part_id, quantity, trans_type, reference_no, employee_id)
+            VALUES ($1, $2, 'Cycle Count Adjustment', $3, $4)
+        `, [line.part_id, variance_qty, line_id.toString(), req.user.employee_id]);
+
+        await client.query(`
+            UPDATE cycle_count_line 
+            SET status = 'APPROVED_ADJUSTED' 
+            WHERE line_id = $1
+        `, [line_id]);
+
+        await client.query('COMMIT');
+        res.json({ message: 'Adjustment approved successfully' });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    } finally {
+        client.release();
+    }
 });
 
 // POST /api/inventory/cycle-count/manager/recount/:id
