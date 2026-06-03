@@ -167,6 +167,7 @@ const PowerSearchPage = () => {
                         <div>
                             <div className="text-sm text-gray-500">Detail</div>
                             <div className="text-sm">{selectedPartDetail.detail}</div>
+                        </div>
 
                         <div className="pt-4 border-t border-gray-200 mt-4">
                             <button
