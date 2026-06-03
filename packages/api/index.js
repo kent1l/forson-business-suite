@@ -41,6 +41,7 @@ function registerRoute(routePrefix, modulePath) {
 registerRoute('/api', './routes/partRoutes');
 registerRoute('/api', './routes/partMergeRoutes');
 registerRoute('/api', './routes/inventoryRoutes');
+registerRoute('/api', './routes/cycleCountRoutes');
 registerRoute('/api', './routes/purchaseOrderRoutes');
 registerRoute('/api', './routes/goodsReceiptRoutes');
 
