@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS cycle_count_batch (
     batch_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    employee_id UUID REFERENCES employee(employee_id),
+    employee_id INTEGER REFERENCES employee(employee_id),
     status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     started_at TIMESTAMP WITH TIME ZONE,
@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS cycle_count_batch (
 CREATE TABLE IF NOT EXISTS cycle_count_line (
     line_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     batch_id UUID REFERENCES cycle_count_batch(batch_id),
-    part_id UUID REFERENCES part(part_id),
+    part_id INTEGER REFERENCES part(part_id),
     status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
     system_qty_snapshot DECIMAL(12, 4),
     counted_qty DECIMAL(12, 4),
@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS cycle_count_line (
 );
 
 CREATE TABLE IF NOT EXISTS part_inventory_stats (
-    part_id UUID PRIMARY KEY REFERENCES part(part_id),
+    part_id INTEGER PRIMARY KEY REFERENCES part(part_id),
     last_counted_at TIMESTAMP WITH TIME ZONE,
     audit_requested BOOLEAN DEFAULT FALSE
 );
@@ -36,7 +36,7 @@ FROM permission
 WHERE permission_key IN ('cycle_count:execute', 'cycle_count:manage')
 ON CONFLICT (permission_level_id, permission_id) DO NOTHING;
 
-INSERT INTO app_settings (setting_key, setting_value, description) VALUES
+INSERT INTO settings (setting_key, setting_value, description) VALUES
 ('CYCLE_COUNT_ENABLED', 'false', 'Enable the automated cycle counting system'),
 ('CYCLE_COUNT_SCHEDULE', '0 2 * * *', 'Cron schedule for batch generation'),
 ('CYCLE_COUNT_BATCH_SIZE', '50', 'Default number of items per batch'),
