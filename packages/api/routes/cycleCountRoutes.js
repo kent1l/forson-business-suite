@@ -247,6 +247,9 @@ router.post('/inventory/cycle-count/lines/:line_id/approve', protect, hasPermiss
 
         await client.query('COMMIT');
         res.json({ message: 'Adjustment approved successfully' });
+        // Background cache clearance
+        db.query('REFRESH MATERIALIZED VIEW employee_cycle_count_performance;')
+          .catch(err => console.error('[AnalyticsView] Background refresh failure:', err));
     } catch (err) {
         await client.query('ROLLBACK');
         console.error(err.message);
