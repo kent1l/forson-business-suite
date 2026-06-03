@@ -284,4 +284,17 @@ router.post('/inventory/cycle-count/request-audit', protect, hasPermission('cycl
     }
 });
 
+
+// GET /api/inventory/cycle-count/performance
+router.get('/inventory/cycle-count/performance', protect, hasPermission('cycle_count:manage'), async (req, res) => {
+    try {
+        await db.query('REFRESH MATERIALIZED VIEW employee_cycle_count_performance');
+        const { rows } = await db.query('SELECT * FROM employee_cycle_count_performance ORDER BY employee_name ASC');
+        res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
 module.exports = router;
