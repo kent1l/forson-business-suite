@@ -21,6 +21,7 @@ import AccountsReceivablePage from '../../pages/AccountsReceivablePage';
 import SalesHistoryPage from '../../pages/SalesHistoryPage'; // <-- Import new page
 import DocumentsPage from '../../pages/DocumentsPage';
 import ChequePrintingPage from '../../pages/ChequePrintingPage';
+import CycleCountExecutionPage from '../../pages/CycleCountExecutionPage';
 
 const MainLayout = ({ user, onLogout, onNavigate, currentPage, posLines, setPosLines }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -45,6 +46,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, posLines, setPosL
             case 'purchase_orders': return <PurchaseOrderPage />;
             case 'ar': return <AccountsReceivablePage />;
             case 'inventory': return <InventoryPage user={user} />;
+            case 'cycle_count': return <CycleCountExecutionPage />;
             case 'employees': return <EmployeesPage user={user} />;
             case 'settings': return <SettingsPage user={user} />;
             default: return <Dashboard />;
