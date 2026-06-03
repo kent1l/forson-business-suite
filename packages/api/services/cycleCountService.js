@@ -31,7 +31,7 @@ async function generateCycleCountBatches() {
         // 2. Fetch available employees
         const { rows: employees } = await client.query(`
             SELECT DISTINCT e.employee_id
-            FROM employees e
+            FROM employee e
             LEFT JOIN role_permission rp ON e.permission_level_id = rp.permission_level_id
             LEFT JOIN permission p ON rp.permission_id = p.permission_id
             WHERE e.is_active = TRUE
@@ -52,7 +52,7 @@ async function generateCycleCountBatches() {
                 SELECT
                     p.part_id,
                     p.group_id,
-                    COALESCE(pis.last_counted_at, p.created_at) AS last_counted_at,
+                    COALESCE(pis.last_counted_at, p.date_created) AS last_counted_at,
                     COALESCE(pis.audit_requested, FALSE) AS audit_requested,
                     (SELECT COALESCE(SUM(quantity), 0) FROM inventory_transaction WHERE part_id = p.part_id) AS current_stock,
                     (
@@ -62,7 +62,7 @@ async function generateCycleCountBatches() {
                           AND trans_type = 'StockOut'
                           AND transaction_date >= NOW() - INTERVAL '30 days'
                     ) AS velocity_30d
-                FROM parts p
+                FROM part p
                 LEFT JOIN part_inventory_stats pis ON p.part_id = pis.part_id
                 WHERE p.is_active = TRUE
             )
@@ -158,7 +158,7 @@ async function generateCycleCountBatches() {
 
         if (auditRequestedPartsToClear.length > 0) {
             await client.query(
-                'UPDATE part_inventory_stats SET audit_requested = FALSE WHERE part_id = ANY($1::uuid[])',
+                'UPDATE part_inventory_stats SET audit_requested = FALSE WHERE part_id = ANY($1::int[])',
                 [auditRequestedPartsToClear]
             );
         }
