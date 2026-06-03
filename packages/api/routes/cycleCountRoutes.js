@@ -64,7 +64,7 @@ router.post('/inventory/cycle-count/manager/recount/:id', protect, hasPermission
     res.status(501).send('Not Implemented Yet');
 });
 
-module.exports = router;
+
 
 // POST /api/inventory/cycle-count/request-audit
 router.post('/inventory/cycle-count/request-audit', protect, hasPermission('cycle_count:manage'), async (req, res) => {
@@ -86,3 +86,5 @@ router.post('/inventory/cycle-count/request-audit', protect, hasPermission('cycl
         res.status(500).send('Server Error');
     }
 });
+
+module.exports = router;

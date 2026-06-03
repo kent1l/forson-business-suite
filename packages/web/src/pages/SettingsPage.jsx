@@ -476,14 +476,15 @@ const SettingsPage = ({ user }) => {
                             </nav>
                         </div>
 
-                        {activeTab === 'company' && <CompanyInfoSettings settings={settings} handleChange={handleChange} />}
+                                                {activeTab === 'company' && <CompanyInfoSettings settings={settings} handleChange={handleChange} />}
                         {activeTab === 'financial' && <FinancialSettings settings={settings} handleChange={handleChange} />}
                         {activeTab === 'tax_rates' && <TaxRateSettings settings={settings} handleChange={handleChange} />}
+                        {activeTab === 'cycle_count' && <CycleCountSettings settings={settings} handleChange={handleChange} />}
                         {activeTab === 'permissions' && <PermissionsSettings />}
                         {activeTab === 'backup' && <BackupSettings settings={settings} handleChange={handleChange} handleSave={handleSave} />}
                         {activeTab === 'data' && <DataUtilsSettings />}
 
-                        {['company', 'financial', 'backup'].includes(activeTab) && (
+                        {['company', 'financial', 'cycle_count', 'backup'].includes(activeTab) && (
                             <form onSubmit={handleSave}>
                                 <div className="pt-4 flex justify-end mt-6 border-t">
                                     <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
