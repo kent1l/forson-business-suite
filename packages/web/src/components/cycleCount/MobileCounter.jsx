@@ -73,6 +73,8 @@ const MobileCounter = ({ task, onSubmit, onCancel, itemNumber, totalItems, isUna
         } else {
             onSubmit(qty);
         }
+
+        setInputValue('');
     };
 
     const numpadButtons = [
@@ -187,9 +189,8 @@ const MobileCounter = ({ task, onSubmit, onCancel, itemNumber, totalItems, isUna
                         <button
                             onClick={handleSubmitClick}
                             disabled={!inputValue}
-                            className={`w-full py-5 rounded-xl font-bold text-2xl flex items-center justify-center space-x-2 shadow-md transition-colors ${
-                                inputValue ? 'bg-green-600 hover:bg-green-700 text-white active:scale-95' : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                            }`}
+                            className={`w-full py-5 rounded-xl font-bold text-2xl flex items-center justify-center space-x-2 shadow-md transition-colors ${inputValue ? 'bg-green-600 hover:bg-green-700 text-white active:scale-95' : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                }`}
                         >
                             <span>Submit Count</span>
                             <Check className="w-8 h-8" />

@@ -15,7 +15,7 @@ router.get('/inventory/cycle-count/my-tasks', protect, hasPermission('cycle_coun
             JOIN part p ON l.part_id = p.part_id
             WHERE b.employee_id = $1 AND b.status IN ('PENDING', 'IN_PROGRESS')
             AND l.status = 'PENDING'
-            ORDER BY l.created_at ASC;
+            ORDER BY b.created_at ASC;
         `;
         const { rows } = await db.query(query, [employee_id]);
         res.json(rows);
@@ -62,15 +62,13 @@ router.post('/inventory/cycle-count/lines/:id/submit', protect, hasPermission('c
 
         // 2. Snapshot current system quantity with a lock on the part
         const partResult = await client.query(`
-            SELECT stock_on_hand FROM part WHERE part_id = $1 FOR SHARE
+            SELECT COALESCE(SUM(quantity), 0) AS system_qty 
+            FROM inventory_transaction 
+            WHERE part_id = $1
         `, [line.part_id]);
 
-        if (partResult.rows.length === 0) {
-            await client.query('ROLLBACK');
-            return res.status(404).json({ message: 'Associated part not found' });
-        }
-
-        const system_qty_snapshot = parseFloat(partResult.rows[0].stock_on_hand || 0);
+        // Aggregate functions always return 1 row, so we extract it directly
+        const system_qty_snapshot = parseFloat(partResult.rows[0].system_qty || 0);
         const countedQuantity = parseFloat(counted_qty);
 
         // 3. Determine status
