@@ -97,7 +97,7 @@ export default function ManagerReviewDesk() {
                                                 {isPositive ? `+${varianceQty}` : varianceQty}
                                             </td>
                                             <td className={`py-2 px-4 border-b font-bold ${colorClass}`}>
-                                                $${financialImpact.toFixed(2)}
+                                                ${financialImpact.toFixed(2)}
                                             </td>
                                             <td className="py-2 px-4 border-b">
                                                 <button
