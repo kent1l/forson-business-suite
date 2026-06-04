@@ -9,10 +9,15 @@ router.get('/inventory/cycle-count/my-tasks', protect, hasPermission('cycle_coun
     try {
         const { employee_id } = req.user;
         const query = `
-            SELECT l.*, p.detail, p.internal_sku
+            SELECT
+                l.*,
+                p.detail,
+                p.internal_sku,
+                COALESCE(pv.display_name, p.internal_sku, p.detail) AS display_name
             FROM cycle_count_line l
             JOIN cycle_count_batch b ON l.batch_id = b.batch_id
             JOIN part p ON l.part_id = p.part_id
+            LEFT JOIN parts_view pv ON pv.part_id = p.part_id
             WHERE b.employee_id = $1 AND b.status IN ('PENDING', 'IN_PROGRESS')
             AND l.status = 'PENDING'
             ORDER BY b.created_at ASC;
@@ -119,8 +124,15 @@ router.post('/inventory/cycle-count/unassigned-find', protect, hasPermission('cy
         await client.query('BEGIN');
 
         // 1. Ensure part exists and snapshot qty
-        const partResult = await client.query('SELECT stock_on_hand FROM part WHERE part_id = $1 FOR SHARE', [part_id]);
-        if (partResult.rows.length === 0) {
+        const partResult = await client.query(`
+            SELECT
+                COUNT(p.part_id) AS part_exists,
+                COALESCE(SUM(it.quantity), 0) AS stock_on_hand
+            FROM part p
+            LEFT JOIN inventory_transaction it ON it.part_id = p.part_id
+            WHERE p.part_id = $1
+        `, [part_id]);
+        if (partResult.rows.length === 0 || Number(partResult.rows[0].part_exists) === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ message: 'Part not found' });
         }
@@ -186,7 +198,8 @@ router.get('/inventory/cycle-count/manager/review', protect, hasPermission('cycl
             SELECT 
                 l.*, 
                 p.detail, 
-                p.internal_sku, 
+                p.internal_sku,
+                COALESCE(pv.display_name, p.internal_sku, p.detail) AS display_name,
                 p.wac_cost,
                 b.employee_id,
                 (l.counted_qty - l.system_qty_snapshot) AS variance_qty,
@@ -194,6 +207,7 @@ router.get('/inventory/cycle-count/manager/review', protect, hasPermission('cycl
             FROM cycle_count_line l
             JOIN cycle_count_batch b ON l.batch_id = b.batch_id
             JOIN part p ON l.part_id = p.part_id
+            LEFT JOIN parts_view pv ON pv.part_id = p.part_id
             WHERE l.status = 'PENDING_MANAGER_REVIEW'
             ORDER BY l.counted_at DESC;
         `;

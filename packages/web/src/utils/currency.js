@@ -14,7 +14,9 @@
  */
 
 // Utility functions for currency formatting
-export const formatCurrency = (value) => {
+export const formatCurrency = (value, currencySymbol = '₱') => {
     const num = Number(value) || 0;
-    return `₱${num.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const sign = num < 0 ? '-' : '';
+    const absValue = Math.abs(num);
+    return `${sign}${currencySymbol}${absValue.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
