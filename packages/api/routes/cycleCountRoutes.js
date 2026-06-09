@@ -43,6 +43,19 @@ router.post('/inventory/cycle-count/lines/:id/submit', protect, hasPermission('c
     try {
         await client.query('BEGIN');
 
+        // Load Smart Tolerance Thresholds from settings
+        const settingsResult = await client.query(`
+            SELECT setting_key, setting_value FROM settings 
+            WHERE setting_key IN ('CYCLE_COUNT_MAX_VARIANCE_QTY', 'CYCLE_COUNT_MAX_FINANCIAL_IMPACT')
+        `);
+        const settings = settingsResult.rows.reduce((acc, row) => {
+            acc[row.setting_key] = row.setting_value;
+            return acc;
+        }, {});
+
+        const MAX_VARIANCE_QTY = parseFloat(settings['CYCLE_COUNT_MAX_VARIANCE_QTY'] || '2');
+        const MAX_FINANCIAL_IMPACT = parseFloat(settings['CYCLE_COUNT_MAX_FINANCIAL_IMPACT'] || '5.00');
+
         // 1. Lock the line and verify it belongs to the current user's batch and is pending
         const lineResult = await client.query(`
             SELECT l.*, b.employee_id
@@ -65,19 +78,38 @@ router.post('/inventory/cycle-count/lines/:id/submit', protect, hasPermission('c
             return res.status(403).json({ message: 'Not authorized to submit this line' });
         }
 
-        // 2. Snapshot current system quantity with a lock on the part
+        // 2. Snapshot current system quantity and fetch WAC cost with a lock on the part
         const partResult = await client.query(`
-            SELECT COALESCE(SUM(quantity), 0) AS system_qty 
-            FROM inventory_transaction 
-            WHERE part_id = $1
+            SELECT 
+                p.wac_cost,
+                COALESCE((SELECT SUM(quantity) FROM inventory_transaction WHERE part_id = $1), 0) AS system_qty
+            FROM part p 
+            WHERE p.part_id = $1
         `, [line.part_id]);
 
-        // Aggregate functions always return 1 row, so we extract it directly
         const system_qty_snapshot = parseFloat(partResult.rows[0].system_qty || 0);
+        const wac_cost = parseFloat(partResult.rows[0].wac_cost || 0);
         const countedQuantity = parseFloat(counted_qty);
 
-        // 3. Determine status
-        const status = (system_qty_snapshot === countedQuantity) ? 'MATCHED_AUTO_APPROVED' : 'PENDING_MANAGER_REVIEW';
+        // 3. Determine status and calculate variance
+        const variance_qty = countedQuantity - system_qty_snapshot;
+        const financial_impact = Math.abs(variance_qty * wac_cost);
+        let status = 'PENDING_MANAGER_REVIEW';
+
+        if (variance_qty === 0) {
+            status = 'MATCHED_AUTO_APPROVED';
+        } else if (Math.abs(variance_qty) <= MAX_VARIANCE_QTY || financial_impact <= MAX_FINANCIAL_IMPACT) {
+            status = 'APPROVED_ADJUSTED'; // Auto-approved due to tolerance
+        }
+
+        // 3.5 The Ledger Guardrail (Auto-Adjustment)
+        // If the variance is within tolerance but not 0, we must automatically adjust the stock
+        if (variance_qty !== 0 && status === 'APPROVED_ADJUSTED') {
+            await client.query(`
+                INSERT INTO inventory_transaction (part_id, quantity, trans_type, reference_no, employee_id)
+                VALUES ($1, $2, 'Cycle Count Auto-Adjustment', $3, $4)
+            `, [line.part_id, variance_qty, id.toString(), req.user.employee_id]);
+        }
 
         // 4. Update the line
         const updateResult = await client.query(`
@@ -123,21 +155,23 @@ router.post('/inventory/cycle-count/unassigned-find', protect, hasPermission('cy
     try {
         await client.query('BEGIN');
 
-        // 1. Ensure part exists and snapshot qty
+        // 1. Ensure part exists, fetch WAC, and snapshot qty
         const partResult = await client.query(`
             SELECT
-                COUNT(p.part_id) AS part_exists,
-                COALESCE(SUM(it.quantity), 0) AS stock_on_hand
+                p.part_id,
+                p.wac_cost,
+                COALESCE((SELECT SUM(quantity) FROM inventory_transaction WHERE part_id = $1), 0) AS stock_on_hand
             FROM part p
-            LEFT JOIN inventory_transaction it ON it.part_id = p.part_id
             WHERE p.part_id = $1
         `, [part_id]);
-        if (partResult.rows.length === 0 || Number(partResult.rows[0].part_exists) === 0) {
+
+        if (partResult.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ message: 'Part not found' });
         }
 
         const system_qty_snapshot = parseFloat(partResult.rows[0].stock_on_hand || 0);
+        const wac_cost = parseFloat(partResult.rows[0].wac_cost || 0);
         const countedQuantity = parseFloat(counted_qty);
 
         // 2. Find an active batch for this user
@@ -163,9 +197,40 @@ router.post('/inventory/cycle-count/unassigned-find', protect, hasPermission('cy
             batch_id = newBatchResult.rows[0].batch_id;
         }
 
-        // 3. Insert line
-        const status = (system_qty_snapshot === countedQuantity) ? 'MATCHED_AUTO_APPROVED' : 'PENDING_MANAGER_REVIEW';
+        // 2.5 Tolerance Evaluation
+        // Load Smart Tolerance Thresholds from settings
+        const settingsResult = await client.query(`
+            SELECT setting_key, setting_value FROM settings 
+            WHERE setting_key IN ('CYCLE_COUNT_MAX_VARIANCE_QTY', 'CYCLE_COUNT_MAX_FINANCIAL_IMPACT')
+        `);
+        const settings = settingsResult.rows.reduce((acc, row) => {
+            acc[row.setting_key] = row.setting_value;
+            return acc;
+        }, {});
 
+        const MAX_VARIANCE_QTY = parseFloat(settings['CYCLE_COUNT_MAX_VARIANCE_QTY'] || '2');
+        const MAX_FINANCIAL_IMPACT = parseFloat(settings['CYCLE_COUNT_MAX_FINANCIAL_IMPACT'] || '5.00');
+        
+        const variance_qty = countedQuantity - system_qty_snapshot;
+        const financial_impact = Math.abs(variance_qty * wac_cost);
+        let status = 'PENDING_MANAGER_REVIEW';
+
+        if (variance_qty === 0) {
+            status = 'MATCHED_AUTO_APPROVED';
+        } else if (Math.abs(variance_qty) <= MAX_VARIANCE_QTY || financial_impact <= MAX_FINANCIAL_IMPACT) {
+            status = 'APPROVED_ADJUSTED';
+        }
+
+        // Auto-Adjustment Ledger Guardrail
+        if (variance_qty !== 0 && status === 'APPROVED_ADJUSTED') {
+            // We need a temporary reference since the line isn't created yet, we will use 'Auto-Adj'
+            await client.query(`
+                INSERT INTO inventory_transaction (part_id, quantity, trans_type, reference_no, employee_id)
+                VALUES ($1, $2, 'Cycle Count Auto-Adjustment', 'Unassigned-Find', $3)
+            `, [part_id, variance_qty, employee_id]);
+        }
+
+        // 3. Insert line
         const lineResult = await client.query(`
             INSERT INTO cycle_count_line (batch_id, part_id, status, system_qty_snapshot, counted_qty, is_unassigned_find, counted_at)
             VALUES ($1, $2, $3, $4, $5, TRUE, CURRENT_TIMESTAMP)
