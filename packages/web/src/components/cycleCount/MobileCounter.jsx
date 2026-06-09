@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Check, Search } from 'lucide-react';
 import api from '../../api';
+import toast from 'react-hot-toast';
+
+const getPartDisplayName = (part) => part?.display_name || part?.detail || part?.internal_sku || part?.part_number || 'Unnamed item';
+const getPartSecondaryLabel = (part) => part?.internal_sku || part?.part_number || '';
 
 const MobileCounter = ({ task, onSubmit, onCancel, itemNumber, totalItems, isUnassigned = false }) => {
     const [inputValue, setInputValue] = useState('');
@@ -18,25 +22,46 @@ const MobileCounter = ({ task, onSubmit, onCancel, itemNumber, totalItems, isUna
         }
     }, [isUnassigned]);
 
-    const handleSearch = async (e) => {
-        const query = e.target.value;
-        setSearchQuery(query);
+    useEffect(() => {
+        if (!isUnassigned || selectedPart) return undefined;
 
-        if (query.length < 3) {
+        const query = searchQuery.trim();
+        if (query.length < 2) {
             setSearchResults([]);
-            return;
+            setSearching(false);
+            return undefined;
         }
 
-        setSearching(true);
-        try {
-            // Re-using the parts search endpoint
-            const res = await api.get(`/parts?search=${encodeURIComponent(query)}&limit=10`);
-            setSearchResults(res.data.data || []);
-        } catch (err) {
-            console.error('Search failed', err);
-        } finally {
-            setSearching(false);
-        }
+        const controller = new AbortController();
+        const debounceTimer = setTimeout(async () => {
+            setSearching(true);
+            try {
+                const res = await api.get('/power-search/parts', {
+                    params: { keyword: query, status: 'active' },
+                    signal: controller.signal,
+                });
+                const results = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+                setSearchResults(results);
+            } catch (err) {
+                if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return;
+                console.error('Search failed', err);
+                setSearchResults([]);
+                toast.error('Unable to search parts. Please try again.');
+            } finally {
+                if (!controller.signal.aborted) {
+                    setSearching(false);
+                }
+            }
+        }, 300);
+
+        return () => {
+            controller.abort();
+            clearTimeout(debounceTimer);
+        };
+    }, [isUnassigned, searchQuery, selectedPart]);
+
+    const handleSearchChange = (e) => {
+        setSearchQuery(e.target.value);
     };
 
     const handleSelectPart = (part) => {
@@ -77,6 +102,10 @@ const MobileCounter = ({ task, onSubmit, onCancel, itemNumber, totalItems, isUna
         setInputValue('');
     };
 
+    const activePart = isUnassigned ? selectedPart : task;
+    const activeDisplayName = getPartDisplayName(activePart);
+    const activeSecondaryLabel = getPartSecondaryLabel(activePart);
+
     const numpadButtons = [
         [1, 2, 3],
         [4, 5, 6],
@@ -106,7 +135,7 @@ const MobileCounter = ({ task, onSubmit, onCancel, itemNumber, totalItems, isUna
                 {/* Part Identification Area */}
                 {isUnassigned && !selectedPart ? (
                     <div className="flex-1">
-                        <div className="relative mb-4">
+                        <div className="relative mb-2">
                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <Search className="h-5 w-5 text-gray-400" />
                             </div>
@@ -114,12 +143,18 @@ const MobileCounter = ({ task, onSubmit, onCancel, itemNumber, totalItems, isUna
                                 ref={searchInputRef}
                                 type="text"
                                 className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-lg"
-                                placeholder="Scan barcode or type SKU..."
+                                placeholder="Scan barcode or type item name/SKU..."
                                 value={searchQuery}
-                                onChange={handleSearch}
+                                onChange={handleSearchChange}
                             />
                         </div>
+                        {searchQuery.trim().length > 0 && searchQuery.trim().length < 2 && (
+                            <div className="text-sm text-gray-500 mb-3">Type at least 2 characters to search.</div>
+                        )}
                         {searching && <div className="text-center py-4 text-gray-500">Searching...</div>}
+                        {!searching && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
+                            <div className="text-center py-4 text-gray-500">No matching parts found.</div>
+                        )}
                         <div className="space-y-2">
                             {searchResults.map(part => (
                                 <button
@@ -127,20 +162,24 @@ const MobileCounter = ({ task, onSubmit, onCancel, itemNumber, totalItems, isUna
                                     onClick={() => handleSelectPart(part)}
                                     className="w-full text-left p-4 bg-white border border-gray-200 rounded-lg hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
                                 >
-                                    <div className="font-bold text-gray-900">{part.internal_sku}</div>
-                                    <div className="text-sm text-gray-600 truncate">{part.detail}</div>
+                                    <div className="font-bold text-gray-900 whitespace-normal break-words line-clamp-3">{getPartDisplayName(part)}</div>
+                                    {getPartSecondaryLabel(part) && (
+                                        <div className="text-sm text-gray-600 whitespace-normal break-words">{getPartSecondaryLabel(part)}</div>
+                                    )}
                                 </button>
                             ))}
                         </div>
                     </div>
                 ) : (
                     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6 text-center">
-                        <h2 className="text-3xl font-black text-gray-900 mb-2 tracking-tight">
-                            {isUnassigned ? selectedPart.internal_sku : task.internal_sku}
+                        <h2 className="text-2xl sm:text-3xl font-black text-gray-900 mb-2 tracking-tight whitespace-normal break-words line-clamp-3">
+                            {activeDisplayName}
                         </h2>
-                        <p className="text-lg text-gray-600">
-                            {isUnassigned ? selectedPart.detail : task.detail}
-                        </p>
+                        {activeSecondaryLabel && (
+                            <p className="text-lg text-gray-600 whitespace-normal break-words">
+                                {activeSecondaryLabel}
+                            </p>
+                        )}
                         {isUnassigned && (
                             <button
                                 onClick={() => setSelectedPart(null)}

@@ -2,8 +2,12 @@ import React, { useState, useEffect } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import EmployeePerformanceTab from './EmployeePerformanceTab';
+import { useSettings } from '../../contexts/SettingsContext';
+import { formatCurrency } from '../../utils/currency';
 
 export default function ManagerReviewDesk() {
+    const { settings } = useSettings();
+    const currencySymbol = settings?.DEFAULT_CURRENCY_SYMBOL || '₱';
     const [activeTab, setActiveTab] = useState('pending_reviews');
     const [lines, setLines] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -29,7 +33,7 @@ export default function ManagerReviewDesk() {
 
     const handleApprove = async (lineId) => {
         try {
-            const response = await api.post(`/inventory/cycle-count/lines/${lineId}/approve`);
+            await api.post(`/inventory/cycle-count/lines/${lineId}/approve`);
             toast.success('Adjustment approved successfully.');
             setLines(prev => prev.filter(line => line.line_id !== lineId));
         } catch (error) {
@@ -89,7 +93,7 @@ export default function ManagerReviewDesk() {
 
                                     return (
                                         <tr key={line.line_id} className="text-center hover:bg-gray-50">
-                                            <td className="py-2 px-4 border-b text-left">{line.detail}</td>
+                                            <td className="py-2 px-4 border-b text-left whitespace-normal break-words">{line.display_name || line.detail}</td>
                                             <td className="py-2 px-4 border-b text-left">{line.internal_sku}</td>
                                             <td className="py-2 px-4 border-b">{line.system_qty_snapshot}</td>
                                             <td className="py-2 px-4 border-b font-medium">{line.counted_qty}</td>
@@ -97,7 +101,7 @@ export default function ManagerReviewDesk() {
                                                 {isPositive ? `+${varianceQty}` : varianceQty}
                                             </td>
                                             <td className={`py-2 px-4 border-b font-bold ${colorClass}`}>
-                                                ${financialImpact.toFixed(2)}
+                                                {formatCurrency(financialImpact, currencySymbol)}
                                             </td>
                                             <td className="py-2 px-4 border-b">
                                                 <button
