@@ -146,7 +146,7 @@ async function generateCycleCountBatches() {
 
             for (const part of assignedParts) {
                 await client.query(
-                    'INSERT INTO cycle_count_line (batch_id, part_id, status) VALUES ($1, $2, $3)',
+                    'INSERT INTO cycle_count_line (batch_id, part_id, status) VALUES ($1, $2, $3) RETURNING line_id',
                     [batchId, part.part_id, 'PENDING']
                 );
                 linesCreated++;
