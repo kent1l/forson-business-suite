@@ -275,7 +275,60 @@ router.post('/inventory/cycle-count/lines/:line_id/approve', protect, hasPermiss
 
 // POST /api/inventory/cycle-count/manager/recount/:id
 router.post('/inventory/cycle-count/manager/recount/:id', protect, hasPermission('cycle_count:manage'), async (req, res) => {
-    res.status(501).send('Not Implemented Yet');
+    const { id } = req.params;
+    const client = await db.getClient();
+
+    try {
+        await client.query('BEGIN');
+
+        // 1. Lock the line for update
+        const lineResult = await client.query(`
+            SELECT * FROM cycle_count_line 
+            WHERE line_id = $1 
+            FOR UPDATE
+        `, [id]);
+
+        if (lineResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: 'Line not found' });
+        }
+
+        const line = lineResult.rows[0];
+
+        // 2. Ensure the line is actually pending review
+        if (line.status !== 'PENDING_MANAGER_REVIEW') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: 'Line is not pending manager review' });
+        }
+
+        // 3. Mark the line as rejected for recount
+        await client.query(`
+            UPDATE cycle_count_line 
+            SET status = 'RECOUNT_REQUESTED' 
+            WHERE line_id = $1
+        `, [id]);
+
+        // 4. Force the nightly engine to prioritize this part again by setting audit_requested to TRUE
+        await client.query(`
+            INSERT INTO part_inventory_stats (part_id, audit_requested)
+            VALUES ($1, TRUE)
+            ON CONFLICT (part_id) DO UPDATE 
+            SET audit_requested = TRUE
+        `, [line.part_id]);
+
+        await client.query('COMMIT');
+        res.json({ message: 'Recount requested successfully. Part flagged for audit.' });
+        
+        // Background cache clearance
+        db.query('REFRESH MATERIALIZED VIEW employee_cycle_count_performance;')
+          .catch(err => console.error('[AnalyticsView] Background refresh failure:', err));
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    } finally {
+        client.release();
+    }
 });
 
 
