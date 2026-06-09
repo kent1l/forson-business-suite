@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.5.1 - 2026-06-09
+
+- Fixed the `update-prod.sh` script to intelligently determine whether to run `git pull` based on the Git HEAD state (branch vs. detached tag).
+- Fix: Restricted the cheque printing routes and sidebar link to only users with appropriate role permissions (`cheques:view`, `cheques:create`, `cheques:manage_settings`).
+- Added cycle count features, including batch generation with priority scoring, staff execution dashboard and mobile counter, manager review desk with automatic adjustment tolerances, and a performance analytics dashboard.
+
 ## v1.4.4 - 2026-05-14
 
 ### Docs
