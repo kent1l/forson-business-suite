@@ -33,3 +33,6 @@ WHERE bs.employee_id IS NOT NULL OR ls.employee_id IS NOT NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_employee_cycle_count_performance_employee_id
 ON employee_cycle_count_performance (employee_id);
+
+-- Required for REFRESH MATERIALIZED VIEW CONCURRENTLY to work
+CREATE UNIQUE INDEX IF NOT EXISTS idx_emp_cycle_perf_employee_id ON employee_cycle_count_performance(employee_id);

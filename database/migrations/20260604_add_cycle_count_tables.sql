@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS cycle_count_batch (
     batch_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    employee_id UUID REFERENCES employee(employee_id),
+    employee_id UUID REFERENCES employee(employee_id) ON DELETE SET NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     started_at TIMESTAMP WITH TIME ZONE,
@@ -9,8 +9,8 @@ CREATE TABLE IF NOT EXISTS cycle_count_batch (
 
 CREATE TABLE IF NOT EXISTS cycle_count_line (
     line_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    batch_id UUID REFERENCES cycle_count_batch(batch_id),
-    part_id UUID REFERENCES part(part_id),
+    batch_id UUID REFERENCES cycle_count_batch(batch_id) ON DELETE CASCADE,
+    part_id UUID REFERENCES part(part_id) ON DELETE CASCADE,
     status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
     system_qty_snapshot DECIMAL(12, 4),
     counted_qty DECIMAL(12, 4),
