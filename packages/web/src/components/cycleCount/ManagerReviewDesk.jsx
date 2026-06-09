@@ -43,6 +43,20 @@ export default function ManagerReviewDesk() {
         }
     };
 
+    const handleRecount = async (lineId) => {
+        if (!window.confirm('Are you sure you want to request a recount for this part? It will be re-added to the counting queue.')) return;
+        
+        try {
+            await api.post(`/inventory/cycle-count/manager/recount/${lineId}`);
+            toast.success('Recount requested. Part queued for next batch.');
+            setLines(prev => prev.filter(line => line.line_id !== lineId));
+        } catch (error) {
+            console.error('Error requesting recount', error);
+            const errMsg = error.response?.data?.message || 'Failed to request recount';
+            toast.error(errMsg);
+        }
+    };
+
     return (
         <div className="manager-review-desk p-4">
             <h2 className="text-2xl font-bold mb-4">Manager Review Desk</h2>
@@ -103,12 +117,18 @@ export default function ManagerReviewDesk() {
                                             <td className={`py-2 px-4 border-b font-bold ${colorClass}`}>
                                                 {formatCurrency(financialImpact, currencySymbol)}
                                             </td>
-                                            <td className="py-2 px-4 border-b">
+                                            <td className="py-2 px-4 border-b flex justify-center space-x-2">
                                                 <button
                                                     onClick={() => handleApprove(line.line_id)}
                                                     className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1 px-3 rounded shadow-sm transition-colors"
                                                 >
-                                                    Approve Adjustment
+                                                    Approve
+                                                </button>
+                                                <button
+                                                    onClick={() => handleRecount(line.line_id)}
+                                                    className="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-1 px-3 rounded shadow-sm transition-colors"
+                                                >
+                                                    Recount
                                                 </button>
                                             </td>
                                         </tr>

@@ -90,6 +90,14 @@ const CycleCountSettings = ({ settings, handleChange }) => (
                 <label className="block text-sm font-medium text-gray-700 mb-1">Points for negative stock</label>
                 <input type="number" name="CYCLE_COUNT_NEGATIVE_STOCK_WEIGHT" value={settings.CYCLE_COUNT_NEGATIVE_STOCK_WEIGHT || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
             </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Auto-Approve Max Variance Qty</label>
+                <input type="number" name="CYCLE_COUNT_MAX_VARIANCE_QTY" value={settings.CYCLE_COUNT_MAX_VARIANCE_QTY || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Auto-Approve Max Financial Impact</label>
+                <input type="number" step="0.01" name="CYCLE_COUNT_MAX_FINANCIAL_IMPACT" value={settings.CYCLE_COUNT_MAX_FINANCIAL_IMPACT || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+            </div>
         </div>
     </div>
 );
