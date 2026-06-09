@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.5.1.1 - 2026-06-09
+
+- Fix: Corrected foreign key constraints referencing the `employee` table in the cycle count migrations, and added appropriate `ON DELETE CASCADE` and `ON DELETE SET NULL` rules.
+- Fix: Added a unique index to the materialized performance view to enable concurrent view refreshes without database locking.
+
 ## v1.5.1 - 2026-06-09
 
 - Fixed the `update-prod.sh` script to intelligently determine whether to run `git pull` based on the Git HEAD state (branch vs. detached tag).
