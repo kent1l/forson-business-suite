@@ -19,6 +19,8 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
         { name: 'Goods Receipt', icon: ICONS.receipt, page: 'goods_receipt', permission: 'goods_receipt:create' },
         { name: 'Purchase Orders', icon: ICONS.purchase_order, page: 'purchase_orders', permission: 'purchase_orders:view' },
         { name: 'Inventory', icon: ICONS.inventory, page: 'inventory', permission: 'inventory:view' },
+        { name: 'Cycle Count', icon: ICONS.dashboard, page: 'cycle_count', permission: 'cycle_count:execute' },
+        { name: 'Manager Audit', icon: ICONS.reporting, page: 'manager_audit', permission: 'cycle_count:manage' },
         { name: 'A/R', icon: ICONS.ar, page: 'ar', permission: 'ar:view' },
         { name: 'Parts', icon: ICONS.parts, page: 'parts', permission: 'parts:view' },
         { name: 'Suppliers', icon: ICONS.suppliers, page: 'suppliers', permission: 'suppliers:view' },

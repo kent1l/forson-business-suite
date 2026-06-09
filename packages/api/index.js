@@ -7,6 +7,7 @@ const { startMeiliListener } = require('./meili-listener');
 const { startMeiliApplicationsListener } = require('./meili-app-listener');
 const { startMeiliOutboxWorker } = require('./meili-outbox-worker');
 const { startSearchRepairWorker } = require('./search-repair-worker');
+const { startCycleCountEngine } = require('./services/cycleCountService');
 
 // Set default timezone to Philippine Time
 process.env.TZ = 'Asia/Manila';
@@ -41,6 +42,7 @@ function registerRoute(routePrefix, modulePath) {
 registerRoute('/api', './routes/partRoutes');
 registerRoute('/api', './routes/partMergeRoutes');
 registerRoute('/api', './routes/inventoryRoutes');
+registerRoute('/api', './routes/cycleCountRoutes');
 registerRoute('/api', './routes/purchaseOrderRoutes');
 registerRoute('/api', './routes/goodsReceiptRoutes');
 
@@ -163,4 +165,5 @@ app.listen(PORT, async () => {
   } else {
     console.log('Legacy part meili listener disabled (set ENABLE_LEGACY_MEILI_PART_LISTENER=true to enable).');
   }
+  startCycleCountEngine();
 });

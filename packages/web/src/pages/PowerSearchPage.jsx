@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import api from '../api'; // Use the configured api instance
+import api from '../api';
+import toast from 'react-hot-toast'; // Use the configured api instance
 import Icon from '../components/ui/Icon'; // Import the Icon component
 import { ICONS } from '../constants'; // Import the icon paths
 import SearchBar from '../components/SearchBar';
@@ -45,7 +46,7 @@ const PowerSearchPage = () => {
                 setLoading(true);
                 setError('');
                 setHasSearched(true);
-                
+
                 // The API call is now much simpler
                 const response = await api.get(`/power-search/parts`, {
                     params: { keyword }
@@ -71,7 +72,7 @@ const PowerSearchPage = () => {
     return (
         <div>
             <h1 className="text-2xl font-semibold text-gray-800 mb-6">Power Search</h1>
-            
+
             {/* --- The New, Simplified Search Bar --- */}
             <div className="bg-white p-4 rounded-xl border border-gray-200 mb-6">
                 <div className="relative">
@@ -91,7 +92,7 @@ const PowerSearchPage = () => {
                 {loading && <p className="text-center text-gray-500">Searching...</p>}
                 {error && <p className="text-center text-red-500">{error}</p>}
                 {!loading && !error && (
-                     <div className="overflow-x-auto">
+                    <div className="overflow-x-auto">
                         <table className="w-full text-left">
                             <thead className="border-b">
                                 <tr className="bg-gray-100 border-t border-b border-gray-300">
@@ -108,12 +109,12 @@ const PowerSearchPage = () => {
                                         <td className="p-3 text-sm font-mono align-top">{part.internal_sku}</td>
                                         <td className="p-3 text-sm font-medium text-gray-800 align-top">{part.display_name}</td>
                                         <td className="p-3 text-sm text-gray-600 align-top">
-                            {part.applications ? (
-                                <div className="whitespace-pre-line">
-                                    {formatApplicationText(part.applications, { style: 'multilineFull' })}
-                                </div>
-                            ) : ''}
-                        </td>
+                                            {part.applications ? (
+                                                <div className="whitespace-pre-line">
+                                                    {formatApplicationText(part.applications, { style: 'multilineFull' })}
+                                                </div>
+                                            ) : ''}
+                                        </td>
                                         <td className="p-3 text-sm text-gray-700 align-top">{typeof part.stock_on_hand !== 'undefined' ? Number(part.stock_on_hand).toFixed(2) : '-'}</td>
                                         <td className="p-3 text-sm text-gray-800 font-semibold align-top">{part.last_sale_price ? (Number(part.last_sale_price).toFixed(2)) : '-'}</td>
                                     </tr>
@@ -124,7 +125,7 @@ const PowerSearchPage = () => {
                                     </tr>
                                 )}
                                 {!hasSearched && (
-                                     <tr>
+                                    <tr>
                                         <td colSpan="3" className="p-3 text-center text-gray-500">Type in the search box to begin.</td>
                                     </tr>
                                 )}
@@ -168,7 +169,23 @@ const PowerSearchPage = () => {
                             <div className="text-sm text-gray-500">Detail</div>
                             <div className="text-sm">{selectedPartDetail.detail}</div>
                         </div>
+                        <div className="pt-4 border-t border-gray-200 mt-4">
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        await api.post('/inventory/cycle-count/request-audit', { part_id: selectedPartDetail.part_id });
+                                        toast.success('Inventory audit requested for ' + selectedPartDetail.internal_sku);
+                                    } catch (err) {
+                                        toast.error('Failed to request audit');
+                                    }
+                                }}
+                                className="px-4 py-2 bg-yellow-50 text-yellow-600 border border-yellow-200 hover:bg-yellow-100 rounded text-sm font-medium transition-colors"
+                            >
+                                Request Inventory Audit
+                            </button>
+                        </div>
                     </div>
+
                 )}
             </Modal>
         </div>
