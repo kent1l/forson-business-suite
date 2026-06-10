@@ -98,7 +98,7 @@ router.post('/inventory/cycle-count/lines/:id/submit', protect, hasPermission('c
 
         if (variance_qty === 0) {
             status = 'MATCHED_AUTO_APPROVED';
-        } else if (Math.abs(variance_qty) <= MAX_VARIANCE_QTY || financial_impact <= MAX_FINANCIAL_IMPACT) {
+        } else if (Math.abs(variance_qty) <= MAX_VARIANCE_QTY && financial_impact <= MAX_FINANCIAL_IMPACT) {
             status = 'APPROVED_ADJUSTED'; // Auto-approved due to tolerance
         }
 
@@ -217,7 +217,7 @@ router.post('/inventory/cycle-count/unassigned-find', protect, hasPermission('cy
 
         if (variance_qty === 0) {
             status = 'MATCHED_AUTO_APPROVED';
-        } else if (Math.abs(variance_qty) <= MAX_VARIANCE_QTY || financial_impact <= MAX_FINANCIAL_IMPACT) {
+        } else if (Math.abs(variance_qty) <= MAX_VARIANCE_QTY && financial_impact <= MAX_FINANCIAL_IMPACT) {
             status = 'APPROVED_ADJUSTED';
         }
 
