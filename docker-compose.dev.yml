@@ -69,7 +69,7 @@ services:
       - ./packages/mobile:/app
       - /app/node_modules
     environment:
-      - REACT_NATIVE_PACKAGER_HOSTNAME=10.10.1.254
+      - REACT_NATIVE_PACKAGER_HOSTNAME=10.10.1.116 #IP for dev-server
       - NODE_ENV=development
     restart: unless-stopped
 
