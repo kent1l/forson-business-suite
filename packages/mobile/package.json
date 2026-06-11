@@ -47,5 +47,15 @@
     "web": "expo start --web",
     "lint": "expo lint"
   },
-  "private": true
+  "private": true,
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "react-native-nitro-image"
+        ],
+        "listUnknownPackages": false
+      }
+    }
+  }
 }
