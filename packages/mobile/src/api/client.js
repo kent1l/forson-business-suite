@@ -2,12 +2,10 @@ import axios from 'axios';
 import useAuthStore from '../store/useAuthStore';
 import * as SecureStore from 'expo-secure-store';
 
-// We use process.env.EXPO_PUBLIC_API_URL if it exists, otherwise default to localhost (useful for simulators)
-// Note: For physical devices testing against local dev server, you must set EXPO_PUBLIC_API_URL to your machine's local IP (e.g., http://192.168.1.100:3000/api)
-const baseURL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api';
-
 const apiClient = axios.create({
-  baseURL,
+  // Base URL pointing straight to the Proxmox server container layer
+  baseURL: 'http://10.10.1.116:3001/api',
+  timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -21,7 +19,7 @@ apiClient.interceptors.request.use(
 
     // If not in store, attempt to get from SecureStore (fallback)
     if (!token) {
-        token = await SecureStore.getItemAsync('auth_token');
+      token = await SecureStore.getItemAsync('auth_token');
     }
 
     if (token) {
