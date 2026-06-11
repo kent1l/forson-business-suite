@@ -1,10 +1,14 @@
 import { DarkTheme, DefaultTheme, ThemeProvider, Stack } from 'expo-router';
 import { useColorScheme, View, Text, ActivityIndicator } from 'react-native';
 import { useEffect } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import useAuthStore from '../store/useAuthStore';
 import LoginScreen from '../screens/LoginScreen';
+
+// Initialize the query client
+const queryClient = new QueryClient();
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -27,12 +31,15 @@ export default function TabLayout() {
   }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <Stack>
-        <Stack.Screen name="index" options={{ headerShown: true, title: 'Dashboard' }} />
-        <Stack.Screen name="count" options={{ headerShown: true, title: 'Active Count' }} />
-      </Stack>
-    </ThemeProvider>
+    // Wrap the entire app hierarchy with the QueryClientProvider
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <AnimatedSplashOverlay />
+        <Stack>
+          <Stack.Screen name="index" options={{ headerShown: true, title: 'Dashboard' }} />
+          <Stack.Screen name="count" options={{ headerShown: true, title: 'Active Count' }} />
+        </Stack>
+      </ThemeProvider>
+    </QueryClientProvider>
   );
 }
