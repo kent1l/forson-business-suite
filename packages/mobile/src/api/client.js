@@ -1,10 +1,9 @@
 import axios from 'axios';
 import useAuthStore from '../store/useAuthStore';
+import useSettingsStore from '../store/useSettingsStore';
 import * as SecureStore from 'expo-secure-store';
 
 const apiClient = axios.create({
-  // Base URL pointing straight to the Proxmox server container layer
-  baseURL: 'http://10.10.1.116:3001/api',
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
@@ -14,6 +13,9 @@ const apiClient = axios.create({
 // Request interceptor: Attach JWT token if available
 apiClient.interceptors.request.use(
   async (config) => {
+    const currentIp = useSettingsStore.getState().serverIp || '10.10.1.116:3001';
+    config.baseURL = currentIp.startsWith('http') ? `${currentIp}/api` : `http://${currentIp}/api`;
+
     // Try getting the token from Zustand store first for performance
     let token = useAuthStore.getState().token;
 
