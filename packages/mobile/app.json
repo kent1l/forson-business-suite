@@ -28,6 +28,13 @@
     "plugins": [
       "expo-router",
       [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "Allow Forson ERP to access your camera to scan barcodes.",
+          "enableCodeScanner": true
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "backgroundColor": "#208AEF",
