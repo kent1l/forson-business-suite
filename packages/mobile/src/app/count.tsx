@@ -36,10 +36,13 @@ export default function CountScreen() {
   const currentLine = activeBatchData[currentLineIndex];
 
   const codeScanner = useCodeScanner({
-    codeTypes: ['ean-13', 'code-128', 'qr'],
+    formats: ['ean-13', 'code-128', 'qr'],
     onCodeScanned: (codes) => {
-      if (codes.length > 0 && codes[0].value && !scannedBarcode) {
-        setScannedBarcode(codes[0].value);
+      if (codes.length > 0) {
+        const scannedValue = codes[0].value;
+        if (scannedValue && !scannedBarcode) {
+          setScannedBarcode(scannedValue);
+        }
       }
     }
   });
