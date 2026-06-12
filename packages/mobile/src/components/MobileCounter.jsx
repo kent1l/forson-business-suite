@@ -21,6 +21,13 @@ export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
     setInputQuantity('0');
   };
 
+  const handleBackspace = () => {
+    setInputQuantity((prev) => {
+      if (prev.length <= 1) return '0';
+      return prev.slice(0, -1);
+    });
+  };
+
   const handleIncrement = (amount) => {
     setInputQuantity((prev) => {
       const current = parseInt(prev || '0', 10);
@@ -93,9 +100,17 @@ export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
         <View style={styles.row}>
           {renderButton('C', handleClear, true)}
           {renderButton('0', () => handleNumberPress(0))}
-          {renderButton('OK', handleSubmit, false, true)}
+          {renderButton('⌫', handleBackspace, true)}
         </View>
       </View>
+
+      <TouchableOpacity
+        style={styles.submitButton}
+        onPress={handleSubmit}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.submitButtonText}>Submit</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -189,6 +204,22 @@ const styles = StyleSheet.create({
     borderColor: '#2563eb',
   },
   actionButtonText: {
+    color: '#ffffff',
+  },
+  submitButton: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: '#3b82f6',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+    minHeight: 56,
+  },
+  submitButtonText: {
+    fontSize: 24,
+    fontWeight: 'bold',
     color: '#ffffff',
   },
 });
