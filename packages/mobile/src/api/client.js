@@ -1,13 +1,10 @@
 import axios from 'axios';
 import useAuthStore from '../store/useAuthStore';
+import useSettingsStore from '../store/useSettingsStore';
 import * as SecureStore from 'expo-secure-store';
 
-// We use process.env.EXPO_PUBLIC_API_URL if it exists, otherwise default to localhost (useful for simulators)
-// Note: For physical devices testing against local dev server, you must set EXPO_PUBLIC_API_URL to your machine's local IP (e.g., http://192.168.1.100:3000/api)
-const baseURL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api';
-
 const apiClient = axios.create({
-  baseURL,
+  timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -16,12 +13,15 @@ const apiClient = axios.create({
 // Request interceptor: Attach JWT token if available
 apiClient.interceptors.request.use(
   async (config) => {
+    const currentIp = useSettingsStore.getState().serverIp || '10.10.1.116:3001';
+    config.baseURL = currentIp.startsWith('http') ? `${currentIp}/api` : `http://${currentIp}/api`;
+
     // Try getting the token from Zustand store first for performance
     let token = useAuthStore.getState().token;
 
     // If not in store, attempt to get from SecureStore (fallback)
     if (!token) {
-        token = await SecureStore.getItemAsync('auth_token');
+      token = await SecureStore.getItemAsync('auth_token');
     }
 
     if (token) {

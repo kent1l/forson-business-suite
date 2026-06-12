@@ -35,13 +35,19 @@ export default function CountScreen() {
 
   const currentLine = activeBatchData[currentLineIndex];
 
-  const codeScanner = useCodeScanner({
-    codeTypes: ['ean-13', 'code-128', 'qr'],
-    onCodeScanned: (codes) => {
-      if (codes.length > 0 && codes[0].value && !scannedBarcode) {
-        setScannedBarcode(codes[0].value);
+  const handleCodeScanned = (codes: any[]) => {
+    if (codes.length > 0) {
+      const scannedValue = codes[0].value;
+      if (scannedValue && !scannedBarcode) {
+        console.log(`Scanned barcode: ${scannedValue}`);
+        setScannedBarcode(scannedValue);
       }
     }
+  };
+
+  const codeScanner = useCodeScanner({
+    codeTypes: ['ean-13', 'code-128', 'qr'],
+    onCodeScanned: handleCodeScanned
   });
 
   const handleSubmitCount = async (countedQty: number) => {
@@ -118,7 +124,7 @@ export default function CountScreen() {
             style={StyleSheet.absoluteFill}
             device={device}
             isActive={true}
-            codeScanner={codeScanner}
+            codeScanner={codeScanner as any}
           />
         </View>
       ) : null}
