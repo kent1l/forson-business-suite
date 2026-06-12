@@ -117,7 +117,7 @@ export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    width: '100%',
     padding: 20,
     justifyContent: 'center',
     alignItems: 'center',

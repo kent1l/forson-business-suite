@@ -148,7 +148,11 @@ export default function CountScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        style={{ flex: 1, width: '100%' }}
+        contentContainerStyle={{ flexGrow: 1, justifyContent: 'space-between' }}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.topSection}>
           <View style={styles.headerZone}>
             <Text style={styles.itemTitle}>{currentLine.display_name}</Text>
@@ -251,10 +255,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: 'space-between',
-  },
+
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
