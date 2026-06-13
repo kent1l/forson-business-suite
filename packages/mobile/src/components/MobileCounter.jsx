@@ -2,8 +2,12 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
 
 export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
-  const { width } = useWindowDimensions();
-  const BUTTON_SIZE = Math.min((width * 0.6 - 40) / 3, 80);
+  const { width, height } = useWindowDimensions();
+  const leftColWidth = width * 0.6;
+  const BUTTON_SIZE = Math.floor((leftColWidth - 16 - 24) / 3);
+  const availableHeight = height * 0.78 - 16;
+  const ROW_HEIGHT = Math.min(Math.floor(availableHeight / 4) - 10, BUTTON_SIZE);
+
   const [inputQuantity, setInputQuantity] = useState(initialQuantity.toString());
 
   const handleNumberPress = (num) => {
@@ -40,22 +44,33 @@ export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
     }
   };
 
-  const renderButton = (label, onPress, isSecondary = false, isAction = false) => (
+  const buttonStyle = {
+    width: BUTTON_SIZE,
+    height: ROW_HEIGHT,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  };
+
+  const renderButton = (label, onPress, isSecondary = false) => (
     <TouchableOpacity
       style={[
-        styles.button,
+        buttonStyle,
         isSecondary && styles.secondaryButton,
-        isAction && styles.actionButton,
       ]}
       onPress={onPress}
-      activeOpacity={0.7}
+      activeOpacity={0.65}
     >
       <Text
         style={[
           styles.buttonText,
           isSecondary && styles.secondaryButtonText,
-          isAction && styles.actionButtonText,
         ]}
+        adjustsFontSizeToFit
+        numberOfLines={1}
       >
         {label}
       </Text>
@@ -66,24 +81,24 @@ export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
     <View style={styles.container}>
       <View style={styles.leftColumn}>
         <View style={styles.row}>
-          {renderButton('1', () => handleNumberPress(1), false, false, BUTTON_SIZE)}
-          {renderButton('2', () => handleNumberPress(2), false, false, BUTTON_SIZE)}
-          {renderButton('3', () => handleNumberPress(3), false, false, BUTTON_SIZE)}
+          {renderButton('1', () => handleNumberPress(1))}
+          {renderButton('2', () => handleNumberPress(2))}
+          {renderButton('3', () => handleNumberPress(3))}
         </View>
         <View style={styles.row}>
-          {renderButton('4', () => handleNumberPress(4), false, false, BUTTON_SIZE)}
-          {renderButton('5', () => handleNumberPress(5), false, false, BUTTON_SIZE)}
-          {renderButton('6', () => handleNumberPress(6), false, false, BUTTON_SIZE)}
+          {renderButton('4', () => handleNumberPress(4))}
+          {renderButton('5', () => handleNumberPress(5))}
+          {renderButton('6', () => handleNumberPress(6))}
         </View>
         <View style={styles.row}>
-          {renderButton('7', () => handleNumberPress(7), false, false, BUTTON_SIZE)}
-          {renderButton('8', () => handleNumberPress(8), false, false, BUTTON_SIZE)}
-          {renderButton('9', () => handleNumberPress(9), false, false, BUTTON_SIZE)}
+          {renderButton('7', () => handleNumberPress(7))}
+          {renderButton('8', () => handleNumberPress(8))}
+          {renderButton('9', () => handleNumberPress(9))}
         </View>
         <View style={styles.row}>
-          {renderButton('C', handleClear, true, false, BUTTON_SIZE)}
-          {renderButton('0', () => handleNumberPress(0), false, false, BUTTON_SIZE)}
-          {renderButton('⌫', handleBackspace, true, false, BUTTON_SIZE)}
+          {renderButton('C', handleClear, true)}
+          {renderButton('0', () => handleNumberPress(0))}
+          {renderButton('⌫', handleBackspace, true)}
         </View>
       </View>
 
@@ -131,73 +146,75 @@ const styles = StyleSheet.create({
   },
   leftColumn: {
     flex: 0.6,
-    justifyContent: 'center',
+    flexDirection: 'column',
+    justifyContent: 'space-evenly',
+    alignItems: 'center',
     paddingRight: 6,
+    alignSelf: 'stretch',
   },
   rightColumn: {
     flex: 0.4,
     flexDirection: 'column',
-    paddingLeft: 6,
+    paddingLeft: 8,
     borderLeftWidth: 1,
     borderLeftColor: '#e5e7eb',
+    alignSelf: 'stretch',
   },
   displayContainer: {
-    flex: 0.28,
+    flex: 0.25,
     backgroundColor: '#f3f4f6',
-    borderRadius: 10,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
     borderWidth: 1,
     borderColor: '#e5e7eb',
-    paddingVertical: 6,
   },
   displayLabel: {
-    fontSize: 12,
+    fontSize: 11,
+    fontWeight: '500',
     color: '#6b7280',
     marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   displayText: {
-    fontSize: 40,
+    fontSize: 42,
     fontWeight: 'bold',
     color: '#111827',
     textAlign: 'center',
   },
   quickActionsContainer: {
-    flex: 0.14,
+    flex: 0.12,
     flexDirection: 'row',
+    gap: 6,
     marginBottom: 8,
   },
   quickButton: {
     flex: 1,
-    backgroundColor: '#e5e7eb',
-    borderRadius: 8,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
     alignItems: 'center',
     justifyContent: 'center',
   },
   quickButtonText: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 17,
+    fontWeight: '700',
     color: '#374151',
   },
   row: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    width: '100%',
-    marginBottom: 8,
-  },
-  button: {
-    backgroundColor: '#f3f4f6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginHorizontal: 4,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
+    justifyContent: 'space-evenly',
+    alignSelf: 'stretch',
+    marginBottom: 0,
   },
   buttonText: {
-    fontSize: 26,
-    fontWeight: 'bold',
+    fontSize: 28,
+    fontWeight: '600',
     color: '#1f2937',
+    textAlign: 'center',
   },
   secondaryButton: {
     backgroundColor: '#fee2e2',
@@ -224,6 +241,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#ffffff',
-    textAlign: 'center',
+    letterSpacing: 0.3,
   },
 });

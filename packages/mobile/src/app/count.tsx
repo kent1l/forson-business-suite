@@ -106,6 +106,7 @@ export default function CountScreen() {
   }
 
   const needsBarcode = !currentLine.barcode && !scannedBarcode;
+  const hasBarcode: boolean = Boolean(currentLine.barcode) || Boolean(scannedBarcode);
 
   const openCameraModal = () => {
     setPendingBarcode(null);
@@ -135,28 +136,20 @@ export default function CountScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.headerStrip}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <View style={styles.headerTopRow}>
           <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Ionicons name="arrow-back" size={24} color="#374151" />
           </TouchableOpacity>
 
           <TouchableOpacity
             onPress={openCameraModal}
+            activeOpacity={0.75}
             style={[
-              styles.statusPill,
-              (scannedBarcode || currentLine.barcode) ? styles.statusPillSuccess : styles.statusPillNeutral
+              styles.barcodePill,
+              hasBarcode ? styles.barcodePillSuccess : styles.barcodePillNeutral
             ]}
-            activeOpacity={0.7}
           >
-            <Ionicons
-              name={(scannedBarcode || currentLine.barcode) ? 'barcode' : 'barcode-outline'}
-              size={14}
-              color="#fff"
-              style={{ marginRight: 4 }}
-            />
-            <Text style={(scannedBarcode || currentLine.barcode) ? styles.statusPillTextSuccess : styles.statusPillTextNeutral}>
-              {(scannedBarcode || currentLine.barcode) ? 'Barcode ✓' : 'Scan Barcode'}
-            </Text>
+            <Text style={styles.barcodePillText}>Barcode</Text>
           </TouchableOpacity>
         </View>
 
@@ -166,10 +159,10 @@ export default function CountScreen() {
           numberOfLines={1}
           minimumFontScale={0.6}
         >
-          {currentLine.display_name}
+          {currentLine.display_name ?? currentLine.part_id}
         </Text>
 
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <View style={styles.metaRow}>
           <Text style={styles.itemSubtitle}>Item {currentLineIndex + 1} of {activeBatchData.length}</Text>
           <Text style={styles.itemSubtitle}>ID: {currentLine.part_id}</Text>
         </View>
@@ -279,15 +272,45 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingTop: 10,
+    paddingBottom: 8,
     justifyContent: 'space-between',
-    overflow: 'hidden',
+  },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  barcodePill: {
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+  },
+  barcodePillSuccess: {
+    backgroundColor: '#16a34a',
+  },
+  barcodePillNeutral: {
+    backgroundColor: '#9ca3af',
+  },
+  barcodePillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#ffffff',
   },
   itemTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#111827',
     textAlign: 'center',
+  },
+  metaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  itemSubtitle: {
+    fontSize: 12,
+    color: '#6b7280',
   },
   progressBarTrack: {
     height: 4,
@@ -300,37 +323,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#3b82f6',
     borderRadius: 2,
   },
-  itemSubtitle: {
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  statusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 12,
-  },
-  statusPillNeutral: {
-    backgroundColor: 'gray',
-  },
-  statusPillSuccess: {
-    backgroundColor: 'green',
-  },
-  statusPillTextNeutral: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 12,
-  },
-  statusPillTextSuccess: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 12,
-  },
   counterZone: {
     flex: 0.78,
     backgroundColor: '#fff',
-    overflow: 'hidden',
   },
   modalContainer: {
     flex: 1,
