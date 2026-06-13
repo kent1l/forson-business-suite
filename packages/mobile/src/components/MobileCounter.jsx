@@ -1,12 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
-
-const { width } = Dimensions.get('window');
-
-// Responsive button sizing based on screen width
-const BUTTON_SIZE = Math.min((width - 80) / 3, 100);
+import { View, Text, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
 
 export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
+  const { width } = useWindowDimensions();
+  const BUTTON_SIZE = Math.min((width * 0.6 - 40) / 3, 80);
   const [inputQuantity, setInputQuantity] = useState(initialQuantity.toString());
 
   const handleNumberPress = (num) => {
@@ -67,128 +64,138 @@ export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.displayContainer}>
-        <Text style={styles.displayLabel}>Current Quantity</Text>
-        <Text style={styles.displayText}>{inputQuantity}</Text>
+      <View style={styles.leftColumn}>
+        <View style={styles.row}>
+          {renderButton('1', () => handleNumberPress(1), false, false, BUTTON_SIZE)}
+          {renderButton('2', () => handleNumberPress(2), false, false, BUTTON_SIZE)}
+          {renderButton('3', () => handleNumberPress(3), false, false, BUTTON_SIZE)}
+        </View>
+        <View style={styles.row}>
+          {renderButton('4', () => handleNumberPress(4), false, false, BUTTON_SIZE)}
+          {renderButton('5', () => handleNumberPress(5), false, false, BUTTON_SIZE)}
+          {renderButton('6', () => handleNumberPress(6), false, false, BUTTON_SIZE)}
+        </View>
+        <View style={styles.row}>
+          {renderButton('7', () => handleNumberPress(7), false, false, BUTTON_SIZE)}
+          {renderButton('8', () => handleNumberPress(8), false, false, BUTTON_SIZE)}
+          {renderButton('9', () => handleNumberPress(9), false, false, BUTTON_SIZE)}
+        </View>
+        <View style={styles.row}>
+          {renderButton('C', handleClear, true, false, BUTTON_SIZE)}
+          {renderButton('0', () => handleNumberPress(0), false, false, BUTTON_SIZE)}
+          {renderButton('⌫', handleBackspace, true, false, BUTTON_SIZE)}
+        </View>
       </View>
 
-      <View style={styles.quickActionsContainer}>
-        <TouchableOpacity style={styles.quickButton} onPress={() => handleIncrement(-1)}>
-          <Text style={styles.quickButtonText}>-1</Text>
+      <View style={styles.rightColumn}>
+        <View style={styles.displayContainer}>
+          <Text style={styles.displayLabel}>Qty</Text>
+          <Text
+            style={styles.displayText}
+            adjustsFontSizeToFit
+            numberOfLines={1}
+            minimumFontScale={0.4}
+          >
+            {inputQuantity}
+          </Text>
+        </View>
+
+        <View style={styles.quickActionsContainer}>
+          <TouchableOpacity style={styles.quickButton} onPress={() => handleIncrement(-1)}>
+            <Text style={styles.quickButtonText}>−1</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.quickButton, { marginLeft: 4 }]} onPress={() => handleIncrement(1)}>
+            <Text style={styles.quickButtonText}>+1</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity
+          style={styles.submitButton}
+          onPress={handleSubmit}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.submitButtonText}>Submit</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.quickButton} onPress={() => handleIncrement(1)}>
-          <Text style={styles.quickButtonText}>+1</Text>
-        </TouchableOpacity>
       </View>
-
-      <View style={styles.numpadContainer}>
-        <View style={styles.row}>
-          {renderButton('1', () => handleNumberPress(1))}
-          {renderButton('2', () => handleNumberPress(2))}
-          {renderButton('3', () => handleNumberPress(3))}
-        </View>
-        <View style={styles.row}>
-          {renderButton('4', () => handleNumberPress(4))}
-          {renderButton('5', () => handleNumberPress(5))}
-          {renderButton('6', () => handleNumberPress(6))}
-        </View>
-        <View style={styles.row}>
-          {renderButton('7', () => handleNumberPress(7))}
-          {renderButton('8', () => handleNumberPress(8))}
-          {renderButton('9', () => handleNumberPress(9))}
-        </View>
-        <View style={styles.row}>
-          {renderButton('C', handleClear, true)}
-          {renderButton('0', () => handleNumberPress(0))}
-          {renderButton('⌫', handleBackspace, true)}
-        </View>
-      </View>
-
-      <TouchableOpacity
-        style={styles.submitButton}
-        onPress={handleSubmit}
-        activeOpacity={0.7}
-      >
-        <Text style={styles.submitButtonText}>Submit</Text>
-      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    width: '100%',
-    padding: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
     backgroundColor: '#fff',
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  leftColumn: {
+    flex: 0.6,
+    justifyContent: 'center',
+    paddingRight: 6,
+  },
+  rightColumn: {
+    flex: 0.4,
+    flexDirection: 'column',
+    paddingLeft: 6,
+    borderLeftWidth: 1,
+    borderLeftColor: '#e5e7eb',
   },
   displayContainer: {
-    width: '100%',
-    maxWidth: 400,
+    flex: 0.28,
     backgroundColor: '#f3f4f6',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 20,
+    borderRadius: 10,
     alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: '#e5e7eb',
+    paddingVertical: 6,
   },
   displayLabel: {
-    fontSize: 18,
+    fontSize: 12,
     color: '#6b7280',
-    marginBottom: 8,
+    marginBottom: 2,
   },
   displayText: {
-    fontSize: 48,
+    fontSize: 40,
     fontWeight: 'bold',
     color: '#111827',
+    textAlign: 'center',
   },
   quickActionsContainer: {
+    flex: 0.14,
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    maxWidth: 400,
-    marginBottom: 20,
+    marginBottom: 8,
   },
   quickButton: {
     flex: 1,
     backgroundColor: '#e5e7eb',
-    padding: 20,
-    marginHorizontal: 8,
-    borderRadius: 12,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
   quickButtonText: {
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#374151',
-  },
-  numpadContainer: {
-    width: '100%',
-    maxWidth: 400,
-    alignItems: 'center',
   },
   row: {
     flexDirection: 'row',
     justifyContent: 'center',
     width: '100%',
-    marginBottom: 16,
+    marginBottom: 8,
   },
   button: {
-    width: BUTTON_SIZE,
-    height: BUTTON_SIZE,
     backgroundColor: '#f3f4f6',
-    borderRadius: BUTTON_SIZE / 2,
     justifyContent: 'center',
     alignItems: 'center',
-    marginHorizontal: 8,
+    marginHorizontal: 4,
     borderWidth: 1,
     borderColor: '#e5e7eb',
   },
   buttonText: {
-    fontSize: 32,
+    fontSize: 26,
     fontWeight: 'bold',
     color: '#1f2937',
   },
@@ -207,19 +214,16 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   submitButton: {
-    width: '100%',
-    maxWidth: 400,
+    flex: 1,
     backgroundColor: '#3b82f6',
-    paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 20,
-    minHeight: 56,
   },
   submitButtonText: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#ffffff',
+    textAlign: 'center',
   },
 });

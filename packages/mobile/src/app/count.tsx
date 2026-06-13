@@ -134,21 +134,53 @@ export default function CountScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.topSection}>
-        <View style={styles.headerZone}>
-          <Text style={styles.itemTitle}>{currentLine.display_name}</Text>
-          <Text style={styles.itemSubtitle}>Item {currentLineIndex + 1} of {activeBatchData.length}</Text>
-          <Text style={styles.itemSubtitle}>Part ID: {currentLine.part_id}</Text>
+      <View style={styles.headerStrip}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="arrow-back" size={24} color="#374151" />
+          </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.statusPill, (scannedBarcode || currentLine.barcode) ? styles.statusPillSuccess : styles.statusPillNeutral]}
             onPress={openCameraModal}
+            style={[
+              styles.statusPill,
+              (scannedBarcode || currentLine.barcode) ? styles.statusPillSuccess : styles.statusPillNeutral
+            ]}
             activeOpacity={0.7}
           >
+            <Ionicons
+              name={(scannedBarcode || currentLine.barcode) ? 'barcode' : 'barcode-outline'}
+              size={14}
+              color="#fff"
+              style={{ marginRight: 4 }}
+            />
             <Text style={(scannedBarcode || currentLine.barcode) ? styles.statusPillTextSuccess : styles.statusPillTextNeutral}>
-              Barcode
+              {(scannedBarcode || currentLine.barcode) ? 'Barcode ✓' : 'Scan Barcode'}
             </Text>
           </TouchableOpacity>
+        </View>
+
+        <Text
+          style={styles.itemTitle}
+          adjustsFontSizeToFit
+          numberOfLines={1}
+          minimumFontScale={0.6}
+        >
+          {currentLine.display_name}
+        </Text>
+
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={styles.itemSubtitle}>Item {currentLineIndex + 1} of {activeBatchData.length}</Text>
+          <Text style={styles.itemSubtitle}>ID: {currentLine.part_id}</Text>
+        </View>
+
+        <View style={styles.progressBarTrack}>
+          <View
+            style={[
+              styles.progressBarFill,
+              { width: `${((currentLineIndex + 1) / activeBatchData.length) * 100}%` }
+            ]}
+          />
         </View>
       </View>
 
@@ -227,6 +259,7 @@ export default function CountScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    flexDirection: 'column',
     backgroundColor: '#fff',
   },
 
@@ -239,34 +272,41 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: 'red',
   },
-  topSection: {
-    alignItems: 'center',
-    flex: 1,
-    width: '100%',
-  },
-  headerZone: {
-    width: '100%',
-    padding: 20,
+  headerStrip: {
+    flex: 0.22,
+    minHeight: 88,
     backgroundColor: '#f9fafb',
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
-    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    justifyContent: 'space-between',
+    overflow: 'hidden',
   },
   itemTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#111827',
     textAlign: 'center',
-    marginBottom: 8,
+  },
+  progressBarTrack: {
+    height: 4,
+    backgroundColor: '#e5e7eb',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: 4,
+    backgroundColor: '#3b82f6',
+    borderRadius: 2,
   },
   itemSubtitle: {
     fontSize: 14,
     color: '#6b7280',
   },
   statusPill: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 4,
     paddingHorizontal: 8,
     borderRadius: 12,
@@ -288,8 +328,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   counterZone: {
-    justifyContent: 'flex-end',
-    paddingBottom: 20,
+    flex: 0.78,
+    backgroundColor: '#fff',
+    overflow: 'hidden',
   },
   modalContainer: {
     flex: 1,
