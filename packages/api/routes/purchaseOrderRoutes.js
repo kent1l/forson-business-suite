@@ -1,7 +1,6 @@
 const express = require('express');
 const db = require('../db');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
-const { constructDisplayName } = require('../helpers/displayNameHelper');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const fs = require('fs');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
@@ -302,6 +301,7 @@ router.get('/purchase-orders/:id/pdf', protect, hasPermission('purchase_orders:v
                 p.detail,
                 b.brand_name,
                 g.group_name,
+                (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
                 (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order)
                  FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers
             FROM purchase_order_line pol
@@ -313,7 +313,7 @@ router.get('/purchase-orders/:id/pdf', protect, hasPermission('purchase_orders:v
         const linesRes = await db.query(poLinesQuery, [id]);
         const linesForPdf = linesRes.rows.map((row) => ({
             ...row,
-            display_name: constructDisplayName(row)
+            display_name: row.display_name || ''
         }));
 
         // 3. Fetch company settings

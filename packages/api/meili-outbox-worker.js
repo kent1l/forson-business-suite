@@ -1,6 +1,5 @@
 const db = require('./db');
 const { syncPartWithMeili, removePartFromMeili } = require('./meilisearch');
-const { constructDisplayName } = require('./helpers/displayNameHelper');
 const { activeAliasCondition } = require('./helpers/partNumberSoftDelete');
 const { normalizePartData } = require('./helpers/normalizePart');
 
@@ -33,10 +32,7 @@ const loadPartDocs = async (partIds) => {
 
   const query = `
     SELECT
-      p.*,
-      b.brand_name,
-      g.group_name,
-      (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${activeAliasCondition('pn')}) as part_numbers,
+      pv.*,
       (SELECT ARRAY_AGG(
         CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''))
       )
@@ -45,12 +41,10 @@ const loadPartDocs = async (partIds) => {
       LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
       LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
       LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
-      WHERE pa.part_id = p.part_id) AS applications_array,
-      (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags_array
-    FROM part AS p
-    LEFT JOIN brand AS b ON p.brand_id = b.brand_id
-    LEFT JOIN "group" AS g ON p.group_id = g.group_id
-    WHERE p.part_id = ANY($1::int[])
+      WHERE pa.part_id = pv.part_id) AS applications_array,
+      (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = pv.part_id) AS tags_array
+    FROM public.parts_view AS pv
+    WHERE pv.part_id = ANY($1::int[])
   `;
 
   const { rows } = await db.query(query, [partIds]);
@@ -59,7 +53,7 @@ const loadPartDocs = async (partIds) => {
     const normalizedFields = normalizePartData(part);
     return {
       ...part,
-      display_name: constructDisplayName(part),
+      // display_name is provided natively by parts_view
       applications: part.applications_array || [],
       searchable_applications: (part.applications_array && Array.isArray(part.applications_array))
         ? part.applications_array.map((app) => (typeof app === 'string' ? app : `${app.make || ''} ${app.model || ''} ${app.engine || ''}`.trim())).join(', ')

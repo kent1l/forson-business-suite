@@ -1,5 +1,6 @@
 const db = require('./db');
 const { syncPartWithMeili, removePartFromMeili } = require('./meilisearch');
+const { activeAliasCondition } = require('./helpers/partNumberSoftDelete');
 
 /**
  * Dedicated listener that uses a persistent Postgres client to LISTEN for
@@ -35,30 +36,36 @@ const startMeiliListener = async () => {
           await removePartFromMeili(id);
         }
         if (upserts.length) {
-          // Fetch all docs in one query and bulk add
+          // Fetch authoritative data from parts_view (display_name is DB-computed)
           const { rows } = await db.query(
-            `SELECT p.part_id,
-                    COALESCE(p.internal_sku, '') AS internal_sku,
-                    COALESCE(p.detail, '') AS detail,
-                    b.brand_name,
-                    g.group_name,
-                    p.is_active,
-                    (SELECT COALESCE(json_agg(pn.part_number), '[]'::json) FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('./helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers,
-                    (SELECT COALESCE(json_agg(t.tag_name), '[]'::json) FROM part_tag pt JOIN tag t ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags,
-                    (SELECT COALESCE(json_agg(pa.application_id), '[]'::json) FROM part_application pa WHERE pa.part_id = p.part_id) AS applications,
-                    (SELECT COALESCE(json_agg(concat_ws(' ', COALESCE(av.make,''), COALESCE(av.model,''), COALESCE(av.engine,''))), '[]'::json)
-                       FROM part_application pa JOIN application_view av ON av.application_id = pa.application_id
-                       WHERE pa.part_id = p.part_id) AS searchable_applications
-             FROM part p
-             LEFT JOIN brand b ON b.brand_id = p.brand_id
-             LEFT JOIN "group" g ON g.group_id = p.group_id
-             WHERE p.part_id = ANY($1::int[])`,
+            `SELECT
+                pv.part_id,
+                pv.display_name,
+                pv.internal_sku,
+                pv.brand_name,
+                pv.group_name,
+                pv.is_active,
+                (SELECT COALESCE(json_agg(pn.part_number), '[]'::json)
+                   FROM part_number pn
+                   WHERE pn.part_id = pv.part_id AND ${activeAliasCondition('pn')}) AS part_numbers,
+                (SELECT COALESCE(json_agg(t.tag_name), '[]'::json)
+                   FROM part_tag pt JOIN tag t ON t.tag_id = pt.tag_id
+                   WHERE pt.part_id = pv.part_id) AS tags,
+                (SELECT COALESCE(json_agg(pa.application_id), '[]'::json)
+                   FROM part_application pa
+                   WHERE pa.part_id = pv.part_id) AS applications,
+                (SELECT COALESCE(json_agg(concat_ws(' ', COALESCE(av.make,''), COALESCE(av.model,''), COALESCE(av.engine,''))), '[]'::json)
+                   FROM part_application pa
+                   JOIN application_view av ON av.application_id = pa.application_id
+                   WHERE pa.part_id = pv.part_id) AS searchable_applications
+             FROM public.parts_view pv
+             WHERE pv.part_id = ANY($1::int[])`,
             [upserts]
           );
 
           const docs = rows.map(row => ({
             part_id: row.part_id,
-            display_name: row.internal_sku || row.detail || '',
+            display_name: row.display_name || '',
             internal_sku: row.internal_sku,
             brand_name: row.brand_name,
             group_name: row.group_name,

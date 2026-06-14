@@ -1,7 +1,6 @@
 const express = require('express');
 const db = require('../db');
 const { Parser } = require('json2csv');
-const { constructDisplayName } = require('../helpers/displayNameHelper');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const router = express.Router();
@@ -18,6 +17,7 @@ router.get('/reports/sales-summary', protect, hasPermission('reports:view'), asy
             SELECT 
                 i.invoice_date, i.invoice_number, p.detail,
                 g.group_name, b.brand_name,
+                (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
                 (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers,
                 il.quantity, il.sale_price,
                 (il.quantity * il.sale_price) AS line_total,
@@ -59,7 +59,7 @@ router.get('/reports/sales-summary', protect, hasPermission('reports:view'), asy
 
         const [detailsRes, summaryRes, countRes] = await Promise.all([detailsPromise, summaryPromise, countPromise]);
 
-        const details = detailsRes.rows.map(row => ({ ...row, display_name: constructDisplayName(row) }));
+        const details = detailsRes.rows;
         
         const summaryData = summaryRes.rows[0];
         const netSales = parseFloat(summaryData.gross_sales) - parseFloat(summaryData.total_refunds);
@@ -102,6 +102,7 @@ router.get('/reports/top-selling', protect, hasPermission('reports:view'), async
             SELECT
                 p.part_id, p.internal_sku, p.detail,
                 b.brand_name, g.group_name,
+                (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
                 (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers,
                 SUM(il.quantity) AS total_quantity_sold,
                 SUM(il.quantity * il.sale_price) AS total_revenue
@@ -139,7 +140,7 @@ router.get('/reports/top-selling', protect, hasPermission('reports:view'), async
             `, [startDate, endDate]) : Promise.resolve({ rows: [{ total: 0 }] })
         ]);
         const { rows } = rowsRes;
-        const data = rows.map(row => ({ ...row, display_name: constructDisplayName(row) }));
+        const data = rows;
 
         if (format === 'csv') {
             const json2csvParser = new Parser();
@@ -168,6 +169,7 @@ router.get('/reports/inventory-valuation', protect, hasPermission('reports:view'
                 p.detail,
                 b.brand_name,
                 g.group_name,
+                (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
                 (
                     SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) 
                     FROM part_number pn 
@@ -208,7 +210,7 @@ router.get('/reports/inventory-valuation', protect, hasPermission('reports:view'
             `) : Promise.resolve({ rows: [{ total: 0 }] })
         ]);
         const { rows } = rowsRes;
-        const data = rows.map(row => ({ ...row, display_name: constructDisplayName(row) }));
+        const data = rows;
 
         if (format === 'csv') {
             const json2csvParser = new Parser();
@@ -240,6 +242,7 @@ router.get('/reports/low-stock', protect, hasPermission('reports:view'), async (
                 p.detail,
                 b.brand_name,
                 g.group_name,
+                (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
                 (
                     SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) 
                     FROM part_number pn 
@@ -280,7 +283,7 @@ router.get('/reports/low-stock', protect, hasPermission('reports:view'), async (
             `) : Promise.resolve({ rows: [{ total: 0 }] })
         ]);
         const { rows } = rowsRes;
-        const data = rows.map(row => ({ ...row, display_name: constructDisplayName(row) }));
+        const data = rows;
 
         if (format === 'csv') {
             const json2csvParser = new Parser();
@@ -385,6 +388,7 @@ router.get('/reports/inventory-movement', protect, hasPermission('reports:view')
                 p.detail,
                 b.brand_name,
                 g.group_name,
+                (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
                 (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers,
                 it.trans_type,
                 it.quantity,
@@ -412,7 +416,7 @@ router.get('/reports/inventory-movement', protect, hasPermission('reports:view')
             `, queryParams) : Promise.resolve({ rows: [{ total: 0 }] })
         ]);
         const { rows } = rowsRes;
-        const data = rows.map(row => ({ ...row, display_name: constructDisplayName(row) }));
+        const data = rows;
         
         if (format === 'csv') {
             const json2csvParser = new Parser();
@@ -455,6 +459,7 @@ router.get('/reports/profitability-by-product', protect, hasPermission('reports:
                 p.detail,
                 b.brand_name,
                 g.group_name,
+                (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
                 (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers,
                 SUM(il.quantity) AS total_quantity_sold,
                 SUM(il.quantity * il.sale_price) AS total_revenue,
@@ -491,7 +496,7 @@ router.get('/reports/profitability-by-product', protect, hasPermission('reports:
             `, queryParams) : Promise.resolve({ rows: [{ total: 0 }] })
         ]);
         const { rows } = rowsRes;
-        const data = rows.map(row => ({ ...row, display_name: constructDisplayName(row) }));
+        const data = rows;
 
         if (format === 'csv') {
             const json2csvParser = new Parser();
