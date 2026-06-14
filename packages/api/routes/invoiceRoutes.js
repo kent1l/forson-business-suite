@@ -3,7 +3,6 @@ const db = require('../db');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatter');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
-const { constructDisplayName } = require('../helpers/displayNameHelper'); // Import the helper
 const { validatePaymentTerms } = require('../helpers/paymentTermsHelper');
 const { calculateInvoiceTax, storeTaxBreakdown, validateTaxCalculation } = require('../services/taxCalculationService');
 const router = express.Router();
@@ -122,6 +121,7 @@ router.get('/invoices/:id/lines', protect, hasPermission('invoicing:create'), as
                 p.detail,
                 b.brand_name,
                 g.group_name,
+                (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
                 (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) as part_numbers
             FROM invoice_line il
             JOIN part p ON il.part_id = p.part_id
@@ -131,12 +131,7 @@ router.get('/invoices/:id/lines', protect, hasPermission('invoicing:create'), as
             ORDER BY p.detail;
         `;
         const { rows } = await db.query(query, [id]);
-        // Construct display_name for each line
-        const linesWithDisplayName = rows.map(line => ({
-            ...line,
-            display_name: constructDisplayName(line)
-        }));
-        res.json(linesWithDisplayName);
+        res.json(rows);
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
@@ -154,6 +149,7 @@ router.get('/invoices/:id/lines-with-refunds', protect, hasPermission('invoicing
                 p.detail,
                 b.brand_name,
                 g.group_name,
+                (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
                 (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) as part_numbers,
                 COALESCE(rf.quantity_refunded, 0) AS quantity_refunded
             FROM invoice_line il
@@ -170,12 +166,7 @@ router.get('/invoices/:id/lines-with-refunds', protect, hasPermission('invoicing
             ORDER BY p.detail;
         `;
         const { rows } = await db.query(query, [id]);
-        // Construct display_name for each line
-        const linesWithDisplayName = rows.map(line => ({
-            ...line,
-            display_name: constructDisplayName(line)
-        }));
-        res.json(linesWithDisplayName);
+        res.json(rows);
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');

@@ -13,8 +13,6 @@ export default function CountScreen() {
   const router = useRouter();
   const { activeBatchData, clearActiveBatch } = useCycleCountStore();
   const [currentLineIndex, setCurrentLineIndex] = useState(0);
-  const [collectedCounts, setCollectedCounts] = useState<Record<string, number>>({});
-  const [collectedBarcodes, setCollectedBarcodes] = useState<Record<string, string | null>>({});
   const [scannedBarcode, setScannedBarcode] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasPermission, setHasPermission] = useState(false);
@@ -62,37 +60,25 @@ export default function CountScreen() {
   });
 
   const handleSubmitCount = async (countedQty: number) => {
-    const newCounts = { ...collectedCounts, [currentLine.line_id.toString()]: countedQty };
-    setCollectedCounts(newCounts);
+    setIsSubmitting(true);
+    try {
+      const payload: any = {
+        counted_qty: countedQty
+      };
 
-    const newBarcodes = { ...collectedBarcodes, [currentLine.line_id.toString()]: scannedBarcode };
-    setCollectedBarcodes(newBarcodes);
+      if (scannedBarcode) {
+        payload.scanned_barcode = scannedBarcode;
+      }
 
-    if (currentLineIndex + 1 < activeBatchData.length) {
-      setCurrentLineIndex(prev => prev + 1);
-      setScannedBarcode(null); // Reset for the next item
-    } else {
-      // Reached the end, trigger full payload delivery
-      setIsSubmitting(true);
-      try {
-        // Compile quantities against the backend snapshot commit endpoint
-        // Since there is no bulk endpoint, we use Promise.all to submit individually
-        const submitPromises = activeBatchData.map((line: any) => {
-          const lineIdStr = String(line.line_id);
-          const payload: any = {
-            counted_qty: (newCounts as Record<string, number>)[lineIdStr]
-          };
+      await apiClient.post(`/inventory/cycle-count/lines/${currentLine.line_id}/submit`, payload);
 
-          if ((newBarcodes as Record<string, string | null>)[lineIdStr]) {
-            payload.scanned_barcode = (newBarcodes as Record<string, string | null>)[lineIdStr];
-          }
+      setIsSubmitting(false);
 
-          return apiClient.post(`/inventory/cycle-count/lines/${line.line_id}/submit`, payload);
-        });
-
-        await Promise.all(submitPromises);
-
-        setIsSubmitting(false);
+      if (currentLineIndex + 1 < activeBatchData.length) {
+        setCurrentLineIndex(prev => prev + 1);
+        setScannedBarcode(null); // Reset for the next item
+      } else {
+        // Reached the end
         Alert.alert('Batch Complete', 'All items submitted successfully.', [
           {
             text: 'OK',
@@ -102,11 +88,11 @@ export default function CountScreen() {
             },
           },
         ]);
-      } catch (error: any) {
-        setIsSubmitting(false);
-        console.error('Submit batch error', error);
-        Alert.alert('Error', error.response?.data?.message || 'Failed to submit one or more items.');
       }
+    } catch (error: any) {
+      setIsSubmitting(false);
+      console.error('Submit batch error', error);
+      Alert.alert('Error', error.response?.data?.message || 'Failed to submit the item.');
     }
   };
 
@@ -120,6 +106,7 @@ export default function CountScreen() {
   }
 
   const needsBarcode = !currentLine.barcode && !scannedBarcode;
+  const hasBarcode: boolean = Boolean(currentLine.barcode) || Boolean(scannedBarcode);
 
   const openCameraModal = () => {
     setPendingBarcode(null);
@@ -148,42 +135,61 @@ export default function CountScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView
-        style={{ flex: 1, width: '100%' }}
-        contentContainerStyle={{ flexGrow: 1, justifyContent: 'space-between' }}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.topSection}>
-          <View style={styles.headerZone}>
-            <Text style={styles.itemTitle}>{currentLine.display_name}</Text>
-            <Text style={styles.itemSubtitle}>Item {currentLineIndex + 1} of {activeBatchData.length}</Text>
-            <Text style={styles.itemSubtitle}>Part ID: {currentLine.part_id}</Text>
-          </View>
+      <View style={styles.headerStrip}>
+        <View style={styles.headerTopRow}>
+          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="arrow-back" size={24} color="#374151" />
+          </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.statusPill, (scannedBarcode || currentLine.barcode) ? styles.statusPillSuccess : styles.statusPillNeutral]}
             onPress={openCameraModal}
-            activeOpacity={0.7}
+            activeOpacity={0.75}
+            style={[
+              styles.barcodePill,
+              hasBarcode ? styles.barcodePillSuccess : styles.barcodePillNeutral
+            ]}
           >
-            {scannedBarcode || currentLine.barcode ? (
-              <Text style={styles.statusPillTextSuccess}>
-                [✓ Barcode: {scannedBarcode || currentLine.barcode}]
-              </Text>
-            ) : (
-              <Text style={styles.statusPillTextNeutral}>
-                [📷 Scan to Add Barcode]
-              </Text>
-            )}
+            <Text style={styles.barcodePillText}>Barcode</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.counterZone}>
-          <MobileCounter
-            initialQuantity={0}
-            onSubmit={handleSubmitCount}
+        <View style={{ alignItems: 'center' }}>
+          <Text
+            style={styles.itemTitle}
+            adjustsFontSizeToFit
+            numberOfLines={1}
+            minimumFontScale={0.6}
+          >
+            {currentLine.display_name ?? currentLine.part_id}
+          </Text>
+          <Text
+            style={[styles.itemSubtitle, { marginTop: 2, fontSize: 11, opacity: 0.7 }]}
+            numberOfLines={1}
+          >
+            {currentLine.internal_sku || currentLine.sku || currentLine.part_id}
+          </Text>
+        </View>
+
+        <View style={styles.metaRow}>
+          <Text style={styles.itemSubtitle}>Item {currentLineIndex + 1} of {activeBatchData.length}</Text>
+        </View>
+
+        <View style={styles.progressBarTrack}>
+          <View
+            style={[
+              styles.progressBarFill,
+              { width: `${((currentLineIndex + 1) / activeBatchData.length) * 100}%` }
+            ]}
           />
         </View>
-      </ScrollView>
+      </View>
+
+      <View style={styles.counterZone}>
+        <MobileCounter
+          initialQuantity={0}
+          onSubmit={handleSubmitCount}
+        />
+      </View>
 
       {/* Camera Modal */}
       <Modal visible={isCameraModalOpen} animationType="slide" transparent={false}>
@@ -253,6 +259,7 @@ export default function CountScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    flexDirection: 'column',
     backgroundColor: '#fff',
   },
 
@@ -265,61 +272,67 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: 'red',
   },
-  topSection: {
-    alignItems: 'center',
-  },
-  headerZone: {
-    width: '100%',
-    padding: 20,
+  headerStrip: {
+    flex: 0.22,
+    minHeight: 88,
     backgroundColor: '#f9fafb',
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 8,
+    justifyContent: 'space-between',
+  },
+  headerTopRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  barcodePill: {
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+  },
+  barcodePillSuccess: {
+    backgroundColor: '#16a34a',
+  },
+  barcodePillNeutral: {
+    backgroundColor: '#9ca3af',
+  },
+  barcodePillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#ffffff',
   },
   itemTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#111827',
     textAlign: 'center',
-    marginBottom: 8,
   },
-  itemSubtitle: {
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  statusPill: {
-    marginTop: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 999,
-    minHeight: 48,
-    justifyContent: 'center',
+  metaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
-  statusPillNeutral: {
-    backgroundColor: '#f3f4f6',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
+  itemSubtitle: {
+    fontSize: 12,
+    color: '#6b7280',
   },
-  statusPillSuccess: {
-    backgroundColor: '#d1fae5',
-    borderWidth: 1,
-    borderColor: '#10b981',
+  progressBarTrack: {
+    height: 4,
+    backgroundColor: '#e5e7eb',
+    borderRadius: 2,
+    overflow: 'hidden',
   },
-  statusPillTextNeutral: {
-    color: '#4b5563',
-    fontWeight: '600',
-    fontSize: 16,
-  },
-  statusPillTextSuccess: {
-    color: '#065f46',
-    fontWeight: 'bold',
-    fontSize: 16,
+  progressBarFill: {
+    height: 4,
+    backgroundColor: '#3b82f6',
+    borderRadius: 2,
   },
   counterZone: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingBottom: 20,
+    flex: 0.78,
+    backgroundColor: '#fff',
   },
   modalContainer: {
     flex: 1,

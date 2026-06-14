@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
-
-const { width } = Dimensions.get('window');
-
-// Responsive button sizing based on screen width
-const BUTTON_SIZE = Math.min((width - 80) / 3, 100);
+import { View, Text, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
 
 export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
+  const { width, height } = useWindowDimensions();
+  const leftColWidth = width * 0.6;
+  const BUTTON_SIZE = Math.floor((leftColWidth - 16 - 24) / 3);
+  const availableHeight = height * 0.78 - 16;
+  const ROW_HEIGHT = Math.min(Math.floor(availableHeight / 4) - 10, BUTTON_SIZE);
+
   const [inputQuantity, setInputQuantity] = useState(initialQuantity.toString());
 
   const handleNumberPress = (num) => {
@@ -43,22 +44,33 @@ export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
     }
   };
 
-  const renderButton = (label, onPress, isSecondary = false, isAction = false) => (
+  const buttonStyle = {
+    width: BUTTON_SIZE,
+    height: ROW_HEIGHT,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  };
+
+  const renderButton = (label, onPress, isSecondary = false) => (
     <TouchableOpacity
       style={[
-        styles.button,
+        buttonStyle,
         isSecondary && styles.secondaryButton,
-        isAction && styles.actionButton,
       ]}
       onPress={onPress}
-      activeOpacity={0.7}
+      activeOpacity={0.65}
     >
       <Text
         style={[
           styles.buttonText,
           isSecondary && styles.secondaryButtonText,
-          isAction && styles.actionButtonText,
         ]}
+        adjustsFontSizeToFit
+        numberOfLines={1}
       >
         {label}
       </Text>
@@ -67,21 +79,7 @@ export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.displayContainer}>
-        <Text style={styles.displayLabel}>Current Quantity</Text>
-        <Text style={styles.displayText}>{inputQuantity}</Text>
-      </View>
-
-      <View style={styles.quickActionsContainer}>
-        <TouchableOpacity style={styles.quickButton} onPress={() => handleIncrement(-1)}>
-          <Text style={styles.quickButtonText}>-1</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.quickButton} onPress={() => handleIncrement(1)}>
-          <Text style={styles.quickButtonText}>+1</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.numpadContainer}>
+      <View style={styles.leftColumn}>
         <View style={styles.row}>
           {renderButton('1', () => handleNumberPress(1))}
           {renderButton('2', () => handleNumberPress(2))}
@@ -104,93 +102,119 @@ export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
         </View>
       </View>
 
-      <TouchableOpacity
-        style={styles.submitButton}
-        onPress={handleSubmit}
-        activeOpacity={0.7}
-      >
-        <Text style={styles.submitButtonText}>Submit</Text>
-      </TouchableOpacity>
+      <View style={styles.rightColumn}>
+        <View style={styles.displayContainer}>
+          <Text style={styles.displayLabel}>Qty</Text>
+          <Text
+            style={styles.displayText}
+            adjustsFontSizeToFit
+            numberOfLines={1}
+            minimumFontScale={0.4}
+          >
+            {inputQuantity}
+          </Text>
+        </View>
+
+        <View style={styles.quickActionsContainer}>
+          <TouchableOpacity style={styles.quickButton} onPress={() => handleIncrement(-1)}>
+            <Text style={styles.quickButtonText}>−1</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.quickButton, { marginLeft: 4 }]} onPress={() => handleIncrement(1)}>
+            <Text style={styles.quickButtonText}>+1</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity
+          style={styles.submitButton}
+          onPress={handleSubmit}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.submitButtonText}>Submit</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    width: '100%',
-    padding: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
     backgroundColor: '#fff',
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  leftColumn: {
+    flex: 0.6,
+    flexDirection: 'column',
+    justifyContent: 'space-evenly',
+    alignItems: 'center',
+    paddingRight: 6,
+    alignSelf: 'stretch',
+  },
+  rightColumn: {
+    flex: 0.4,
+    flexDirection: 'column',
+    paddingLeft: 8,
+    borderLeftWidth: 1,
+    borderLeftColor: '#e5e7eb',
+    alignSelf: 'stretch',
   },
   displayContainer: {
-    width: '100%',
-    maxWidth: 400,
+    flex: 0.25,
     backgroundColor: '#f3f4f6',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 20,
+    borderRadius: 14,
     alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: '#e5e7eb',
   },
   displayLabel: {
-    fontSize: 18,
+    fontSize: 11,
+    fontWeight: '500',
     color: '#6b7280',
-    marginBottom: 8,
+    marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   displayText: {
-    fontSize: 48,
+    fontSize: 42,
     fontWeight: 'bold',
     color: '#111827',
+    textAlign: 'center',
   },
   quickActionsContainer: {
+    flex: 0.12,
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    maxWidth: 400,
-    marginBottom: 20,
+    gap: 6,
+    marginBottom: 8,
   },
   quickButton: {
     flex: 1,
-    backgroundColor: '#e5e7eb',
-    padding: 20,
-    marginHorizontal: 8,
+    backgroundColor: '#f3f4f6',
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
     alignItems: 'center',
     justifyContent: 'center',
   },
   quickButtonText: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 17,
+    fontWeight: '700',
     color: '#374151',
-  },
-  numpadContainer: {
-    width: '100%',
-    maxWidth: 400,
-    alignItems: 'center',
   },
   row: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    width: '100%',
-    marginBottom: 16,
-  },
-  button: {
-    width: BUTTON_SIZE,
-    height: BUTTON_SIZE,
-    backgroundColor: '#f3f4f6',
-    borderRadius: BUTTON_SIZE / 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginHorizontal: 8,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
+    justifyContent: 'space-evenly',
+    alignSelf: 'stretch',
+    marginBottom: 0,
   },
   buttonText: {
-    fontSize: 32,
-    fontWeight: 'bold',
+    fontSize: 28,
+    fontWeight: '600',
     color: '#1f2937',
+    textAlign: 'center',
   },
   secondaryButton: {
     backgroundColor: '#fee2e2',
@@ -207,19 +231,16 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   submitButton: {
-    width: '100%',
-    maxWidth: 400,
+    flex: 1,
     backgroundColor: '#3b82f6',
-    paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 20,
-    minHeight: 56,
   },
   submitButtonText: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#ffffff',
+    letterSpacing: 0.3,
   },
 });

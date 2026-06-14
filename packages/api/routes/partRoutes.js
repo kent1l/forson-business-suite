@@ -1,6 +1,5 @@
 const express = require('express');
 const db = require('../db');
-const { constructDisplayName } = require('../helpers/displayNameHelper');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { meiliClient } = require('../meilisearch');
 const { enqueuePartUpsert, enqueuePartDelete } = require('../services/meiliOutboxService');
@@ -13,8 +12,8 @@ const router = express.Router();
 const getPartDataForMeili = async (client, partId) => {
     const query = `
         SELECT
-            p.*, b.brand_name, g.group_name,
-            (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${activeAliasCondition('pn')}) as part_numbers,
+            pv.*,
+            (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = pv.part_id AND ${activeAliasCondition('pn')}) as part_numbers,
                         (SELECT ARRAY_AGG(
                                 CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''))
                         ) FROM part_application pa
@@ -22,12 +21,10 @@ const getPartDataForMeili = async (client, partId) => {
                             LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
                             LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
                             LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
-                        WHERE pa.part_id = p.part_id) AS applications_array,
-            (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags_array
-        FROM part AS p
-        LEFT JOIN brand AS b ON p.brand_id = b.brand_id
-        LEFT JOIN "group" AS g ON p.group_id = g.group_id
-        WHERE p.part_id = $1
+                        WHERE pa.part_id = pv.part_id) AS applications_array,
+            (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = pv.part_id) AS tags_array
+        FROM public.parts_view AS pv
+        WHERE pv.part_id = $1
     `;
     const res = await client.query(query, [partId]);
     if (res.rows.length === 0) return null;
@@ -36,14 +33,12 @@ const getPartDataForMeili = async (client, partId) => {
     const normalizedFields = normalizePartData(part);
     return {
         ...part,
-        display_name: constructDisplayName(part),
+        // display_name is already provided by parts_view
         applications: part.applications_array || [],
         // Flatten applications into a single searchable string for Meilisearch
         searchable_applications: (part.applications_array && Array.isArray(part.applications_array))
             ? part.applications_array.map(app => {
-                // SQL returns a concatenated string like "Make Model Engine" for each application.
                 if (typeof app === 'string') return app;
-                // If for some reason the application is an object, concatenate known fields.
                 return `${app.make || ''} ${app.model || ''} ${app.engine || ''}`.trim();
             }).join(', ')
             : '',
@@ -166,21 +161,21 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
         if (isGlobalSort && paginated) {
             queryParams.push(limit, offset);
         }
-        let orderByClause = 'ORDER BY array_position($1::int[], p.part_id)';
+        let orderByClause = 'ORDER BY array_position($1::int[], pv.part_id)';
         if (isGlobalSort) {
             if (sortBy === 'sku') {
-                orderByClause = `ORDER BY LOWER(COALESCE(p.internal_sku, '')) ${sortDirection}, p.part_id ${sortDirection}`;
+                orderByClause = `ORDER BY LOWER(COALESCE(pv.internal_sku, '')) ${sortDirection}, pv.part_id ${sortDirection}`;
             } else if (sortBy === 'application') {
-                orderByClause = `ORDER BY LOWER(COALESCE(applications, '')) ${sortDirection}, p.part_id ${sortDirection}`;
+                orderByClause = `ORDER BY LOWER(COALESCE(applications, '')) ${sortDirection}, pv.part_id ${sortDirection}`;
             } else {
-                orderByClause = `ORDER BY LOWER(COALESCE(g.group_name, '') || ' ' || COALESCE(b.brand_name, '') || ' ' || COALESCE(p.detail, '')) ${sortDirection}, p.part_id ${sortDirection}`;
+                orderByClause = `ORDER BY LOWER(COALESCE(pv.group_name, '') || ' ' || COALESCE(pv.brand_name, '') || ' ' || COALESCE(pv.detail, '')) ${sortDirection}, pv.part_id ${sortDirection}`;
             }
         }
 
         const query = `
             SELECT
-                p.*, b.brand_name, g.group_name,
-                (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = p.part_id AND ${activeAliasCondition('pn')}) AS part_numbers,
+                pv.*,
+                (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = pv.part_id AND ${activeAliasCondition('pn')}) AS part_numbers,
                 (SELECT STRING_AGG(
                     CONCAT(
                         vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''),
@@ -197,25 +192,23 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
                   LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
                   LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
                   LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
-                WHERE pa.part_id = p.part_id) AS applications,
-                (SELECT STRING_AGG(t.tag_name, ', ') FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags
-            FROM part AS p
-            LEFT JOIN brand AS b ON p.brand_id = b.brand_id
-            LEFT JOIN "group" AS g ON p.group_id = g.group_id
-            WHERE p.part_id = ANY($1::int[])
+                WHERE pa.part_id = pv.part_id) AS applications,
+                (SELECT STRING_AGG(t.tag_name, ', ') FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = pv.part_id) AS tags
+            FROM public.parts_view AS pv
+            WHERE pv.part_id = ANY($1::int[])
             ${orderByClause}
             ${sqlOffset}
         `;
         console.log('[DEBUG] [GET /parts] Attempting Postgres query...');
         const { rows } = await db.query(query, queryParams);
-        const partsWithDisplayName = rows.map(part => ({ ...part, display_name: constructDisplayName(part) }));
+        // display_name is natively provided by parts_view
         if (!paginated) {
-            return res.json(partsWithDisplayName);
+            return res.json(rows);
         }
         const total = isGlobalSort
-            ? (totalHits || partsWithDisplayName.length)
-            : (searchResults.estimatedTotalHits || searchResults.totalHits || partsWithDisplayName.length);
-        res.json(paginatedResponse({ data: partsWithDisplayName, page, pageSize, total }));
+            ? (totalHits || rows.length)
+            : (searchResults.estimatedTotalHits || searchResults.totalHits || rows.length);
+        res.json(paginatedResponse({ data: rows, page, pageSize, total }));
     } catch (err) {
         console.error(`[${req.method} ${req.url}] Internal Error:`, err);
         res.status(500).json({ message: 'Internal Server Error' });
@@ -228,17 +221,15 @@ router.get('/parts/:id', protect, hasPermission('parts:view'), async (req, res) 
     try {
         const query = `
             SELECT
-                p.*, b.brand_name, g.group_name,
-                (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = p.part_id AND ${activeAliasCondition('pn')}) AS part_numbers
-            FROM part AS p
-            LEFT JOIN brand AS b ON p.brand_id = b.brand_id
-            LEFT JOIN "group" AS g ON p.group_id = g.group_id
-            WHERE p.part_id = $1;
+                pv.*,
+                (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = pv.part_id AND ${activeAliasCondition('pn')}) AS part_numbers
+            FROM public.parts_view AS pv
+            WHERE pv.part_id = $1;
         `;
         const { rows } = await db.query(query, [id]);
         if (rows.length === 0) return res.status(404).json({ message: 'Part not found' });
-        const part = { ...rows[0], display_name: constructDisplayName(rows[0]) };
-        res.json(part);
+        // display_name is natively provided by parts_view
+        res.json(rows[0]);
     } catch (err) {
         console.error(`[${req.method} ${req.url}] Internal Error:`, err);
         res.status(500).json({ message: 'Internal Server Error' });

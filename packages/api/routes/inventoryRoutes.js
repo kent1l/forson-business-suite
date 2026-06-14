@@ -1,6 +1,5 @@
 const express = require('express');
 const db = require('../db');
-const { constructDisplayName } = require('../helpers/displayNameHelper');
 const { meiliClient } = require('../meilisearch'); // <-- 1. Import Meili client
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const router = express.Router();
@@ -83,6 +82,7 @@ router.get('/inventory', async (req, res) => {
                 p.warning_quantity,
                 b.brand_name,
                 g.group_name,
+                (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
                 (
                     SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order)
                     FROM part_number pn
@@ -100,19 +100,14 @@ router.get('/inventory', async (req, res) => {
         `;
 
         const { rows } = await db.query(query, queryParams);
-        
-        const inventoryWithDisplayName = rows.map(item => ({
-            ...item,
-            display_name: constructDisplayName(item)
-        }));
 
         if (!paginated) {
-            return res.json(inventoryWithDisplayName);
+            return res.json(rows);
         }
         const total = isGlobalSort
-            ? (totalHits || inventoryWithDisplayName.length)
-            : (searchResults.estimatedTotalHits || searchResults.totalHits || inventoryWithDisplayName.length);
-        res.json(paginatedResponse({ data: inventoryWithDisplayName, page, pageSize, total }));
+            ? (totalHits || rows.length)
+            : (searchResults.estimatedTotalHits || searchResults.totalHits || rows.length);
+        res.json(paginatedResponse({ data: rows, page, pageSize, total }));
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
