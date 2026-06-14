@@ -153,18 +153,25 @@ export default function CountScreen() {
           </TouchableOpacity>
         </View>
 
-        <Text
-          style={styles.itemTitle}
-          adjustsFontSizeToFit
-          numberOfLines={1}
-          minimumFontScale={0.6}
-        >
-          {currentLine.display_name ?? currentLine.part_id}
-        </Text>
+        <View style={{ alignItems: 'center' }}>
+          <Text
+            style={styles.itemTitle}
+            adjustsFontSizeToFit
+            numberOfLines={1}
+            minimumFontScale={0.6}
+          >
+            {currentLine.display_name ?? currentLine.part_id}
+          </Text>
+          <Text
+            style={[styles.itemSubtitle, { marginTop: 2, fontSize: 11, opacity: 0.7 }]}
+            numberOfLines={1}
+          >
+            {currentLine.internal_sku || currentLine.sku || currentLine.part_id}
+          </Text>
+        </View>
 
         <View style={styles.metaRow}>
           <Text style={styles.itemSubtitle}>Item {currentLineIndex + 1} of {activeBatchData.length}</Text>
-          <Text style={styles.itemSubtitle}>ID: {currentLine.part_id}</Text>
         </View>
 
         <View style={styles.progressBarTrack}>
