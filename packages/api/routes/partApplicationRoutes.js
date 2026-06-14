@@ -2,7 +2,6 @@ const express = require('express');
 const db = require('../db');
 const { syncPartWithMeili } = require('../meilisearch');
 const { enqueuePartUpsert } = require('../services/meiliOutboxService');
-const { constructDisplayName } = require('../helpers/displayNameHelper');
 const router = express.Router();
 
 // Helper function to get all data for a part for Meilisearch indexing
@@ -52,18 +51,13 @@ const getPartDataForMeili = async (client, partId) => {
             GROUP BY pa.part_id
         )
         SELECT
-            p.*,
-            b.brand_name,
-            g.group_name,
-            (SELECT string_agg(part_number, '; ') FROM part_number WHERE part_id = p.part_id) as part_numbers,
+            pv.*,
             app_data.applications as applications_array,
             app_data.searchable_applications,
-            (SELECT array_agg(tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags_array
-        FROM part p
-        LEFT JOIN brand b ON p.brand_id = b.brand_id
-        LEFT JOIN "group" g ON p.group_id = g.group_id
-        LEFT JOIN app_data ON app_data.part_id = p.part_id
-        WHERE p.part_id = $1;
+            (SELECT array_agg(tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = pv.part_id) AS tags_array
+        FROM public.parts_view AS pv
+        LEFT JOIN app_data ON app_data.part_id = pv.part_id
+        WHERE pv.part_id = $1;
     `;
     const res = await client.query(query, [partId]);
     if (res.rows.length === 0) return null;
@@ -71,7 +65,7 @@ const getPartDataForMeili = async (client, partId) => {
     const part = res.rows[0];
     return {
         ...part,
-        display_name: constructDisplayName(part),
+        // display_name is natively provided by parts_view
         applications: part.applications_array || [],
         searchable_applications: part.searchable_applications || '',
         tags: part.tags_array || []
