@@ -20,7 +20,7 @@ services:
     build:
       context: ./packages/api
       dockerfile: Dockerfile
-    command: sh -c "npm install --no-audit --no-fund && npm start"
+    command: sh -c "npm start"
     volumes:
       - ./packages/api:/usr/src/app
       - backend_node_modules:/usr/src/app/node_modules
