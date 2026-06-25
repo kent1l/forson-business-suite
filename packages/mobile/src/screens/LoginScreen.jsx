@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Modal } from 'react-native';
 import axios from 'axios';
 import { SymbolView } from 'expo-symbols';
@@ -36,17 +36,35 @@ export default function LoginScreen() {
       }
     } catch (error) {
       console.error('Login error:', error);
-      Alert.alert('Login Failed', error.response?.data?.message || 'Something went wrong. Please try again.');
+      const isNetworkError = !error.response && (error.code === 'ECONNABORTED' || error.message?.includes('Network Error') || error.message?.includes('Network request failed'));
+      if (isNetworkError) {
+        Alert.alert(
+          'Connection Failed',
+          'Could not connect to the server. Would you like to configure the server IP?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Configure IP', onPress: () => openSettings() }
+          ]
+        );
+      } else {
+        Alert.alert('Login Failed', error.response?.data?.message || 'Something went wrong. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
   const openSettings = () => {
-    setTempIp(useSettingsStore.getState().serverIp);
-    setTestResult(null);
-    setIsModalVisible(true);
+      setTempIp(useSettingsStore.getState().serverIp);
+      setTestResult(null);
+      setIsModalVisible(true);
   };
+
+  useEffect(() => {
+    if (!serverIp) {
+      openSettings();
+    }
+  }, [serverIp]);
 
   const handleTestConnection = async () => {
     if (!tempIp.trim()) {

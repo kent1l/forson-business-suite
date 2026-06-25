@@ -31,7 +31,7 @@ const secureStoreStorage = {
 const useSettingsStore = create(
   persist(
     (set) => ({
-      serverIp: '10.10.1.116:3001',
+      serverIp: '',
       setServerIp: (ip) => set({ serverIp: ip }),
     }),
     {
