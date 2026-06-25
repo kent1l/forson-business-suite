@@ -18,7 +18,8 @@
         "monochromeImage": "./assets/images/forson-android-icon-foreground.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.forson.erp"
+      "package": "com.forson.erp",
+      "usesCleartextTraffic": true
     },
     "web": {
       "output": "static",
