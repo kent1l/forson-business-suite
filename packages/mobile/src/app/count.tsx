@@ -192,8 +192,8 @@ export default function CountScreen() {
           <Text
             style={styles.itemTitle}
             adjustsFontSizeToFit
-            numberOfLines={1}
-            minimumFontScale={0.6}
+            numberOfLines={3}
+            minimumFontScale={0.85}
           >
             {currentLine.display_name ?? currentLine.part_id}
           </Text>
