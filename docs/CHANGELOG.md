@@ -1,5 +1,18 @@
 # Changelog
 
+## v2.0.0 - 2026-06-25
+
+### Added
+- **Mobile Application (Expo & React Native)**: Introduced a brand-new mobile app in `packages/mobile` for inventory cycle counting. Includes core network and state architecture, PIN authentication with custom numeric keypad, TanStack Query integration, configurable API server IP settings with connection testing, and persistent storage.
+- **Advanced Mobile Counting & Scan Workflows**: Implemented camera-based barcode scanning using `react-native-vision-camera` and `nitro-image`, featuring auto-focus, haptic feedback, scan validation, and pull-to-refresh functionality.
+- **Ad-Hoc Inventory Workflows**: Added support for ad-hoc inventory counting, including an unassigned parts search and counting screen integrated with the mobile store.
+- **Android Native Project & Branding**: Configured Android native project structures, adaptive launcher icons, assets, and Expo Router type safety.
+- **Barcode Uniqueness Enforcements**: Implemented database migrations, API-level validations, and mobile scanning flow optimizations to guarantee unique part barcodes, verified with a comprehensive test suite.
+
+### Refactored / Optimized
+- **Database & Search Refactoring**: Replaced complex application-level display name construction with a native SQL view (`public.parts_view`) for all database queries and Meilisearch synchronizations, significantly improving search and retrieval performance.
+- **Mobile Ergonomics**: Refactored the Cycle Count and MobileCounter screens to implement a responsive, single-screen adaptive layout optimized for mobile device ergonomics.
+
 ## v1.5.1.1 - 2026-06-09
 
 - Fix: Corrected foreign key constraints referencing the `employee` table in the cycle count migrations, and added appropriate `ON DELETE CASCADE` and `ON DELETE SET NULL` rules.
