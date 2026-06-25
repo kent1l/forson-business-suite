@@ -38,6 +38,7 @@ export default function TabLayout() {
         <Stack>
           <Stack.Screen name="index" options={{ headerShown: true, title: 'Dashboard' }} />
           <Stack.Screen name="count" options={{ headerShown: true, title: 'Active Count' }} />
+          <Stack.Screen name="unassigned-search" options={{ headerShown: true, title: 'Log Unassigned Find' }} />
         </Stack>
       </ThemeProvider>
     </QueryClientProvider>

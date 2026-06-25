@@ -1,22 +1,40 @@
 import { create } from 'zustand';
+import apiClient from '../api/client';
 
-const useCycleCountStore = create((set) => ({
+const useCycleCountStore = create((set, get) => ({
+  // ── Assigned batch ──────────────────────────────────────────────────────────
   activeBatchId: null,
   activeBatchData: null,
 
   setActiveBatch: (batchId, batchData = null) => {
-    set({
-      activeBatchId: batchId,
-      activeBatchData: batchData
-    });
+    set({ activeBatchId: batchId, activeBatchData: batchData });
   },
 
   clearActiveBatch: () => {
-    set({
-      activeBatchId: null,
-      activeBatchData: null
+    set({ activeBatchId: null, activeBatchData: null });
+  },
+
+  // ── Ad-hoc (unassigned find) ─────────────────────────────────────────────
+  isAdHocMode: false,
+  currentAdHocItem: null,
+
+  startAdHocCount: (partData) => {
+    set({ isAdHocMode: true, currentAdHocItem: partData });
+  },
+
+  clearAdHocMode: () => {
+    set({ isAdHocMode: false, currentAdHocItem: null });
+  },
+
+  submitAdHocCount: async (actualQty) => {
+    const { currentAdHocItem } = get();
+    if (!currentAdHocItem) throw new Error('No ad-hoc item set');
+    const { data } = await apiClient.post('/inventory/cycle-count/unassigned-find', {
+      part_id: currentAdHocItem.id,
+      actual_qty: actualQty,
     });
-  }
+    return data;
+  },
 }));
 
 export default useCycleCountStore;

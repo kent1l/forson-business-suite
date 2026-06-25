@@ -72,7 +72,16 @@ export default function DashboardScreen() {
         </View>
       </View>
 
-      <Text style={styles.listTitle}>Assigned Lines</Text>
+      <View style={styles.listTitleRow}>
+        <Text style={styles.listTitle}>Assigned Lines</Text>
+        <TouchableOpacity
+          style={styles.adHocBtn}
+          onPress={() => router.push('/unassigned-search')}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.adHocBtnText}>+ Log Unassigned Find</Text>
+        </TouchableOpacity>
+      </View>
       <FlatList
         data={tasks || []}
         keyExtractor={(item) => item.line_id.toString()}
@@ -137,8 +146,24 @@ const styles = StyleSheet.create({
   listTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 12,
     color: '#1f2937',
+  },
+  listTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  adHocBtn: {
+    backgroundColor: '#f59e0b',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+  },
+  adHocBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#fff',
   },
   listContainer: {
     paddingBottom: 20,

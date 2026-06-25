@@ -11,7 +11,14 @@ import apiClient from '../api/client';
 
 export default function CountScreen() {
   const router = useRouter();
-  const { activeBatchData, clearActiveBatch } = useCycleCountStore();
+  const {
+    activeBatchData,
+    clearActiveBatch,
+    isAdHocMode,
+    currentAdHocItem,
+    submitAdHocCount,
+    clearAdHocMode,
+  } = useCycleCountStore();
   const [currentLineIndex, setCurrentLineIndex] = useState(0);
   const [scannedBarcode, setScannedBarcode] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -32,15 +39,32 @@ export default function CountScreen() {
     })();
   }, []);
 
-  if (!activeBatchData || activeBatchData.length === 0) {
+  // Guard: in ad-hoc mode we need currentAdHocItem; in batch mode we need activeBatchData
+  if (!isAdHocMode && (!activeBatchData || activeBatchData.length === 0)) {
     return (
       <View style={styles.centerContainer}>
         <Text style={styles.errorText}>No active batch selected.</Text>
       </View>
     );
   }
+  if (isAdHocMode && !currentAdHocItem) {
+    return (
+      <View style={styles.centerContainer}>
+        <Text style={styles.errorText}>No item selected for ad-hoc count.</Text>
+      </View>
+    );
+  }
 
-  const currentLine = activeBatchData[currentLineIndex];
+  // currentLine is the unified data shape for the UI regardless of mode
+  const currentLine = isAdHocMode
+    ? {
+        display_name: currentAdHocItem!.display_name ?? currentAdHocItem!.name,
+        internal_sku: currentAdHocItem!.internal_sku ?? currentAdHocItem!.sku,
+        part_id: currentAdHocItem!.id ?? currentAdHocItem!.part_id,
+        barcode: currentAdHocItem!.barcode ?? null,
+        expected_qty: currentAdHocItem!.expected_qty ?? null,
+      }
+    : activeBatchData![currentLineIndex];
 
   const handleCodeScanned = (codes: any[]) => {
     if (codes.length > 0 && isCameraActive && !pendingBarcode) {
@@ -62,36 +86,45 @@ export default function CountScreen() {
   const handleSubmitCount = async (countedQty: number) => {
     setIsSubmitting(true);
     try {
-      const payload: any = {
-        counted_qty: countedQty
-      };
-
-      if (scannedBarcode) {
-        payload.scanned_barcode = scannedBarcode;
-      }
-
-      await apiClient.post(`/inventory/cycle-count/lines/${currentLine.line_id}/submit`, payload);
-
-      setIsSubmitting(false);
-
-      if (currentLineIndex + 1 < activeBatchData.length) {
-        setCurrentLineIndex(prev => prev + 1);
-        setScannedBarcode(null); // Reset for the next item
-      } else {
-        // Reached the end
-        Alert.alert('Batch Complete', 'All items submitted successfully.', [
+      if (isAdHocMode) {
+        // ── Ad-hoc path ──────────────────────────────────────────────────────
+        await submitAdHocCount(countedQty);
+        setIsSubmitting(false);
+        Alert.alert('Submitted', 'Unassigned find logged successfully.', [
           {
             text: 'OK',
             onPress: () => {
-              clearActiveBatch();
+              clearAdHocMode();
               router.replace('/');
             },
           },
         ]);
+      } else {
+        // ── Assigned batch path ──────────────────────────────────────────────
+        const payload: any = { counted_qty: countedQty };
+        if (scannedBarcode) payload.scanned_barcode = scannedBarcode;
+
+        await apiClient.post(`/inventory/cycle-count/lines/${currentLine.line_id}/submit`, payload);
+        setIsSubmitting(false);
+
+        if (currentLineIndex + 1 < activeBatchData!.length) {
+          setCurrentLineIndex(prev => prev + 1);
+          setScannedBarcode(null);
+        } else {
+          Alert.alert('Batch Complete', 'All items submitted successfully.', [
+            {
+              text: 'OK',
+              onPress: () => {
+                clearActiveBatch();
+                router.replace('/');
+              },
+            },
+          ]);
+        }
       }
     } catch (error: any) {
       setIsSubmitting(false);
-      console.error('Submit batch error', error);
+      console.error('Submit count error', error);
       Alert.alert('Error', error.response?.data?.message || 'Failed to submit the item.');
     }
   };
@@ -100,7 +133,9 @@ export default function CountScreen() {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#3b82f6" />
-        <Text style={{ marginTop: 16 }}>Submitting batch...</Text>
+        <Text style={{ marginTop: 16 }}>
+          {isAdHocMode ? 'Submitting find...' : 'Submitting batch...'}
+        </Text>
       </View>
     );
   }
@@ -171,17 +206,27 @@ export default function CountScreen() {
         </View>
 
         <View style={styles.metaRow}>
-          <Text style={styles.itemSubtitle}>Item {currentLineIndex + 1} of {activeBatchData.length}</Text>
+          {isAdHocMode ? (
+            <Text style={[styles.itemSubtitle, { color: '#f59e0b', fontWeight: '600' }]}>
+              ⚠ Unassigned Find
+            </Text>
+          ) : (
+            <Text style={styles.itemSubtitle}>
+              Item {currentLineIndex + 1} of {activeBatchData!.length}
+            </Text>
+          )}
         </View>
 
-        <View style={styles.progressBarTrack}>
-          <View
-            style={[
-              styles.progressBarFill,
-              { width: `${((currentLineIndex + 1) / activeBatchData.length) * 100}%` }
-            ]}
-          />
-        </View>
+        {!isAdHocMode && (
+          <View style={styles.progressBarTrack}>
+            <View
+              style={[
+                styles.progressBarFill,
+                { width: `${((currentLineIndex + 1) / activeBatchData!.length) * 100}%` },
+              ]}
+            />
+          </View>
+        )}
       </View>
 
       <View style={styles.counterZone}>
