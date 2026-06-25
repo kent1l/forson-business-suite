@@ -114,6 +114,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
             // Strict Relevance with Exact-Match Priority
             matchingStrategy: 'all',
             attributesToSearchOn: [
+                'barcode',
                 'internal_sku',
                 'normalized_internal_sku',
                 'part_numbers',
@@ -346,10 +347,12 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
         res.status(201).json(newPartData);
     } catch (err) {
         await client.query('ROLLBACK');
+        if (err.code === '23505' && err.constraint === 'parts_barcode_key') {
+            return res.status(400).json({ error: 'This barcode is already assigned to another item.' });
+        }
         console.error(`[${req.method} ${req.url}] Internal Error:`, err);
         res.status(500).json({ message: 'Internal Server Error' });
     } finally {
-        console.log('[DEBUG] POST /parts - Releasing client');
         client.release();
     }
 });
@@ -411,6 +414,9 @@ router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) 
         res.json(updatedPart.rows[0]);
     } catch (err) {
         await client.query('ROLLBACK');
+        if (err.code === '23505' && err.constraint === 'parts_barcode_key') {
+            return res.status(400).json({ error: 'This barcode is already assigned to another item.' });
+        }
         console.error(`[${req.method} ${req.url}] Internal Error:`, err);
         res.status(500).json({ message: 'Internal Server Error' });
     } finally {
@@ -438,3 +444,4 @@ router.delete('/parts/:id', protect, hasPermission('parts:delete'), async (req, 
 });
 
 module.exports = { router, manageTags, getPartDataForMeili };
+

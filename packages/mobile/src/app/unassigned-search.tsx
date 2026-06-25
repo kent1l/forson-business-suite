@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,8 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
-  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -18,6 +19,8 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import apiClient from '../api/client';
 import useCycleCountStore from '../store/useCycleCountStore';
+
+const DEBOUNCE_MS = 300;
 
 export default function UnassignedSearchScreen() {
   const router = useRouter();
@@ -28,15 +31,56 @@ export default function UnassignedSearchScreen() {
   const [results, setResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Camera state ────────────────────────────────────────────────────────────
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
   const [hasPermission, setHasPermission] = useState(false);
+  const [isScanResolving, setIsScanResolving] = useState(false);
   const scanLockRef = useRef(false);
 
   const device = useCameraDevice('back');
+
+  // ── Core search function (shared by debounce + barcode scan) ─────────────
+  const fetchParts = useCallback(async (q: string): Promise<any[]> => {
+    const trimmed = q.trim();
+    if (!trimmed) return [];
+    const { data } = await apiClient.get('/parts', { params: { search: trimmed } });
+    // API returns { data: [...] } or an array directly
+    const list = Array.isArray(data) ? data : (data?.data ?? data?.results ?? []);
+    return list;
+  }, []);
+
+  // ── Debounced autocomplete ────────────────────────────────────────────────
+  useEffect(() => {
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+
+    if (!query.trim()) {
+      setResults([]);
+      setSearchError(null);
+      return;
+    }
+
+    debounceTimer.current = setTimeout(async () => {
+      setIsSearching(true);
+      setSearchError(null);
+      try {
+        const list = await fetchParts(query);
+        setResults(list);
+      } catch (err: any) {
+        setSearchError(err.response?.data?.message || 'Search failed. Try again.');
+        setResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, DEBOUNCE_MS);
+
+    return () => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    };
+  }, [query, fetchParts]);
 
   // ── Camera permission ────────────────────────────────────────────────────────
   const openScanner = async () => {
@@ -51,14 +95,14 @@ export default function UnassignedSearchScreen() {
     setIsScannerOpen(true);
   };
 
-  const closeScanner = () => {
+  const closeScanner = useCallback(() => {
     setIsScannerOpen(false);
     setIsCameraActive(false);
     setIsTorchOn(false);
     scanLockRef.current = false;
-  };
+  }, []);
 
-  // ── Barcode scan handler (VisionCamera v4) ──────────────────────────────────
+  // ── Barcode scan → exact lookup → immediate navigate ─────────────────────
   const codeScanner = useCodeScanner({
     codeTypes: ['ean-13', 'code-128', 'qr', 'code-39'],
     onCodeScanned: useCallback(
@@ -70,39 +114,32 @@ export default function UnassignedSearchScreen() {
         scanLockRef.current = true;
         setIsCameraActive(false);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-        // Search the scanned barcode immediately
+        setIsScanResolving(true);
         closeScanner();
-        await performSearch(value);
-        setQuery(value);
+
+        try {
+          const list = await fetchParts(value);
+          if (list.length === 0) {
+            Alert.alert('Not Found', `No part found for barcode "${value}".`);
+            setIsScanResolving(false);
+            return;
+          }
+          // Prefer exact barcode match; fall back to top result
+          const exactMatch = list.find(
+            (p: any) => p.barcode?.toString() === value
+          ) ?? list[0];
+          startAdHocCount(exactMatch);
+          router.push('/count');
+        } catch (err: any) {
+          Alert.alert('Error', err.response?.data?.message || 'Failed to look up barcode.');
+          setIsScanResolving(false);
+        }
       },
-      [isCameraActive] // eslint-disable-line react-hooks/exhaustive-deps
+      [isCameraActive, closeScanner, fetchParts, startAdHocCount, router]
     ),
   });
 
-  // ── Search API ───────────────────────────────────────────────────────────────
-  const performSearch = async (searchQuery: string) => {
-    const trimmed = searchQuery.trim();
-    if (!trimmed) return;
-
-    Keyboard.dismiss();
-    setIsSearching(true);
-    setSearchError(null);
-    setResults([]);
-
-    try {
-      const { data } = await apiClient.get('/inventory/parts/search', {
-        params: { q: trimmed },
-      });
-      setResults(Array.isArray(data) ? data : data?.results ?? []);
-    } catch (err: any) {
-      setSearchError(err.response?.data?.message || 'Search failed. Please try again.');
-    } finally {
-      setIsSearching(false);
-    }
-  };
-
-  // ── Part selection ───────────────────────────────────────────────────────────
+  // ── Part selection from list ──────────────────────────────────────────────
   const handleSelectPart = (part: any) => {
     startAdHocCount(part);
     router.push('/count');
@@ -116,10 +153,11 @@ export default function UnassignedSearchScreen() {
       </View>
       <View style={styles.resultInfo}>
         <Text style={styles.resultName} numberOfLines={1}>
-          {item.display_name ?? item.name ?? item.id}
+          {item.display_name ?? item.name ?? item.part_id}
         </Text>
         <Text style={styles.resultSku} numberOfLines={1}>
           SKU: {item.internal_sku || item.sku || '—'}
+          {item.barcode ? `  ·  Barcode: ${item.barcode}` : ''}
         </Text>
       </View>
       <Ionicons name="chevron-forward" size={18} color="#9ca3af" />
@@ -128,6 +166,14 @@ export default function UnassignedSearchScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Scan-resolving overlay */}
+      {isScanResolving && (
+        <View style={styles.scanResolveOverlay}>
+          <ActivityIndicator size="large" color="#fff" />
+          <Text style={styles.scanResolveText}>Looking up barcode…</Text>
+        </View>
+      )}
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -137,70 +183,73 @@ export default function UnassignedSearchScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      {/* Search bar + scan toggle */}
-      <View style={styles.searchRow}>
-        <View style={styles.searchInputWrap}>
-          <Ionicons name="search-outline" size={18} color="#9ca3af" style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search by name, SKU, or ID…"
-            placeholderTextColor="#9ca3af"
-            value={query}
-            onChangeText={setQuery}
-            returnKeyType="search"
-            onSubmitEditing={() => performSearch(query)}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          {query.length > 0 && (
-            <TouchableOpacity onPress={() => { setQuery(''); setResults([]); }}>
-              <Ionicons name="close-circle" size={18} color="#9ca3af" />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <TouchableOpacity style={styles.scanBtn} onPress={openScanner} activeOpacity={0.8}>
-          <Ionicons name="barcode-outline" size={22} color="#fff" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Search action button */}
-      <TouchableOpacity
-        style={[styles.searchActionBtn, isSearching && styles.searchActionBtnDisabled]}
-        onPress={() => performSearch(query)}
-        disabled={isSearching || query.trim().length === 0}
-        activeOpacity={0.8}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
       >
-        {isSearching
-          ? <ActivityIndicator size="small" color="#fff" />
-          : <Text style={styles.searchActionBtnText}>Search</Text>
-        }
-      </TouchableOpacity>
+        {/* Search bar + scan toggle */}
+        <View style={styles.searchRow}>
+          <View style={styles.searchInputWrap}>
+            {isSearching
+              ? <ActivityIndicator size="small" color="#9ca3af" style={styles.searchIcon} />
+              : <Ionicons name="search-outline" size={18} color="#9ca3af" style={styles.searchIcon} />
+            }
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search by name, SKU, barcode…"
+              placeholderTextColor="#9ca3af"
+              value={query}
+              onChangeText={setQuery}
+              returnKeyType="search"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoFocus
+            />
+            {query.length > 0 && (
+              <TouchableOpacity onPress={() => { setQuery(''); setResults([]); }}>
+                <Ionicons name="close-circle" size={18} color="#9ca3af" />
+              </TouchableOpacity>
+            )}
+          </View>
 
-      {/* Error */}
-      {searchError && (
-        <View style={styles.errorBanner}>
-          <Ionicons name="alert-circle-outline" size={16} color="#dc2626" />
-          <Text style={styles.errorText}>{searchError}</Text>
+          <TouchableOpacity style={styles.scanBtn} onPress={openScanner} activeOpacity={0.8}>
+            <Ionicons name="barcode-outline" size={22} color="#fff" />
+          </TouchableOpacity>
         </View>
-      )}
 
-      {/* Results */}
-      <FlatList
-        data={results}
-        keyExtractor={(item) => String(item.id ?? item.part_id)}
-        renderItem={renderResult}
-        contentContainerStyle={styles.resultsList}
-        keyboardShouldPersistTaps="handled"
-        ListEmptyComponent={
-          !isSearching && query.trim() ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="search" size={40} color="#d1d5db" />
-              <Text style={styles.emptyText}>No parts found for "{query}"</Text>
-            </View>
-          ) : null
-        }
-      />
+        {/* Inline hint */}
+        <Text style={styles.hintText}>
+          Type to search · or tap{' '}
+          <Text style={{ color: '#3b82f6' }}>⬛</Text>
+          {' '}to scan a barcode
+        </Text>
+
+        {/* Error banner */}
+        {searchError && (
+          <View style={styles.errorBanner}>
+            <Ionicons name="alert-circle-outline" size={16} color="#dc2626" />
+            <Text style={styles.errorText}>{searchError}</Text>
+          </View>
+        )}
+
+        {/* Autocomplete results */}
+        <FlatList
+          data={results}
+          keyExtractor={(item) => String(item.part_id ?? item.id)}
+          renderItem={renderResult}
+          contentContainerStyle={styles.resultsList}
+          keyboardShouldPersistTaps="handled"
+          ListEmptyComponent={
+            !isSearching && query.trim().length > 0 ? (
+              <View style={styles.emptyState}>
+                <Ionicons name="search" size={40} color="#d1d5db" />
+                <Text style={styles.emptyText}>No parts found for "{query}"</Text>
+              </View>
+            ) : null
+          }
+        />
+      </KeyboardAvoidingView>
 
       {/* Barcode Scanner Modal */}
       <Modal visible={isScannerOpen} animationType="slide" transparent={false}>
@@ -239,7 +288,7 @@ export default function UnassignedSearchScreen() {
             </View>
           ) : (
             <View style={styles.centerContainer}>
-              <Text style={styles.errorText}>Camera unavailable or permission denied.</Text>
+              <Text style={{ color: '#dc2626', fontSize: 14 }}>Camera unavailable or permission denied.</Text>
               <TouchableOpacity style={{ marginTop: 20 }} onPress={closeScanner}>
                 <Text style={{ color: '#3b82f6', fontSize: 16 }}>Close</Text>
               </TouchableOpacity>
@@ -254,6 +303,16 @@ export default function UnassignedSearchScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f3f4f6' },
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
+  scanResolveOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    zIndex: 999,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  },
+  scanResolveText: { color: '#fff', fontSize: 15 },
 
   header: {
     flexDirection: 'row',
@@ -296,38 +355,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  searchActionBtn: {
-    marginHorizontal: 16,
-    marginTop: 10,
-    height: 48,
-    backgroundColor: '#1d4ed8',
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
+  hintText: {
+    fontSize: 11,
+    color: '#9ca3af',
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 4,
   },
-  searchActionBtnDisabled: { backgroundColor: '#93c5fd' },
-  searchActionBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fee2e2',
     marginHorizontal: 16,
-    marginTop: 10,
+    marginTop: 6,
     padding: 10,
     borderRadius: 8,
     gap: 6,
   },
   errorText: { color: '#dc2626', fontSize: 13, flex: 1 },
 
-  resultsList: { padding: 16, paddingBottom: 40 },
+  resultsList: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 40 },
   resultCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fff',
     borderRadius: 12,
     padding: 14,
-    marginBottom: 10,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: '#e5e7eb',
     shadowColor: '#000',
