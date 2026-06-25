@@ -6,7 +6,6 @@ const db = require('../db');
 const { protect, isAdmin } = require('../middleware/authMiddleware');
 const { generateUniqueCode } = require('../helpers/codeGenerator');
 const { syncPartWithMeili } = require('../meilisearch');
-const { constructDisplayName } = require('../helpers/displayNameHelper');
 const router = express.Router();
 
 // Configure multer for in-memory file storage
@@ -46,16 +45,23 @@ router.get('/export/:entity', protect, isAdmin, async (req, res) => {
     try {
         let query;
         if (entity === 'parts') {
+            // parts_view provides display_name and part_numbers natively
             query = `
                 SELECT
-                    p.internal_sku, p.detail, b.brand_name, g.group_name,
-                    (SELECT STRING_AGG(pn.part_number, ';') FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) as part_numbers,
-                    p.barcode, p.is_active, p.last_cost, p.last_sale_price, p.reorder_point, p.warning_quantity,
-                    p.measurement_unit, p.is_tax_inclusive_price, p.is_price_change_allowed, p.is_using_default_quantity,
-                    p.is_service, p.low_stock_warning
-                FROM part p
-                LEFT JOIN brand b ON p.brand_id = b.brand_id
-                LEFT JOIN "group" g ON p.group_id = g.group_id
+                    pv.internal_sku, pv.detail, pv.brand_name, pv.group_name,
+                    pv.display_name,
+                    (SELECT STRING_AGG(pn.part_number, ';') FROM part_number pn
+                     WHERE pn.part_id = pv.part_id AND pn.deleted_at IS NULL) AS part_numbers,
+                    pv.barcode, pv.is_active, pv.last_cost, pv.last_sale_price,
+                    (SELECT p2.reorder_point FROM part p2 WHERE p2.part_id = pv.part_id) AS reorder_point,
+                    (SELECT p2.warning_quantity FROM part p2 WHERE p2.part_id = pv.part_id) AS warning_quantity,
+                    (SELECT p2.measurement_unit FROM part p2 WHERE p2.part_id = pv.part_id) AS measurement_unit,
+                    (SELECT p2.is_tax_inclusive_price FROM part p2 WHERE p2.part_id = pv.part_id) AS is_tax_inclusive_price,
+                    (SELECT p2.is_price_change_allowed FROM part p2 WHERE p2.part_id = pv.part_id) AS is_price_change_allowed,
+                    (SELECT p2.is_using_default_quantity FROM part p2 WHERE p2.part_id = pv.part_id) AS is_using_default_quantity,
+                    (SELECT p2.is_service FROM part p2 WHERE p2.part_id = pv.part_id) AS is_service,
+                    (SELECT p2.low_stock_warning FROM part p2 WHERE p2.part_id = pv.part_id) AS low_stock_warning
+                FROM public.parts_view pv
             `;
         } else {
             query = `SELECT ${fieldsToExport.join(', ')} FROM ${config.table}`;
@@ -162,15 +168,18 @@ router.post('/import/:entity', protect, isAdmin, upload.single('file'), async (r
             else updatedCount++;
 
             if (entity === 'parts') {
-                const brand = await client.query('SELECT brand_name FROM brand WHERE brand_id = $1', [newOrUpdatedRow.brand_id]);
-                const group = await client.query('SELECT group_name FROM "group" WHERE group_id = $1', [newOrUpdatedRow.group_id]);
+                // Re-fetch from parts_view to get authoritative display_name
+                const pvRes = await client.query(
+                    'SELECT display_name FROM public.parts_view WHERE part_id = $1',
+                    [newOrUpdatedRow.part_id]
+                );
                 const partForMeili = {
                     ...newOrUpdatedRow,
-                    brand_name: brand.rows[0].brand_name,
-                    group_name: group.rows[0].group_name,
+                    brand_name: row.brand_name,
+                    group_name: row.group_name,
                     part_numbers: row.part_numbers || '',
+                    display_name: pvRes.rows[0]?.display_name || ''
                 };
-                partForMeili.display_name = constructDisplayName(partForMeili);
                 partsToSync.push(partForMeili);
             }
         }
@@ -203,20 +212,17 @@ router.get('/sync-parts-to-meili', protect, isAdmin, async (req, res) => {
         console.log('Starting one-time sync of all parts to Meilisearch...');
         const query = `
             SELECT
-                p.*, b.brand_name, g.group_name,
-                (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) as part_numbers,
-                                (SELECT ARRAY_AGG(
-                                        CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''))
-                                ) FROM part_application pa
-                                    JOIN application a ON pa.application_id = a.application_id
-                                    LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
-                                    LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
-                                    LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
-                                WHERE pa.part_id = p.part_id) AS applications_array,
-                (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = p.part_id) AS tags_array
-            FROM part AS p
-            LEFT JOIN brand AS b ON p.brand_id = b.brand_id
-            LEFT JOIN "group" AS g ON p.group_id = g.group_id
+                pv.*,
+                (SELECT ARRAY_AGG(
+                        CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''))
+                ) FROM part_application pa
+                    JOIN application a ON pa.application_id = a.application_id
+                    LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
+                    LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
+                    LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
+                WHERE pa.part_id = pv.part_id) AS applications_array,
+                (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = pv.part_id) AS tags_array
+            FROM public.parts_view AS pv
         `;
         const { rows } = await client.query(query);
 
@@ -226,7 +232,7 @@ router.get('/sync-parts-to-meili', protect, isAdmin, async (req, res) => {
 
         const partsToSync = rows.map(part => ({
             ...part,
-            display_name: constructDisplayName(part),
+            // display_name is natively provided by parts_view
             applications: part.applications_array || [],
             tags: part.tags_array || []
         }));

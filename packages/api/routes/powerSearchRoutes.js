@@ -1,7 +1,6 @@
 const express = require('express');
 const db = require('../db');
 const { meiliClient } = require('../meilisearch');
-const { constructDisplayName } = require('../helpers/displayNameHelper');
 const { activeAliasCondition } = require('../helpers/partNumberSoftDelete');
 const router = express.Router();
 
@@ -60,6 +59,7 @@ router.get('/power-search/parts', async (req, res) => {
                 p.is_tax_inclusive_price,
                 b.brand_name,
                 g.group_name,
+                (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
                 (
                     SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order)
                     FROM part_number pn WHERE pn.part_id = p.part_id AND ${activeAliasCondition('pn')}
@@ -137,7 +137,7 @@ router.get('/power-search/parts', async (req, res) => {
 
                     return {
                         ...p,
-                        display_name: constructDisplayName(p),
+                        display_name: p.display_name || '',
                         applications: formattedApps
                     };
                 }).filter(Boolean);        res.json(parts);

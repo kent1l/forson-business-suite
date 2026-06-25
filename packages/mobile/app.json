@@ -1,0 +1,58 @@
+{
+  "expo": {
+    "name": "Forson Cycle Count Mobile",
+    "slug": "mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/forson-icon.png",
+    "scheme": "mobile",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.forson.erp"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#fbd602",
+        "foregroundImage": "./assets/images/forson-android-icon-foreground.png",
+        "monochromeImage": "./assets/images/forson-android-icon-foreground.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.forson.erp"
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "Allow Forson ERP to access your camera to scan barcodes.",
+          "enableCodeScanner": true
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#208AEF",
+          "android": {
+            "image": "./assets/images/splash-icon.png",
+            "imageWidth": 76
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7be2cb55-55b5-4e31-92c9-2e0700db3486"
+      }
+    }
+  }
+}

@@ -33,7 +33,7 @@ router.get('/inventory/cycle-count/my-tasks', protect, hasPermission('cycle_coun
 // POST /api/inventory/cycle-count/lines/:id/submit
 router.post('/inventory/cycle-count/lines/:id/submit', protect, hasPermission('cycle_count:execute'), async (req, res) => {
     const { id } = req.params;
-    const { counted_qty } = req.body;
+    const { counted_qty, scanned_barcode } = req.body;
 
     if (counted_qty === undefined) {
         return res.status(400).json({ message: 'counted_qty is required' });
@@ -98,7 +98,7 @@ router.post('/inventory/cycle-count/lines/:id/submit', protect, hasPermission('c
 
         if (variance_qty === 0) {
             status = 'MATCHED_AUTO_APPROVED';
-        } else if (Math.abs(variance_qty) <= MAX_VARIANCE_QTY || financial_impact <= MAX_FINANCIAL_IMPACT) {
+        } else if (Math.abs(variance_qty) <= MAX_VARIANCE_QTY && financial_impact <= MAX_FINANCIAL_IMPACT) {
             status = 'APPROVED_ADJUSTED'; // Auto-approved due to tolerance
         }
 
@@ -109,6 +109,15 @@ router.post('/inventory/cycle-count/lines/:id/submit', protect, hasPermission('c
                 INSERT INTO inventory_transaction (part_id, quantity, trans_type, reference_no, employee_id)
                 VALUES ($1, $2, 'Cycle Count Auto-Adjustment', $3, $4)
             `, [line.part_id, variance_qty, id.toString(), req.user.employee_id]);
+        }
+
+        // 3.6 Conditionally update barcode
+        if (scanned_barcode) {
+            await client.query(`
+                UPDATE part
+                SET barcode = $1
+                WHERE part_id = $2
+            `, [scanned_barcode, line.part_id]);
         }
 
         // 4. Update the line
@@ -217,7 +226,7 @@ router.post('/inventory/cycle-count/unassigned-find', protect, hasPermission('cy
 
         if (variance_qty === 0) {
             status = 'MATCHED_AUTO_APPROVED';
-        } else if (Math.abs(variance_qty) <= MAX_VARIANCE_QTY || financial_impact <= MAX_FINANCIAL_IMPACT) {
+        } else if (Math.abs(variance_qty) <= MAX_VARIANCE_QTY && financial_impact <= MAX_FINANCIAL_IMPACT) {
             status = 'APPROVED_ADJUSTED';
         }
 

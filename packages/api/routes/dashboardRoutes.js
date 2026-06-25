@@ -1,6 +1,5 @@
 const express = require('express');
 const db = require('../db');
-const { constructDisplayName } = require('../helpers/displayNameHelper');
 const router = express.Router();
 
 const OUTBOX_ALERTS_DEFAULTS = Object.freeze({
@@ -259,6 +258,7 @@ router.get('/dashboard/enhanced-stats', async (req, res) => {
                     COALESCE(g.group_name, '') as group_name,
                     COALESCE(b.brand_name, '') as brand_name,
                     COALESCE(array_to_string(array_agg(DISTINCT pn.part_number), ', '), '') as part_numbers,
+                    (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
                     SUM(il.quantity) as total_quantity,
                     SUM((il.sale_price * il.quantity) - COALESCE(il.discount_amount, 0)) as total_revenue
                 FROM invoice_line il
@@ -306,7 +306,7 @@ router.get('/dashboard/enhanced-stats', async (req, res) => {
             recentSales: recentSalesRes.rows,
             topProducts: topProductsRes.rows.map(product => ({
                 ...product,
-                product_name: constructDisplayName(product)
+                product_name: product.display_name || ''
             })),
             searchSyncHealth
         };
