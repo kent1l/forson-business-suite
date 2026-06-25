@@ -168,6 +168,7 @@ const setupMeiliSearch = async () => {
       const partsSettings = {
         rankingRules: ['words', 'exactness', 'attribute', 'typo', 'proximity', 'display_name:asc'],
         searchableAttributes: [
+          'barcode',
           'internal_sku',
           'normalized_internal_sku',
           'part_numbers',
@@ -188,6 +189,7 @@ const setupMeiliSearch = async () => {
         typoTolerance: {
           enabled: true,
           disableOnAttributes: [
+            'barcode',
             'internal_sku', 
             'normalized_internal_sku', 
             'part_numbers', 

@@ -26,12 +26,12 @@ const useCycleCountStore = create((set, get) => ({
     set({ isAdHocMode: false, currentAdHocItem: null });
   },
 
-  submitAdHocCount: async (actualQty) => {
+  submitAdHocCount: async (countedQty) => {
     const { currentAdHocItem } = get();
     if (!currentAdHocItem) throw new Error('No ad-hoc item set');
     const { data } = await apiClient.post('/inventory/cycle-count/unassigned-find', {
-      part_id: currentAdHocItem.id,
-      actual_qty: actualQty,
+      part_id: currentAdHocItem.part_id ?? currentAdHocItem.id,
+      counted_qty: countedQty,
     });
     return data;
   },
