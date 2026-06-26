@@ -3,6 +3,7 @@ node_modules/
 
 # Environment variables
 .env
+.env.local
 
 # Backup Files
 backups/
@@ -10,3 +11,13 @@ backups/
 # Graphify artifacts
 graphify-out/
 .graphify/
+
+# Build artifacts
+*.apk
+*.aab
+dist/
+android/app/build/
+
+# Gradle
+android/.gradle/
+android/local.properties
