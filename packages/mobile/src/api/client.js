@@ -13,7 +13,10 @@ const apiClient = axios.create({
 // Request interceptor: Attach JWT token if available
 apiClient.interceptors.request.use(
   async (config) => {
-    const currentIp = useSettingsStore.getState().serverIp || '10.10.1.116:3001';
+    const currentIp = useSettingsStore.getState().serverIp;
+    if (!currentIp) {
+      return Promise.reject(new Error('No server configured. Please set the server IP in Settings.'));
+    }
     config.baseURL = currentIp.startsWith('http') ? `${currentIp}/api` : `http://${currentIp}/api`;
 
     // Try getting the token from Zustand store first for performance

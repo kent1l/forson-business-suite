@@ -1,44 +1,32 @@
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
 import * as SecureStore from 'expo-secure-store';
 
-const secureStoreStorage = {
-  getItem: async (name) => {
-    try {
-      const value = await SecureStore.getItemAsync(name);
-      return value || null;
-    } catch (error) {
-      console.error('Failed to get item from SecureStore:', error);
-      return null;
-    }
-  },
-  setItem: async (name, value) => {
-    try {
-      await SecureStore.setItemAsync(name, value);
-    } catch (error) {
-      console.error('Failed to set item in SecureStore:', error);
-    }
-  },
-  removeItem: async (name) => {
-    try {
-      await SecureStore.deleteItemAsync(name);
-    } catch (error) {
-      console.error('Failed to delete item from SecureStore:', error);
-    }
-  },
-};
+const STORAGE_KEY = 'settings_server_ip';
 
-const useSettingsStore = create(
-  persist(
-    (set) => ({
-      serverIp: '',
-      setServerIp: (ip) => set({ serverIp: ip }),
-    }),
-    {
-      name: 'settings-storage',
-      storage: createJSONStorage(() => secureStoreStorage),
+const useSettingsStore = create((set) => ({
+  serverIp: '',
+  isHydrated: false,
+
+  hydrate: async () => {
+    try {
+      const ip = await SecureStore.getItemAsync(STORAGE_KEY);
+      set({ serverIp: ip || '', isHydrated: true });
+    } catch (error) {
+      console.error('Failed to hydrate settings store:', error);
+      set({ isHydrated: true });
     }
-  )
-);
+  },
+
+  setServerIp: async (ip) => {
+    try {
+      await SecureStore.setItemAsync(STORAGE_KEY, ip);
+      set({ serverIp: ip });
+    } catch (error) {
+      console.error('Failed to persist server IP:', error);
+      // Still update in-memory state so the session works
+      set({ serverIp: ip });
+    }
+  },
+}));
 
 export default useSettingsStore;
