@@ -6,6 +6,7 @@
 		"packages/*"
 	],
 	"scripts": {
+		"postinstall": "patch-package",
 		"test": "npm run -w packages/api test",
 		"lint": "npm run -w packages/api lint"
 	},
@@ -13,5 +14,8 @@
 		"date-fns": "^4.1.0",
 		"date-fns-tz": "^3.2.0",
 		"globals": "^17.6.0"
+	},
+	"devDependencies": {
+		"patch-package": "^8.0.1"
 	}
 }

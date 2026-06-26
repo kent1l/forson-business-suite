@@ -26,6 +26,7 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "./withAndroidBuildFixes",
       "expo-router",
       [
         "react-native-vision-camera",
