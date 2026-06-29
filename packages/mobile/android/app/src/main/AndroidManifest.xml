@@ -27,7 +27,6 @@
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
         <data android:scheme="mobile"/>
-        <data android:scheme="exp+forson-mobile-app"/>
         <data android:scheme="exp+mobile"/>
       </intent-filter>
     </activity>
