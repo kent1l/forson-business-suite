@@ -43,6 +43,9 @@ jobs:
             packages/api/package-lock.json
             packages/web/package-lock.json
           
+      - name: Install root dependencies
+        run: npm install
+
       - name: Install API dependencies
         run: npm install
         working-directory: packages/api
