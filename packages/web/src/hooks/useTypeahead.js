@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect } from 'react';
 
 // useTypeahead - centralized keyboard navigation and ARIA wiring for typeahead/listbox dropdowns
-// options: { items: array, onSelect: (item) => void, inputId: string, listboxId: string }
-export default function useTypeahead({ items = [], onSelect = () => {}, inputId = 'typeahead-input', listboxId = 'typeahead-listbox' } = {}) {
+// options: { items, onSelect, onEnterUnselected(rawValue), inputRef, inputId, listboxId }
+export default function useTypeahead({ items = [], onSelect = () => {}, onEnterUnselected = null, inputRef = null, inputId = 'typeahead-input', listboxId = 'typeahead-listbox' } = {}) {
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
 
   // clamp highlighted index when items change
@@ -15,6 +15,20 @@ export default function useTypeahead({ items = [], onSelect = () => {}, inputId 
   }, [items, highlightedIndex]);
 
   const handleKeyDown = useCallback((e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (items && items.length > 0 && highlightedIndex >= 0 && highlightedIndex < items.length) {
+        // User navigated to a dropdown item and pressed Enter — select it
+        onSelect(items[highlightedIndex]);
+      } else if (typeof onEnterUnselected === 'function') {
+        // No dropdown item selected — pass raw DOM value directly so scanner
+        // gets the actual typed value regardless of React state batching lag
+        const rawValue = inputRef?.current?.value ?? null;
+        onEnterUnselected(rawValue);
+      }
+      return;
+    }
+    // Arrow/Home/End navigation only makes sense when dropdown is open
     if (!items || items.length === 0) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -22,13 +36,7 @@ export default function useTypeahead({ items = [], onSelect = () => {}, inputId 
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : items.length - 1));
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (highlightedIndex >= 0 && highlightedIndex < items.length) {
-        onSelect(items[highlightedIndex]);
-      }
     } else if (e.key === 'Escape') {
-      // clear highlight on escape (caller may clear results)
       setHighlightedIndex(-1);
     } else if (e.key === 'Home') {
       e.preventDefault();
@@ -37,7 +45,7 @@ export default function useTypeahead({ items = [], onSelect = () => {}, inputId 
       e.preventDefault();
       setHighlightedIndex(items.length - 1);
     }
-  }, [items, highlightedIndex, onSelect]);
+  }, [items, highlightedIndex, onSelect, onEnterUnselected, inputRef]);
 
   const getInputProps = useCallback(() => ({
     id: inputId,

@@ -60,6 +60,7 @@ const BrandGroupForm = ({ type, onSave, onCancel, initialName = '' }) => {
 const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, isBulkEdit = false, selectedCount: _selectedCount = 0 }) => {
     const { settings } = useSettings();
     const [tags, setTags] = useState([]); // <-- State for tags
+    const [barcodes, setBarcodes] = useState([]); // <-- State for barcodes
     const [selectedApps, setSelectedApps] = useState([]); // <-- State for linked applications
 
     // helper to display an application label
@@ -96,7 +97,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
         if (isBulkEdit) {
             return {
                 brand_id: '', group_id: '',
-                reorder_point: '', warning_quantity: '', last_cost: '', last_sale_price: '', barcode: '', measurement_unit: '', tax_rate_id: '',
+                reorder_point: '', warning_quantity: '', last_cost: '', last_sale_price: '', measurement_unit: '', tax_rate_id: '',
                 is_active: 'unchanged', is_price_change_allowed: 'unchanged', is_using_default_quantity: 'unchanged',
                 is_service: 'unchanged', low_stock_warning: 'unchanged', is_tax_inclusive_price: 'unchanged'
             };
@@ -112,7 +113,6 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                 is_active: part.is_active ?? true,
                 last_cost: part.last_cost || 0,
                 last_sale_price: part.last_sale_price || 0,
-                barcode: part.barcode || '',
                 measurement_unit: part.measurement_unit || 'pcs',
                 tax_rate_id: part.tax_rate_id || '',
                 is_price_change_allowed: part.is_price_change_allowed ?? true,
@@ -125,7 +125,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
         return {
             detail: '', brand_id: '', group_id: '', part_numbers_string: '',
             reorder_point: 1, warning_quantity: 1, is_active: true,
-            last_cost: 0, last_sale_price: 0, barcode: '', measurement_unit: 'pcs', tax_rate_id: '',
+            last_cost: 0, last_sale_price: 0, measurement_unit: 'pcs', tax_rate_id: '',
             is_price_change_allowed: true, is_using_default_quantity: true,
             is_service: false, low_stock_warning: true, 
             is_tax_inclusive_price: settings?.DEFAULT_IS_TAX_INCLUSIVE !== 'false' // Default to true unless explicitly set to false
@@ -166,15 +166,32 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
         setTags(initialTags);
     }, [initialTags]);
 
+    const initialBarcodes = useMemo(() => {
+        let bs = [];
+        if (part?.barcodes) {
+            if (Array.isArray(part.barcodes)) {
+                bs = part.barcodes;
+            } else if (typeof part.barcodes === 'string') {
+                bs = part.barcodes.split(',').map(b => b.trim()).filter(b => b);
+            }
+        }
+        return bs;
+    }, [part]);
+
+    useEffect(() => {
+        setBarcodes(initialBarcodes);
+    }, [initialBarcodes]);
+
     const isFormDirty = useMemo(() => {
         const keys = Object.keys(formData);
         for (let key of keys) {
             if (formData[key] !== initialFormData[key]) return true;
         }
         if (JSON.stringify(tags) !== JSON.stringify(initialTags)) return true;
+        if (JSON.stringify(barcodes) !== JSON.stringify(initialBarcodes)) return true;
         if (selectedApps.length > 0) return true;
         return false;
-    }, [formData, initialFormData, tags, initialTags, selectedApps]);
+    }, [formData, initialFormData, tags, initialTags, barcodes, initialBarcodes, selectedApps]);
 
     const isFormElement = (el) => {
         if (!el) return false;
@@ -184,8 +201,8 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
 
     const handleSubmit = useCallback((e) => {
         e.preventDefault();
-        onSave({ ...formData, tags, applications: selectedApps }); // include linked applications
-    }, [formData, tags, selectedApps, onSave]);
+        onSave({ ...formData, tags, barcodes, applications: selectedApps }); // include linked applications
+    }, [formData, tags, barcodes, selectedApps, onSave]);
 
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
@@ -420,10 +437,12 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                     <div className={`transition-all duration-300 ease-in-out overflow-hidden ${showAdvanced ? 'max-h-[500px] mt-4' : 'max-h-0'}`}>
                         <div className="space-y-4">
                             <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Barcode</label>
-                                    <input type="text" name="barcode" value={formData.barcode} onChange={handleChange} onFocus={(e) => e.target.select()} placeholder={isBulkEdit ? 'No Change' : ''} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                                </div>
+                                {!isBulkEdit && (
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Barcodes</label>
+                                        <TagInput value={barcodes} onChange={setBarcodes} placeholder="Scan/type barcode + Enter" />
+                                    </div>
+                                )}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
                                     <input type="text" name="measurement_unit" value={formData.measurement_unit} onChange={handleChange} onFocus={(e) => e.target.select()} placeholder={isBulkEdit ? 'No Change' : 'pcs'} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />

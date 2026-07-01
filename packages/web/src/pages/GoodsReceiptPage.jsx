@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import useTypeahead from '../hooks/useTypeahead';
 import api from '../api';
 import toast from 'react-hot-toast';
@@ -21,8 +21,34 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
     const [searchResults, setSearchResults] = useState([]);
     const resultsId = 'goods-receipt-search-results';
     const inputId = 'goods-receipt-search-input';
+    const searchInputRef = useRef(null);
+    const searchDebounceRef = useRef(null);
+    const handleRapidScan = useCallback(async (rawValue) => {
+        const term = (rawValue ?? searchTerm).trim();
+        if (!term) return;
+        if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+        setSearchResults([]);
+        try {
+            const response = await api.get(`/parts/barcode/${encodeURIComponent(term)}`);
+            const enriched = await enrichPartsArray([response.data]);
+            addPartToLines(enriched[0]);
+        } catch (err) {
+            if (err.response?.status === 404) {
+                toast.error(`No item found for barcode "${term}".`);
+            } else {
+                console.error(err);
+            }
+        }
+    }, [searchTerm]);
 
-    const { getInputProps, getItemProps, reset } = useTypeahead({ items: searchResults, onSelect: (item) => { addPartToLines(item); setSearchResults([]); }, inputId, listboxId: resultsId });
+    const { getInputProps, getItemProps, reset } = useTypeahead({ 
+        items: searchResults, 
+        onSelect: (item) => { addPartToLines(item); setSearchResults([]); }, 
+        onEnterUnselected: handleRapidScan,
+        inputRef: searchInputRef,
+        inputId, 
+        listboxId: resultsId 
+    });
     const [loading, setLoading] = useState(true);
     const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
     const [isNewPartModalOpen, setIsNewPartModalOpen] = useState(false);
@@ -56,8 +82,8 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
             }
         };
 
-        const debounceTimer = setTimeout(fetchSearchResults, 300);
-        return () => clearTimeout(debounceTimer);
+        searchDebounceRef.current = setTimeout(fetchSearchResults, 300);
+        return () => clearTimeout(searchDebounceRef.current);
     }, [searchTerm]);
 
     // Application text formatting is handled by the helper
@@ -322,6 +348,7 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
                     <div className="flex items-center space-x-2">
                         <div className="relative flex-grow">
                             <SearchBar
+                                ref={searchInputRef}
                                 {...getInputProps()}
                                 value={searchTerm}
                                 onChange={setSearchTerm}

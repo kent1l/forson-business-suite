@@ -156,7 +156,39 @@ const POSPage = ({ user, lines, setLines }) => {
     const [pendingPaymentData, setPendingPaymentData] = useState(null);
     const searchInputRef = useRef(null);
     const physicalReceiptRef = useRef(null);
-    const { getInputProps, getItemProps, reset } = useTypeahead({ items: searchResults, onSelect: (item) => { handleSelectPart(item); }, inputId: 'pos-search-input', listboxId: 'pos-search-results' });
+    // Ref to cancel the pending debounce when Enter is pressed (scanner use)
+    const searchDebounceRef = useRef(null);
+
+    // Instant barcode lookup — hits the DB directly, no Meilisearch, no debounce
+    // rawValue is the DOM input's .value passed directly from useTypeahead on Enter,
+    // bypassing React state batching so the scanner's input is always fully captured.
+    const handleRapidScan = useCallback(async (rawValue) => {
+        const term = (rawValue ?? searchTerm).trim();
+        if (!term) return;
+        // Cancel any in-flight debounce so the dropdown doesn't appear after
+        if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+        setSearchResults([]);
+        try {
+            const response = await api.get(`/parts/barcode/${encodeURIComponent(term)}`);
+            const enriched = await enrichPartsArray([response.data]);
+            handleSelectPart(enriched[0]);
+        } catch (err) {
+            if (err.response?.status === 404) {
+                toast.error(`No item found for barcode "${term}".`);
+            } else {
+                console.error(err);
+            }
+        }
+    }, [searchTerm]);
+
+    const { getInputProps, getItemProps, reset } = useTypeahead({ 
+        items: searchResults, 
+        onSelect: (item) => { handleSelectPart(item); }, 
+        onEnterUnselected: handleRapidScan,
+        inputRef: searchInputRef,
+        inputId: 'pos-search-input', 
+        listboxId: 'pos-search-results' 
+    });
 
     // Saved sales hook (user-specific)
     const { saved, count: savedCount, saveSale, remove: removeSaved, get: getSaved } = useSavedSales({ userId: user?.employee_id, max: 10 });
@@ -185,11 +217,11 @@ const POSPage = ({ user, lines, setLines }) => {
             }
         };
 
-        const debounceTimer = setTimeout(() => {
+        searchDebounceRef.current = setTimeout(() => {
             fetchSearchResults();
-        }, 300); // 300ms delay
+        }, 300);
 
-        return () => clearTimeout(debounceTimer);
+        return () => clearTimeout(searchDebounceRef.current);
     }, [searchTerm]);
 
 
