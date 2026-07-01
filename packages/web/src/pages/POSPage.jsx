@@ -156,7 +156,33 @@ const POSPage = ({ user, lines, setLines }) => {
     const [pendingPaymentData, setPendingPaymentData] = useState(null);
     const searchInputRef = useRef(null);
     const physicalReceiptRef = useRef(null);
-    const { getInputProps, getItemProps, reset } = useTypeahead({ items: searchResults, onSelect: (item) => { handleSelectPart(item); }, inputId: 'pos-search-input', listboxId: 'pos-search-results' });
+    const handleRapidScan = async () => {
+        if (!searchTerm.trim()) return;
+        try {
+            const response = await api.get('/power-search/parts', { params: { keyword: searchTerm } });
+            const results = response.data || [];
+            if (results.length > 0) {
+                // If top result is an exact barcode match, select it immediately
+                const exactMatch = results.find(r => r.barcodes && r.barcodes.includes(searchTerm)) || (results.length === 1 ? results[0] : null);
+                if (exactMatch) {
+                    const enriched = await enrichPartsArray([exactMatch]);
+                    handleSelectPart(enriched[0]);
+                }
+            } else {
+                toast.error(`No item found for barcode "${searchTerm}".`);
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const { getInputProps, getItemProps, reset } = useTypeahead({ 
+        items: searchResults, 
+        onSelect: (item) => { handleSelectPart(item); }, 
+        onEnterUnselected: handleRapidScan,
+        inputId: 'pos-search-input', 
+        listboxId: 'pos-search-results' 
+    });
 
     // Saved sales hook (user-specific)
     const { saved, count: savedCount, saveSale, remove: removeSaved, get: getSaved } = useSavedSales({ userId: user?.employee_id, max: 10 });

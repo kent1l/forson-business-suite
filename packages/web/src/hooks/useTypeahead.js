@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect } from 'react';
 
 // useTypeahead - centralized keyboard navigation and ARIA wiring for typeahead/listbox dropdowns
-// options: { items: array, onSelect: (item) => void, inputId: string, listboxId: string }
-export default function useTypeahead({ items = [], onSelect = () => {}, inputId = 'typeahead-input', listboxId = 'typeahead-listbox' } = {}) {
+// options: { items: array, onSelect: (item) => void, onEnterUnselected: () => void, inputId: string, listboxId: string }
+export default function useTypeahead({ items = [], onSelect = () => {}, onEnterUnselected = null, inputId = 'typeahead-input', listboxId = 'typeahead-listbox' } = {}) {
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
 
   // clamp highlighted index when items change
@@ -26,6 +26,8 @@ export default function useTypeahead({ items = [], onSelect = () => {}, inputId 
       e.preventDefault();
       if (highlightedIndex >= 0 && highlightedIndex < items.length) {
         onSelect(items[highlightedIndex]);
+      } else if (typeof onEnterUnselected === 'function') {
+        onEnterUnselected();
       }
     } else if (e.key === 'Escape') {
       // clear highlight on escape (caller may clear results)

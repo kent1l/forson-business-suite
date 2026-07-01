@@ -21,8 +21,33 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
     const [searchResults, setSearchResults] = useState([]);
     const resultsId = 'goods-receipt-search-results';
     const inputId = 'goods-receipt-search-input';
+    const handleRapidScan = async () => {
+        if (!searchTerm.trim()) return;
+        try {
+            const response = await api.get('/power-search/parts', { params: { keyword: searchTerm } });
+            const results = response.data || [];
+            if (results.length > 0) {
+                const exactMatch = results.find(r => r.barcodes && r.barcodes.includes(searchTerm)) || (results.length === 1 ? results[0] : null);
+                if (exactMatch) {
+                    const enriched = await enrichPartsArray([exactMatch]);
+                    addPartToLines(enriched[0]);
+                    setSearchResults([]);
+                }
+            } else {
+                toast.error(`No item found for barcode "${searchTerm}".`);
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    };
 
-    const { getInputProps, getItemProps, reset } = useTypeahead({ items: searchResults, onSelect: (item) => { addPartToLines(item); setSearchResults([]); }, inputId, listboxId: resultsId });
+    const { getInputProps, getItemProps, reset } = useTypeahead({ 
+        items: searchResults, 
+        onSelect: (item) => { addPartToLines(item); setSearchResults([]); }, 
+        onEnterUnselected: handleRapidScan,
+        inputId, 
+        listboxId: resultsId 
+    });
     const [loading, setLoading] = useState(true);
     const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
     const [isNewPartModalOpen, setIsNewPartModalOpen] = useState(false);
