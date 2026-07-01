@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import useTypeahead from '../hooks/useTypeahead';
 import api from '../api';
 import toast from 'react-hot-toast';
@@ -21,23 +21,22 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
     const [searchResults, setSearchResults] = useState([]);
     const resultsId = 'goods-receipt-search-results';
     const inputId = 'goods-receipt-search-input';
+    const searchDebounceRef = useRef(null);
     const handleRapidScan = async () => {
-        if (!searchTerm.trim()) return;
+        const term = searchTerm.trim();
+        if (!term) return;
+        if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+        setSearchResults([]);
         try {
-            const response = await api.get('/power-search/parts', { params: { keyword: searchTerm } });
-            const results = response.data || [];
-            if (results.length > 0) {
-                const exactMatch = results.find(r => r.barcodes && r.barcodes.includes(searchTerm)) || (results.length === 1 ? results[0] : null);
-                if (exactMatch) {
-                    const enriched = await enrichPartsArray([exactMatch]);
-                    addPartToLines(enriched[0]);
-                    setSearchResults([]);
-                }
-            } else {
-                toast.error(`No item found for barcode "${searchTerm}".`);
-            }
+            const response = await api.get(`/parts/barcode/${encodeURIComponent(term)}`);
+            const enriched = await enrichPartsArray([response.data]);
+            addPartToLines(enriched[0]);
         } catch (err) {
-            console.error(err);
+            if (err.response?.status === 404) {
+                toast.error(`No item found for barcode "${term}".`);
+            } else {
+                console.error(err);
+            }
         }
     };
 
@@ -81,8 +80,8 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
             }
         };
 
-        const debounceTimer = setTimeout(fetchSearchResults, 300);
-        return () => clearTimeout(debounceTimer);
+        searchDebounceRef.current = setTimeout(fetchSearchResults, 300);
+        return () => clearTimeout(searchDebounceRef.current);
     }, [searchTerm]);
 
     // Application text formatting is handled by the helper

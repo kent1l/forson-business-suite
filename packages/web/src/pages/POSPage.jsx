@@ -156,23 +156,26 @@ const POSPage = ({ user, lines, setLines }) => {
     const [pendingPaymentData, setPendingPaymentData] = useState(null);
     const searchInputRef = useRef(null);
     const physicalReceiptRef = useRef(null);
+    // Ref to cancel the pending debounce when Enter is pressed (scanner use)
+    const searchDebounceRef = useRef(null);
+
+    // Instant barcode lookup — hits the DB directly, no Meilisearch, no debounce
     const handleRapidScan = async () => {
-        if (!searchTerm.trim()) return;
+        const term = searchTerm.trim();
+        if (!term) return;
+        // Cancel any in-flight debounce so the dropdown doesn't appear after
+        if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+        setSearchResults([]);
         try {
-            const response = await api.get('/power-search/parts', { params: { keyword: searchTerm } });
-            const results = response.data || [];
-            if (results.length > 0) {
-                // If top result is an exact barcode match, select it immediately
-                const exactMatch = results.find(r => r.barcodes && r.barcodes.includes(searchTerm)) || (results.length === 1 ? results[0] : null);
-                if (exactMatch) {
-                    const enriched = await enrichPartsArray([exactMatch]);
-                    handleSelectPart(enriched[0]);
-                }
-            } else {
-                toast.error(`No item found for barcode "${searchTerm}".`);
-            }
+            const response = await api.get(`/parts/barcode/${encodeURIComponent(term)}`);
+            const enriched = await enrichPartsArray([response.data]);
+            handleSelectPart(enriched[0]);
         } catch (err) {
-            console.error(err);
+            if (err.response?.status === 404) {
+                toast.error(`No item found for barcode "${term}".`);
+            } else {
+                console.error(err);
+            }
         }
     };
 
@@ -211,11 +214,11 @@ const POSPage = ({ user, lines, setLines }) => {
             }
         };
 
-        const debounceTimer = setTimeout(() => {
+        searchDebounceRef.current = setTimeout(() => {
             fetchSearchResults();
-        }, 300); // 300ms delay
+        }, 300);
 
-        return () => clearTimeout(debounceTimer);
+        return () => clearTimeout(searchDebounceRef.current);
     }, [searchTerm]);
 
 

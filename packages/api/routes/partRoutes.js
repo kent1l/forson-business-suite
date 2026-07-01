@@ -243,6 +243,39 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
     }
 });
 
+// GET part by exact barcode — used by scanner/POS for instant zero-debounce lookup
+// Must be defined BEFORE /parts/:id to avoid route collision
+router.get('/parts/barcode/:barcode', protect, async (req, res) => {
+    const { barcode } = req.params;
+    if (!barcode || !barcode.trim()) return res.status(400).json({ message: 'Barcode is required' });
+
+    try {
+        const { rows } = await db.query(
+            `SELECT
+                p.part_id, p.internal_sku, p.detail, p.last_sale_price, p.last_cost,
+                COALESCE(p.wac_cost, 0) AS wac_cost, p.tax_rate_id, p.is_tax_inclusive_price,
+                b.brand_name, g.group_name,
+                (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
+                (SELECT ARRAY_AGG(pb2.barcode) FROM part_barcode pb2 WHERE pb2.part_id = p.part_id) AS barcodes,
+                (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order)
+                 FROM part_number pn WHERE pn.part_id = p.part_id AND ${activeAliasCondition('pn')}) AS part_numbers,
+                (SELECT COALESCE(SUM(it.quantity), 0) FROM inventory_transaction it WHERE it.part_id = p.part_id) AS stock_on_hand
+             FROM part_barcode pb
+             JOIN part p ON pb.part_id = p.part_id
+             LEFT JOIN brand b ON p.brand_id = b.brand_id
+             LEFT JOIN "group" g ON p.group_id = g.group_id
+             WHERE pb.barcode = $1 AND p.is_active = true
+             LIMIT 1`,
+            [barcode.trim()]
+        );
+        if (rows.length === 0) return res.status(404).json({ message: 'No active part found for this barcode.' });
+        res.json(rows[0]);
+    } catch (err) {
+        console.error('[barcode lookup]', err.message);
+        res.status(500).json({ message: 'Internal Server Error' });
+    }
+});
+
 // GET a single part by ID
 router.get('/parts/:id', protect, hasPermission('parts:view'), async (req, res) => {
     const { id } = req.params;
