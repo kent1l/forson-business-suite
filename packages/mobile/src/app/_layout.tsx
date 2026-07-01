@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import useAuthStore from '../store/useAuthStore';
+import useSettingsStore from '../store/useSettingsStore';
 import LoginScreen from '../screens/LoginScreen';
 
 // Initialize the query client
@@ -12,13 +13,15 @@ const queryClient = new QueryClient();
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
-  const { user, isHydrated, hydrate } = useAuthStore();
+  const { user, isHydrated: authHydrated, hydrate: hydrateAuth } = useAuthStore();
+  const { isHydrated: settingsHydrated, hydrate: hydrateSettings } = useSettingsStore();
 
   useEffect(() => {
-    hydrate();
-  }, [hydrate]);
+    hydrateAuth();
+    hydrateSettings();
+  }, [hydrateAuth, hydrateSettings]);
 
-  if (!isHydrated) {
+  if (!authHydrated || !settingsHydrated) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" />

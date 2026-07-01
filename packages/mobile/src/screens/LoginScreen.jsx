@@ -96,12 +96,12 @@ export default function LoginScreen() {
     }
   };
 
-  const handleSaveSettings = () => {
+  const handleSaveSettings = async () => {
     if (!tempIp.trim()) {
       Alert.alert('Error', 'IP address cannot be empty.');
       return;
     }
-    setServerIp(tempIp.trim());
+    await setServerIp(tempIp.trim());
     setIsModalVisible(false);
     Alert.alert('Saved', 'Server IP configuration updated.');
   };

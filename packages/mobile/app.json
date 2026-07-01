@@ -18,14 +18,21 @@
         "monochromeImage": "./assets/images/forson-android-icon-foreground.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.forson.erp",
-      "usesCleartextTraffic": true
+      "package": "com.forson.erp"
     },
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
       "./withAndroidBuildFixes",
       "expo-router",
       [
