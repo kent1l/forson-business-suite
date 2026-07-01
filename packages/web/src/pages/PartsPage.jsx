@@ -285,6 +285,7 @@ const PartsPage = ({ user, onNavigate }) => {
                                     <SortableHeader column="internal_sku" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>SKU</SortableHeader>
                                     <SortableHeader column="display_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Item</SortableHeader>
                                     <SortableHeader column="application_text" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Application</SortableHeader>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Barcodes</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>
@@ -295,6 +296,18 @@ const PartsPage = ({ user, onNavigate }) => {
                                         <td className="p-3 text-sm font-mono">{part.internal_sku}</td>
                                         <td className="p-3 text-sm font-medium">{part.display_name}</td>
                                         <td className="p-3 text-sm">{formatApplicationText(part.applications, { style: 'tableCell' })}</td>
+                                        <td className="p-3 text-sm">
+                                            {part.barcodes && part.barcodes.length > 0 ? (
+                                                <div className="flex items-center space-x-1">
+                                                    <span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded border border-gray-200">{part.barcodes[0]}</span>
+                                                    {part.barcodes.length > 1 && (
+                                                        <span className="text-xs text-gray-500 cursor-help" title={part.barcodes.slice(1).join(', ')}>+{part.barcodes.length - 1} more</span>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <span className="text-gray-400 text-xs">-</span>
+                                            )}
+                                        </td>
                                         <td className="p-3 text-sm text-right">
                                             <div className="flex justify-end items-center space-x-4">
                                                 {part.tags && <TagPopover tags={part.tags} />}
@@ -312,7 +325,7 @@ const PartsPage = ({ user, onNavigate }) => {
                                 ))}
                                 {sortedParts.length === 0 && (
                                     <tr>
-                                        <td colSpan="5" className="p-4 text-center text-gray-500">No data to display.</td>
+                                        <td colSpan="6" className="p-4 text-center text-gray-500">No data to display.</td>
                                     </tr>
                                 )}
                             </tbody>

@@ -13,6 +13,7 @@ const getPartDataForMeili = async (client, partId) => {
     const query = `
         SELECT
             pv.*,
+            (SELECT ARRAY_AGG(pb.barcode) FROM part_barcode pb WHERE pb.part_id = pv.part_id) as barcodes,
             (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = pv.part_id AND ${activeAliasCondition('pn')}) as part_numbers,
                         (SELECT ARRAY_AGG(
                                 CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''))
@@ -43,6 +44,7 @@ const getPartDataForMeili = async (client, partId) => {
             }).join(', ')
             : '',
         tags: part.tags_array || [],
+        barcodes: part.barcodes || [],
         normalized_internal_sku: normalizedFields.normalized_internal_sku,
         normalized_part_numbers: normalizedFields.normalized_part_numbers
     };
@@ -100,6 +102,30 @@ const manageTags = async (client, tags, partId) => {
     }
 };
 
+// Helper function to handle multiple barcodes
+const manageBarcodes = async (client, barcodes, partId) => {
+    if (!Array.isArray(barcodes)) {
+        return;
+    }
+
+    // Delete existing barcodes for the part
+    await client.query('DELETE FROM part_barcode WHERE part_id = $1', [partId]);
+
+    const validBarcodes = barcodes.map(b => (typeof b === 'string' ? b.trim() : '')).filter(Boolean);
+    const uniqueBarcodes = [...new Set(validBarcodes)];
+
+    for (const barcode of uniqueBarcodes) {
+        // We use INSERT ... ON CONFLICT DO NOTHING to handle if the barcode is assigned somewhere else
+        // or just insert. If it's unique across the table, we'll let it error if it's already used by ANOTHER part,
+        // which matches the previous constraint behavior. But wait, if they try to use an existing barcode from another part,
+        // it will throw a unique constraint error which the route catches.
+        await client.query(
+            'INSERT INTO part_barcode (part_id, barcode) VALUES ($1, $2)',
+            [partId, barcode]
+        );
+    }
+};
+
 // GET all parts with status filter, search, and sorting (POWERED BY MEILISEARCH)
 router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
     const { status = 'active', search = '', tags = '' } = req.query;
@@ -114,7 +140,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
             // Strict Relevance with Exact-Match Priority
             matchingStrategy: 'all',
             attributesToSearchOn: [
-                'barcode',
+                'barcodes',
                 'internal_sku',
                 'normalized_internal_sku',
                 'part_numbers',
@@ -176,6 +202,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
         const query = `
             SELECT
                 pv.*,
+                (SELECT ARRAY_AGG(pb.barcode) FROM part_barcode pb WHERE pb.part_id = pv.part_id) as barcodes,
                 (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = pv.part_id AND ${activeAliasCondition('pn')}) AS part_numbers,
                 (SELECT STRING_AGG(
                     CONCAT(
@@ -223,6 +250,7 @@ router.get('/parts/:id', protect, hasPermission('parts:view'), async (req, res) 
         const query = `
             SELECT
                 pv.*,
+                (SELECT ARRAY_AGG(pb.barcode) FROM part_barcode pb WHERE pb.part_id = pv.part_id) as barcodes,
                 (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = pv.part_id AND ${activeAliasCondition('pn')}) AS part_numbers
             FROM public.parts_view AS pv
             WHERE pv.part_id = $1;
@@ -258,7 +286,7 @@ router.get('/parts/:id/tags', protect, hasPermission('parts:view'), async (req, 
 
 router.post('/parts', protect, hasPermission('parts:create'), async (req, res) => {
     console.log('[DEBUG] POST /parts - Request body:', req.body);
-    const { tags, created_by, part_numbers_string, ...partData } = req.body;
+    const { tags, barcodes, created_by, part_numbers_string, ...partData } = req.body;
     // detail is optional; only brand and group are required
     if (!partData.brand_id || !partData.group_id) {
         console.log('[DEBUG] POST /parts - Missing brand_id or group_id');
@@ -293,12 +321,12 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
         const taxRateIdOrNull = partData.tax_rate_id ? parseInt(partData.tax_rate_id, 10) : null;
 
         const newPartQuery = `
-            INSERT INTO part (detail, brand_id, group_id, internal_sku, reorder_point, warning_quantity, is_active, last_cost, last_sale_price, barcode, measurement_unit, is_price_change_allowed, is_using_default_quantity, is_service, low_stock_warning, created_by, tax_rate_id, is_tax_inclusive_price)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *;
+            INSERT INTO part (detail, brand_id, group_id, internal_sku, reorder_point, warning_quantity, is_active, last_cost, last_sale_price, measurement_unit, is_price_change_allowed, is_using_default_quantity, is_service, low_stock_warning, created_by, tax_rate_id, is_tax_inclusive_price)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *;
         `;
         const newPart = await client.query(newPartQuery, [
             partData.detail, partData.brand_id, partData.group_id, internalSku, partData.reorder_point, 
-            partData.warning_quantity, partData.is_active, partData.last_cost, partData.last_sale_price, partData.barcode,
+            partData.warning_quantity, partData.is_active, partData.last_cost, partData.last_sale_price,
             partData.measurement_unit, partData.is_price_change_allowed, partData.is_using_default_quantity,
             partData.is_service, partData.low_stock_warning, created_by, taxRateIdOrNull, partData.is_tax_inclusive_price
         ]);
@@ -331,6 +359,7 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
         }
         
         await manageTags(client, tags, newPartData.part_id);
+        await manageBarcodes(client, barcodes, newPartData.part_id);
         await client.query('COMMIT');
         
         const partForMeili = await getPartDataForMeili(db, newPartData.part_id);
@@ -347,7 +376,7 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
         res.status(201).json(newPartData);
     } catch (err) {
         await client.query('ROLLBACK');
-        if (err.code === '23505' && err.constraint === 'parts_barcode_key') {
+        if (err.code === '23505' && err.constraint === 'part_barcode_barcode_key') {
             return res.status(400).json({ error: 'This barcode is already assigned to another item.' });
         }
         console.error(`[${req.method} ${req.url}] Internal Error:`, err);
@@ -366,7 +395,7 @@ router.put('/parts/bulk-update', protect, hasPermission('parts:edit'), async (re
 
 router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) => {
     const { id } = req.params;
-    const { tags, modified_by, ...partData } = req.body;
+    const { tags, barcodes, modified_by, ...partData } = req.body;
     // detail is optional; only brand and group are required
     if (!partData.brand_id || !partData.group_id) {
         return res.status(400).json({ message: 'Brand and group are required' });
@@ -382,14 +411,14 @@ router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) 
             `UPDATE part SET 
                 detail = $1, brand_id = $2, group_id = $3, reorder_point = $4, 
                 warning_quantity = $5, is_active = $6, last_cost = $7, last_sale_price = $8, 
-                barcode = $9, measurement_unit = $10, is_price_change_allowed = $11, 
-                is_using_default_quantity = $12, is_service = $13, low_stock_warning = $14, 
-                modified_by = $15, date_modified = CURRENT_TIMESTAMP, tax_rate_id = $16,
-                is_tax_inclusive_price = $17
-            WHERE part_id = $18 RETURNING *`,
+                measurement_unit = $9, is_price_change_allowed = $10, 
+                is_using_default_quantity = $11, is_service = $12, low_stock_warning = $13, 
+                modified_by = $14, date_modified = CURRENT_TIMESTAMP, tax_rate_id = $15,
+                is_tax_inclusive_price = $16
+            WHERE part_id = $17 RETURNING *`,
             [
                 partData.detail, partData.brand_id, partData.group_id, partData.reorder_point, partData.warning_quantity, partData.is_active, 
-                partData.last_cost, partData.last_sale_price, partData.barcode, partData.measurement_unit, partData.is_price_change_allowed, 
+                partData.last_cost, partData.last_sale_price, partData.measurement_unit, partData.is_price_change_allowed, 
                 partData.is_using_default_quantity, partData.is_service, partData.low_stock_warning, modified_by, taxRateIdOrNull,
                 partData.is_tax_inclusive_price, id
             ]
@@ -399,6 +428,7 @@ router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) 
         }
         
         await manageTags(client, tags, id);
+        await manageBarcodes(client, barcodes, id);
         await client.query('COMMIT');
 
         const partForMeili = await getPartDataForMeili(db, id);
@@ -414,7 +444,7 @@ router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) 
         res.json(updatedPart.rows[0]);
     } catch (err) {
         await client.query('ROLLBACK');
-        if (err.code === '23505' && err.constraint === 'parts_barcode_key') {
+        if (err.code === '23505' && err.constraint === 'part_barcode_barcode_key') {
             return res.status(400).json({ error: 'This barcode is already assigned to another item.' });
         }
         console.error(`[${req.method} ${req.url}] Internal Error:`, err);
@@ -443,5 +473,5 @@ router.delete('/parts/:id', protect, hasPermission('parts:delete'), async (req, 
     }
 });
 
-module.exports = { router, manageTags, getPartDataForMeili };
+module.exports = { router, manageTags, manageBarcodes, getPartDataForMeili };
 
