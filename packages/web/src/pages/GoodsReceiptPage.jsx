@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import useTypeahead from '../hooks/useTypeahead';
 import api from '../api';
 import toast from 'react-hot-toast';
@@ -21,9 +21,10 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
     const [searchResults, setSearchResults] = useState([]);
     const resultsId = 'goods-receipt-search-results';
     const inputId = 'goods-receipt-search-input';
+    const searchInputRef = useRef(null);
     const searchDebounceRef = useRef(null);
-    const handleRapidScan = async () => {
-        const term = searchTerm.trim();
+    const handleRapidScan = useCallback(async (rawValue) => {
+        const term = (rawValue ?? searchTerm).trim();
         if (!term) return;
         if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
         setSearchResults([]);
@@ -38,12 +39,13 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
                 console.error(err);
             }
         }
-    };
+    }, [searchTerm]);
 
     const { getInputProps, getItemProps, reset } = useTypeahead({ 
         items: searchResults, 
         onSelect: (item) => { addPartToLines(item); setSearchResults([]); }, 
         onEnterUnselected: handleRapidScan,
+        inputRef: searchInputRef,
         inputId, 
         listboxId: resultsId 
     });
@@ -346,6 +348,7 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
                     <div className="flex items-center space-x-2">
                         <div className="relative flex-grow">
                             <SearchBar
+                                ref={searchInputRef}
                                 {...getInputProps()}
                                 value={searchTerm}
                                 onChange={setSearchTerm}

@@ -160,8 +160,10 @@ const POSPage = ({ user, lines, setLines }) => {
     const searchDebounceRef = useRef(null);
 
     // Instant barcode lookup — hits the DB directly, no Meilisearch, no debounce
-    const handleRapidScan = async () => {
-        const term = searchTerm.trim();
+    // rawValue is the DOM input's .value passed directly from useTypeahead on Enter,
+    // bypassing React state batching so the scanner's input is always fully captured.
+    const handleRapidScan = useCallback(async (rawValue) => {
+        const term = (rawValue ?? searchTerm).trim();
         if (!term) return;
         // Cancel any in-flight debounce so the dropdown doesn't appear after
         if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
@@ -177,12 +179,13 @@ const POSPage = ({ user, lines, setLines }) => {
                 console.error(err);
             }
         }
-    };
+    }, [searchTerm]);
 
     const { getInputProps, getItemProps, reset } = useTypeahead({ 
         items: searchResults, 
         onSelect: (item) => { handleSelectPart(item); }, 
         onEnterUnselected: handleRapidScan,
+        inputRef: searchInputRef,
         inputId: 'pos-search-input', 
         listboxId: 'pos-search-results' 
     });
