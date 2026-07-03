@@ -128,7 +128,7 @@
       "label": "styles",
       "file_type": "code",
       "source_file": "packages/mobile/src/app/count.tsx",
-      "source_location": "L321",
+      "source_location": "L319",
       "_origin": "ast",
       "id": "packages_mobile_src_app_count_styles",
       "community": 38,
@@ -15866,7 +15866,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "packages/mobile/src/app/count.tsx",
-      "source_location": "L321",
+      "source_location": "L319",
       "weight": 1.0,
       "source": "packages_mobile_src_app_count",
       "target": "packages_mobile_src_app_count_styles",
@@ -43568,5 +43568,5 @@
       "source_file": "packages/mobile/assets/images/tabIcons/home@3x.png"
     }
   ],
-  "built_at_commit": "7fd9d1904cbc737b302405cb3e8a4652954c07ac"
+  "built_at_commit": "5472ce30bdb5692fff0c5fbf9639973dec1728df"
 }

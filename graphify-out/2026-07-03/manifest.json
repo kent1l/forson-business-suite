@@ -800,7 +800,7 @@
     "semantic_hash": "10af60a946e825510538ef9bd1dd225d"
   },
   "packages/mobile/.expo/types/router.d.ts": {
-    "mtime": 1782929206.1561823,
+    "mtime": 1783081737.3454926,
     "ast_hash": "f00456c6d4e1e66c14639044269589b6",
     "semantic_hash": "f00456c6d4e1e66c14639044269589b6"
   },
@@ -895,9 +895,9 @@
     "semantic_hash": "9644ed7440220373e9b8868259341fdc"
   },
   "packages/mobile/src/app/count.tsx": {
-    "mtime": 1782929205.0311382,
-    "ast_hash": "f19f0623fae62b44f709013b84f5ef65",
-    "semantic_hash": "f19f0623fae62b44f709013b84f5ef65"
+    "mtime": 1783081734.3023736,
+    "ast_hash": "2c8b20ab4e702b0d15521a16686e3b93",
+    "semantic_hash": ""
   },
   "packages/mobile/src/app/explore.tsx": {
     "mtime": 1782378010.3917792,
@@ -2438,5 +2438,10 @@
     "mtime": 1779279573.238206,
     "ast_hash": "8e3a10e157f75ada21ab742c022d5430",
     "semantic_hash": "8e3a10e157f75ada21ab742c022d5430"
+  },
+  "graphify-out/memory/query_20260703_122446_why_does_haspermission___connect_auth_permissions.md": {
+    "mtime": 1783081486.0275917,
+    "ast_hash": "9ffb9e2a3e2013f3004ef98dfc23dd2f",
+    "semantic_hash": ""
   }
 }

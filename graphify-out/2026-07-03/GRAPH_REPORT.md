@@ -1,13 +1,18 @@
-# Graph Report - .  (2026-07-03)
+# Graph Report - forson-business-suite  (2026-07-03)
 
 ## Corpus Check
-- 488 files · ~260,268 words
+- 398 files · ~260,413 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1515 nodes · 2611 edges · 256 communities (109 shown, 147 thin omitted)
+- 1515 nodes · 2604 edges · 255 communities (108 shown, 147 thin omitted)
 - Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 93 edges (avg confidence: 0.61)
 - Token cost: 0 input · 0 output
+
+## Graph Freshness
+- Built from commit: `7fd9d190`
+- Run `git rev-parse HEAD` and compare to check if the graph is stale.
+- Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - [[_COMMUNITY_Accounts Receivable & Invoice Aging|Accounts Receivable & Invoice Aging]]
@@ -96,7 +101,6 @@
 - [[_COMMUNITY_Cycle Count Operations (83)|Cycle Count Operations (83)]]
 - [[_COMMUNITY_Meilisearch Sync Worker (84)|Meilisearch Sync Worker (84)]]
 - [[_COMMUNITY_Meilisearch Sync Worker (85)|Meilisearch Sync Worker (85)]]
-- [[_COMMUNITY_test_db_queries Module (86)|test_db_queries Module (86)]]
 - [[_COMMUNITY_Plan-Feature Skill Module (87)|Plan-Feature Skill Module (87)]]
 - [[_COMMUNITY_CI Workflow Module (88)|CI Workflow Module (88)]]
 - [[_COMMUNITY_Deploy Job Module (89)|Deploy Job Module (89)]]
@@ -281,7 +285,7 @@
 - **Cheque Printing Module Scaffolding and Verification** — docs_cheque_implementation_progress_audit_2026_04_19_dhd_tracking, docs_cheque_phase1_status_environment_caveat, docs_changelog_v141 [INFERRED 0.85]
 - **Home Tab User Interface** — packages_mobile_assets_images_tabicons_home_3x_icon, packages_mobile_assets_images_tabicons_home_3x_home_navigation, packages_mobile_assets_images_tabicons_home_3x_minimalist_icon_design [INFERRED 0.85]
 
-## Communities (256 total, 147 thin omitted)
+## Communities (255 total, 147 thin omitted)
 
 ### Community 0 - "Accounts Receivable & Invoice Aging"
 Cohesion: 0.09
@@ -312,8 +316,8 @@ Cohesion: 0.06
 Nodes (34): dependencies, axios, date-fns, date-fns-tz, @headlessui/react, lucide-react, pdf-lib, react (+26 more)
 
 ### Community 7 - "Mobile Task Counters & Dashboard"
-Cohesion: 0.12
-Nodes (22): apiClient, CountScreen(), styles, DashboardScreen(), fetchAssignedTasks(), styles, queryClient, TabLayout() (+14 more)
+Cohesion: 0.14
+Nodes (18): apiClient, DashboardScreen(), fetchAssignedTasks(), styles, queryClient, TabLayout(), styles, UnassignedSearchScreen() (+10 more)
 
 ### Community 8 - "Mobile App Packaging & Build Properties"
 Cohesion: 0.06
@@ -415,6 +419,10 @@ Nodes (12): { activeAliasCondition }, db, { enqueuePartUpsert, enqueuePartDelete
 Cohesion: 0.18
 Nodes (13): applyMigration(), { Client }, crypto, ensureMigrationsTable(), fs, getApplied(), getClient(), loadMigrations() (+5 more)
 
+### Community 35 - "Meilisearch Sync Worker (35)"
+Cohesion: 0.06
+Nodes (17): db, DuplicateFinder, express, PartMergeService, { protect, hasPermission }, router, DuplicateFinder, { meiliClient } (+9 more)
+
 ### Community 36 - "Meilisearch Sync Worker (36)"
 Cohesion: 0.14
 Nodes (13): db, ENTITY_CONFIG, express, { generateUniqueCode }, {
@@ -427,10 +435,6 @@ Nodes (13): db, ENTITY_CONFIG, express, { generateUniqueCode }, {
 ### Community 37 - "Meilisearch Sync Worker (37)"
 Cohesion: 0.19
 Nodes (11): db, { enqueuePartUpsert }, express, router, { syncPartWithMeili }, ACTIONS, db, enqueueEvent() (+3 more)
-
-### Community 38 - "Tax Calculation & Rates (38)"
-Cohesion: 0.14
-Nodes (7): { meiliClient }, DuplicateFinder, { Pool }, DuplicateFinder, mockPool, { DuplicateFinder }, DuplicateFinder
 
 ### Community 39 - "InvoiceDetailsModal Module (39)"
 Cohesion: 0.20
@@ -467,10 +471,6 @@ Nodes (9): InventoryMovementReport, InventoryValuationReport, LowStockReport, Pr
 ### Community 47 - "documentsRoutes Module (47)"
 Cohesion: 0.22
 Nodes (7): db, express, { protect, hasPermission }, router, db, express, request
-
-### Community 48 - "Parts Management & Catalog (48)"
-Cohesion: 0.22
-Nodes (7): db, DuplicateFinder, express, PartMergeService, { protect, hasPermission }, router, DuplicateFinder
 
 ### Community 49 - "paymentRoutes Module (49)"
 Cohesion: 0.22
@@ -637,18 +637,18 @@ Cohesion: 0.67
 Nodes (3): Home Navigation Route, Home Tab Icon, Minimalist Rounded Icon Design
 
 ## Knowledge Gaps
-- **715 isolated node(s):** `backup.sh script`, `name`, `version`, `private`, `workspaces` (+710 more)
+- **715 isolated node(s):** `styles`, `backup.sh script`, `name`, `version`, `private` (+710 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **147 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `hasPermission()` connect `Auth Permissions & Dashboard Widgets` to `Meilisearch Sync Worker (33)`, `Payment Terms & Overdue Calculations`, `arRoutes Module (69)`, `InvoiceDetailsModal Module (39)`, `Cheque PDF Rendering & Formatting`, `Cycle Count Operations (76)`, `documentsRoutes Module (47)`, `Parts Management & Catalog (48)`, `paymentRoutes Module (49)`, `Tax Calculation & Rates (18)`, `Cycle Count Operations (15)`, `backupRoutes Module (53)`, `customerRoutes Module (54)`, `Meilisearch Sync Worker (23)`, `Tax Calculation & Rates (24)`, `reportingRoutes Module (57)`, `goodsReceiptRoutes Module (56)`, `documentNumberGenerator Module (28)`?**
-  _High betweenness centrality (0.221) - this node is a cross-community bridge._
+- **Why does `hasPermission()` connect `Auth Permissions & Dashboard Widgets` to `Meilisearch Sync Worker (33)`, `Meilisearch Sync Worker (35)`, `Payment Terms & Overdue Calculations`, `arRoutes Module (69)`, `InvoiceDetailsModal Module (39)`, `Cheque PDF Rendering & Formatting`, `Cycle Count Operations (76)`, `documentsRoutes Module (47)`, `Cycle Count Operations (15)`, `paymentRoutes Module (49)`, `Tax Calculation & Rates (18)`, `backupRoutes Module (53)`, `customerRoutes Module (54)`, `Meilisearch Sync Worker (23)`, `Tax Calculation & Rates (24)`, `reportingRoutes Module (57)`, `goodsReceiptRoutes Module (56)`, `documentNumberGenerator Module (28)`?**
+  _High betweenness centrality (0.218) - this node is a cross-community bridge._
 - **Why does `meilisearch` connect `API Gateway Dependencies` to `Meilisearch Sync Worker (27)`?**
-  _High betweenness centrality (0.047) - this node is a cross-community bridge._
-- **What connects `backup.sh script`, `name`, `version` to the rest of the system?**
+  _High betweenness centrality (0.053) - this node is a cross-community bridge._
+- **What connects `styles`, `backup.sh script`, `name` to the rest of the system?**
   _724 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Accounts Receivable & Invoice Aging` be split into smaller, more focused modules?**
   _Cohesion score 0.08979591836734693 - nodes in this community are weakly interconnected._
