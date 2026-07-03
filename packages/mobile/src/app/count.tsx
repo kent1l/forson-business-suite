@@ -95,7 +95,7 @@ export default function CountScreen() {
             text: 'OK',
             onPress: () => {
               clearAdHocMode();
-              router.replace('/');
+              router.replace('/unassigned-search');
             },
           },
         ]);
