@@ -89,16 +89,14 @@ export default function CountScreen() {
       if (isAdHocMode) {
         // ── Ad-hoc path ──────────────────────────────────────────────────────
         await submitAdHocCount(countedQty);
-        setIsSubmitting(false);
-        Alert.alert('Submitted', 'Unassigned find logged successfully.', [
-          {
-            text: 'OK',
-            onPress: () => {
-              clearAdHocMode();
-              router.replace('/unassigned-search');
-            },
-          },
-        ]);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        
+        // Delay clearAdHocMode slightly to prevent state tearing/crashes during unmount
+        setTimeout(() => {
+          clearAdHocMode();
+        }, 100);
+        
+        router.replace('/unassigned-search');
       } else {
         // ── Assigned batch path ──────────────────────────────────────────────
         const payload: any = { counted_qty: countedQty };
