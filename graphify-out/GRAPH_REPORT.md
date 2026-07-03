@@ -5,12 +5,12 @@
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1515 nodes · 2604 edges · 255 communities (108 shown, 147 thin omitted)
-- Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 93 edges (avg confidence: 0.61)
+- 1900 nodes · 2951 edges · 288 communities (118 shown, 170 thin omitted)
+- Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 83 edges (avg confidence: 0.58)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `5472ce30`
+- Built from commit: `7786a423`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -101,6 +101,7 @@
 - [[_COMMUNITY_Cycle Count Operations (83)|Cycle Count Operations (83)]]
 - [[_COMMUNITY_Meilisearch Sync Worker (84)|Meilisearch Sync Worker (84)]]
 - [[_COMMUNITY_Meilisearch Sync Worker (85)|Meilisearch Sync Worker (85)]]
+- [[_COMMUNITY_test-ar-data.js|test-ar-data.js]]
 - [[_COMMUNITY_Plan-Feature Skill Module (87)|Plan-Feature Skill Module (87)]]
 - [[_COMMUNITY_CI Workflow Module (88)|CI Workflow Module (88)]]
 - [[_COMMUNITY_Deploy Job Module (89)|Deploy Job Module (89)]]
@@ -148,106 +149,135 @@
 - [[_COMMUNITY_Backend Architecture Module (132)|Backend Architecture Module (132)]]
 - [[_COMMUNITY_Developer Workflows Module (133)|Developer Workflows Module (133)]]
 - [[_COMMUNITY_Frontend Architecture Module (134)|Frontend Architecture Module (134)]]
-- [[_COMMUNITY_Meilisearch Sync Worker (135)|Meilisearch Sync Worker (135)]]
-- [[_COMMUNITY_Project-Specific Conventions Module (136)|Project-Specific Conventions Module (136)]]
-- [[_COMMUNITY_Database Migration Scripts (137)|Database Migration Scripts (137)]]
-- [[_COMMUNITY_Document Display & Interaction Module (138)|Document Display & Interaction Module (138)]]
-- [[_COMMUNITY_DMI Frontend Implementation Module (139)|DMI Frontend Implementation Module (139)]]
-- [[_COMMUNITY_DMI Layout Structure Module (140)|DMI Layout Structure Module (140)]]
-- [[_COMMUNITY_CI Test Job Module (141)|CI Test Job Module (141)]]
-- [[_COMMUNITY_Docker Infrastructure (142)|Docker Infrastructure (142)]]
-- [[_COMMUNITY_Security Scan Workflow Module (143)|Security Scan Workflow Module (143)]]
-- [[_COMMUNITY_Development Commands Module (144)|Development Commands Module (144)]]
-- [[_COMMUNITY_One-Time Setup Module (145)|One-Time Setup Module (145)]]
-- [[_COMMUNITY_Production Commands Module (146)|Production Commands Module (146)]]
-- [[_COMMUNITY_Analytics Charts Module (147)|Analytics Charts Module (147)]]
-- [[_COMMUNITY_Enhanced API Endpoints Module (148)|Enhanced API Endpoints Module (148)]]
-- [[_COMMUNITY_Enhanced KPI Cards Module (149)|Enhanced KPI Cards Module (149)]]
-- [[_COMMUNITY_Quick Actions Panel Module (150)|Quick Actions Panel Module (150)]]
-- [[_COMMUNITY_Recent Activity Feed Module (151)|Recent Activity Feed Module (151)]]
-- [[_COMMUNITY_SemVer Standards & Release Strategy Module (152)|SemVer Standards & Release Strategy Module (152)]]
-- [[_COMMUNITY_Changelog Version 1 Module (153)|Changelog Version 1 Module (153)]]
-- [[_COMMUNITY_Mobile Agents Rules Module (162)|Mobile Agents Rules Module (162)]]
-- [[_COMMUNITY_splashscreen_logo hdpi Module (164)|splashscreen_logo hdpi Module (164)]]
-- [[_COMMUNITY_splashscreen_logo mdpi Module (165)|splashscreen_logo mdpi Module (165)]]
-- [[_COMMUNITY_splashscreen_logo xhdpi Module (166)|splashscreen_logo xhdpi Module (166)]]
-- [[_COMMUNITY_splashscreen_logo xxhdpi Module (167)|splashscreen_logo xxhdpi Module (167)]]
-- [[_COMMUNITY_splashscreen_logo xxxhdpi Module (168)|splashscreen_logo xxxhdpi Module (168)]]
-- [[_COMMUNITY_HDPI Launcher Icon Module (169)|HDPI Launcher Icon Module (169)]]
-- [[_COMMUNITY_HDPI Launcher Foreground Icon Module (170)|HDPI Launcher Foreground Icon Module (170)]]
-- [[_COMMUNITY_HDPI Launcher Monochrome Icon Module (171)|HDPI Launcher Monochrome Icon Module (171)]]
-- [[_COMMUNITY_HDPI Launcher Round Icon Module (172)|HDPI Launcher Round Icon Module (172)]]
-- [[_COMMUNITY_MDPI Launcher Icon Module (173)|MDPI Launcher Icon Module (173)]]
-- [[_COMMUNITY_MDPI Launcher Foreground Icon Module (174)|MDPI Launcher Foreground Icon Module (174)]]
-- [[_COMMUNITY_MDPI Launcher Monochrome Icon Module (175)|MDPI Launcher Monochrome Icon Module (175)]]
-- [[_COMMUNITY_MDPI Launcher Round Icon Module (176)|MDPI Launcher Round Icon Module (176)]]
-- [[_COMMUNITY_XHDPI Launcher Icon Module (177)|XHDPI Launcher Icon Module (177)]]
-- [[_COMMUNITY_XHDPI Launcher Foreground Icon Module (178)|XHDPI Launcher Foreground Icon Module (178)]]
-- [[_COMMUNITY_XHDPI Launcher Monochrome Icon Module (179)|XHDPI Launcher Monochrome Icon Module (179)]]
-- [[_COMMUNITY_XHDPI Launcher Round Icon Module (180)|XHDPI Launcher Round Icon Module (180)]]
-- [[_COMMUNITY_XXHDPI Launcher Icon Module (181)|XXHDPI Launcher Icon Module (181)]]
-- [[_COMMUNITY_XXHDPI Launcher Foreground Icon Module (182)|XXHDPI Launcher Foreground Icon Module (182)]]
-- [[_COMMUNITY_XXHDPI Launcher Monochrome Icon Module (183)|XXHDPI Launcher Monochrome Icon Module (183)]]
-- [[_COMMUNITY_XXHDPI Launcher Round Icon Module (184)|XXHDPI Launcher Round Icon Module (184)]]
-- [[_COMMUNITY_XXXHDPI Launcher Icon Module (185)|XXXHDPI Launcher Icon Module (185)]]
-- [[_COMMUNITY_XXXHDPI Launcher Foreground Icon Module (186)|XXXHDPI Launcher Foreground Icon Module (186)]]
-- [[_COMMUNITY_XXXHDPI Launcher Monochrome Icon Module (187)|XXXHDPI Launcher Monochrome Icon Module (187)]]
-- [[_COMMUNITY_XXXHDPI Launcher Round Icon Module (188)|XXXHDPI Launcher Round Icon Module (188)]]
-- [[_COMMUNITY_Expo Symbol Module (191)|Expo Symbol Module (191)]]
-- [[_COMMUNITY_Grid Diagram Module (192)|Grid Diagram Module (192)]]
-- [[_COMMUNITY_Android Icon Background Module (193)|Android Icon Background Module (193)]]
-- [[_COMMUNITY_Android Icon Foreground Module (194)|Android Icon Foreground Module (194)]]
-- [[_COMMUNITY_Android Icon Monochrome Module (195)|Android Icon Monochrome Module (195)]]
-- [[_COMMUNITY_Expo Badge Module (196)|Expo Badge Module (196)]]
-- [[_COMMUNITY_Expo Badge White Module (197)|Expo Badge White Module (197)]]
-- [[_COMMUNITY_Expo Logo Module (198)|Expo Logo Module (198)]]
-- [[_COMMUNITY_Favicon Module (199)|Favicon Module (199)]]
-- [[_COMMUNITY_Forson Android Icon Foreground Module (200)|Forson Android Icon Foreground Module (200)]]
-- [[_COMMUNITY_Forson Icon Module (201)|Forson Icon Module (201)]]
-- [[_COMMUNITY_Icon Module (202)|Icon Module (202)]]
-- [[_COMMUNITY_Logo Glow Module (203)|Logo Glow Module (203)]]
-- [[_COMMUNITY_React Logo Module (204)|React Logo Module (204)]]
-- [[_COMMUNITY_React Logo @2x Module (205)|React Logo @2x Module (205)]]
-- [[_COMMUNITY_React Logo @3x Module (206)|React Logo @3x Module (206)]]
-- [[_COMMUNITY_Splash Icon Module (207)|Splash Icon Module (207)]]
-- [[_COMMUNITY_Tab Icon Explore Module (208)|Tab Icon Explore Module (208)]]
-- [[_COMMUNITY_Tab Icon Explore @2x Module (209)|Tab Icon Explore @2x Module (209)]]
-- [[_COMMUNITY_Tab Icon Explore @3x Module (210)|Tab Icon Explore @3x Module (210)]]
-- [[_COMMUNITY_Home Tab Icon Module (211)|Home Tab Icon Module (211)]]
-- [[_COMMUNITY_Home Tab Icon 2x Module (212)|Home Tab Icon 2x Module (212)]]
-- [[_COMMUNITY_Tutorial Web Module (213)|Tutorial Web Module (213)]]
-- [[_COMMUNITY_Expo Has Changed Module (217)|Expo Has Changed Module (217)]]
-- [[_COMMUNITY_Android Adaptive Foreground Icon 108 Module (218)|Android Adaptive Foreground Icon 108 Module (218)]]
-- [[_COMMUNITY_Android Adaptive Foreground Icon 162 Module (219)|Android Adaptive Foreground Icon 162 Module (219)]]
-- [[_COMMUNITY_Android Adaptive Foreground Icon 216 Module (220)|Android Adaptive Foreground Icon 216 Module (220)]]
-- [[_COMMUNITY_Android Adaptive Foreground Icon 324 Module (221)|Android Adaptive Foreground Icon 324 Module (221)]]
-- [[_COMMUNITY_Android Adaptive Foreground Icon 432 Module (222)|Android Adaptive Foreground Icon 432 Module (222)]]
-- [[_COMMUNITY_Android Adaptive Monochrome Icon 108 Module (223)|Android Adaptive Monochrome Icon 108 Module (223)]]
-- [[_COMMUNITY_Android Adaptive Monochrome Icon 162 Module (224)|Android Adaptive Monochrome Icon 162 Module (224)]]
-- [[_COMMUNITY_Android Adaptive Monochrome Icon 216 Module (225)|Android Adaptive Monochrome Icon 216 Module (225)]]
-- [[_COMMUNITY_Android Adaptive Monochrome Icon 324 Module (226)|Android Adaptive Monochrome Icon 324 Module (226)]]
-- [[_COMMUNITY_Android Adaptive Monochrome Icon 432 Module (227)|Android Adaptive Monochrome Icon 432 Module (227)]]
-- [[_COMMUNITY_icon 144 Module (228)|icon 144 Module (228)]]
-- [[_COMMUNITY_icon 192 Module (229)|icon 192 Module (229)]]
-- [[_COMMUNITY_icon 48 Module (230)|icon 48 Module (230)]]
-- [[_COMMUNITY_icon 72 Module (231)|icon 72 Module (231)]]
-- [[_COMMUNITY_icon 96 Module (232)|icon 96 Module (232)]]
-- [[_COMMUNITY_icon 144 Module (233)|icon 144 Module (233)]]
-- [[_COMMUNITY_icon 192 Module (234)|icon 192 Module (234)]]
-- [[_COMMUNITY_icon 48 Module (235)|icon 48 Module (235)]]
-- [[_COMMUNITY_icon 72 Module (236)|icon 72 Module (236)]]
-- [[_COMMUNITY_icon 96 Module (237)|icon 96 Module (237)]]
-- [[_COMMUNITY_icon 114 Module (238)|icon 114 Module (238)]]
-- [[_COMMUNITY_icon 152 Module (239)|icon 152 Module (239)]]
-- [[_COMMUNITY_icon 228 Module (240)|icon 228 Module (240)]]
-- [[_COMMUNITY_icon 304 Module (241)|icon 304 Module (241)]]
-- [[_COMMUNITY_icon 76 Module (242)|icon 76 Module (242)]]
-- [[_COMMUNITY_Production Deployment Strategy Module (249)|Production Deployment Strategy Module (249)]]
-- [[_COMMUNITY_Rollback Procedures Module (250)|Rollback Procedures Module (250)]]
-- [[_COMMUNITY_Staging Deployment Plan Module (251)|Staging Deployment Plan Module (251)]]
-- [[_COMMUNITY_PRD User Management & Security Module (252)|PRD User Management & Security Module (252)]]
-- [[_COMMUNITY_Core System & User Management Module Module (253)|Core System & User Management Module Module (253)]]
-- [[_COMMUNITY_Parts Management & Catalog (254)|Parts Management & Catalog (254)]]
+- [[_COMMUNITY_Forson Business Suite Functional Requirement Document (Code-Audited)|Forson Business Suite: Functional Requirement Document (Code-Audited)]]
+- [[_COMMUNITY_Forson Business Suite — Features Documentation|Forson Business Suite — Features Documentation]]
+- [[_COMMUNITY_DMI Data Management & Database Migration|DMI Data Management & Database Migration]]
+- [[_COMMUNITY_Document Display & Interaction|Document Display & Interaction]]
+- [[_COMMUNITY_DMI Frontend Implementation|DMI Frontend Implementation]]
+- [[_COMMUNITY_DMI Layout Structure|DMI Layout Structure]]
+- [[_COMMUNITY_CI Test Job|CI Test Job]]
+- [[_COMMUNITY_Build and Push Docker Images Workflow|Build and Push Docker Images Workflow]]
+- [[_COMMUNITY_Security Scan Workflow|Security Scan Workflow]]
+- [[_COMMUNITY_Development Commands|Development Commands]]
+- [[_COMMUNITY_One-Time Setup|One-Time Setup]]
+- [[_COMMUNITY_Production Commands|Production Commands]]
+- [[_COMMUNITY_Analytics Charts|Analytics Charts]]
+- [[_COMMUNITY_Enhanced API Endpoints|Enhanced API Endpoints]]
+- [[_COMMUNITY_Enhanced KPI Cards|Enhanced KPI Cards]]
+- [[_COMMUNITY_Quick Actions Panel|Quick Actions Panel]]
+- [[_COMMUNITY_Recent Activity Feed|Recent Activity Feed]]
+- [[_COMMUNITY_SemVer Standards & Release Strategy|SemVer Standards & Release Strategy]]
+- [[_COMMUNITY_Changelog Version 1.4.1 Cheque Presets & Relevance Optimization|Changelog Version 1.4.1 Cheque Presets & Relevance Optimization]]
+- [[_COMMUNITY_Mobile Agents Rules|Mobile Agents Rules]]
+- [[_COMMUNITY_splashscreen_logo hdpi|splashscreen_logo hdpi]]
+- [[_COMMUNITY_splashscreen_logo mdpi|splashscreen_logo mdpi]]
+- [[_COMMUNITY_splashscreen_logo xhdpi|splashscreen_logo xhdpi]]
+- [[_COMMUNITY_splashscreen_logo xxhdpi|splashscreen_logo xxhdpi]]
+- [[_COMMUNITY_splashscreen_logo xxxhdpi|splashscreen_logo xxxhdpi]]
+- [[_COMMUNITY_HDPI Launcher Icon|HDPI Launcher Icon]]
+- [[_COMMUNITY_HDPI Launcher Foreground Icon|HDPI Launcher Foreground Icon]]
+- [[_COMMUNITY_HDPI Launcher Monochrome Icon|HDPI Launcher Monochrome Icon]]
+- [[_COMMUNITY_HDPI Launcher Round Icon|HDPI Launcher Round Icon]]
+- [[_COMMUNITY_MDPI Launcher Icon|MDPI Launcher Icon]]
+- [[_COMMUNITY_MDPI Launcher Foreground Icon|MDPI Launcher Foreground Icon]]
+- [[_COMMUNITY_MDPI Launcher Monochrome Icon|MDPI Launcher Monochrome Icon]]
+- [[_COMMUNITY_MDPI Launcher Round Icon|MDPI Launcher Round Icon]]
+- [[_COMMUNITY_XHDPI Launcher Icon|XHDPI Launcher Icon]]
+- [[_COMMUNITY_XHDPI Launcher Foreground Icon|XHDPI Launcher Foreground Icon]]
+- [[_COMMUNITY_XHDPI Launcher Monochrome Icon|XHDPI Launcher Monochrome Icon]]
+- [[_COMMUNITY_XHDPI Launcher Round Icon|XHDPI Launcher Round Icon]]
+- [[_COMMUNITY_XXHDPI Launcher Icon|XXHDPI Launcher Icon]]
+- [[_COMMUNITY_XXHDPI Launcher Foreground Icon|XXHDPI Launcher Foreground Icon]]
+- [[_COMMUNITY_XXHDPI Launcher Monochrome Icon|XXHDPI Launcher Monochrome Icon]]
+- [[_COMMUNITY_XXHDPI Launcher Round Icon|XXHDPI Launcher Round Icon]]
+- [[_COMMUNITY_XXXHDPI Launcher Icon|XXXHDPI Launcher Icon]]
+- [[_COMMUNITY_XXXHDPI Launcher Foreground Icon|XXXHDPI Launcher Foreground Icon]]
+- [[_COMMUNITY_XXXHDPI Launcher Monochrome Icon|XXXHDPI Launcher Monochrome Icon]]
+- [[_COMMUNITY_XXXHDPI Launcher Round Icon|XXXHDPI Launcher Round Icon]]
+- [[_COMMUNITY_Expo Symbol|Expo Symbol]]
+- [[_COMMUNITY_Grid Diagram|Grid Diagram]]
+- [[_COMMUNITY_Android Icon Background|Android Icon Background]]
+- [[_COMMUNITY_Android Icon Foreground|Android Icon Foreground]]
+- [[_COMMUNITY_Android Icon Monochrome|Android Icon Monochrome]]
+- [[_COMMUNITY_Expo Badge|Expo Badge]]
+- [[_COMMUNITY_Expo Badge White|Expo Badge White]]
+- [[_COMMUNITY_Expo Logo|Expo Logo]]
+- [[_COMMUNITY_Favicon|Favicon]]
+- [[_COMMUNITY_Forson Android Icon Foreground|Forson Android Icon Foreground]]
+- [[_COMMUNITY_Forson Icon|Forson Icon]]
+- [[_COMMUNITY_Icon|Icon]]
+- [[_COMMUNITY_Logo Glow|Logo Glow]]
+- [[_COMMUNITY_React Logo|React Logo]]
+- [[_COMMUNITY_React Logo @2x|React Logo @2x]]
+- [[_COMMUNITY_React Logo @3x|React Logo @3x]]
+- [[_COMMUNITY_Splash Icon|Splash Icon]]
+- [[_COMMUNITY_Tab Icon Explore|Tab Icon Explore]]
+- [[_COMMUNITY_Tab Icon Explore @2x|Tab Icon Explore @2x]]
+- [[_COMMUNITY_Tab Icon Explore @3x|Tab Icon Explore @3x]]
+- [[_COMMUNITY_Home Tab Icon|Home Tab Icon]]
+- [[_COMMUNITY_Home Tab Icon 2x|Home Tab Icon 2x]]
+- [[_COMMUNITY_Tutorial Web|Tutorial Web]]
+- [[_COMMUNITY_Expo Has Changed|Expo Has Changed]]
+- [[_COMMUNITY_Android Adaptive Foreground Icon 108|Android Adaptive Foreground Icon 108]]
+- [[_COMMUNITY_Android Adaptive Foreground Icon 162|Android Adaptive Foreground Icon 162]]
+- [[_COMMUNITY_Android Adaptive Foreground Icon 216|Android Adaptive Foreground Icon 216]]
+- [[_COMMUNITY_Android Adaptive Foreground Icon 324|Android Adaptive Foreground Icon 324]]
+- [[_COMMUNITY_Android Adaptive Foreground Icon 432|Android Adaptive Foreground Icon 432]]
+- [[_COMMUNITY_Android Adaptive Monochrome Icon 108|Android Adaptive Monochrome Icon 108]]
+- [[_COMMUNITY_Android Adaptive Monochrome Icon 162|Android Adaptive Monochrome Icon 162]]
+- [[_COMMUNITY_Android Adaptive Monochrome Icon 216|Android Adaptive Monochrome Icon 216]]
+- [[_COMMUNITY_Android Adaptive Monochrome Icon 324|Android Adaptive Monochrome Icon 324]]
+- [[_COMMUNITY_Android Adaptive Monochrome Icon 432|Android Adaptive Monochrome Icon 432]]
+- [[_COMMUNITY_icon 144|icon 144]]
+- [[_COMMUNITY_icon 192|icon 192]]
+- [[_COMMUNITY_icon 48|icon 48]]
+- [[_COMMUNITY_icon 72|icon 72]]
+- [[_COMMUNITY_icon 96|icon 96]]
+- [[_COMMUNITY_icon 144|icon 144]]
+- [[_COMMUNITY_icon 192|icon 192]]
+- [[_COMMUNITY_icon 48|icon 48]]
+- [[_COMMUNITY_icon 72|icon 72]]
+- [[_COMMUNITY_icon 96|icon 96]]
+- [[_COMMUNITY_icon 114|icon 114]]
+- [[_COMMUNITY_icon 152|icon 152]]
+- [[_COMMUNITY_icon 228|icon 228]]
+- [[_COMMUNITY_icon 304|icon 304]]
+- [[_COMMUNITY_icon 76|icon 76]]
+- [[_COMMUNITY_React + Vite|React + Vite]]
+- [[_COMMUNITY_01-efficiency|01-efficiency.md]]
+- [[_COMMUNITY_02-graph-protocol|02-graph-protocol.md]]
+- [[_COMMUNITY_PRD User Management & Security|PRD User Management & Security]]
+- [[_COMMUNITY_Core System & User Management Module|Core System & User Management Module]]
+- [[_COMMUNITY_Inventory & Part Management Module|Inventory & Part Management Module]]
+- [[_COMMUNITY_03-database-migrations|03-database-migrations.md]]
+- [[_COMMUNITY_build-feature|build-feature.md]]
+- [[_COMMUNITY_cascade|cascade.md]]
+- [[_COMMUNITY_document_nav.prompt|document_nav.prompt.md]]
+- [[_COMMUNITY_AGENTS|AGENTS.md]]
+- [[_COMMUNITY_Document Management Interface (DMI)|Document Management Interface (DMI)]]
+- [[_COMMUNITY_Deploy Workflow|Deploy Workflow]]
+- [[_COMMUNITY_CICD & Release Workflow|CI/CD & Release Workflow]]
+- [[_COMMUNITY_Database Migrations Framework|Database Migrations Framework]]
+- [[_COMMUNITY_Application Release Workflow|Application Release Workflow]]
+- [[_COMMUNITY_Changelog Version 2.0.0 Mobile and Part View Optimization|Changelog Version 2.0.0 Mobile and Part View Optimization]]
+- [[_COMMUNITY_Cheque Printing DHD Compliance Audit|Cheque Printing DHD Compliance Audit]]
+- [[_COMMUNITY_Sales History Summary Statistics|Sales History Summary Statistics]]
+- [[_COMMUNITY_On-Account Payments & Accounts Receivable Charges|On-Account Payments & Accounts Receivable Charges]]
+- [[_COMMUNITY_Payment Terms Integration & Readiness|Payment Terms Integration & Readiness]]
+- [[_COMMUNITY_Purchase Order PDF Template|Purchase Order PDF Template]]
+- [[_COMMUNITY_Expo Configuration|Expo Configuration]]
+- [[_COMMUNITY_Vite Logo|Vite Logo]]
+- [[_COMMUNITY_Payment Terms Rollout Plan|Payment Terms Rollout Plan]]
+- [[_COMMUNITY_PRD Inventory Management|PRD Inventory Management]]
+- [[_COMMUNITY_PRD Sales Order Processing|PRD Sales Order Processing]]
+- [[_COMMUNITY_PRD System Architecture|PRD System Architecture]]
+- [[_COMMUNITY_PRD Functional Breakdown|PRD Functional Breakdown]]
+- [[_COMMUNITY_Sales & Transactions Module|Sales & Transactions Module]]
+- [[_COMMUNITY_System Architecture Overview|System Architecture Overview]]
+- [[_COMMUNITY_Docker Environment Deployment|Docker Environment Deployment]]
+- [[_COMMUNITY_Meilisearch Sync Queue Monitoring|Meilisearch Sync Queue Monitoring]]
+- [[_COMMUNITY_Tax Database Schema & Fields|Tax Database Schema & Fields]]
+- [[_COMMUNITY_Mobile Cycle Counting Testing & UX Verification Plan|Mobile Cycle Counting Testing & UX Verification Plan]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `api` - 64 edges
@@ -262,16 +292,16 @@
 10. `PartMergeService` - 23 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `Rule of Immutability: Database Migrations` --semantically_similar_to--> `Developer Rules`  [INFERRED] [semantically similar]
-  .agents/rules/03-database-migrations.md → COMMANDS.md
-- `Document Management Interface (DMI)` --conceptually_related_to--> `Sales & Transactions Module`  [INFERRED]
-  .github/prompts/document_nav.prompt.md → PRD_Functional_Breakdown.md
-- `Payment Terms Rollout Plan` --conceptually_related_to--> `Update/Upgrade (Production) Commands`  [INFERRED]
-  PAYMENT_TERMS_ROLLOUT_PLAN.md → COMMANDS.md
-- `Dashboard Enhancement Summary` --conceptually_related_to--> `PRD Functional Breakdown`  [INFERRED]
-  DASHBOARD_ENHANCEMENT_SUMMARY.md → PRD_Functional_Breakdown.md
-- `PRD Inventory Management` --conceptually_related_to--> `Database Folder Layout`  [INFERRED]
-  PRD_forson-business-suite.md → database/README.md
+- `InvoiceDetailsModal()` --calls--> `hasPermission()`  [INFERRED]
+  packages/web/src/components/refunds/InvoiceDetailsModal.jsx → packages/api/middleware/authMiddleware.js
+- `AccountsReceivablePage()` --calls--> `hasPermission()`  [INFERRED]
+  packages/web/src/pages/AccountsReceivablePage.jsx → packages/api/middleware/authMiddleware.js
+- `ApplicationsPage()` --calls--> `hasPermission()`  [INFERRED]
+  packages/web/src/pages/ApplicationsPage.jsx → packages/api/middleware/authMiddleware.js
+- `CustomersPage()` --calls--> `hasPermission()`  [INFERRED]
+  packages/web/src/pages/CustomersPage.jsx → packages/api/middleware/authMiddleware.js
+- `CycleCountExecutionPage()` --calls--> `hasPermission()`  [INFERRED]
+  packages/web/src/pages/CycleCountExecutionPage.jsx → packages/api/middleware/authMiddleware.js
 
 ## Import Cycles
 - 1-file cycle: `packages/api/meilisearch.js -> packages/api/meilisearch.js`
@@ -285,15 +315,15 @@
 - **Cheque Printing Module Scaffolding and Verification** — docs_cheque_implementation_progress_audit_2026_04_19_dhd_tracking, docs_cheque_phase1_status_environment_caveat, docs_changelog_v141 [INFERRED 0.85]
 - **Home Tab User Interface** — packages_mobile_assets_images_tabicons_home_3x_icon, packages_mobile_assets_images_tabicons_home_3x_home_navigation, packages_mobile_assets_images_tabicons_home_3x_minimalist_icon_design [INFERRED 0.85]
 
-## Communities (255 total, 147 thin omitted)
+## Communities (288 total, 170 thin omitted)
 
 ### Community 0 - "Accounts Receivable & Invoice Aging"
-Cohesion: 0.09
-Nodes (32): Command, CommandPaletteProps, DOCUMENT_TYPES, DocumentBrowser(), DocumentBrowserV2(), DocumentGrid(), DATE_PRESETS, DOCUMENT_TYPES (+24 more)
+Cohesion: 0.08
+Nodes (33): Command, CommandPaletteProps, DOCUMENT_TYPES, DocumentBrowser(), DocumentBrowserV2(), DocumentGrid(), DATE_PRESETS, DOCUMENT_TYPES (+25 more)
 
 ### Community 1 - "Inventory Valuation & Low Stock Reporting"
-Cohesion: 0.17
-Nodes (21): SupplierForm(), asArray(), InventoryMovementReport(), InventoryValuationReport(), LowStockReport(), asArray(), ProfitabilityReport(), RefundsReport() (+13 more)
+Cohesion: 0.21
+Nodes (10): StockAdjustmentForm(), asArray(), InventoryMovementReport(), FilterBar(), Modal(), PAGE_SIZE_OPTIONS, PaginationControls(), SortableHeader() (+2 more)
 
 ### Community 2 - "Mobile Exploration & Tab Navigation"
 Cohesion: 0.12
@@ -304,28 +334,28 @@ Cohesion: 0.05
 Nodes (38): author, dependencies, bcrypt, cors, dotenv, express, json2csv, jsonwebtoken (+30 more)
 
 ### Community 4 - "Payment Terms & Overdue Calculations"
-Cohesion: 0.07
-Nodes (26): computeDueDate(), parsePaymentTermsDays(), validatePaymentTerms(), formatPhysicalReceiptNumber(), { calculateInvoiceTax, storeTaxBreakdown, validateTaxCalculation }, db, express, { formatPhysicalReceiptNumber } (+18 more)
+Cohesion: 0.10
+Nodes (20): computeDueDate(), parsePaymentTermsDays(), validatePaymentTerms(), formatPhysicalReceiptNumber(), { calculateInvoiceTax, storeTaxBreakdown, validateTaxCalculation }, db, express, { formatPhysicalReceiptNumber } (+12 more)
 
 ### Community 5 - "Web Inventory & Purchase Order Forms"
-Cohesion: 0.12
-Nodes (22): PurchaseOrderForm(), StockAdjustmentForm(), SearchBar, GoodsReceiptModals(), TransactionHistoryModal(), cache, enrichApplicationsField(), enrichPart() (+14 more)
+Cohesion: 0.17
+Nodes (11): cache, enrichApplicationsField(), enrichPart(), getApplication(), loadApplications(), APPLICATION_DISPLAY_PRESETS, getPreset(), formatCache (+3 more)
 
 ### Community 6 - "Web Frontend Dependencies"
 Cohesion: 0.06
 Nodes (34): dependencies, axios, date-fns, date-fns-tz, @headlessui/react, lucide-react, pdf-lib, react (+26 more)
 
 ### Community 7 - "Mobile Task Counters & Dashboard"
-Cohesion: 0.14
-Nodes (18): apiClient, DashboardScreen(), fetchAssignedTasks(), styles, queryClient, TabLayout(), styles, UnassignedSearchScreen() (+10 more)
+Cohesion: 0.11
+Nodes (23): apiClient, CountScreen(), styles, DashboardScreen(), fetchAssignedTasks(), styles, queryClient, TabLayout() (+15 more)
 
 ### Community 8 - "Mobile App Packaging & Build Properties"
 Cohesion: 0.06
 Nodes (33): dependencies, axios, expo, expo-build-properties, expo-constants, expo-device, expo-font, expo-glass-effect (+25 more)
 
 ### Community 9 - "Parts De-duplication & Conflict Resolution"
-Cohesion: 0.16
-Nodes (13): ConfirmMerge(), ConflictResolver(), DuplicateGroupList(), ImpactSummary(), PartCompareCard(), Icon(), ICONS, DEFAULT_TEMPLATE (+5 more)
+Cohesion: 0.10
+Nodes (20): ConfirmMerge(), ConflictResolver(), DuplicateGroupList(), ImpactSummary(), PartCompareCard(), BackupSettings(), PaymentMethodSettings(), PermissionsSettings() (+12 more)
 
 ### Community 10 - "Cheque PDF Rendering & Formatting"
 Cohesion: 0.08
@@ -337,34 +367,38 @@ Nodes (29): backgroundColor, foregroundImage, monochromeImage, adaptiveIcon, pac
 
 ### Community 12 - "Web Client Services & Search Combobox"
 Cohesion: 0.19
-Nodes (9): api, ApplicationSearchCombobox(), NewApplicationModal(), EditHistory(), PartForm(), DueDateEditor(), Modal(), TagPopover() (+1 more)
+Nodes (9): api, ApplicationSearchCombobox(), NewApplicationModal(), EmployeePerformanceTab(), ManagerReviewDesk(), PartForm(), SupplierForm(), GoodsReceiptModals() (+1 more)
 
 ### Community 13 - "API Routes & Pagination Middleware"
-Cohesion: 0.09
-Nodes (23): buildPaginationMeta(), paginatedResponse(), parsePaginationQuery(), db, express, { parsePaginationQuery, paginatedResponse }, router, bcrypt (+15 more)
+Cohesion: 0.08
+Nodes (26): buildPaginationMeta(), paginatedResponse(), parsePaginationQuery(), db, express, { parsePaginationQuery, paginatedResponse }, router, db (+18 more)
 
 ### Community 14 - "Auth Permissions & Dashboard Widgets"
-Cohesion: 0.19
-Nodes (20): hasPermission(), LowStockAlertsPanel(), RecentActivityFeed(), RecentSalesPanel(), Header(), Sidebar(), useAuth(), ApplicationsPage() (+12 more)
+Cohesion: 0.10
+Nodes (24): AppContent(), StaffDashboard(), Header(), MainLayout(), Sidebar(), AuthProvider(), useAuth(), SettingsProvider() (+16 more)
 
 ### Community 15 - "Cycle Count Operations (15)"
 Cohesion: 0.17
-Nodes (12): CustomerInvoiceDetailsModal(), CustomerSummaryTable(), InvoiceAgingSummaryChart(), EmployeePerformanceTab(), ManagerReviewDesk(), currency(), ReceivePaymentForm(), KPICard() (+4 more)
+Nodes (12): CustomerInvoiceDetailsModal(), CustomerSummaryTable(), InvoiceAgingSummaryChart(), EditHistory(), currency(), ReceivePaymentForm(), DueDateEditor(), KPICard() (+4 more)
+
+### Community 16 - "Meilisearch Sync Worker (16)"
+Cohesion: 0.06
+Nodes (33): Automated Testing, Backend Enhancements, Backward Compatibility, 📈 Business Benefits, Code Quality, 🏆 Conclusion, Data Flow, Database Optimizations (+25 more)
 
 ### Community 17 - "CustomerForm Module (17)"
-Cohesion: 0.17
-Nodes (12): CustomerForm(), SavedSalesPanel(), ReportCard(), PaymentModal(), PriceQuantityModal(), Receipt, SplitPaymentModal(), TagInput() (+4 more)
+Cohesion: 0.13
+Nodes (19): CustomerForm(), PurchaseOrderForm(), SavedSalesPanel(), SearchBar, Combobox(), PriceQuantityModal(), Receipt, SplitPaymentModal() (+11 more)
 
 ### Community 18 - "Tax Calculation & Rates (18)"
-Cohesion: 0.10
-Nodes (17): protect(), db, express, { protect }, router, db, express, { protect, hasPermission } (+9 more)
+Cohesion: 0.14
+Nodes (12): hasPermission(), db, express, { protect, hasPermission }, router, db, express, { protect, hasPermission } (+4 more)
 
 ### Community 19 - "Meilisearch Sync Worker (19)"
 Cohesion: 0.16
 Nodes (20): cancelRepairJob(), claimNextPendingJob(), createRepairJob(), db, DEFAULTS, ensureSearchRepairSchema(), estimateRemainingSeconds(), fetchJobStatusPayload() (+12 more)
 
 ### Community 20 - "DocumentInterface Module (20)"
-Cohesion: 0.16
+Cohesion: 0.14
 Nodes (11): DocumentInterfaceProps, DocumentMetadata, DocumentStatus, DocumentType, projectCache, InvoiceDueDateDisplay(), calculateDaysOverdue(), computeDueDate() (+3 more)
 
 ### Community 22 - "db Module (22)"
@@ -373,27 +407,27 @@ Nodes (9): { Pool }, bcrypt, db, express, router, db, db, db (+1 more)
 
 ### Community 23 - "Meilisearch Sync Worker (23)"
 Cohesion: 0.13
-Nodes (16): activeAliasCondition(), db, softDeleteSupported(), { activeAliasCondition, softDeleteSupported }, db, express, { getPartDataForMeili }, { protect, hasPermission } (+8 more)
+Nodes (15): activeAliasCondition(), db, softDeleteSupported(), { activeAliasCondition, softDeleteSupported }, db, express, { getPartDataForMeili }, { protect, hasPermission } (+7 more)
 
 ### Community 24 - "Tax Calculation & Rates (24)"
-Cohesion: 0.12
-Nodes (15): db, isAdmin(), jwt, db, express, { protect, isAdmin }, router, db (+7 more)
+Cohesion: 0.10
+Nodes (20): db, isAdmin(), jwt, protect(), db, express, { protect }, router (+12 more)
 
 ### Community 25 - "Meilisearch Sync Worker (25)"
-Cohesion: 0.12
-Nodes (14): app, cors, express, path, { setupMeiliSearch }, { startCycleCountEngine }, { startMeiliApplicationsListener }, { startMeiliListener } (+6 more)
+Cohesion: 0.09
+Nodes (19): app, cors, express, path, { setupMeiliSearch }, { startCycleCountEngine }, { startMeiliApplicationsListener }, { startMeiliListener } (+11 more)
 
 ### Community 26 - "Meilisearch Sync Worker (26)"
-Cohesion: 0.17
-Nodes (15): db, startMeiliApplicationsListener(), { syncApplications, removeApplication }, index(), isRetryable(), { meiliClient }, removeApplication(), retryAsync() (+7 more)
+Cohesion: 0.18
+Nodes (14): db, { syncApplications, removeApplication }, index(), isRetryable(), { meiliClient }, removeApplication(), retryAsync(), syncApplications() (+6 more)
 
 ### Community 27 - "Meilisearch Sync Worker (27)"
-Cohesion: 0.16
-Nodes (14): { activeAliasCondition }, db, startMeiliListener(), { syncPartWithMeili, removePartFromMeili }, client, isRetryable(), { MeiliSearch }, removePartFromMeili() (+6 more)
+Cohesion: 0.13
+Nodes (17): client, isRetryable(), { MeiliSearch }, removePartFromMeili(), retryAsync(), syncPartWithMeili(), wait(), getPartDataForMeili() (+9 more)
 
 ### Community 28 - "documentNumberGenerator Module (28)"
-Cohesion: 0.14
-Nodes (13): getNextDocumentNumber(), db, express, fs, { getNextDocumentNumber }, { parsePaginationQuery, paginatedResponse }, { protect, hasPermission }, router (+5 more)
+Cohesion: 0.10
+Nodes (19): getNextDocumentNumber(), db, express, { getNextDocumentNumber }, { hasPermission, protect }, { parsePaginationQuery, paginatedResponse }, router, db (+11 more)
 
 ### Community 29 - "Meilisearch Sync Worker (29)"
 Cohesion: 0.18
@@ -404,53 +438,52 @@ Cohesion: 0.18
 Nodes (13): buildSymmetricSynonyms(), fs, getEnvironmentConfig(), isRetryable(), { meiliClient }, path, retryAsync(), setupMeiliSearch() (+5 more)
 
 ### Community 31 - "Tax Calculation & Rates (31)"
-Cohesion: 0.15
-Nodes (6): BackupSettings(), DataUtilsSettings(), formatEta(), TERMINAL_STATUSES, PaymentMethodSettings(), PermissionsSettings()
+Cohesion: 0.40
+Nodes (3): DataUtilsSettings(), formatEta(), TERMINAL_STATUSES
 
 ### Community 32 - "package Module (32)"
 Cohesion: 0.13
 Nodes (14): dependencies, date-fns, date-fns-tz, globals, devDependencies, patch-package, name, private (+6 more)
 
 ### Community 33 - "Meilisearch Sync Worker (33)"
-Cohesion: 0.14
-Nodes (12): { activeAliasCondition }, db, { enqueuePartUpsert, enqueuePartDelete }, express, manageTags(), { meiliClient }, { normalizePartData }, { parsePaginationQuery, paginatedResponse } (+4 more)
+Cohesion: 0.09
+Nodes (23): db, { enqueuePartUpsert }, express, router, { syncPartWithMeili }, { activeAliasCondition }, db, { enqueuePartUpsert, enqueuePartDelete } (+15 more)
 
 ### Community 34 - "Database Migration Scripts (34)"
 Cohesion: 0.18
 Nodes (13): applyMigration(), { Client }, crypto, ensureMigrationsTable(), fs, getApplied(), getClient(), loadMigrations() (+5 more)
 
 ### Community 35 - "Meilisearch Sync Worker (35)"
-Cohesion: 0.06
-Nodes (17): db, DuplicateFinder, express, PartMergeService, { protect, hasPermission }, router, DuplicateFinder, { meiliClient } (+9 more)
+Cohesion: 0.05
+Nodes (12): DuplicateFinder, { meiliClient }, DuplicateFinder, PartMergeService, DuplicateFinder, { Pool }, DuplicateFinder, { Pool } (+4 more)
 
 ### Community 36 - "Meilisearch Sync Worker (36)"
-Cohesion: 0.14
-Nodes (13): db, ENTITY_CONFIG, express, { generateUniqueCode }, {
-    JOB_MODES,
-    createRepairJob,
-    fetchJobStatusPayload,
-    cancelRepairJob
-}, multer, Papa, { Parser } (+5 more)
+Cohesion: 0.09
+Nodes (22): generateUniqueCode(), db, express, { generateUniqueCode }, router, db, ENTITY_CONFIG, express (+14 more)
 
 ### Community 37 - "Meilisearch Sync Worker (37)"
-Cohesion: 0.19
-Nodes (11): db, { enqueuePartUpsert }, express, router, { syncPartWithMeili }, ACTIONS, db, enqueueEvent() (+3 more)
+Cohesion: 0.06
+Nodes (32): 1. Enhanced Decision Making, 1. Enhanced KPI Cards (`EnhancedKPICard.jsx`), 1. Responsive Design, 2. Analytics Charts (`AnalyticsCharts.jsx`), 2. Improved Workflow Efficiency, 2. Real-time Capabilities, 3. Professional Presentation, 3. Professional UI/UX (+24 more)
+
+### Community 38 - "Tax Calculation & Rates (38)"
+Cohesion: 0.06
+Nodes (30): 1. Code Review and Testing ✅, 2. Database Migration Safety ✅, 3. Infrastructure Review ✅, Business Metrics, Contact Information, Critical Path Tests, Deployment Steps, Documentation Updates Required (+22 more)
 
 ### Community 39 - "InvoiceDetailsModal Module (39)"
-Cohesion: 0.20
-Nodes (6): InvoiceDetailsModal(), RefundForm(), DateRangeShortcuts(), InvoicingPage(), SalesHistoryPage(), formatPhysicalReceiptNumber()
+Cohesion: 0.14
+Nodes (18): InvoiceDetailsModal(), RefundForm(), InventoryValuationReport(), LowStockReport(), asArray(), ProfitabilityReport(), RefundsReport(), ReportCard() (+10 more)
 
 ### Community 40 - "AnalyticsCharts Module (40)"
-Cohesion: 0.21
-Nodes (6): SalesTrendChart(), TopProductsChart(), colorVariants, EnhancedKPICard(), iconMap, QuickActionsPanel()
+Cohesion: 0.09
+Nodes (17): SalesTrendChart(), TopProductsChart(), colorVariants, EnhancedKPICard(), iconMap, QuickActionsPanel(), Dashboard(), InventoryMovementReport (+9 more)
 
 ### Community 41 - "codeGenerator Module (41)"
-Cohesion: 0.20
-Nodes (9): generateUniqueCode(), db, express, { generateUniqueCode }, router, db, express, { generateUniqueCode } (+1 more)
+Cohesion: 0.07
+Nodes (27): 1. Frontend (SplitPaymentModal.jsx), 2. Backend (invoiceRoutes.js), 3. Database Schema, Advanced (Phase 2), Backend Changes, Benefits, Business Benefits, Common Issues (+19 more)
 
 ### Community 42 - "App Module (42)"
-Cohesion: 0.21
-Nodes (8): App(), AppContent(), MainLayout(), AuthContext, AuthProvider(), SettingsProvider(), LoginScreen(), SetupPage()
+Cohesion: 0.11
+Nodes (18): Acceptance Criteria, Activation, API Contract, Cascade Required?, 🤖 Coding-Agent Prompt — [Feature Name], Context, Data Model Changes, Execution Phases (+10 more)
 
 ### Community 43 - "Meilisearch Sync Worker (43)"
 Cohesion: 0.18
@@ -465,12 +498,16 @@ Cohesion: 0.20
 Nodes (9): reactNativeDirectoryCheck, expo, doctor, main, name, private, exclude, listUnknownPackages (+1 more)
 
 ### Community 46 - "ReportingPage Module (46)"
-Cohesion: 0.20
-Nodes (9): InventoryMovementReport, InventoryValuationReport, LowStockReport, ProfitabilityReport, RefundsReport, reportTabs, SalesByCustomerReport, SalesReport (+1 more)
+Cohesion: 0.11
+Nodes (18): [1.4.2] - 2026-05-10, Added, Changed, Changelog, CI/CD, Docs, Docs, Fixed (+10 more)
 
 ### Community 47 - "documentsRoutes Module (47)"
 Cohesion: 0.22
 Nodes (7): db, express, { protect, hasPermission }, router, db, express, request
+
+### Community 48 - "Parts Management & Catalog (48)"
+Cohesion: 0.11
+Nodes (18): Adding a New API Route, Backend (`packages/api`), Building and Testing, Code Patterns, Copilot Instructions for Forson Business Suite, Debugging, Developer Workflows, Examples (+10 more)
 
 ### Community 49 - "paymentRoutes Module (49)"
 Cohesion: 0.22
@@ -493,16 +530,16 @@ Cohesion: 0.29
 Nodes (6): { exec }, express, fs, path, { protect, hasPermission }, router
 
 ### Community 54 - "customerRoutes Module (54)"
-Cohesion: 0.29
-Nodes (5): db, express, { parsePaginationQuery, paginatedResponse }, { protect, hasPermission }, router
+Cohesion: 0.12
+Nodes (16): 1. **Enhanced Configuration Options**, 2. **Flexible Header System**, 3. **Compound Component Pattern**, 4. **Advanced Behavior Controls**, 5. **Accessibility Improvements**, API Reference, Backward Compatibility, Compound Components (+8 more)
 
 ### Community 55 - "Meilisearch Sync Worker (55)"
 Cohesion: 0.33
 Nodes (6): db, express, getSearchSyncAlerts(), getSearchSyncHealth(), OUTBOX_ALERTS_DEFAULTS, router
 
 ### Community 56 - "goodsReceiptRoutes Module (56)"
-Cohesion: 0.29
-Nodes (6): db, express, { getNextDocumentNumber }, { hasPermission, protect }, { parsePaginationQuery, paginatedResponse }, router
+Cohesion: 0.13
+Nodes (14): 1) Cheque generation, 2) Input UI (main page), 3) Settings modal, 4) Validation rules, 5) History module, 6) Workflow coverage, 7) Data/state model alignment, 8) Constraints, error handling, anti-pattern checks (+6 more)
 
 ### Community 57 - "reportingRoutes Module (57)"
 Cohesion: 0.29
@@ -525,8 +562,8 @@ Cohesion: 0.29
 Nodes (4): fs, GRADLE_PROPS, path, { withDangerousMod, withGradleProperties }
 
 ### Community 62 - "Cycle Count Operations (62)"
-Cohesion: 0.48
-Nodes (4): getPartDisplayName(), getPartSecondaryLabel(), MobileCounter(), StaffDashboard()
+Cohesion: 0.83
+Nodes (3): getPartDisplayName(), getPartSecondaryLabel(), MobileCounter()
 
 ### Community 63 - "Cheque Processing (63)"
 Cohesion: 0.29
@@ -545,16 +582,16 @@ Cohesion: 0.29
 Nodes (5): api, axios, jwt, testUser, token
 
 ### Community 67 - "Docker Infrastructure (67)"
-Cohesion: 0.33
-Nodes (6): Docker Compose Development Overrides, Docker Compose Production Architecture, Docker Compose Core Services, PRD System Architecture, System Architecture Overview, Docker Environment Deployment
+Cohesion: 0.67
+Nodes (3): Docker Compose Development Overrides, Docker Compose Production Architecture, Docker Compose Core Services
 
 ### Community 68 - "purchaseOrderPdf Module (68)"
 Cohesion: 0.33
 Nodes (4): fs, os, path, puppeteer
 
 ### Community 69 - "arRoutes Module (69)"
-Cohesion: 0.33
-Nodes (5): db, express, { parsePaginationQuery, paginatedResponse }, { protect, hasPermission }, router
+Cohesion: 0.15
+Nodes (12): Applying schema: dev and prod (non‑destructive), Authoring migrations (conventions), Backup and rollback, Baseline vs. migrations, Common templates, Database, Database setup and migrations guide, Examples in this repo (+4 more)
 
 ### Community 70 - "documentRoutes Module (70)"
 Cohesion: 0.33
@@ -565,20 +602,24 @@ Cohesion: 0.33
 Nodes (4): fs, { meiliClient }, path, synonymsPath
 
 ### Community 72 - "Forson Business Suite Module (72)"
-Cohesion: 0.33
-Nodes (6): Forson Business Suite, Icon Logo, Print Receipt, Vite Logo, React + Vite, Drawer Component Refactoring
+Cohesion: 0.67
+Nodes (3): Forson Business Suite, Icon Logo, Print Receipt
+
+### Community 73 - "Parts Management & Catalog (73)"
+Cohesion: 0.17
+Nodes (11): 1. Overview, 2. Goals & Success Metrics, 3.1 In-Scope Modules, 3.2 Out-of-Scope (Future Phases), 3. Scope, 4.1 Inventory Management, 4.2 Sales Order Processing, 4.3 User Management & Security (+3 more)
 
 ### Community 74 - "Parts Management & Catalog (74)"
 Cohesion: 0.60
 Nodes (3): { normalizeForSearch, normalizeArray }, normalizeArray(), normalizeForSearch()
 
 ### Community 75 - "Meilisearch Sync Worker (75)"
-Cohesion: 0.50
-Nodes (5): Meilisearch Configuration, Purchase Order PDF Template, Mobile Agents, Expo Configuration, Expo App README
+Cohesion: 0.13
+Nodes (14): Backwards Compatibility, Basic Configuration, Breaking Changes, Development, Environment-Specific Defaults, Error Handling Improvements, Example .env Configuration, Health Check Endpoints (+6 more)
 
 ### Community 76 - "Cycle Count Operations (76)"
-Cohesion: 0.40
-Nodes (4): db, express, { protect, hasPermission }, router
+Cohesion: 0.20
+Nodes (9): 1) One-Time Setup, 2) Development, 3) Production, 4) Update/Upgrade (Production), 5) Useful Admin, 6) CI/CD & Release Workflow, 🚨 DEVELOPER RULES (CRITICAL), Forson Business Suite - Commands (+1 more)
 
 ### Community 78 - "Android Adaptive Background Icon 108 Module (78)"
 Cohesion: 0.40
@@ -592,69 +633,81 @@ Nodes (3): mockLines, mockParts, mockTaxRates
 Cohesion: 0.50
 Nodes (4): apiRequest(), axios, testAREndpointsWithData(), testCredentials
 
-### Community 82 - "Query First Module (82)"
-Cohesion: 0.50
-Nodes (4): Query First, Copilot Instructions for Forson Business Suite, Document Management Interface (DMI), Sales & Transactions Module
-
-### Community 83 - "Cycle Count Operations (83)"
-Cohesion: 0.50
-Nodes (4): Split Payment & Multi-Method Checkout, On-Account Payments & Accounts Receivable Charges, Payment Terms Integration & Readiness, PRD Sales Order Processing
-
 ### Community 84 - "Meilisearch Sync Worker (84)"
-Cohesion: 0.50
-Nodes (3): db, path, { syncPartWithMeili }
+Cohesion: 0.22
+Nodes (7): bcrypt, db, express, jwt, { parsePaginationQuery, paginatedResponse }, { protect, isAdmin }, router
 
 ### Community 85 - "Meilisearch Sync Worker (85)"
-Cohesion: 0.50
-Nodes (3): db, { getPartDataForMeili }, { syncPartWithMeili }
+Cohesion: 0.25
+Nodes (6): db, express, { formatPhysicalReceiptNumber }, invoicePaymentsMiddlewares, { protect, hasPermission }, router
+
+### Community 86 - "test-ar-data.js"
+Cohesion: 0.29
+Nodes (6): db, DuplicateFinder, express, PartMergeService, { protect, hasPermission }, router
 
 ### Community 87 - "Plan-Feature Skill Module (87)"
-Cohesion: 0.67
-Nodes (3): Plan-Feature Skill, Feature Implementation Sequence, Monorepo Cascade Workflow
-
-### Community 88 - "CI Workflow Module (88)"
-Cohesion: 0.67
-Nodes (3): CI Workflow, Deploy Workflow, CI/CD & Release Workflow
-
-### Community 89 - "Deploy Job Module (89)"
-Cohesion: 0.67
-Nodes (3): Deploy Job, Update/Upgrade (Production) Commands, Payment Terms Rollout Plan
+Cohesion: 0.29
+Nodes (6): Get a fresh project, Get started, Join the community, Learn more, Other setup steps, Welcome to your Expo app 👋
 
 ### Community 90 - "Tax Calculation & Rates (90)"
-Cohesion: 0.67
-Nodes (3): Database Migrations Framework, Database Initialization Workflow, Tax Database Schema & Fields
-
-### Community 91 - "Cycle Count Operations (91)"
-Cohesion: 0.67
-Nodes (3): Changelog Version 1.5.1 Cycle Counting Features, Changelog Version 2.0.0 Mobile and Part View Optimization, Mobile Cycle Counting Testing & UX Verification Plan
+Cohesion: 0.05
+Nodes (41): 1) Branch and Prepare, 2) Bump Version, 3) Validate, 4) Commit Release Prep, 5) Tag Release, 6) Build with Explicit Metadata, 7) Deploy & Verify, Application Versioning & Release Guide (+33 more)
 
 ### Community 92 - "Meilisearch Sync Worker (92)"
-Cohesion: 0.67
-Nodes (3): Sales History Summary Statistics, Meilisearch Outbox Alert Triggers & Playbooks, Meilisearch Sync Queue Monitoring
+Cohesion: 0.22
+Nodes (8): Alert triggers, Notes on idempotency / versioning, Playbook: Dead queue replay, Playbook: Full repair async job (emergency), Playbook: Meili degraded, Purpose, Rollback toggles / env flags, Search Sync Runbook (Meilisearch + Durable Outbox)
 
 ### Community 93 - "Home Navigation Route Module (93)"
 Cohesion: 0.67
 Nodes (3): Home Navigation Route, Home Tab Icon, Minimalist Rounded Icon Design
 
+### Community 95 - "DocumentsPage Module (95)"
+Cohesion: 0.40
+Nodes (4): Answer, Outcome, Q: Why does hasPermission() connect Auth Permissions & Dashboard Widgets to 18 other modules across the codebase?, Source Nodes
+
+### Community 111 - "Cheque Processing (111)"
+Cohesion: 0.33
+Nodes (5): Cheque Printing Module — Phase 1 Status, Environment caveat, Phase 1 completion criteria, Phase 1 objective, What is completed in codebase
+
+### Community 115 - "Cheque Processing (115)"
+Cohesion: 0.40
+Nodes (4): db, express, { protect, hasPermission }, router
+
+### Community 117 - "Tax Calculation & Rates (117)"
+Cohesion: 0.05
+Nodes (41): API Endpoints, Application Rollback, Common Issues, Compliance Notes, Configuration, Database Rollback, Database Schema Changes, Debug Tools (+33 more)
+
+### Community 133 - "Developer Workflows Module (133)"
+Cohesion: 0.40
+Nodes (4): db, express, { protect }, router
+
+### Community 135 - "Forson Business Suite: Functional Requirement Document (Code-Audited)"
+Cohesion: 0.40
+Nodes (4): Forson Business Suite: Functional Requirement Document (Code-Audited), Module: Core System & User Management, Module: Inventory & Part Management, Module: Sales & Transactions
+
+### Community 136 - "Forson Business Suite — Features Documentation"
+Cohesion: 0.50
+Nodes (3): Forson Business Suite — Features Documentation, Sales History — Summary (detailed), Split Payments (detailed)
+
 ## Knowledge Gaps
-- **715 isolated node(s):** `styles`, `backup.sh script`, `name`, `version`, `private` (+710 more)
+- **991 isolated node(s):** `backup.sh script`, `name`, `version`, `private`, `workspaces` (+986 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **147 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **170 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `hasPermission()` connect `Auth Permissions & Dashboard Widgets` to `Meilisearch Sync Worker (33)`, `Meilisearch Sync Worker (35)`, `Payment Terms & Overdue Calculations`, `arRoutes Module (69)`, `InvoiceDetailsModal Module (39)`, `Cheque PDF Rendering & Formatting`, `Cycle Count Operations (76)`, `documentsRoutes Module (47)`, `Cycle Count Operations (15)`, `paymentRoutes Module (49)`, `Tax Calculation & Rates (18)`, `backupRoutes Module (53)`, `customerRoutes Module (54)`, `Meilisearch Sync Worker (23)`, `Tax Calculation & Rates (24)`, `reportingRoutes Module (57)`, `goodsReceiptRoutes Module (56)`, `documentNumberGenerator Module (28)`?**
-  _High betweenness centrality (0.218) - this node is a cross-community bridge._
+- **Why does `hasPermission()` connect `Tax Calculation & Rates (18)` to `Meilisearch Sync Worker (33)`, `Payment Terms & Overdue Calculations`, `InvoiceDetailsModal Module (39)`, `AnalyticsCharts Module (40)`, `Cheque PDF Rendering & Formatting`, `API Routes & Pagination Middleware`, `Auth Permissions & Dashboard Widgets`, `documentsRoutes Module (47)`, `Cycle Count Operations (15)`, `paymentRoutes Module (49)`, `Cheque Processing (115)`, `backupRoutes Module (53)`, `test-ar-data.js`, `Meilisearch Sync Worker (23)`, `Tax Calculation & Rates (24)`, `Meilisearch Sync Worker (85)`, `documentNumberGenerator Module (28)`, `reportingRoutes Module (57)`?**
+  _High betweenness centrality (0.153) - this node is a cross-community bridge._
 - **Why does `meilisearch` connect `API Gateway Dependencies` to `Meilisearch Sync Worker (27)`?**
-  _High betweenness centrality (0.053) - this node is a cross-community bridge._
-- **What connects `styles`, `backup.sh script`, `name` to the rest of the system?**
-  _724 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _High betweenness centrality (0.036) - this node is a cross-community bridge._
+- **What connects `backup.sh script`, `name`, `version` to the rest of the system?**
+  _1000 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Accounts Receivable & Invoice Aging` be split into smaller, more focused modules?**
-  _Cohesion score 0.08979591836734693 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.08272859216255443 - nodes in this community are weakly interconnected._
 - **Should `Mobile Exploration & Tab Navigation` be split into smaller, more focused modules?**
   _Cohesion score 0.11794871794871795 - nodes in this community are weakly interconnected._
 - **Should `API Gateway Dependencies` be split into smaller, more focused modules?**
   _Cohesion score 0.05128205128205128 - nodes in this community are weakly interconnected._
 - **Should `Payment Terms & Overdue Calculations` be split into smaller, more focused modules?**
-  _Cohesion score 0.0746031746031746 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.10052910052910052 - nodes in this community are weakly interconnected._

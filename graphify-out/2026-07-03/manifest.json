@@ -800,7 +800,7 @@
     "semantic_hash": "10af60a946e825510538ef9bd1dd225d"
   },
   "packages/mobile/.expo/types/router.d.ts": {
-    "mtime": 1783081737.3454926,
+    "mtime": 1783083890.5435572,
     "ast_hash": "f00456c6d4e1e66c14639044269589b6",
     "semantic_hash": "f00456c6d4e1e66c14639044269589b6"
   },
@@ -895,8 +895,8 @@
     "semantic_hash": "9644ed7440220373e9b8868259341fdc"
   },
   "packages/mobile/src/app/count.tsx": {
-    "mtime": 1783081734.3023736,
-    "ast_hash": "2c8b20ab4e702b0d15521a16686e3b93",
+    "mtime": 1783083889.431514,
+    "ast_hash": "e91730bf9db59ac2a0cdb0dc7b394c40",
     "semantic_hash": ""
   },
   "packages/mobile/src/app/explore.tsx": {
