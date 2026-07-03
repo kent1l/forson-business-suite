@@ -2158,5 +2158,285 @@
     "mtime": 1782378010.3865905,
     "ast_hash": "c62d22797f3002396754d8cc55b0ae1a",
     "semantic_hash": "c62d22797f3002396754d8cc55b0ae1a"
+  },
+  ".agents/rules/01-efficiency.md": {
+    "mtime": 1779279573.1732264,
+    "ast_hash": "2eaed10fc6518f48f00ccfd80e3b6840",
+    "semantic_hash": "2eaed10fc6518f48f00ccfd80e3b6840"
+  },
+  ".agents/rules/02-graph-protocol.md": {
+    "mtime": 1779279573.1738918,
+    "ast_hash": "b6ca0aee17779224bc0f5dc79196a15e",
+    "semantic_hash": "b6ca0aee17779224bc0f5dc79196a15e"
+  },
+  ".agents/rules/03-database-migrations.md": {
+    "mtime": 1779279573.1738918,
+    "ast_hash": "b9ddb40a42753b3309751c7fc76173e6",
+    "semantic_hash": "b9ddb40a42753b3309751c7fc76173e6"
+  },
+  ".agents/skills/plan-feature/SKILL.md": {
+    "mtime": 1783068718.0133927,
+    "ast_hash": "b7de2313af24f4b6b4a569d56f5c490d",
+    "semantic_hash": "b7de2313af24f4b6b4a569d56f5c490d"
+  },
+  ".agents/workflows/build-feature.md": {
+    "mtime": 1779279573.1740842,
+    "ast_hash": "7d12e4ecbbd9e1a667f3e3aef280136f",
+    "semantic_hash": "7d12e4ecbbd9e1a667f3e3aef280136f"
+  },
+  ".agents/workflows/cascade.md": {
+    "mtime": 1779279573.1747105,
+    "ast_hash": "187bedbc179e48f74a92cd26bc54a6f7",
+    "semantic_hash": "187bedbc179e48f74a92cd26bc54a6f7"
+  },
+  ".github/copilot-instructions.md": {
+    "mtime": 1779279573.1750844,
+    "ast_hash": "d51a16adb9121251012f712b8ca1f99b",
+    "semantic_hash": "d51a16adb9121251012f712b8ca1f99b"
+  },
+  ".github/prompts/document_nav.prompt.md": {
+    "mtime": 1779279573.1750844,
+    "ast_hash": "4798f2b5565888633f38f4554f68bea9",
+    "semantic_hash": "4798f2b5565888633f38f4554f68bea9"
+  },
+  ".github/workflows/ci.yml": {
+    "mtime": 1782927992.9023237,
+    "ast_hash": "2ac2764dc9c35e53e0714610fe067bbd",
+    "semantic_hash": "2ac2764dc9c35e53e0714610fe067bbd"
+  },
+  ".github/workflows/deploy.yml": {
+    "mtime": 1779279573.1761973,
+    "ast_hash": "9762add2820482cad5479a5af0166861",
+    "semantic_hash": "9762add2820482cad5479a5af0166861"
+  },
+  ".github/workflows/docker-publish.yml": {
+    "mtime": 1779279573.1761973,
+    "ast_hash": "79fae3d62424804e74e22b73c4cfa279",
+    "semantic_hash": "79fae3d62424804e74e22b73c4cfa279"
+  },
+  ".github/workflows/security.yml": {
+    "mtime": 1779279573.1761973,
+    "ast_hash": "4629f3e2185eddd59511469963084979",
+    "semantic_hash": "4629f3e2185eddd59511469963084979"
+  },
+  "COMMANDS.md": {
+    "mtime": 1779279573.1770844,
+    "ast_hash": "551484b6ea749388e478572bf73cf44d",
+    "semantic_hash": "551484b6ea749388e478572bf73cf44d"
+  },
+  "DASHBOARD_ENHANCEMENT_SUMMARY.md": {
+    "mtime": 1779279573.1770844,
+    "ast_hash": "123130f446251b254c50dc28f5603b01",
+    "semantic_hash": "123130f446251b254c50dc28f5603b01"
+  },
+  "PAYMENT_TERMS_ROLLOUT_PLAN.md": {
+    "mtime": 1779279573.1780844,
+    "ast_hash": "ae8d497ce67ccff638e473867aa44155",
+    "semantic_hash": "ae8d497ce67ccff638e473867aa44155"
+  },
+  "PRD_Functional_Breakdown.md": {
+    "mtime": 1779279573.1780844,
+    "ast_hash": "ebfe5b10a3e8758ed958e6090f75e1bd",
+    "semantic_hash": "ebfe5b10a3e8758ed958e6090f75e1bd"
+  },
+  "PRD_forson-business-suite.md": {
+    "mtime": 1779279573.1780844,
+    "ast_hash": "547f46ae46145cd8ab2f1d1474b30de4",
+    "semantic_hash": "547f46ae46145cd8ab2f1d1474b30de4"
+  },
+  "README.md": {
+    "mtime": 1779279573.1790845,
+    "ast_hash": "901d4e06d79aabd8e9f062a97b1c36f9",
+    "semantic_hash": "901d4e06d79aabd8e9f062a97b1c36f9"
+  },
+  "TAX_IMPLEMENTATION.md": {
+    "mtime": 1779279573.1790845,
+    "ast_hash": "812f37b7fab4c17d57679ea6c5830c94",
+    "semantic_hash": "812f37b7fab4c17d57679ea6c5830c94"
+  },
+  "database/README.md": {
+    "mtime": 1779279573.193085,
+    "ast_hash": "0ca2a1706d013e2df4951298a024321e",
+    "semantic_hash": "0ca2a1706d013e2df4951298a024321e"
+  },
+  "docker-compose.dev.yml": {
+    "mtime": 1782378010.3325882,
+    "ast_hash": "a6edd5c3c2a8bc4a9b10f5eb83c8ff6c",
+    "semantic_hash": "a6edd5c3c2a8bc4a9b10f5eb83c8ff6c"
+  },
+  "docker-compose.prod.yml": {
+    "mtime": 1779279573.2126496,
+    "ast_hash": "95e58bbf08b72a7eadb7ee25f8309980",
+    "semantic_hash": "95e58bbf08b72a7eadb7ee25f8309980"
+  },
+  "docker-compose.yml": {
+    "mtime": 1780392394.2483153,
+    "ast_hash": "77e9db7cdae1e389d0a43583303128df",
+    "semantic_hash": "77e9db7cdae1e389d0a43583303128df"
+  },
+  "docs/APPLICATION_VERSIONING_AND_RELEASE_GUIDE.md": {
+    "mtime": 1779279573.213086,
+    "ast_hash": "f8f180a0879a8f8803fa580e302ff327",
+    "semantic_hash": "f8f180a0879a8f8803fa580e302ff327"
+  },
+  "docs/CHANGELOG.md": {
+    "mtime": 1782379383.4727108,
+    "ast_hash": "79d9d67b129d952c2a20484f6aaf9c51",
+    "semantic_hash": "79d9d67b129d952c2a20484f6aaf9c51"
+  },
+  "docs/CHEQUE_IMPLEMENTATION_PROGRESS_AUDIT_2026-04-19.md": {
+    "mtime": 1779279573.213086,
+    "ast_hash": "7e00dc72f2818beb1b1484b7d0a5e240",
+    "semantic_hash": "7e00dc72f2818beb1b1484b7d0a5e240"
+  },
+  "docs/CHEQUE_PHASE1_STATUS.md": {
+    "mtime": 1779279573.213086,
+    "ast_hash": "9ac9ba5588488e715a18e218180e4079",
+    "semantic_hash": "9ac9ba5588488e715a18e218180e4079"
+  },
+  "docs/FEATURES.md": {
+    "mtime": 1779279573.213086,
+    "ast_hash": "9fb2fbf0f1469938ee484423dbae34a7",
+    "semantic_hash": "9fb2fbf0f1469938ee484423dbae34a7"
+  },
+  "docs/MEILI_OUTBOX_RUNBOOK.md": {
+    "mtime": 1779279573.2140858,
+    "ast_hash": "43026e3296cee821e8a04118466c3f0d",
+    "semantic_hash": "43026e3296cee821e8a04118466c3f0d"
+  },
+  "docs/ON_ACCOUNT_PAYMENTS.md": {
+    "mtime": 1779279573.2140858,
+    "ast_hash": "69db098600ff6806d8764fb04a45d052",
+    "semantic_hash": "69db098600ff6806d8764fb04a45d052"
+  },
+  "docs/PAYMENT_TERMS_PRODUCTION_READINESS.md": {
+    "mtime": 1779279573.2140858,
+    "ast_hash": "25c634c4413ae7c4db3bcc7fe637178b",
+    "semantic_hash": "25c634c4413ae7c4db3bcc7fe637178b"
+  },
+  "packages/web/README.md": {
+    "mtime": 1779279573.2351592,
+    "ast_hash": "a310fedf2f880561dc04aecc83f92be4",
+    "semantic_hash": "a310fedf2f880561dc04aecc83f92be4"
+  },
+  "packages/web/index.html": {
+    "mtime": 1779279573.2351592,
+    "ast_hash": "83128108702aa63298dce4a5cb9c32b7",
+    "semantic_hash": "83128108702aa63298dce4a5cb9c32b7"
+  },
+  "packages/web/public/print.html": {
+    "mtime": 1779279573.238206,
+    "ast_hash": "155a387a718f7209e4c8d5789c9c08cd",
+    "semantic_hash": "155a387a718f7209e4c8d5789c9c08cd"
+  },
+  "packages/web/src/components/ui/Drawer.README.md": {
+    "mtime": 1779279573.2480297,
+    "ast_hash": "9f98658cecdaa86dd568ca5f81dc0740",
+    "semantic_hash": "9f98658cecdaa86dd568ca5f81dc0740"
+  },
+  "test_plan.md": {
+    "mtime": 1782378010.448909,
+    "ast_hash": "a5ec2dc5f0dbaf2c667f687a75f96b7c",
+    "semantic_hash": "a5ec2dc5f0dbaf2c667f687a75f96b7c"
+  },
+  "packages/mobile/.expo/web/cache/production/images/android-adaptive-background/android-adaptive-background-fb139c2dee362ebf2070e23b96da6fc0d43f8492de38b8af1fd7223e19b5861d-cover-transparent/icon_108.png": {
+    "mtime": 1782378181.2371268,
+    "ast_hash": "5fc5ff595a9708fb1186f29d4cba0165",
+    "semantic_hash": "5fc5ff595a9708fb1186f29d4cba0165"
+  },
+  "packages/mobile/.expo/web/cache/production/images/android-adaptive-background/android-adaptive-background-fb139c2dee362ebf2070e23b96da6fc0d43f8492de38b8af1fd7223e19b5861d-cover-transparent/icon_162.png": {
+    "mtime": 1782378181.2371268,
+    "ast_hash": "8b804c2e3ffcb414d81159cdbe8e1338",
+    "semantic_hash": "8b804c2e3ffcb414d81159cdbe8e1338"
+  },
+  "packages/mobile/.expo/web/cache/production/images/android-adaptive-background/android-adaptive-background-fb139c2dee362ebf2070e23b96da6fc0d43f8492de38b8af1fd7223e19b5861d-cover-transparent/icon_216.png": {
+    "mtime": 1782378181.2371993,
+    "ast_hash": "1e8461bcda400d6f2e6ba0a789e9df32",
+    "semantic_hash": "1e8461bcda400d6f2e6ba0a789e9df32"
+  },
+  "packages/mobile/.expo/web/cache/production/images/android-adaptive-background/android-adaptive-background-fb139c2dee362ebf2070e23b96da6fc0d43f8492de38b8af1fd7223e19b5861d-cover-transparent/icon_324.png": {
+    "mtime": 1782378181.2371993,
+    "ast_hash": "3a76914a81170ce0bafc194cf299e0b8",
+    "semantic_hash": "3a76914a81170ce0bafc194cf299e0b8"
+  },
+  "packages/mobile/.expo/web/cache/production/images/android-adaptive-background/android-adaptive-background-fb139c2dee362ebf2070e23b96da6fc0d43f8492de38b8af1fd7223e19b5861d-cover-transparent/icon_432.png": {
+    "mtime": 1782378181.2371993,
+    "ast_hash": "11c5ebf85672a8b1a823b29ffcc023a6",
+    "semantic_hash": "11c5ebf85672a8b1a823b29ffcc023a6"
+  },
+  "packages/mobile/.expo/web/cache/production/images/android-adaptive-foreground/android-adaptive-foreground-9e3d0315a33c6799de601dd34cd8bf8cc3a8d16f3bf75592baec2ceb7240b391-cover-transparent/icon_108.png": {
+    "mtime": 1782378181.2371993,
+    "ast_hash": "21c6ff184e62fe81d5d99486c994b4a1",
+    "semantic_hash": "21c6ff184e62fe81d5d99486c994b4a1"
+  },
+  "packages/mobile/.expo/web/cache/production/images/android-adaptive-foreground/android-adaptive-foreground-9e3d0315a33c6799de601dd34cd8bf8cc3a8d16f3bf75592baec2ceb7240b391-cover-transparent/icon_162.png": {
+    "mtime": 1782378181.2371993,
+    "ast_hash": "23d6c4c853d373ebc8a6b78e01a565f5",
+    "semantic_hash": "23d6c4c853d373ebc8a6b78e01a565f5"
+  },
+  "packages/mobile/.expo/web/cache/production/images/android-adaptive-foreground/android-adaptive-foreground-9e3d0315a33c6799de601dd34cd8bf8cc3a8d16f3bf75592baec2ceb7240b391-cover-transparent/icon_216.png": {
+    "mtime": 1782378181.2371993,
+    "ast_hash": "94e64d4a7a895c46bee57dd117eaaa4e",
+    "semantic_hash": "94e64d4a7a895c46bee57dd117eaaa4e"
+  },
+  "packages/mobile/.expo/web/cache/production/images/android-adaptive-foreground/android-adaptive-foreground-9e3d0315a33c6799de601dd34cd8bf8cc3a8d16f3bf75592baec2ceb7240b391-cover-transparent/icon_324.png": {
+    "mtime": 1782378181.2381992,
+    "ast_hash": "54904135a542a76951f4c4aa7618d942",
+    "semantic_hash": "54904135a542a76951f4c4aa7618d942"
+  },
+  "packages/mobile/.expo/web/cache/production/images/android-adaptive-foreground/android-adaptive-foreground-9e3d0315a33c6799de601dd34cd8bf8cc3a8d16f3bf75592baec2ceb7240b391-cover-transparent/icon_432.png": {
+    "mtime": 1782378181.2381992,
+    "ast_hash": "56f4339ea33cd98feee64cf1b83ecd24",
+    "semantic_hash": "56f4339ea33cd98feee64cf1b83ecd24"
+  },
+  "packages/mobile/.expo/web/cache/production/images/android-adaptive-monochrome/android-adaptive-monochrome-6371fc2c12e33ad2215a86c281db3d682a81bebe7c957a842c13b8bf00cceb83-cover-transparent/icon_108.png": {
+    "mtime": 1782378181.2381992,
+    "ast_hash": "3d7d2cdcf1efff070cd99b3a24b2af0a",
+    "semantic_hash": "3d7d2cdcf1efff070cd99b3a24b2af0a"
+  },
+  "packages/mobile/.expo/web/cache/production/images/android-adaptive-monochrome/android-adaptive-monochrome-6371fc2c12e33ad2215a86c281db3d682a81bebe7c957a842c13b8bf00cceb83-cover-transparent/icon_162.png": {
+    "mtime": 1782378181.2381992,
+    "ast_hash": "ddc9ce93ec17a515f270e1334f4d096d",
+    "semantic_hash": "ddc9ce93ec17a515f270e1334f4d096d"
+  },
+  "packages/mobile/.expo/web/cache/production/images/android-adaptive-monochrome/android-adaptive-monochrome-6371fc2c12e33ad2215a86c281db3d682a81bebe7c957a842c13b8bf00cceb83-cover-transparent/icon_216.png": {
+    "mtime": 1782378181.2391994,
+    "ast_hash": "25ce7486d6cf2a88b12191bdc327889c",
+    "semantic_hash": "25ce7486d6cf2a88b12191bdc327889c"
+  },
+  "packages/mobile/.expo/web/cache/production/images/android-adaptive-monochrome/android-adaptive-monochrome-6371fc2c12e33ad2215a86c281db3d682a81bebe7c957a842c13b8bf00cceb83-cover-transparent/icon_324.png": {
+    "mtime": 1782378181.2391994,
+    "ast_hash": "c74b95ed269648784a5341dc7fc8c5d2",
+    "semantic_hash": "c74b95ed269648784a5341dc7fc8c5d2"
+  },
+  "packages/mobile/.expo/web/cache/production/images/android-adaptive-monochrome/android-adaptive-monochrome-6371fc2c12e33ad2215a86c281db3d682a81bebe7c957a842c13b8bf00cceb83-cover-transparent/icon_432.png": {
+    "mtime": 1782378181.2391994,
+    "ast_hash": "d294024561d781537913c8be15eed1e1",
+    "semantic_hash": "d294024561d781537913c8be15eed1e1"
+  },
+  "packages/mobile/assets/images/tabIcons/home.png": {
+    "mtime": 1782378010.3863366,
+    "ast_hash": "eeb5de2ac12ace75b31dfda235208956",
+    "semantic_hash": "eeb5de2ac12ace75b31dfda235208956"
+  },
+  "packages/mobile/assets/images/tabIcons/home@2x.png": {
+    "mtime": 1782378010.3863366,
+    "ast_hash": "456346cfb0b82cc0f39e921e05d082d9",
+    "semantic_hash": "456346cfb0b82cc0f39e921e05d082d9"
+  },
+  "packages/mobile/assets/images/tabIcons/home@3x.png": {
+    "mtime": 1782378010.3863366,
+    "ast_hash": "5d86e963002b3664ab81c128c838559d",
+    "semantic_hash": "5d86e963002b3664ab81c128c838559d"
+  },
+  "packages/web/public/icon_logo.svg": {
+    "mtime": 1779279573.2370868,
+    "ast_hash": "56eade04a180062d7b5f9d339ec686e6",
+    "semantic_hash": "56eade04a180062d7b5f9d339ec686e6"
+  },
+  "packages/web/public/vite.svg": {
+    "mtime": 1779279573.238206,
+    "ast_hash": "8e3a10e157f75ada21ab742c022d5430",
+    "semantic_hash": "8e3a10e157f75ada21ab742c022d5430"
   }
 }
