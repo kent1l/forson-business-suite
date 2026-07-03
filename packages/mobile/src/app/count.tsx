@@ -61,7 +61,7 @@ export default function CountScreen() {
         display_name: currentAdHocItem!.display_name ?? currentAdHocItem!.name,
         internal_sku: currentAdHocItem!.internal_sku ?? currentAdHocItem!.sku,
         part_id: currentAdHocItem!.id ?? currentAdHocItem!.part_id,
-        barcode: currentAdHocItem!.barcode ?? null,
+        barcodes: currentAdHocItem!.barcodes ?? [],
         expected_qty: currentAdHocItem!.expected_qty ?? null,
       }
     : activeBatchData![currentLineIndex];
@@ -89,16 +89,14 @@ export default function CountScreen() {
       if (isAdHocMode) {
         // ── Ad-hoc path ──────────────────────────────────────────────────────
         await submitAdHocCount(countedQty);
-        setIsSubmitting(false);
-        Alert.alert('Submitted', 'Unassigned find logged successfully.', [
-          {
-            text: 'OK',
-            onPress: () => {
-              clearAdHocMode();
-              router.replace('/');
-            },
-          },
-        ]);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        
+        // Delay clearAdHocMode slightly to prevent state tearing/crashes during unmount
+        setTimeout(() => {
+          clearAdHocMode();
+        }, 100);
+        
+        router.replace('/unassigned-search');
       } else {
         // ── Assigned batch path ──────────────────────────────────────────────
         const payload: any = { counted_qty: countedQty };
@@ -140,8 +138,8 @@ export default function CountScreen() {
     );
   }
 
-  const needsBarcode = !currentLine.barcode && !scannedBarcode;
-  const hasBarcode: boolean = Boolean(currentLine.barcode) || Boolean(scannedBarcode);
+  const needsBarcode = !(currentLine.barcodes && currentLine.barcodes.length > 0) && !scannedBarcode;
+  const hasBarcode: boolean = Boolean(currentLine.barcodes && currentLine.barcodes.length > 0) || Boolean(scannedBarcode);
 
   const openCameraModal = () => {
     setPendingBarcode(null);
@@ -158,8 +156,25 @@ export default function CountScreen() {
 
   const acceptBarcode = () => {
     if (pendingBarcode) {
-      setScannedBarcode(pendingBarcode);
-      closeCameraModal();
+      if (currentLine.barcodes && currentLine.barcodes.includes(pendingBarcode)) {
+        setScannedBarcode(pendingBarcode);
+        closeCameraModal();
+      } else {
+        Alert.alert(
+          'Link Barcode',
+          `Do you want to link the scanned barcode (${pendingBarcode}) to this item?`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Yes, Link It', 
+              onPress: () => {
+                setScannedBarcode(pendingBarcode);
+                closeCameraModal();
+              }
+            }
+          ]
+        );
+      }
     }
   };
 

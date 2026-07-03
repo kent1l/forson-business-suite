@@ -8,8 +8,18 @@ node_modules/
 # Backup Files
 backups/
 
-# Graphify artifacts
-graphify-out/
+# ==========================================
+# Graphify Artifacts
+# ==========================================
+# 1. Track the compiled architecture blueprints for the agent
+!graphify-out/
+!graphify-out/graph.json
+!graphify-out/graph.html
+!graphify-out/GRAPH_REPORT.md
+
+# 2. STRICTLY IGNORE the volatile background caching layers
+graphify-out/cache/
+.graphify_*
 .graphify/
 
 # Build artifacts

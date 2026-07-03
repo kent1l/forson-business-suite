@@ -16,8 +16,8 @@ const ENTITY_CONFIG = {
     parts: {
         table: 'part',
         upsertConflictKey: 'internal_sku',
-        csvFields: ['internal_sku', 'detail', 'brand_name', 'group_name', 'part_numbers', 'barcode', 'is_active', 'last_cost', 'last_sale_price', 'reorder_point', 'warning_quantity', 'measurement_unit', 'is_tax_inclusive_price', 'is_price_change_allowed', 'is_using_default_quantity', 'is_service', 'low_stock_warning'],
-        dbFields: ['internal_sku', 'detail', 'barcode', 'is_active', 'last_cost', 'last_sale_price', 'reorder_point', 'warning_quantity', 'measurement_unit', 'is_tax_inclusive_price', 'is_price_change_allowed', 'is_using_default_quantity', 'is_service', 'low_stock_warning', 'brand_id', 'group_id']
+        csvFields: ['internal_sku', 'detail', 'brand_name', 'group_name', 'part_numbers', 'barcodes', 'is_active', 'last_cost', 'last_sale_price', 'reorder_point', 'warning_quantity', 'measurement_unit', 'is_tax_inclusive_price', 'is_price_change_allowed', 'is_using_default_quantity', 'is_service', 'low_stock_warning'],
+        dbFields: ['internal_sku', 'detail', 'is_active', 'last_cost', 'last_sale_price', 'reorder_point', 'warning_quantity', 'measurement_unit', 'is_tax_inclusive_price', 'is_price_change_allowed', 'is_using_default_quantity', 'is_service', 'low_stock_warning', 'brand_id', 'group_id']
     },
     customers: {
         table: 'customer',
@@ -52,7 +52,8 @@ router.get('/export/:entity', protect, isAdmin, async (req, res) => {
                     pv.display_name,
                     (SELECT STRING_AGG(pn.part_number, ';') FROM part_number pn
                      WHERE pn.part_id = pv.part_id AND pn.deleted_at IS NULL) AS part_numbers,
-                    pv.barcode, pv.is_active, pv.last_cost, pv.last_sale_price,
+                    (SELECT STRING_AGG(pb.barcode, ';') FROM part_barcode pb WHERE pb.part_id = pv.part_id) AS barcodes,
+                    pv.is_active, pv.last_cost, pv.last_sale_price,
                     (SELECT p2.reorder_point FROM part p2 WHERE p2.part_id = pv.part_id) AS reorder_point,
                     (SELECT p2.warning_quantity FROM part p2 WHERE p2.part_id = pv.part_id) AS warning_quantity,
                     (SELECT p2.measurement_unit FROM part p2 WHERE p2.part_id = pv.part_id) AS measurement_unit,
@@ -164,6 +165,14 @@ router.post('/import/:entity', protect, isAdmin, upload.single('file'), async (r
                 }
             }
 
+            if (entity === 'parts' && row.barcodes) {
+                const barcodes = row.barcodes.split(';').map(b => b.trim()).filter(Boolean);
+                await client.query('DELETE FROM part_barcode WHERE part_id = $1', [newOrUpdatedRow.part_id]);
+                for (const barcode of barcodes) {
+                    await client.query('INSERT INTO part_barcode (part_id, barcode) VALUES ($1, $2) ON CONFLICT (barcode) DO NOTHING', [newOrUpdatedRow.part_id, barcode]);
+                }
+            }
+
             if (newOrUpdatedRow.xmax === '0') createdCount++;
             else updatedCount++;
 
@@ -178,6 +187,7 @@ router.post('/import/:entity', protect, isAdmin, upload.single('file'), async (r
                     brand_name: row.brand_name,
                     group_name: row.group_name,
                     part_numbers: row.part_numbers || '',
+                    barcodes: row.barcodes ? row.barcodes.split(';').map(b => b.trim()).filter(Boolean) : [],
                     display_name: pvRes.rows[0]?.display_name || ''
                 };
                 partsToSync.push(partForMeili);
@@ -213,6 +223,7 @@ router.get('/sync-parts-to-meili', protect, isAdmin, async (req, res) => {
         const query = `
             SELECT
                 pv.*,
+                (SELECT ARRAY_AGG(pb.barcode) FROM part_barcode pb WHERE pb.part_id = pv.part_id) as barcodes,
                 (SELECT ARRAY_AGG(
                         CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''))
                 ) FROM part_application pa
@@ -234,7 +245,8 @@ router.get('/sync-parts-to-meili', protect, isAdmin, async (req, res) => {
             ...part,
             // display_name is natively provided by parts_view
             applications: part.applications_array || [],
-            tags: part.tags_array || []
+            tags: part.tags_array || [],
+            barcodes: part.barcodes || []
         }));
 
         // Sync with Meilisearch

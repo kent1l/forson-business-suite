@@ -120,13 +120,25 @@ export default function UnassignedSearchScreen() {
         try {
           const list = await fetchParts(value);
           if (list.length === 0) {
-            Alert.alert('Not Found', `No part found for barcode "${value}".`);
+            Alert.alert(
+              'Barcode Not Found',
+              `No part found for barcode "${value}". What would you like to do?`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Assign to Existing', onPress: () => {
+                   Alert.alert('Instructions', 'Search for the item by name or SKU, select it, then scan this barcode on the count screen to link it.');
+                }},
+                { text: 'Create New Item', onPress: () => {
+                   Alert.alert('Notice', 'Please use the Web Portal to create new items.');
+                }}
+              ]
+            );
             setIsScanResolving(false);
             return;
           }
           // Prefer exact barcode match; fall back to top result
           const exactMatch = list.find(
-            (p: any) => p.barcode?.toString() === value
+            (p: any) => p.barcodes && p.barcodes.includes(value)
           ) ?? list[0];
           startAdHocCount(exactMatch);
           router.push('/count');
@@ -157,7 +169,7 @@ export default function UnassignedSearchScreen() {
         </Text>
         <Text style={styles.resultSku} numberOfLines={1}>
           SKU: {item.internal_sku || item.sku || '—'}
-          {item.barcode ? `  ·  Barcode: ${item.barcode}` : ''}
+          {item.barcodes && item.barcodes.length > 0 ? `  ·  Barcode: ${item.barcodes[0]}${item.barcodes.length > 1 ? ` (+${item.barcodes.length - 1} more)` : ''}` : ''}
         </Text>
       </View>
       <Ionicons name="chevron-forward" size={18} color="#9ca3af" />

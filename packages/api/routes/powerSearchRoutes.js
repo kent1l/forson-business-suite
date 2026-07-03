@@ -15,6 +15,7 @@ router.get('/power-search/parts', async (req, res) => {
             limit: 200,
             matchingStrategy: 'all',
             attributesToSearchOn: [
+                'barcodes',
                 'internal_sku',
                 'normalized_internal_sku',
                 'part_numbers',
@@ -60,6 +61,10 @@ router.get('/power-search/parts', async (req, res) => {
                 b.brand_name,
                 g.group_name,
                 (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
+                (
+                    SELECT ARRAY_AGG(pb.barcode)
+                    FROM part_barcode pb WHERE pb.part_id = p.part_id
+                ) AS barcodes,
                 (
                     SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order)
                     FROM part_number pn WHERE pn.part_id = p.part_id AND ${activeAliasCondition('pn')}

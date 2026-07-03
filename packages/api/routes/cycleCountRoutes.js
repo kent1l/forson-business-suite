@@ -13,7 +13,8 @@ router.get('/inventory/cycle-count/my-tasks', protect, hasPermission('cycle_coun
                 l.*,
                 p.detail,
                 p.internal_sku,
-                COALESCE(pv.display_name, p.internal_sku, p.detail) AS display_name
+                COALESCE(pv.display_name, p.internal_sku, p.detail) AS display_name,
+                (SELECT ARRAY_AGG(barcode) FROM part_barcode pb WHERE pb.part_id = p.part_id) as barcodes
             FROM cycle_count_line l
             JOIN cycle_count_batch b ON l.batch_id = b.batch_id
             JOIN part p ON l.part_id = p.part_id
@@ -114,10 +115,10 @@ router.post('/inventory/cycle-count/lines/:id/submit', protect, hasPermission('c
         // 3.6 Conditionally update barcode
         if (scanned_barcode) {
             await client.query(`
-                UPDATE part
-                SET barcode = $1
-                WHERE part_id = $2
-            `, [scanned_barcode, line.part_id]);
+                INSERT INTO part_barcode (part_id, barcode)
+                VALUES ($1, $2)
+                ON CONFLICT (barcode) DO NOTHING
+            `, [line.part_id, scanned_barcode]);
         }
 
         // 4. Update the line
@@ -274,6 +275,7 @@ router.get('/inventory/cycle-count/manager/review', protect, hasPermission('cycl
                 p.detail, 
                 p.internal_sku,
                 COALESCE(pv.display_name, p.internal_sku, p.detail) AS display_name,
+                (SELECT ARRAY_AGG(barcode) FROM part_barcode pb WHERE pb.part_id = p.part_id) as barcodes,
                 p.wac_cost,
                 b.employee_id,
                 (l.counted_qty - l.system_qty_snapshot) AS variance_qty,
