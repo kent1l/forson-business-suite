@@ -1,7 +1,7 @@
 # Graph Report - forson-business-suite  (2026-07-04)
 
 ## Corpus Check
-- 399 files · ~262,024 words
+- 399 files · ~262,088 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `601a1225`
+- Built from commit: `c52b452e`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -691,7 +691,7 @@ Cohesion: 0.50
 Nodes (3): Forson Business Suite — Features Documentation, Sales History — Summary (detailed), Split Payments (detailed)
 
 ## Knowledge Gaps
-- **999 isolated node(s):** `🗺️ Navigation & App Architecture`, `⚙️ Server Settings Modal (Nested in Login)`, `2. Dashboard Screen`, `📸 Barcode Scanner Modal (Nested in Count)`, `📸 Barcode Scanner Modal (Nested in Unassigned Search)` (+994 more)
+- **999 isolated node(s):** `styles`, `🗺️ Navigation & App Architecture`, `⚙️ Server Settings Modal (Nested in Login)`, `2. Dashboard Screen`, `📸 Barcode Scanner Modal (Nested in Count)` (+994 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **171 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -699,10 +699,10 @@ Nodes (3): Forson Business Suite — Features Documentation, Sales History — S
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `hasPermission()` connect `Tax Calculation & Rates (18)` to `Meilisearch Sync Worker (33)`, `Payment Terms & Overdue Calculations`, `Developer Workflows Module (133)`, `InvoiceDetailsModal Module (39)`, `AnalyticsCharts Module (40)`, `Parts De-duplication & Conflict Resolution`, `Cheque PDF Rendering & Formatting`, `API Routes & Pagination Middleware`, `Auth Permissions & Dashboard Widgets`, `documentsRoutes Module (47)`, `Cycle Count Operations (15)`, `paymentRoutes Module (49)`, `Cheque Processing (115)`, `Meilisearch Sync Worker (85)`, `test-ar-data.js`, `Meilisearch Sync Worker (23)`, `Tax Calculation & Rates (24)`, `documentNumberGenerator Module (28)`?**
-  _High betweenness centrality (0.130) - this node is a cross-community bridge._
+  _High betweenness centrality (0.131) - this node is a cross-community bridge._
 - **Why does `meilisearch` connect `API Gateway Dependencies` to `Meilisearch Sync Worker (27)`?**
-  _High betweenness centrality (0.039) - this node is a cross-community bridge._
-- **What connects `🗺️ Navigation & App Architecture`, `⚙️ Server Settings Modal (Nested in Login)`, `2. Dashboard Screen` to the rest of the system?**
+  _High betweenness centrality (0.034) - this node is a cross-community bridge._
+- **What connects `styles`, `🗺️ Navigation & App Architecture`, `⚙️ Server Settings Modal (Nested in Login)` to the rest of the system?**
   _1008 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Accounts Receivable & Invoice Aging` be split into smaller, more focused modules?**
   _Cohesion score 0.08272859216255443 - nodes in this community are weakly interconnected._
