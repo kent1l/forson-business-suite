@@ -3,10 +3,13 @@ import { View, Text, TouchableOpacity, StyleSheet, useWindowDimensions } from 'r
 
 export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
   const { width, height } = useWindowDimensions();
-  const leftColWidth = width * 0.6;
-  const BUTTON_SIZE = Math.floor((leftColWidth - 16 - 24) / 3);
-  const availableHeight = height * 0.78 - 16;
-  const ROW_HEIGHT = Math.min(Math.floor(availableHeight / 4) - 10, BUTTON_SIZE);
+  const maxContainerWidth = Math.min(width, 500); // Cap width for tablet scaling
+  const leftColWidth = maxContainerWidth * 0.4;
+  const rightColWidth = maxContainerWidth * 0.6;
+  const BUTTON_GAP = 8;
+  // Calculate button size based on rightColWidth (60% of container width)
+  const BUTTON_SIZE = Math.floor((rightColWidth - 16 - (2 * BUTTON_GAP)) / 3);
+  const ROW_HEIGHT = BUTTON_SIZE; // Lock aspect ratio to 1:1
 
   const [inputQuantity, setInputQuantity] = useState(initialQuantity.toString());
 
@@ -33,7 +36,6 @@ export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
     setInputQuantity((prev) => {
       const current = parseInt(prev || '0', 10);
       const next = current + amount;
-      // Prevent negative numbers if needed, but here we just prevent less than 0
       return Math.max(0, next).toString();
     });
   };
@@ -47,7 +49,7 @@ export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
   const buttonStyle = {
     width: BUTTON_SIZE,
     height: ROW_HEIGHT,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: '#ffffff',
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
@@ -77,121 +79,142 @@ export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
     </TouchableOpacity>
   );
 
+  const quickActionWidth = Math.floor((maxContainerWidth - 16 - BUTTON_GAP) / 2);
+  const containerStyle = {
+    flexDirection: 'column',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    width: maxContainerWidth,
+    height: 5 * ROW_HEIGHT + 4 * BUTTON_GAP + 16,
+    alignSelf: 'center',
+    marginTop: 'auto',
+    gap: BUTTON_GAP,
+  };
+
+  const displayLabelFontSize = Math.max(9, Math.floor(ROW_HEIGHT * 0.2));
+  const displayTextFontSize = Math.max(18, Math.floor(ROW_HEIGHT * 0.7));
+
   return (
-    <View style={styles.container}>
-      <View style={styles.leftColumn}>
-        <View style={styles.row}>
-          {renderButton('1', () => handleNumberPress(1))}
-          {renderButton('2', () => handleNumberPress(2))}
-          {renderButton('3', () => handleNumberPress(3))}
-        </View>
-        <View style={styles.row}>
-          {renderButton('4', () => handleNumberPress(4))}
-          {renderButton('5', () => handleNumberPress(5))}
-          {renderButton('6', () => handleNumberPress(6))}
-        </View>
-        <View style={styles.row}>
-          {renderButton('7', () => handleNumberPress(7))}
-          {renderButton('8', () => handleNumberPress(8))}
-          {renderButton('9', () => handleNumberPress(9))}
-        </View>
-        <View style={styles.row}>
-          {renderButton('C', handleClear, true)}
-          {renderButton('0', () => handleNumberPress(0))}
-          {renderButton('⌫', handleBackspace, true)}
-        </View>
+    <View style={containerStyle}>
+      {/* Row 1: Quick Actions (Full width, split in two) */}
+      <View style={styles.quickActionsContainer}>
+        <TouchableOpacity
+          style={[styles.quickButton, { width: quickActionWidth, height: ROW_HEIGHT }]}
+          onPress={() => handleIncrement(-1)}
+          activeOpacity={0.65}
+        >
+          <Text style={styles.quickButtonText}>−1</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.quickButton, { width: quickActionWidth, height: ROW_HEIGHT }]}
+          onPress={() => handleIncrement(1)}
+          activeOpacity={0.65}
+        >
+          <Text style={styles.quickButtonText}>+1</Text>
+        </TouchableOpacity>
       </View>
 
-      <View style={styles.rightColumn}>
-        <View style={styles.displayContainer}>
-          <Text style={styles.displayLabel}>Qty</Text>
-          <Text
-            style={styles.displayText}
-            adjustsFontSizeToFit
-            numberOfLines={1}
-            minimumFontScale={0.4}
+      {/* Row 2 to 5: Main Column Split */}
+      <View style={styles.columnsContainer}>
+        {/* Left Column - Display & Actions (40% width) */}
+        <View style={[styles.leftColumn, { width: leftColWidth }]}>
+          {/* Row 2 & 3: Qty Display (Double height) */}
+          <View style={[styles.displayContainer, { height: 2 * ROW_HEIGHT + BUTTON_GAP }]}>
+            <Text style={[styles.displayLabel, { fontSize: displayLabelFontSize }]}>Qty</Text>
+            <Text
+              style={[styles.displayText, { fontSize: displayTextFontSize }]}
+              adjustsFontSizeToFit
+              numberOfLines={1}
+              minimumFontScale={0.4}
+            >
+              {inputQuantity}
+            </Text>
+          </View>
+
+          {/* Row 4 & 5: Submit Button (Double height) */}
+          <TouchableOpacity
+            style={[styles.submitButton, { height: 2 * ROW_HEIGHT + BUTTON_GAP }]}
+            onPress={handleSubmit}
+            activeOpacity={0.7}
           >
-            {inputQuantity}
-          </Text>
-        </View>
-
-        <View style={styles.quickActionsContainer}>
-          <TouchableOpacity style={styles.quickButton} onPress={() => handleIncrement(-1)}>
-            <Text style={styles.quickButtonText}>−1</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.quickButton, { marginLeft: 4 }]} onPress={() => handleIncrement(1)}>
-            <Text style={styles.quickButtonText}>+1</Text>
+            <Text style={styles.submitButtonText}>Submit</Text>
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity
-          style={styles.submitButton}
-          onPress={handleSubmit}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.submitButtonText}>Submit</Text>
-        </TouchableOpacity>
+        {/* Right Column - Numeric Keypad (60% width) */}
+        <View style={[styles.rightColumn, { width: rightColWidth }]}>
+          <View style={styles.row}>
+            {renderButton('1', () => handleNumberPress(1))}
+            {renderButton('2', () => handleNumberPress(2))}
+            {renderButton('3', () => handleNumberPress(3))}
+          </View>
+          <View style={styles.row}>
+            {renderButton('4', () => handleNumberPress(4))}
+            {renderButton('5', () => handleNumberPress(5))}
+            {renderButton('6', () => handleNumberPress(6))}
+          </View>
+          <View style={styles.row}>
+            {renderButton('7', () => handleNumberPress(7))}
+            {renderButton('8', () => handleNumberPress(8))}
+            {renderButton('9', () => handleNumberPress(9))}
+          </View>
+          <View style={styles.row}>
+            {renderButton('C', handleClear, true)}
+            {renderButton('0', () => handleNumberPress(0))}
+            {renderButton('⌫', handleBackspace, true)}
+          </View>
+        </View>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  columnsContainer: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
-    paddingHorizontal: 8,
-    paddingVertical: 8,
+    alignSelf: 'stretch',
   },
   leftColumn: {
-    flex: 0.6,
     flexDirection: 'column',
-    justifyContent: 'space-evenly',
-    alignItems: 'center',
+    gap: 8,
     paddingRight: 6,
     alignSelf: 'stretch',
   },
   rightColumn: {
-    flex: 0.4,
     flexDirection: 'column',
+    gap: 8,
     paddingLeft: 8,
     borderLeftWidth: 1,
     borderLeftColor: '#e5e7eb',
     alignSelf: 'stretch',
   },
   displayContainer: {
-    flex: 0.25,
     backgroundColor: '#f3f4f6',
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
     borderWidth: 1,
     borderColor: '#e5e7eb',
   },
   displayLabel: {
-    fontSize: 11,
     fontWeight: '500',
     color: '#6b7280',
-    marginBottom: 2,
+    marginBottom: 4,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   displayText: {
-    fontSize: 42,
     fontWeight: 'bold',
     color: '#111827',
     textAlign: 'center',
   },
   quickActionsContainer: {
-    flex: 0.12,
     flexDirection: 'row',
-    gap: 6,
-    marginBottom: 8,
+    gap: 8,
+    alignSelf: 'stretch',
   },
   quickButton: {
-    flex: 1,
     backgroundColor: '#f3f4f6',
     borderRadius: 12,
     borderWidth: 1,
@@ -206,9 +229,8 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
-    justifyContent: 'space-evenly',
+    gap: 8,
     alignSelf: 'stretch',
-    marginBottom: 0,
   },
   buttonText: {
     fontSize: 28,
@@ -223,15 +245,7 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     color: '#ef4444',
   },
-  actionButton: {
-    backgroundColor: '#3b82f6',
-    borderColor: '#2563eb',
-  },
-  actionButtonText: {
-    color: '#ffffff',
-  },
   submitButton: {
-    flex: 1,
     backgroundColor: '#3b82f6',
     borderRadius: 12,
     alignItems: 'center',
