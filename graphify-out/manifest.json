@@ -284,11 +284,6 @@
     "ast_hash": "0b4d0b64063ad676d7833601c555fd1c",
     "semantic_hash": "0b4d0b64063ad676d7833601c555fd1c"
   },
-  "database/migrations/20260701_create_part_barcode_table.sql": {
-    "mtime": 1783098966.4473464,
-    "ast_hash": "84df941c248de6d7f3acab5e5201981c",
-    "semantic_hash": "84df941c248de6d7f3acab5e5201981c"
-  },
   "database/migrations/document_metadata_v2.sql": {
     "mtime": 1779279573.2110858,
     "ast_hash": "ef00c0738bd73b002fdcf625decaa401",
@@ -2477,6 +2472,11 @@
   "packages/web/src/components/cycleCount/StaffProgressTab.jsx": {
     "mtime": 1783202986.20206,
     "ast_hash": "f11a929e3f687e947157edd4227ccfb4",
+    "semantic_hash": ""
+  },
+  "database/migrations/20260701_01_create_part_barcode_table.sql": {
+    "mtime": 1783098966.4473464,
+    "ast_hash": "84df941c248de6d7f3acab5e5201981c",
     "semantic_hash": ""
   }
 }
