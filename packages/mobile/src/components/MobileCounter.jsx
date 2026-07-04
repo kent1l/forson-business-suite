@@ -90,15 +90,18 @@ export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
     marginTop: 'auto',
   };
 
+  const displayLabelFontSize = Math.max(9, Math.floor(ROW_HEIGHT * 0.15));
+  const displayTextFontSize = Math.max(18, Math.floor(ROW_HEIGHT * 0.45));
+
   return (
     <View style={containerStyle}>
       {/* Left Column - Display & Actions (40% width) */}
       <View style={[styles.leftColumn, { width: leftColWidth }]}>
         {/* Row 1: Qty Display */}
         <View style={[styles.displayContainer, { height: ROW_HEIGHT }]}>
-          <Text style={styles.displayLabel}>Qty</Text>
+          <Text style={[styles.displayLabel, { fontSize: displayLabelFontSize }]}>Qty</Text>
           <Text
-            style={styles.displayText}
+            style={[styles.displayText, { fontSize: displayTextFontSize }]}
             adjustsFontSizeToFit
             numberOfLines={1}
             minimumFontScale={0.4}
