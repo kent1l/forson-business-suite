@@ -155,76 +155,6 @@
       "norm_label": "router"
     },
     {
-      "label": "_layout.tsx",
-      "file_type": "code",
-      "source_file": "packages/mobile/src/app/_layout.tsx",
-      "source_location": "L1",
-      "_origin": "ast",
-      "id": "packages_mobile_src_app_layout",
-      "community": 295,
-      "norm_label": "_layout.tsx"
-    },
-    {
-      "label": "queryClient",
-      "file_type": "code",
-      "source_file": "packages/mobile/src/app/_layout.tsx",
-      "source_location": "L12",
-      "_origin": "ast",
-      "id": "packages_mobile_src_app_layout_queryclient",
-      "community": 295,
-      "norm_label": "queryclient"
-    },
-    {
-      "label": "TabLayout()",
-      "file_type": "code",
-      "source_file": "packages/mobile/src/app/_layout.tsx",
-      "source_location": "L14",
-      "_origin": "ast",
-      "id": "packages_mobile_src_app_layout_tablayout",
-      "community": 295,
-      "norm_label": "tablayout()"
-    },
-    {
-      "label": "index.tsx",
-      "file_type": "code",
-      "source_file": "packages/mobile/src/app/index.tsx",
-      "source_location": "L1",
-      "_origin": "ast",
-      "id": "packages_mobile_src_app_index",
-      "community": 293,
-      "norm_label": "index.tsx"
-    },
-    {
-      "label": "fetchAssignedTasks()",
-      "file_type": "code",
-      "source_file": "packages/mobile/src/app/index.tsx",
-      "source_location": "L9",
-      "_origin": "ast",
-      "id": "packages_mobile_src_app_index_fetchassignedtasks",
-      "community": 293,
-      "norm_label": "fetchassignedtasks()"
-    },
-    {
-      "label": "DashboardScreen()",
-      "file_type": "code",
-      "source_file": "packages/mobile/src/app/index.tsx",
-      "source_location": "L14",
-      "_origin": "ast",
-      "id": "packages_mobile_src_app_index_dashboardscreen",
-      "community": 293,
-      "norm_label": "dashboardscreen()"
-    },
-    {
-      "label": "styles",
-      "file_type": "code",
-      "source_file": "packages/mobile/src/app/index.tsx",
-      "source_location": "L126",
-      "_origin": "ast",
-      "id": "packages_mobile_src_app_index_styles",
-      "community": 293,
-      "norm_label": "styles"
-    },
-    {
       "label": "my-progress.tsx",
       "file_type": "code",
       "source_file": "packages/mobile/src/app/my-progress.tsx",
@@ -268,7 +198,7 @@
       "label": "patchEditCount()",
       "file_type": "code",
       "source_file": "packages/mobile/src/app/my-progress.tsx",
-      "source_location": "L50",
+      "source_location": "L51",
       "_origin": "ast",
       "id": "packages_mobile_src_app_my_progress_patcheditcount",
       "community": 28,
@@ -278,7 +208,7 @@
       "label": "EditCountModal()",
       "file_type": "code",
       "source_file": "packages/mobile/src/app/my-progress.tsx",
-      "source_location": "L59",
+      "source_location": "L60",
       "_origin": "ast",
       "id": "packages_mobile_src_app_my_progress_editcountmodal",
       "community": 28,
@@ -288,7 +218,7 @@
       "label": "Filter",
       "file_type": "code",
       "source_file": "packages/mobile/src/app/my-progress.tsx",
-      "source_location": "L122",
+      "source_location": "L123",
       "_origin": "ast",
       "id": "packages_mobile_src_app_my_progress_filter",
       "community": 28,
@@ -298,7 +228,7 @@
       "label": "MyProgressScreen()",
       "file_type": "code",
       "source_file": "packages/mobile/src/app/my-progress.tsx",
-      "source_location": "L124",
+      "source_location": "L125",
       "_origin": "ast",
       "id": "packages_mobile_src_app_my_progress_myprogressscreen",
       "community": 28,
@@ -308,7 +238,7 @@
       "label": "styles",
       "file_type": "code",
       "source_file": "packages/mobile/src/app/my-progress.tsx",
-      "source_location": "L299",
+      "source_location": "L300",
       "_origin": "ast",
       "id": "packages_mobile_src_app_my_progress_styles",
       "community": 28,
@@ -318,31 +248,11 @@
       "label": "ms",
       "file_type": "code",
       "source_file": "packages/mobile/src/app/my-progress.tsx",
-      "source_location": "L334",
+      "source_location": "L335",
       "_origin": "ast",
       "id": "packages_mobile_src_app_my_progress_ms",
       "community": 28,
       "norm_label": "ms"
-    },
-    {
-      "label": "StaffDashboard.jsx",
-      "file_type": "code",
-      "source_file": "packages/web/src/components/cycleCount/StaffDashboard.jsx",
-      "source_location": "L1",
-      "_origin": "ast",
-      "id": "packages_web_src_components_cyclecount_staffdashboard",
-      "community": 290,
-      "norm_label": "staffdashboard.jsx"
-    },
-    {
-      "label": "StaffDashboard()",
-      "file_type": "code",
-      "source_file": "packages/web/src/components/cycleCount/StaffDashboard.jsx",
-      "source_location": "L5",
-      "_origin": "ast",
-      "id": "packages_web_src_components_cyclecount_staffdashboard_staffdashboard",
-      "community": 290,
-      "norm_label": "staffdashboard()"
     },
     {
       "label": "StaffProgressTab.jsx",
@@ -383,6 +293,96 @@
       "id": "packages_web_src_components_cyclecount_staffprogresstab_staffprogresstab",
       "community": 290,
       "norm_label": "staffprogresstab()"
+    },
+    {
+      "label": "_layout.tsx",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 295,
+      "norm_label": "_layout.tsx",
+      "id": "packages_mobile_src_app_layout"
+    },
+    {
+      "label": "queryClient",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_location": "L12",
+      "_origin": "ast",
+      "community": 295,
+      "norm_label": "queryclient",
+      "id": "packages_mobile_src_app_layout_queryclient"
+    },
+    {
+      "label": "TabLayout()",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_location": "L14",
+      "_origin": "ast",
+      "community": 295,
+      "norm_label": "tablayout()",
+      "id": "packages_mobile_src_app_layout_tablayout"
+    },
+    {
+      "label": "index.tsx",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/app/index.tsx",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 293,
+      "norm_label": "index.tsx",
+      "id": "packages_mobile_src_app_index"
+    },
+    {
+      "label": "fetchAssignedTasks()",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/app/index.tsx",
+      "source_location": "L9",
+      "_origin": "ast",
+      "community": 293,
+      "norm_label": "fetchassignedtasks()",
+      "id": "packages_mobile_src_app_index_fetchassignedtasks"
+    },
+    {
+      "label": "DashboardScreen()",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/app/index.tsx",
+      "source_location": "L14",
+      "_origin": "ast",
+      "community": 293,
+      "norm_label": "dashboardscreen()",
+      "id": "packages_mobile_src_app_index_dashboardscreen"
+    },
+    {
+      "label": "styles",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/app/index.tsx",
+      "source_location": "L126",
+      "_origin": "ast",
+      "community": 293,
+      "norm_label": "styles",
+      "id": "packages_mobile_src_app_index_styles"
+    },
+    {
+      "label": "StaffDashboard.jsx",
+      "file_type": "code",
+      "source_file": "packages/web/src/components/cycleCount/StaffDashboard.jsx",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 290,
+      "norm_label": "staffdashboard.jsx",
+      "id": "packages_web_src_components_cyclecount_staffdashboard"
+    },
+    {
+      "label": "StaffDashboard()",
+      "file_type": "code",
+      "source_file": "packages/web/src/components/cycleCount/StaffDashboard.jsx",
+      "source_location": "L5",
+      "_origin": "ast",
+      "community": 290,
+      "norm_label": "staffdashboard()",
+      "id": "packages_web_src_components_cyclecount_staffdashboard_staffdashboard"
     },
     {
       "label": "CycleCountControlsTab.jsx",
@@ -20070,67 +20070,6 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
-      "source_file": "packages/mobile/src/app/_layout.tsx",
-      "source_location": "L12",
-      "weight": 1.0,
-      "source": "packages_mobile_src_app_layout",
-      "target": "packages_mobile_src_app_layout_queryclient",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/mobile/src/app/_layout.tsx",
-      "source_location": "L14",
-      "weight": 1.0,
-      "source": "packages_mobile_src_app_layout",
-      "target": "packages_mobile_src_app_layout_tablayout",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/mobile/src/app/index.tsx",
-      "source_location": "L14",
-      "weight": 1.0,
-      "source": "packages_mobile_src_app_index",
-      "target": "packages_mobile_src_app_index_dashboardscreen",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/mobile/src/app/index.tsx",
-      "source_location": "L9",
-      "weight": 1.0,
-      "source": "packages_mobile_src_app_index",
-      "target": "packages_mobile_src_app_index_fetchassignedtasks",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/mobile/src/app/index.tsx",
-      "source_location": "L126",
-      "weight": 1.0,
-      "source": "packages_mobile_src_app_index",
-      "target": "packages_mobile_src_app_index_styles",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "indirect_call",
-      "context": "collection",
-      "confidence": "INFERRED",
-      "source_file": "packages/mobile/src/app/index.tsx",
-      "source_location": "L20",
-      "weight": 1.0,
-      "source": "packages_mobile_src_app_index_dashboardscreen",
-      "target": "packages_mobile_src_app_index_fetchassignedtasks",
-      "confidence_score": 0.5
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
       "source_file": "packages/mobile/src/app/my-progress.tsx",
       "source_location": "L22",
       "weight": 1.0,
@@ -20142,7 +20081,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "packages/mobile/src/app/my-progress.tsx",
-      "source_location": "L59",
+      "source_location": "L60",
       "weight": 1.0,
       "source": "packages_mobile_src_app_my_progress",
       "target": "packages_mobile_src_app_my_progress_editcountmodal",
@@ -20162,7 +20101,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "packages/mobile/src/app/my-progress.tsx",
-      "source_location": "L122",
+      "source_location": "L123",
       "weight": 1.0,
       "source": "packages_mobile_src_app_my_progress",
       "target": "packages_mobile_src_app_my_progress_filter",
@@ -20172,7 +20111,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "packages/mobile/src/app/my-progress.tsx",
-      "source_location": "L334",
+      "source_location": "L335",
       "weight": 1.0,
       "source": "packages_mobile_src_app_my_progress",
       "target": "packages_mobile_src_app_my_progress_ms",
@@ -20182,7 +20121,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "packages/mobile/src/app/my-progress.tsx",
-      "source_location": "L124",
+      "source_location": "L125",
       "weight": 1.0,
       "source": "packages_mobile_src_app_my_progress",
       "target": "packages_mobile_src_app_my_progress_myprogressscreen",
@@ -20192,7 +20131,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "packages/mobile/src/app/my-progress.tsx",
-      "source_location": "L50",
+      "source_location": "L51",
       "weight": 1.0,
       "source": "packages_mobile_src_app_my_progress",
       "target": "packages_mobile_src_app_my_progress_patcheditcount",
@@ -20212,7 +20151,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "packages/mobile/src/app/my-progress.tsx",
-      "source_location": "L299",
+      "source_location": "L300",
       "weight": 1.0,
       "source": "packages_mobile_src_app_my_progress",
       "target": "packages_mobile_src_app_my_progress_styles",
@@ -20223,7 +20162,7 @@
       "context": "collection",
       "confidence": "INFERRED",
       "source_file": "packages/mobile/src/app/my-progress.tsx",
-      "source_location": "L134",
+      "source_location": "L135",
       "weight": 1.0,
       "source": "packages_mobile_src_app_my_progress_myprogressscreen",
       "target": "packages_mobile_src_app_my_progress_fetchprogress",
@@ -20234,65 +20173,22 @@
       "context": "collection",
       "confidence": "INFERRED",
       "source_file": "packages/mobile/src/app/my-progress.tsx",
-      "source_location": "L138",
+      "source_location": "L139",
       "weight": 1.0,
       "source": "packages_mobile_src_app_my_progress_myprogressscreen",
       "target": "packages_mobile_src_app_my_progress_patcheditcount",
       "confidence_score": 0.5
     },
     {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/web/src/components/cycleCount/StaffDashboard.jsx",
-      "source_location": "L5",
-      "weight": 1.0,
-      "source": "packages_web_src_components_cyclecount_staffdashboard",
-      "target": "packages_web_src_components_cyclecount_staffdashboard_staffdashboard",
-      "confidence_score": 1.0
-    },
-    {
       "relation": "imports_from",
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "packages/web/src/components/cycleCount/StaffDashboard.jsx",
       "source_location": "L3",
       "weight": 1.0,
-      "source": "packages_web_src_components_cyclecount_staffdashboard",
-      "target": "packages_web_src_components_cyclecount_staffprogresstab",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/web/src/components/cycleCount/StaffDashboard.jsx",
-      "source_location": "L3",
-      "weight": 1.0,
-      "source": "packages_web_src_components_cyclecount_staffdashboard",
-      "target": "packages_web_src_components_cyclecount_staffprogresstab_staffprogresstab",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/web/src/pages/CycleCountExecutionPage.jsx",
-      "source_location": "L5",
-      "weight": 1.0,
       "confidence_score": 1.0,
-      "source": "packages_web_src_pages_cyclecountexecutionpage",
-      "target": "packages_web_src_components_cyclecount_staffdashboard"
-    },
-    {
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/web/src/pages/CycleCountExecutionPage.jsx",
-      "source_location": "L5",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_web_src_pages_cyclecountexecutionpage",
-      "target": "packages_web_src_components_cyclecount_staffdashboard_staffdashboard"
+      "source": "packages_web_src_components_cyclecount_staffdashboard",
+      "target": "packages_web_src_components_cyclecount_staffprogresstab"
     },
     {
       "relation": "contains",
@@ -20323,6 +20219,110 @@
       "source": "packages_web_src_components_cyclecount_staffprogresstab",
       "target": "packages_web_src_components_cyclecount_staffprogresstab_statusbadge",
       "confidence_score": 1.0
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/web/src/components/cycleCount/StaffDashboard.jsx",
+      "source_location": "L3",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_web_src_components_cyclecount_staffdashboard",
+      "target": "packages_web_src_components_cyclecount_staffprogresstab_staffprogresstab"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_location": "L12",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_layout",
+      "target": "packages_mobile_src_app_layout_queryclient"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_location": "L14",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_layout",
+      "target": "packages_mobile_src_app_layout_tablayout"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/index.tsx",
+      "source_location": "L14",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_index",
+      "target": "packages_mobile_src_app_index_dashboardscreen"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/index.tsx",
+      "source_location": "L9",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_index",
+      "target": "packages_mobile_src_app_index_fetchassignedtasks"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/index.tsx",
+      "source_location": "L126",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_index",
+      "target": "packages_mobile_src_app_index_styles"
+    },
+    {
+      "relation": "indirect_call",
+      "context": "collection",
+      "confidence": "INFERRED",
+      "source_file": "packages/mobile/src/app/index.tsx",
+      "source_location": "L20",
+      "weight": 1.0,
+      "confidence_score": 0.5,
+      "source": "packages_mobile_src_app_index_dashboardscreen",
+      "target": "packages_mobile_src_app_index_fetchassignedtasks"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/web/src/components/cycleCount/StaffDashboard.jsx",
+      "source_location": "L5",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_web_src_components_cyclecount_staffdashboard",
+      "target": "packages_web_src_components_cyclecount_staffdashboard_staffdashboard"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/web/src/pages/CycleCountExecutionPage.jsx",
+      "source_location": "L5",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_web_src_pages_cyclecountexecutionpage",
+      "target": "packages_web_src_components_cyclecount_staffdashboard"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/web/src/pages/CycleCountExecutionPage.jsx",
+      "source_location": "L5",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_web_src_pages_cyclecountexecutionpage",
+      "target": "packages_web_src_components_cyclecount_staffdashboard_staffdashboard"
     },
     {
       "relation": "contains",
@@ -51319,5 +51319,5 @@
       "source_file": "packages/mobile/assets/images/tabIcons/home@3x.png"
     }
   ],
-  "built_at_commit": "4271e42eebb532235c5e6b772f81d510ed7f856c"
+  "built_at_commit": "2249ce3d6db225bf0d8531029ba42afb5db4023e"
 }
