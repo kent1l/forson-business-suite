@@ -188,11 +188,12 @@ export default function UnassignedSearchScreen() {
 
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Ionicons name="arrow-back" size={24} color="#374151" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Log Unassigned Find</Text>
-        <View style={{ width: 24 }} />
+        <View style={styles.headerLeft}>
+          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="arrow-back" size={24} color="#374151" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Log Unassigned Find</Text>
+        </View>
       </View>
 
       <KeyboardAvoidingView
@@ -329,12 +330,16 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     backgroundColor: '#fff',
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   headerTitle: { fontSize: 17, fontWeight: '700', color: '#111827' },
 

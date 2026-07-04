@@ -38,10 +38,10 @@ export default function TabLayout() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <AnimatedSplashOverlay />
-        <Stack>
-          <Stack.Screen name="index" options={{ headerShown: true, title: 'Dashboard' }} />
-          <Stack.Screen name="count" options={{ headerShown: true, title: 'Active Count' }} />
-          <Stack.Screen name="unassigned-search" options={{ headerShown: true, title: 'Log Unassigned Find' }} />
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="index" />
+          <Stack.Screen name="count" />
+          <Stack.Screen name="unassigned-search" />
         </Stack>
       </ThemeProvider>
     </QueryClientProvider>

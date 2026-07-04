@@ -79,78 +79,91 @@ export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
     </TouchableOpacity>
   );
 
+  const quickActionWidth = Math.floor((maxContainerWidth - 16 - BUTTON_GAP) / 2);
   const containerStyle = {
-    flexDirection: 'row',
+    flexDirection: 'column',
     backgroundColor: '#ffffff',
     paddingHorizontal: 8,
     paddingVertical: 8,
     width: maxContainerWidth,
-    height: 4 * ROW_HEIGHT + 3 * BUTTON_GAP + 16,
+    height: 5 * ROW_HEIGHT + 4 * BUTTON_GAP + 16,
     alignSelf: 'center',
     marginTop: 'auto',
+    gap: BUTTON_GAP,
   };
 
-  const displayLabelFontSize = Math.max(9, Math.floor(ROW_HEIGHT * 0.15));
-  const displayTextFontSize = Math.max(18, Math.floor(ROW_HEIGHT * 0.45));
+  const displayLabelFontSize = Math.max(9, Math.floor(ROW_HEIGHT * 0.2));
+  const displayTextFontSize = Math.max(18, Math.floor(ROW_HEIGHT * 0.7));
 
   return (
     <View style={containerStyle}>
-      {/* Left Column - Display & Actions (40% width) */}
-      <View style={[styles.leftColumn, { width: leftColWidth }]}>
-        {/* Row 1: Qty Display */}
-        <View style={[styles.displayContainer, { height: ROW_HEIGHT }]}>
-          <Text style={[styles.displayLabel, { fontSize: displayLabelFontSize }]}>Qty</Text>
-          <Text
-            style={[styles.displayText, { fontSize: displayTextFontSize }]}
-            adjustsFontSizeToFit
-            numberOfLines={1}
-            minimumFontScale={0.4}
-          >
-            {inputQuantity}
-          </Text>
-        </View>
-
-        {/* Row 2: Quick Actions */}
-        <View style={[styles.quickActionsContainer, { height: ROW_HEIGHT }]}>
-          <TouchableOpacity style={styles.quickButton} onPress={() => handleIncrement(-1)} activeOpacity={0.65}>
-            <Text style={styles.quickButtonText}>−1</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.quickButton} onPress={() => handleIncrement(1)} activeOpacity={0.65}>
-            <Text style={styles.quickButtonText}>+1</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Rows 3 & 4: Submit Button */}
+      {/* Row 1: Quick Actions (Full width, split in two) */}
+      <View style={styles.quickActionsContainer}>
         <TouchableOpacity
-          style={[styles.submitButton, { height: 2 * ROW_HEIGHT + BUTTON_GAP }]}
-          onPress={handleSubmit}
-          activeOpacity={0.7}
+          style={[styles.quickButton, { width: quickActionWidth, height: ROW_HEIGHT }]}
+          onPress={() => handleIncrement(-1)}
+          activeOpacity={0.65}
         >
-          <Text style={styles.submitButtonText}>Submit</Text>
+          <Text style={styles.quickButtonText}>−1</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.quickButton, { width: quickActionWidth, height: ROW_HEIGHT }]}
+          onPress={() => handleIncrement(1)}
+          activeOpacity={0.65}
+        >
+          <Text style={styles.quickButtonText}>+1</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Right Column - Numeric Keypad (60% width) */}
-      <View style={[styles.rightColumn, { width: rightColWidth }]}>
-        <View style={styles.row}>
-          {renderButton('1', () => handleNumberPress(1))}
-          {renderButton('2', () => handleNumberPress(2))}
-          {renderButton('3', () => handleNumberPress(3))}
+      {/* Row 2 to 5: Main Column Split */}
+      <View style={styles.columnsContainer}>
+        {/* Left Column - Display & Actions (40% width) */}
+        <View style={[styles.leftColumn, { width: leftColWidth }]}>
+          {/* Row 2 & 3: Qty Display (Double height) */}
+          <View style={[styles.displayContainer, { height: 2 * ROW_HEIGHT + BUTTON_GAP }]}>
+            <Text style={[styles.displayLabel, { fontSize: displayLabelFontSize }]}>Qty</Text>
+            <Text
+              style={[styles.displayText, { fontSize: displayTextFontSize }]}
+              adjustsFontSizeToFit
+              numberOfLines={1}
+              minimumFontScale={0.4}
+            >
+              {inputQuantity}
+            </Text>
+          </View>
+
+          {/* Row 4 & 5: Submit Button (Double height) */}
+          <TouchableOpacity
+            style={[styles.submitButton, { height: 2 * ROW_HEIGHT + BUTTON_GAP }]}
+            onPress={handleSubmit}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.submitButtonText}>Submit</Text>
+          </TouchableOpacity>
         </View>
-        <View style={styles.row}>
-          {renderButton('4', () => handleNumberPress(4))}
-          {renderButton('5', () => handleNumberPress(5))}
-          {renderButton('6', () => handleNumberPress(6))}
-        </View>
-        <View style={styles.row}>
-          {renderButton('7', () => handleNumberPress(7))}
-          {renderButton('8', () => handleNumberPress(8))}
-          {renderButton('9', () => handleNumberPress(9))}
-        </View>
-        <View style={styles.row}>
-          {renderButton('C', handleClear, true)}
-          {renderButton('0', () => handleNumberPress(0))}
-          {renderButton('⌫', handleBackspace, true)}
+
+        {/* Right Column - Numeric Keypad (60% width) */}
+        <View style={[styles.rightColumn, { width: rightColWidth }]}>
+          <View style={styles.row}>
+            {renderButton('1', () => handleNumberPress(1))}
+            {renderButton('2', () => handleNumberPress(2))}
+            {renderButton('3', () => handleNumberPress(3))}
+          </View>
+          <View style={styles.row}>
+            {renderButton('4', () => handleNumberPress(4))}
+            {renderButton('5', () => handleNumberPress(5))}
+            {renderButton('6', () => handleNumberPress(6))}
+          </View>
+          <View style={styles.row}>
+            {renderButton('7', () => handleNumberPress(7))}
+            {renderButton('8', () => handleNumberPress(8))}
+            {renderButton('9', () => handleNumberPress(9))}
+          </View>
+          <View style={styles.row}>
+            {renderButton('C', handleClear, true)}
+            {renderButton('0', () => handleNumberPress(0))}
+            {renderButton('⌫', handleBackspace, true)}
+          </View>
         </View>
       </View>
     </View>
@@ -158,6 +171,10 @@ export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
 }
 
 const styles = StyleSheet.create({
+  columnsContainer: {
+    flexDirection: 'row',
+    alignSelf: 'stretch',
+  },
   leftColumn: {
     flexDirection: 'column',
     gap: 8,
@@ -181,15 +198,13 @@ const styles = StyleSheet.create({
     borderColor: '#e5e7eb',
   },
   displayLabel: {
-    fontSize: 11,
     fontWeight: '500',
     color: '#6b7280',
-    marginBottom: 2,
+    marginBottom: 4,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   displayText: {
-    fontSize: 42,
     fontWeight: 'bold',
     color: '#111827',
     textAlign: 'center',
@@ -200,7 +215,6 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   quickButton: {
-    flex: 1,
     backgroundColor: '#f3f4f6',
     borderRadius: 12,
     borderWidth: 1,

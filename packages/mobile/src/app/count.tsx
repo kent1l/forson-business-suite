@@ -185,48 +185,54 @@ export default function CountScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header */}
       <View style={styles.headerStrip}>
-        <View style={styles.headerTopRow}>
+        <View style={styles.headerLeft}>
           <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Ionicons name="arrow-back" size={24} color="#374151" />
           </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={openCameraModal}
-            activeOpacity={0.75}
-            style={[
-              styles.barcodePill,
-              hasBarcode ? styles.barcodePillSuccess : styles.barcodePillNeutral
-            ]}
-          >
-            <Text style={styles.barcodePillText}>Barcode</Text>
-          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Active Count</Text>
         </View>
 
-        <View style={{ alignItems: 'center' }}>
-          <Text
-            style={styles.itemTitle}
-            adjustsFontSizeToFit
-            numberOfLines={3}
-            minimumFontScale={0.85}
-          >
-            {currentLine.display_name ?? currentLine.part_id}
-          </Text>
-          <Text
-            style={[styles.itemSubtitle, { marginTop: 2, fontSize: 11, opacity: 0.7 }]}
-            numberOfLines={1}
-          >
-            {currentLine.internal_sku || currentLine.sku || currentLine.part_id}
-          </Text>
-        </View>
+        <TouchableOpacity
+          onPress={openCameraModal}
+          activeOpacity={0.75}
+          style={[
+            styles.barcodePill,
+            hasBarcode ? styles.barcodePillSuccess : styles.barcodePillNeutral
+          ]}
+        >
+          <Text style={styles.barcodePillText}>Barcode</Text>
+        </TouchableOpacity>
+      </View>
 
+      {/* Item details card (item_text_zone) */}
+      <View style={styles.itemTextZone}>
+        <Text
+          style={styles.itemTitle}
+          adjustsFontSizeToFit
+          numberOfLines={3}
+          minimumFontScale={0.85}
+        >
+          {currentLine.display_name ?? currentLine.part_id}
+        </Text>
+        <Text
+          style={styles.itemSubtitle}
+          numberOfLines={1}
+        >
+          {currentLine.internal_sku || currentLine.sku || currentLine.part_id}
+        </Text>
+      </View>
+
+      {/* Progress container */}
+      <View style={styles.progressContainer}>
         <View style={styles.metaRow}>
           {isAdHocMode ? (
-            <Text style={[styles.itemSubtitle, { color: '#f59e0b', fontWeight: '600' }]}>
+            <Text style={[styles.progressText, { color: '#f59e0b', fontWeight: '600' }]}>
               ⚠ Unassigned Find
             </Text>
           ) : (
-            <Text style={styles.itemSubtitle}>
+            <Text style={styles.progressText}>
               Item {currentLineIndex + 1} of {activeBatchData!.length}
             </Text>
           )}
@@ -333,20 +339,24 @@ const styles = StyleSheet.create({
     color: 'red',
   },
   headerStrip: {
-    flex: 0.22,
-    minHeight: 88,
-    backgroundColor: '#f9fafb',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 8,
-    justifyContent: 'space-between',
-  },
-  headerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#111827',
   },
   barcodePill: {
     paddingVertical: 4,
@@ -364,18 +374,38 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#ffffff',
   },
+  itemTextZone: {
+    flex: 1,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginVertical: 12,
+    padding: 16,
+  },
   itemTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#111827',
     textAlign: 'center',
   },
-  metaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
   itemSubtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  progressContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  metaRow: {
+    marginBottom: 6,
+  },
+  progressText: {
     fontSize: 12,
     color: '#6b7280',
   },
@@ -391,7 +421,6 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   counterZone: {
-    flex: 0.78,
     backgroundColor: '#fff',
   },
   modalContainer: {
