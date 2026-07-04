@@ -375,9 +375,9 @@
     "semantic_hash": "6387e94ef220f281db5a2c2486b1ddf4"
   },
   "packages/api/helpers/pdf/chequePdf.js": {
-    "mtime": 1779279573.2210863,
-    "ast_hash": "9961f9e155786259c1901176dbb9389f",
-    "semantic_hash": "9961f9e155786259c1901176dbb9389f"
+    "mtime": 1783208324.1316087,
+    "ast_hash": "c788ac4bdfd3c41e7a2822347c7bee10",
+    "semantic_hash": ""
   },
   "packages/api/helpers/pdf/purchaseOrderPdf.js": {
     "mtime": 1779279573.2220156,
@@ -1025,8 +1025,8 @@
     "semantic_hash": "4f1bee7fbe2725684184e07606a29152"
   },
   "packages/web/package.json": {
-    "mtime": 1783206073.5999908,
-    "ast_hash": "861c08e47b70dfd80a85735fd5685d50",
+    "mtime": 1783208324.1323726,
+    "ast_hash": "73943c7ec84b674ae08a8ad963e376dc",
     "semantic_hash": ""
   },
   "packages/web/src/App.jsx": {
@@ -2165,9 +2165,9 @@
     "semantic_hash": "b6ca0aee17779224bc0f5dc79196a15e"
   },
   ".agents/rules/03-database-migrations.md": {
-    "mtime": 1779279573.1738918,
-    "ast_hash": "b9ddb40a42753b3309751c7fc76173e6",
-    "semantic_hash": "b9ddb40a42753b3309751c7fc76173e6"
+    "mtime": 1783207874.9961958,
+    "ast_hash": "2b5023af704d1b0322dbf3273afe9cd7",
+    "semantic_hash": ""
   },
   ".agents/skills/plan-feature/SKILL.md": {
     "mtime": 1783098966.4469204,
@@ -2275,8 +2275,8 @@
     "semantic_hash": "f8f180a0879a8f8803fa580e302ff327"
   },
   "docs/CHANGELOG.md": {
-    "mtime": 1783206073.5575955,
-    "ast_hash": "c93bf55ce99d344df0b4e65b81fbb846",
+    "mtime": 1783208324.127045,
+    "ast_hash": "6322bb25058cbce5d3b2ab753186603c",
     "semantic_hash": ""
   },
   "docs/CHEQUE_IMPLEMENTATION_PROGRESS_AUDIT_2026-04-19.md": {
