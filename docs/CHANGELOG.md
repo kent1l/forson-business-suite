@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.1.1 - 2026-07-04
+
+### Fixed
+- **Database Migration Sequencing**: Renamed the part barcode table migration to enforce correct alphabetical execution order and updated project database migration guidelines to prevent schema sorting issues.
+- **Cheque PDF Generator**: Added support for letter feed types in the PDF fallback renderer path, correcting the MediaBox dimensions to match PDF-lib output when pdf-lib is unavailable or fails.
+
 ## v2.1.0 - 2026-07-04
 
 ### Added

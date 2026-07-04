@@ -75,12 +75,14 @@ function toPdfLibSafeText(text, font) {
     }
 }
 
-function createFallbackPdf({ rows, template, xOffset, yOffset, testPrint }) {
+function createFallbackPdf({ rows, template, xOffset, yOffset, testPrint, isLetterFeed }) {
     const positions = template?.field_positions || {};
     const currencySettings = template?.currency_settings || { enabled: true, label: '₱' };
     const amountWordsSettings = template?.amount_words_settings || { suffix: 'pesos' };
     const textSettings = template?.text_settings || {};
     const paperSize = resolvePaperSize(template?.paper_settings);
+    const pageWidth = isLetterFeed ? 612 : paperSize.width;
+    const pageHeight = isLetterFeed ? 792 : paperSize.height;
     const pages = rows.map((row) => {
         const amountWords = amountToWords(row.amount, { suffix: amountWordsSettings?.suffix || 'pesos' });
         const words = template?.amount_format === 'upper' ? amountWords.toUpperCase() : amountWords;
@@ -119,7 +121,7 @@ function createFallbackPdf({ rows, template, xOffset, yOffset, testPrint }) {
     for (const lines of pages) {
         const stream = lines.join('\n');
         const contentId = addObject(`<< /Length ${Buffer.byteLength(stream, 'utf8')} >>\nstream\n${stream}\nendstream`);
-        const pageId = addObject(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${paperSize.width} ${paperSize.height}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentId} 0 R >>`);
+        const pageId = addObject(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentId} 0 R >>`);
         pageIds.push(pageId);
     }
     objects.unshift({ id: 3, body: '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>' });
@@ -164,7 +166,7 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
 
     if (!PDFDocument || !StandardFonts) {
         return {
-            buffer: createFallbackPdf({ rows, template, xOffset: finalXOffset, yOffset: finalYOffset, testPrint }),
+            buffer: createFallbackPdf({ rows, template, xOffset: finalXOffset, yOffset: finalYOffset, testPrint, isLetterFeed }),
             renderer: 'fallback',
             warning: 'pdf-lib unavailable; fallback renderer used'
         };
@@ -272,7 +274,7 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
         return { buffer: Buffer.from(bytes), renderer: 'pdf-lib', warning: null };
     } catch (error) {
         return {
-            buffer: createFallbackPdf({ rows, template, xOffset: finalXOffset, yOffset: finalYOffset, testPrint }),
+            buffer: createFallbackPdf({ rows, template, xOffset: finalXOffset, yOffset: finalYOffset, testPrint, isLetterFeed }),
             renderer: 'fallback',
             warning: `pdf-lib failed (${error.message || 'unknown error'}); fallback renderer used`
         };
