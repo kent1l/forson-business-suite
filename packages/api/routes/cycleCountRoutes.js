@@ -322,6 +322,9 @@ router.post('/inventory/cycle-count/lines/:line_id/approve', protect, hasPermiss
         }
 
         const variance_qty = line.counted_qty - line.system_qty_snapshot;
+        const wac_result = await client.query('SELECT wac_cost FROM part WHERE part_id = $1', [line.part_id]);
+        const wac_cost = parseFloat(wac_result.rows[0]?.wac_cost || 0);
+        const financial_impact = Math.abs(variance_qty * wac_cost);
 
         // The Ledger Guardrail
         await client.query(`
@@ -334,6 +337,13 @@ router.post('/inventory/cycle-count/lines/:line_id/approve', protect, hasPermiss
             SET status = 'APPROVED_ADJUSTED' 
             WHERE line_id = $1
         `, [line_id]);
+
+        // Audit log
+        await client.query(`
+            INSERT INTO cycle_count_audit_log
+                (line_id, part_id, action, variance_qty, financial_impact, counted_qty, system_qty_snapshot, actioned_by)
+            VALUES ($1, $2, 'APPROVED', $3, $4, $5, $6, $7)
+        `, [line_id, line.part_id, variance_qty, financial_impact, line.counted_qty, line.system_qty_snapshot, req.user.employee_id]);
 
         await client.query('COMMIT');
         res.json({ message: 'Adjustment approved successfully' });
@@ -392,6 +402,16 @@ router.post('/inventory/cycle-count/manager/recount/:id', protect, hasPermission
             SET audit_requested = TRUE
         `, [line.part_id]);
 
+        // Audit log
+        const variance_qty_recount = line.counted_qty - line.system_qty_snapshot;
+        const wac_rc = await client.query('SELECT wac_cost FROM part WHERE part_id = $1', [line.part_id]);
+        const fi_rc = Math.abs(variance_qty_recount * parseFloat(wac_rc.rows[0]?.wac_cost || 0));
+        await client.query(`
+            INSERT INTO cycle_count_audit_log
+                (line_id, part_id, action, variance_qty, financial_impact, counted_qty, system_qty_snapshot, actioned_by)
+            VALUES ($1, $2, 'RECOUNT_REQUESTED', $3, $4, $5, $6, $7)
+        `, [id, line.part_id, variance_qty_recount, fi_rc, line.counted_qty, line.system_qty_snapshot, req.user.employee_id]);
+
         await client.query('COMMIT');
         res.json({ message: 'Recount requested successfully. Part flagged for audit.' });
         
@@ -437,6 +457,186 @@ router.get('/inventory/cycle-count/performance', protect, hasPermission('cycle_c
         await db.query('REFRESH MATERIALIZED VIEW employee_cycle_count_performance');
         const { rows } = await db.query('SELECT * FROM employee_cycle_count_performance ORDER BY employee_name ASC');
         res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// GET /api/inventory/cycle-count/audit-log
+router.get('/inventory/cycle-count/audit-log', protect, hasPermission('cycle_count:manage'), async (req, res) => {
+    try {
+        const limit = Math.min(parseInt(req.query.limit || '100', 10), 500);
+        const offset = parseInt(req.query.offset || '0', 10);
+        const { rows } = await db.query(`
+            SELECT
+                al.*,
+                COALESCE(pv.display_name, p.internal_sku, p.detail) AS display_name,
+                p.internal_sku,
+                e.first_name || ' ' || e.last_name AS actioned_by_name
+            FROM cycle_count_audit_log al
+            LEFT JOIN part p ON al.part_id = p.part_id
+            LEFT JOIN parts_view pv ON pv.part_id = al.part_id
+            LEFT JOIN employee e ON al.actioned_by = e.employee_id
+            ORDER BY al.actioned_at DESC
+            LIMIT $1 OFFSET $2
+        `, [limit, offset]);
+        const { rows: countRows } = await db.query('SELECT COUNT(*) FROM cycle_count_audit_log');
+        res.json({ rows, total: parseInt(countRows[0].count, 10) });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// POST /api/inventory/cycle-count/trigger-batch  — manual batch generation
+router.post('/inventory/cycle-count/trigger-batch', protect, hasPermission('cycle_count:manage'), async (req, res) => {
+    try {
+        const { generateCycleCountBatches } = require('../services/cycleCountService');
+        // Run async, respond immediately
+        generateCycleCountBatches()
+            .then(() => console.log('[CycleCountEngine] Manual batch generation complete.'))
+            .catch(err => console.error('[CycleCountEngine] Manual batch error:', err));
+        res.json({ message: 'Batch generation triggered. Check logs for completion.' });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// POST /api/inventory/cycle-count/assign-item  — manually assign a part to an employee
+router.post('/inventory/cycle-count/assign-item', protect, hasPermission('cycle_count:manage'), async (req, res) => {
+    const { employee_id, part_id } = req.body;
+    if (!employee_id || !part_id) {
+        return res.status(400).json({ message: 'employee_id and part_id are required' });
+    }
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        // Verify part exists
+        const partCheck = await client.query('SELECT part_id FROM part WHERE part_id = $1 AND is_active = TRUE', [part_id]);
+        if (partCheck.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: 'Part not found or inactive' });
+        }
+        // Verify employee exists and is active
+        const empCheck = await client.query('SELECT employee_id FROM employee WHERE employee_id = $1 AND is_active = TRUE', [employee_id]);
+        if (empCheck.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: 'Employee not found or inactive' });
+        }
+        // Find or create an open batch for this employee
+        const batchRes = await client.query(`
+            SELECT batch_id FROM cycle_count_batch
+            WHERE employee_id = $1 AND status = 'PENDING'
+            ORDER BY created_at DESC LIMIT 1
+        `, [employee_id]);
+        let batch_id;
+        if (batchRes.rows.length > 0) {
+            batch_id = batchRes.rows[0].batch_id;
+        } else {
+            const nb = await client.query(
+                'INSERT INTO cycle_count_batch (employee_id, status) VALUES ($1, $2) RETURNING batch_id',
+                [employee_id, 'PENDING']
+            );
+            batch_id = nb.rows[0].batch_id;
+        }
+        // Check not already assigned
+        const existing = await client.query(`
+            SELECT l.line_id FROM cycle_count_line l
+            JOIN cycle_count_batch b ON l.batch_id = b.batch_id
+            WHERE b.employee_id = $1 AND l.part_id = $2 AND l.status = 'PENDING'
+        `, [employee_id, part_id]);
+        if (existing.rows.length > 0) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ message: 'Part already assigned to this employee' });
+        }
+        const lineRes = await client.query(
+            'INSERT INTO cycle_count_line (batch_id, part_id, status) VALUES ($1, $2, $3) RETURNING *',
+            [batch_id, part_id, 'PENDING']
+        );
+        await client.query('COMMIT');
+        res.json(lineRes.rows[0]);
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    } finally {
+        client.release();
+    }
+});
+
+// GET /api/inventory/cycle-count/employees  — list employees eligible for cycle count
+router.get('/inventory/cycle-count/employees', protect, hasPermission('cycle_count:manage'), async (req, res) => {
+    try {
+        const { rows } = await db.query(`
+            SELECT
+                e.employee_id,
+                e.first_name || ' ' || e.last_name AS employee_name,
+                e.is_active,
+                COUNT(DISTINCT b.batch_id) FILTER (WHERE b.status IN ('PENDING','IN_PROGRESS')) AS active_batches,
+                COUNT(l.line_id) FILTER (WHERE l.status = 'PENDING') AS pending_items
+            FROM employee e
+            LEFT JOIN cycle_count_batch b ON b.employee_id = e.employee_id
+            LEFT JOIN cycle_count_line l ON l.batch_id = b.batch_id AND l.status = 'PENDING'
+            LEFT JOIN role_permission rp ON e.permission_level_id = rp.permission_level_id
+            LEFT JOIN permission p ON rp.permission_id = p.permission_id
+            WHERE e.is_active = TRUE
+              AND (e.permission_level_id = 10 OR p.permission_key = 'cycle_count:execute')
+            GROUP BY e.employee_id
+            ORDER BY employee_name ASC
+        `);
+        res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// GET /api/inventory/cycle-count/employees/:id/detail
+router.get('/inventory/cycle-count/employees/:id/detail', protect, hasPermission('cycle_count:manage'), async (req, res) => {
+    const { id } = req.params;
+    try {
+        // Summary stats
+        const perfRows = await db.query(`
+            SELECT * FROM employee_cycle_count_performance WHERE employee_id = $1
+        `, [id]);
+        // Recent completed lines
+        const recentLines = await db.query(`
+            SELECT
+                l.*,
+                (l.counted_qty - l.system_qty_snapshot) AS variance_qty,
+                COALESCE(pv.display_name, p.internal_sku, p.detail) AS display_name,
+                p.internal_sku,
+                p.wac_cost,
+                ((l.counted_qty - l.system_qty_snapshot) * p.wac_cost) AS financial_impact
+            FROM cycle_count_line l
+            JOIN cycle_count_batch b ON l.batch_id = b.batch_id
+            JOIN part p ON l.part_id = p.part_id
+            LEFT JOIN parts_view pv ON pv.part_id = p.part_id
+            WHERE b.employee_id = $1
+              AND l.status NOT IN ('PENDING')
+            ORDER BY l.counted_at DESC
+            LIMIT 50
+        `, [id]);
+        // Active pending items
+        const pendingLines = await db.query(`
+            SELECT
+                l.*,
+                COALESCE(pv.display_name, p.internal_sku, p.detail) AS display_name,
+                p.internal_sku
+            FROM cycle_count_line l
+            JOIN cycle_count_batch b ON l.batch_id = b.batch_id
+            JOIN part p ON l.part_id = p.part_id
+            LEFT JOIN parts_view pv ON pv.part_id = p.part_id
+            WHERE b.employee_id = $1 AND l.status = 'PENDING'
+            ORDER BY b.created_at ASC
+        `, [id]);
+        res.json({
+            performance: perfRows.rows[0] || null,
+            recent_lines: recentLines.rows,
+            pending_lines: pendingLines.rows
+        });
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
