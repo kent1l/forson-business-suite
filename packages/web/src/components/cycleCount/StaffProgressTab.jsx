@@ -132,13 +132,14 @@ export default function StaffProgressTab() {
                                 const vc = v < 0 ? 'text-red-600' : v > 0 ? 'text-green-600' : 'text-gray-700';
                                 const isEditing = editingId === item.line_id;
                                 const canEdit = item.status === 'PENDING_MANAGER_REVIEW';
+                                const showSystemQty = item.status !== 'PENDING_MANAGER_REVIEW';
 
                                 return (
                                     <tr key={item.line_id} className={`border-b hover:bg-gray-50 ${isEditing ? 'bg-blue-50' : ''}`}>
                                         <td className="py-2 px-3 max-w-xs truncate">{item.display_name || item.detail}</td>
                                         <td className="py-2 px-3 font-mono text-xs text-gray-500">{item.internal_sku}</td>
                                         <td className="py-2 px-3 text-center"><StatusBadge status={item.status} /></td>
-                                        <td className="py-2 px-3 text-right text-gray-500">{item.system_qty_snapshot ?? '—'}</td>
+                                        <td className="py-2 px-3 text-right text-gray-500">{showSystemQty ? (item.system_qty_snapshot ?? '—') : <span className="text-gray-300 italic text-xs">hidden</span>}</td>
                                         <td className="py-2 px-3 text-right font-medium">
                                             {isEditing ? (
                                                 <input

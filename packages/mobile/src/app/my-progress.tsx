@@ -88,10 +88,12 @@ function EditCountModal({
             </Text>
             <Text style={ms.modalSku}>{item.internal_sku}</Text>
 
-            <View style={ms.modalInfo}>
-              <Text style={ms.infoLabel}>System Qty</Text>
-              <Text style={ms.infoValue}>{item.system_qty_snapshot ?? '—'}</Text>
-            </View>
+            {item.status !== 'PENDING_MANAGER_REVIEW' && (
+              <View style={ms.modalInfo}>
+                <Text style={ms.infoLabel}>System Qty</Text>
+                <Text style={ms.infoValue}>{item.system_qty_snapshot ?? '—'}</Text>
+              </View>
+            )}
 
             <Text style={ms.inputLabel}>New Count</Text>
             <TextInput
@@ -184,7 +186,9 @@ export default function MyProgressScreen() {
         <View style={styles.row}>
           <View style={styles.cell}>
             <Text style={styles.cellLabel}>System</Text>
-            <Text style={styles.cellValue}>{item.system_qty_snapshot ?? '—'}</Text>
+            <Text style={[styles.cellValue, item.status === 'PENDING_MANAGER_REVIEW' && styles.cellValueHidden]}>
+              {item.status === 'PENDING_MANAGER_REVIEW' ? 'hidden' : (item.system_qty_snapshot ?? '—')}
+            </Text>
           </View>
           <View style={styles.cell}>
             <Text style={styles.cellLabel}>Counted</Text>
@@ -320,6 +324,7 @@ const styles = StyleSheet.create({
   cellLabel:     { fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
   cellValue:     { fontSize: 16, color: '#374151' },
   cellValueBold: { fontWeight: '700' },
+  cellValueHidden: { fontSize: 12, color: '#9ca3af', fontStyle: 'italic' },
   editBtn:     { backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 8, paddingVertical: 8, alignItems: 'center' },
   editBtnText: { color: '#2563eb', fontSize: 13, fontWeight: '700' },
   timestamp:   { fontSize: 11, color: '#9ca3af', marginTop: 8, textAlign: 'right' },
