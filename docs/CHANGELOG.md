@@ -1,5 +1,22 @@
 # Changelog
 
+## v2.1.0 - 2026-07-04
+
+### Added
+- **Cycle Count Audit History and Controls**: Added audit history log, manager controls, and employee detail drill-down. Implemented Meilisearch part search and pagination to My Progress web tab. Staff progress view and pending count edit is now available on web and mobile.
+- **Multiple Barcodes Support**: Implemented multiple barcodes per item with instant barcode lookup via a dedicated DB endpoint, bypassing Meilisearch and debounce. Supported physical barcode scanners by intercepting rapid enter presses.
+- **Mobile Application Redesign**: Redesigned the MobileCounter layout with tablet-responsive scaling and dynamic quantity display font sizes based on ROW_HEIGHT. Updated the Android app architecture map with updated header and counter layouts.
+- **Mobile Networking Settings**: Enabled cleartext traffic and configured network security for the Android app. Added reset default server IP and auto-prompt configuration on connection failure.
+
+### Fixed
+- Masked system quantity for pending review items in progress views.
+- Staff now correctly edits `PENDING_MANAGER_REVIEW` lines, not raw `PENDING`.
+- Prevented duplicate pending items in workload query by extracting aggregation.
+- Redirected to unassigned search after clearing ad-hoc mode in the count screen.
+- Bypassed React state batching by reading raw DOM value on Enter for instant scanner lookup.
+- Disabled dev client for preview/production EAS builds and removed hardcoded dev IP to fix async store rehydration race.
+- Fixed `patch-package` missing in CI workflow by installing root deps first.
+
 ## v2.0.0 - 2026-06-25
 
 ### Added
