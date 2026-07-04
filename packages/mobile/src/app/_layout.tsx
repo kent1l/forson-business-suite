@@ -42,6 +42,7 @@ export default function TabLayout() {
           <Stack.Screen name="index" />
           <Stack.Screen name="count" />
           <Stack.Screen name="unassigned-search" />
+          <Stack.Screen name="my-progress" />
         </Stack>
       </ThemeProvider>
     </QueryClientProvider>

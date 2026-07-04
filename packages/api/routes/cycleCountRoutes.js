@@ -31,6 +31,139 @@ router.get('/inventory/cycle-count/my-tasks', protect, hasPermission('cycle_coun
     }
 });
 
+// GET /api/inventory/cycle-count/my-progress  — staff views their own count history
+router.get('/inventory/cycle-count/my-progress', protect, hasPermission('cycle_count:execute'), async (req, res) => {
+    try {
+        const { employee_id } = req.user;
+        const { rows } = await db.query(`
+            SELECT
+                l.*,
+                p.detail,
+                p.internal_sku,
+                COALESCE(pv.display_name, p.internal_sku, p.detail) AS display_name,
+                p.wac_cost,
+                (l.counted_qty - l.system_qty_snapshot) AS variance_qty,
+                ((l.counted_qty - l.system_qty_snapshot) * p.wac_cost) AS financial_impact,
+                b.created_at AS batch_created_at
+            FROM cycle_count_line l
+            JOIN cycle_count_batch b ON l.batch_id = b.batch_id
+            JOIN part p ON l.part_id = p.part_id
+            LEFT JOIN parts_view pv ON pv.part_id = p.part_id
+            WHERE b.employee_id = $1
+            ORDER BY
+                CASE WHEN l.status = 'PENDING' THEN 0 ELSE 1 END,
+                COALESCE(l.counted_at, b.created_at) DESC
+            LIMIT 200
+        `, [employee_id]);
+        res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// PATCH /api/inventory/cycle-count/lines/:id/edit-count  — staff corrects a PENDING count
+router.patch('/inventory/cycle-count/lines/:id/edit-count', protect, hasPermission('cycle_count:execute'), async (req, res) => {
+    const { id } = req.params;
+    const { counted_qty } = req.body;
+
+    if (counted_qty === undefined || isNaN(parseFloat(counted_qty))) {
+        return res.status(400).json({ message: 'counted_qty is required and must be a number' });
+    }
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+
+        // 1. Lock & validate: must be PENDING and belong to this employee's batch
+        const lineResult = await client.query(`
+            SELECT l.*, b.employee_id
+            FROM cycle_count_line l
+            JOIN cycle_count_batch b ON l.batch_id = b.batch_id
+            WHERE l.line_id = $1 AND l.status = 'PENDING'
+            FOR UPDATE OF l
+        `, [id]);
+
+        if (lineResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: 'Line not found or not editable (must be PENDING)' });
+        }
+
+        const line = lineResult.rows[0];
+        if (line.employee_id !== req.user.employee_id) {
+            await client.query('ROLLBACK');
+            return res.status(403).json({ message: 'Not authorized to edit this line' });
+        }
+
+        // 2. Load tolerance settings
+        const settingsResult = await client.query(`
+            SELECT setting_key, setting_value FROM settings
+            WHERE setting_key IN ('CYCLE_COUNT_MAX_VARIANCE_QTY', 'CYCLE_COUNT_MAX_FINANCIAL_IMPACT')
+        `);
+        const settings = settingsResult.rows.reduce((acc, row) => {
+            acc[row.setting_key] = row.setting_value;
+            return acc;
+        }, {});
+
+        const MAX_VARIANCE_QTY = parseFloat(settings['CYCLE_COUNT_MAX_VARIANCE_QTY'] || '2');
+        const MAX_FINANCIAL_IMPACT = parseFloat(settings['CYCLE_COUNT_MAX_FINANCIAL_IMPACT'] || '5.00');
+
+        // 3. Re-snapshot current system qty and WAC
+        const partResult = await client.query(`
+            SELECT
+                p.wac_cost,
+                COALESCE((SELECT SUM(quantity) FROM inventory_transaction WHERE part_id = $1), 0) AS system_qty
+            FROM part p WHERE p.part_id = $1
+        `, [line.part_id]);
+
+        const system_qty_snapshot = parseFloat(partResult.rows[0].system_qty || 0);
+        const wac_cost = parseFloat(partResult.rows[0].wac_cost || 0);
+        const countedQuantity = parseFloat(counted_qty);
+        const variance_qty = countedQuantity - system_qty_snapshot;
+        const financial_impact = Math.abs(variance_qty * wac_cost);
+
+        let status = 'PENDING_MANAGER_REVIEW';
+        if (variance_qty === 0) {
+            status = 'MATCHED_AUTO_APPROVED';
+        } else if (Math.abs(variance_qty) <= MAX_VARIANCE_QTY && financial_impact <= MAX_FINANCIAL_IMPACT) {
+            status = 'APPROVED_ADJUSTED';
+        }
+
+        // 4. If auto-approved with variance, apply ledger adjustment
+        if (variance_qty !== 0 && status === 'APPROVED_ADJUSTED') {
+            await client.query(`
+                INSERT INTO inventory_transaction (part_id, quantity, trans_type, reference_no, employee_id)
+                VALUES ($1, $2, 'Cycle Count Auto-Adjustment', $3, $4)
+            `, [line.part_id, variance_qty, id.toString(), req.user.employee_id]);
+        }
+
+        // 5. Update line with new count
+        const updateResult = await client.query(`
+            UPDATE cycle_count_line
+            SET counted_qty = $1, system_qty_snapshot = $2, status = $3, counted_at = CURRENT_TIMESTAMP
+            WHERE line_id = $4
+            RETURNING *
+        `, [countedQuantity, system_qty_snapshot, status, id]);
+
+        // 6. Update part_inventory_stats
+        await client.query(`
+            INSERT INTO part_inventory_stats (part_id, last_counted_at, audit_requested)
+            VALUES ($1, CURRENT_TIMESTAMP, FALSE)
+            ON CONFLICT (part_id) DO UPDATE
+            SET last_counted_at = CURRENT_TIMESTAMP, audit_requested = FALSE
+        `, [line.part_id]);
+
+        await client.query('COMMIT');
+        res.json(updateResult.rows[0]);
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    } finally {
+        client.release();
+    }
+});
+
 // POST /api/inventory/cycle-count/lines/:id/submit
 router.post('/inventory/cycle-count/lines/:id/submit', protect, hasPermission('cycle_count:execute'), async (req, res) => {
     const { id } = req.params;
