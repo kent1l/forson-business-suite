@@ -105,324 +105,174 @@
   },
   "nodes": [
     {
-      "label": "android_app_map.md",
-      "file_type": "document",
-      "source_file": "docs/android_app_map.md",
+      "label": "cycleCountRoutes.js",
+      "file_type": "code",
+      "source_file": "packages/api/routes/cycleCountRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "docs_android_app_map",
-      "community": 1,
-      "norm_label": "android_app_map.md"
+      "id": "packages_api_routes_cyclecountroutes",
+      "community": 85,
+      "norm_label": "cyclecountroutes.js"
     },
     {
-      "label": "Android App UI Reference Map",
-      "file_type": "document",
-      "source_file": "docs/android_app_map.md",
+      "label": "express",
+      "file_type": "code",
+      "source_file": "packages/api/routes/cycleCountRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "docs_android_app_map_android_app_ui_reference_map",
-      "community": 1,
-      "norm_label": "android app ui reference map"
+      "id": "packages_api_routes_cyclecountroutes_express",
+      "community": 85,
+      "norm_label": "express"
     },
     {
-      "label": "\ud83d\uddfa\ufe0f Navigation & App Architecture",
-      "file_type": "document",
-      "source_file": "docs/android_app_map.md",
+      "label": "db",
+      "file_type": "code",
+      "source_file": "packages/api/routes/cycleCountRoutes.js",
+      "source_location": "L2",
+      "_origin": "ast",
+      "id": "packages_api_routes_cyclecountroutes_db",
+      "community": 85,
+      "norm_label": "db"
+    },
+    {
+      "label": "{ protect, hasPermission }",
+      "file_type": "code",
+      "source_file": "packages/api/routes/cycleCountRoutes.js",
+      "source_location": "L3",
+      "_origin": "ast",
+      "id": "packages_api_routes_cyclecountroutes_protect_haspermission",
+      "community": 85,
+      "norm_label": "{ protect, haspermission }"
+    },
+    {
+      "label": "router",
+      "file_type": "code",
+      "source_file": "packages/api/routes/cycleCountRoutes.js",
       "source_location": "L5",
       "_origin": "ast",
-      "id": "docs_android_app_map_navigation_app_architecture",
-      "community": 1,
-      "norm_label": "\ud83d\uddfa\ufe0f navigation & app architecture"
+      "id": "packages_api_routes_cyclecountroutes_router",
+      "community": 85,
+      "norm_label": "router"
     },
     {
-      "label": "\ud83d\udcf1 Page-by-Page Element Catalog",
-      "file_type": "document",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L34",
-      "_origin": "ast",
-      "id": "docs_android_app_map_page_by_page_element_catalog",
-      "community": 1,
-      "norm_label": "\ud83d\udcf1 page-by-page element catalog"
-    },
-    {
-      "label": "1. Login Screen",
-      "file_type": "document",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L36",
-      "_origin": "ast",
-      "id": "docs_android_app_map_1_login_screen",
-      "community": 1,
-      "norm_label": "1. login screen"
-    },
-    {
-      "label": "\u2699\ufe0f Server Settings Modal (Nested in Login)",
-      "file_type": "document",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L49",
-      "_origin": "ast",
-      "id": "docs_android_app_map_server_settings_modal_nested_in_login",
-      "community": 1,
-      "norm_label": "\u2699\ufe0f server settings modal (nested in login)"
-    },
-    {
-      "label": "2. Dashboard Screen",
-      "file_type": "document",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L62",
-      "_origin": "ast",
-      "id": "docs_android_app_map_2_dashboard_screen",
-      "community": 1,
-      "norm_label": "2. dashboard screen"
-    },
-    {
-      "label": "3. Active Count Screen",
-      "file_type": "document",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L80",
-      "_origin": "ast",
-      "id": "docs_android_app_map_3_active_count_screen",
-      "community": 1,
-      "norm_label": "3. active count screen"
-    },
-    {
-      "label": "\ud83d\udcf8 Barcode Scanner Modal (Nested in Count)",
-      "file_type": "document",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L98",
-      "_origin": "ast",
-      "id": "docs_android_app_map_barcode_scanner_modal_nested_in_count",
-      "community": 1,
-      "norm_label": "\ud83d\udcf8 barcode scanner modal (nested in count)"
-    },
-    {
-      "label": "4. Log Unassigned Find Screen",
-      "file_type": "document",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L113",
-      "_origin": "ast",
-      "id": "docs_android_app_map_4_log_unassigned_find_screen",
-      "community": 1,
-      "norm_label": "4. log unassigned find screen"
-    },
-    {
-      "label": "\ud83d\udcf8 Barcode Scanner Modal (Nested in Unassigned Search)",
-      "file_type": "document",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L131",
-      "_origin": "ast",
-      "id": "docs_android_app_map_barcode_scanner_modal_nested_in_unassigned_search",
-      "community": 1,
-      "norm_label": "\ud83d\udcf8 barcode scanner modal (nested in unassigned search)"
-    },
-    {
-      "label": "5. Reusable Component: Mobile Counter Keypad",
-      "file_type": "document",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L148",
-      "_origin": "ast",
-      "id": "docs_android_app_map_5_reusable_component_mobile_counter_keypad",
-      "community": 1,
-      "norm_label": "5. reusable component: mobile counter keypad"
-    },
-    {
-      "label": "Quick Actions Row (Row 1)",
-      "file_type": "document",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L168",
-      "_origin": "ast",
-      "id": "docs_android_app_map_quick_actions_row_row_1",
-      "community": 1,
-      "norm_label": "quick actions row (row 1)"
-    },
-    {
-      "label": "Display & Submit Panel (Left Column, below Row 1)",
-      "file_type": "document",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L172",
-      "_origin": "ast",
-      "id": "docs_android_app_map_display_submit_panel_left_column_below_row_1",
-      "community": 1,
-      "norm_label": "display & submit panel (left column, below row 1)"
-    },
-    {
-      "label": "Numeric Keypad Grid (Right Column, below Row 1)",
-      "file_type": "document",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L176",
-      "_origin": "ast",
-      "id": "docs_android_app_map_numeric_keypad_grid_right_column_below_row_1",
-      "community": 1,
-      "norm_label": "numeric keypad grid (right column, below row 1)"
-    },
-    {
-      "label": "\ud83c\udfa8 Global Styling & Asset Resources",
-      "file_type": "document",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L184",
-      "_origin": "ast",
-      "id": "docs_android_app_map_global_styling_asset_resources",
-      "community": 1,
-      "norm_label": "\ud83c\udfa8 global styling & asset resources"
-    },
-    {
-      "label": "_layout.tsx",
+      "label": "AuditHistoryTab.jsx",
       "file_type": "code",
-      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_file": "packages/web/src/components/cycleCount/AuditHistoryTab.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 291,
-      "norm_label": "_layout.tsx",
-      "id": "packages_mobile_src_app_layout"
+      "id": "packages_web_src_components_cyclecount_audithistorytab",
+      "community": 70,
+      "norm_label": "audithistorytab.jsx"
     },
     {
-      "label": "queryClient",
+      "label": "ACTION_LABELS",
       "file_type": "code",
-      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_file": "packages/web/src/components/cycleCount/AuditHistoryTab.jsx",
+      "source_location": "L7",
+      "_origin": "ast",
+      "id": "packages_web_src_components_cyclecount_audithistorytab_action_labels",
+      "community": 70,
+      "norm_label": "action_labels"
+    },
+    {
+      "label": "AuditHistoryTab()",
+      "file_type": "code",
+      "source_file": "packages/web/src/components/cycleCount/AuditHistoryTab.jsx",
       "source_location": "L12",
       "_origin": "ast",
-      "community": 291,
-      "norm_label": "queryclient",
-      "id": "packages_mobile_src_app_layout_queryclient"
+      "id": "packages_web_src_components_cyclecount_audithistorytab_audithistorytab",
+      "community": 70,
+      "norm_label": "audithistorytab()"
     },
     {
-      "label": "TabLayout()",
+      "label": "CycleCountControlsTab.jsx",
       "file_type": "code",
-      "source_file": "packages/mobile/src/app/_layout.tsx",
-      "source_location": "L14",
-      "_origin": "ast",
-      "community": 291,
-      "norm_label": "tablayout()",
-      "id": "packages_mobile_src_app_layout_tablayout"
-    },
-    {
-      "label": "count.tsx",
-      "file_type": "code",
-      "source_file": "packages/mobile/src/app/count.tsx",
+      "source_file": "packages/web/src/components/cycleCount/CycleCountControlsTab.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 115,
-      "norm_label": "count.tsx",
-      "id": "packages_mobile_src_app_count"
+      "id": "packages_web_src_components_cyclecount_cyclecountcontrolstab",
+      "community": 70,
+      "norm_label": "cyclecountcontrolstab.jsx"
     },
     {
-      "label": "CountScreen()",
+      "label": "CycleCountControlsTab()",
       "file_type": "code",
-      "source_file": "packages/mobile/src/app/count.tsx",
-      "source_location": "L12",
+      "source_file": "packages/web/src/components/cycleCount/CycleCountControlsTab.jsx",
+      "source_location": "L5",
       "_origin": "ast",
-      "community": 115,
-      "norm_label": "countscreen()",
-      "id": "packages_mobile_src_app_count_countscreen"
+      "id": "packages_web_src_components_cyclecount_cyclecountcontrolstab_cyclecountcontrolstab",
+      "community": 70,
+      "norm_label": "cyclecountcontrolstab()"
     },
     {
-      "label": "styles",
+      "label": "EmployeeDetailModal.jsx",
       "file_type": "code",
-      "source_file": "packages/mobile/src/app/count.tsx",
-      "source_location": "L325",
-      "_origin": "ast",
-      "community": 115,
-      "norm_label": "styles",
-      "id": "packages_mobile_src_app_count_styles"
-    },
-    {
-      "label": "index.tsx",
-      "file_type": "code",
-      "source_file": "packages/mobile/src/app/index.tsx",
+      "source_file": "packages/web/src/components/cycleCount/EmployeeDetailModal.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 289,
-      "norm_label": "index.tsx",
-      "id": "packages_mobile_src_app_index"
+      "id": "packages_web_src_components_cyclecount_employeedetailmodal",
+      "community": 70,
+      "norm_label": "employeedetailmodal.jsx"
     },
     {
-      "label": "fetchAssignedTasks()",
+      "label": "EmployeeDetailModal()",
       "file_type": "code",
-      "source_file": "packages/mobile/src/app/index.tsx",
-      "source_location": "L9",
+      "source_file": "packages/web/src/components/cycleCount/EmployeeDetailModal.jsx",
+      "source_location": "L5",
       "_origin": "ast",
-      "community": 289,
-      "norm_label": "fetchassignedtasks()",
-      "id": "packages_mobile_src_app_index_fetchassignedtasks"
+      "id": "packages_web_src_components_cyclecount_employeedetailmodal_employeedetailmodal",
+      "community": 70,
+      "norm_label": "employeedetailmodal()"
     },
     {
-      "label": "DashboardScreen()",
+      "label": "EmployeePerformanceTab.jsx",
       "file_type": "code",
-      "source_file": "packages/mobile/src/app/index.tsx",
-      "source_location": "L14",
-      "_origin": "ast",
-      "community": 289,
-      "norm_label": "dashboardscreen()",
-      "id": "packages_mobile_src_app_index_dashboardscreen"
-    },
-    {
-      "label": "styles",
-      "file_type": "code",
-      "source_file": "packages/mobile/src/app/index.tsx",
-      "source_location": "L117",
-      "_origin": "ast",
-      "community": 289,
-      "norm_label": "styles",
-      "id": "packages_mobile_src_app_index_styles"
-    },
-    {
-      "label": "unassigned-search.tsx",
-      "file_type": "code",
-      "source_file": "packages/mobile/src/app/unassigned-search.tsx",
+      "source_file": "packages/web/src/components/cycleCount/EmployeePerformanceTab.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 292,
-      "norm_label": "unassigned-search.tsx",
-      "id": "packages_mobile_src_app_unassigned_search"
+      "id": "packages_web_src_components_cyclecount_employeeperformancetab",
+      "community": 70,
+      "norm_label": "employeeperformancetab.jsx"
     },
     {
-      "label": "UnassignedSearchScreen()",
+      "label": "EmployeePerformanceTab()",
       "file_type": "code",
-      "source_file": "packages/mobile/src/app/unassigned-search.tsx",
-      "source_location": "L25",
+      "source_file": "packages/web/src/components/cycleCount/EmployeePerformanceTab.jsx",
+      "source_location": "L6",
       "_origin": "ast",
-      "community": 292,
-      "norm_label": "unassignedsearchscreen()",
-      "id": "packages_mobile_src_app_unassigned_search_unassignedsearchscreen"
+      "id": "packages_web_src_components_cyclecount_employeeperformancetab_employeeperformancetab",
+      "community": 70,
+      "norm_label": "employeeperformancetab()"
     },
     {
-      "label": "styles",
+      "label": "ManagerReviewDesk.jsx",
       "file_type": "code",
-      "source_file": "packages/mobile/src/app/unassigned-search.tsx",
-      "source_location": "L316",
-      "_origin": "ast",
-      "community": 292,
-      "norm_label": "styles",
-      "id": "packages_mobile_src_app_unassigned_search_styles"
-    },
-    {
-      "label": "MobileCounter.jsx",
-      "file_type": "code",
-      "source_file": "packages/mobile/src/components/MobileCounter.jsx",
+      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 115,
-      "norm_label": "mobilecounter.jsx",
-      "id": "packages_mobile_src_components_mobilecounter"
+      "id": "packages_web_src_components_cyclecount_managerreviewdesk",
+      "community": 70,
+      "norm_label": "managerreviewdesk.jsx"
     },
     {
-      "label": "MobileCounter()",
+      "label": "TABS",
       "file_type": "code",
-      "source_file": "packages/mobile/src/components/MobileCounter.jsx",
-      "source_location": "L4",
+      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
+      "source_location": "L10",
       "_origin": "ast",
-      "community": 115,
-      "norm_label": "mobilecounter()",
-      "id": "packages_mobile_src_components_mobilecounter_mobilecounter"
+      "id": "packages_web_src_components_cyclecount_managerreviewdesk_tabs",
+      "community": 70,
+      "norm_label": "tabs"
     },
     {
-      "label": "styles",
+      "label": "ManagerReviewDesk()",
       "file_type": "code",
-      "source_file": "packages/mobile/src/components/MobileCounter.jsx",
-      "source_location": "L173",
+      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
+      "source_location": "L17",
       "_origin": "ast",
-      "community": 115,
-      "norm_label": "styles",
-      "id": "packages_mobile_src_components_mobilecounter_styles"
+      "id": "packages_web_src_components_cyclecount_managerreviewdesk_managerreviewdesk",
+      "community": 70,
+      "norm_label": "managerreviewdesk()"
     },
     {
       "label": "backup.sh",
@@ -1258,7 +1108,7 @@
       "source_file": "packages/api/helpers/receiptNumberFormatter.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 4,
+      "community": 62,
       "norm_label": "receiptnumberformatter.js",
       "id": "packages_api_helpers_receiptnumberformatter"
     },
@@ -1268,7 +1118,7 @@
       "source_file": "packages/api/helpers/receiptNumberFormatter.js",
       "source_location": "L7",
       "_origin": "ast",
-      "community": 4,
+      "community": 62,
       "norm_label": "formatphysicalreceiptnumber()",
       "id": "packages_api_helpers_receiptnumberformatter_formatphysicalreceiptnumber"
     },
@@ -2558,7 +2408,7 @@
       "source_file": "packages/api/routes/backupRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 24,
+      "community": 84,
       "norm_label": "backuproutes.js",
       "id": "packages_api_routes_backuproutes"
     },
@@ -2568,7 +2418,7 @@
       "source_file": "packages/api/routes/backupRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 24,
+      "community": 84,
       "norm_label": "express",
       "id": "packages_api_routes_backuproutes_express"
     },
@@ -2578,7 +2428,7 @@
       "source_file": "packages/api/routes/backupRoutes.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 24,
+      "community": 84,
       "norm_label": "fs",
       "id": "packages_api_routes_backuproutes_fs"
     },
@@ -2588,7 +2438,7 @@
       "source_file": "packages/api/routes/backupRoutes.js",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 24,
+      "community": 84,
       "norm_label": "path",
       "id": "packages_api_routes_backuproutes_path"
     },
@@ -2598,7 +2448,7 @@
       "source_file": "packages/api/routes/backupRoutes.js",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 24,
+      "community": 84,
       "norm_label": "{ exec }",
       "id": "packages_api_routes_backuproutes_exec"
     },
@@ -2608,7 +2458,7 @@
       "source_file": "packages/api/routes/backupRoutes.js",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 24,
+      "community": 84,
       "norm_label": "{ protect, haspermission }",
       "id": "packages_api_routes_backuproutes_protect_haspermission"
     },
@@ -2618,7 +2468,7 @@
       "source_file": "packages/api/routes/backupRoutes.js",
       "source_location": "L6",
       "_origin": "ast",
-      "community": 24,
+      "community": 84,
       "norm_label": "router",
       "id": "packages_api_routes_backuproutes_router"
     },
@@ -2883,56 +2733,6 @@
       "id": "packages_api_routes_customerroutes_managetags"
     },
     {
-      "label": "cycleCountRoutes.js",
-      "file_type": "code",
-      "source_file": "packages/api/routes/cycleCountRoutes.js",
-      "source_location": "L1",
-      "_origin": "ast",
-      "community": 24,
-      "norm_label": "cyclecountroutes.js",
-      "id": "packages_api_routes_cyclecountroutes"
-    },
-    {
-      "label": "express",
-      "file_type": "code",
-      "source_file": "packages/api/routes/cycleCountRoutes.js",
-      "source_location": "L1",
-      "_origin": "ast",
-      "community": 24,
-      "norm_label": "express",
-      "id": "packages_api_routes_cyclecountroutes_express"
-    },
-    {
-      "label": "db",
-      "file_type": "code",
-      "source_file": "packages/api/routes/cycleCountRoutes.js",
-      "source_location": "L2",
-      "_origin": "ast",
-      "community": 24,
-      "norm_label": "db",
-      "id": "packages_api_routes_cyclecountroutes_db"
-    },
-    {
-      "label": "{ protect, hasPermission }",
-      "file_type": "code",
-      "source_file": "packages/api/routes/cycleCountRoutes.js",
-      "source_location": "L3",
-      "_origin": "ast",
-      "community": 24,
-      "norm_label": "{ protect, haspermission }",
-      "id": "packages_api_routes_cyclecountroutes_protect_haspermission"
-    },
-    {
-      "label": "router",
-      "file_type": "code",
-      "source_file": "packages/api/routes/cycleCountRoutes.js",
-      "source_location": "L5",
-      "_origin": "ast",
-      "community": 24,
-      "norm_label": "router",
-      "id": "packages_api_routes_cyclecountroutes_router"
-    },
-    {
       "label": "dashboardRoutes.js",
       "file_type": "code",
       "source_file": "packages/api/routes/dashboardRoutes.js",
@@ -3138,7 +2938,7 @@
       "source_file": "packages/api/routes/documentRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 70,
+      "community": 24,
       "norm_label": "documentroutes.js",
       "id": "packages_api_routes_documentroutes"
     },
@@ -3148,7 +2948,7 @@
       "source_file": "packages/api/routes/documentRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 70,
+      "community": 24,
       "norm_label": "express",
       "id": "packages_api_routes_documentroutes_express"
     },
@@ -3158,7 +2958,7 @@
       "source_file": "packages/api/routes/documentRoutes.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 70,
+      "community": 24,
       "norm_label": "db",
       "id": "packages_api_routes_documentroutes_db"
     },
@@ -3168,7 +2968,7 @@
       "source_file": "packages/api/routes/documentRoutes.js",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 70,
+      "community": 24,
       "norm_label": "{ protect }",
       "id": "packages_api_routes_documentroutes_protect"
     },
@@ -3178,7 +2978,7 @@
       "source_file": "packages/api/routes/documentRoutes.js",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 70,
+      "community": 24,
       "norm_label": "router",
       "id": "packages_api_routes_documentroutes_router"
     },
@@ -3188,7 +2988,7 @@
       "source_file": "packages/api/routes/documentRoutes.js",
       "source_location": "L7",
       "_origin": "ast",
-      "community": 70,
+      "community": 24,
       "norm_label": "parsedocumentid()",
       "id": "packages_api_routes_documentroutes_parsedocumentid"
     },
@@ -3248,7 +3048,7 @@
       "source_file": "packages/api/routes/draftRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 293,
+      "community": 24,
       "norm_label": "draftroutes.js",
       "id": "packages_api_routes_draftroutes"
     },
@@ -3258,7 +3058,7 @@
       "source_file": "packages/api/routes/draftRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 293,
+      "community": 24,
       "norm_label": "express",
       "id": "packages_api_routes_draftroutes_express"
     },
@@ -3268,7 +3068,7 @@
       "source_file": "packages/api/routes/draftRoutes.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 293,
+      "community": 24,
       "norm_label": "db",
       "id": "packages_api_routes_draftroutes_db"
     },
@@ -3278,7 +3078,7 @@
       "source_file": "packages/api/routes/draftRoutes.js",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 293,
+      "community": 24,
       "norm_label": "{ protect }",
       "id": "packages_api_routes_draftroutes_protect"
     },
@@ -3288,7 +3088,7 @@
       "source_file": "packages/api/routes/draftRoutes.js",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 293,
+      "community": 24,
       "norm_label": "router",
       "id": "packages_api_routes_draftroutes_router"
     },
@@ -4048,7 +3848,7 @@
       "source_file": "packages/api/routes/paymentMethodRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 4,
+      "community": 62,
       "norm_label": "paymentmethodroutes.js",
       "id": "packages_api_routes_paymentmethodroutes"
     },
@@ -4058,7 +3858,7 @@
       "source_file": "packages/api/routes/paymentMethodRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 4,
+      "community": 62,
       "norm_label": "express",
       "id": "packages_api_routes_paymentmethodroutes_express"
     },
@@ -4068,7 +3868,7 @@
       "source_file": "packages/api/routes/paymentMethodRoutes.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 4,
+      "community": 62,
       "norm_label": "db",
       "id": "packages_api_routes_paymentmethodroutes_db"
     },
@@ -4078,7 +3878,7 @@
       "source_file": "packages/api/routes/paymentMethodRoutes.js",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 4,
+      "community": 62,
       "norm_label": "{ protect, haspermission }",
       "id": "packages_api_routes_paymentmethodroutes_protect_haspermission"
     },
@@ -4088,7 +3888,7 @@
       "source_file": "packages/api/routes/paymentMethodRoutes.js",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 4,
+      "community": 62,
       "norm_label": "{ formatphysicalreceiptnumber }",
       "id": "packages_api_routes_paymentmethodroutes_formatphysicalreceiptnumber"
     },
@@ -4098,7 +3898,7 @@
       "source_file": "packages/api/routes/paymentMethodRoutes.js",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 4,
+      "community": 62,
       "norm_label": "router",
       "id": "packages_api_routes_paymentmethodroutes_router"
     },
@@ -4108,7 +3908,7 @@
       "source_file": "packages/api/routes/paymentMethodRoutes.js",
       "source_location": "L9",
       "_origin": "ast",
-      "community": 4,
+      "community": 62,
       "norm_label": "settlementcolumnssupported()",
       "id": "packages_api_routes_paymentmethodroutes_settlementcolumnssupported"
     },
@@ -4118,7 +3918,7 @@
       "source_file": "packages/api/routes/paymentMethodRoutes.js",
       "source_location": "L315",
       "_origin": "ast",
-      "community": 4,
+      "community": 62,
       "norm_label": "invoicepaymentsmiddlewares",
       "id": "packages_api_routes_paymentmethodroutes_invoicepaymentsmiddlewares"
     },
@@ -4178,7 +3978,7 @@
       "source_file": "packages/api/routes/paymentTermRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 22,
+      "community": 288,
       "norm_label": "paymenttermroutes.js",
       "id": "packages_api_routes_paymenttermroutes"
     },
@@ -4188,7 +3988,7 @@
       "source_file": "packages/api/routes/paymentTermRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 22,
+      "community": 288,
       "norm_label": "express",
       "id": "packages_api_routes_paymenttermroutes_express"
     },
@@ -4198,7 +3998,7 @@
       "source_file": "packages/api/routes/paymentTermRoutes.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 22,
+      "community": 288,
       "norm_label": "db",
       "id": "packages_api_routes_paymenttermroutes_db"
     },
@@ -4208,7 +4008,7 @@
       "source_file": "packages/api/routes/paymentTermRoutes.js",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 22,
+      "community": 288,
       "norm_label": "{ protect, haspermission }",
       "id": "packages_api_routes_paymenttermroutes_protect_haspermission"
     },
@@ -4218,7 +4018,7 @@
       "source_file": "packages/api/routes/paymentTermRoutes.js",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 22,
+      "community": 288,
       "norm_label": "router",
       "id": "packages_api_routes_paymenttermroutes_router"
     },
@@ -4478,7 +4278,7 @@
       "source_file": "packages/api/routes/reportingRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 288,
+      "community": 79,
       "norm_label": "reportingroutes.js",
       "id": "packages_api_routes_reportingroutes"
     },
@@ -4488,7 +4288,7 @@
       "source_file": "packages/api/routes/reportingRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 288,
+      "community": 79,
       "norm_label": "express",
       "id": "packages_api_routes_reportingroutes_express"
     },
@@ -4498,7 +4298,7 @@
       "source_file": "packages/api/routes/reportingRoutes.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 288,
+      "community": 79,
       "norm_label": "db",
       "id": "packages_api_routes_reportingroutes_db"
     },
@@ -4508,7 +4308,7 @@
       "source_file": "packages/api/routes/reportingRoutes.js",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 288,
+      "community": 79,
       "norm_label": "{ parser }",
       "id": "packages_api_routes_reportingroutes_parser"
     },
@@ -4518,7 +4318,7 @@
       "source_file": "packages/api/routes/reportingRoutes.js",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 288,
+      "community": 79,
       "norm_label": "{ protect, haspermission }",
       "id": "packages_api_routes_reportingroutes_protect_haspermission"
     },
@@ -4528,7 +4328,7 @@
       "source_file": "packages/api/routes/reportingRoutes.js",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 288,
+      "community": 79,
       "norm_label": "{ parsepaginationquery, paginatedresponse }",
       "id": "packages_api_routes_reportingroutes_parsepaginationquery_paginatedresponse"
     },
@@ -4538,7 +4338,7 @@
       "source_file": "packages/api/routes/reportingRoutes.js",
       "source_location": "L6",
       "_origin": "ast",
-      "community": 288,
+      "community": 79,
       "norm_label": "router",
       "id": "packages_api_routes_reportingroutes_router"
     },
@@ -4698,7 +4498,7 @@
       "source_file": "packages/api/routes/tagRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 294,
+      "community": 115,
       "norm_label": "tagroutes.js",
       "id": "packages_api_routes_tagroutes"
     },
@@ -4708,7 +4508,7 @@
       "source_file": "packages/api/routes/tagRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 294,
+      "community": 115,
       "norm_label": "express",
       "id": "packages_api_routes_tagroutes_express"
     },
@@ -4718,7 +4518,7 @@
       "source_file": "packages/api/routes/tagRoutes.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 294,
+      "community": 115,
       "norm_label": "db",
       "id": "packages_api_routes_tagroutes_db"
     },
@@ -4728,7 +4528,7 @@
       "source_file": "packages/api/routes/tagRoutes.js",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 294,
+      "community": 115,
       "norm_label": "{ protect }",
       "id": "packages_api_routes_tagroutes_protect"
     },
@@ -4738,7 +4538,7 @@
       "source_file": "packages/api/routes/tagRoutes.js",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 294,
+      "community": 115,
       "norm_label": "router",
       "id": "packages_api_routes_tagroutes_router"
     },
@@ -4798,7 +4598,7 @@
       "source_file": "packages/api/routes/taxReportRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 295,
+      "community": 289,
       "norm_label": "taxreportroutes.js",
       "id": "packages_api_routes_taxreportroutes"
     },
@@ -4808,7 +4608,7 @@
       "source_file": "packages/api/routes/taxReportRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 295,
+      "community": 289,
       "norm_label": "express",
       "id": "packages_api_routes_taxreportroutes_express"
     },
@@ -4818,7 +4618,7 @@
       "source_file": "packages/api/routes/taxReportRoutes.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 295,
+      "community": 289,
       "norm_label": "db",
       "id": "packages_api_routes_taxreportroutes_db"
     },
@@ -4828,7 +4628,7 @@
       "source_file": "packages/api/routes/taxReportRoutes.js",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 295,
+      "community": 289,
       "norm_label": "{ protect, haspermission }",
       "id": "packages_api_routes_taxreportroutes_protect_haspermission"
     },
@@ -4838,7 +4638,7 @@
       "source_file": "packages/api/routes/taxReportRoutes.js",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 295,
+      "community": 289,
       "norm_label": "router",
       "id": "packages_api_routes_taxreportroutes_router"
     },
@@ -5498,7 +5298,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 40,
       "norm_label": "duplicatefinder.js",
       "id": "packages_api_services_duplicatefinder"
     },
@@ -5508,7 +5308,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 40,
       "norm_label": "{ meiliclient }",
       "id": "packages_api_services_duplicatefinder_meiliclient"
     },
@@ -5518,7 +5318,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L9",
       "_origin": "ast",
-      "community": 35,
+      "community": 31,
       "norm_label": "duplicatefinder",
       "id": "packages_api_services_duplicatefinder_duplicatefinder"
     },
@@ -5528,7 +5328,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L10",
       "_origin": "ast",
-      "community": 35,
+      "community": 31,
       "norm_label": ".constructor()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_constructor"
     },
@@ -5538,7 +5338,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L15",
       "_origin": "ast",
-      "community": 35,
+      "community": 31,
       "norm_label": ".normalizetext()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_normalizetext"
     },
@@ -5548,7 +5348,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L26",
       "_origin": "ast",
-      "community": 35,
+      "community": 31,
       "norm_label": ".normalizepartnumber()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_normalizepartnumber"
     },
@@ -5558,7 +5358,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L31",
       "_origin": "ast",
-      "community": 35,
+      "community": 31,
       "norm_label": ".extractnumerictokens()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_extractnumerictokens"
     },
@@ -5568,7 +5368,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L40",
       "_origin": "ast",
-      "community": 35,
+      "community": 31,
       "norm_label": ".calculatecompositescore()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_calculatecompositescore"
     },
@@ -5578,7 +5378,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L118",
       "_origin": "ast",
-      "community": 35,
+      "community": 31,
       "norm_label": ".getconfidencelevel()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_getconfidencelevel"
     },
@@ -5588,7 +5388,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L132",
       "_origin": "ast",
-      "community": 35,
+      "community": 31,
       "norm_label": ".findduplicategroups()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_findduplicategroups"
     },
@@ -5598,7 +5398,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L136",
       "_origin": "ast",
-      "community": 35,
+      "community": 31,
       "norm_label": ".findoptimizedduplicategroups()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_findoptimizedduplicategroups"
     },
@@ -5608,7 +5408,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L260",
       "_origin": "ast",
-      "community": 35,
+      "community": 31,
       "norm_label": ".finddeterministicpairs()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_finddeterministicpairs"
     },
@@ -5618,7 +5418,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L346",
       "_origin": "ast",
-      "community": 35,
+      "community": 31,
       "norm_label": ".findfuzzymeilisearchpairs()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_findfuzzymeilisearchpairs"
     },
@@ -5628,7 +5428,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L422",
       "_origin": "ast",
-      "community": 35,
+      "community": 31,
       "norm_label": ".grouppartsbykey()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_grouppartsbykey"
     },
@@ -5638,7 +5438,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L440",
       "_origin": "ast",
-      "community": 35,
+      "community": 31,
       "norm_label": ".formatpartdata()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_formatpartdata"
     },
@@ -5648,7 +5448,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L455",
       "_origin": "ast",
-      "community": 35,
+      "community": 31,
       "norm_label": ".deduplicategroups()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_deduplicategroups"
     },
@@ -5658,7 +5458,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L476",
       "_origin": "ast",
-      "community": 35,
+      "community": 31,
       "norm_label": ".searchpartsformerge()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_searchpartsformerge"
     },
@@ -5738,7 +5538,7 @@
       "source_file": "packages/api/services/partMergeService.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 86,
       "norm_label": "partmergeservice.js",
       "id": "packages_api_services_partmergeservice"
     },
@@ -5748,7 +5548,7 @@
       "source_file": "packages/api/services/partMergeService.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 86,
       "norm_label": "duplicatefinder",
       "id": "packages_api_services_partmergeservice_duplicatefinder"
     },
@@ -6158,7 +5958,7 @@
       "source_file": "packages/api/test_formatter.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 4,
+      "community": 62,
       "norm_label": "test_formatter.js",
       "id": "packages_api_test_formatter"
     },
@@ -6168,7 +5968,7 @@
       "source_file": "packages/api/test_formatter.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 4,
+      "community": 62,
       "norm_label": "{ formatphysicalreceiptnumber }",
       "id": "packages_api_test_formatter_formatphysicalreceiptnumber"
     },
@@ -7703,6 +7503,66 @@
       "id": "packages_mobile_src_api_client_apiclient"
     },
     {
+      "label": "_layout.tsx",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 7,
+      "norm_label": "_layout.tsx",
+      "id": "packages_mobile_src_app_layout"
+    },
+    {
+      "label": "queryClient",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_location": "L12",
+      "_origin": "ast",
+      "community": 7,
+      "norm_label": "queryclient",
+      "id": "packages_mobile_src_app_layout_queryclient"
+    },
+    {
+      "label": "TabLayout()",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_location": "L14",
+      "_origin": "ast",
+      "community": 7,
+      "norm_label": "tablayout()",
+      "id": "packages_mobile_src_app_layout_tablayout"
+    },
+    {
+      "label": "count.tsx",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/app/count.tsx",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 7,
+      "norm_label": "count.tsx",
+      "id": "packages_mobile_src_app_count"
+    },
+    {
+      "label": "CountScreen()",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/app/count.tsx",
+      "source_location": "L12",
+      "_origin": "ast",
+      "community": 7,
+      "norm_label": "countscreen()",
+      "id": "packages_mobile_src_app_count_countscreen"
+    },
+    {
+      "label": "styles",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/app/count.tsx",
+      "source_location": "L325",
+      "_origin": "ast",
+      "community": 7,
+      "norm_label": "styles",
+      "id": "packages_mobile_src_app_count_styles"
+    },
+    {
       "label": "explore.tsx",
       "file_type": "code",
       "source_file": "packages/mobile/src/app/explore.tsx",
@@ -7733,12 +7593,112 @@
       "id": "packages_mobile_src_app_explore_styles"
     },
     {
+      "label": "index.tsx",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/app/index.tsx",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 7,
+      "norm_label": "index.tsx",
+      "id": "packages_mobile_src_app_index"
+    },
+    {
+      "label": "fetchAssignedTasks()",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/app/index.tsx",
+      "source_location": "L9",
+      "_origin": "ast",
+      "community": 7,
+      "norm_label": "fetchassignedtasks()",
+      "id": "packages_mobile_src_app_index_fetchassignedtasks"
+    },
+    {
+      "label": "DashboardScreen()",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/app/index.tsx",
+      "source_location": "L14",
+      "_origin": "ast",
+      "community": 7,
+      "norm_label": "dashboardscreen()",
+      "id": "packages_mobile_src_app_index_dashboardscreen"
+    },
+    {
+      "label": "styles",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/app/index.tsx",
+      "source_location": "L117",
+      "_origin": "ast",
+      "community": 7,
+      "norm_label": "styles",
+      "id": "packages_mobile_src_app_index_styles"
+    },
+    {
+      "label": "unassigned-search.tsx",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/app/unassigned-search.tsx",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 7,
+      "norm_label": "unassigned-search.tsx",
+      "id": "packages_mobile_src_app_unassigned_search"
+    },
+    {
+      "label": "UnassignedSearchScreen()",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/app/unassigned-search.tsx",
+      "source_location": "L25",
+      "_origin": "ast",
+      "community": 7,
+      "norm_label": "unassignedsearchscreen()",
+      "id": "packages_mobile_src_app_unassigned_search_unassignedsearchscreen"
+    },
+    {
+      "label": "styles",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/app/unassigned-search.tsx",
+      "source_location": "L316",
+      "_origin": "ast",
+      "community": 7,
+      "norm_label": "styles",
+      "id": "packages_mobile_src_app_unassigned_search_styles"
+    },
+    {
+      "label": "MobileCounter.jsx",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/components/MobileCounter.jsx",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 7,
+      "norm_label": "mobilecounter.jsx",
+      "id": "packages_mobile_src_components_mobilecounter"
+    },
+    {
+      "label": "MobileCounter()",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/components/MobileCounter.jsx",
+      "source_location": "L4",
+      "_origin": "ast",
+      "community": 7,
+      "norm_label": "mobilecounter()",
+      "id": "packages_mobile_src_components_mobilecounter_mobilecounter"
+    },
+    {
+      "label": "styles",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/components/MobileCounter.jsx",
+      "source_location": "L173",
+      "_origin": "ast",
+      "community": 7,
+      "norm_label": "styles",
+      "id": "packages_mobile_src_components_mobilecounter_styles"
+    },
+    {
       "label": "animated-icon.tsx",
       "file_type": "code",
       "source_file": "packages/mobile/src/components/animated-icon.tsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 84,
+      "community": 7,
       "norm_label": "animated-icon.tsx",
       "id": "packages_mobile_src_components_animated_icon"
     },
@@ -7748,7 +7708,7 @@
       "source_file": "packages/mobile/src/components/animated-icon.tsx",
       "source_location": "L10",
       "_origin": "ast",
-      "community": 84,
+      "community": 7,
       "norm_label": "animatedsplashoverlay()",
       "id": "packages_mobile_src_components_animated_icon_animatedsplashoverlay"
     },
@@ -7758,7 +7718,7 @@
       "source_file": "packages/mobile/src/components/animated-icon.tsx",
       "source_location": "L47",
       "_origin": "ast",
-      "community": 84,
+      "community": 7,
       "norm_label": "keyframe",
       "id": "packages_mobile_src_components_animated_icon_keyframe"
     },
@@ -7768,7 +7728,7 @@
       "source_file": "packages/mobile/src/components/animated-icon.tsx",
       "source_location": "L57",
       "_origin": "ast",
-      "community": 84,
+      "community": 7,
       "norm_label": "logokeyframe",
       "id": "packages_mobile_src_components_animated_icon_logokeyframe"
     },
@@ -7778,7 +7738,7 @@
       "source_file": "packages/mobile/src/components/animated-icon.tsx",
       "source_location": "L74",
       "_origin": "ast",
-      "community": 84,
+      "community": 7,
       "norm_label": "glowkeyframe",
       "id": "packages_mobile_src_components_animated_icon_glowkeyframe"
     },
@@ -7788,7 +7748,7 @@
       "source_file": "packages/mobile/src/components/animated-icon.tsx",
       "source_location": "L83",
       "_origin": "ast",
-      "community": 84,
+      "community": 7,
       "norm_label": "animatedicon()",
       "id": "packages_mobile_src_components_animated_icon_animatedicon"
     },
@@ -7798,7 +7758,7 @@
       "source_file": "packages/mobile/src/components/animated-icon.tsx",
       "source_location": "L98",
       "_origin": "ast",
-      "community": 84,
+      "community": 7,
       "norm_label": "styles",
       "id": "packages_mobile_src_components_animated_icon_styles"
     },
@@ -8858,7 +8818,7 @@
       "source_file": "packages/web/src/App.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 31,
+      "community": 18,
       "norm_label": "app.jsx",
       "id": "packages_web_src_app"
     },
@@ -8868,7 +8828,7 @@
       "source_file": "packages/web/src/App.jsx",
       "source_location": "L12",
       "_origin": "ast",
-      "community": 31,
+      "community": 18,
       "norm_label": "appcontent()",
       "id": "packages_web_src_app_appcontent"
     },
@@ -8878,7 +8838,7 @@
       "source_file": "packages/web/src/App.jsx",
       "source_location": "L41",
       "_origin": "ast",
-      "community": 31,
+      "community": 18,
       "norm_label": "app()",
       "id": "packages_web_src_app_app"
     },
@@ -8908,7 +8868,7 @@
       "source_file": "packages/web/src/api.js",
       "source_location": "L7",
       "_origin": "ast",
-      "community": 12,
+      "community": 39,
       "norm_label": "api",
       "id": "packages_web_src_api_api"
     },
@@ -8918,7 +8878,7 @@
       "source_file": "packages/web/src/components/EditHistory.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 12,
+      "community": 15,
       "norm_label": "edithistory.jsx",
       "id": "packages_web_src_components_edithistory"
     },
@@ -8928,7 +8888,7 @@
       "source_file": "packages/web/src/components/EditHistory.jsx",
       "source_location": "L6",
       "_origin": "ast",
-      "community": 12,
+      "community": 15,
       "norm_label": "edithistory()",
       "id": "packages_web_src_components_edithistory_edithistory"
     },
@@ -8978,7 +8938,7 @@
       "source_file": "packages/web/src/components/accounts-receivable/CustomerInvoiceDetailsModal.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 12,
+      "community": 15,
       "norm_label": "customerinvoicedetailsmodal.jsx",
       "id": "packages_web_src_components_accounts_receivable_customerinvoicedetailsmodal"
     },
@@ -8998,7 +8958,7 @@
       "source_file": "packages/web/src/components/accounts-receivable/CustomerSummaryTable.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 15,
+      "community": 39,
       "norm_label": "customersummarytable.jsx",
       "id": "packages_web_src_components_accounts_receivable_customersummarytable"
     },
@@ -9008,7 +8968,7 @@
       "source_file": "packages/web/src/components/accounts-receivable/CustomerSummaryTable.jsx",
       "source_location": "L52",
       "_origin": "ast",
-      "community": 15,
+      "community": 39,
       "norm_label": "_tableskeleton()",
       "id": "packages_web_src_components_accounts_receivable_customersummarytable_tableskeleton"
     },
@@ -9018,7 +8978,7 @@
       "source_file": "packages/web/src/components/accounts-receivable/CustomerSummaryTable.jsx",
       "source_location": "L75",
       "_origin": "ast",
-      "community": 15,
+      "community": 39,
       "norm_label": "customersummarytable()",
       "id": "packages_web_src_components_accounts_receivable_customersummarytable_customersummarytable"
     },
@@ -9083,52 +9043,12 @@
       "id": "packages_web_src_components_applications_newapplicationmodal_newapplicationmodal"
     },
     {
-      "label": "EmployeePerformanceTab.jsx",
-      "file_type": "code",
-      "source_file": "packages/web/src/components/cycleCount/EmployeePerformanceTab.jsx",
-      "source_location": "L1",
-      "_origin": "ast",
-      "community": 15,
-      "norm_label": "employeeperformancetab.jsx",
-      "id": "packages_web_src_components_cyclecount_employeeperformancetab"
-    },
-    {
-      "label": "EmployeePerformanceTab()",
-      "file_type": "code",
-      "source_file": "packages/web/src/components/cycleCount/EmployeePerformanceTab.jsx",
-      "source_location": "L5",
-      "_origin": "ast",
-      "community": 15,
-      "norm_label": "employeeperformancetab()",
-      "id": "packages_web_src_components_cyclecount_employeeperformancetab_employeeperformancetab"
-    },
-    {
-      "label": "ManagerReviewDesk.jsx",
-      "file_type": "code",
-      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
-      "source_location": "L1",
-      "_origin": "ast",
-      "community": 15,
-      "norm_label": "managerreviewdesk.jsx",
-      "id": "packages_web_src_components_cyclecount_managerreviewdesk"
-    },
-    {
-      "label": "ManagerReviewDesk()",
-      "file_type": "code",
-      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
-      "source_location": "L8",
-      "_origin": "ast",
-      "community": 15,
-      "norm_label": "managerreviewdesk()",
-      "id": "packages_web_src_components_cyclecount_managerreviewdesk_managerreviewdesk"
-    },
-    {
       "label": "MobileCounter.jsx",
       "file_type": "code",
       "source_file": "packages/web/src/components/cycleCount/MobileCounter.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 62,
+      "community": 18,
       "norm_label": "mobilecounter.jsx",
       "id": "packages_web_src_components_cyclecount_mobilecounter"
     },
@@ -9138,7 +9058,7 @@
       "source_file": "packages/web/src/components/cycleCount/MobileCounter.jsx",
       "source_location": "L6",
       "_origin": "ast",
-      "community": 62,
+      "community": 18,
       "norm_label": "getpartdisplayname()",
       "id": "packages_web_src_components_cyclecount_mobilecounter_getpartdisplayname"
     },
@@ -9148,7 +9068,7 @@
       "source_file": "packages/web/src/components/cycleCount/MobileCounter.jsx",
       "source_location": "L7",
       "_origin": "ast",
-      "community": 62,
+      "community": 18,
       "norm_label": "getpartsecondarylabel()",
       "id": "packages_web_src_components_cyclecount_mobilecounter_getpartsecondarylabel"
     },
@@ -9158,7 +9078,7 @@
       "source_file": "packages/web/src/components/cycleCount/MobileCounter.jsx",
       "source_location": "L9",
       "_origin": "ast",
-      "community": 62,
+      "community": 18,
       "norm_label": "mobilecounter()",
       "id": "packages_web_src_components_cyclecount_mobilecounter_mobilecounter"
     },
@@ -9168,7 +9088,7 @@
       "source_file": "packages/web/src/components/cycleCount/StaffDashboard.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 62,
+      "community": 18,
       "norm_label": "staffdashboard.jsx",
       "id": "packages_web_src_components_cyclecount_staffdashboard"
     },
@@ -9178,7 +9098,7 @@
       "source_file": "packages/web/src/components/cycleCount/StaffDashboard.jsx",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 62,
+      "community": 18,
       "norm_label": "staffdashboard()",
       "id": "packages_web_src_components_cyclecount_staffdashboard_staffdashboard"
     },
@@ -9188,7 +9108,7 @@
       "source_file": "packages/web/src/components/dashboard/AnalyticsCharts.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 40,
+      "community": 18,
       "norm_label": "analyticscharts.jsx",
       "id": "packages_web_src_components_dashboard_analyticscharts"
     },
@@ -9198,7 +9118,7 @@
       "source_file": "packages/web/src/components/dashboard/AnalyticsCharts.jsx",
       "source_location": "L14",
       "_origin": "ast",
-      "community": 40,
+      "community": 18,
       "norm_label": "customtooltip()",
       "id": "packages_web_src_components_dashboard_analyticscharts_customtooltip"
     },
@@ -9208,7 +9128,7 @@
       "source_file": "packages/web/src/components/dashboard/AnalyticsCharts.jsx",
       "source_location": "L30",
       "_origin": "ast",
-      "community": 40,
+      "community": 18,
       "norm_label": "salestrendchart()",
       "id": "packages_web_src_components_dashboard_analyticscharts_salestrendchart"
     },
@@ -9218,7 +9138,7 @@
       "source_file": "packages/web/src/components/dashboard/AnalyticsCharts.jsx",
       "source_location": "L91",
       "_origin": "ast",
-      "community": 40,
+      "community": 18,
       "norm_label": "topproductschart()",
       "id": "packages_web_src_components_dashboard_analyticscharts_topproductschart"
     },
@@ -9228,7 +9148,7 @@
       "source_file": "packages/web/src/components/dashboard/AnalyticsCharts.jsx",
       "source_location": "L176",
       "_origin": "ast",
-      "community": 40,
+      "community": 18,
       "norm_label": "inventorychart()",
       "id": "packages_web_src_components_dashboard_analyticscharts_inventorychart"
     },
@@ -9238,7 +9158,7 @@
       "source_file": "packages/web/src/components/dashboard/EnhancedKPICard.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 40,
+      "community": 18,
       "norm_label": "enhancedkpicard.jsx",
       "id": "packages_web_src_components_dashboard_enhancedkpicard"
     },
@@ -9248,7 +9168,7 @@
       "source_file": "packages/web/src/components/dashboard/EnhancedKPICard.jsx",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 40,
+      "community": 18,
       "norm_label": "iconmap",
       "id": "packages_web_src_components_dashboard_enhancedkpicard_iconmap"
     },
@@ -9258,7 +9178,7 @@
       "source_file": "packages/web/src/components/dashboard/EnhancedKPICard.jsx",
       "source_location": "L13",
       "_origin": "ast",
-      "community": 40,
+      "community": 18,
       "norm_label": "colorvariants",
       "id": "packages_web_src_components_dashboard_enhancedkpicard_colorvariants"
     },
@@ -9268,7 +9188,7 @@
       "source_file": "packages/web/src/components/dashboard/EnhancedKPICard.jsx",
       "source_location": "L56",
       "_origin": "ast",
-      "community": 40,
+      "community": 18,
       "norm_label": "enhancedkpicard()",
       "id": "packages_web_src_components_dashboard_enhancedkpicard_enhancedkpicard"
     },
@@ -9278,7 +9198,7 @@
       "source_file": "packages/web/src/components/dashboard/QuickActionsPanel.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 40,
+      "community": 18,
       "norm_label": "quickactionspanel.jsx",
       "id": "packages_web_src_components_dashboard_quickactionspanel"
     },
@@ -9288,7 +9208,7 @@
       "source_file": "packages/web/src/components/dashboard/QuickActionsPanel.jsx",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 40,
+      "community": 18,
       "norm_label": "quickactionbutton()",
       "id": "packages_web_src_components_dashboard_quickactionspanel_quickactionbutton"
     },
@@ -9298,7 +9218,7 @@
       "source_file": "packages/web/src/components/dashboard/QuickActionsPanel.jsx",
       "source_location": "L73",
       "_origin": "ast",
-      "community": 40,
+      "community": 18,
       "norm_label": "quickactionspanel()",
       "id": "packages_web_src_components_dashboard_quickactionspanel_quickactionspanel"
     },
@@ -10018,7 +9938,7 @@
       "source_file": "packages/web/src/components/forms/CustomerForm.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 17,
+      "community": 12,
       "norm_label": "customerform.jsx",
       "id": "packages_web_src_components_forms_customerform"
     },
@@ -10028,7 +9948,7 @@
       "source_file": "packages/web/src/components/forms/CustomerForm.jsx",
       "source_location": "L6",
       "_origin": "ast",
-      "community": 17,
+      "community": 12,
       "norm_label": "customerform()",
       "id": "packages_web_src_components_forms_customerform_customerform"
     },
@@ -10138,7 +10058,7 @@
       "source_file": "packages/web/src/components/forms/SupplierForm.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 39,
+      "community": 12,
       "norm_label": "supplierform.jsx",
       "id": "packages_web_src_components_forms_supplierform"
     },
@@ -10148,7 +10068,7 @@
       "source_file": "packages/web/src/components/forms/SupplierForm.jsx",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 39,
+      "community": 12,
       "norm_label": "supplierform()",
       "id": "packages_web_src_components_forms_supplierform_supplierform"
     },
@@ -10188,7 +10108,7 @@
       "source_file": "packages/web/src/components/layout/Header.jsx",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 18,
+      "community": 297,
       "norm_label": "header()",
       "id": "packages_web_src_components_layout_header_header"
     },
@@ -10198,7 +10118,7 @@
       "source_file": "packages/web/src/components/layout/MainLayout.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 18,
+      "community": 297,
       "norm_label": "mainlayout.jsx",
       "id": "packages_web_src_components_layout_mainlayout"
     },
@@ -10208,7 +10128,7 @@
       "source_file": "packages/web/src/components/layout/MainLayout.jsx",
       "source_location": "L27",
       "_origin": "ast",
-      "community": 31,
+      "community": 18,
       "norm_label": "mainlayout()",
       "id": "packages_web_src_components_layout_mainlayout_mainlayout"
     },
@@ -10348,7 +10268,7 @@
       "source_file": "packages/web/src/components/pos/SavedSalesPanel.jsx",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 17,
+      "community": 5,
       "norm_label": "savedsalespanel()",
       "id": "packages_web_src_components_pos_savedsalespanel_savedsalespanel"
     },
@@ -10638,7 +10558,7 @@
       "source_file": "packages/web/src/components/settings/BackupSettings.jsx",
       "source_location": "L9",
       "_origin": "ast",
-      "community": 9,
+      "community": 17,
       "norm_label": "backupsettings()",
       "id": "packages_web_src_components_settings_backupsettings_backupsettings"
     },
@@ -10648,7 +10568,7 @@
       "source_file": "packages/web/src/components/settings/DataUtilsSettings.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 12,
+      "community": 17,
       "norm_label": "datautilssettings.jsx",
       "id": "packages_web_src_components_settings_datautilssettings"
     },
@@ -10658,7 +10578,7 @@
       "source_file": "packages/web/src/components/settings/DataUtilsSettings.jsx",
       "source_location": "L9",
       "_origin": "ast",
-      "community": 12,
+      "community": 17,
       "norm_label": "exportcard()",
       "id": "packages_web_src_components_settings_datautilssettings_exportcard"
     },
@@ -10668,7 +10588,7 @@
       "source_file": "packages/web/src/components/settings/DataUtilsSettings.jsx",
       "source_location": "L52",
       "_origin": "ast",
-      "community": 12,
+      "community": 17,
       "norm_label": "importcard()",
       "id": "packages_web_src_components_settings_datautilssettings_importcard"
     },
@@ -10678,7 +10598,7 @@
       "source_file": "packages/web/src/components/settings/DataUtilsSettings.jsx",
       "source_location": "L118",
       "_origin": "ast",
-      "community": 12,
+      "community": 17,
       "norm_label": "formateta()",
       "id": "packages_web_src_components_settings_datautilssettings_formateta"
     },
@@ -10688,7 +10608,7 @@
       "source_file": "packages/web/src/components/settings/DataUtilsSettings.jsx",
       "source_location": "L128",
       "_origin": "ast",
-      "community": 12,
+      "community": 17,
       "norm_label": "terminal_statuses",
       "id": "packages_web_src_components_settings_datautilssettings_terminal_statuses"
     },
@@ -10698,7 +10618,7 @@
       "source_file": "packages/web/src/components/settings/DataUtilsSettings.jsx",
       "source_location": "L130",
       "_origin": "ast",
-      "community": 12,
+      "community": 17,
       "norm_label": "datautilssettings()",
       "id": "packages_web_src_components_settings_datautilssettings_datautilssettings"
     },
@@ -10728,7 +10648,7 @@
       "source_file": "packages/web/src/components/settings/PaymentMethodSettings.jsx",
       "source_location": "L259",
       "_origin": "ast",
-      "community": 9,
+      "community": 17,
       "norm_label": "paymentmethodsettings()",
       "id": "packages_web_src_components_settings_paymentmethodsettings_paymentmethodsettings"
     },
@@ -10738,7 +10658,7 @@
       "source_file": "packages/web/src/components/settings/PermissionsSettings.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 9,
+      "community": 17,
       "norm_label": "permissionssettings.jsx",
       "id": "packages_web_src_components_settings_permissionssettings"
     },
@@ -10748,7 +10668,7 @@
       "source_file": "packages/web/src/components/settings/PermissionsSettings.jsx",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 9,
+      "community": 17,
       "norm_label": "permissionssettings()",
       "id": "packages_web_src_components_settings_permissionssettings_permissionssettings"
     },
@@ -10798,7 +10718,7 @@
       "source_file": "packages/web/src/components/ui/Drawer.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 79,
+      "community": 15,
       "norm_label": "drawer.jsx",
       "id": "packages_web_src_components_ui_drawer"
     },
@@ -10808,7 +10728,7 @@
       "source_file": "packages/web/src/components/ui/Drawer.jsx",
       "source_location": "L89",
       "_origin": "ast",
-      "community": 79,
+      "community": 15,
       "norm_label": "drawer()",
       "id": "packages_web_src_components_ui_drawer_drawer"
     },
@@ -10818,7 +10738,7 @@
       "source_file": "packages/web/src/components/ui/Drawer.jsx",
       "source_location": "L268",
       "_origin": "ast",
-      "community": 79,
+      "community": 15,
       "norm_label": "drawerheader()",
       "id": "packages_web_src_components_ui_drawer_drawerheader"
     },
@@ -10828,7 +10748,7 @@
       "source_file": "packages/web/src/components/ui/Drawer.jsx",
       "source_location": "L274",
       "_origin": "ast",
-      "community": 79,
+      "community": 15,
       "norm_label": "drawercontent()",
       "id": "packages_web_src_components_ui_drawer_drawercontent"
     },
@@ -10838,7 +10758,7 @@
       "source_file": "packages/web/src/components/ui/Drawer.jsx",
       "source_location": "L280",
       "_origin": "ast",
-      "community": 79,
+      "community": 15,
       "norm_label": "drawerfooter()",
       "id": "packages_web_src_components_ui_drawer_drawerfooter"
     },
@@ -10848,7 +10768,7 @@
       "source_file": "packages/web/src/components/ui/DueDateEditor.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 12,
+      "community": 15,
       "norm_label": "duedateeditor.jsx",
       "id": "packages_web_src_components_ui_duedateeditor"
     },
@@ -10858,7 +10778,7 @@
       "source_file": "packages/web/src/components/ui/DueDateEditor.jsx",
       "source_location": "L25",
       "_origin": "ast",
-      "community": 12,
+      "community": 15,
       "norm_label": "duedateeditor()",
       "id": "packages_web_src_components_ui_duedateeditor_duedateeditor"
     },
@@ -10868,7 +10788,7 @@
       "source_file": "packages/web/src/components/ui/FilterBar.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 39,
+      "community": 12,
       "norm_label": "filterbar.jsx",
       "id": "packages_web_src_components_ui_filterbar"
     },
@@ -10878,7 +10798,7 @@
       "source_file": "packages/web/src/components/ui/FilterBar.jsx",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 39,
+      "community": 12,
       "norm_label": "filterbar()",
       "id": "packages_web_src_components_ui_filterbar_filterbar"
     },
@@ -11018,7 +10938,7 @@
       "source_file": "packages/web/src/components/ui/PriceQuantityModal.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 17,
+      "community": 5,
       "norm_label": "pricequantitymodal.jsx",
       "id": "packages_web_src_components_ui_pricequantitymodal"
     },
@@ -11028,7 +10948,7 @@
       "source_file": "packages/web/src/components/ui/PriceQuantityModal.jsx",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 17,
+      "community": 5,
       "norm_label": "pricequantitymodal()",
       "id": "packages_web_src_components_ui_pricequantitymodal_pricequantitymodal"
     },
@@ -11058,7 +10978,7 @@
       "source_file": "packages/web/src/components/ui/Receipt.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 17,
+      "community": 5,
       "norm_label": "receipt.jsx",
       "id": "packages_web_src_components_ui_receipt"
     },
@@ -11068,7 +10988,7 @@
       "source_file": "packages/web/src/components/ui/Receipt.jsx",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 17,
+      "community": 5,
       "norm_label": "receipt",
       "id": "packages_web_src_components_ui_receipt_receipt"
     },
@@ -11118,7 +11038,7 @@
       "source_file": "packages/web/src/components/ui/TagInput.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 9,
+      "community": 12,
       "norm_label": "taginput.jsx",
       "id": "packages_web_src_components_ui_taginput"
     },
@@ -11128,7 +11048,7 @@
       "source_file": "packages/web/src/components/ui/TagInput.jsx",
       "source_location": "L6",
       "_origin": "ast",
-      "community": 17,
+      "community": 12,
       "norm_label": "taginput()",
       "id": "packages_web_src_components_ui_taginput_taginput"
     },
@@ -11158,7 +11078,7 @@
       "source_file": "packages/web/src/components/ui/TransactionHistoryModal.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 12,
+      "community": 5,
       "norm_label": "transactionhistorymodal.jsx",
       "id": "packages_web_src_components_ui_transactionhistorymodal"
     },
@@ -11228,7 +11148,7 @@
       "source_file": "packages/web/src/contexts/AuthContext.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 14,
+      "community": 18,
       "norm_label": "authcontext.jsx",
       "id": "packages_web_src_contexts_authcontext"
     },
@@ -11238,7 +11158,7 @@
       "source_file": "packages/web/src/contexts/AuthContext.jsx",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 14,
+      "community": 18,
       "norm_label": "authcontext",
       "id": "packages_web_src_contexts_authcontext_authcontext"
     },
@@ -11248,7 +11168,7 @@
       "source_file": "packages/web/src/contexts/AuthContext.jsx",
       "source_location": "L6",
       "_origin": "ast",
-      "community": 31,
+      "community": 18,
       "norm_label": "authprovider()",
       "id": "packages_web_src_contexts_authcontext_authprovider"
     },
@@ -11288,7 +11208,7 @@
       "source_file": "packages/web/src/contexts/SettingsContext.jsx",
       "source_location": "L6",
       "_origin": "ast",
-      "community": 31,
+      "community": 18,
       "norm_label": "settingsprovider()",
       "id": "packages_web_src_contexts_settingscontext_settingsprovider"
     },
@@ -11508,7 +11428,7 @@
       "source_file": "packages/web/src/hooks/useSavedSales.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 17,
+      "community": 5,
       "norm_label": "usesavedsales.js",
       "id": "packages_web_src_hooks_usesavedsales"
     },
@@ -11518,7 +11438,7 @@
       "source_file": "packages/web/src/hooks/useSavedSales.js",
       "source_location": "L10",
       "_origin": "ast",
-      "community": 17,
+      "community": 5,
       "norm_label": "usesavedsales()",
       "id": "packages_web_src_hooks_usesavedsales_usesavedsales"
     },
@@ -11548,7 +11468,7 @@
       "source_file": "packages/web/src/main.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 31,
+      "community": 18,
       "norm_label": "main.jsx",
       "id": "packages_web_src_main"
     },
@@ -11598,7 +11518,7 @@
       "source_file": "packages/web/src/pages/ApplicationsPage.jsx",
       "source_location": "L405",
       "_origin": "ast",
-      "community": 18,
+      "community": 297,
       "norm_label": "applicationspage()",
       "id": "packages_web_src_pages_applicationspage_applicationspage"
     },
@@ -11608,7 +11528,7 @@
       "source_file": "packages/web/src/pages/ChequePrintingPage.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 9,
+      "community": 297,
       "norm_label": "chequeprintingpage.jsx",
       "id": "packages_web_src_pages_chequeprintingpage"
     },
@@ -11628,7 +11548,7 @@
       "source_file": "packages/web/src/pages/ChequePrintingPage.jsx",
       "source_location": "L10",
       "_origin": "ast",
-      "community": 9,
+      "community": 297,
       "norm_label": "default_template",
       "id": "packages_web_src_pages_chequeprintingpage_default_template"
     },
@@ -11638,7 +11558,7 @@
       "source_file": "packages/web/src/pages/ChequePrintingPage.jsx",
       "source_location": "L19",
       "_origin": "ast",
-      "community": 9,
+      "community": 297,
       "norm_label": "settings_tabs",
       "id": "packages_web_src_pages_chequeprintingpage_settings_tabs"
     },
@@ -11648,7 +11568,7 @@
       "source_file": "packages/web/src/pages/ChequePrintingPage.jsx",
       "source_location": "L29",
       "_origin": "ast",
-      "community": 9,
+      "community": 297,
       "norm_label": "field_labels",
       "id": "packages_web_src_pages_chequeprintingpage_field_labels"
     },
@@ -11668,7 +11588,7 @@
       "source_file": "packages/web/src/pages/CustomersPage.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 17,
+      "community": 12,
       "norm_label": "customerspage.jsx",
       "id": "packages_web_src_pages_customerspage"
     },
@@ -11678,7 +11598,7 @@
       "source_file": "packages/web/src/pages/CustomersPage.jsx",
       "source_location": "L14",
       "_origin": "ast",
-      "community": 18,
+      "community": 12,
       "norm_label": "customerspage()",
       "id": "packages_web_src_pages_customerspage_customerspage"
     },
@@ -11688,7 +11608,7 @@
       "source_file": "packages/web/src/pages/CycleCountExecutionPage.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 62,
+      "community": 18,
       "norm_label": "cyclecountexecutionpage.jsx",
       "id": "packages_web_src_pages_cyclecountexecutionpage"
     },
@@ -11708,7 +11628,7 @@
       "source_file": "packages/web/src/pages/Dashboard.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 40,
+      "community": 18,
       "norm_label": "dashboard.jsx",
       "id": "packages_web_src_pages_dashboard"
     },
@@ -11728,7 +11648,7 @@
       "source_file": "packages/web/src/pages/DocumentsPage.tsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 296,
+      "community": 0,
       "norm_label": "documentspage.tsx",
       "id": "packages_web_src_pages_documentspage"
     },
@@ -11738,7 +11658,7 @@
       "source_file": "packages/web/src/pages/DocumentsPage.tsx",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 296,
+      "community": 0,
       "norm_label": "documentspage()",
       "id": "packages_web_src_pages_documentspage_documentspage"
     },
@@ -11768,7 +11688,7 @@
       "source_file": "packages/web/src/pages/EmployeesPage.jsx",
       "source_location": "L148",
       "_origin": "ast",
-      "community": 18,
+      "community": 297,
       "norm_label": "employeespage()",
       "id": "packages_web_src_pages_employeespage_employeespage"
     },
@@ -11778,7 +11698,7 @@
       "source_file": "packages/web/src/pages/GoodsReceiptHistoryPage.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 12,
+      "community": 39,
       "norm_label": "goodsreceipthistorypage.jsx",
       "id": "packages_web_src_pages_goodsreceipthistorypage"
     },
@@ -11868,7 +11788,7 @@
       "source_file": "packages/web/src/pages/LoginScreen.jsx",
       "source_location": "L6",
       "_origin": "ast",
-      "community": 31,
+      "community": 18,
       "norm_label": "loginscreen()",
       "id": "packages_web_src_pages_loginscreen_loginscreen"
     },
@@ -11878,7 +11798,7 @@
       "source_file": "packages/web/src/pages/POSPage.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 17,
+      "community": 5,
       "norm_label": "pospage.jsx",
       "id": "packages_web_src_pages_pospage"
     },
@@ -11888,7 +11808,7 @@
       "source_file": "packages/web/src/pages/POSPage.jsx",
       "source_location": "L25",
       "_origin": "ast",
-      "community": 17,
+      "community": 5,
       "norm_label": "buttonsgrid()",
       "id": "packages_web_src_pages_pospage_buttonsgrid"
     },
@@ -11898,7 +11818,7 @@
       "source_file": "packages/web/src/pages/POSPage.jsx",
       "source_location": "L129",
       "_origin": "ast",
-      "community": 17,
+      "community": 5,
       "norm_label": "pospage()",
       "id": "packages_web_src_pages_pospage_pospage"
     },
@@ -11938,7 +11858,7 @@
       "source_file": "packages/web/src/pages/PartNumberManager.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 290,
+      "community": 18,
       "norm_label": "partnumbermanager.jsx",
       "id": "packages_web_src_pages_partnumbermanager"
     },
@@ -11948,7 +11868,7 @@
       "source_file": "packages/web/src/pages/PartNumberManager.jsx",
       "source_location": "L8",
       "_origin": "ast",
-      "community": 290,
+      "community": 18,
       "norm_label": "spinner()",
       "id": "packages_web_src_pages_partnumbermanager_spinner"
     },
@@ -11958,7 +11878,7 @@
       "source_file": "packages/web/src/pages/PartNumberManager.jsx",
       "source_location": "L16",
       "_origin": "ast",
-      "community": 290,
+      "community": 18,
       "norm_label": "moveupicon()",
       "id": "packages_web_src_pages_partnumbermanager_moveupicon"
     },
@@ -11968,7 +11888,7 @@
       "source_file": "packages/web/src/pages/PartNumberManager.jsx",
       "source_location": "L23",
       "_origin": "ast",
-      "community": 290,
+      "community": 18,
       "norm_label": "movedownicon()",
       "id": "packages_web_src_pages_partnumbermanager_movedownicon"
     },
@@ -11978,7 +11898,7 @@
       "source_file": "packages/web/src/pages/PartNumberManager.jsx",
       "source_location": "L31",
       "_origin": "ast",
-      "community": 290,
+      "community": 18,
       "norm_label": "trashicon()",
       "id": "packages_web_src_pages_partnumbermanager_trashicon"
     },
@@ -11988,7 +11908,7 @@
       "source_file": "packages/web/src/pages/PartNumberManager.jsx",
       "source_location": "L37",
       "_origin": "ast",
-      "community": 290,
+      "community": 18,
       "norm_label": "partnumbermanager()",
       "id": "packages_web_src_pages_partnumbermanager_partnumbermanager"
     },
@@ -12038,7 +11958,7 @@
       "source_file": "packages/web/src/pages/PartsCleanupPage.jsx",
       "source_location": "L35",
       "_origin": "ast",
-      "community": 18,
+      "community": 297,
       "norm_label": "partscleanuppage()",
       "id": "packages_web_src_pages_partscleanuppage_partscleanuppage"
     },
@@ -12108,7 +12028,7 @@
       "source_file": "packages/web/src/pages/PurchaseOrderEditorPage.jsx",
       "source_location": "L11",
       "_origin": "ast",
-      "community": 5,
+      "community": 39,
       "norm_label": "purchaseordereditorpage()",
       "id": "packages_web_src_pages_purchaseordereditorpage_purchaseordereditorpage"
     },
@@ -12138,7 +12058,7 @@
       "source_file": "packages/web/src/pages/PurchaseOrderPage.jsx",
       "source_location": "L70",
       "_origin": "ast",
-      "community": 18,
+      "community": 39,
       "norm_label": "purchaseorderpage()",
       "id": "packages_web_src_pages_purchaseorderpage_purchaseorderpage"
     },
@@ -12148,7 +12068,7 @@
       "source_file": "packages/web/src/pages/ReportingPage.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 85,
+      "community": 18,
       "norm_label": "reportingpage.jsx",
       "id": "packages_web_src_pages_reportingpage"
     },
@@ -12158,7 +12078,7 @@
       "source_file": "packages/web/src/pages/ReportingPage.jsx",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 85,
+      "community": 18,
       "norm_label": "salesreport",
       "id": "packages_web_src_pages_reportingpage_salesreport"
     },
@@ -12168,7 +12088,7 @@
       "source_file": "packages/web/src/pages/ReportingPage.jsx",
       "source_location": "L6",
       "_origin": "ast",
-      "community": 85,
+      "community": 18,
       "norm_label": "inventoryvaluationreport",
       "id": "packages_web_src_pages_reportingpage_inventoryvaluationreport"
     },
@@ -12178,7 +12098,7 @@
       "source_file": "packages/web/src/pages/ReportingPage.jsx",
       "source_location": "L7",
       "_origin": "ast",
-      "community": 85,
+      "community": 18,
       "norm_label": "topsellingreport",
       "id": "packages_web_src_pages_reportingpage_topsellingreport"
     },
@@ -12188,7 +12108,7 @@
       "source_file": "packages/web/src/pages/ReportingPage.jsx",
       "source_location": "L8",
       "_origin": "ast",
-      "community": 85,
+      "community": 18,
       "norm_label": "lowstockreport",
       "id": "packages_web_src_pages_reportingpage_lowstockreport"
     },
@@ -12198,7 +12118,7 @@
       "source_file": "packages/web/src/pages/ReportingPage.jsx",
       "source_location": "L9",
       "_origin": "ast",
-      "community": 85,
+      "community": 18,
       "norm_label": "salesbycustomerreport",
       "id": "packages_web_src_pages_reportingpage_salesbycustomerreport"
     },
@@ -12208,7 +12128,7 @@
       "source_file": "packages/web/src/pages/ReportingPage.jsx",
       "source_location": "L10",
       "_origin": "ast",
-      "community": 85,
+      "community": 18,
       "norm_label": "inventorymovementreport",
       "id": "packages_web_src_pages_reportingpage_inventorymovementreport"
     },
@@ -12218,7 +12138,7 @@
       "source_file": "packages/web/src/pages/ReportingPage.jsx",
       "source_location": "L11",
       "_origin": "ast",
-      "community": 85,
+      "community": 18,
       "norm_label": "profitabilityreport",
       "id": "packages_web_src_pages_reportingpage_profitabilityreport"
     },
@@ -12228,7 +12148,7 @@
       "source_file": "packages/web/src/pages/ReportingPage.jsx",
       "source_location": "L12",
       "_origin": "ast",
-      "community": 85,
+      "community": 18,
       "norm_label": "refundsreport",
       "id": "packages_web_src_pages_reportingpage_refundsreport"
     },
@@ -12238,7 +12158,7 @@
       "source_file": "packages/web/src/pages/ReportingPage.jsx",
       "source_location": "L15",
       "_origin": "ast",
-      "community": 85,
+      "community": 18,
       "norm_label": "reporttabs",
       "id": "packages_web_src_pages_reportingpage_reporttabs"
     },
@@ -12288,7 +12208,7 @@
       "source_file": "packages/web/src/pages/SettingsPage.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 9,
+      "community": 17,
       "norm_label": "settingspage.jsx",
       "id": "packages_web_src_pages_settingspage"
     },
@@ -12298,7 +12218,7 @@
       "source_file": "packages/web/src/pages/SettingsPage.jsx",
       "source_location": "L12",
       "_origin": "ast",
-      "community": 9,
+      "community": 17,
       "norm_label": "companyinfosettings()",
       "id": "packages_web_src_pages_settingspage_companyinfosettings"
     },
@@ -12308,7 +12228,7 @@
       "source_file": "packages/web/src/pages/SettingsPage.jsx",
       "source_location": "L39",
       "_origin": "ast",
-      "community": 9,
+      "community": 17,
       "norm_label": "financialsettings()",
       "id": "packages_web_src_pages_settingspage_financialsettings"
     },
@@ -12318,7 +12238,7 @@
       "source_file": "packages/web/src/pages/SettingsPage.jsx",
       "source_location": "L57",
       "_origin": "ast",
-      "community": 9,
+      "community": 17,
       "norm_label": "cyclecountsettings()",
       "id": "packages_web_src_pages_settingspage_cyclecountsettings"
     },
@@ -12328,7 +12248,7 @@
       "source_file": "packages/web/src/pages/SettingsPage.jsx",
       "source_location": "L105",
       "_origin": "ast",
-      "community": 9,
+      "community": 17,
       "norm_label": "taxratesettings()",
       "id": "packages_web_src_pages_settingspage_taxratesettings"
     },
@@ -12338,7 +12258,7 @@
       "source_file": "packages/web/src/pages/SettingsPage.jsx",
       "source_location": "L313",
       "_origin": "ast",
-      "community": 9,
+      "community": 17,
       "norm_label": "taxrateform()",
       "id": "packages_web_src_pages_settingspage_taxrateform"
     },
@@ -12348,7 +12268,7 @@
       "source_file": "packages/web/src/pages/SettingsPage.jsx",
       "source_location": "L412",
       "_origin": "ast",
-      "community": 9,
+      "community": 17,
       "norm_label": "settingspage()",
       "id": "packages_web_src_pages_settingspage_settingspage"
     },
@@ -12358,7 +12278,7 @@
       "source_file": "packages/web/src/pages/SetupPage.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 31,
+      "community": 18,
       "norm_label": "setuppage.jsx",
       "id": "packages_web_src_pages_setuppage"
     },
@@ -12368,7 +12288,7 @@
       "source_file": "packages/web/src/pages/SetupPage.jsx",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 31,
+      "community": 18,
       "norm_label": "setuppage()",
       "id": "packages_web_src_pages_setuppage_setuppage"
     },
@@ -12378,7 +12298,7 @@
       "source_file": "packages/web/src/pages/SuppliersPage.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 39,
+      "community": 12,
       "norm_label": "supplierspage.jsx",
       "id": "packages_web_src_pages_supplierspage"
     },
@@ -12388,7 +12308,7 @@
       "source_file": "packages/web/src/pages/SuppliersPage.jsx",
       "source_location": "L14",
       "_origin": "ast",
-      "community": 18,
+      "community": 12,
       "norm_label": "supplierspage()",
       "id": "packages_web_src_pages_supplierspage_supplierspage"
     },
@@ -12448,7 +12368,7 @@
       "source_file": "packages/web/src/utils/downloadFile.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 12,
+      "community": 39,
       "norm_label": "downloadfile.js",
       "id": "packages_web_src_utils_downloadfile"
     },
@@ -12458,7 +12378,7 @@
       "source_file": "packages/web/src/utils/downloadFile.js",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 12,
+      "community": 39,
       "norm_label": "downloadfile()",
       "id": "packages_web_src_utils_downloadfile_downloadfile"
     },
@@ -12528,7 +12448,7 @@
       "source_file": "packages/web/src/utils/status.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 15,
+      "community": 39,
       "norm_label": "status.js",
       "id": "packages_web_src_utils_status"
     },
@@ -12538,7 +12458,7 @@
       "source_file": "packages/web/src/utils/status.js",
       "source_location": "L30",
       "_origin": "ast",
-      "community": 15,
+      "community": 39,
       "norm_label": "getcustomerstatusbadge()",
       "id": "packages_web_src_utils_status_getcustomerstatusbadge"
     },
@@ -12548,7 +12468,7 @@
       "source_file": "packages/web/src/utils/status.js",
       "source_location": "L79",
       "_origin": "ast",
-      "community": 15,
+      "community": 39,
       "norm_label": "getinvoicestatusbadge()",
       "id": "packages_web_src_utils_status_getinvoicestatusbadge"
     },
@@ -12628,7 +12548,7 @@
       "source_file": "packages/web/tests/DocumentsPage.test.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 296,
+      "community": 0,
       "norm_label": "documentspage.test.jsx",
       "id": "packages_web_tests_documentspage_test"
     },
@@ -13512,7 +13432,7 @@
       "source_file": "test_db_queries.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 290,
       "norm_label": "test_db_queries.js",
       "id": "test_db_queries"
     },
@@ -13522,7 +13442,7 @@
       "source_file": "test_db_queries.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 290,
       "norm_label": "{ pool }",
       "id": "test_db_queries_pool"
     },
@@ -13532,7 +13452,7 @@
       "source_file": "test_db_queries.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 35,
+      "community": 290,
       "norm_label": "duplicatefinder",
       "id": "test_db_queries_duplicatefinder"
     },
@@ -13542,7 +13462,7 @@
       "source_file": "test_db_queries.js",
       "source_location": "L12",
       "_origin": "ast",
-      "community": 35,
+      "community": 290,
       "norm_label": "run()",
       "id": "test_db_queries_run"
     },
@@ -13552,7 +13472,7 @@
       "source_file": "test_duplicate_error.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 40,
       "norm_label": "test_duplicate_error.js",
       "id": "test_duplicate_error"
     },
@@ -13562,7 +13482,7 @@
       "source_file": "test_duplicate_error.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 40,
       "norm_label": "{ pool }",
       "id": "test_duplicate_error_pool"
     },
@@ -13572,7 +13492,7 @@
       "source_file": "test_duplicate_error.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 35,
+      "community": 40,
       "norm_label": "duplicatefinder",
       "id": "test_duplicate_error_duplicatefinder"
     },
@@ -13582,7 +13502,7 @@
       "source_file": "test_duplicate_error.js",
       "source_location": "L12",
       "_origin": "ast",
-      "community": 35,
+      "community": 40,
       "norm_label": "run()",
       "id": "test_duplicate_error_run"
     },
@@ -13592,7 +13512,7 @@
       "source_file": "test_duplicate_mock.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 40,
       "norm_label": "test_duplicate_mock.js",
       "id": "test_duplicate_mock"
     },
@@ -13602,7 +13522,7 @@
       "source_file": "test_duplicate_mock.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 40,
       "norm_label": "duplicatefinder",
       "id": "test_duplicate_mock_duplicatefinder"
     },
@@ -13612,7 +13532,7 @@
       "source_file": "test_duplicate_mock.js",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 35,
+      "community": 40,
       "norm_label": "mockpool",
       "id": "test_duplicate_mock_mockpool"
     },
@@ -13622,7 +13542,7 @@
       "source_file": "test_duplicate_mock.js",
       "source_location": "L9",
       "_origin": "ast",
-      "community": 35,
+      "community": 40,
       "norm_label": "run()",
       "id": "test_duplicate_mock_run"
     },
@@ -13632,7 +13552,7 @@
       "source_file": "test_duplicate_refactor.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 40,
       "norm_label": "test_duplicate_refactor.js",
       "id": "test_duplicate_refactor"
     },
@@ -13642,7 +13562,7 @@
       "source_file": "test_duplicate_refactor.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 40,
       "norm_label": "{ duplicatefinder }",
       "id": "test_duplicate_refactor_duplicatefinder"
     },
@@ -13652,7 +13572,7 @@
       "source_file": "test_duplicate_refactor_syntax.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 40,
       "norm_label": "test_duplicate_refactor_syntax.js",
       "id": "test_duplicate_refactor_syntax"
     },
@@ -13662,7 +13582,7 @@
       "source_file": "test_duplicate_refactor_syntax.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 40,
       "norm_label": "duplicatefinder",
       "id": "test_duplicate_refactor_syntax_duplicatefinder"
     },
@@ -17207,6 +17127,166 @@
       "id": "docs_payment_terms_production_readiness_conclusion"
     },
     {
+      "label": "android_app_map.md",
+      "file_type": "document",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 1,
+      "norm_label": "android_app_map.md",
+      "id": "docs_android_app_map"
+    },
+    {
+      "label": "Android App UI Reference Map",
+      "file_type": "document",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 1,
+      "norm_label": "android app ui reference map",
+      "id": "docs_android_app_map_android_app_ui_reference_map"
+    },
+    {
+      "label": "\ud83d\uddfa\ufe0f Navigation & App Architecture",
+      "file_type": "document",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L5",
+      "_origin": "ast",
+      "community": 1,
+      "norm_label": "\ud83d\uddfa\ufe0f navigation & app architecture",
+      "id": "docs_android_app_map_navigation_app_architecture"
+    },
+    {
+      "label": "\ud83d\udcf1 Page-by-Page Element Catalog",
+      "file_type": "document",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L34",
+      "_origin": "ast",
+      "community": 1,
+      "norm_label": "\ud83d\udcf1 page-by-page element catalog",
+      "id": "docs_android_app_map_page_by_page_element_catalog"
+    },
+    {
+      "label": "1. Login Screen",
+      "file_type": "document",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L36",
+      "_origin": "ast",
+      "community": 1,
+      "norm_label": "1. login screen",
+      "id": "docs_android_app_map_1_login_screen"
+    },
+    {
+      "label": "\u2699\ufe0f Server Settings Modal (Nested in Login)",
+      "file_type": "document",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L49",
+      "_origin": "ast",
+      "community": 1,
+      "norm_label": "\u2699\ufe0f server settings modal (nested in login)",
+      "id": "docs_android_app_map_server_settings_modal_nested_in_login"
+    },
+    {
+      "label": "2. Dashboard Screen",
+      "file_type": "document",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L62",
+      "_origin": "ast",
+      "community": 1,
+      "norm_label": "2. dashboard screen",
+      "id": "docs_android_app_map_2_dashboard_screen"
+    },
+    {
+      "label": "3. Active Count Screen",
+      "file_type": "document",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L80",
+      "_origin": "ast",
+      "community": 1,
+      "norm_label": "3. active count screen",
+      "id": "docs_android_app_map_3_active_count_screen"
+    },
+    {
+      "label": "\ud83d\udcf8 Barcode Scanner Modal (Nested in Count)",
+      "file_type": "document",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L98",
+      "_origin": "ast",
+      "community": 1,
+      "norm_label": "\ud83d\udcf8 barcode scanner modal (nested in count)",
+      "id": "docs_android_app_map_barcode_scanner_modal_nested_in_count"
+    },
+    {
+      "label": "4. Log Unassigned Find Screen",
+      "file_type": "document",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L113",
+      "_origin": "ast",
+      "community": 1,
+      "norm_label": "4. log unassigned find screen",
+      "id": "docs_android_app_map_4_log_unassigned_find_screen"
+    },
+    {
+      "label": "\ud83d\udcf8 Barcode Scanner Modal (Nested in Unassigned Search)",
+      "file_type": "document",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L131",
+      "_origin": "ast",
+      "community": 1,
+      "norm_label": "\ud83d\udcf8 barcode scanner modal (nested in unassigned search)",
+      "id": "docs_android_app_map_barcode_scanner_modal_nested_in_unassigned_search"
+    },
+    {
+      "label": "5. Reusable Component: Mobile Counter Keypad",
+      "file_type": "document",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L148",
+      "_origin": "ast",
+      "community": 1,
+      "norm_label": "5. reusable component: mobile counter keypad",
+      "id": "docs_android_app_map_5_reusable_component_mobile_counter_keypad"
+    },
+    {
+      "label": "Quick Actions Row (Row 1)",
+      "file_type": "document",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L168",
+      "_origin": "ast",
+      "community": 1,
+      "norm_label": "quick actions row (row 1)",
+      "id": "docs_android_app_map_quick_actions_row_row_1"
+    },
+    {
+      "label": "Display & Submit Panel (Left Column, below Row 1)",
+      "file_type": "document",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L172",
+      "_origin": "ast",
+      "community": 1,
+      "norm_label": "display & submit panel (left column, below row 1)",
+      "id": "docs_android_app_map_display_submit_panel_left_column_below_row_1"
+    },
+    {
+      "label": "Numeric Keypad Grid (Right Column, below Row 1)",
+      "file_type": "document",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L176",
+      "_origin": "ast",
+      "community": 1,
+      "norm_label": "numeric keypad grid (right column, below row 1)",
+      "id": "docs_android_app_map_numeric_keypad_grid_right_column_below_row_1"
+    },
+    {
+      "label": "\ud83c\udfa8 Global Styling & Asset Resources",
+      "file_type": "document",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L184",
+      "_origin": "ast",
+      "community": 1,
+      "norm_label": "\ud83c\udfa8 global styling & asset resources",
+      "id": "docs_android_app_map_global_styling_asset_resources"
+    },
+    {
       "label": "query_20260703_122446_why_does_haspermission___connect_auth_permissions.md",
       "file_type": "document",
       "source_file": "graphify-out/memory/query_20260703_122446_why_does_haspermission___connect_auth_permissions.md",
@@ -19800,295 +19880,222 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
-      "source_file": "docs/android_app_map.md",
+      "source_file": "packages/api/routes/cycleCountRoutes.js",
+      "source_location": "L2",
+      "weight": 1.0,
+      "source": "packages_api_routes_cyclecountroutes",
+      "target": "packages_api_routes_cyclecountroutes_db",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/api/routes/cycleCountRoutes.js",
       "source_location": "L1",
       "weight": 1.0,
-      "source": "docs_android_app_map",
-      "target": "docs_android_app_map_android_app_ui_reference_map",
+      "source": "packages_api_routes_cyclecountroutes",
+      "target": "packages_api_routes_cyclecountroutes_express",
       "confidence_score": 1.0
     },
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L184",
+      "source_file": "packages/api/routes/cycleCountRoutes.js",
+      "source_location": "L3",
       "weight": 1.0,
-      "source": "docs_android_app_map_android_app_ui_reference_map",
-      "target": "docs_android_app_map_global_styling_asset_resources",
+      "source": "packages_api_routes_cyclecountroutes",
+      "target": "packages_api_routes_cyclecountroutes_protect_haspermission",
       "confidence_score": 1.0
     },
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
-      "source_file": "docs/android_app_map.md",
+      "source_file": "packages/api/routes/cycleCountRoutes.js",
       "source_location": "L5",
       "weight": 1.0,
-      "source": "docs_android_app_map_android_app_ui_reference_map",
-      "target": "docs_android_app_map_navigation_app_architecture",
+      "source": "packages_api_routes_cyclecountroutes",
+      "target": "packages_api_routes_cyclecountroutes_router",
       "confidence_score": 1.0
     },
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L34",
+      "source_file": "packages/web/src/components/cycleCount/AuditHistoryTab.jsx",
+      "source_location": "L7",
       "weight": 1.0,
-      "source": "docs_android_app_map_android_app_ui_reference_map",
-      "target": "docs_android_app_map_page_by_page_element_catalog",
+      "source": "packages_web_src_components_cyclecount_audithistorytab",
+      "target": "packages_web_src_components_cyclecount_audithistorytab_action_labels",
       "confidence_score": 1.0
     },
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L36",
-      "weight": 1.0,
-      "source": "docs_android_app_map_page_by_page_element_catalog",
-      "target": "docs_android_app_map_1_login_screen",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L62",
-      "weight": 1.0,
-      "source": "docs_android_app_map_page_by_page_element_catalog",
-      "target": "docs_android_app_map_2_dashboard_screen",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L80",
-      "weight": 1.0,
-      "source": "docs_android_app_map_page_by_page_element_catalog",
-      "target": "docs_android_app_map_3_active_count_screen",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L113",
-      "weight": 1.0,
-      "source": "docs_android_app_map_page_by_page_element_catalog",
-      "target": "docs_android_app_map_4_log_unassigned_find_screen",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L148",
-      "weight": 1.0,
-      "source": "docs_android_app_map_page_by_page_element_catalog",
-      "target": "docs_android_app_map_5_reusable_component_mobile_counter_keypad",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L49",
-      "weight": 1.0,
-      "source": "docs_android_app_map_1_login_screen",
-      "target": "docs_android_app_map_server_settings_modal_nested_in_login",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L98",
-      "weight": 1.0,
-      "source": "docs_android_app_map_3_active_count_screen",
-      "target": "docs_android_app_map_barcode_scanner_modal_nested_in_count",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L131",
-      "weight": 1.0,
-      "source": "docs_android_app_map_4_log_unassigned_find_screen",
-      "target": "docs_android_app_map_barcode_scanner_modal_nested_in_unassigned_search",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L172",
-      "weight": 1.0,
-      "source": "docs_android_app_map_5_reusable_component_mobile_counter_keypad",
-      "target": "docs_android_app_map_display_submit_panel_left_column_below_row_1",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L176",
-      "weight": 1.0,
-      "source": "docs_android_app_map_5_reusable_component_mobile_counter_keypad",
-      "target": "docs_android_app_map_numeric_keypad_grid_right_column_below_row_1",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "docs/android_app_map.md",
-      "source_location": "L168",
-      "weight": 1.0,
-      "source": "docs_android_app_map_5_reusable_component_mobile_counter_keypad",
-      "target": "docs_android_app_map_quick_actions_row_row_1",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_file": "packages/web/src/components/cycleCount/AuditHistoryTab.jsx",
       "source_location": "L12",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_mobile_src_app_layout",
-      "target": "packages_mobile_src_app_layout_queryclient"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/mobile/src/app/_layout.tsx",
-      "source_location": "L14",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_mobile_src_app_layout",
-      "target": "packages_mobile_src_app_layout_tablayout"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/mobile/src/app/count.tsx",
-      "source_location": "L12",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_mobile_src_app_count",
-      "target": "packages_mobile_src_app_count_countscreen"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/mobile/src/app/count.tsx",
-      "source_location": "L325",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_mobile_src_app_count",
-      "target": "packages_mobile_src_app_count_styles"
+      "source": "packages_web_src_components_cyclecount_audithistorytab",
+      "target": "packages_web_src_components_cyclecount_audithistorytab_audithistorytab",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports_from",
       "context": "import",
       "confidence": "EXTRACTED",
-      "source_file": "packages/mobile/src/app/count.tsx",
-      "source_location": "L9",
+      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
+      "source_location": "L5",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_mobile_src_app_count",
-      "target": "packages_mobile_src_components_mobilecounter"
+      "source": "packages_web_src_components_cyclecount_managerreviewdesk",
+      "target": "packages_web_src_components_cyclecount_audithistorytab",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports",
       "context": "import",
       "confidence": "EXTRACTED",
-      "source_file": "packages/mobile/src/app/count.tsx",
-      "source_location": "L9",
+      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
+      "source_location": "L5",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_mobile_src_app_count",
-      "target": "packages_mobile_src_components_mobilecounter_mobilecounter"
+      "source": "packages_web_src_components_cyclecount_managerreviewdesk",
+      "target": "packages_web_src_components_cyclecount_audithistorytab_audithistorytab",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
-      "source_file": "packages/mobile/src/app/index.tsx",
-      "source_location": "L14",
+      "source_file": "packages/web/src/components/cycleCount/CycleCountControlsTab.jsx",
+      "source_location": "L5",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_mobile_src_app_index",
-      "target": "packages_mobile_src_app_index_dashboardscreen"
+      "source": "packages_web_src_components_cyclecount_cyclecountcontrolstab",
+      "target": "packages_web_src_components_cyclecount_cyclecountcontrolstab_cyclecountcontrolstab",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
+      "source_location": "L6",
+      "weight": 1.0,
+      "source": "packages_web_src_components_cyclecount_managerreviewdesk",
+      "target": "packages_web_src_components_cyclecount_cyclecountcontrolstab",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
+      "source_location": "L6",
+      "weight": 1.0,
+      "source": "packages_web_src_components_cyclecount_managerreviewdesk",
+      "target": "packages_web_src_components_cyclecount_cyclecountcontrolstab_cyclecountcontrolstab",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
-      "source_file": "packages/mobile/src/app/index.tsx",
-      "source_location": "L9",
+      "source_file": "packages/web/src/components/cycleCount/EmployeeDetailModal.jsx",
+      "source_location": "L5",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_mobile_src_app_index",
-      "target": "packages_mobile_src_app_index_fetchassignedtasks"
+      "source": "packages_web_src_components_cyclecount_employeedetailmodal",
+      "target": "packages_web_src_components_cyclecount_employeedetailmodal_employeedetailmodal",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/web/src/components/cycleCount/EmployeePerformanceTab.jsx",
+      "source_location": "L4",
+      "weight": 1.0,
+      "source": "packages_web_src_components_cyclecount_employeeperformancetab",
+      "target": "packages_web_src_components_cyclecount_employeedetailmodal",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/web/src/components/cycleCount/EmployeePerformanceTab.jsx",
+      "source_location": "L4",
+      "weight": 1.0,
+      "source": "packages_web_src_components_cyclecount_employeeperformancetab",
+      "target": "packages_web_src_components_cyclecount_employeedetailmodal_employeedetailmodal",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
-      "source_file": "packages/mobile/src/app/index.tsx",
-      "source_location": "L117",
+      "source_file": "packages/web/src/components/cycleCount/EmployeePerformanceTab.jsx",
+      "source_location": "L6",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_mobile_src_app_index",
-      "target": "packages_mobile_src_app_index_styles"
+      "source": "packages_web_src_components_cyclecount_employeeperformancetab",
+      "target": "packages_web_src_components_cyclecount_employeeperformancetab_employeeperformancetab",
+      "confidence_score": 1.0
     },
     {
-      "relation": "indirect_call",
-      "context": "collection",
-      "confidence": "INFERRED",
-      "source_file": "packages/mobile/src/app/index.tsx",
-      "source_location": "L20",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
+      "source_location": "L4",
       "weight": 1.0,
-      "confidence_score": 0.5,
-      "source": "packages_mobile_src_app_index_dashboardscreen",
-      "target": "packages_mobile_src_app_index_fetchassignedtasks"
+      "source": "packages_web_src_components_cyclecount_managerreviewdesk",
+      "target": "packages_web_src_components_cyclecount_employeeperformancetab",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
+      "source_location": "L4",
+      "weight": 1.0,
+      "source": "packages_web_src_components_cyclecount_managerreviewdesk",
+      "target": "packages_web_src_components_cyclecount_employeeperformancetab_employeeperformancetab",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
-      "source_file": "packages/mobile/src/app/unassigned-search.tsx",
-      "source_location": "L316",
+      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
+      "source_location": "L17",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_mobile_src_app_unassigned_search",
-      "target": "packages_mobile_src_app_unassigned_search_styles"
+      "source": "packages_web_src_components_cyclecount_managerreviewdesk",
+      "target": "packages_web_src_components_cyclecount_managerreviewdesk_managerreviewdesk",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
-      "source_file": "packages/mobile/src/app/unassigned-search.tsx",
+      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
+      "source_location": "L10",
+      "weight": 1.0,
+      "source": "packages_web_src_components_cyclecount_managerreviewdesk",
+      "target": "packages_web_src_components_cyclecount_managerreviewdesk_tabs",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/web/src/components/layout/MainLayout.jsx",
       "source_location": "L25",
       "weight": 1.0,
       "confidence_score": 1.0,
-      "source": "packages_mobile_src_app_unassigned_search",
-      "target": "packages_mobile_src_app_unassigned_search_unassignedsearchscreen"
+      "source": "packages_web_src_components_layout_mainlayout",
+      "target": "packages_web_src_components_cyclecount_managerreviewdesk"
     },
     {
-      "relation": "contains",
+      "relation": "imports",
+      "context": "import",
       "confidence": "EXTRACTED",
-      "source_file": "packages/mobile/src/components/MobileCounter.jsx",
-      "source_location": "L4",
+      "source_file": "packages/web/src/components/layout/MainLayout.jsx",
+      "source_location": "L25",
       "weight": 1.0,
       "confidence_score": 1.0,
-      "source": "packages_mobile_src_components_mobilecounter",
-      "target": "packages_mobile_src_components_mobilecounter_mobilecounter"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/mobile/src/components/MobileCounter.jsx",
-      "source_location": "L173",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_mobile_src_components_mobilecounter",
-      "target": "packages_mobile_src_components_mobilecounter_styles"
+      "source": "packages_web_src_components_layout_mainlayout",
+      "target": "packages_web_src_components_cyclecount_managerreviewdesk_managerreviewdesk"
     },
     {
       "relation": "contains",
@@ -20724,17 +20731,6 @@
       "weight": 1.0,
       "confidence_score": 1.0,
       "source": "packages_api_routes_customerroutes",
-      "target": "packages_api_db"
-    },
-    {
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/api/routes/cycleCountRoutes.js",
-      "source_location": "L2",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_api_routes_cyclecountroutes",
       "target": "packages_api_db"
     },
     {
@@ -24065,17 +24061,6 @@
       "relation": "imports_from",
       "context": "import",
       "confidence": "EXTRACTED",
-      "source_file": "packages/api/routes/cycleCountRoutes.js",
-      "source_location": "L3",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_api_routes_cyclecountroutes",
-      "target": "packages_api_middleware_authmiddleware"
-    },
-    {
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
       "source_file": "packages/api/routes/dataUtilsRoutes.js",
       "source_location": "L6",
       "weight": 1.0,
@@ -24351,17 +24336,6 @@
       "relation": "imports",
       "context": "import",
       "confidence": "EXTRACTED",
-      "source_file": "packages/api/routes/cycleCountRoutes.js",
-      "source_location": "L3",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_api_routes_cyclecountroutes",
-      "target": "packages_api_middleware_authmiddleware_protect"
-    },
-    {
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
       "source_file": "packages/api/routes/dataUtilsRoutes.js",
       "source_location": "L6",
       "weight": 1.0,
@@ -24631,17 +24605,6 @@
       "weight": 1.0,
       "confidence_score": 1.0,
       "source": "packages_api_routes_customerroutes",
-      "target": "packages_api_middleware_authmiddleware_haspermission"
-    },
-    {
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/api/routes/cycleCountRoutes.js",
-      "source_location": "L3",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_api_routes_cyclecountroutes",
       "target": "packages_api_middleware_authmiddleware_haspermission"
     },
     {
@@ -25806,46 +25769,6 @@
       "confidence_score": 1.0,
       "source": "packages_api_routes_customerroutes",
       "target": "packages_api_routes_customerroutes_router"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/api/routes/cycleCountRoutes.js",
-      "source_location": "L2",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_api_routes_cyclecountroutes",
-      "target": "packages_api_routes_cyclecountroutes_db"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/api/routes/cycleCountRoutes.js",
-      "source_location": "L1",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_api_routes_cyclecountroutes",
-      "target": "packages_api_routes_cyclecountroutes_express"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/api/routes/cycleCountRoutes.js",
-      "source_location": "L3",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_api_routes_cyclecountroutes",
-      "target": "packages_api_routes_cyclecountroutes_protect_haspermission"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/api/routes/cycleCountRoutes.js",
-      "source_location": "L5",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_api_routes_cyclecountroutes",
-      "target": "packages_api_routes_cyclecountroutes_router"
     },
     {
       "relation": "contains",
@@ -30969,6 +30892,39 @@
       "relation": "imports_from",
       "context": "import",
       "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/count.tsx",
+      "source_location": "L10",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_count",
+      "target": "packages_mobile_src_api_client"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/index.tsx",
+      "source_location": "L6",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_index",
+      "target": "packages_mobile_src_api_client"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/unassigned-search.tsx",
+      "source_location": "L20",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_unassigned_search",
+      "target": "packages_mobile_src_api_client"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
       "source_file": "packages/mobile/src/screens/LoginScreen.jsx",
       "source_location": "L5",
       "weight": 1.0,
@@ -31013,6 +30969,39 @@
       "relation": "imports",
       "context": "import",
       "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/count.tsx",
+      "source_location": "L10",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_count",
+      "target": "packages_mobile_src_api_client_apiclient"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/index.tsx",
+      "source_location": "L6",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_index",
+      "target": "packages_mobile_src_api_client_apiclient"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/unassigned-search.tsx",
+      "source_location": "L20",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_unassigned_search",
+      "target": "packages_mobile_src_api_client_apiclient"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
       "source_file": "packages/mobile/src/screens/LoginScreen.jsx",
       "source_location": "L5",
       "weight": 1.0,
@@ -31030,6 +31019,222 @@
       "confidence_score": 1.0,
       "source": "packages_mobile_src_store_usecyclecountstore",
       "target": "packages_mobile_src_api_client_apiclient"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_location": "L12",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_layout",
+      "target": "packages_mobile_src_app_layout_queryclient"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_location": "L14",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_layout",
+      "target": "packages_mobile_src_app_layout_tablayout"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_location": "L6",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_layout",
+      "target": "packages_mobile_src_components_animated_icon"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_location": "L6",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_layout",
+      "target": "packages_mobile_src_components_animated_icon_animatedsplashoverlay"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_location": "L9",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_layout",
+      "target": "packages_mobile_src_screens_loginscreen"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_location": "L9",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_layout",
+      "target": "packages_mobile_src_screens_loginscreen_loginscreen"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_location": "L7",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_layout",
+      "target": "packages_mobile_src_store_useauthstore"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_location": "L7",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_layout",
+      "target": "packages_mobile_src_store_useauthstore_useauthstore"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_location": "L8",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_layout",
+      "target": "packages_mobile_src_store_usesettingsstore"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_location": "L8",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_layout",
+      "target": "packages_mobile_src_store_usesettingsstore_usesettingsstore"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_location": "L15",
+      "weight": 1.0,
+      "source": "packages_mobile_src_app_layout_tablayout",
+      "target": "packages_mobile_src_hooks_use_color_scheme_web_usecolorscheme"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_location": "L16",
+      "weight": 1.0,
+      "source": "packages_mobile_src_app_layout_tablayout",
+      "target": "packages_mobile_src_store_useauthstore_useauthstore"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "packages/mobile/src/app/_layout.tsx",
+      "source_location": "L17",
+      "weight": 1.0,
+      "source": "packages_mobile_src_app_layout_tablayout",
+      "target": "packages_mobile_src_store_usesettingsstore_usesettingsstore"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/count.tsx",
+      "source_location": "L12",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_count",
+      "target": "packages_mobile_src_app_count_countscreen"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/count.tsx",
+      "source_location": "L325",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_count",
+      "target": "packages_mobile_src_app_count_styles"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/count.tsx",
+      "source_location": "L9",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_count",
+      "target": "packages_mobile_src_components_mobilecounter"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/count.tsx",
+      "source_location": "L9",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_count",
+      "target": "packages_mobile_src_components_mobilecounter_mobilecounter"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/count.tsx",
+      "source_location": "L8",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_count",
+      "target": "packages_mobile_src_store_usecyclecountstore"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/count.tsx",
+      "source_location": "L8",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_count",
+      "target": "packages_mobile_src_store_usecyclecountstore_usecyclecountstore"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "packages/mobile/src/app/count.tsx",
+      "source_location": "L21",
+      "weight": 1.0,
+      "source": "packages_mobile_src_app_count_countscreen",
+      "target": "packages_mobile_src_store_usecyclecountstore_usecyclecountstore"
     },
     {
       "relation": "contains",
@@ -31215,6 +31420,153 @@
       "weight": 1.0,
       "source": "packages_mobile_src_app_explore_tabtwoscreen",
       "target": "packages_mobile_src_hooks_use_theme_usetheme"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/index.tsx",
+      "source_location": "L14",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_index",
+      "target": "packages_mobile_src_app_index_dashboardscreen"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/index.tsx",
+      "source_location": "L9",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_index",
+      "target": "packages_mobile_src_app_index_fetchassignedtasks"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/index.tsx",
+      "source_location": "L117",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_index",
+      "target": "packages_mobile_src_app_index_styles"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/index.tsx",
+      "source_location": "L7",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_index",
+      "target": "packages_mobile_src_store_usecyclecountstore"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/index.tsx",
+      "source_location": "L7",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_index",
+      "target": "packages_mobile_src_store_usecyclecountstore_usecyclecountstore"
+    },
+    {
+      "relation": "indirect_call",
+      "context": "collection",
+      "confidence": "INFERRED",
+      "source_file": "packages/mobile/src/app/index.tsx",
+      "source_location": "L20",
+      "weight": 1.0,
+      "confidence_score": 0.5,
+      "source": "packages_mobile_src_app_index_dashboardscreen",
+      "target": "packages_mobile_src_app_index_fetchassignedtasks"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "packages/mobile/src/app/index.tsx",
+      "source_location": "L16",
+      "weight": 1.0,
+      "source": "packages_mobile_src_app_index_dashboardscreen",
+      "target": "packages_mobile_src_store_usecyclecountstore_usecyclecountstore"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/unassigned-search.tsx",
+      "source_location": "L316",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_unassigned_search",
+      "target": "packages_mobile_src_app_unassigned_search_styles"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/unassigned-search.tsx",
+      "source_location": "L25",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_unassigned_search",
+      "target": "packages_mobile_src_app_unassigned_search_unassignedsearchscreen"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/unassigned-search.tsx",
+      "source_location": "L21",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_unassigned_search",
+      "target": "packages_mobile_src_store_usecyclecountstore"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/unassigned-search.tsx",
+      "source_location": "L21",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_unassigned_search",
+      "target": "packages_mobile_src_store_usecyclecountstore_usecyclecountstore"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "packages/mobile/src/app/unassigned-search.tsx",
+      "source_location": "L27",
+      "weight": 1.0,
+      "source": "packages_mobile_src_app_unassigned_search_unassignedsearchscreen",
+      "target": "packages_mobile_src_store_usecyclecountstore_usecyclecountstore"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/components/MobileCounter.jsx",
+      "source_location": "L4",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_components_mobilecounter",
+      "target": "packages_mobile_src_components_mobilecounter_mobilecounter"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/components/MobileCounter.jsx",
+      "source_location": "L173",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_components_mobilecounter",
+      "target": "packages_mobile_src_components_mobilecounter_styles"
     },
     {
       "relation": "contains",
@@ -32975,28 +33327,6 @@
       "relation": "imports_from",
       "context": "import",
       "confidence": "EXTRACTED",
-      "source_file": "packages/web/src/components/cycleCount/EmployeePerformanceTab.jsx",
-      "source_location": "L2",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_web_src_components_cyclecount_employeeperformancetab",
-      "target": "packages_web_src_api"
-    },
-    {
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
-      "source_location": "L2",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_web_src_components_cyclecount_managerreviewdesk",
-      "target": "packages_web_src_api"
-    },
-    {
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
       "source_file": "packages/web/src/components/cycleCount/MobileCounter.jsx",
       "source_location": "L3",
       "weight": 1.0,
@@ -33651,28 +33981,6 @@
       "weight": 1.0,
       "confidence_score": 1.0,
       "source": "packages_web_src_components_applications_newapplicationmodal",
-      "target": "packages_web_src_api_api"
-    },
-    {
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/web/src/components/cycleCount/EmployeePerformanceTab.jsx",
-      "source_location": "L2",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_web_src_components_cyclecount_employeeperformancetab",
-      "target": "packages_web_src_api_api"
-    },
-    {
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
-      "source_location": "L2",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_web_src_components_cyclecount_managerreviewdesk",
       "target": "packages_web_src_api_api"
     },
     {
@@ -35139,125 +35447,6 @@
       "confidence_score": 1.0,
       "source": "packages_web_src_pages_partapplicationmanager",
       "target": "packages_web_src_components_applications_newapplicationmodal_newapplicationmodal"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/web/src/components/cycleCount/EmployeePerformanceTab.jsx",
-      "source_location": "L5",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_web_src_components_cyclecount_employeeperformancetab",
-      "target": "packages_web_src_components_cyclecount_employeeperformancetab_employeeperformancetab"
-    },
-    {
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
-      "source_location": "L4",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_web_src_components_cyclecount_managerreviewdesk",
-      "target": "packages_web_src_components_cyclecount_employeeperformancetab"
-    },
-    {
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
-      "source_location": "L4",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_web_src_components_cyclecount_managerreviewdesk",
-      "target": "packages_web_src_components_cyclecount_employeeperformancetab_employeeperformancetab"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
-      "source_location": "L8",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_web_src_components_cyclecount_managerreviewdesk",
-      "target": "packages_web_src_components_cyclecount_managerreviewdesk_managerreviewdesk"
-    },
-    {
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
-      "source_location": "L5",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_web_src_components_cyclecount_managerreviewdesk",
-      "target": "packages_web_src_contexts_settingscontext"
-    },
-    {
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
-      "source_location": "L5",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_web_src_components_cyclecount_managerreviewdesk",
-      "target": "packages_web_src_contexts_settingscontext_usesettings"
-    },
-    {
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
-      "source_location": "L6",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_web_src_components_cyclecount_managerreviewdesk",
-      "target": "packages_web_src_utils_currency"
-    },
-    {
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
-      "source_location": "L6",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_web_src_components_cyclecount_managerreviewdesk",
-      "target": "packages_web_src_utils_currency_formatcurrency"
-    },
-    {
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/web/src/components/layout/MainLayout.jsx",
-      "source_location": "L25",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_web_src_components_layout_mainlayout",
-      "target": "packages_web_src_components_cyclecount_managerreviewdesk"
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
-      "source_location": "L9",
-      "weight": 1.0,
-      "source": "packages_web_src_components_cyclecount_managerreviewdesk_managerreviewdesk",
-      "target": "packages_web_src_contexts_settingscontext_usesettings"
-    },
-    {
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/web/src/components/layout/MainLayout.jsx",
-      "source_location": "L25",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_web_src_components_layout_mainlayout",
-      "target": "packages_web_src_components_cyclecount_managerreviewdesk_managerreviewdesk"
     },
     {
       "relation": "contains",
@@ -50224,6 +50413,156 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_android_app_map",
+      "target": "docs_android_app_map_android_app_ui_reference_map"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L184",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_android_app_map_android_app_ui_reference_map",
+      "target": "docs_android_app_map_global_styling_asset_resources"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L5",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_android_app_map_android_app_ui_reference_map",
+      "target": "docs_android_app_map_navigation_app_architecture"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L34",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_android_app_map_android_app_ui_reference_map",
+      "target": "docs_android_app_map_page_by_page_element_catalog"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L36",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_android_app_map_page_by_page_element_catalog",
+      "target": "docs_android_app_map_1_login_screen"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L62",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_android_app_map_page_by_page_element_catalog",
+      "target": "docs_android_app_map_2_dashboard_screen"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L80",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_android_app_map_page_by_page_element_catalog",
+      "target": "docs_android_app_map_3_active_count_screen"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L113",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_android_app_map_page_by_page_element_catalog",
+      "target": "docs_android_app_map_4_log_unassigned_find_screen"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L148",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_android_app_map_page_by_page_element_catalog",
+      "target": "docs_android_app_map_5_reusable_component_mobile_counter_keypad"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L49",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_android_app_map_1_login_screen",
+      "target": "docs_android_app_map_server_settings_modal_nested_in_login"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L98",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_android_app_map_3_active_count_screen",
+      "target": "docs_android_app_map_barcode_scanner_modal_nested_in_count"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L131",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_android_app_map_4_log_unassigned_find_screen",
+      "target": "docs_android_app_map_barcode_scanner_modal_nested_in_unassigned_search"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L172",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_android_app_map_5_reusable_component_mobile_counter_keypad",
+      "target": "docs_android_app_map_display_submit_panel_left_column_below_row_1"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L176",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_android_app_map_5_reusable_component_mobile_counter_keypad",
+      "target": "docs_android_app_map_numeric_keypad_grid_right_column_below_row_1"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/android_app_map.md",
+      "source_location": "L168",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "docs_android_app_map_5_reusable_component_mobile_counter_keypad",
+      "target": "docs_android_app_map_quick_actions_row_row_1"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "graphify-out/memory/query_20260703_122446_why_does_haspermission___connect_auth_permissions.md",
       "source_location": "L10",
       "weight": 1.0,
@@ -50854,5 +51193,5 @@
       "source_file": "packages/mobile/assets/images/tabIcons/home@3x.png"
     }
   ],
-  "built_at_commit": "2f7f6ca4e764cc64647edc834a2cee50c321f754"
+  "built_at_commit": "03f914730ba90538db38ef03980d639adcbdcdff"
 }

@@ -1,16 +1,16 @@
 # Graph Report - forson-business-suite  (2026-07-04)
 
 ## Corpus Check
-- 399 files · ~262,238 words
+- 399 files · ~262,422 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1915 nodes · 2939 edges · 293 communities (120 shown, 173 thin omitted)
-- Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 82 edges (avg confidence: 0.58)
+- 1916 nodes · 2966 edges · 293 communities (120 shown, 173 thin omitted)
+- Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 83 edges (avg confidence: 0.58)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `ce56811c`
+- Built from commit: `f5535bbd`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -281,8 +281,8 @@
 - [[_COMMUNITY_reindexWithNormalized.js|reindexWithNormalized.js]]
 - [[_COMMUNITY_index.tsx|index.tsx]]
 - [[_COMMUNITY_test-search.js|test-search.js]]
-- [[_COMMUNITY__layout.tsx|_layout.tsx]]
-- [[_COMMUNITY_unassigned-search.tsx|unassigned-search.tsx]]
+- [[_COMMUNITY_DocumentsPage.tsx|DocumentsPage.tsx]]
+- [[_COMMUNITY_ChequePrintingPage|ChequePrintingPage]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `api` - 64 edges
@@ -301,12 +301,12 @@
   packages/web/src/components/refunds/InvoiceDetailsModal.jsx → packages/api/middleware/authMiddleware.js
 - `AccountsReceivablePage()` --calls--> `hasPermission()`  [INFERRED]
   packages/web/src/pages/AccountsReceivablePage.jsx → packages/api/middleware/authMiddleware.js
-- `ApplicationsPage()` --calls--> `hasPermission()`  [INFERRED]
-  packages/web/src/pages/ApplicationsPage.jsx → packages/api/middleware/authMiddleware.js
-- `CustomersPage()` --calls--> `hasPermission()`  [INFERRED]
-  packages/web/src/pages/CustomersPage.jsx → packages/api/middleware/authMiddleware.js
-- `CycleCountExecutionPage()` --calls--> `hasPermission()`  [INFERRED]
-  packages/web/src/pages/CycleCountExecutionPage.jsx → packages/api/middleware/authMiddleware.js
+- `TabLayout()` --calls--> `useColorScheme()`  [INFERRED]
+  packages/mobile/src/app/_layout.tsx → packages/mobile/src/hooks/use-color-scheme.web.ts
+- `AppTabs()` --calls--> `useColorScheme()`  [INFERRED]
+  packages/mobile/src/components/app-tabs.tsx → packages/mobile/src/hooks/use-color-scheme.web.ts
+- `CustomTabList()` --calls--> `useColorScheme()`  [INFERRED]
+  packages/mobile/src/components/app-tabs.web.tsx → packages/mobile/src/hooks/use-color-scheme.web.ts
 
 ## Import Cycles
 - 1-file cycle: `packages/api/meilisearch.js -> packages/api/meilisearch.js`
@@ -323,12 +323,12 @@
 ## Communities (293 total, 173 thin omitted)
 
 ### Community 0 - "Accounts Receivable & Invoice Aging"
-Cohesion: 0.08
-Nodes (33): Command, CommandPaletteProps, DOCUMENT_TYPES, DocumentBrowser(), DocumentBrowserV2(), DocumentGrid(), DATE_PRESETS, DOCUMENT_TYPES (+25 more)
+Cohesion: 0.09
+Nodes (32): Command, CommandPaletteProps, DOCUMENT_TYPES, DocumentBrowser(), DocumentBrowserV2(), DocumentGrid(), DATE_PRESETS, DOCUMENT_TYPES (+24 more)
 
 ### Community 1 - "Inventory Valuation & Low Stock Reporting"
-Cohesion: 0.13
-Nodes (14): 1. Login Screen, 2. Dashboard Screen, 3. Active Count Screen, 4. Log Unassigned Find Screen, 5. Reusable Component: Mobile Counter Keypad, Android App UI Reference Map, 📸 Barcode Scanner Modal (Nested in Count), 📸 Barcode Scanner Modal (Nested in Unassigned Search) (+6 more)
+Cohesion: 0.12
+Nodes (15): 1. Login Screen, 2. Dashboard Screen, 3. Active Count Screen, 4. Log Unassigned Find Screen, 5. Reusable Component: Mobile Counter Keypad, Android App UI Reference Map, 📸 Barcode Scanner Modal (Nested in Count), 📸 Barcode Scanner Modal (Nested in Unassigned Search) (+7 more)
 
 ### Community 2 - "Mobile Exploration & Tab Navigation"
 Cohesion: 0.12
@@ -339,20 +339,20 @@ Cohesion: 0.05
 Nodes (38): author, dependencies, bcrypt, cors, dotenv, express, json2csv, jsonwebtoken (+30 more)
 
 ### Community 4 - "Payment Terms & Overdue Calculations"
-Cohesion: 0.12
-Nodes (18): computeDueDate(), parsePaymentTermsDays(), validatePaymentTerms(), { calculateInvoiceTax, storeTaxBreakdown, validateTaxCalculation }, db, express, { formatPhysicalReceiptNumber }, { getNextDocumentNumber } (+10 more)
+Cohesion: 0.07
+Nodes (26): computeDueDate(), parsePaymentTermsDays(), validatePaymentTerms(), formatPhysicalReceiptNumber(), { calculateInvoiceTax, storeTaxBreakdown, validateTaxCalculation }, db, express, { formatPhysicalReceiptNumber } (+18 more)
 
 ### Community 5 - "Web Inventory & Purchase Order Forms"
-Cohesion: 0.17
-Nodes (11): cache, enrichApplicationsField(), enrichPart(), getApplication(), loadApplications(), APPLICATION_DISPLAY_PRESETS, getPreset(), formatCache (+3 more)
+Cohesion: 0.11
+Nodes (24): PurchaseOrderForm(), StockAdjustmentForm(), SearchBar, GoodsReceiptModals(), TransactionHistoryModal(), cache, enrichApplicationsField(), enrichPart() (+16 more)
 
 ### Community 6 - "Web Frontend Dependencies"
 Cohesion: 0.06
 Nodes (34): dependencies, axios, date-fns, date-fns-tz, @headlessui/react, lucide-react, pdf-lib, react (+26 more)
 
 ### Community 7 - "Mobile Task Counters & Dashboard"
-Cohesion: 0.36
-Nodes (6): apiClient, LoginScreen(), styles, useAuthStore, useCycleCountStore, useSettingsStore
+Cohesion: 0.12
+Nodes (22): apiClient, CountScreen(), styles, DashboardScreen(), fetchAssignedTasks(), styles, queryClient, TabLayout() (+14 more)
 
 ### Community 8 - "Mobile App Packaging & Build Properties"
 Cohesion: 0.06
@@ -360,7 +360,7 @@ Nodes (33): dependencies, axios, expo, expo-build-properties, expo-constants, ex
 
 ### Community 9 - "Parts De-duplication & Conflict Resolution"
 Cohesion: 0.11
-Nodes (19): CustomerForm(), ConfirmMerge(), ConflictResolver(), DuplicateGroupList(), ImpactSummary(), PartCompareCard(), SearchBar, BackupSettings() (+11 more)
+Nodes (17): ConfirmMerge(), ConflictResolver(), DuplicateGroupList(), ImpactSummary(), PartCompareCard(), BackupSettings(), PaymentMethodSettings(), PermissionsSettings() (+9 more)
 
 ### Community 10 - "Cheque PDF Rendering & Formatting"
 Cohesion: 0.08
@@ -371,32 +371,32 @@ Cohesion: 0.07
 Nodes (29): backgroundColor, foregroundImage, monochromeImage, adaptiveIcon, package, predictiveBackGestureEnabled, projectId, reactCompiler (+21 more)
 
 ### Community 12 - "Web Client Services & Search Combobox"
-Cohesion: 0.16
-Nodes (12): api, ApplicationSearchCombobox(), NewApplicationModal(), EditHistory(), PartForm(), PurchaseOrderForm(), PermissionsSettings(), DueDateEditor() (+4 more)
+Cohesion: 0.14
+Nodes (13): api, ApplicationSearchCombobox(), NewApplicationModal(), EditHistory(), PartForm(), DataUtilsSettings(), formatEta(), TERMINAL_STATUSES (+5 more)
 
 ### Community 13 - "API Routes & Pagination Middleware"
-Cohesion: 0.06
-Nodes (34): buildPaginationMeta(), paginatedResponse(), parsePaginationQuery(), db, express, { parsePaginationQuery, paginatedResponse }, router, db (+26 more)
+Cohesion: 0.08
+Nodes (27): buildPaginationMeta(), paginatedResponse(), parsePaginationQuery(), db, express, { parsePaginationQuery, paginatedResponse }, router, db (+19 more)
 
 ### Community 14 - "Auth Permissions & Dashboard Widgets"
-Cohesion: 0.11
-Nodes (14): App(), AppContent(), MainLayout(), Sidebar(), InvoiceDetailsModal(), RefundForm(), AuthContext, AuthProvider() (+6 more)
+Cohesion: 0.16
+Nodes (12): InvoiceDetailsModal(), RefundForm(), ReportCard(), DateRangeShortcuts(), PaymentModal(), SplitPaymentModal(), AuthContext, SettingsContext (+4 more)
 
 ### Community 15 - "Cycle Count Operations (15)"
-Cohesion: 0.22
-Nodes (10): CustomerInvoiceDetailsModal(), CustomerSummaryTable(), InvoiceAgingSummaryChart(), currency(), ReceivePaymentForm(), KPICard(), AccountsReceivablePage(), exportToCSV() (+2 more)
+Cohesion: 0.17
+Nodes (12): CustomerInvoiceDetailsModal(), CustomerSummaryTable(), InvoiceAgingSummaryChart(), EmployeePerformanceTab(), ManagerReviewDesk(), currency(), ReceivePaymentForm(), KPICard() (+4 more)
 
 ### Community 16 - "Meilisearch Sync Worker (16)"
 Cohesion: 0.06
 Nodes (33): Automated Testing, Backend Enhancements, Backward Compatibility, 📈 Business Benefits, Code Quality, 🏆 Conclusion, Data Flow, Database Optimizations (+25 more)
 
 ### Community 17 - "CustomerForm Module (17)"
-Cohesion: 0.12
-Nodes (20): StockAdjustmentForm(), SavedSalesPanel(), ReportCard(), GoodsReceiptModals(), PaymentModal(), PriceQuantityModal(), Receipt, TransactionHistoryModal() (+12 more)
+Cohesion: 0.21
+Nodes (7): CustomerForm(), SavedSalesPanel(), PriceQuantityModal(), Receipt, TagInput(), useSavedSales(), POSPage()
 
 ### Community 18 - "Tax Calculation & Rates (18)"
-Cohesion: 0.09
-Nodes (18): hasPermission(), { exec }, express, fs, path, { protect, hasPermission }, router, db (+10 more)
+Cohesion: 0.22
+Nodes (18): hasPermission(), LowStockAlertsPanel(), RecentActivityFeed(), RecentSalesPanel(), Header(), Sidebar(), useAuth(), ApplicationsPage() (+10 more)
 
 ### Community 19 - "Meilisearch Sync Worker (19)"
 Cohesion: 0.16
@@ -407,28 +407,28 @@ Cohesion: 0.16
 Nodes (11): DocumentInterfaceProps, DocumentMetadata, DocumentStatus, DocumentType, projectCache, InvoiceDueDateDisplay(), calculateDaysOverdue(), computeDueDate() (+3 more)
 
 ### Community 22 - "db Module (22)"
-Cohesion: 0.11
-Nodes (9): { Pool }, bcrypt, db, express, router, db, db, db (+1 more)
+Cohesion: 0.08
+Nodes (13): { Pool }, db, express, { protect }, router, db, express, { protect } (+5 more)
 
 ### Community 23 - "Meilisearch Sync Worker (23)"
 Cohesion: 0.13
 Nodes (16): activeAliasCondition(), db, softDeleteSupported(), { activeAliasCondition, softDeleteSupported }, db, express, { getPartDataForMeili }, { protect, hasPermission } (+8 more)
 
 ### Community 24 - "Tax Calculation & Rates (24)"
-Cohesion: 0.07
-Nodes (28): db, isAdmin(), jwt, protect(), db, express, { protect, hasPermission }, router (+20 more)
+Cohesion: 0.09
+Nodes (24): db, isAdmin(), jwt, protect(), db, express, { protect, hasPermission }, router (+16 more)
 
 ### Community 25 - "Meilisearch Sync Worker (25)"
-Cohesion: 0.12
-Nodes (14): app, cors, express, path, { setupMeiliSearch }, { startCycleCountEngine }, { startMeiliApplicationsListener }, { startMeiliListener } (+6 more)
+Cohesion: 0.09
+Nodes (18): app, cors, express, path, { setupMeiliSearch }, { startCycleCountEngine }, { startMeiliApplicationsListener }, { startMeiliListener } (+10 more)
 
 ### Community 26 - "Meilisearch Sync Worker (26)"
 Cohesion: 0.17
 Nodes (15): db, startMeiliApplicationsListener(), { syncApplications, removeApplication }, index(), isRetryable(), { meiliClient }, removeApplication(), retryAsync() (+7 more)
 
 ### Community 27 - "Meilisearch Sync Worker (27)"
-Cohesion: 0.15
-Nodes (15): { activeAliasCondition }, db, startMeiliListener(), { syncPartWithMeili, removePartFromMeili }, client, isRetryable(), { MeiliSearch }, removePartFromMeili() (+7 more)
+Cohesion: 0.13
+Nodes (16): client, isRetryable(), { MeiliSearch }, removePartFromMeili(), retryAsync(), syncPartWithMeili(), wait(), { meiliClient } (+8 more)
 
 ### Community 28 - "documentNumberGenerator Module (28)"
 Cohesion: 0.10
@@ -443,8 +443,8 @@ Cohesion: 0.18
 Nodes (13): buildSymmetricSynonyms(), fs, getEnvironmentConfig(), isRetryable(), { meiliClient }, path, retryAsync(), setupMeiliSearch() (+5 more)
 
 ### Community 31 - "Tax Calculation & Rates (31)"
-Cohesion: 0.40
-Nodes (3): DataUtilsSettings(), formatEta(), TERMINAL_STATUSES
+Cohesion: 0.24
+Nodes (7): App(), AppContent(), MainLayout(), AuthProvider(), SettingsProvider(), LoginScreen(), SetupPage()
 
 ### Community 32 - "package Module (32)"
 Cohesion: 0.13
@@ -480,12 +480,12 @@ Cohesion: 0.06
 Nodes (30): 1. Code Review and Testing ✅, 2. Database Migration Safety ✅, 3. Infrastructure Review ✅, Business Metrics, Contact Information, Critical Path Tests, Deployment Steps, Documentation Updates Required (+22 more)
 
 ### Community 39 - "InvoiceDetailsModal Module (39)"
-Cohesion: 0.14
-Nodes (26): SupplierForm(), asArray(), InventoryMovementReport(), InventoryValuationReport(), LowStockReport(), asArray(), ProfitabilityReport(), RefundsReport() (+18 more)
+Cohesion: 0.18
+Nodes (19): SupplierForm(), asArray(), InventoryMovementReport(), InventoryValuationReport(), LowStockReport(), asArray(), ProfitabilityReport(), RefundsReport() (+11 more)
 
 ### Community 40 - "AnalyticsCharts Module (40)"
-Cohesion: 0.09
-Nodes (17): SalesTrendChart(), TopProductsChart(), colorVariants, EnhancedKPICard(), iconMap, QuickActionsPanel(), Dashboard(), InventoryMovementReport (+9 more)
+Cohesion: 0.21
+Nodes (6): SalesTrendChart(), TopProductsChart(), colorVariants, EnhancedKPICard(), iconMap, QuickActionsPanel()
 
 ### Community 41 - "codeGenerator Module (41)"
 Cohesion: 0.07
@@ -572,8 +572,8 @@ Cohesion: 0.29
 Nodes (4): fs, GRADLE_PROPS, path, { withDangerousMod, withGradleProperties }
 
 ### Community 62 - "Cycle Count Operations (62)"
-Cohesion: 0.12
-Nodes (15): EmployeePerformanceTab(), ManagerReviewDesk(), getPartDisplayName(), getPartSecondaryLabel(), MobileCounter(), StaffDashboard(), Header(), DateRangeShortcuts() (+7 more)
+Cohesion: 0.48
+Nodes (4): getPartDisplayName(), getPartSecondaryLabel(), MobileCounter(), StaffDashboard()
 
 ### Community 63 - "Cheque Processing (63)"
 Cohesion: 0.29
@@ -645,11 +645,11 @@ Nodes (4): apiRequest(), axios, testAREndpointsWithData(), testCredentials
 
 ### Community 84 - "Meilisearch Sync Worker (84)"
 Cohesion: 0.29
-Nodes (4): glowKeyframe, keyframe, logoKeyframe, styles
+Nodes (6): { exec }, express, fs, path, { protect, hasPermission }, router
 
 ### Community 85 - "Meilisearch Sync Worker (85)"
 Cohesion: 0.20
-Nodes (8): formatPhysicalReceiptNumber(), db, express, { formatPhysicalReceiptNumber }, invoicePaymentsMiddlewares, { protect, hasPermission }, router, { formatPhysicalReceiptNumber }
+Nodes (9): InventoryMovementReport, InventoryValuationReport, LowStockReport, ProfitabilityReport, RefundsReport, reportTabs, SalesByCustomerReport, SalesReport (+1 more)
 
 ### Community 86 - "test-ar-data.js"
 Cohesion: 0.29
@@ -680,16 +680,16 @@ Cohesion: 0.33
 Nodes (5): Cheque Printing Module — Phase 1 Status, Environment caveat, Phase 1 completion criteria, Phase 1 objective, What is completed in codebase
 
 ### Community 115 - "Cheque Processing (115)"
-Cohesion: 0.40
-Nodes (3): styles, MobileCounter(), styles
+Cohesion: 0.33
+Nodes (5): db, express, { meiliClient }, { parsePaginationQuery, paginatedResponse }, router
 
 ### Community 117 - "Tax Calculation & Rates (117)"
 Cohesion: 0.05
 Nodes (41): API Endpoints, Application Rollback, Common Issues, Compliance Notes, Configuration, Database Rollback, Database Schema Changes, Debug Tools (+33 more)
 
 ### Community 133 - "Developer Workflows Module (133)"
-Cohesion: 0.29
-Nodes (5): db, express, { parsePaginationQuery, paginatedResponse }, { protect, hasPermission }, router
+Cohesion: 0.22
+Nodes (7): bcrypt, db, express, jwt, { parsePaginationQuery, paginatedResponse }, { protect, isAdmin }, router
 
 ### Community 135 - "Forson Business Suite: Functional Requirement Document (Code-Audited)"
 Cohesion: 0.40
@@ -700,31 +700,31 @@ Cohesion: 0.50
 Nodes (3): Forson Business Suite — Features Documentation, Sales History — Summary (detailed), Split Payments (detailed)
 
 ### Community 288 - "reindexWithNormalized.js"
-Cohesion: 0.50
-Nodes (3): db, { getPartDataForMeili }, { syncPartWithMeili }
+Cohesion: 0.40
+Nodes (4): db, express, { protect, hasPermission }, router
 
 ### Community 289 - "index.tsx"
-Cohesion: 0.67
-Nodes (3): DashboardScreen(), fetchAssignedTasks(), styles
+Cohesion: 0.40
+Nodes (4): bcrypt, db, express, router
 
 ## Knowledge Gaps
-- **1000 isolated node(s):** `queryClient`, `styles`, `styles`, `styles`, `styles` (+995 more)
+- **1000 isolated node(s):** `backup.sh script`, `name`, `version`, `private`, `workspaces` (+995 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **173 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `hasPermission()` connect `Tax Calculation & Rates (18)` to `Payment Terms & Overdue Calculations`, `Developer Workflows Module (133)`, `Parts De-duplication & Conflict Resolution`, `Cheque PDF Rendering & Formatting`, `API Routes & Pagination Middleware`, `Auth Permissions & Dashboard Widgets`, `Cycle Count Operations (15)`, `CustomerForm Module (17)`, `Meilisearch Sync Worker (23)`, `Tax Calculation & Rates (24)`, `documentNumberGenerator Module (28)`, `Meilisearch Sync Worker (33)`, `InvoiceDetailsModal Module (39)`, `AnalyticsCharts Module (40)`, `documentsRoutes Module (47)`, `paymentRoutes Module (49)`, `Cycle Count Operations (62)`, `Meilisearch Sync Worker (85)`, `test-ar-data.js`?**
-  _High betweenness centrality (0.109) - this node is a cross-community bridge._
+- **Why does `hasPermission()` connect `Tax Calculation & Rates (18)` to `reindexWithNormalized.js`, `Meilisearch Sync Worker (33)`, `Payment Terms & Overdue Calculations`, `Cheque PDF Rendering & Formatting`, `API Routes & Pagination Middleware`, `Auth Permissions & Dashboard Widgets`, `documentsRoutes Module (47)`, `Cycle Count Operations (15)`, `paymentRoutes Module (49)`, `Meilisearch Sync Worker (84)`, `test-ar-data.js`, `Meilisearch Sync Worker (23)`, `Tax Calculation & Rates (24)`, `documentNumberGenerator Module (28)`?**
+  _High betweenness centrality (0.151) - this node is a cross-community bridge._
 - **Why does `meilisearch` connect `API Gateway Dependencies` to `Meilisearch Sync Worker (27)`?**
-  _High betweenness centrality (0.032) - this node is a cross-community bridge._
-- **What connects `queryClient`, `styles`, `styles` to the rest of the system?**
+  _High betweenness centrality (0.035) - this node is a cross-community bridge._
+- **What connects `backup.sh script`, `name`, `version` to the rest of the system?**
   _1009 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Accounts Receivable & Invoice Aging` be split into smaller, more focused modules?**
-  _Cohesion score 0.08272859216255443 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.08979591836734693 - nodes in this community are weakly interconnected._
 - **Should `Inventory Valuation & Low Stock Reporting` be split into smaller, more focused modules?**
-  _Cohesion score 0.13333333333333333 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.125 - nodes in this community are weakly interconnected._
 - **Should `Mobile Exploration & Tab Navigation` be split into smaller, more focused modules?**
   _Cohesion score 0.11794871794871795 - nodes in this community are weakly interconnected._
 - **Should `API Gateway Dependencies` be split into smaller, more focused modules?**

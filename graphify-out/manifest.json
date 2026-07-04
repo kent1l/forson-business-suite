@@ -485,9 +485,9 @@
     "semantic_hash": "681ed4c9ea2d29451a6d38cb7fc19e59"
   },
   "packages/api/routes/cycleCountRoutes.js": {
-    "mtime": 1783098966.460581,
-    "ast_hash": "e04a042357c48a7d6f17063ddadec1ee",
-    "semantic_hash": "e04a042357c48a7d6f17063ddadec1ee"
+    "mtime": 1783148252.5563278,
+    "ast_hash": "1c5f650d96c96d57128d9c3673d42835",
+    "semantic_hash": ""
   },
   "packages/api/routes/dashboardRoutes.js": {
     "mtime": 1782378010.3685896,
@@ -800,7 +800,7 @@
     "semantic_hash": "10af60a946e825510538ef9bd1dd225d"
   },
   "packages/mobile/.expo/types/router.d.ts": {
-    "mtime": 1783140829.1039188,
+    "mtime": 1783147605.4194136,
     "ast_hash": "f00456c6d4e1e66c14639044269589b6",
     "semantic_hash": "f00456c6d4e1e66c14639044269589b6"
   },
@@ -890,12 +890,12 @@
     "semantic_hash": "f7822a0aa28a5bc3e8513e24492b4449"
   },
   "packages/mobile/src/app/_layout.tsx": {
-    "mtime": 1783140802.7038803,
+    "mtime": 1783147603.7933486,
     "ast_hash": "321449364a81003302139c2295c43726",
     "semantic_hash": ""
   },
   "packages/mobile/src/app/count.tsx": {
-    "mtime": 1783140827.9778745,
+    "mtime": 1783147603.7963486,
     "ast_hash": "bba0b1bf826479e214c65d6fd5ac7df7",
     "semantic_hash": ""
   },
@@ -905,17 +905,17 @@
     "semantic_hash": "42adf91e47cfe6b5d4ede54a35db24d0"
   },
   "packages/mobile/src/app/index.tsx": {
-    "mtime": 1783140807.78208,
+    "mtime": 1783147603.8223498,
     "ast_hash": "a7d17cdd1c88f89003cac9084fde82ac",
     "semantic_hash": ""
   },
   "packages/mobile/src/app/unassigned-search.tsx": {
-    "mtime": 1783140815.4473815,
+    "mtime": 1783147603.8963528,
     "ast_hash": "a42ffdcb040286e2b9316fbde99dcf18",
     "semantic_hash": ""
   },
   "packages/mobile/src/components/MobileCounter.jsx": {
-    "mtime": 1783140839.985347,
+    "mtime": 1783147603.9103532,
     "ast_hash": "f6c2e37fdf91f419fe90426efa20ad65",
     "semantic_hash": ""
   },
@@ -1085,14 +1085,14 @@
     "semantic_hash": "c94ac99fe545ac89591ca001934f7ab1"
   },
   "packages/web/src/components/cycleCount/EmployeePerformanceTab.jsx": {
-    "mtime": 1782378010.3985908,
-    "ast_hash": "a42f76570bbe99101d44ed06788dfcae",
-    "semantic_hash": "a42f76570bbe99101d44ed06788dfcae"
+    "mtime": 1783148353.201358,
+    "ast_hash": "6dc8d79e5c30d3321d32c092a3b33788",
+    "semantic_hash": ""
   },
   "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx": {
-    "mtime": 1782378010.4125915,
-    "ast_hash": "dc206e13045df5b0843d4f063803c7f8",
-    "semantic_hash": "dc206e13045df5b0843d4f063803c7f8"
+    "mtime": 1783148378.6195135,
+    "ast_hash": "72f848a8e0f7393dbc12d0a75b40c37f",
+    "semantic_hash": ""
   },
   "packages/web/src/components/cycleCount/MobileCounter.jsx": {
     "mtime": 1782378010.4125915,
@@ -2445,8 +2445,28 @@
     "semantic_hash": ""
   },
   "docs/android_app_map.md": {
-    "mtime": 1783146790.0200772,
+    "mtime": 1783147603.6378195,
     "ast_hash": "7de43aa03449fcd0ea35a7fb849e54f6",
+    "semantic_hash": ""
+  },
+  "database/migrations/20260704_add_cycle_count_audit_log.sql": {
+    "mtime": 1783148203.9213803,
+    "ast_hash": "26e530070f54d1ddc26ef8c5e6ae5927",
+    "semantic_hash": ""
+  },
+  "packages/web/src/components/cycleCount/AuditHistoryTab.jsx": {
+    "mtime": 1783148277.9701009,
+    "ast_hash": "d73bd4f0ab1c4309d84c83900bae7673",
+    "semantic_hash": ""
+  },
+  "packages/web/src/components/cycleCount/CycleCountControlsTab.jsx": {
+    "mtime": 1783148338.4007654,
+    "ast_hash": "7503b1b9d27a9b5268bc9deb3cb262f4",
+    "semantic_hash": ""
+  },
+  "packages/web/src/components/cycleCount/EmployeeDetailModal.jsx": {
+    "mtime": 1783148304.482407,
+    "ast_hash": "16b62566e2067473dcac50c747495476",
     "semantic_hash": ""
   }
 }
