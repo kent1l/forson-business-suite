@@ -105,14 +105,44 @@
   },
   "nodes": [
     {
+      "label": "MobileCounter.jsx",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/components/MobileCounter.jsx",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "packages_mobile_src_components_mobilecounter",
+      "community": 7,
+      "norm_label": "mobilecounter.jsx"
+    },
+    {
+      "label": "MobileCounter()",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/components/MobileCounter.jsx",
+      "source_location": "L4",
+      "_origin": "ast",
+      "id": "packages_mobile_src_components_mobilecounter_mobilecounter",
+      "community": 7,
+      "norm_label": "mobilecounter()"
+    },
+    {
+      "label": "styles",
+      "file_type": "code",
+      "source_file": "packages/mobile/src/components/MobileCounter.jsx",
+      "source_location": "L157",
+      "_origin": "ast",
+      "id": "packages_mobile_src_components_mobilecounter_styles",
+      "community": 7,
+      "norm_label": "styles"
+    },
+    {
       "label": "android_app_map.md",
       "file_type": "document",
       "source_file": "docs/android_app_map.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "docs_android_app_map",
       "community": 1,
-      "norm_label": "android_app_map.md"
+      "norm_label": "android_app_map.md",
+      "id": "docs_android_app_map"
     },
     {
       "label": "Android App UI Reference Map",
@@ -120,9 +150,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "docs_android_app_map_android_app_ui_reference_map",
       "community": 1,
-      "norm_label": "android app ui reference map"
+      "norm_label": "android app ui reference map",
+      "id": "docs_android_app_map_android_app_ui_reference_map"
     },
     {
       "label": "\ud83d\uddfa\ufe0f Navigation & App Architecture",
@@ -130,9 +160,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L5",
       "_origin": "ast",
-      "id": "docs_android_app_map_navigation_app_architecture",
       "community": 1,
-      "norm_label": "\ud83d\uddfa\ufe0f navigation & app architecture"
+      "norm_label": "\ud83d\uddfa\ufe0f navigation & app architecture",
+      "id": "docs_android_app_map_navigation_app_architecture"
     },
     {
       "label": "\ud83d\udcf1 Page-by-Page Element Catalog",
@@ -140,9 +170,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L34",
       "_origin": "ast",
-      "id": "docs_android_app_map_page_by_page_element_catalog",
       "community": 1,
-      "norm_label": "\ud83d\udcf1 page-by-page element catalog"
+      "norm_label": "\ud83d\udcf1 page-by-page element catalog",
+      "id": "docs_android_app_map_page_by_page_element_catalog"
     },
     {
       "label": "1. Login Screen",
@@ -150,9 +180,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L36",
       "_origin": "ast",
-      "id": "docs_android_app_map_1_login_screen",
       "community": 1,
-      "norm_label": "1. login screen"
+      "norm_label": "1. login screen",
+      "id": "docs_android_app_map_1_login_screen"
     },
     {
       "label": "\u2699\ufe0f Server Settings Modal (Nested in Login)",
@@ -160,9 +190,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L49",
       "_origin": "ast",
-      "id": "docs_android_app_map_server_settings_modal_nested_in_login",
       "community": 1,
-      "norm_label": "\u2699\ufe0f server settings modal (nested in login)"
+      "norm_label": "\u2699\ufe0f server settings modal (nested in login)",
+      "id": "docs_android_app_map_server_settings_modal_nested_in_login"
     },
     {
       "label": "2. Dashboard Screen",
@@ -170,9 +200,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L62",
       "_origin": "ast",
-      "id": "docs_android_app_map_2_dashboard_screen",
       "community": 1,
-      "norm_label": "2. dashboard screen"
+      "norm_label": "2. dashboard screen",
+      "id": "docs_android_app_map_2_dashboard_screen"
     },
     {
       "label": "3. Active Count Screen",
@@ -180,9 +210,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L78",
       "_origin": "ast",
-      "id": "docs_android_app_map_3_active_count_screen",
       "community": 1,
-      "norm_label": "3. active count screen"
+      "norm_label": "3. active count screen",
+      "id": "docs_android_app_map_3_active_count_screen"
     },
     {
       "label": "\ud83d\udcf8 Barcode Scanner Modal (Nested in Count)",
@@ -190,9 +220,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L94",
       "_origin": "ast",
-      "id": "docs_android_app_map_barcode_scanner_modal_nested_in_count",
       "community": 1,
-      "norm_label": "\ud83d\udcf8 barcode scanner modal (nested in count)"
+      "norm_label": "\ud83d\udcf8 barcode scanner modal (nested in count)",
+      "id": "docs_android_app_map_barcode_scanner_modal_nested_in_count"
     },
     {
       "label": "4. Log Unassigned Find Screen",
@@ -200,9 +230,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L109",
       "_origin": "ast",
-      "id": "docs_android_app_map_4_log_unassigned_find_screen",
       "community": 1,
-      "norm_label": "4. log unassigned find screen"
+      "norm_label": "4. log unassigned find screen",
+      "id": "docs_android_app_map_4_log_unassigned_find_screen"
     },
     {
       "label": "\ud83d\udcf8 Barcode Scanner Modal (Nested in Unassigned Search)",
@@ -210,9 +240,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L126",
       "_origin": "ast",
-      "id": "docs_android_app_map_barcode_scanner_modal_nested_in_unassigned_search",
       "community": 1,
-      "norm_label": "\ud83d\udcf8 barcode scanner modal (nested in unassigned search)"
+      "norm_label": "\ud83d\udcf8 barcode scanner modal (nested in unassigned search)",
+      "id": "docs_android_app_map_barcode_scanner_modal_nested_in_unassigned_search"
     },
     {
       "label": "5. Reusable Component: Mobile Counter Keypad",
@@ -220,9 +250,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L143",
       "_origin": "ast",
-      "id": "docs_android_app_map_5_reusable_component_mobile_counter_keypad",
       "community": 1,
-      "norm_label": "5. reusable component: mobile counter keypad"
+      "norm_label": "5. reusable component: mobile counter keypad",
+      "id": "docs_android_app_map_5_reusable_component_mobile_counter_keypad"
     },
     {
       "label": "Keypad Elements (Left Column)",
@@ -230,9 +260,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L164",
       "_origin": "ast",
-      "id": "docs_android_app_map_keypad_elements_left_column",
       "community": 1,
-      "norm_label": "keypad elements (left column)"
+      "norm_label": "keypad elements (left column)",
+      "id": "docs_android_app_map_keypad_elements_left_column"
     },
     {
       "label": "Display & Control Panel (Right Column)",
@@ -240,9 +270,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L169",
       "_origin": "ast",
-      "id": "docs_android_app_map_display_control_panel_right_column",
       "community": 1,
-      "norm_label": "display & control panel (right column)"
+      "norm_label": "display & control panel (right column)",
+      "id": "docs_android_app_map_display_control_panel_right_column"
     },
     {
       "label": "\ud83c\udfa8 Global Styling & Asset Resources",
@@ -250,9 +280,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L179",
       "_origin": "ast",
-      "id": "docs_android_app_map_global_styling_asset_resources",
       "community": 1,
-      "norm_label": "\ud83c\udfa8 global styling & asset resources"
+      "norm_label": "\ud83c\udfa8 global styling & asset resources",
+      "id": "docs_android_app_map_global_styling_asset_resources"
     },
     {
       "label": "backup.sh",
@@ -7691,36 +7721,6 @@
       "community": 7,
       "norm_label": "styles",
       "id": "packages_mobile_src_app_unassigned_search_styles"
-    },
-    {
-      "label": "MobileCounter.jsx",
-      "file_type": "code",
-      "source_file": "packages/mobile/src/components/MobileCounter.jsx",
-      "source_location": "L1",
-      "_origin": "ast",
-      "community": 7,
-      "norm_label": "mobilecounter.jsx",
-      "id": "packages_mobile_src_components_mobilecounter"
-    },
-    {
-      "label": "MobileCounter()",
-      "file_type": "code",
-      "source_file": "packages/mobile/src/components/MobileCounter.jsx",
-      "source_location": "L4",
-      "_origin": "ast",
-      "community": 7,
-      "norm_label": "mobilecounter()",
-      "id": "packages_mobile_src_components_mobilecounter_mobilecounter"
-    },
-    {
-      "label": "styles",
-      "file_type": "code",
-      "source_file": "packages/mobile/src/components/MobileCounter.jsx",
-      "source_location": "L139",
-      "_origin": "ast",
-      "community": 7,
-      "norm_label": "styles",
-      "id": "packages_mobile_src_components_mobilecounter_styles"
     },
     {
       "label": "animated-icon.tsx",
@@ -19788,14 +19788,56 @@
   ],
   "links": [
     {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/count.tsx",
+      "source_location": "L9",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_count",
+      "target": "packages_mobile_src_components_mobilecounter"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/components/MobileCounter.jsx",
+      "source_location": "L4",
+      "weight": 1.0,
+      "source": "packages_mobile_src_components_mobilecounter",
+      "target": "packages_mobile_src_components_mobilecounter_mobilecounter",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/components/MobileCounter.jsx",
+      "source_location": "L157",
+      "weight": 1.0,
+      "source": "packages_mobile_src_components_mobilecounter",
+      "target": "packages_mobile_src_components_mobilecounter_styles",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "packages/mobile/src/app/count.tsx",
+      "source_location": "L9",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "packages_mobile_src_app_count",
+      "target": "packages_mobile_src_components_mobilecounter_mobilecounter"
+    },
+    {
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "docs/android_app_map.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_android_app_map",
-      "target": "docs_android_app_map_android_app_ui_reference_map",
-      "confidence_score": 1.0
+      "target": "docs_android_app_map_android_app_ui_reference_map"
     },
     {
       "relation": "contains",
@@ -19803,9 +19845,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L179",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_android_app_map_android_app_ui_reference_map",
-      "target": "docs_android_app_map_global_styling_asset_resources",
-      "confidence_score": 1.0
+      "target": "docs_android_app_map_global_styling_asset_resources"
     },
     {
       "relation": "contains",
@@ -19813,9 +19855,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_android_app_map_android_app_ui_reference_map",
-      "target": "docs_android_app_map_navigation_app_architecture",
-      "confidence_score": 1.0
+      "target": "docs_android_app_map_navigation_app_architecture"
     },
     {
       "relation": "contains",
@@ -19823,9 +19865,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L34",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_android_app_map_android_app_ui_reference_map",
-      "target": "docs_android_app_map_page_by_page_element_catalog",
-      "confidence_score": 1.0
+      "target": "docs_android_app_map_page_by_page_element_catalog"
     },
     {
       "relation": "contains",
@@ -19833,9 +19875,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L36",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_android_app_map_page_by_page_element_catalog",
-      "target": "docs_android_app_map_1_login_screen",
-      "confidence_score": 1.0
+      "target": "docs_android_app_map_1_login_screen"
     },
     {
       "relation": "contains",
@@ -19843,9 +19885,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L62",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_android_app_map_page_by_page_element_catalog",
-      "target": "docs_android_app_map_2_dashboard_screen",
-      "confidence_score": 1.0
+      "target": "docs_android_app_map_2_dashboard_screen"
     },
     {
       "relation": "contains",
@@ -19853,9 +19895,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L78",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_android_app_map_page_by_page_element_catalog",
-      "target": "docs_android_app_map_3_active_count_screen",
-      "confidence_score": 1.0
+      "target": "docs_android_app_map_3_active_count_screen"
     },
     {
       "relation": "contains",
@@ -19863,9 +19905,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L109",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_android_app_map_page_by_page_element_catalog",
-      "target": "docs_android_app_map_4_log_unassigned_find_screen",
-      "confidence_score": 1.0
+      "target": "docs_android_app_map_4_log_unassigned_find_screen"
     },
     {
       "relation": "contains",
@@ -19873,9 +19915,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L143",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_android_app_map_page_by_page_element_catalog",
-      "target": "docs_android_app_map_5_reusable_component_mobile_counter_keypad",
-      "confidence_score": 1.0
+      "target": "docs_android_app_map_5_reusable_component_mobile_counter_keypad"
     },
     {
       "relation": "contains",
@@ -19883,9 +19925,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L49",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_android_app_map_1_login_screen",
-      "target": "docs_android_app_map_server_settings_modal_nested_in_login",
-      "confidence_score": 1.0
+      "target": "docs_android_app_map_server_settings_modal_nested_in_login"
     },
     {
       "relation": "contains",
@@ -19893,9 +19935,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L94",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_android_app_map_3_active_count_screen",
-      "target": "docs_android_app_map_barcode_scanner_modal_nested_in_count",
-      "confidence_score": 1.0
+      "target": "docs_android_app_map_barcode_scanner_modal_nested_in_count"
     },
     {
       "relation": "contains",
@@ -19903,9 +19945,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L126",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_android_app_map_4_log_unassigned_find_screen",
-      "target": "docs_android_app_map_barcode_scanner_modal_nested_in_unassigned_search",
-      "confidence_score": 1.0
+      "target": "docs_android_app_map_barcode_scanner_modal_nested_in_unassigned_search"
     },
     {
       "relation": "contains",
@@ -19913,9 +19955,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L169",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_android_app_map_5_reusable_component_mobile_counter_keypad",
-      "target": "docs_android_app_map_display_control_panel_right_column",
-      "confidence_score": 1.0
+      "target": "docs_android_app_map_display_control_panel_right_column"
     },
     {
       "relation": "contains",
@@ -19923,9 +19965,9 @@
       "source_file": "docs/android_app_map.md",
       "source_location": "L164",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_android_app_map_5_reusable_component_mobile_counter_keypad",
-      "target": "docs_android_app_map_keypad_elements_left_column",
-      "confidence_score": 1.0
+      "target": "docs_android_app_map_keypad_elements_left_column"
     },
     {
       "relation": "contains",
@@ -31100,28 +31142,6 @@
       "context": "import",
       "confidence": "EXTRACTED",
       "source_file": "packages/mobile/src/app/count.tsx",
-      "source_location": "L9",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_mobile_src_app_count",
-      "target": "packages_mobile_src_components_mobilecounter"
-    },
-    {
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/mobile/src/app/count.tsx",
-      "source_location": "L9",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_mobile_src_app_count",
-      "target": "packages_mobile_src_components_mobilecounter_mobilecounter"
-    },
-    {
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/mobile/src/app/count.tsx",
       "source_location": "L8",
       "weight": 1.0,
       "confidence_score": 1.0,
@@ -31461,26 +31481,6 @@
       "weight": 1.0,
       "source": "packages_mobile_src_app_unassigned_search_unassignedsearchscreen",
       "target": "packages_mobile_src_store_usecyclecountstore_usecyclecountstore"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/mobile/src/components/MobileCounter.jsx",
-      "source_location": "L4",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_mobile_src_components_mobilecounter",
-      "target": "packages_mobile_src_components_mobilecounter_mobilecounter"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "packages/mobile/src/components/MobileCounter.jsx",
-      "source_location": "L139",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "packages_mobile_src_components_mobilecounter",
-      "target": "packages_mobile_src_components_mobilecounter_styles"
     },
     {
       "relation": "contains",
@@ -51120,5 +51120,5 @@
       "source_file": "packages/mobile/assets/images/tabIcons/home@3x.png"
     }
   ],
-  "built_at_commit": "601a122577eb36225b2fa1812f9ab7abeab2929d"
+  "built_at_commit": "c52b452e23f678068510568e42af148c34f670e5"
 }
