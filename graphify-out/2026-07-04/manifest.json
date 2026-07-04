@@ -915,8 +915,8 @@
     "semantic_hash": "8d50b9e76f57c3c4982c22df7a08d282"
   },
   "packages/mobile/src/components/MobileCounter.jsx": {
-    "mtime": 1783132775.5494676,
-    "ast_hash": "6dcdb26fcf2b4218c57b286e7ec8a842",
+    "mtime": 1783136716.722745,
+    "ast_hash": "5f144ffb3e3c95ba85c81fbcbc032d98",
     "semantic_hash": ""
   },
   "packages/mobile/src/components/animated-icon.tsx": {

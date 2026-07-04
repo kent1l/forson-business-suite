@@ -128,7 +128,7 @@
       "label": "styles",
       "file_type": "code",
       "source_file": "packages/mobile/src/components/MobileCounter.jsx",
-      "source_location": "L157",
+      "source_location": "L160",
       "_origin": "ast",
       "id": "packages_mobile_src_components_mobilecounter_styles",
       "community": 7,
@@ -19812,7 +19812,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "packages/mobile/src/components/MobileCounter.jsx",
-      "source_location": "L157",
+      "source_location": "L160",
       "weight": 1.0,
       "source": "packages_mobile_src_components_mobilecounter",
       "target": "packages_mobile_src_components_mobilecounter_styles",
@@ -51120,5 +51120,5 @@
       "source_file": "packages/mobile/assets/images/tabIcons/home@3x.png"
     }
   ],
-  "built_at_commit": "c52b452e23f678068510568e42af148c34f670e5"
+  "built_at_commit": "34f1648d25002e8cc359ed53f074d927e2a3e0b6"
 }
