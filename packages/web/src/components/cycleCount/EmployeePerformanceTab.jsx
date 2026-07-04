@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
+import EmployeeDetailModal from './EmployeeDetailModal';
 
 export default function EmployeePerformanceTab() {
     const [performanceData, setPerformanceData] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [selectedEmployee, setSelectedEmployee] = useState(null);
 
     const fetchPerformance = async () => {
         setLoading(true);
@@ -26,7 +28,10 @@ export default function EmployeePerformanceTab() {
     return (
         <div className="employee-performance-tab p-4">
             <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold">Employee Performance</h2>
+                <div>
+                    <h2 className="text-xl font-bold">Employee Performance</h2>
+                    <p className="text-sm text-gray-500">Click a row to view detailed breakdown.</p>
+                </div>
                 <button
                     onClick={fetchPerformance}
                     disabled={loading}
@@ -52,8 +57,15 @@ export default function EmployeePerformanceTab() {
                     </thead>
                     <tbody>
                         {performanceData.map((data) => (
-                            <tr key={data.employee_id} className="text-center hover:bg-gray-50">
-                                <td className="py-2 px-4 border-b text-left font-medium">{data.employee_name}</td>
+                            <tr
+                                key={data.employee_id}
+                                className="text-center hover:bg-blue-50 cursor-pointer transition-colors"
+                                onClick={() => setSelectedEmployee(data)}
+                                title="Click to view detailed breakdown"
+                            >
+                                <td className="py-2 px-4 border-b text-left font-medium">
+                                    {data.employee_name}
+                                </td>
                                 <td className="py-2 px-4 border-b">{parseFloat(data.avg_speed_mins).toFixed(1)}</td>
                                 <td className="py-2 px-4 border-b">{parseFloat(data.match_accuracy_percent).toFixed(1)}%</td>
                                 <td className="py-2 px-4 border-b">{data.discovery_volume}</td>
@@ -61,6 +73,14 @@ export default function EmployeePerformanceTab() {
                         ))}
                     </tbody>
                 </table>
+            )}
+
+            {selectedEmployee && (
+                <EmployeeDetailModal
+                    employeeId={selectedEmployee.employee_id}
+                    employeeName={selectedEmployee.employee_name}
+                    onClose={() => setSelectedEmployee(null)}
+                />
             )}
         </div>
     );

@@ -2,8 +2,17 @@ import React, { useState, useEffect } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import EmployeePerformanceTab from './EmployeePerformanceTab';
+import AuditHistoryTab from './AuditHistoryTab';
+import CycleCountControlsTab from './CycleCountControlsTab';
 import { useSettings } from '../../contexts/SettingsContext';
 import { formatCurrency } from '../../utils/currency';
+
+const TABS = [
+    { id: 'pending_reviews', label: 'Pending Reviews' },
+    { id: 'history',         label: 'History' },
+    { id: 'performance',     label: 'Employee Performance' },
+    { id: 'controls',        label: 'Controls' },
+];
 
 export default function ManagerReviewDesk() {
     const { settings } = useSettings();
@@ -62,19 +71,25 @@ export default function ManagerReviewDesk() {
             <h2 className="text-2xl font-bold mb-4">Manager Review Desk</h2>
 
             <div className="mb-6 border-b border-gray-200">
-                <nav className="-mb-px flex space-x-8">
-                    <button
-                        onClick={() => setActiveTab('pending_reviews')}
-                        className={`whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'pending_reviews' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
-                    >
-                        Pending Reviews
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('performance')}
-                        className={`whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'performance' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
-                    >
-                        Employee Performance
-                    </button>
+                <nav className="-mb-px flex space-x-8 overflow-x-auto">
+                    {TABS.map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                                activeTab === tab.id
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            }`}
+                        >
+                            {tab.label}
+                            {tab.id === 'pending_reviews' && lines.length > 0 && (
+                                <span className="ml-2 inline-block bg-red-500 text-white text-xs font-bold rounded-full px-1.5 py-0.5 leading-none">
+                                    {lines.length}
+                                </span>
+                            )}
+                        </button>
+                    ))}
                 </nav>
             </div>
 
@@ -140,9 +155,9 @@ export default function ManagerReviewDesk() {
                 </div>
             )}
 
-            {activeTab === 'performance' && (
-                <EmployeePerformanceTab />
-            )}
+            {activeTab === 'history' && <AuditHistoryTab />}
+            {activeTab === 'performance' && <EmployeePerformanceTab />}
+            {activeTab === 'controls' && <CycleCountControlsTab />}
         </div>
     );
 }

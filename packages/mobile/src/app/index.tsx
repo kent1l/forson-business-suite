@@ -91,13 +91,22 @@ export default function DashboardScreen() {
 
       <View style={styles.listTitleRow}>
         <Text style={styles.listTitle}>Assigned Lines</Text>
-        <TouchableOpacity
-          style={styles.adHocBtn}
-          onPress={() => router.push('/unassigned-search')}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.adHocBtnText}>+ Log Unassigned Find</Text>
-        </TouchableOpacity>
+        <View style={styles.listActions}>
+          <TouchableOpacity
+            style={styles.progressBtn}
+            onPress={() => router.push('/my-progress')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.progressBtnText}>📊 My Progress</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.adHocBtn}
+            onPress={() => router.push('/unassigned-search')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.adHocBtnText}>+ Log Unassigned</Text>
+          </TouchableOpacity>
+        </View>
       </View>
       <FlatList
         data={tasks || []}
@@ -192,6 +201,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 12,
+  },
+  listActions: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  progressBtn: {
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+  },
+  progressBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2563eb',
   },
   adHocBtn: {
     backgroundColor: '#f59e0b',
