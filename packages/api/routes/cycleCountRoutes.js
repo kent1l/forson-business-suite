@@ -35,7 +35,11 @@ router.get('/inventory/cycle-count/my-tasks', protect, hasPermission('cycle_coun
 router.get('/inventory/cycle-count/my-progress', protect, hasPermission('cycle_count:execute'), async (req, res) => {
     try {
         const { employee_id } = req.user;
-        const { rows } = await db.query(`
+        const limit = parseInt(req.query.limit || '200');
+        const offset = parseInt(req.query.offset || '0');
+        const statusFilter = req.query.status;
+
+        let baseQuery = `
             SELECT
                 l.*,
                 p.detail,
@@ -50,12 +54,53 @@ router.get('/inventory/cycle-count/my-progress', protect, hasPermission('cycle_c
             JOIN part p ON l.part_id = p.part_id
             LEFT JOIN parts_view pv ON pv.part_id = p.part_id
             WHERE b.employee_id = $1
-            ORDER BY
-                CASE WHEN l.status = 'PENDING' THEN 0 ELSE 1 END,
-                COALESCE(l.counted_at, b.created_at) DESC
-            LIMIT 200
+        `;
+
+        const params = [employee_id];
+
+        if (statusFilter === 'pending') {
+            baseQuery += ` AND l.status = 'PENDING_MANAGER_REVIEW'`;
+        } else if (statusFilter === 'done') {
+            baseQuery += ` AND l.status NOT IN ('PENDING', 'PENDING_MANAGER_REVIEW')`;
+        } else {
+            // By default, exclude unstarted 'PENDING' items from progress history
+            baseQuery += ` AND l.status != 'PENDING'`;
+        }
+
+        // Get total count
+        const totalRes = await db.query(`SELECT COUNT(*) FROM (${baseQuery}) AS t`, params);
+        const total = parseInt(totalRes.rows[0].count, 10);
+
+        // Get summary counts for tabs
+        const summaryRes = await db.query(`
+            SELECT
+                COALESCE(COUNT(CASE WHEN l.status != 'PENDING' THEN 1 END), 0) AS all_count,
+                COALESCE(COUNT(CASE WHEN l.status = 'PENDING_MANAGER_REVIEW' THEN 1 END), 0) AS pending_count,
+                COALESCE(COUNT(CASE WHEN l.status NOT IN ('PENDING', 'PENDING_MANAGER_REVIEW') THEN 1 END), 0) AS done_count
+            FROM cycle_count_line l
+            JOIN cycle_count_batch b ON l.batch_id = b.batch_id
+            WHERE b.employee_id = $1
         `, [employee_id]);
-        res.json(rows);
+        const summary = {
+            all: parseInt(summaryRes.rows[0].all_count, 10),
+            pending: parseInt(summaryRes.rows[0].pending_count, 10),
+            done: parseInt(summaryRes.rows[0].done_count, 10)
+        };
+
+        // Add sorting and pagination
+        let query = baseQuery + `
+            ORDER BY COALESCE(l.counted_at, b.created_at) DESC
+            LIMIT $2 OFFSET $3
+        `;
+        params.push(limit, offset);
+
+        const { rows } = await db.query(query, params);
+
+        if (req.query.limit || req.query.offset) {
+            res.json({ rows, total, summary });
+        } else {
+            res.json(rows);
+        }
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
