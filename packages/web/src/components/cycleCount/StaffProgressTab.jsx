@@ -31,7 +31,8 @@ export default function StaffProgressTab() {
         setLoading(true);
         try {
             const res = await api.get('/inventory/cycle-count/my-progress');
-            setItems(res.data);
+            // Only show lines that have been counted (exclude raw unstarted PENDING)
+            setItems(res.data.filter(i => i.status !== 'PENDING'));
         } catch {
             toast.error('Failed to load progress.');
         } finally {
@@ -72,22 +73,22 @@ export default function StaffProgressTab() {
     };
 
     const filtered = items.filter(i => {
-        if (filter === 'pending') return i.status === 'PENDING';
-        if (filter === 'done') return i.status !== 'PENDING';
+        if (filter === 'pending') return i.status === 'PENDING_MANAGER_REVIEW';
+        if (filter === 'done') return i.status !== 'PENDING_MANAGER_REVIEW';
         return true;
     });
 
-    const pendingCount = items.filter(i => i.status === 'PENDING').length;
-    const doneCount = items.filter(i => i.status !== 'PENDING').length;
+    const pendingCount = items.filter(i => i.status === 'PENDING_MANAGER_REVIEW').length;
+    const doneCount = items.filter(i => i.status !== 'PENDING_MANAGER_REVIEW').length;
 
     return (
         <div className="staff-progress-tab">
             {/* Summary strip */}
             <div className="flex gap-4 mb-5">
                 {[
-                    { key: 'all',     label: 'All',       val: items.length,  cls: 'bg-gray-50 border-gray-200' },
-                    { key: 'pending', label: 'Pending',   val: pendingCount,  cls: 'bg-orange-50 border-orange-200' },
-                    { key: 'done',    label: 'Completed', val: doneCount,     cls: 'bg-green-50 border-green-200' },
+                    { key: 'all',     label: 'All',            val: items.length,  cls: 'bg-gray-50 border-gray-200' },
+                    { key: 'pending', label: 'Pending Review', val: pendingCount,  cls: 'bg-orange-50 border-orange-200' },
+                    { key: 'done',    label: 'Approved',       val: doneCount,     cls: 'bg-green-50 border-green-200' },
                 ].map(({ key, label, val, cls }) => (
                     <button
                         key={key}
@@ -130,7 +131,7 @@ export default function StaffProgressTab() {
                                 const v = parseFloat(item.variance_qty) || 0;
                                 const vc = v < 0 ? 'text-red-600' : v > 0 ? 'text-green-600' : 'text-gray-700';
                                 const isEditing = editingId === item.line_id;
-                                const canEdit = item.status === 'PENDING';
+                                const canEdit = item.status === 'PENDING_MANAGER_REVIEW';
 
                                 return (
                                     <tr key={item.line_id} className={`border-b hover:bg-gray-50 ${isEditing ? 'bg-blue-50' : ''}`}>

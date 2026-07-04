@@ -75,18 +75,18 @@ router.patch('/inventory/cycle-count/lines/:id/edit-count', protect, hasPermissi
     try {
         await client.query('BEGIN');
 
-        // 1. Lock & validate: must be PENDING and belong to this employee's batch
+        // 1. Lock & validate: must be PENDING_MANAGER_REVIEW and belong to this employee's batch
         const lineResult = await client.query(`
             SELECT l.*, b.employee_id
             FROM cycle_count_line l
             JOIN cycle_count_batch b ON l.batch_id = b.batch_id
-            WHERE l.line_id = $1 AND l.status = 'PENDING'
+            WHERE l.line_id = $1 AND l.status = 'PENDING_MANAGER_REVIEW'
             FOR UPDATE OF l
         `, [id]);
 
         if (lineResult.rows.length === 0) {
             await client.query('ROLLBACK');
-            return res.status(404).json({ message: 'Line not found or not editable (must be PENDING)' });
+            return res.status(404).json({ message: 'Line not found or not editable (must be awaiting manager review)' });
         }
 
         const line = lineResult.rows[0];

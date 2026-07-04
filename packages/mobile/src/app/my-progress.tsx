@@ -44,7 +44,8 @@ const STATUS_META: Record<string, { label: string; color: string; bg: string }> 
 // ── API calls ────────────────────────────────────────────────────────────────
 const fetchProgress = async (): Promise<CountLine[]> => {
   const { data } = await apiClient.get('/inventory/cycle-count/my-progress');
-  return data;
+  // Exclude raw not-yet-counted lines — only show what staff have already submitted
+  return data.filter((l: CountLine) => l.status !== 'PENDING');
 };
 
 const patchEditCount = async ({ lineId, countedQty }: { lineId: number; countedQty: number }) => {
@@ -152,12 +153,12 @@ export default function MyProgressScreen() {
     try { await refetch(); } finally { setRefreshing(false); }
   }, [refetch]);
 
-  const pendingCount = items.filter(i => i.status === 'PENDING').length;
-  const doneCount    = items.filter(i => i.status !== 'PENDING').length;
+  const pendingCount = items.filter(i => i.status === 'PENDING_MANAGER_REVIEW').length;
+  const doneCount    = items.filter(i => i.status !== 'PENDING_MANAGER_REVIEW').length;
 
   const filtered = items.filter(i => {
-    if (filter === 'pending') return i.status === 'PENDING';
-    if (filter === 'done')    return i.status !== 'PENDING';
+    if (filter === 'pending') return i.status === 'PENDING_MANAGER_REVIEW';
+    if (filter === 'done')    return i.status !== 'PENDING_MANAGER_REVIEW';
     return true;
   });
 
@@ -165,7 +166,7 @@ export default function MyProgressScreen() {
     const meta = STATUS_META[item.status] || STATUS_META['PENDING'];
     const v = parseFloat(item.variance_qty ?? '0');
     const varColor = v < 0 ? '#dc2626' : v > 0 ? '#16a34a' : '#6b7280';
-    const canEdit = item.status === 'PENDING';
+    const canEdit = item.status === 'PENDING_MANAGER_REVIEW';
 
     return (
       <View style={styles.card}>
@@ -233,8 +234,8 @@ export default function MyProgressScreen() {
       <View style={styles.filterRow}>
         {([
           { key: 'all',     label: `All (${items.length})` },
-          { key: 'pending', label: `Pending (${pendingCount})` },
-          { key: 'done',    label: `Done (${doneCount})` },
+          { key: 'pending', label: `Pending Review (${pendingCount})` },
+          { key: 'done',    label: `Approved (${doneCount})` },
         ] as { key: Filter; label: string }[]).map(({ key, label }) => (
           <TouchableOpacity
             key={key}
