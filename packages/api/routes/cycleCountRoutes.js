@@ -463,6 +463,28 @@ router.get('/inventory/cycle-count/performance', protect, hasPermission('cycle_c
     }
 });
 
+// DELETE /api/inventory/cycle-count/lines/:id  — remove a PENDING assigned item
+router.delete('/inventory/cycle-count/lines/:id', protect, hasPermission('cycle_count:manage'), async (req, res) => {
+    const { id } = req.params;
+    try {
+        const lineRes = await db.query(
+            'SELECT * FROM cycle_count_line WHERE line_id = $1',
+            [id]
+        );
+        if (lineRes.rows.length === 0) {
+            return res.status(404).json({ message: 'Line not found' });
+        }
+        if (lineRes.rows[0].status !== 'PENDING') {
+            return res.status(400).json({ message: 'Only PENDING items can be removed' });
+        }
+        await db.query('DELETE FROM cycle_count_line WHERE line_id = $1', [id]);
+        res.json({ message: 'Item removed from queue' });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
 // GET /api/inventory/cycle-count/audit-log
 router.get('/inventory/cycle-count/audit-log', protect, hasPermission('cycle_count:manage'), async (req, res) => {
     try {

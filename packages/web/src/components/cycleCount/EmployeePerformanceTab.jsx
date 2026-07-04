@@ -63,7 +63,7 @@ export default function EmployeePerformanceTab() {
                                 onClick={() => setSelectedEmployee(data)}
                                 title="Click to view detailed breakdown"
                             >
-                                <td className="py-2 px-4 border-b text-left font-medium text-blue-700 underline decoration-dotted">
+                                <td className="py-2 px-4 border-b text-left font-medium">
                                     {data.employee_name}
                                 </td>
                                 <td className="py-2 px-4 border-b">{parseFloat(data.avg_speed_mins).toFixed(1)}</td>
