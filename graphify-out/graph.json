@@ -105,14 +105,44 @@
   },
   "nodes": [
     {
+      "label": "03-database-migrations.md",
+      "file_type": "document",
+      "source_file": ".agents/rules/03-database-migrations.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "agents_rules_03_database_migrations",
+      "community": 256,
+      "norm_label": "03-database-migrations.md"
+    },
+    {
+      "label": "Rule of Immutability: Database Migrations",
+      "file_type": "document",
+      "source_file": ".agents/rules/03-database-migrations.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "agents_rules_03_database_migrations_rule_of_immutability_database_migrations",
+      "community": 256,
+      "norm_label": "rule of immutability: database migrations"
+    },
+    {
+      "label": "Migration Naming & Sequencing Rules",
+      "file_type": "document",
+      "source_file": ".agents/rules/03-database-migrations.md",
+      "source_location": "L14",
+      "_origin": "ast",
+      "id": "agents_rules_03_database_migrations_migration_naming_sequencing_rules",
+      "community": 256,
+      "norm_label": "migration naming & sequencing rules"
+    },
+    {
       "label": "CHANGELOG.md",
       "file_type": "document",
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "docs_changelog",
       "community": 46,
-      "norm_label": "changelog.md"
+      "norm_label": "changelog.md",
+      "id": "docs_changelog"
     },
     {
       "label": "Changelog",
@@ -120,9 +150,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "docs_changelog_changelog",
       "community": 46,
-      "norm_label": "changelog"
+      "norm_label": "changelog",
+      "id": "docs_changelog_changelog"
     },
     {
       "label": "v2.1.0 - 2026-07-04",
@@ -130,9 +160,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L3",
       "_origin": "ast",
-      "id": "docs_changelog_v2_1_0_2026_07_04",
       "community": 46,
-      "norm_label": "v2.1.0 - 2026-07-04"
+      "norm_label": "v2.1.0 - 2026-07-04",
+      "id": "docs_changelog_v2_1_0_2026_07_04"
     },
     {
       "label": "Added",
@@ -140,9 +170,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L5",
       "_origin": "ast",
-      "id": "docs_changelog_added",
       "community": 46,
-      "norm_label": "added"
+      "norm_label": "added",
+      "id": "docs_changelog_added"
     },
     {
       "label": "Fixed",
@@ -150,9 +180,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L11",
       "_origin": "ast",
-      "id": "docs_changelog_fixed",
       "community": 46,
-      "norm_label": "fixed"
+      "norm_label": "fixed",
+      "id": "docs_changelog_fixed"
     },
     {
       "label": "v2.0.0 - 2026-06-25",
@@ -160,9 +190,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L20",
       "_origin": "ast",
-      "id": "docs_changelog_v2_0_0_2026_06_25",
       "community": 46,
-      "norm_label": "v2.0.0 - 2026-06-25"
+      "norm_label": "v2.0.0 - 2026-06-25",
+      "id": "docs_changelog_v2_0_0_2026_06_25"
     },
     {
       "label": "Added",
@@ -170,9 +200,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L22",
       "_origin": "ast",
-      "id": "docs_changelog_added_22",
       "community": 46,
-      "norm_label": "added"
+      "norm_label": "added",
+      "id": "docs_changelog_added_22"
     },
     {
       "label": "Refactored / Optimized",
@@ -180,9 +210,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L29",
       "_origin": "ast",
-      "id": "docs_changelog_refactored_optimized",
       "community": 46,
-      "norm_label": "refactored / optimized"
+      "norm_label": "refactored / optimized",
+      "id": "docs_changelog_refactored_optimized"
     },
     {
       "label": "v1.5.1.1 - 2026-06-09",
@@ -190,9 +220,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L33",
       "_origin": "ast",
-      "id": "docs_changelog_v1_5_1_1_2026_06_09",
       "community": 46,
-      "norm_label": "v1.5.1.1 - 2026-06-09"
+      "norm_label": "v1.5.1.1 - 2026-06-09",
+      "id": "docs_changelog_v1_5_1_1_2026_06_09"
     },
     {
       "label": "v1.5.1 - 2026-06-09",
@@ -200,9 +230,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L38",
       "_origin": "ast",
-      "id": "docs_changelog_v1_5_1_2026_06_09",
       "community": 46,
-      "norm_label": "v1.5.1 - 2026-06-09"
+      "norm_label": "v1.5.1 - 2026-06-09",
+      "id": "docs_changelog_v1_5_1_2026_06_09"
     },
     {
       "label": "v1.4.4 - 2026-05-14",
@@ -210,9 +240,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L44",
       "_origin": "ast",
-      "id": "docs_changelog_v1_4_4_2026_05_14",
       "community": 46,
-      "norm_label": "v1.4.4 - 2026-05-14"
+      "norm_label": "v1.4.4 - 2026-05-14",
+      "id": "docs_changelog_v1_4_4_2026_05_14"
     },
     {
       "label": "Docs",
@@ -220,9 +250,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L46",
       "_origin": "ast",
-      "id": "docs_changelog_docs",
       "community": 46,
-      "norm_label": "docs"
+      "norm_label": "docs",
+      "id": "docs_changelog_docs"
     },
     {
       "label": "Fixed",
@@ -230,9 +260,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L53",
       "_origin": "ast",
-      "id": "docs_changelog_fixed_53",
       "community": 46,
-      "norm_label": "fixed"
+      "norm_label": "fixed",
+      "id": "docs_changelog_fixed_53"
     },
     {
       "label": "v1.4.3 - 2026-05-14",
@@ -240,9 +270,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L56",
       "_origin": "ast",
-      "id": "docs_changelog_v1_4_3_2026_05_14",
       "community": 46,
-      "norm_label": "v1.4.3 - 2026-05-14"
+      "norm_label": "v1.4.3 - 2026-05-14",
+      "id": "docs_changelog_v1_4_3_2026_05_14"
     },
     {
       "label": "Fixed",
@@ -250,9 +280,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L58",
       "_origin": "ast",
-      "id": "docs_changelog_fixed_58",
       "community": 46,
-      "norm_label": "fixed"
+      "norm_label": "fixed",
+      "id": "docs_changelog_fixed_58"
     },
     {
       "label": "Optimization",
@@ -260,9 +290,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L65",
       "_origin": "ast",
-      "id": "docs_changelog_optimization",
       "community": 46,
-      "norm_label": "optimization"
+      "norm_label": "optimization",
+      "id": "docs_changelog_optimization"
     },
     {
       "label": "CI/CD",
@@ -270,9 +300,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L70",
       "_origin": "ast",
-      "id": "docs_changelog_ci_cd",
       "community": 46,
-      "norm_label": "ci/cd"
+      "norm_label": "ci/cd",
+      "id": "docs_changelog_ci_cd"
     },
     {
       "label": "[1.4.2] - 2026-05-10",
@@ -280,9 +310,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L78",
       "_origin": "ast",
-      "id": "docs_changelog_1_4_2_2026_05_10",
       "community": 46,
-      "norm_label": "[1.4.2] - 2026-05-10"
+      "norm_label": "[1.4.2] - 2026-05-10",
+      "id": "docs_changelog_1_4_2_2026_05_10"
     },
     {
       "label": "Fixed",
@@ -290,9 +320,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L79",
       "_origin": "ast",
-      "id": "docs_changelog_fixed_79",
       "community": 46,
-      "norm_label": "fixed"
+      "norm_label": "fixed",
+      "id": "docs_changelog_fixed_79"
     },
     {
       "label": "Changed",
@@ -300,9 +330,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L83",
       "_origin": "ast",
-      "id": "docs_changelog_changed",
       "community": 46,
-      "norm_label": "changed"
+      "norm_label": "changed",
+      "id": "docs_changelog_changed"
     },
     {
       "label": "Docs",
@@ -310,9 +340,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L86",
       "_origin": "ast",
-      "id": "docs_changelog_docs_86",
       "community": 46,
-      "norm_label": "docs"
+      "norm_label": "docs",
+      "id": "docs_changelog_docs_86"
     },
     {
       "label": "v1.4.1",
@@ -320,9 +350,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L89",
       "_origin": "ast",
-      "id": "docs_changelog_v1_4_1",
       "community": 46,
-      "norm_label": "v1.4.1"
+      "norm_label": "v1.4.1",
+      "id": "docs_changelog_v1_4_1"
     },
     {
       "label": "package.json",
@@ -330,9 +360,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "packages_web_package",
       "community": 6,
-      "norm_label": "package.json"
+      "norm_label": "package.json",
+      "id": "packages_web_package"
     },
     {
       "label": "name",
@@ -340,9 +370,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L2",
       "_origin": "ast",
-      "id": "packages_web_package_name",
       "community": 6,
-      "norm_label": "name"
+      "norm_label": "name",
+      "id": "packages_web_package_name"
     },
     {
       "label": "private",
@@ -350,9 +380,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L3",
       "_origin": "ast",
-      "id": "packages_web_package_private",
       "community": 6,
-      "norm_label": "private"
+      "norm_label": "private",
+      "id": "packages_web_package_private"
     },
     {
       "label": "version",
@@ -360,9 +390,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L4",
       "_origin": "ast",
-      "id": "packages_web_package_version",
       "community": 6,
-      "norm_label": "version"
+      "norm_label": "version",
+      "id": "packages_web_package_version"
     },
     {
       "label": "type",
@@ -370,9 +400,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L5",
       "_origin": "ast",
-      "id": "packages_web_package_type",
       "community": 6,
-      "norm_label": "type"
+      "norm_label": "type",
+      "id": "packages_web_package_type"
     },
     {
       "label": "scripts",
@@ -380,9 +410,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L6",
       "_origin": "ast",
-      "id": "packages_web_package_scripts",
       "community": 6,
-      "norm_label": "scripts"
+      "norm_label": "scripts",
+      "id": "packages_web_package_scripts"
     },
     {
       "label": "dev",
@@ -390,9 +420,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L7",
       "_origin": "ast",
-      "id": "packages_web_package_scripts_dev",
       "community": 6,
-      "norm_label": "dev"
+      "norm_label": "dev",
+      "id": "packages_web_package_scripts_dev"
     },
     {
       "label": "build",
@@ -400,9 +430,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L8",
       "_origin": "ast",
-      "id": "packages_web_package_scripts_build",
       "community": 6,
-      "norm_label": "build"
+      "norm_label": "build",
+      "id": "packages_web_package_scripts_build"
     },
     {
       "label": "preview",
@@ -410,9 +440,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L9",
       "_origin": "ast",
-      "id": "packages_web_package_scripts_preview",
       "community": 6,
-      "norm_label": "preview"
+      "norm_label": "preview",
+      "id": "packages_web_package_scripts_preview"
     },
     {
       "label": "lint",
@@ -420,9 +450,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L10",
       "_origin": "ast",
-      "id": "packages_web_package_scripts_lint",
       "community": 6,
-      "norm_label": "lint"
+      "norm_label": "lint",
+      "id": "packages_web_package_scripts_lint"
     },
     {
       "label": "test",
@@ -430,9 +460,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L11",
       "_origin": "ast",
-      "id": "packages_web_package_scripts_test",
       "community": 6,
-      "norm_label": "test"
+      "norm_label": "test",
+      "id": "packages_web_package_scripts_test"
     },
     {
       "label": "dependencies",
@@ -440,9 +470,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L13",
       "_origin": "ast",
-      "id": "packages_web_package_dependencies",
       "community": 6,
-      "norm_label": "dependencies"
+      "norm_label": "dependencies",
+      "id": "packages_web_package_dependencies"
     },
     {
       "label": "@headlessui/react",
@@ -450,9 +480,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L14",
       "_origin": "ast",
-      "id": "packages_web_package_dependencies_headlessui_react",
       "community": 6,
-      "norm_label": "@headlessui/react"
+      "norm_label": "@headlessui/react",
+      "id": "packages_web_package_dependencies_headlessui_react"
     },
     {
       "label": "axios",
@@ -460,9 +490,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L15",
       "_origin": "ast",
-      "id": "packages_web_package_dependencies_axios",
       "community": 6,
-      "norm_label": "axios"
+      "norm_label": "axios",
+      "id": "packages_web_package_dependencies_axios"
     },
     {
       "label": "date-fns",
@@ -470,9 +500,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L16",
       "_origin": "ast",
-      "id": "packages_web_package_dependencies_date_fns",
       "community": 6,
-      "norm_label": "date-fns"
+      "norm_label": "date-fns",
+      "id": "packages_web_package_dependencies_date_fns"
     },
     {
       "label": "date-fns-tz",
@@ -480,9 +510,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L17",
       "_origin": "ast",
-      "id": "packages_web_package_dependencies_date_fns_tz",
       "community": 6,
-      "norm_label": "date-fns-tz"
+      "norm_label": "date-fns-tz",
+      "id": "packages_web_package_dependencies_date_fns_tz"
     },
     {
       "label": "lucide-react",
@@ -490,9 +520,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L18",
       "_origin": "ast",
-      "id": "packages_web_package_dependencies_lucide_react",
       "community": 6,
-      "norm_label": "lucide-react"
+      "norm_label": "lucide-react",
+      "id": "packages_web_package_dependencies_lucide_react"
     },
     {
       "label": "pdf-lib",
@@ -500,9 +530,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L19",
       "_origin": "ast",
-      "id": "packages_web_package_dependencies_pdf_lib",
       "community": 6,
-      "norm_label": "pdf-lib"
+      "norm_label": "pdf-lib",
+      "id": "packages_web_package_dependencies_pdf_lib"
     },
     {
       "label": "react",
@@ -510,9 +540,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L20",
       "_origin": "ast",
-      "id": "packages_web_package_dependencies_react",
       "community": 6,
-      "norm_label": "react"
+      "norm_label": "react",
+      "id": "packages_web_package_dependencies_react"
     },
     {
       "label": "react-dom",
@@ -520,9 +550,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L21",
       "_origin": "ast",
-      "id": "packages_web_package_dependencies_react_dom",
       "community": 6,
-      "norm_label": "react-dom"
+      "norm_label": "react-dom",
+      "id": "packages_web_package_dependencies_react_dom"
     },
     {
       "label": "react-hot-toast",
@@ -530,9 +560,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L22",
       "_origin": "ast",
-      "id": "packages_web_package_dependencies_react_hot_toast",
       "community": 6,
-      "norm_label": "react-hot-toast"
+      "norm_label": "react-hot-toast",
+      "id": "packages_web_package_dependencies_react_hot_toast"
     },
     {
       "label": "recharts",
@@ -540,9 +570,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L23",
       "_origin": "ast",
-      "id": "packages_web_package_dependencies_recharts",
       "community": 6,
-      "norm_label": "recharts"
+      "norm_label": "recharts",
+      "id": "packages_web_package_dependencies_recharts"
     },
     {
       "label": "to-words",
@@ -550,9 +580,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L24",
       "_origin": "ast",
-      "id": "packages_web_package_dependencies_to_words",
       "community": 6,
-      "norm_label": "to-words"
+      "norm_label": "to-words",
+      "id": "packages_web_package_dependencies_to_words"
     },
     {
       "label": "devDependencies",
@@ -560,9 +590,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L26",
       "_origin": "ast",
-      "id": "packages_web_package_devdependencies",
       "community": 6,
-      "norm_label": "devdependencies"
+      "norm_label": "devdependencies",
+      "id": "packages_web_package_devdependencies"
     },
     {
       "label": "@eslint/js",
@@ -570,9 +600,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L27",
       "_origin": "ast",
-      "id": "packages_web_package_devdependencies_eslint_js",
       "community": 6,
-      "norm_label": "@eslint/js"
+      "norm_label": "@eslint/js",
+      "id": "packages_web_package_devdependencies_eslint_js"
     },
     {
       "label": "@tailwindcss/vite",
@@ -580,9 +610,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L28",
       "_origin": "ast",
-      "id": "packages_web_package_devdependencies_tailwindcss_vite",
       "community": 6,
-      "norm_label": "@tailwindcss/vite"
+      "norm_label": "@tailwindcss/vite",
+      "id": "packages_web_package_devdependencies_tailwindcss_vite"
     },
     {
       "label": "@types/react",
@@ -590,9 +620,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L29",
       "_origin": "ast",
-      "id": "packages_web_package_devdependencies_types_react",
       "community": 6,
-      "norm_label": "@types/react"
+      "norm_label": "@types/react",
+      "id": "packages_web_package_devdependencies_types_react"
     },
     {
       "label": "@types/react-dom",
@@ -600,9 +630,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L30",
       "_origin": "ast",
-      "id": "packages_web_package_devdependencies_types_react_dom",
       "community": 6,
-      "norm_label": "@types/react-dom"
+      "norm_label": "@types/react-dom",
+      "id": "packages_web_package_devdependencies_types_react_dom"
     },
     {
       "label": "@vitejs/plugin-react",
@@ -610,9 +640,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L31",
       "_origin": "ast",
-      "id": "packages_web_package_devdependencies_vitejs_plugin_react",
       "community": 6,
-      "norm_label": "@vitejs/plugin-react"
+      "norm_label": "@vitejs/plugin-react",
+      "id": "packages_web_package_devdependencies_vitejs_plugin_react"
     },
     {
       "label": "eslint",
@@ -620,9 +650,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L32",
       "_origin": "ast",
-      "id": "packages_web_package_devdependencies_eslint",
       "community": 6,
-      "norm_label": "eslint"
+      "norm_label": "eslint",
+      "id": "packages_web_package_devdependencies_eslint"
     },
     {
       "label": "eslint-plugin-react-hooks",
@@ -630,9 +660,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L33",
       "_origin": "ast",
-      "id": "packages_web_package_devdependencies_eslint_plugin_react_hooks",
       "community": 6,
-      "norm_label": "eslint-plugin-react-hooks"
+      "norm_label": "eslint-plugin-react-hooks",
+      "id": "packages_web_package_devdependencies_eslint_plugin_react_hooks"
     },
     {
       "label": "eslint-plugin-react-refresh",
@@ -640,9 +670,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L34",
       "_origin": "ast",
-      "id": "packages_web_package_devdependencies_eslint_plugin_react_refresh",
       "community": 6,
-      "norm_label": "eslint-plugin-react-refresh"
+      "norm_label": "eslint-plugin-react-refresh",
+      "id": "packages_web_package_devdependencies_eslint_plugin_react_refresh"
     },
     {
       "label": "globals",
@@ -650,9 +680,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L35",
       "_origin": "ast",
-      "id": "packages_web_package_devdependencies_globals",
       "community": 6,
-      "norm_label": "globals"
+      "norm_label": "globals",
+      "id": "packages_web_package_devdependencies_globals"
     },
     {
       "label": "tailwindcss",
@@ -660,9 +690,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L36",
       "_origin": "ast",
-      "id": "packages_web_package_devdependencies_tailwindcss",
       "community": 6,
-      "norm_label": "tailwindcss"
+      "norm_label": "tailwindcss",
+      "id": "packages_web_package_devdependencies_tailwindcss"
     },
     {
       "label": "vite",
@@ -670,9 +700,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L37",
       "_origin": "ast",
-      "id": "packages_web_package_devdependencies_vite",
       "community": 6,
-      "norm_label": "vite"
+      "norm_label": "vite",
+      "id": "packages_web_package_devdependencies_vite"
     },
     {
       "label": "backup.sh",
@@ -1138,7 +1168,7 @@
       "source_file": "packages/api/helpers/documentNumberGenerator.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 79,
+      "community": 4,
       "norm_label": "documentnumbergenerator.js",
       "id": "packages_api_helpers_documentnumbergenerator"
     },
@@ -1148,7 +1178,7 @@
       "source_file": "packages/api/helpers/documentNumberGenerator.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 79,
+      "community": 4,
       "norm_label": "getnextdocumentnumber()",
       "id": "packages_api_helpers_documentnumbergenerator_getnextdocumentnumber"
     },
@@ -1508,7 +1538,7 @@
       "source_file": "packages/api/helpers/receiptNumberFormatter.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 4,
+      "community": 85,
       "norm_label": "receiptnumberformatter.js",
       "id": "packages_api_helpers_receiptnumberformatter"
     },
@@ -1518,7 +1548,7 @@
       "source_file": "packages/api/helpers/receiptNumberFormatter.js",
       "source_location": "L7",
       "_origin": "ast",
-      "community": 4,
+      "community": 85,
       "norm_label": "formatphysicalreceiptnumber()",
       "id": "packages_api_helpers_receiptnumberformatter_formatphysicalreceiptnumber"
     },
@@ -2228,7 +2258,7 @@
       "source_file": "packages/api/middleware/authMiddleware.js",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 24,
+      "community": 294,
       "norm_label": "protect()",
       "id": "packages_api_middleware_authmiddleware_protect"
     },
@@ -2748,7 +2778,7 @@
       "source_file": "packages/api/routes/arRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 53,
+      "community": 13,
       "norm_label": "arroutes.js",
       "id": "packages_api_routes_arroutes"
     },
@@ -2758,7 +2788,7 @@
       "source_file": "packages/api/routes/arRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 53,
+      "community": 13,
       "norm_label": "express",
       "id": "packages_api_routes_arroutes_express"
     },
@@ -2768,7 +2798,7 @@
       "source_file": "packages/api/routes/arRoutes.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 53,
+      "community": 13,
       "norm_label": "db",
       "id": "packages_api_routes_arroutes_db"
     },
@@ -2778,7 +2808,7 @@
       "source_file": "packages/api/routes/arRoutes.js",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 53,
+      "community": 13,
       "norm_label": "{ protect, haspermission }",
       "id": "packages_api_routes_arroutes_protect_haspermission"
     },
@@ -2788,7 +2818,7 @@
       "source_file": "packages/api/routes/arRoutes.js",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 53,
+      "community": 13,
       "norm_label": "{ parsepaginationquery, paginatedresponse }",
       "id": "packages_api_routes_arroutes_parsepaginationquery_paginatedresponse"
     },
@@ -2798,7 +2828,7 @@
       "source_file": "packages/api/routes/arRoutes.js",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 53,
+      "community": 13,
       "norm_label": "router",
       "id": "packages_api_routes_arroutes_router"
     },
@@ -3138,7 +3168,7 @@
       "source_file": "packages/api/routes/cycleCountRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 85,
+      "community": 22,
       "norm_label": "cyclecountroutes.js",
       "id": "packages_api_routes_cyclecountroutes"
     },
@@ -3148,7 +3178,7 @@
       "source_file": "packages/api/routes/cycleCountRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 85,
+      "community": 22,
       "norm_label": "express",
       "id": "packages_api_routes_cyclecountroutes_express"
     },
@@ -3158,7 +3188,7 @@
       "source_file": "packages/api/routes/cycleCountRoutes.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 85,
+      "community": 22,
       "norm_label": "db",
       "id": "packages_api_routes_cyclecountroutes_db"
     },
@@ -3168,7 +3198,7 @@
       "source_file": "packages/api/routes/cycleCountRoutes.js",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 85,
+      "community": 22,
       "norm_label": "{ protect, haspermission }",
       "id": "packages_api_routes_cyclecountroutes_protect_haspermission"
     },
@@ -3178,7 +3208,7 @@
       "source_file": "packages/api/routes/cycleCountRoutes.js",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 85,
+      "community": 22,
       "norm_label": "router",
       "id": "packages_api_routes_cyclecountroutes_router"
     },
@@ -3498,7 +3528,7 @@
       "source_file": "packages/api/routes/draftRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 24,
+      "community": 294,
       "norm_label": "draftroutes.js",
       "id": "packages_api_routes_draftroutes"
     },
@@ -3508,7 +3538,7 @@
       "source_file": "packages/api/routes/draftRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 24,
+      "community": 294,
       "norm_label": "express",
       "id": "packages_api_routes_draftroutes_express"
     },
@@ -3518,7 +3548,7 @@
       "source_file": "packages/api/routes/draftRoutes.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 24,
+      "community": 294,
       "norm_label": "db",
       "id": "packages_api_routes_draftroutes_db"
     },
@@ -3528,7 +3558,7 @@
       "source_file": "packages/api/routes/draftRoutes.js",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 24,
+      "community": 294,
       "norm_label": "{ protect }",
       "id": "packages_api_routes_draftroutes_protect"
     },
@@ -3538,7 +3568,7 @@
       "source_file": "packages/api/routes/draftRoutes.js",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 24,
+      "community": 294,
       "norm_label": "router",
       "id": "packages_api_routes_draftroutes_router"
     },
@@ -3548,7 +3578,7 @@
       "source_file": "packages/api/routes/employeeRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 13,
+      "community": 24,
       "norm_label": "employeeroutes.js",
       "id": "packages_api_routes_employeeroutes"
     },
@@ -3558,7 +3588,7 @@
       "source_file": "packages/api/routes/employeeRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 13,
+      "community": 24,
       "norm_label": "express",
       "id": "packages_api_routes_employeeroutes_express"
     },
@@ -3568,7 +3598,7 @@
       "source_file": "packages/api/routes/employeeRoutes.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 13,
+      "community": 24,
       "norm_label": "bcrypt",
       "id": "packages_api_routes_employeeroutes_bcrypt"
     },
@@ -3578,7 +3608,7 @@
       "source_file": "packages/api/routes/employeeRoutes.js",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 13,
+      "community": 24,
       "norm_label": "jwt",
       "id": "packages_api_routes_employeeroutes_jwt"
     },
@@ -3588,7 +3618,7 @@
       "source_file": "packages/api/routes/employeeRoutes.js",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 13,
+      "community": 24,
       "norm_label": "db",
       "id": "packages_api_routes_employeeroutes_db"
     },
@@ -3598,7 +3628,7 @@
       "source_file": "packages/api/routes/employeeRoutes.js",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 13,
+      "community": 24,
       "norm_label": "{ protect, isadmin }",
       "id": "packages_api_routes_employeeroutes_protect_isadmin"
     },
@@ -3608,7 +3638,7 @@
       "source_file": "packages/api/routes/employeeRoutes.js",
       "source_location": "L6",
       "_origin": "ast",
-      "community": 13,
+      "community": 24,
       "norm_label": "{ parsepaginationquery, paginatedresponse }",
       "id": "packages_api_routes_employeeroutes_parsepaginationquery_paginatedresponse"
     },
@@ -3618,7 +3648,7 @@
       "source_file": "packages/api/routes/employeeRoutes.js",
       "source_location": "L7",
       "_origin": "ast",
-      "community": 13,
+      "community": 24,
       "norm_label": "router",
       "id": "packages_api_routes_employeeroutes_router"
     },
@@ -3628,7 +3658,7 @@
       "source_file": "packages/api/routes/employeeRoutes.js",
       "source_location": "L10",
       "_origin": "ast",
-      "community": 13,
+      "community": 24,
       "norm_label": "generatetoken()",
       "id": "packages_api_routes_employeeroutes_generatetoken"
     },
@@ -3638,7 +3668,7 @@
       "source_file": "packages/api/routes/goodsReceiptRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 79,
+      "community": 4,
       "norm_label": "goodsreceiptroutes.js",
       "id": "packages_api_routes_goodsreceiptroutes"
     },
@@ -3648,7 +3678,7 @@
       "source_file": "packages/api/routes/goodsReceiptRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 79,
+      "community": 4,
       "norm_label": "express",
       "id": "packages_api_routes_goodsreceiptroutes_express"
     },
@@ -3658,7 +3688,7 @@
       "source_file": "packages/api/routes/goodsReceiptRoutes.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 79,
+      "community": 4,
       "norm_label": "db",
       "id": "packages_api_routes_goodsreceiptroutes_db"
     },
@@ -3668,7 +3698,7 @@
       "source_file": "packages/api/routes/goodsReceiptRoutes.js",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 79,
+      "community": 4,
       "norm_label": "{ getnextdocumentnumber }",
       "id": "packages_api_routes_goodsreceiptroutes_getnextdocumentnumber"
     },
@@ -3678,7 +3708,7 @@
       "source_file": "packages/api/routes/goodsReceiptRoutes.js",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 79,
+      "community": 4,
       "norm_label": "{ haspermission, protect }",
       "id": "packages_api_routes_goodsreceiptroutes_haspermission_protect"
     },
@@ -3688,7 +3718,7 @@
       "source_file": "packages/api/routes/goodsReceiptRoutes.js",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 79,
+      "community": 4,
       "norm_label": "{ parsepaginationquery, paginatedresponse }",
       "id": "packages_api_routes_goodsreceiptroutes_parsepaginationquery_paginatedresponse"
     },
@@ -3698,7 +3728,7 @@
       "source_file": "packages/api/routes/goodsReceiptRoutes.js",
       "source_location": "L6",
       "_origin": "ast",
-      "community": 79,
+      "community": 4,
       "norm_label": "router",
       "id": "packages_api_routes_goodsreceiptroutes_router"
     },
@@ -4298,7 +4328,7 @@
       "source_file": "packages/api/routes/paymentMethodRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 4,
+      "community": 85,
       "norm_label": "paymentmethodroutes.js",
       "id": "packages_api_routes_paymentmethodroutes"
     },
@@ -4308,7 +4338,7 @@
       "source_file": "packages/api/routes/paymentMethodRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 4,
+      "community": 85,
       "norm_label": "express",
       "id": "packages_api_routes_paymentmethodroutes_express"
     },
@@ -4318,7 +4348,7 @@
       "source_file": "packages/api/routes/paymentMethodRoutes.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 4,
+      "community": 85,
       "norm_label": "db",
       "id": "packages_api_routes_paymentmethodroutes_db"
     },
@@ -4328,7 +4358,7 @@
       "source_file": "packages/api/routes/paymentMethodRoutes.js",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 4,
+      "community": 85,
       "norm_label": "{ protect, haspermission }",
       "id": "packages_api_routes_paymentmethodroutes_protect_haspermission"
     },
@@ -4338,7 +4368,7 @@
       "source_file": "packages/api/routes/paymentMethodRoutes.js",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 4,
+      "community": 85,
       "norm_label": "{ formatphysicalreceiptnumber }",
       "id": "packages_api_routes_paymentmethodroutes_formatphysicalreceiptnumber"
     },
@@ -4348,7 +4378,7 @@
       "source_file": "packages/api/routes/paymentMethodRoutes.js",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 4,
+      "community": 85,
       "norm_label": "router",
       "id": "packages_api_routes_paymentmethodroutes_router"
     },
@@ -4358,7 +4388,7 @@
       "source_file": "packages/api/routes/paymentMethodRoutes.js",
       "source_location": "L9",
       "_origin": "ast",
-      "community": 4,
+      "community": 85,
       "norm_label": "settlementcolumnssupported()",
       "id": "packages_api_routes_paymentmethodroutes_settlementcolumnssupported"
     },
@@ -4368,7 +4398,7 @@
       "source_file": "packages/api/routes/paymentMethodRoutes.js",
       "source_location": "L315",
       "_origin": "ast",
-      "community": 4,
+      "community": 85,
       "norm_label": "invoicepaymentsmiddlewares",
       "id": "packages_api_routes_paymentmethodroutes_invoicepaymentsmiddlewares"
     },
@@ -4428,7 +4458,7 @@
       "source_file": "packages/api/routes/paymentTermRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 62,
+      "community": 294,
       "norm_label": "paymenttermroutes.js",
       "id": "packages_api_routes_paymenttermroutes"
     },
@@ -4438,7 +4468,7 @@
       "source_file": "packages/api/routes/paymentTermRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 62,
+      "community": 294,
       "norm_label": "express",
       "id": "packages_api_routes_paymenttermroutes_express"
     },
@@ -4448,7 +4478,7 @@
       "source_file": "packages/api/routes/paymentTermRoutes.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 62,
+      "community": 294,
       "norm_label": "db",
       "id": "packages_api_routes_paymenttermroutes_db"
     },
@@ -4458,7 +4488,7 @@
       "source_file": "packages/api/routes/paymentTermRoutes.js",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 62,
+      "community": 294,
       "norm_label": "{ protect, haspermission }",
       "id": "packages_api_routes_paymenttermroutes_protect_haspermission"
     },
@@ -4468,7 +4498,7 @@
       "source_file": "packages/api/routes/paymentTermRoutes.js",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 62,
+      "community": 294,
       "norm_label": "router",
       "id": "packages_api_routes_paymenttermroutes_router"
     },
@@ -4668,7 +4698,7 @@
       "source_file": "packages/api/routes/refundRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 79,
+      "community": 4,
       "norm_label": "refundroutes.js",
       "id": "packages_api_routes_refundroutes"
     },
@@ -4678,7 +4708,7 @@
       "source_file": "packages/api/routes/refundRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 79,
+      "community": 4,
       "norm_label": "express",
       "id": "packages_api_routes_refundroutes_express"
     },
@@ -4688,7 +4718,7 @@
       "source_file": "packages/api/routes/refundRoutes.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 79,
+      "community": 4,
       "norm_label": "db",
       "id": "packages_api_routes_refundroutes_db"
     },
@@ -4698,7 +4728,7 @@
       "source_file": "packages/api/routes/refundRoutes.js",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 79,
+      "community": 4,
       "norm_label": "{ getnextdocumentnumber }",
       "id": "packages_api_routes_refundroutes_getnextdocumentnumber"
     },
@@ -4708,7 +4738,7 @@
       "source_file": "packages/api/routes/refundRoutes.js",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 79,
+      "community": 4,
       "norm_label": "{ protect, haspermission }",
       "id": "packages_api_routes_refundroutes_protect_haspermission"
     },
@@ -4718,7 +4748,7 @@
       "source_file": "packages/api/routes/refundRoutes.js",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 79,
+      "community": 4,
       "norm_label": "router",
       "id": "packages_api_routes_refundroutes_router"
     },
@@ -4848,7 +4878,7 @@
       "source_file": "packages/api/routes/setupRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 22,
+      "community": 153,
       "norm_label": "setuproutes.js",
       "id": "packages_api_routes_setuproutes"
     },
@@ -4858,7 +4888,7 @@
       "source_file": "packages/api/routes/setupRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 22,
+      "community": 153,
       "norm_label": "express",
       "id": "packages_api_routes_setuproutes_express"
     },
@@ -4868,7 +4898,7 @@
       "source_file": "packages/api/routes/setupRoutes.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 22,
+      "community": 153,
       "norm_label": "bcrypt",
       "id": "packages_api_routes_setuproutes_bcrypt"
     },
@@ -4878,7 +4908,7 @@
       "source_file": "packages/api/routes/setupRoutes.js",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 22,
+      "community": 153,
       "norm_label": "db",
       "id": "packages_api_routes_setuproutes_db"
     },
@@ -4888,7 +4918,7 @@
       "source_file": "packages/api/routes/setupRoutes.js",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 22,
+      "community": 153,
       "norm_label": "router",
       "id": "packages_api_routes_setuproutes_router"
     },
@@ -5048,7 +5078,7 @@
       "source_file": "packages/api/routes/taxReportRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 24,
+      "community": 294,
       "norm_label": "taxreportroutes.js",
       "id": "packages_api_routes_taxreportroutes"
     },
@@ -5058,7 +5088,7 @@
       "source_file": "packages/api/routes/taxReportRoutes.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 24,
+      "community": 294,
       "norm_label": "express",
       "id": "packages_api_routes_taxreportroutes_express"
     },
@@ -5068,7 +5098,7 @@
       "source_file": "packages/api/routes/taxReportRoutes.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 24,
+      "community": 294,
       "norm_label": "db",
       "id": "packages_api_routes_taxreportroutes_db"
     },
@@ -5078,7 +5108,7 @@
       "source_file": "packages/api/routes/taxReportRoutes.js",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 24,
+      "community": 294,
       "norm_label": "{ protect, haspermission }",
       "id": "packages_api_routes_taxreportroutes_protect_haspermission"
     },
@@ -5088,7 +5118,7 @@
       "source_file": "packages/api/routes/taxReportRoutes.js",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 24,
+      "community": 294,
       "norm_label": "router",
       "id": "packages_api_routes_taxreportroutes_router"
     },
@@ -5698,7 +5728,7 @@
       "source_file": "packages/api/services/cycleCountService.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 85,
+      "community": 22,
       "norm_label": "cyclecountservice.js",
       "id": "packages_api_services_cyclecountservice"
     },
@@ -5708,7 +5738,7 @@
       "source_file": "packages/api/services/cycleCountService.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 85,
+      "community": 22,
       "norm_label": "cron",
       "id": "packages_api_services_cyclecountservice_cron"
     },
@@ -5718,7 +5748,7 @@
       "source_file": "packages/api/services/cycleCountService.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 85,
+      "community": 22,
       "norm_label": "db",
       "id": "packages_api_services_cyclecountservice_db"
     },
@@ -5728,7 +5758,7 @@
       "source_file": "packages/api/services/cycleCountService.js",
       "source_location": "L6",
       "_origin": "ast",
-      "community": 85,
+      "community": 22,
       "norm_label": "generatecyclecountbatches()",
       "id": "packages_api_services_cyclecountservice_generatecyclecountbatches"
     },
@@ -5738,7 +5768,7 @@
       "source_file": "packages/api/services/cycleCountService.js",
       "source_location": "L177",
       "_origin": "ast",
-      "community": 25,
+      "community": 22,
       "norm_label": "startcyclecountengine()",
       "id": "packages_api_services_cyclecountservice_startcyclecountengine"
     },
@@ -5748,7 +5778,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 62,
       "norm_label": "duplicatefinder.js",
       "id": "packages_api_services_duplicatefinder"
     },
@@ -5758,7 +5788,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 62,
       "norm_label": "{ meiliclient }",
       "id": "packages_api_services_duplicatefinder_meiliclient"
     },
@@ -5768,7 +5798,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L9",
       "_origin": "ast",
-      "community": 35,
+      "community": 53,
       "norm_label": "duplicatefinder",
       "id": "packages_api_services_duplicatefinder_duplicatefinder"
     },
@@ -5778,7 +5808,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L10",
       "_origin": "ast",
-      "community": 35,
+      "community": 53,
       "norm_label": ".constructor()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_constructor"
     },
@@ -5788,7 +5818,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L15",
       "_origin": "ast",
-      "community": 35,
+      "community": 53,
       "norm_label": ".normalizetext()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_normalizetext"
     },
@@ -5798,7 +5828,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L26",
       "_origin": "ast",
-      "community": 35,
+      "community": 53,
       "norm_label": ".normalizepartnumber()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_normalizepartnumber"
     },
@@ -5808,7 +5838,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L31",
       "_origin": "ast",
-      "community": 35,
+      "community": 53,
       "norm_label": ".extractnumerictokens()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_extractnumerictokens"
     },
@@ -5818,7 +5848,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L40",
       "_origin": "ast",
-      "community": 35,
+      "community": 53,
       "norm_label": ".calculatecompositescore()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_calculatecompositescore"
     },
@@ -5828,7 +5858,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L118",
       "_origin": "ast",
-      "community": 35,
+      "community": 53,
       "norm_label": ".getconfidencelevel()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_getconfidencelevel"
     },
@@ -5838,7 +5868,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L132",
       "_origin": "ast",
-      "community": 35,
+      "community": 53,
       "norm_label": ".findduplicategroups()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_findduplicategroups"
     },
@@ -5848,7 +5878,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L136",
       "_origin": "ast",
-      "community": 35,
+      "community": 53,
       "norm_label": ".findoptimizedduplicategroups()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_findoptimizedduplicategroups"
     },
@@ -5858,7 +5888,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L260",
       "_origin": "ast",
-      "community": 35,
+      "community": 53,
       "norm_label": ".finddeterministicpairs()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_finddeterministicpairs"
     },
@@ -5868,7 +5898,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L346",
       "_origin": "ast",
-      "community": 35,
+      "community": 53,
       "norm_label": ".findfuzzymeilisearchpairs()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_findfuzzymeilisearchpairs"
     },
@@ -5878,7 +5908,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L422",
       "_origin": "ast",
-      "community": 35,
+      "community": 53,
       "norm_label": ".grouppartsbykey()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_grouppartsbykey"
     },
@@ -5888,7 +5918,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L440",
       "_origin": "ast",
-      "community": 35,
+      "community": 53,
       "norm_label": ".formatpartdata()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_formatpartdata"
     },
@@ -5898,7 +5928,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L455",
       "_origin": "ast",
-      "community": 35,
+      "community": 53,
       "norm_label": ".deduplicategroups()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_deduplicategroups"
     },
@@ -5908,7 +5938,7 @@
       "source_file": "packages/api/services/duplicateFinder.js",
       "source_location": "L476",
       "_origin": "ast",
-      "community": 35,
+      "community": 53,
       "norm_label": ".searchpartsformerge()",
       "id": "packages_api_services_duplicatefinder_duplicatefinder_searchpartsformerge"
     },
@@ -5988,7 +6018,7 @@
       "source_file": "packages/api/services/partMergeService.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 17,
       "norm_label": "partmergeservice.js",
       "id": "packages_api_services_partmergeservice"
     },
@@ -5998,7 +6028,7 @@
       "source_file": "packages/api/services/partMergeService.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 17,
       "norm_label": "duplicatefinder",
       "id": "packages_api_services_partmergeservice_duplicatefinder"
     },
@@ -6238,7 +6268,7 @@
       "source_file": "packages/api/services/taxCalculationService.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 4,
+      "community": 91,
       "norm_label": "taxcalculationservice.js",
       "id": "packages_api_services_taxcalculationservice"
     },
@@ -6248,7 +6278,7 @@
       "source_file": "packages/api/services/taxCalculationService.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 4,
+      "community": 91,
       "norm_label": "db",
       "id": "packages_api_services_taxcalculationservice_db"
     },
@@ -6258,7 +6288,7 @@
       "source_file": "packages/api/services/taxCalculationService.js",
       "source_location": "L18",
       "_origin": "ast",
-      "community": 4,
+      "community": 91,
       "norm_label": "calculatelinetax()",
       "id": "packages_api_services_taxcalculationservice_calculatelinetax"
     },
@@ -6268,7 +6298,7 @@
       "source_file": "packages/api/services/taxCalculationService.js",
       "source_location": "L58",
       "_origin": "ast",
-      "community": 4,
+      "community": 91,
       "norm_label": "calculateinvoicetax()",
       "id": "packages_api_services_taxcalculationservice_calculateinvoicetax"
     },
@@ -6278,7 +6308,7 @@
       "source_file": "packages/api/services/taxCalculationService.js",
       "source_location": "L174",
       "_origin": "ast",
-      "community": 4,
+      "community": 91,
       "norm_label": "storetaxbreakdown()",
       "id": "packages_api_services_taxcalculationservice_storetaxbreakdown"
     },
@@ -6288,7 +6318,7 @@
       "source_file": "packages/api/services/taxCalculationService.js",
       "source_location": "L204",
       "_origin": "ast",
-      "community": 4,
+      "community": 91,
       "norm_label": "validatetaxcalculation()",
       "id": "packages_api_services_taxcalculationservice_validatetaxcalculation"
     },
@@ -6408,7 +6438,7 @@
       "source_file": "packages/api/test_formatter.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 4,
+      "community": 85,
       "norm_label": "test_formatter.js",
       "id": "packages_api_test_formatter"
     },
@@ -6418,7 +6448,7 @@
       "source_file": "packages/api/test_formatter.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 4,
+      "community": 85,
       "norm_label": "{ formatphysicalreceiptnumber }",
       "id": "packages_api_test_formatter_formatphysicalreceiptnumber"
     },
@@ -6688,7 +6718,7 @@
       "source_file": "packages/api/tests/taxCalculationService.test.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 4,
+      "community": 91,
       "norm_label": "taxcalculationservice.test.js",
       "id": "packages_api_tests_taxcalculationservice_test"
     },
@@ -6698,7 +6728,7 @@
       "source_file": "packages/api/tests/taxCalculationService.test.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 4,
+      "community": 91,
       "norm_label": "{ calculateinvoicetax, calculatelinetax, validatetaxcalculation }",
       "id": "packages_api_tests_taxcalculationservice_test_calculateinvoicetax_calculatelinetax_validatetaxcalculation"
     },
@@ -6708,7 +6738,7 @@
       "source_file": "packages/api/tests/taxCalculationService.test.js",
       "source_location": "L8",
       "_origin": "ast",
-      "community": 4,
+      "community": 91,
       "norm_label": "db",
       "id": "packages_api_tests_taxcalculationservice_test_db"
     },
@@ -9018,7 +9048,7 @@
       "source_file": "packages/web/src/App.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 18,
+      "community": 86,
       "norm_label": "app.jsx",
       "id": "packages_web_src_app"
     },
@@ -9028,7 +9058,7 @@
       "source_file": "packages/web/src/App.jsx",
       "source_location": "L12",
       "_origin": "ast",
-      "community": 18,
+      "community": 86,
       "norm_label": "appcontent()",
       "id": "packages_web_src_app_appcontent"
     },
@@ -9038,7 +9068,7 @@
       "source_file": "packages/web/src/App.jsx",
       "source_location": "L41",
       "_origin": "ast",
-      "community": 18,
+      "community": 86,
       "norm_label": "app()",
       "id": "packages_web_src_app_app"
     },
@@ -9048,7 +9078,7 @@
       "source_file": "packages/web/src/api.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 12,
+      "community": 14,
       "norm_label": "api.js",
       "id": "packages_web_src_api"
     },
@@ -9058,7 +9088,7 @@
       "source_file": "packages/web/src/api.js",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 12,
+      "community": 14,
       "norm_label": "autherrorevent()",
       "id": "packages_web_src_api_autherrorevent"
     },
@@ -9068,7 +9098,7 @@
       "source_file": "packages/web/src/api.js",
       "source_location": "L7",
       "_origin": "ast",
-      "community": 12,
+      "community": 14,
       "norm_label": "api",
       "id": "packages_web_src_api_api"
     },
@@ -9078,7 +9108,7 @@
       "source_file": "packages/web/src/components/EditHistory.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 12,
+      "community": 15,
       "norm_label": "edithistory.jsx",
       "id": "packages_web_src_components_edithistory"
     },
@@ -9088,7 +9118,7 @@
       "source_file": "packages/web/src/components/EditHistory.jsx",
       "source_location": "L6",
       "_origin": "ast",
-      "community": 12,
+      "community": 15,
       "norm_label": "edithistory()",
       "id": "packages_web_src_components_edithistory_edithistory"
     },
@@ -9138,7 +9168,7 @@
       "source_file": "packages/web/src/components/accounts-receivable/CustomerInvoiceDetailsModal.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 12,
+      "community": 15,
       "norm_label": "customerinvoicedetailsmodal.jsx",
       "id": "packages_web_src_components_accounts_receivable_customerinvoicedetailsmodal"
     },
@@ -9248,7 +9278,7 @@
       "source_file": "packages/web/src/components/cycleCount/AuditHistoryTab.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 15,
+      "community": 14,
       "norm_label": "audithistorytab.jsx",
       "id": "packages_web_src_components_cyclecount_audithistorytab"
     },
@@ -9258,7 +9288,7 @@
       "source_file": "packages/web/src/components/cycleCount/AuditHistoryTab.jsx",
       "source_location": "L7",
       "_origin": "ast",
-      "community": 15,
+      "community": 14,
       "norm_label": "action_labels",
       "id": "packages_web_src_components_cyclecount_audithistorytab_action_labels"
     },
@@ -9268,7 +9298,7 @@
       "source_file": "packages/web/src/components/cycleCount/AuditHistoryTab.jsx",
       "source_location": "L12",
       "_origin": "ast",
-      "community": 15,
+      "community": 14,
       "norm_label": "audithistorytab()",
       "id": "packages_web_src_components_cyclecount_audithistorytab_audithistorytab"
     },
@@ -9278,7 +9308,7 @@
       "source_file": "packages/web/src/components/cycleCount/CycleCountControlsTab.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 15,
+      "community": 14,
       "norm_label": "cyclecountcontrolstab.jsx",
       "id": "packages_web_src_components_cyclecount_cyclecountcontrolstab"
     },
@@ -9288,7 +9318,7 @@
       "source_file": "packages/web/src/components/cycleCount/CycleCountControlsTab.jsx",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 15,
+      "community": 14,
       "norm_label": "cyclecountcontrolstab()",
       "id": "packages_web_src_components_cyclecount_cyclecountcontrolstab_cyclecountcontrolstab"
     },
@@ -9298,7 +9328,7 @@
       "source_file": "packages/web/src/components/cycleCount/CycleCountControlsTab.jsx",
       "source_location": "L265",
       "_origin": "ast",
-      "community": 15,
+      "community": 14,
       "norm_label": "employeeworkloadtable()",
       "id": "packages_web_src_components_cyclecount_cyclecountcontrolstab_employeeworkloadtable"
     },
@@ -9308,7 +9338,7 @@
       "source_file": "packages/web/src/components/cycleCount/EmployeeDetailModal.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 15,
+      "community": 14,
       "norm_label": "employeedetailmodal.jsx",
       "id": "packages_web_src_components_cyclecount_employeedetailmodal"
     },
@@ -9318,7 +9348,7 @@
       "source_file": "packages/web/src/components/cycleCount/EmployeeDetailModal.jsx",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 15,
+      "community": 14,
       "norm_label": "employeedetailmodal()",
       "id": "packages_web_src_components_cyclecount_employeedetailmodal_employeedetailmodal"
     },
@@ -9328,7 +9358,7 @@
       "source_file": "packages/web/src/components/cycleCount/EmployeePerformanceTab.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 15,
+      "community": 14,
       "norm_label": "employeeperformancetab.jsx",
       "id": "packages_web_src_components_cyclecount_employeeperformancetab"
     },
@@ -9338,7 +9368,7 @@
       "source_file": "packages/web/src/components/cycleCount/EmployeePerformanceTab.jsx",
       "source_location": "L6",
       "_origin": "ast",
-      "community": 15,
+      "community": 14,
       "norm_label": "employeeperformancetab()",
       "id": "packages_web_src_components_cyclecount_employeeperformancetab_employeeperformancetab"
     },
@@ -9348,7 +9378,7 @@
       "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 15,
+      "community": 14,
       "norm_label": "managerreviewdesk.jsx",
       "id": "packages_web_src_components_cyclecount_managerreviewdesk"
     },
@@ -9358,7 +9388,7 @@
       "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
       "source_location": "L10",
       "_origin": "ast",
-      "community": 15,
+      "community": 14,
       "norm_label": "tabs",
       "id": "packages_web_src_components_cyclecount_managerreviewdesk_tabs"
     },
@@ -9368,7 +9398,7 @@
       "source_file": "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx",
       "source_location": "L17",
       "_origin": "ast",
-      "community": 15,
+      "community": 40,
       "norm_label": "managerreviewdesk()",
       "id": "packages_web_src_components_cyclecount_managerreviewdesk_managerreviewdesk"
     },
@@ -9418,7 +9448,7 @@
       "source_file": "packages/web/src/components/cycleCount/StaffDashboard.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 14,
+      "community": 292,
       "norm_label": "staffdashboard.jsx",
       "id": "packages_web_src_components_cyclecount_staffdashboard"
     },
@@ -9428,7 +9458,7 @@
       "source_file": "packages/web/src/components/cycleCount/StaffDashboard.jsx",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 14,
+      "community": 292,
       "norm_label": "staffdashboard()",
       "id": "packages_web_src_components_cyclecount_staffdashboard_staffdashboard"
     },
@@ -9468,7 +9498,7 @@
       "source_file": "packages/web/src/components/cycleCount/StaffProgressTab.jsx",
       "source_location": "L23",
       "_origin": "ast",
-      "community": 14,
+      "community": 292,
       "norm_label": "staffprogresstab()",
       "id": "packages_web_src_components_cyclecount_staffprogresstab_staffprogresstab"
     },
@@ -9528,7 +9558,7 @@
       "source_file": "packages/web/src/components/dashboard/EnhancedKPICard.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 40,
+      "community": 49,
       "norm_label": "enhancedkpicard.jsx",
       "id": "packages_web_src_components_dashboard_enhancedkpicard"
     },
@@ -9538,7 +9568,7 @@
       "source_file": "packages/web/src/components/dashboard/EnhancedKPICard.jsx",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 40,
+      "community": 49,
       "norm_label": "iconmap",
       "id": "packages_web_src_components_dashboard_enhancedkpicard_iconmap"
     },
@@ -9548,7 +9578,7 @@
       "source_file": "packages/web/src/components/dashboard/EnhancedKPICard.jsx",
       "source_location": "L13",
       "_origin": "ast",
-      "community": 40,
+      "community": 49,
       "norm_label": "colorvariants",
       "id": "packages_web_src_components_dashboard_enhancedkpicard_colorvariants"
     },
@@ -9558,7 +9588,7 @@
       "source_file": "packages/web/src/components/dashboard/EnhancedKPICard.jsx",
       "source_location": "L56",
       "_origin": "ast",
-      "community": 40,
+      "community": 49,
       "norm_label": "enhancedkpicard()",
       "id": "packages_web_src_components_dashboard_enhancedkpicard_enhancedkpicard"
     },
@@ -9568,7 +9598,7 @@
       "source_file": "packages/web/src/components/dashboard/QuickActionsPanel.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 18,
+      "community": 49,
       "norm_label": "quickactionspanel.jsx",
       "id": "packages_web_src_components_dashboard_quickactionspanel"
     },
@@ -9578,7 +9608,7 @@
       "source_file": "packages/web/src/components/dashboard/QuickActionsPanel.jsx",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 18,
+      "community": 49,
       "norm_label": "quickactionbutton()",
       "id": "packages_web_src_components_dashboard_quickactionspanel_quickactionbutton"
     },
@@ -9588,7 +9618,7 @@
       "source_file": "packages/web/src/components/dashboard/QuickActionsPanel.jsx",
       "source_location": "L73",
       "_origin": "ast",
-      "community": 18,
+      "community": 49,
       "norm_label": "quickactionspanel()",
       "id": "packages_web_src_components_dashboard_quickactionspanel_quickactionspanel"
     },
@@ -10088,7 +10118,7 @@
       "source_file": "packages/web/src/components/document-management/PreviewComponent.tsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 12,
+      "community": 14,
       "norm_label": "previewcomponent.tsx",
       "id": "packages_web_src_components_document_management_previewcomponent"
     },
@@ -10098,7 +10128,7 @@
       "source_file": "packages/web/src/components/document-management/PreviewComponent.tsx",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 12,
+      "community": 14,
       "norm_label": "previewcomponent()",
       "id": "packages_web_src_components_document_management_previewcomponent_previewcomponent"
     },
@@ -10308,7 +10338,7 @@
       "source_file": "packages/web/src/components/forms/CustomerForm.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 12,
+      "community": 40,
       "norm_label": "customerform.jsx",
       "id": "packages_web_src_components_forms_customerform"
     },
@@ -10318,7 +10348,7 @@
       "source_file": "packages/web/src/components/forms/CustomerForm.jsx",
       "source_location": "L6",
       "_origin": "ast",
-      "community": 12,
+      "community": 40,
       "norm_label": "customerform()",
       "id": "packages_web_src_components_forms_customerform_customerform"
     },
@@ -10408,7 +10438,7 @@
       "source_file": "packages/web/src/components/forms/StockAdjustmentForm.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 39,
+      "community": 115,
       "norm_label": "stockadjustmentform.jsx",
       "id": "packages_web_src_components_forms_stockadjustmentform"
     },
@@ -10418,7 +10448,7 @@
       "source_file": "packages/web/src/components/forms/StockAdjustmentForm.jsx",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 39,
+      "community": 115,
       "norm_label": "stockadjustmentform()",
       "id": "packages_web_src_components_forms_stockadjustmentform_stockadjustmentform"
     },
@@ -10498,7 +10528,7 @@
       "source_file": "packages/web/src/components/layout/MainLayout.jsx",
       "source_location": "L27",
       "_origin": "ast",
-      "community": 18,
+      "community": 86,
       "norm_label": "mainlayout()",
       "id": "packages_web_src_components_layout_mainlayout_mainlayout"
     },
@@ -10648,7 +10678,7 @@
       "source_file": "packages/web/src/components/refunds/InvoiceDetailsModal.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 18,
+      "community": 40,
       "norm_label": "invoicedetailsmodal.jsx",
       "id": "packages_web_src_components_refunds_invoicedetailsmodal"
     },
@@ -10658,7 +10688,7 @@
       "source_file": "packages/web/src/components/refunds/InvoiceDetailsModal.jsx",
       "source_location": "L11",
       "_origin": "ast",
-      "community": 18,
+      "community": 40,
       "norm_label": "getpaymentstatusbadge()",
       "id": "packages_web_src_components_refunds_invoicedetailsmodal_getpaymentstatusbadge"
     },
@@ -10668,7 +10698,7 @@
       "source_file": "packages/web/src/components/refunds/InvoiceDetailsModal.jsx",
       "source_location": "L25",
       "_origin": "ast",
-      "community": 18,
+      "community": 40,
       "norm_label": "formatpaymentstatus()",
       "id": "packages_web_src_components_refunds_invoicedetailsmodal_formatpaymentstatus"
     },
@@ -10678,7 +10708,7 @@
       "source_file": "packages/web/src/components/refunds/InvoiceDetailsModal.jsx",
       "source_location": "L35",
       "_origin": "ast",
-      "community": 18,
+      "community": 40,
       "norm_label": "invoicedetailsmodal()",
       "id": "packages_web_src_components_refunds_invoicedetailsmodal_invoicedetailsmodal"
     },
@@ -10688,7 +10718,7 @@
       "source_file": "packages/web/src/components/refunds/RefundForm.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 18,
+      "community": 40,
       "norm_label": "refundform.jsx",
       "id": "packages_web_src_components_refunds_refundform"
     },
@@ -10698,7 +10728,7 @@
       "source_file": "packages/web/src/components/refunds/RefundForm.jsx",
       "source_location": "L7",
       "_origin": "ast",
-      "community": 18,
+      "community": 40,
       "norm_label": "refundform()",
       "id": "packages_web_src_components_refunds_refundform_refundform"
     },
@@ -10828,7 +10858,7 @@
       "source_file": "packages/web/src/components/reports/ReportCard.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 39,
+      "community": 40,
       "norm_label": "reportcard.jsx",
       "id": "packages_web_src_components_reports_reportcard"
     },
@@ -10838,7 +10868,7 @@
       "source_file": "packages/web/src/components/reports/ReportCard.jsx",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 39,
+      "community": 40,
       "norm_label": "reportcard()",
       "id": "packages_web_src_components_reports_reportcard_reportcard"
     },
@@ -10928,7 +10958,7 @@
       "source_file": "packages/web/src/components/settings/BackupSettings.jsx",
       "source_location": "L9",
       "_origin": "ast",
-      "community": 9,
+      "community": 57,
       "norm_label": "backupsettings()",
       "id": "packages_web_src_components_settings_backupsettings_backupsettings"
     },
@@ -11018,7 +11048,7 @@
       "source_file": "packages/web/src/components/settings/PaymentMethodSettings.jsx",
       "source_location": "L259",
       "_origin": "ast",
-      "community": 9,
+      "community": 57,
       "norm_label": "paymentmethodsettings()",
       "id": "packages_web_src_components_settings_paymentmethodsettings_paymentmethodsettings"
     },
@@ -11028,7 +11058,7 @@
       "source_file": "packages/web/src/components/settings/PermissionsSettings.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 9,
+      "community": 57,
       "norm_label": "permissionssettings.jsx",
       "id": "packages_web_src_components_settings_permissionssettings"
     },
@@ -11038,7 +11068,7 @@
       "source_file": "packages/web/src/components/settings/PermissionsSettings.jsx",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 9,
+      "community": 57,
       "norm_label": "permissionssettings()",
       "id": "packages_web_src_components_settings_permissionssettings_permissionssettings"
     },
@@ -11068,7 +11098,7 @@
       "source_file": "packages/web/src/components/ui/DateRangeShortcuts.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 18,
+      "community": 40,
       "norm_label": "daterangeshortcuts.jsx",
       "id": "packages_web_src_components_ui_daterangeshortcuts"
     },
@@ -11078,7 +11108,7 @@
       "source_file": "packages/web/src/components/ui/DateRangeShortcuts.jsx",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 18,
+      "community": 40,
       "norm_label": "daterangeshortcuts()",
       "id": "packages_web_src_components_ui_daterangeshortcuts_daterangeshortcuts"
     },
@@ -11088,7 +11118,7 @@
       "source_file": "packages/web/src/components/ui/Drawer.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 86,
+      "community": 15,
       "norm_label": "drawer.jsx",
       "id": "packages_web_src_components_ui_drawer"
     },
@@ -11098,7 +11128,7 @@
       "source_file": "packages/web/src/components/ui/Drawer.jsx",
       "source_location": "L89",
       "_origin": "ast",
-      "community": 86,
+      "community": 15,
       "norm_label": "drawer()",
       "id": "packages_web_src_components_ui_drawer_drawer"
     },
@@ -11108,7 +11138,7 @@
       "source_file": "packages/web/src/components/ui/Drawer.jsx",
       "source_location": "L268",
       "_origin": "ast",
-      "community": 86,
+      "community": 15,
       "norm_label": "drawerheader()",
       "id": "packages_web_src_components_ui_drawer_drawerheader"
     },
@@ -11118,7 +11148,7 @@
       "source_file": "packages/web/src/components/ui/Drawer.jsx",
       "source_location": "L274",
       "_origin": "ast",
-      "community": 86,
+      "community": 15,
       "norm_label": "drawercontent()",
       "id": "packages_web_src_components_ui_drawer_drawercontent"
     },
@@ -11128,7 +11158,7 @@
       "source_file": "packages/web/src/components/ui/Drawer.jsx",
       "source_location": "L280",
       "_origin": "ast",
-      "community": 86,
+      "community": 15,
       "norm_label": "drawerfooter()",
       "id": "packages_web_src_components_ui_drawer_drawerfooter"
     },
@@ -11138,7 +11168,7 @@
       "source_file": "packages/web/src/components/ui/DueDateEditor.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 12,
+      "community": 15,
       "norm_label": "duedateeditor.jsx",
       "id": "packages_web_src_components_ui_duedateeditor"
     },
@@ -11148,7 +11178,7 @@
       "source_file": "packages/web/src/components/ui/DueDateEditor.jsx",
       "source_location": "L25",
       "_origin": "ast",
-      "community": 12,
+      "community": 15,
       "norm_label": "duedateeditor()",
       "id": "packages_web_src_components_ui_duedateeditor_duedateeditor"
     },
@@ -11288,7 +11318,7 @@
       "source_file": "packages/web/src/components/ui/PaymentModal.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 5,
+      "community": 40,
       "norm_label": "paymentmodal.jsx",
       "id": "packages_web_src_components_ui_paymentmodal"
     },
@@ -11298,7 +11328,7 @@
       "source_file": "packages/web/src/components/ui/PaymentModal.jsx",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 5,
+      "community": 40,
       "norm_label": "paymentmodal()",
       "id": "packages_web_src_components_ui_paymentmodal_paymentmodal"
     },
@@ -11398,7 +11428,7 @@
       "source_file": "packages/web/src/components/ui/SplitPaymentModal.jsx",
       "source_location": "L8",
       "_origin": "ast",
-      "community": 5,
+      "community": 40,
       "norm_label": "splitpaymentmodal()",
       "id": "packages_web_src_components_ui_splitpaymentmodal_splitpaymentmodal"
     },
@@ -11418,7 +11448,7 @@
       "source_file": "packages/web/src/components/ui/TagInput.jsx",
       "source_location": "L6",
       "_origin": "ast",
-      "community": 12,
+      "community": 40,
       "norm_label": "taginput()",
       "id": "packages_web_src_components_ui_taginput_taginput"
     },
@@ -11448,7 +11478,7 @@
       "source_file": "packages/web/src/components/ui/TransactionHistoryModal.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 12,
+      "community": 115,
       "norm_label": "transactionhistorymodal.jsx",
       "id": "packages_web_src_components_ui_transactionhistorymodal"
     },
@@ -11458,7 +11488,7 @@
       "source_file": "packages/web/src/components/ui/TransactionHistoryModal.jsx",
       "source_location": "L7",
       "_origin": "ast",
-      "community": 39,
+      "community": 115,
       "norm_label": "transactionhistorymodal()",
       "id": "packages_web_src_components_ui_transactionhistorymodal_transactionhistorymodal"
     },
@@ -11518,7 +11548,7 @@
       "source_file": "packages/web/src/contexts/AuthContext.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 18,
+      "community": 40,
       "norm_label": "authcontext.jsx",
       "id": "packages_web_src_contexts_authcontext"
     },
@@ -11528,7 +11558,7 @@
       "source_file": "packages/web/src/contexts/AuthContext.jsx",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 18,
+      "community": 40,
       "norm_label": "authcontext",
       "id": "packages_web_src_contexts_authcontext_authcontext"
     },
@@ -11538,7 +11568,7 @@
       "source_file": "packages/web/src/contexts/AuthContext.jsx",
       "source_location": "L6",
       "_origin": "ast",
-      "community": 18,
+      "community": 86,
       "norm_label": "authprovider()",
       "id": "packages_web_src_contexts_authcontext_authprovider"
     },
@@ -11558,7 +11588,7 @@
       "source_file": "packages/web/src/contexts/SettingsContext.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 18,
+      "community": 40,
       "norm_label": "settingscontext.jsx",
       "id": "packages_web_src_contexts_settingscontext"
     },
@@ -11568,7 +11598,7 @@
       "source_file": "packages/web/src/contexts/SettingsContext.jsx",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 18,
+      "community": 40,
       "norm_label": "settingscontext",
       "id": "packages_web_src_contexts_settingscontext_settingscontext"
     },
@@ -11578,7 +11608,7 @@
       "source_file": "packages/web/src/contexts/SettingsContext.jsx",
       "source_location": "L6",
       "_origin": "ast",
-      "community": 18,
+      "community": 86,
       "norm_label": "settingsprovider()",
       "id": "packages_web_src_contexts_settingscontext_settingsprovider"
     },
@@ -11588,7 +11618,7 @@
       "source_file": "packages/web/src/contexts/SettingsContext.jsx",
       "source_location": "L32",
       "_origin": "ast",
-      "community": 39,
+      "community": 40,
       "norm_label": "usesettings()",
       "id": "packages_web_src_contexts_settingscontext_usesettings"
     },
@@ -11838,7 +11868,7 @@
       "source_file": "packages/web/src/main.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 18,
+      "community": 86,
       "norm_label": "main.jsx",
       "id": "packages_web_src_main"
     },
@@ -11858,7 +11888,7 @@
       "source_file": "packages/web/src/pages/AccountsReceivablePage.jsx",
       "source_location": "L37",
       "_origin": "ast",
-      "community": 15,
+      "community": 18,
       "norm_label": "accountsreceivablepage()",
       "id": "packages_web_src_pages_accountsreceivablepage_accountsreceivablepage"
     },
@@ -11908,7 +11938,7 @@
       "source_file": "packages/web/src/pages/ChequePrintingPage.jsx",
       "source_location": "L9",
       "_origin": "ast",
-      "community": 9,
+      "community": 290,
       "norm_label": "blankrow()",
       "id": "packages_web_src_pages_chequeprintingpage_blankrow"
     },
@@ -11948,7 +11978,7 @@
       "source_file": "packages/web/src/pages/ChequePrintingPage.jsx",
       "source_location": "L44",
       "_origin": "ast",
-      "community": 9,
+      "community": 290,
       "norm_label": "chequeprintingpage()",
       "id": "packages_web_src_pages_chequeprintingpage_chequeprintingpage"
     },
@@ -11958,7 +11988,7 @@
       "source_file": "packages/web/src/pages/CustomersPage.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 12,
+      "community": 39,
       "norm_label": "customerspage.jsx",
       "id": "packages_web_src_pages_customerspage"
     },
@@ -11978,7 +12008,7 @@
       "source_file": "packages/web/src/pages/CycleCountExecutionPage.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 18,
+      "community": 292,
       "norm_label": "cyclecountexecutionpage.jsx",
       "id": "packages_web_src_pages_cyclecountexecutionpage"
     },
@@ -11998,7 +12028,7 @@
       "source_file": "packages/web/src/pages/Dashboard.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 18,
+      "community": 49,
       "norm_label": "dashboard.jsx",
       "id": "packages_web_src_pages_dashboard"
     },
@@ -12018,7 +12048,7 @@
       "source_file": "packages/web/src/pages/DocumentsPage.tsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 0,
+      "community": 288,
       "norm_label": "documentspage.tsx",
       "id": "packages_web_src_pages_documentspage"
     },
@@ -12028,7 +12058,7 @@
       "source_file": "packages/web/src/pages/DocumentsPage.tsx",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 0,
+      "community": 288,
       "norm_label": "documentspage()",
       "id": "packages_web_src_pages_documentspage_documentspage"
     },
@@ -12068,7 +12098,7 @@
       "source_file": "packages/web/src/pages/GoodsReceiptHistoryPage.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 5,
+      "community": 9,
       "norm_label": "goodsreceipthistorypage.jsx",
       "id": "packages_web_src_pages_goodsreceipthistorypage"
     },
@@ -12108,7 +12138,7 @@
       "source_file": "packages/web/src/pages/InventoryPage.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 39,
+      "community": 115,
       "norm_label": "inventorypage.jsx",
       "id": "packages_web_src_pages_inventorypage"
     },
@@ -12118,7 +12148,7 @@
       "source_file": "packages/web/src/pages/InventoryPage.jsx",
       "source_location": "L17",
       "_origin": "ast",
-      "community": 18,
+      "community": 115,
       "norm_label": "inventorypage()",
       "id": "packages_web_src_pages_inventorypage_inventorypage"
     },
@@ -12128,7 +12158,7 @@
       "source_file": "packages/web/src/pages/InvoicingPage.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 5,
+      "community": 40,
       "norm_label": "invoicingpage.jsx",
       "id": "packages_web_src_pages_invoicingpage"
     },
@@ -12138,7 +12168,7 @@
       "source_file": "packages/web/src/pages/InvoicingPage.jsx",
       "source_location": "L17",
       "_origin": "ast",
-      "community": 5,
+      "community": 40,
       "norm_label": "invoicingpage()",
       "id": "packages_web_src_pages_invoicingpage_invoicingpage"
     },
@@ -12158,7 +12188,7 @@
       "source_file": "packages/web/src/pages/LoginScreen.jsx",
       "source_location": "L6",
       "_origin": "ast",
-      "community": 18,
+      "community": 86,
       "norm_label": "loginscreen()",
       "id": "packages_web_src_pages_loginscreen_loginscreen"
     },
@@ -12228,7 +12258,7 @@
       "source_file": "packages/web/src/pages/PartNumberManager.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 12,
+      "community": 133,
       "norm_label": "partnumbermanager.jsx",
       "id": "packages_web_src_pages_partnumbermanager"
     },
@@ -12238,7 +12268,7 @@
       "source_file": "packages/web/src/pages/PartNumberManager.jsx",
       "source_location": "L8",
       "_origin": "ast",
-      "community": 12,
+      "community": 133,
       "norm_label": "spinner()",
       "id": "packages_web_src_pages_partnumbermanager_spinner"
     },
@@ -12248,7 +12278,7 @@
       "source_file": "packages/web/src/pages/PartNumberManager.jsx",
       "source_location": "L16",
       "_origin": "ast",
-      "community": 12,
+      "community": 133,
       "norm_label": "moveupicon()",
       "id": "packages_web_src_pages_partnumbermanager_moveupicon"
     },
@@ -12258,7 +12288,7 @@
       "source_file": "packages/web/src/pages/PartNumberManager.jsx",
       "source_location": "L23",
       "_origin": "ast",
-      "community": 12,
+      "community": 133,
       "norm_label": "movedownicon()",
       "id": "packages_web_src_pages_partnumbermanager_movedownicon"
     },
@@ -12268,7 +12298,7 @@
       "source_file": "packages/web/src/pages/PartNumberManager.jsx",
       "source_location": "L31",
       "_origin": "ast",
-      "community": 12,
+      "community": 133,
       "norm_label": "trashicon()",
       "id": "packages_web_src_pages_partnumbermanager_trashicon"
     },
@@ -12278,7 +12308,7 @@
       "source_file": "packages/web/src/pages/PartNumberManager.jsx",
       "source_location": "L37",
       "_origin": "ast",
-      "community": 12,
+      "community": 133,
       "norm_label": "partnumbermanager()",
       "id": "packages_web_src_pages_partnumbermanager_partnumbermanager"
     },
@@ -12388,7 +12418,7 @@
       "source_file": "packages/web/src/pages/PurchaseOrderEditorPage.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 5,
+      "community": 14,
       "norm_label": "purchaseordereditorpage.jsx",
       "id": "packages_web_src_pages_purchaseordereditorpage"
     },
@@ -12398,7 +12428,7 @@
       "source_file": "packages/web/src/pages/PurchaseOrderEditorPage.jsx",
       "source_location": "L11",
       "_origin": "ast",
-      "community": 5,
+      "community": 14,
       "norm_label": "purchaseordereditorpage()",
       "id": "packages_web_src_pages_purchaseordereditorpage_purchaseordereditorpage"
     },
@@ -12408,7 +12438,7 @@
       "source_file": "packages/web/src/pages/PurchaseOrderPage.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 39,
+      "community": 14,
       "norm_label": "purchaseorderpage.jsx",
       "id": "packages_web_src_pages_purchaseorderpage"
     },
@@ -12418,7 +12448,7 @@
       "source_file": "packages/web/src/pages/PurchaseOrderPage.jsx",
       "source_location": "L18",
       "_origin": "ast",
-      "community": 39,
+      "community": 14,
       "norm_label": "purchaseorderlines()",
       "id": "packages_web_src_pages_purchaseorderpage_purchaseorderlines"
     },
@@ -12428,7 +12458,7 @@
       "source_file": "packages/web/src/pages/PurchaseOrderPage.jsx",
       "source_location": "L70",
       "_origin": "ast",
-      "community": 18,
+      "community": 14,
       "norm_label": "purchaseorderpage()",
       "id": "packages_web_src_pages_purchaseorderpage_purchaseorderpage"
     },
@@ -12548,7 +12578,7 @@
       "source_file": "packages/web/src/pages/SalesHistoryPage.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 18,
+      "community": 40,
       "norm_label": "saleshistorypage.jsx",
       "id": "packages_web_src_pages_saleshistorypage"
     },
@@ -12558,7 +12588,7 @@
       "source_file": "packages/web/src/pages/SalesHistoryPage.jsx",
       "source_location": "L18",
       "_origin": "ast",
-      "community": 18,
+      "community": 40,
       "norm_label": "getstatusbadge()",
       "id": "packages_web_src_pages_saleshistorypage_getstatusbadge"
     },
@@ -12568,7 +12598,7 @@
       "source_file": "packages/web/src/pages/SalesHistoryPage.jsx",
       "source_location": "L36",
       "_origin": "ast",
-      "community": 18,
+      "community": 40,
       "norm_label": "saleshistorypage()",
       "id": "packages_web_src_pages_saleshistorypage_saleshistorypage"
     },
@@ -12578,7 +12608,7 @@
       "source_file": "packages/web/src/pages/SettingsPage.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 9,
+      "community": 57,
       "norm_label": "settingspage.jsx",
       "id": "packages_web_src_pages_settingspage"
     },
@@ -12588,7 +12618,7 @@
       "source_file": "packages/web/src/pages/SettingsPage.jsx",
       "source_location": "L12",
       "_origin": "ast",
-      "community": 9,
+      "community": 57,
       "norm_label": "companyinfosettings()",
       "id": "packages_web_src_pages_settingspage_companyinfosettings"
     },
@@ -12598,7 +12628,7 @@
       "source_file": "packages/web/src/pages/SettingsPage.jsx",
       "source_location": "L39",
       "_origin": "ast",
-      "community": 9,
+      "community": 57,
       "norm_label": "financialsettings()",
       "id": "packages_web_src_pages_settingspage_financialsettings"
     },
@@ -12608,7 +12638,7 @@
       "source_file": "packages/web/src/pages/SettingsPage.jsx",
       "source_location": "L57",
       "_origin": "ast",
-      "community": 9,
+      "community": 57,
       "norm_label": "cyclecountsettings()",
       "id": "packages_web_src_pages_settingspage_cyclecountsettings"
     },
@@ -12618,7 +12648,7 @@
       "source_file": "packages/web/src/pages/SettingsPage.jsx",
       "source_location": "L105",
       "_origin": "ast",
-      "community": 9,
+      "community": 57,
       "norm_label": "taxratesettings()",
       "id": "packages_web_src_pages_settingspage_taxratesettings"
     },
@@ -12628,7 +12658,7 @@
       "source_file": "packages/web/src/pages/SettingsPage.jsx",
       "source_location": "L313",
       "_origin": "ast",
-      "community": 9,
+      "community": 57,
       "norm_label": "taxrateform()",
       "id": "packages_web_src_pages_settingspage_taxrateform"
     },
@@ -12638,7 +12668,7 @@
       "source_file": "packages/web/src/pages/SettingsPage.jsx",
       "source_location": "L412",
       "_origin": "ast",
-      "community": 9,
+      "community": 57,
       "norm_label": "settingspage()",
       "id": "packages_web_src_pages_settingspage_settingspage"
     },
@@ -12648,7 +12678,7 @@
       "source_file": "packages/web/src/pages/SetupPage.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 18,
+      "community": 86,
       "norm_label": "setuppage.jsx",
       "id": "packages_web_src_pages_setuppage"
     },
@@ -12658,7 +12688,7 @@
       "source_file": "packages/web/src/pages/SetupPage.jsx",
       "source_location": "L5",
       "_origin": "ast",
-      "community": 18,
+      "community": 86,
       "norm_label": "setuppage()",
       "id": "packages_web_src_pages_setuppage_setuppage"
     },
@@ -12738,7 +12768,7 @@
       "source_file": "packages/web/src/utils/downloadFile.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 12,
+      "community": 14,
       "norm_label": "downloadfile.js",
       "id": "packages_web_src_utils_downloadfile"
     },
@@ -12748,7 +12778,7 @@
       "source_file": "packages/web/src/utils/downloadFile.js",
       "source_location": "L4",
       "_origin": "ast",
-      "community": 18,
+      "community": 14,
       "norm_label": "downloadfile()",
       "id": "packages_web_src_utils_downloadfile_downloadfile"
     },
@@ -12778,7 +12808,7 @@
       "source_file": "packages/web/src/utils/receiptNumberFormatter.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 5,
+      "community": 40,
       "norm_label": "receiptnumberformatter.js",
       "id": "packages_web_src_utils_receiptnumberformatter"
     },
@@ -12788,7 +12818,7 @@
       "source_file": "packages/web/src/utils/receiptNumberFormatter.js",
       "source_location": "L8",
       "_origin": "ast",
-      "community": 5,
+      "community": 40,
       "norm_label": "formatphysicalreceiptnumber()",
       "id": "packages_web_src_utils_receiptnumberformatter_formatphysicalreceiptnumber"
     },
@@ -12918,7 +12948,7 @@
       "source_file": "packages/web/tests/DocumentsPage.test.jsx",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 0,
+      "community": 288,
       "norm_label": "documentspage.test.jsx",
       "id": "packages_web_tests_documentspage_test"
     },
@@ -13802,7 +13832,7 @@
       "source_file": "test_db_queries.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 266,
       "norm_label": "test_db_queries.js",
       "id": "test_db_queries"
     },
@@ -13812,7 +13842,7 @@
       "source_file": "test_db_queries.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 266,
       "norm_label": "{ pool }",
       "id": "test_db_queries_pool"
     },
@@ -13822,7 +13852,7 @@
       "source_file": "test_db_queries.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 35,
+      "community": 266,
       "norm_label": "duplicatefinder",
       "id": "test_db_queries_duplicatefinder"
     },
@@ -13832,7 +13862,7 @@
       "source_file": "test_db_queries.js",
       "source_location": "L12",
       "_origin": "ast",
-      "community": 35,
+      "community": 266,
       "norm_label": "run()",
       "id": "test_db_queries_run"
     },
@@ -13842,7 +13872,7 @@
       "source_file": "test_duplicate_error.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 62,
       "norm_label": "test_duplicate_error.js",
       "id": "test_duplicate_error"
     },
@@ -13852,7 +13882,7 @@
       "source_file": "test_duplicate_error.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 62,
       "norm_label": "{ pool }",
       "id": "test_duplicate_error_pool"
     },
@@ -13862,7 +13892,7 @@
       "source_file": "test_duplicate_error.js",
       "source_location": "L2",
       "_origin": "ast",
-      "community": 35,
+      "community": 62,
       "norm_label": "duplicatefinder",
       "id": "test_duplicate_error_duplicatefinder"
     },
@@ -13872,7 +13902,7 @@
       "source_file": "test_duplicate_error.js",
       "source_location": "L12",
       "_origin": "ast",
-      "community": 35,
+      "community": 62,
       "norm_label": "run()",
       "id": "test_duplicate_error_run"
     },
@@ -13882,7 +13912,7 @@
       "source_file": "test_duplicate_mock.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 62,
       "norm_label": "test_duplicate_mock.js",
       "id": "test_duplicate_mock"
     },
@@ -13892,7 +13922,7 @@
       "source_file": "test_duplicate_mock.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 62,
       "norm_label": "duplicatefinder",
       "id": "test_duplicate_mock_duplicatefinder"
     },
@@ -13902,7 +13932,7 @@
       "source_file": "test_duplicate_mock.js",
       "source_location": "L3",
       "_origin": "ast",
-      "community": 35,
+      "community": 62,
       "norm_label": "mockpool",
       "id": "test_duplicate_mock_mockpool"
     },
@@ -13912,7 +13942,7 @@
       "source_file": "test_duplicate_mock.js",
       "source_location": "L9",
       "_origin": "ast",
-      "community": 35,
+      "community": 62,
       "norm_label": "run()",
       "id": "test_duplicate_mock_run"
     },
@@ -13922,7 +13952,7 @@
       "source_file": "test_duplicate_refactor.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 62,
       "norm_label": "test_duplicate_refactor.js",
       "id": "test_duplicate_refactor"
     },
@@ -13932,7 +13962,7 @@
       "source_file": "test_duplicate_refactor.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 62,
       "norm_label": "{ duplicatefinder }",
       "id": "test_duplicate_refactor_duplicatefinder"
     },
@@ -13942,7 +13972,7 @@
       "source_file": "test_duplicate_refactor_syntax.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 62,
       "norm_label": "test_duplicate_refactor_syntax.js",
       "id": "test_duplicate_refactor_syntax"
     },
@@ -13952,7 +13982,7 @@
       "source_file": "test_duplicate_refactor_syntax.js",
       "source_location": "L1",
       "_origin": "ast",
-      "community": 35,
+      "community": 62,
       "norm_label": "duplicatefinder",
       "id": "test_duplicate_refactor_syntax_duplicatefinder"
     },
@@ -13995,26 +14025,6 @@
       "community": 251,
       "norm_label": "graph-first protocol",
       "id": "agents_rules_02_graph_protocol_graph_first_protocol"
-    },
-    {
-      "label": "03-database-migrations.md",
-      "file_type": "document",
-      "source_file": ".agents/rules/03-database-migrations.md",
-      "source_location": "L1",
-      "_origin": "ast",
-      "community": 256,
-      "norm_label": "03-database-migrations.md",
-      "id": "agents_rules_03_database_migrations"
-    },
-    {
-      "label": "Rule of Immutability: Database Migrations",
-      "file_type": "document",
-      "source_file": ".agents/rules/03-database-migrations.md",
-      "source_location": "L1",
-      "_origin": "ast",
-      "community": 256,
-      "norm_label": "rule of immutability: database migrations",
-      "id": "agents_rules_03_database_migrations_rule_of_immutability_database_migrations"
     },
     {
       "label": "SKILL.md",
@@ -20021,12 +20031,32 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": ".agents/rules/03-database-migrations.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "agents_rules_03_database_migrations",
+      "target": "agents_rules_03_database_migrations_rule_of_immutability_database_migrations",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".agents/rules/03-database-migrations.md",
+      "source_location": "L14",
+      "weight": 1.0,
+      "source": "agents_rules_03_database_migrations_rule_of_immutability_database_migrations",
+      "target": "agents_rules_03_database_migrations_migration_naming_sequencing_rules",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_changelog",
-      "target": "docs_changelog_changelog",
-      "confidence_score": 1.0
+      "target": "docs_changelog_changelog"
     },
     {
       "relation": "contains",
@@ -20034,9 +20064,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L78",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_changelog_changelog",
-      "target": "docs_changelog_1_4_2_2026_05_10",
-      "confidence_score": 1.0
+      "target": "docs_changelog_1_4_2_2026_05_10"
     },
     {
       "relation": "contains",
@@ -20044,9 +20074,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L89",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_changelog_changelog",
-      "target": "docs_changelog_v1_4_1",
-      "confidence_score": 1.0
+      "target": "docs_changelog_v1_4_1"
     },
     {
       "relation": "contains",
@@ -20054,9 +20084,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L56",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_changelog_changelog",
-      "target": "docs_changelog_v1_4_3_2026_05_14",
-      "confidence_score": 1.0
+      "target": "docs_changelog_v1_4_3_2026_05_14"
     },
     {
       "relation": "contains",
@@ -20064,9 +20094,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L44",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_changelog_changelog",
-      "target": "docs_changelog_v1_4_4_2026_05_14",
-      "confidence_score": 1.0
+      "target": "docs_changelog_v1_4_4_2026_05_14"
     },
     {
       "relation": "contains",
@@ -20074,9 +20104,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L33",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_changelog_changelog",
-      "target": "docs_changelog_v1_5_1_1_2026_06_09",
-      "confidence_score": 1.0
+      "target": "docs_changelog_v1_5_1_1_2026_06_09"
     },
     {
       "relation": "contains",
@@ -20084,9 +20114,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L38",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_changelog_changelog",
-      "target": "docs_changelog_v1_5_1_2026_06_09",
-      "confidence_score": 1.0
+      "target": "docs_changelog_v1_5_1_2026_06_09"
     },
     {
       "relation": "contains",
@@ -20094,9 +20124,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L20",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_changelog_changelog",
-      "target": "docs_changelog_v2_0_0_2026_06_25",
-      "confidence_score": 1.0
+      "target": "docs_changelog_v2_0_0_2026_06_25"
     },
     {
       "relation": "contains",
@@ -20104,9 +20134,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L3",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_changelog_changelog",
-      "target": "docs_changelog_v2_1_0_2026_07_04",
-      "confidence_score": 1.0
+      "target": "docs_changelog_v2_1_0_2026_07_04"
     },
     {
       "relation": "contains",
@@ -20114,9 +20144,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_changelog_v2_1_0_2026_07_04",
-      "target": "docs_changelog_added",
-      "confidence_score": 1.0
+      "target": "docs_changelog_added"
     },
     {
       "relation": "contains",
@@ -20124,9 +20154,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L11",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_changelog_v2_1_0_2026_07_04",
-      "target": "docs_changelog_fixed",
-      "confidence_score": 1.0
+      "target": "docs_changelog_fixed"
     },
     {
       "relation": "contains",
@@ -20134,9 +20164,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L22",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_changelog_v2_0_0_2026_06_25",
-      "target": "docs_changelog_added_22",
-      "confidence_score": 1.0
+      "target": "docs_changelog_added_22"
     },
     {
       "relation": "contains",
@@ -20144,9 +20174,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L29",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_changelog_v2_0_0_2026_06_25",
-      "target": "docs_changelog_refactored_optimized",
-      "confidence_score": 1.0
+      "target": "docs_changelog_refactored_optimized"
     },
     {
       "relation": "contains",
@@ -20154,9 +20184,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L46",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_changelog_v1_4_4_2026_05_14",
-      "target": "docs_changelog_docs",
-      "confidence_score": 1.0
+      "target": "docs_changelog_docs"
     },
     {
       "relation": "contains",
@@ -20164,9 +20194,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L53",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_changelog_v1_4_4_2026_05_14",
-      "target": "docs_changelog_fixed_53",
-      "confidence_score": 1.0
+      "target": "docs_changelog_fixed_53"
     },
     {
       "relation": "contains",
@@ -20174,9 +20204,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L70",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_changelog_v1_4_3_2026_05_14",
-      "target": "docs_changelog_ci_cd",
-      "confidence_score": 1.0
+      "target": "docs_changelog_ci_cd"
     },
     {
       "relation": "contains",
@@ -20184,9 +20214,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L58",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_changelog_v1_4_3_2026_05_14",
-      "target": "docs_changelog_fixed_58",
-      "confidence_score": 1.0
+      "target": "docs_changelog_fixed_58"
     },
     {
       "relation": "contains",
@@ -20194,9 +20224,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L65",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_changelog_v1_4_3_2026_05_14",
-      "target": "docs_changelog_optimization",
-      "confidence_score": 1.0
+      "target": "docs_changelog_optimization"
     },
     {
       "relation": "contains",
@@ -20204,9 +20234,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L83",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_changelog_1_4_2_2026_05_10",
-      "target": "docs_changelog_changed",
-      "confidence_score": 1.0
+      "target": "docs_changelog_changed"
     },
     {
       "relation": "contains",
@@ -20214,9 +20244,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L86",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_changelog_1_4_2_2026_05_10",
-      "target": "docs_changelog_docs_86",
-      "confidence_score": 1.0
+      "target": "docs_changelog_docs_86"
     },
     {
       "relation": "contains",
@@ -20224,9 +20254,9 @@
       "source_file": "docs/CHANGELOG.md",
       "source_location": "L79",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_changelog_1_4_2_2026_05_10",
-      "target": "docs_changelog_fixed_79",
-      "confidence_score": 1.0
+      "target": "docs_changelog_fixed_79"
     },
     {
       "relation": "contains",
@@ -20234,9 +20264,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L13",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package",
-      "target": "packages_web_package_dependencies",
-      "confidence_score": 1.0
+      "target": "packages_web_package_dependencies"
     },
     {
       "relation": "contains",
@@ -20244,9 +20274,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L26",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package",
-      "target": "packages_web_package_devdependencies",
-      "confidence_score": 1.0
+      "target": "packages_web_package_devdependencies"
     },
     {
       "relation": "contains",
@@ -20254,9 +20284,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L2",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package",
-      "target": "packages_web_package_name",
-      "confidence_score": 1.0
+      "target": "packages_web_package_name"
     },
     {
       "relation": "contains",
@@ -20264,9 +20294,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L3",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package",
-      "target": "packages_web_package_private",
-      "confidence_score": 1.0
+      "target": "packages_web_package_private"
     },
     {
       "relation": "contains",
@@ -20274,9 +20304,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L6",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package",
-      "target": "packages_web_package_scripts",
-      "confidence_score": 1.0
+      "target": "packages_web_package_scripts"
     },
     {
       "relation": "contains",
@@ -20284,9 +20314,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package",
-      "target": "packages_web_package_type",
-      "confidence_score": 1.0
+      "target": "packages_web_package_type"
     },
     {
       "relation": "contains",
@@ -20294,9 +20324,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L4",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package",
-      "target": "packages_web_package_version",
-      "confidence_score": 1.0
+      "target": "packages_web_package_version"
     },
     {
       "relation": "contains",
@@ -20304,9 +20334,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L8",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_scripts",
-      "target": "packages_web_package_scripts_build",
-      "confidence_score": 1.0
+      "target": "packages_web_package_scripts_build"
     },
     {
       "relation": "contains",
@@ -20314,9 +20344,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L7",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_scripts",
-      "target": "packages_web_package_scripts_dev",
-      "confidence_score": 1.0
+      "target": "packages_web_package_scripts_dev"
     },
     {
       "relation": "contains",
@@ -20324,9 +20354,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L10",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_scripts",
-      "target": "packages_web_package_scripts_lint",
-      "confidence_score": 1.0
+      "target": "packages_web_package_scripts_lint"
     },
     {
       "relation": "contains",
@@ -20334,9 +20364,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L9",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_scripts",
-      "target": "packages_web_package_scripts_preview",
-      "confidence_score": 1.0
+      "target": "packages_web_package_scripts_preview"
     },
     {
       "relation": "contains",
@@ -20344,9 +20374,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L11",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_scripts",
-      "target": "packages_web_package_scripts_test",
-      "confidence_score": 1.0
+      "target": "packages_web_package_scripts_test"
     },
     {
       "relation": "contains",
@@ -20354,9 +20384,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L15",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_dependencies",
-      "target": "packages_web_package_dependencies_axios",
-      "confidence_score": 1.0
+      "target": "packages_web_package_dependencies_axios"
     },
     {
       "relation": "contains",
@@ -20364,9 +20394,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L16",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_dependencies",
-      "target": "packages_web_package_dependencies_date_fns",
-      "confidence_score": 1.0
+      "target": "packages_web_package_dependencies_date_fns"
     },
     {
       "relation": "contains",
@@ -20374,9 +20404,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L17",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_dependencies",
-      "target": "packages_web_package_dependencies_date_fns_tz",
-      "confidence_score": 1.0
+      "target": "packages_web_package_dependencies_date_fns_tz"
     },
     {
       "relation": "contains",
@@ -20384,9 +20414,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L14",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_dependencies",
-      "target": "packages_web_package_dependencies_headlessui_react",
-      "confidence_score": 1.0
+      "target": "packages_web_package_dependencies_headlessui_react"
     },
     {
       "relation": "contains",
@@ -20394,9 +20424,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L18",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_dependencies",
-      "target": "packages_web_package_dependencies_lucide_react",
-      "confidence_score": 1.0
+      "target": "packages_web_package_dependencies_lucide_react"
     },
     {
       "relation": "contains",
@@ -20404,9 +20434,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L19",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_dependencies",
-      "target": "packages_web_package_dependencies_pdf_lib",
-      "confidence_score": 1.0
+      "target": "packages_web_package_dependencies_pdf_lib"
     },
     {
       "relation": "contains",
@@ -20414,9 +20444,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L20",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_dependencies",
-      "target": "packages_web_package_dependencies_react",
-      "confidence_score": 1.0
+      "target": "packages_web_package_dependencies_react"
     },
     {
       "relation": "contains",
@@ -20424,9 +20454,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L21",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_dependencies",
-      "target": "packages_web_package_dependencies_react_dom",
-      "confidence_score": 1.0
+      "target": "packages_web_package_dependencies_react_dom"
     },
     {
       "relation": "contains",
@@ -20434,9 +20464,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L22",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_dependencies",
-      "target": "packages_web_package_dependencies_react_hot_toast",
-      "confidence_score": 1.0
+      "target": "packages_web_package_dependencies_react_hot_toast"
     },
     {
       "relation": "contains",
@@ -20444,9 +20474,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L23",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_dependencies",
-      "target": "packages_web_package_dependencies_recharts",
-      "confidence_score": 1.0
+      "target": "packages_web_package_dependencies_recharts"
     },
     {
       "relation": "contains",
@@ -20454,9 +20484,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L24",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_dependencies",
-      "target": "packages_web_package_dependencies_to_words",
-      "confidence_score": 1.0
+      "target": "packages_web_package_dependencies_to_words"
     },
     {
       "relation": "contains",
@@ -20464,9 +20494,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L32",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_devdependencies",
-      "target": "packages_web_package_devdependencies_eslint",
-      "confidence_score": 1.0
+      "target": "packages_web_package_devdependencies_eslint"
     },
     {
       "relation": "contains",
@@ -20474,9 +20504,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L27",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_devdependencies",
-      "target": "packages_web_package_devdependencies_eslint_js",
-      "confidence_score": 1.0
+      "target": "packages_web_package_devdependencies_eslint_js"
     },
     {
       "relation": "contains",
@@ -20484,9 +20514,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L33",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_devdependencies",
-      "target": "packages_web_package_devdependencies_eslint_plugin_react_hooks",
-      "confidence_score": 1.0
+      "target": "packages_web_package_devdependencies_eslint_plugin_react_hooks"
     },
     {
       "relation": "contains",
@@ -20494,9 +20524,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L34",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_devdependencies",
-      "target": "packages_web_package_devdependencies_eslint_plugin_react_refresh",
-      "confidence_score": 1.0
+      "target": "packages_web_package_devdependencies_eslint_plugin_react_refresh"
     },
     {
       "relation": "contains",
@@ -20504,9 +20534,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L35",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_devdependencies",
-      "target": "packages_web_package_devdependencies_globals",
-      "confidence_score": 1.0
+      "target": "packages_web_package_devdependencies_globals"
     },
     {
       "relation": "contains",
@@ -20514,9 +20544,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L36",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_devdependencies",
-      "target": "packages_web_package_devdependencies_tailwindcss",
-      "confidence_score": 1.0
+      "target": "packages_web_package_devdependencies_tailwindcss"
     },
     {
       "relation": "contains",
@@ -20524,9 +20554,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L28",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_devdependencies",
-      "target": "packages_web_package_devdependencies_tailwindcss_vite",
-      "confidence_score": 1.0
+      "target": "packages_web_package_devdependencies_tailwindcss_vite"
     },
     {
       "relation": "contains",
@@ -20534,9 +20564,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L29",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_devdependencies",
-      "target": "packages_web_package_devdependencies_types_react",
-      "confidence_score": 1.0
+      "target": "packages_web_package_devdependencies_types_react"
     },
     {
       "relation": "contains",
@@ -20544,9 +20574,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L30",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_devdependencies",
-      "target": "packages_web_package_devdependencies_types_react_dom",
-      "confidence_score": 1.0
+      "target": "packages_web_package_devdependencies_types_react_dom"
     },
     {
       "relation": "contains",
@@ -20554,9 +20584,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L37",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_devdependencies",
-      "target": "packages_web_package_devdependencies_vite",
-      "confidence_score": 1.0
+      "target": "packages_web_package_devdependencies_vite"
     },
     {
       "relation": "contains",
@@ -20564,9 +20594,9 @@
       "source_file": "packages/web/package.json",
       "source_location": "L31",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "packages_web_package_devdependencies",
-      "target": "packages_web_package_devdependencies_vitejs_plugin_react",
-      "confidence_score": 1.0
+      "target": "packages_web_package_devdependencies_vitejs_plugin_react"
     },
     {
       "relation": "contains",
@@ -48000,16 +48030,6 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
-      "source_file": ".agents/rules/03-database-migrations.md",
-      "source_location": "L1",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "agents_rules_03_database_migrations",
-      "target": "agents_rules_03_database_migrations_rule_of_immutability_database_migrations"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
       "source_file": ".agents/skills/plan-feature/SKILL.md",
       "source_location": "L11",
       "weight": 1.0,
@@ -51890,5 +51910,5 @@
       "source_file": "packages/mobile/assets/images/tabIcons/home@3x.png"
     }
   ],
-  "built_at_commit": "54bf3271d82c6c6dd7f6868c30407361a9ef540f"
+  "built_at_commit": "c1677ac4f866e21301d4f04b972bad99f86f90e1"
 }

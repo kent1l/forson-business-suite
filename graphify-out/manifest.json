@@ -2165,9 +2165,9 @@
     "semantic_hash": "b6ca0aee17779224bc0f5dc79196a15e"
   },
   ".agents/rules/03-database-migrations.md": {
-    "mtime": 1779279573.1738918,
-    "ast_hash": "b9ddb40a42753b3309751c7fc76173e6",
-    "semantic_hash": "b9ddb40a42753b3309751c7fc76173e6"
+    "mtime": 1783207874.9961958,
+    "ast_hash": "2b5023af704d1b0322dbf3273afe9cd7",
+    "semantic_hash": ""
   },
   ".agents/skills/plan-feature/SKILL.md": {
     "mtime": 1783098966.4469204,
