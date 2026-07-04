@@ -774,16 +774,29 @@ router.get('/inventory/cycle-count/employees', protect, hasPermission('cycle_cou
                 e.employee_id,
                 e.first_name || ' ' || e.last_name AS employee_name,
                 e.is_active,
-                COUNT(DISTINCT b.batch_id) FILTER (WHERE b.status IN ('PENDING','IN_PROGRESS')) AS active_batches,
-                COUNT(l.line_id) FILTER (WHERE l.status = 'PENDING') AS pending_items
+                COALESCE(sub.active_batches, 0) AS active_batches,
+                COALESCE(sub.pending_items, 0) AS pending_items
             FROM employee e
-            LEFT JOIN cycle_count_batch b ON b.employee_id = e.employee_id
-            LEFT JOIN cycle_count_line l ON l.batch_id = b.batch_id AND l.status = 'PENDING'
-            LEFT JOIN role_permission rp ON e.permission_level_id = rp.permission_level_id
-            LEFT JOIN permission p ON rp.permission_id = p.permission_id
+            LEFT JOIN (
+                SELECT
+                    b.employee_id,
+                    COUNT(DISTINCT b.batch_id) AS active_batches,
+                    COUNT(l.line_id) AS pending_items
+                FROM cycle_count_batch b
+                LEFT JOIN cycle_count_line l ON l.batch_id = b.batch_id AND l.status = 'PENDING'
+                WHERE b.status IN ('PENDING', 'IN_PROGRESS')
+                GROUP BY b.employee_id
+            ) sub ON sub.employee_id = e.employee_id
             WHERE e.is_active = TRUE
-              AND (e.permission_level_id = 10 OR p.permission_key = 'cycle_count:execute')
-            GROUP BY e.employee_id
+              AND (
+                  e.permission_level_id = 10
+                  OR EXISTS (
+                      SELECT 1 FROM role_permission rp
+                      JOIN permission p ON rp.permission_id = p.permission_id
+                      WHERE rp.permission_level_id = e.permission_level_id
+                        AND p.permission_key = 'cycle_count:execute'
+                  )
+              )
             ORDER BY employee_name ASC
         `);
         res.json(rows);
