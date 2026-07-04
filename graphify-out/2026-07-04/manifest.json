@@ -485,8 +485,8 @@
     "semantic_hash": "681ed4c9ea2d29451a6d38cb7fc19e59"
   },
   "packages/api/routes/cycleCountRoutes.js": {
-    "mtime": 1783148252.5563278,
-    "ast_hash": "1c5f650d96c96d57128d9c3673d42835",
+    "mtime": 1783151642.1126502,
+    "ast_hash": "8b8585549c3035dd462e2e2f939ecbf8",
     "semantic_hash": ""
   },
   "packages/api/routes/dashboardRoutes.js": {
@@ -800,9 +800,9 @@
     "semantic_hash": "10af60a946e825510538ef9bd1dd225d"
   },
   "packages/mobile/.expo/types/router.d.ts": {
-    "mtime": 1783147605.4194136,
-    "ast_hash": "f00456c6d4e1e66c14639044269589b6",
-    "semantic_hash": "f00456c6d4e1e66c14639044269589b6"
+    "mtime": 1783151769.539711,
+    "ast_hash": "3de0352d8c82aea6656b22739007583c",
+    "semantic_hash": ""
   },
   "packages/mobile/.vscode/extensions.json": {
     "mtime": 1782378010.37359,
@@ -890,8 +890,8 @@
     "semantic_hash": "f7822a0aa28a5bc3e8513e24492b4449"
   },
   "packages/mobile/src/app/_layout.tsx": {
-    "mtime": 1783147603.7933486,
-    "ast_hash": "321449364a81003302139c2295c43726",
+    "mtime": 1783151756.472192,
+    "ast_hash": "c677104aaf93b08b8529b47163c894f3",
     "semantic_hash": ""
   },
   "packages/mobile/src/app/count.tsx": {
@@ -905,8 +905,8 @@
     "semantic_hash": "42adf91e47cfe6b5d4ede54a35db24d0"
   },
   "packages/mobile/src/app/index.tsx": {
-    "mtime": 1783147603.8223498,
-    "ast_hash": "a7d17cdd1c88f89003cac9084fde82ac",
+    "mtime": 1783151768.4144762,
+    "ast_hash": "b22a1411cc7830d468c0514644a78f9b",
     "semantic_hash": ""
   },
   "packages/mobile/src/app/unassigned-search.tsx": {
@@ -1085,8 +1085,8 @@
     "semantic_hash": "c94ac99fe545ac89591ca001934f7ab1"
   },
   "packages/web/src/components/cycleCount/EmployeePerformanceTab.jsx": {
-    "mtime": 1783148353.201358,
-    "ast_hash": "6dc8d79e5c30d3321d32c092a3b33788",
+    "mtime": 1783149254.7351298,
+    "ast_hash": "441be8c90104f494607c2a6cbc084b44",
     "semantic_hash": ""
   },
   "packages/web/src/components/cycleCount/ManagerReviewDesk.jsx": {
@@ -1100,9 +1100,9 @@
     "semantic_hash": "cfbcf0ffabccf5a2beb698896c7ee7ed"
   },
   "packages/web/src/components/cycleCount/StaffDashboard.jsx": {
-    "mtime": 1782378010.4125915,
-    "ast_hash": "b63cff9e25eae9f4e3af254a9b99f6bd",
-    "semantic_hash": "b63cff9e25eae9f4e3af254a9b99f6bd"
+    "mtime": 1783151697.3998458,
+    "ast_hash": "4cf5adb0e955bb3d4353c32a26c978a4",
+    "semantic_hash": ""
   },
   "packages/web/src/components/dashboard/AnalyticsCharts.jsx": {
     "mtime": 1779279573.240087,
@@ -2460,13 +2460,23 @@
     "semantic_hash": ""
   },
   "packages/web/src/components/cycleCount/CycleCountControlsTab.jsx": {
-    "mtime": 1783148338.4007654,
-    "ast_hash": "7503b1b9d27a9b5268bc9deb3cb262f4",
+    "mtime": 1783149322.4115934,
+    "ast_hash": "ed90c4c0d64861c41fc5f19a61c34946",
     "semantic_hash": ""
   },
   "packages/web/src/components/cycleCount/EmployeeDetailModal.jsx": {
     "mtime": 1783148304.482407,
     "ast_hash": "16b62566e2067473dcac50c747495476",
+    "semantic_hash": ""
+  },
+  "packages/mobile/src/app/my-progress.tsx": {
+    "mtime": 1783151749.600919,
+    "ast_hash": "802380e699c413e5a8c3b48bbe6a7502",
+    "semantic_hash": ""
+  },
+  "packages/web/src/components/cycleCount/StaffProgressTab.jsx": {
+    "mtime": 1783151676.7010238,
+    "ast_hash": "568bd1e294e19a694d2f310a6e7da67a",
     "semantic_hash": ""
   }
 }
