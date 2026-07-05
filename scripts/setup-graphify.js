@@ -27,11 +27,27 @@ async function main() {
     console.log('    Graphify Development Setup    ');
     console.log('=========================================\n');
 
+    const buildLocalGraph = async () => {
+        const buildWanted = await askQuestion('\nWould you like to build the local AST index now? (y/N): ');
+        rl.close();
+        if (buildWanted.trim().toLowerCase() === 'y') {
+            console.log('\nStarting local Graphify build (AST extraction only, no LLM clustering)...');
+            try {
+                execSync('npx graphify extract . --no-cluster', { stdio: 'inherit' });
+                console.log('✅ Local Graphify build complete!');
+            } catch (err) {
+                console.error('\nGraphify build failed. You can run it manually later with `npx graphify extract . --no-cluster`.');
+            }
+        } else {
+            console.log('\nSetup complete. You can build the graph later by running: npx graphify extract . --no-cluster');
+        }
+    };
+
     const setupWanted = await askQuestion('Would you like to set up an LLM API key for Graphify initialization? (Y/n): ');
     
     if (setupWanted.trim().toLowerCase() === 'n') {
-        console.log('Skipping Graphify setup. You can set it up manually later in .env');
-        rl.close();
+        console.log('Skipping LLM API key setup.');
+        await buildLocalGraph();
         return;
     }
 
@@ -68,8 +84,8 @@ async function main() {
     const apiKey = await askQuestion(`\nPlease enter your ${keyName}: `);
     
     if (!apiKey.trim()) {
-        console.log('No API key provided. Skipping Graphify setup.');
-        rl.close();
+        console.log('\nNo API key provided. Skipping Graphify API setup.');
+        await buildLocalGraph();
         return;
     }
 
@@ -101,13 +117,13 @@ async function main() {
     if (buildWanted.trim().toLowerCase() === 'y') {
         console.log('\nStarting Graphify build...');
         try {
-            execSync('npx graphify', { stdio: 'inherit' });
+            execSync('npx graphify extract .', { stdio: 'inherit' });
             console.log('✅ Graphify build complete!');
         } catch (err) {
-            console.error('\nGraphify build failed. You can run it manually later with `npx graphify`.');
+            console.error('\nGraphify build failed. You can run it manually later with `npx graphify extract .`.');
         }
     } else {
-        console.log('\nSetup complete. You can build the graph later by running: npx graphify');
+        console.log('\nSetup complete. You can build the graph later by running: npx graphify extract .');
     }
 }
 
