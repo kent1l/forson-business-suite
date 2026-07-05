@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.1.3 - 2026-07-05
+
+### Fixed
+- **Permission Access in AuthContext**: Resolved an issue with nested permission mapping inside `AuthContext`, enabling fallback checking for `user?.permissions` and fixing permission setting on login.
+- **HMR Local Host Routing**: Removed the hardcoded local HMR host constraint in Vite configuration to ensure correct socket communication across Docker container ports.
+
 ## v2.1.2 - 2026-07-05
 
 ### Added
