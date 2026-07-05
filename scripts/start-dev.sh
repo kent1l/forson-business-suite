@@ -17,6 +17,13 @@ if grep -q "MEILISEARCH_MASTER_KEY=$" .env || grep -q "your_placeholder" .env; t
     SECURE_KEY=$(openssl rand -hex 32)
     sed -i "s|^MEILISEARCH_MASTER_KEY=.*|MEILISEARCH_MASTER_KEY=${SECURE_KEY}|g" .env
 fi
+
+if command -v node >/dev/null 2>&1; then
+    echo "[Initialization] Checking Graphify configuration..."
+    node scripts/setup-graphify.js
+else
+    echo "[Initialization] Node.js not found on host. Skipping Graphify interactive setup."
+fi
 # -----------------------------------
 
 log "Starting local development stack..."
