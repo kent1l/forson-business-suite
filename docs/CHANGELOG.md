@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.1.2 - 2026-07-05
+
+### Added
+- **Mobile Settings & User Profile Screens**: Added profile and settings screens in the mobile app, with support in the API employee routes, configured Expo navigation, and resolved React Native modal imports in the main dashboard view.
+- **Bulk Removal Support for Cycle Count**: Implemented bulk removal options for cycle count items with item filtering and selection controls on the manager review desk.
+- **Graphify Environment Setup Script Enhancements**: Added an interactive AI platform integration setup and local AST extraction fallback to the developer environment setup scripts.
+
 ## v2.1.1 - 2026-07-04
 
 ### Fixed
