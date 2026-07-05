@@ -132,6 +132,19 @@ export default function CycleCountControlsTab() {
         }
     };
 
+    const handleRemoveItems = async (lineIds, empName) => {
+        if (!window.confirm(`Remove ${lineIds.length} items from ${empName}'s queue?`)) return false;
+        try {
+            await api.post('/inventory/cycle-count/lines/bulk-delete', { line_ids: lineIds });
+            toast.success(`${lineIds.length} items removed from queue.`);
+            await fetchEmployees();
+            return true;
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to remove items.');
+            return false;
+        }
+    };
+
     return (
         <div className="cycle-count-controls space-y-8">
             {/* ── Manual Batch Trigger ── */}
@@ -255,24 +268,34 @@ export default function CycleCountControlsTab() {
                 ) : employees.length === 0 ? (
                     <p className="text-sm text-gray-500">No eligible employees found.</p>
                 ) : (
-                    <EmployeeWorkloadTable employees={employees} onRemoveItem={handleRemoveItem} />
+                    <EmployeeWorkloadTable 
+                        employees={employees} 
+                        onRemoveItem={handleRemoveItem} 
+                        onRemoveItems={handleRemoveItems} 
+                    />
                 )}
             </section>
         </div>
     );
 }
 
-function EmployeeWorkloadTable({ employees, onRemoveItem }) {
+function EmployeeWorkloadTable({ employees, onRemoveItem, onRemoveItems }) {
     const [expanded, setExpanded] = useState(null);
     const [pendingLines, setPendingLines] = useState({});
     const [loadingEmp, setLoadingEmp] = useState(null);
+    const [selectedLineIds, setSelectedLineIds] = useState([]);
+    const [filterText, setFilterText] = useState('');
 
     const toggleExpand = async (empId) => {
         if (expanded === empId) {
             setExpanded(null);
+            setSelectedLineIds([]);
+            setFilterText('');
             return;
         }
         setExpanded(empId);
+        setSelectedLineIds([]);
+        setFilterText('');
         if (pendingLines[empId]) return; // already loaded
         setLoadingEmp(empId);
         try {
@@ -292,6 +315,18 @@ function EmployeeWorkloadTable({ employees, onRemoveItem }) {
             const updated = (prev[empId] || []).filter(l => l.line_id !== lineId);
             return { ...prev, [empId]: updated };
         });
+        setSelectedLineIds(prev => prev.filter(id => id !== lineId));
+    };
+
+    const removeSelectedItems = async (empId, empName) => {
+        const success = await onRemoveItems(selectedLineIds, empName);
+        if (success) {
+            setPendingLines(prev => {
+                const updated = (prev[empId] || []).filter(l => !selectedLineIds.includes(l.line_id));
+                return { ...prev, [empId]: updated };
+            });
+            setSelectedLineIds([]);
+        }
     };
 
     return (
@@ -306,70 +341,154 @@ function EmployeeWorkloadTable({ employees, onRemoveItem }) {
                     </tr>
                 </thead>
                 <tbody>
-                    {employees.map(emp => (
-                        <React.Fragment key={emp.employee_id}>
-                            <tr className="border-b hover:bg-gray-50">
-                                <td className="py-2 px-3 font-medium">{emp.employee_name}</td>
-                                <td className="py-2 px-3 text-center">{emp.active_batches || 0}</td>
-                                <td className="py-2 px-3 text-center">
-                                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${parseInt(emp.pending_items) > 0 ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-600'}`}>
-                                        {emp.pending_items || 0}
-                                    </span>
-                                </td>
-                                <td className="py-2 px-3 text-center">
-                                    {parseInt(emp.pending_items) > 0 && (
-                                        <button
-                                            onClick={() => toggleExpand(emp.employee_id)}
-                                            className="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 rounded px-2 py-0.5 transition-colors"
-                                        >
-                                            {expanded === emp.employee_id ? '▲ Hide' : '▼ View Items'}
-                                        </button>
-                                    )}
-                                </td>
-                            </tr>
+                    {employees.map(emp => {
+                        const lines = pendingLines[emp.employee_id] || [];
+                        const filteredLines = lines.filter(line => {
+                            const q = filterText.toLowerCase();
+                            return (
+                                (line.display_name || '').toLowerCase().includes(q) ||
+                                (line.internal_sku || '').toLowerCase().includes(q)
+                            );
+                        });
 
-                            {expanded === emp.employee_id && (
-                                <tr>
-                                    <td colSpan={4} className="bg-gray-50 px-4 py-3 border-b">
-                                        {loadingEmp === emp.employee_id ? (
-                                            <p className="text-xs text-gray-400">Loading items…</p>
-                                        ) : (pendingLines[emp.employee_id] || []).length === 0 ? (
-                                            <p className="text-xs text-gray-400">No pending items.</p>
-                                        ) : (
-                                            <table className="min-w-full text-xs border border-gray-200 rounded bg-white">
-                                                <thead className="bg-gray-100">
-                                                    <tr>
-                                                        <th className="py-1.5 px-3 border-b text-left">Part</th>
-                                                        <th className="py-1.5 px-3 border-b text-left">SKU</th>
-                                                        <th className="py-1.5 px-3 border-b text-center">Batch</th>
-                                                        <th className="py-1.5 px-3 border-b text-center">Remove</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {(pendingLines[emp.employee_id] || []).map(line => (
-                                                        <tr key={line.line_id} className="border-b hover:bg-red-50">
-                                                            <td className="py-1.5 px-3 max-w-xs truncate">{line.display_name}</td>
-                                                            <td className="py-1.5 px-3 font-mono">{line.internal_sku}</td>
-                                                            <td className="py-1.5 px-3 text-center text-gray-500">{line.batch_id}</td>
-                                                            <td className="py-1.5 px-3 text-center">
-                                                                <button
-                                                                    onClick={() => removeItem(line.line_id, line.display_name || line.internal_sku, emp.employee_id, emp.employee_name)}
-                                                                    className="text-red-500 hover:text-red-700 font-medium px-2 py-0.5 rounded border border-red-200 hover:bg-red-50 transition-colors"
-                                                                    title="Remove from queue"
-                                                                >
-                                                                    ✕ Remove
-                                                                </button>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
+                        return (
+                            <React.Fragment key={emp.employee_id}>
+                                <tr className="border-b hover:bg-gray-50">
+                                    <td className="py-2 px-3 font-medium">{emp.employee_name}</td>
+                                    <td className="py-2 px-3 text-center">{emp.active_batches || 0}</td>
+                                    <td className="py-2 px-3 text-center">
+                                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${parseInt(emp.pending_items) > 0 ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-600'}`}>
+                                            {emp.pending_items || 0}
+                                        </span>
+                                    </td>
+                                    <td className="py-2 px-3 text-center">
+                                        {parseInt(emp.pending_items) > 0 && (
+                                            <button
+                                                onClick={() => toggleExpand(emp.employee_id)}
+                                                className="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 rounded px-2 py-0.5 transition-colors font-medium"
+                                            >
+                                                {expanded === emp.employee_id ? '▲ Hide' : '▼ View Items'}
+                                            </button>
                                         )}
                                     </td>
                                 </tr>
-                            )}
-                        </React.Fragment>
-                    ))}
+
+                                {expanded === emp.employee_id && (
+                                    <tr>
+                                        <td colSpan={4} className="bg-gray-50 px-4 py-3 border-b">
+                                            {loadingEmp === emp.employee_id ? (
+                                                <p className="text-xs text-gray-400">Loading items…</p>
+                                            ) : lines.length === 0 ? (
+                                                <p className="text-xs text-gray-400">No pending items.</p>
+                                            ) : (
+                                                <div>
+                                                    {/* Filter & Action Panel */}
+                                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 bg-gray-100/80 p-2.5 rounded-lg border border-gray-200">
+                                                        <div className="relative max-w-xs w-full">
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Filter by part or SKU..."
+                                                                value={filterText}
+                                                                onChange={e => setFilterText(e.target.value)}
+                                                                className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                                                            />
+                                                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">
+                                                                🔍
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex items-center gap-3">
+                                                            {selectedLineIds.length > 0 && (
+                                                                <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg py-1 px-3">
+                                                                    <span className="text-xs text-red-700 font-semibold">
+                                                                        {selectedLineIds.length} selected
+                                                                    </span>
+                                                                    <button
+                                                                        onClick={() => removeSelectedItems(emp.employee_id, emp.employee_name)}
+                                                                        className="text-xs bg-red-600 hover:bg-red-700 text-white font-medium py-1 px-2.5 rounded shadow-sm transition-colors"
+                                                                    >
+                                                                        ✕ Remove Selected
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                            <span className="text-xs text-gray-500 font-semibold bg-white border border-gray-200 py-1 px-2.5 rounded-lg shadow-sm">
+                                                                Showing {filteredLines.length} of {lines.length} items
+                                                            </span>
+                                                        </div>
+                                                    </div>
+
+                                                    {filteredLines.length === 0 ? (
+                                                        <div className="text-center py-6 text-xs text-gray-400 bg-white border border-gray-200 rounded-lg">
+                                                            No items match the filter criteria.
+                                                        </div>
+                                                    ) : (
+                                                        <table className="min-w-full text-xs border border-gray-200 rounded bg-white">
+                                                            <thead className="bg-gray-100">
+                                                                <tr>
+                                                                    <th className="py-1.5 px-3 border-b text-left w-10">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={filteredLines.length > 0 && filteredLines.every(l => selectedLineIds.includes(l.line_id))}
+                                                                            onChange={e => {
+                                                                                if (e.target.checked) {
+                                                                                    setSelectedLineIds(prev => {
+                                                                                        const newIds = filteredLines.map(l => l.line_id);
+                                                                                        return Array.from(new Set([...prev, ...newIds]));
+                                                                                    });
+                                                                                } else {
+                                                                                    setSelectedLineIds(prev => prev.filter(id => !filteredLines.some(l => l.line_id === id)));
+                                                                                }
+                                                                            }}
+                                                                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer h-3.5 w-3.5"
+                                                                        />
+                                                                    </th>
+                                                                    <th className="py-1.5 px-3 border-b text-left">Part</th>
+                                                                    <th className="py-1.5 px-3 border-b text-left">SKU</th>
+                                                                    <th className="py-1.5 px-3 border-b text-center">Batch</th>
+                                                                    <th className="py-1.5 px-3 border-b text-center">Remove</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {filteredLines.map(line => (
+                                                                    <tr key={line.line_id} className={`border-b hover:bg-red-50/50 ${selectedLineIds.includes(line.line_id) ? 'bg-blue-50/40 hover:bg-blue-50' : ''}`}>
+                                                                        <td className="py-1.5 px-3 text-left">
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={selectedLineIds.includes(line.line_id)}
+                                                                                onChange={e => {
+                                                                                    if (e.target.checked) {
+                                                                                        setSelectedLineIds(prev => [...prev, line.line_id]);
+                                                                                    } else {
+                                                                                        setSelectedLineIds(prev => prev.filter(id => id !== line.line_id));
+                                                                                    }
+                                                                                }}
+                                                                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer h-3.5 w-3.5"
+                                                                            />
+                                                                        </td>
+                                                                        <td className="py-1.5 px-3 max-w-xs truncate">{line.display_name}</td>
+                                                                        <td className="py-1.5 px-3 font-mono">{line.internal_sku}</td>
+                                                                        <td className="py-1.5 px-3 text-center text-gray-500">{line.batch_id}</td>
+                                                                        <td className="py-1.5 px-3 text-center">
+                                                                            <button
+                                                                                onClick={() => removeItem(line.line_id, line.display_name || line.internal_sku, emp.employee_id, emp.employee_name)}
+                                                                                className="text-red-500 hover:text-red-700 font-medium px-2 py-0.5 rounded border border-red-200 hover:bg-red-50 transition-colors"
+                                                                                title="Remove from queue"
+                                                                            >
+                                                                                ✕ Remove
+                                                                            </button>
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </td>
+                                    </tr>
+                                )}
+                            </React.Fragment>
+                        );
+                    })}
                 </tbody>
             </table>
         </div>

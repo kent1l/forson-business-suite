@@ -641,6 +641,36 @@ router.get('/inventory/cycle-count/performance', protect, hasPermission('cycle_c
     }
 });
 
+// POST /api/inventory/cycle-count/lines/bulk-delete — remove multiple PENDING assigned items
+router.post('/inventory/cycle-count/lines/bulk-delete', protect, hasPermission('cycle_count:manage'), async (req, res) => {
+    const { line_ids } = req.body;
+    if (!line_ids || !Array.isArray(line_ids) || line_ids.length === 0) {
+        return res.status(400).json({ message: 'line_ids array is required' });
+    }
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        const checkRes = await client.query(
+            'SELECT status FROM cycle_count_line WHERE line_id = ANY($1)',
+            [line_ids]
+        );
+        const nonPending = checkRes.rows.some(r => r.status !== 'PENDING');
+        if (nonPending) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: 'Only PENDING items can be removed' });
+        }
+        await client.query('DELETE FROM cycle_count_line WHERE line_id = ANY($1)', [line_ids]);
+        await client.query('COMMIT');
+        res.json({ message: `${line_ids.length} items removed from queue` });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    } finally {
+        client.release();
+    }
+});
+
 // DELETE /api/inventory/cycle-count/lines/:id  — remove a PENDING assigned item
 router.delete('/inventory/cycle-count/lines/:id', protect, hasPermission('cycle_count:manage'), async (req, res) => {
     const { id } = req.params;
