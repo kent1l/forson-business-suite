@@ -48,16 +48,50 @@ router.post('/login', async (req, res) => {
     
         res.json({ 
             message: 'Login successful', 
-            user: user_data,
-            token: generateToken(user_data),
-            permissions
+            token: generateToken(user), 
+            user: { ...user_data, permissions }
         });
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
+    } catch (error) {
+        console.error('Login error', error);
+        res.status(500).json({ message: 'Server error' });
     }
 });
 
+// PUT /profile - Update current user's profile (username, password)
+router.put('/profile', protect, async (req, res) => {
+    const { username, password } = req.body;
+    const employeeId = req.user.employee_id;
+
+    if (!username) {
+        return res.status(400).json({ message: 'Username is required' });
+    }
+
+    try {
+        let updatedEmployee;
+        if (password) {
+            const salt = await bcrypt.genSalt(10);
+            const password_hash = await bcrypt.hash(password, salt);
+            updatedEmployee = await db.query(
+                `UPDATE employee SET username = $1, password_hash = $2, password_salt = $3 WHERE employee_id = $4 RETURNING employee_id, username, first_name, last_name`,
+                [username, password_hash, salt, employeeId]
+            );
+        } else {
+            updatedEmployee = await db.query(
+                `UPDATE employee SET username = $1 WHERE employee_id = $2 RETURNING employee_id, username, first_name, last_name`,
+                [username, employeeId]
+            );
+        }
+
+        if (updatedEmployee.rows.length === 0) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        res.json(updatedEmployee.rows[0]);
+    } catch (error) {
+        console.error('Update profile error', error);
+        res.status(500).json({ message: 'Server error updating profile' });
+    }
+});
 
 // --- SECURED ADMIN ROUTES ---
 

@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import apiClient from '../api/client';
 import useCycleCountStore from '../store/useCycleCountStore';
+import { Ionicons } from '@expo/vector-icons';
 
 const fetchAssignedTasks = async () => {
   const { data } = await apiClient.get('/inventory/cycle-count/my-tasks');
@@ -21,6 +22,7 @@ export default function DashboardScreen() {
   });
 
   const [refreshing, setRefreshing] = useState(false);
+  const [isProfileMenuVisible, setProfileMenuVisible] = useState(false);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -74,6 +76,13 @@ export default function DashboardScreen() {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Dashboard</Text>
+        <TouchableOpacity
+          style={styles.profileButton}
+          onPress={() => setProfileMenuVisible(true)}
+          accessibilityLabel="Profile Menu"
+        >
+          <Ionicons name="person-circle-outline" size={32} color="#4b5563" />
+        </TouchableOpacity>
       </View>
       <View style={styles.container}>
         <View style={styles.summaryContainer}>
@@ -119,6 +128,45 @@ export default function DashboardScreen() {
         }
       />
       </View>
+
+      <Modal
+        visible={isProfileMenuVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setProfileMenuVisible(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay} 
+          activeOpacity={1} 
+          onPress={() => setProfileMenuVisible(false)}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Menu</Text>
+            
+            <TouchableOpacity 
+              style={styles.menuButton}
+              onPress={() => {
+                setProfileMenuVisible(false);
+                router.push('/profile');
+              }}
+            >
+              <Ionicons name="person-outline" size={24} color="#3b82f6" />
+              <Text style={styles.menuButtonText}>Go to Profile</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.menuButton}
+              onPress={() => {
+                setProfileMenuVisible(false);
+                router.push('/settings');
+              }}
+            >
+              <Ionicons name="settings-outline" size={24} color="#3b82f6" />
+              <Text style={styles.menuButtonText}>Go to Settings</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -131,6 +179,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: '#ffffff',
     paddingHorizontal: 16,
     paddingVertical: 14,
@@ -141,6 +190,9 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#111827',
+  },
+  profileButton: {
+    padding: 4,
   },
   container: {
     flex: 1,
@@ -256,5 +308,45 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#6b7280',
     marginTop: 20,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 24,
+    paddingBottom: 48,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  menuButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f9fafb',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  menuButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginLeft: 12,
   },
 });
