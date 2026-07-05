@@ -1,16 +1,16 @@
 # Graph Report - forson-business-suite  (2026-07-05)
 
 ## Corpus Check
-- 405 files · ~269,503 words
+- 405 files · ~270,015 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1942 nodes · 3019 edges · 288 communities (120 shown, 168 thin omitted)
+- 1942 nodes · 3011 edges · 288 communities (120 shown, 168 thin omitted)
 - Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 85 edges (avg confidence: 0.58)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `353acc3b`
+- Built from commit: `87f82902`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -280,14 +280,14 @@
 - [[_COMMUNITY_documentRoutes.js|documentRoutes.js]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `api` - 68 edges
+1. `api` - 67 edges
 2. `useAuth()` - 43 edges
 3. `useSettings()` - 37 edges
 4. `Icon()` - 36 edges
 5. `ICONS` - 35 edges
-6. `hasPermission()` - 34 edges
+6. `hasPermission()` - 33 edges
 7. `sortData()` - 33 edges
-8. `protect()` - 28 edges
+8. `protect()` - 27 edges
 9. `Modal()` - 25 edges
 10. `PartMergeService` - 23 edges
 
@@ -366,16 +366,16 @@ Cohesion: 0.07
 Nodes (29): backgroundColor, foregroundImage, monochromeImage, adaptiveIcon, package, predictiveBackGestureEnabled, projectId, reactCompiler (+21 more)
 
 ### Community 12 - "Web Client Services & Search Combobox"
-Cohesion: 0.25
-Nodes (7): db, express, { protect, hasPermission }, router, cron, db, generateCycleCountBatches()
+Cohesion: 0.40
+Nodes (4): db, express, { protect, hasPermission }, router
 
 ### Community 13 - "API Routes & Pagination Middleware"
-Cohesion: 0.07
-Nodes (28): buildPaginationMeta(), paginatedResponse(), parsePaginationQuery(), db, express, { parsePaginationQuery, paginatedResponse }, router, db (+20 more)
+Cohesion: 0.08
+Nodes (26): buildPaginationMeta(), paginatedResponse(), parsePaginationQuery(), db, express, { parsePaginationQuery, paginatedResponse }, router, db (+18 more)
 
 ### Community 14 - "Auth Permissions & Dashboard Widgets"
-Cohesion: 0.20
-Nodes (9): generateUniqueCode(), db, express, { generateUniqueCode }, router, db, express, { generateUniqueCode } (+1 more)
+Cohesion: 0.19
+Nodes (11): db, { enqueuePartUpsert }, express, router, { syncPartWithMeili }, ACTIONS, db, enqueueEvent() (+3 more)
 
 ### Community 15 - "Cycle Count Operations (15)"
 Cohesion: 0.09
@@ -394,8 +394,8 @@ Cohesion: 0.22
 Nodes (18): hasPermission(), LowStockAlertsPanel(), RecentActivityFeed(), RecentSalesPanel(), Header(), Sidebar(), useAuth(), ApplicationsPage() (+10 more)
 
 ### Community 19 - "Meilisearch Sync Worker (19)"
-Cohesion: 0.15
-Nodes (21): getPartDataForMeili(), cancelRepairJob(), claimNextPendingJob(), createRepairJob(), db, DEFAULTS, ensureSearchRepairSchema(), estimateRemainingSeconds() (+13 more)
+Cohesion: 0.16
+Nodes (20): cancelRepairJob(), claimNextPendingJob(), createRepairJob(), db, DEFAULTS, ensureSearchRepairSchema(), estimateRemainingSeconds(), fetchJobStatusPayload() (+12 more)
 
 ### Community 20 - "DocumentInterface Module (20)"
 Cohesion: 0.14
@@ -406,32 +406,32 @@ Cohesion: 0.11
 Nodes (9): { Pool }, bcrypt, db, express, router, db, db, db (+1 more)
 
 ### Community 23 - "Meilisearch Sync Worker (23)"
-Cohesion: 0.13
-Nodes (15): activeAliasCondition(), db, softDeleteSupported(), { activeAliasCondition, softDeleteSupported }, db, express, { getPartDataForMeili }, { protect, hasPermission } (+7 more)
+Cohesion: 0.12
+Nodes (14): db, softDeleteSupported(), { activeAliasCondition, softDeleteSupported }, db, express, { getPartDataForMeili }, { protect, hasPermission }, router (+6 more)
 
 ### Community 24 - "Tax Calculation & Rates (24)"
-Cohesion: 0.09
-Nodes (24): db, isAdmin(), jwt, protect(), db, express, { protect }, router (+16 more)
+Cohesion: 0.12
+Nodes (15): db, isAdmin(), jwt, db, express, { protect, isAdmin }, router, db (+7 more)
 
 ### Community 25 - "Meilisearch Sync Worker (25)"
 Cohesion: 0.11
-Nodes (16): app, cors, express, path, { setupMeiliSearch }, { startCycleCountEngine }, { startMeiliApplicationsListener }, { startMeiliListener } (+8 more)
+Nodes (15): app, cors, express, path, { setupMeiliSearch }, { startCycleCountEngine }, { startMeiliApplicationsListener }, { startMeiliListener } (+7 more)
 
 ### Community 26 - "Meilisearch Sync Worker (26)"
 Cohesion: 0.17
 Nodes (15): db, startMeiliApplicationsListener(), { syncApplications, removeApplication }, index(), isRetryable(), { meiliClient }, removeApplication(), retryAsync() (+7 more)
 
 ### Community 27 - "Meilisearch Sync Worker (27)"
-Cohesion: 0.12
-Nodes (17): client, isRetryable(), { MeiliSearch }, removePartFromMeili(), retryAsync(), syncPartWithMeili(), wait(), meilisearch (+9 more)
+Cohesion: 0.15
+Nodes (15): { activeAliasCondition }, db, startMeiliListener(), { syncPartWithMeili, removePartFromMeili }, client, isRetryable(), { MeiliSearch }, removePartFromMeili() (+7 more)
 
 ### Community 28 - "documentNumberGenerator Module (28)"
 Cohesion: 0.29
 Nodes (6): db, express, { parsePaginationQuery, paginatedResponse }, { Parser }, { protect, hasPermission }, router
 
 ### Community 29 - "Meilisearch Sync Worker (29)"
-Cohesion: 0.14
-Nodes (18): { normalizeForSearch, normalizeArray }, normalizeArray(), normalizeForSearch(), { activeAliasCondition }, claimEvents(), db, DEFAULTS, getCurrentPartVersionMap() (+10 more)
+Cohesion: 0.20
+Nodes (14): { activeAliasCondition }, claimEvents(), db, DEFAULTS, getCurrentPartVersionMap(), isStaleEvent(), loadPartDocs(), markDone() (+6 more)
 
 ### Community 30 - "Meilisearch Sync Worker (30)"
 Cohesion: 0.18
@@ -447,7 +447,7 @@ Nodes (14): dependencies, date-fns, date-fns-tz, globals, devDependencies, patch
 
 ### Community 33 - "Meilisearch Sync Worker (33)"
 Cohesion: 0.09
-Nodes (23): db, { enqueuePartUpsert }, express, router, { syncPartWithMeili }, { activeAliasCondition }, db, { enqueuePartUpsert, enqueuePartDelete } (+15 more)
+Nodes (20): activeAliasCondition(), { activeAliasCondition }, db, { enqueuePartUpsert, enqueuePartDelete }, express, getPartDataForMeili(), manageTags(), { meiliClient } (+12 more)
 
 ### Community 34 - "Database Migration Scripts (34)"
 Cohesion: 0.18
@@ -458,13 +458,8 @@ Cohesion: 0.05
 Nodes (12): DuplicateFinder, { meiliClient }, DuplicateFinder, PartMergeService, DuplicateFinder, { Pool }, DuplicateFinder, { Pool } (+4 more)
 
 ### Community 36 - "Meilisearch Sync Worker (36)"
-Cohesion: 0.14
-Nodes (13): db, ENTITY_CONFIG, express, { generateUniqueCode }, {
-    JOB_MODES,
-    createRepairJob,
-    fetchJobStatusPayload,
-    cancelRepairJob
-}, multer, Papa, { Parser } (+5 more)
+Cohesion: 0.09
+Nodes (22): generateUniqueCode(), db, express, { generateUniqueCode }, router, db, ENTITY_CONFIG, express (+14 more)
 
 ### Community 37 - "Meilisearch Sync Worker (37)"
 Cohesion: 0.06
@@ -531,8 +526,8 @@ Cohesion: 0.25
 Nodes (7): compilerOptions, paths, strict, extends, include, @/*, @/assets/*
 
 ### Community 53 - "arRoutes.js"
-Cohesion: 0.33
-Nodes (5): db, express, { parsePaginationQuery, paginatedResponse }, { protect, hasPermission }, router
+Cohesion: 0.22
+Nodes (7): bcrypt, db, express, jwt, { parsePaginationQuery, paginatedResponse }, { protect, isAdmin }, router
 
 ### Community 54 - "customerRoutes Module (54)"
 Cohesion: 0.12
@@ -567,8 +562,8 @@ Cohesion: 0.29
 Nodes (4): fs, GRADLE_PROPS, path, { withDangerousMod, withGradleProperties }
 
 ### Community 62 - "paymentTermRoutes.js"
-Cohesion: 0.40
-Nodes (4): db, express, { protect, hasPermission }, router
+Cohesion: 0.10
+Nodes (17): protect(), db, express, { protect }, router, db, express, { protect, hasPermission } (+9 more)
 
 ### Community 63 - "Cheque Processing (63)"
 Cohesion: 0.29
@@ -599,8 +594,8 @@ Cohesion: 0.15
 Nodes (12): Applying schema: dev and prod (non‑destructive), Authoring migrations (conventions), Backup and rollback, Baseline vs. migrations, Common templates, Database, Database setup and migrations guide, Examples in this repo (+4 more)
 
 ### Community 70 - "tagRoutes.js"
-Cohesion: 0.40
-Nodes (4): db, express, { protect }, router
+Cohesion: 0.60
+Nodes (3): { normalizeForSearch, normalizeArray }, normalizeArray(), normalizeForSearch()
 
 ### Community 71 - "Meilisearch Sync Worker (71)"
 Cohesion: 0.33
@@ -703,20 +698,20 @@ Cohesion: 0.33
 Nodes (4): db, express, { protect }, router
 
 ## Knowledge Gaps
-- **1008 isolated node(s):** `backup.sh script`, `name`, `version`, `private`, `workspaces` (+1003 more)
+- **1008 isolated node(s):** `express`, `db`, `{ protect, hasPermission }`, `router`, `backup.sh script` (+1003 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **168 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `hasPermission()` connect `Tax Calculation & Rates (18)` to `Meilisearch Sync Worker (33)`, `Payment Terms & Overdue Calculations`, `AnalyticsCharts Module (40)`, `Cheque PDF Rendering & Formatting`, `Web Client Services & Search Combobox`, `API Routes & Pagination Middleware`, `documentsRoutes Module (47)`, `Drawer Module (79)`, `CustomerForm Module (17)`, `Cycle Count Operations (15)`, `Meilisearch Sync Worker (84)`, `arRoutes.js`, `Meilisearch Sync Worker (23)`, `Tax Calculation & Rates (24)`, `documentNumberGenerator Module (28)`, `paymentTermRoutes.js`, `Tax Calculation & Rates (31)`?**
-  _High betweenness centrality (0.143) - this node is a cross-community bridge._
+- **Why does `hasPermission()` connect `Tax Calculation & Rates (18)` to `Meilisearch Sync Worker (33)`, `Payment Terms & Overdue Calculations`, `AnalyticsCharts Module (40)`, `Cheque PDF Rendering & Formatting`, `API Routes & Pagination Middleware`, `documentsRoutes Module (47)`, `Drawer Module (79)`, `CustomerForm Module (17)`, `Cycle Count Operations (15)`, `Meilisearch Sync Worker (84)`, `Meilisearch Sync Worker (23)`, `Tax Calculation & Rates (24)`, `documentNumberGenerator Module (28)`, `paymentTermRoutes.js`, `Tax Calculation & Rates (31)`?**
+  _High betweenness centrality (0.137) - this node is a cross-community bridge._
 - **Why does `dependencies` connect `API Gateway Dependencies` to `Meilisearch Sync Worker (27)`?**
-  _High betweenness centrality (0.035) - this node is a cross-community bridge._
+  _High betweenness centrality (0.030) - this node is a cross-community bridge._
 - **Why does `meilisearch` connect `Meilisearch Sync Worker (27)` to `API Gateway Dependencies`?**
-  _High betweenness centrality (0.035) - this node is a cross-community bridge._
-- **What connects `backup.sh script`, `name`, `version` to the rest of the system?**
+  _High betweenness centrality (0.030) - this node is a cross-community bridge._
+- **What connects `express`, `db`, `{ protect, hasPermission }` to the rest of the system?**
   _1017 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Accounts Receivable & Invoice Aging` be split into smaller, more focused modules?**
   _Cohesion score 0.08979591836734693 - nodes in this community are weakly interconnected._
