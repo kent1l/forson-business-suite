@@ -27,9 +27,42 @@ async function main() {
     console.log('    Graphify Development Setup    ');
     console.log('=========================================\n');
 
+    const installPlatformSkill = async () => {
+        console.log('\nSelect your primary AI Coding Assistant/IDE:');
+        console.log('1. Google Antigravity');
+        console.log('2. Cursor');
+        console.log('3. Claude Code');
+        console.log('4. GitHub Copilot');
+        console.log('5. Aider');
+        console.log('6. Skip / Other (I will install it manually)');
+
+        let platform = '';
+        while (!platform) {
+            const choice = await askQuestion('\nEnter the number of your assistant (1-6): ');
+            switch (choice.trim()) {
+                case '1': platform = 'antigravity'; break;
+                case '2': platform = 'cursor'; break;
+                case '3': platform = 'claude'; break;
+                case '4': platform = 'copilot'; break;
+                case '5': platform = 'aider'; break;
+                case '6': platform = 'skip'; break;
+                default: console.log('Invalid choice. Please enter a number from 1 to 6.');
+            }
+        }
+
+        if (platform !== 'skip') {
+            console.log(`\nInstalling Graphify skill for ${platform} in this project...`);
+            try {
+                execSync(`npx graphify ${platform} install --project`, { stdio: 'inherit' });
+                console.log('✅ AI Assistant integration complete!');
+            } catch (err) {
+                console.error(`\nSkill installation failed. You can run it manually later with: npx graphify ${platform} install --project`);
+            }
+        }
+    };
+
     const buildLocalGraph = async () => {
         const buildWanted = await askQuestion('\nWould you like to build the local AST index now? (y/N): ');
-        rl.close();
         if (buildWanted.trim().toLowerCase() === 'y') {
             console.log('\nStarting local Graphify build (AST extraction only, no LLM clustering)...');
             try {
@@ -41,6 +74,7 @@ async function main() {
         } else {
             console.log('\nSetup complete. You can build the graph later by running: npx graphify extract . --no-cluster');
         }
+        await installPlatformSkill();
     };
 
     const setupWanted = await askQuestion('Would you like to set up an LLM API key for Graphify initialization? (Y/n): ');
@@ -48,6 +82,7 @@ async function main() {
     if (setupWanted.trim().toLowerCase() === 'n') {
         console.log('Skipping LLM API key setup.');
         await buildLocalGraph();
+        rl.close();
         return;
     }
 
@@ -86,6 +121,7 @@ async function main() {
     if (!apiKey.trim()) {
         console.log('\nNo API key provided. Skipping Graphify API setup.');
         await buildLocalGraph();
+        rl.close();
         return;
     }
 
@@ -111,8 +147,6 @@ async function main() {
     console.log(`\n✅ Saved ${keyName} and set GRAPHIFY_MODEL=${model} to .env`);
 
     const buildWanted = await askQuestion('\nWould you like to build the Graphify index now? (y/N): ');
-    
-    rl.close();
 
     if (buildWanted.trim().toLowerCase() === 'y') {
         console.log('\nStarting Graphify build...');
@@ -125,6 +159,9 @@ async function main() {
     } else {
         console.log('\nSetup complete. You can build the graph later by running: npx graphify extract .');
     }
+
+    await installPlatformSkill();
+    rl.close();
 }
 
 main().catch(err => {
