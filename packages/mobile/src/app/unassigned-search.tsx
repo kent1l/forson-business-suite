@@ -51,6 +51,24 @@ const isBarcodeInViewfinder = (code: any, frame: any) => {
   }
 };
 
+const isValidEanChecksum = (barcode: string): boolean => {
+  if (!/^\d{12,13}$/.test(barcode)) return true;
+  const digits = barcode.split('').map(Number);
+  const checkDigit = digits.pop()!;
+  let sum = 0;
+  if (digits.length === 12) {
+    for (let i = 0; i < 12; i++) {
+      sum += digits[i] * (i % 2 === 0 ? 1 : 3);
+    }
+  } else {
+    for (let i = 0; i < 11; i++) {
+      sum += digits[i] * (i % 2 === 0 ? 3 : 1);
+    }
+  }
+  const calculated = (10 - (sum % 10)) % 10;
+  return calculated === checkDigit;
+};
+
 export default function UnassignedSearchScreen() {
   const router = useRouter();
   const { startAdHocCount } = useCycleCountStore();
@@ -58,6 +76,7 @@ export default function UnassignedSearchScreen() {
   // ── Search state ────────────────────────────────────────────────────────────
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
+  const scanConsensusRef = useRef<{ value: string; count: number }>({ value: '', count: 0 });
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -146,6 +165,7 @@ export default function UnassignedSearchScreen() {
       Alert.alert('Permission Required', 'Camera permission is needed to scan barcodes.');
       return;
     }
+    scanConsensusRef.current = { value: '', count: 0 };
     setHasPermission(true);
     scanLockRef.current = false;
     setIsCameraActive(true);
@@ -157,6 +177,7 @@ export default function UnassignedSearchScreen() {
     setIsCameraActive(false);
     setIsTorchOn(false);
     scanLockRef.current = false;
+    scanConsensusRef.current = { value: '', count: 0 };
   }, []);
 
   // ── Barcode scan → exact lookup → immediate navigate ─────────────────────
@@ -172,6 +193,27 @@ export default function UnassignedSearchScreen() {
         if (frame && !isBarcodeInViewfinder(code, frame)) {
           return;
         }
+
+        // Validate EAN/UPC checksums to prevent OCR/scanning noise
+        if (/^\d{12,13}$/.test(value) && !isValidEanChecksum(value)) {
+          console.warn(`Rejected invalid checksum EAN: ${value}`);
+          return;
+        }
+
+        // Require multi-frame consensus
+        if (scanConsensusRef.current.value === value) {
+          scanConsensusRef.current.count += 1;
+        } else {
+          scanConsensusRef.current.value = value;
+          scanConsensusRef.current.count = 1;
+        }
+
+        if (scanConsensusRef.current.count < 3) {
+          return;
+        }
+
+        // Reset consensus on successful match
+        scanConsensusRef.current = { value: '', count: 0 };
 
         scanLockRef.current = true;
         setIsCameraActive(false);
@@ -337,6 +379,8 @@ export default function UnassignedSearchScreen() {
                 isActive={isCameraActive}
                 codeScanner={codeScanner as any}
                 torch={isTorchOn ? 'on' : 'off'}
+                zoom={device.neutralZoom ? device.neutralZoom * 1.5 : 1.5}
+                enableZoomGesture={true}
               />
 
               {/* Overlay */}
