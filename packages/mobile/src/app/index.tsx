@@ -56,7 +56,7 @@ export default function DashboardScreen() {
     // For simplicity, we filter tasks by the clicked task's batch_id
     // to group the active batch data together.
     const batchData = tasks.filter((t: any) => t.batch_id === task.batch_id);
-    setActiveBatch(task.batch_id, batchData);
+    setActiveBatch(task.batch_id, batchData, task.line_id);
     router.push('/count');
   };
 

@@ -18,8 +18,15 @@ export default function CountScreen() {
     currentAdHocItem,
     submitAdHocCount,
     clearAdHocMode,
+    activeLineId,
   } = useCycleCountStore();
-  const [currentLineIndex, setCurrentLineIndex] = useState(0);
+  const [currentLineIndex, setCurrentLineIndex] = useState(() => {
+    if (activeBatchData && activeLineId) {
+      const idx = activeBatchData.findIndex((line: any) => line.line_id === activeLineId);
+      return idx !== -1 ? idx : 0;
+    }
+    return 0;
+  });
   const [scannedBarcode, setScannedBarcode] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasPermission, setHasPermission] = useState(false);

@@ -5,13 +5,14 @@ const useCycleCountStore = create((set, get) => ({
   // ── Assigned batch ──────────────────────────────────────────────────────────
   activeBatchId: null,
   activeBatchData: null,
+  activeLineId: null,
 
-  setActiveBatch: (batchId, batchData = null) => {
-    set({ activeBatchId: batchId, activeBatchData: batchData });
+  setActiveBatch: (batchId, batchData = null, lineId = null) => {
+    set({ activeBatchId: batchId, activeBatchData: batchData, activeLineId: lineId });
   },
 
   clearActiveBatch: () => {
-    set({ activeBatchId: null, activeBatchData: null });
+    set({ activeBatchId: null, activeBatchData: null, activeLineId: null });
   },
 
   // ── Ad-hoc (unassigned find) ─────────────────────────────────────────────
