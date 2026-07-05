@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Alert, ActivityIndicator, ScrollView, Modal, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Alert, ActivityIndicator, ScrollView, Modal, TouchableOpacity, Dimensions, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Camera, useCameraDevice, useCodeScanner } from 'react-native-vision-camera';
@@ -8,6 +8,33 @@ import { Ionicons } from '@expo/vector-icons';
 import useCycleCountStore from '../store/useCycleCountStore';
 import MobileCounter from '../components/MobileCounter';
 import apiClient from '../api/client';
+
+const isBarcodeInViewfinder = (code: any, frame: any) => {
+  if (!code.frame) return true;
+
+  const { x, y, width, height } = code.frame;
+  const cx = x + width / 2;
+  const cy = y + height / 2;
+
+  const ncx = cx / frame.width;
+  const ncy = cy / frame.height;
+
+  const { height: screenHeight } = Dimensions.get('window');
+  const verticalTolerance = 120 / screenHeight;
+  const horizontalTolerance = 0.45;
+
+  const isRotated = frame.width > frame.height;
+
+  if (isRotated) {
+    const dy = Math.abs(ncx - 0.5);
+    const dx = Math.abs(ncy - 0.5);
+    return dy <= verticalTolerance && dx <= horizontalTolerance;
+  } else {
+    const dx = Math.abs(ncx - 0.5);
+    const dy = Math.abs(ncy - 0.5);
+    return dx <= horizontalTolerance && dy <= verticalTolerance;
+  }
+};
 
 export default function CountScreen() {
   const router = useRouter();
@@ -38,6 +65,34 @@ export default function CountScreen() {
   const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
 
   const device = useCameraDevice('back');
+
+  const laserAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (isCameraActive) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(laserAnim, {
+            toValue: 1,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(laserAnim, {
+            toValue: 0,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    } else {
+      laserAnim.setValue(0);
+    }
+  }, [isCameraActive]);
+
+  const laserTranslateY = laserAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [10, 190],
+  });
 
   useEffect(() => {
     (async () => {
@@ -73,10 +128,14 @@ export default function CountScreen() {
       }
     : activeBatchData![currentLineIndex];
 
-  const handleCodeScanned = (codes: any[]) => {
+  const handleCodeScanned = (codes: any[], frame: any) => {
     if (codes.length > 0 && isCameraActive && !pendingBarcode) {
-      const scannedValue = codes[0].value;
+      const code = codes[0];
+      const scannedValue = code.value;
       if (scannedValue) {
+        if (frame && !isBarcodeInViewfinder(code, frame)) {
+          return;
+        }
         console.log(`Scanned barcode: ${scannedValue}`);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setIsCameraActive(false);
@@ -278,14 +337,22 @@ export default function CountScreen() {
               />
 
               {/* Overlay Viewfinder */}
-              <View style={styles.overlay}>
+              <View style={styles.overlay} pointerEvents="none">
                 <View style={styles.overlayTop} />
                 <View style={styles.overlayMiddle}>
                   <View style={styles.overlaySide} />
-                  <View style={styles.viewfinderCutout} />
+                  <View style={styles.viewfinderCutout}>
+                    <View style={[styles.corner, styles.topLeftCorner]} />
+                    <View style={[styles.corner, styles.topRightCorner]} />
+                    <View style={[styles.corner, styles.bottomLeftCorner]} />
+                    <View style={[styles.corner, styles.bottomRightCorner]} />
+                    <Animated.View style={[styles.laser, { transform: [{ translateY: laserTranslateY }] }]} />
+                  </View>
                   <View style={styles.overlaySide} />
                 </View>
-                <View style={styles.overlayBottom} />
+                <View style={styles.overlayBottom}>
+                  <Text style={styles.scanInstruction}>Align barcode within the frame</Text>
+                </View>
               </View>
 
               {/* Camera Header Actions */}
@@ -461,11 +528,25 @@ const styles = StyleSheet.create({
   },
   overlayTop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.65)',
   },
   overlayBottom: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    alignItems: 'center',
+    paddingTop: 24,
+  },
+  scanInstruction: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+    letterSpacing: 0.5,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    overflow: 'hidden',
   },
   overlayMiddle: {
     height: 200,
@@ -473,14 +554,63 @@ const styles = StyleSheet.create({
   },
   overlaySide: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.65)',
   },
   viewfinderCutout: {
     width: '80%',
     height: '100%',
-    borderWidth: 2,
-    borderColor: '#3b82f6',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    borderRadius: 16,
     backgroundColor: 'transparent',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  corner: {
+    position: 'absolute',
+    borderColor: '#06b6d4',
+    width: 24,
+    height: 24,
+  },
+  topLeftCorner: {
+    top: -2,
+    left: -2,
+    borderLeftWidth: 4,
+    borderTopWidth: 4,
+    borderTopLeftRadius: 12,
+  },
+  topRightCorner: {
+    top: -2,
+    right: -2,
+    borderRightWidth: 4,
+    borderTopWidth: 4,
+    borderTopRightRadius: 12,
+  },
+  bottomLeftCorner: {
+    bottom: -2,
+    left: -2,
+    borderLeftWidth: 4,
+    borderBottomWidth: 4,
+    borderBottomLeftRadius: 12,
+  },
+  bottomRightCorner: {
+    bottom: -2,
+    right: -2,
+    borderRightWidth: 4,
+    borderBottomWidth: 4,
+    borderBottomRightRadius: 12,
+  },
+  laser: {
+    position: 'absolute',
+    left: '5%',
+    right: '5%',
+    height: 2,
+    backgroundColor: '#06b6d4',
+    shadowColor: '#06b6d4',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
+    elevation: 5,
   },
   bottomSheet: {
     position: 'absolute',

@@ -11,6 +11,8 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  Dimensions,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -21,6 +23,33 @@ import apiClient from '../api/client';
 import useCycleCountStore from '../store/useCycleCountStore';
 
 const DEBOUNCE_MS = 300;
+
+const isBarcodeInViewfinder = (code: any, frame: any) => {
+  if (!code.frame) return true;
+
+  const { x, y, width, height } = code.frame;
+  const cx = x + width / 2;
+  const cy = y + height / 2;
+
+  const ncx = cx / frame.width;
+  const ncy = cy / frame.height;
+
+  const { height: screenHeight } = Dimensions.get('window');
+  const verticalTolerance = 120 / screenHeight;
+  const horizontalTolerance = 0.43;
+
+  const isRotated = frame.width > frame.height;
+
+  if (isRotated) {
+    const dy = Math.abs(ncx - 0.5);
+    const dx = Math.abs(ncy - 0.5);
+    return dy <= verticalTolerance && dx <= horizontalTolerance;
+  } else {
+    const dx = Math.abs(ncx - 0.5);
+    const dy = Math.abs(ncy - 0.5);
+    return dx <= horizontalTolerance && dy <= verticalTolerance;
+  }
+};
 
 export default function UnassignedSearchScreen() {
   const router = useRouter();
@@ -42,6 +71,34 @@ export default function UnassignedSearchScreen() {
   const scanLockRef = useRef(false);
 
   const device = useCameraDevice('back');
+
+  const laserAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (isCameraActive) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(laserAnim, {
+            toValue: 1,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(laserAnim, {
+            toValue: 0,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    } else {
+      laserAnim.setValue(0);
+    }
+  }, [isCameraActive]);
+
+  const laserTranslateY = laserAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [10, 190],
+  });
 
   // ── Core search function (shared by debounce + barcode scan) ─────────────
   const fetchParts = useCallback(async (q: string): Promise<any[]> => {
@@ -106,10 +163,15 @@ export default function UnassignedSearchScreen() {
   const codeScanner = useCodeScanner({
     codeTypes: ['ean-13', 'code-128', 'qr', 'code-39'],
     onCodeScanned: useCallback(
-      async (codes: any[]) => {
+      async (codes: any[], frame: any) => {
         if (!isCameraActive || scanLockRef.current || codes.length === 0) return;
-        const value = codes[0].value;
+        const code = codes[0];
+        const value = code.value;
         if (!value) return;
+
+        if (frame && !isBarcodeInViewfinder(code, frame)) {
+          return;
+        }
 
         scanLockRef.current = true;
         setIsCameraActive(false);
@@ -282,10 +344,18 @@ export default function UnassignedSearchScreen() {
                 <View style={styles.overlayTop} />
                 <View style={styles.overlayMiddle}>
                   <View style={styles.overlaySide} />
-                  <View style={styles.viewfinderCutout} />
+                  <View style={styles.viewfinderCutout}>
+                    <View style={[styles.corner, styles.topLeftCorner]} />
+                    <View style={[styles.corner, styles.topRightCorner]} />
+                    <View style={[styles.corner, styles.bottomLeftCorner]} />
+                    <View style={[styles.corner, styles.bottomRightCorner]} />
+                    <Animated.View style={[styles.laser, { transform: [{ translateY: laserTranslateY }] }]} />
+                  </View>
                   <View style={styles.overlaySide} />
                 </View>
-                <View style={styles.overlayBottom} />
+                <View style={styles.overlayBottom}>
+                  <Text style={styles.scanInstruction}>Align barcode within the frame</Text>
+                </View>
               </View>
 
               {/* Camera controls */}
@@ -293,7 +363,6 @@ export default function UnassignedSearchScreen() {
                 <TouchableOpacity style={styles.iconButton} onPress={closeScanner}>
                   <Ionicons name="close" size={28} color="#fff" />
                 </TouchableOpacity>
-                <Text style={styles.cameraHint}>Align barcode with frame</Text>
                 <TouchableOpacity style={styles.iconButton} onPress={() => setIsTorchOn((p) => !p)}>
                   <Ionicons name={isTorchOn ? 'flash' : 'flash-off'} size={24} color="#fff" />
                 </TouchableOpacity>
@@ -427,15 +496,81 @@ const styles = StyleSheet.create({
   // Camera modal
   modalContainer: { flex: 1, backgroundColor: '#000' },
   overlay: { ...StyleSheet.absoluteFillObject, zIndex: 5 },
-  overlayTop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.62)' },
-  overlayBottom: { flex: 1, backgroundColor: 'rgba(0,0,0,0.62)' },
+  overlayTop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)' },
+  overlayBottom: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    alignItems: 'center',
+    paddingTop: 24,
+  },
+  scanInstruction: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+    letterSpacing: 0.5,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
   overlayMiddle: { height: 200, flexDirection: 'row' },
-  overlaySide: { flex: 1, backgroundColor: 'rgba(0,0,0,0.62)' },
+  overlaySide: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)' },
   viewfinderCutout: {
     width: '75%',
-    borderWidth: 2,
-    borderColor: '#3b82f6',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    borderRadius: 16,
     backgroundColor: 'transparent',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  corner: {
+    position: 'absolute',
+    borderColor: '#06b6d4',
+    width: 24,
+    height: 24,
+  },
+  topLeftCorner: {
+    top: -2,
+    left: -2,
+    borderLeftWidth: 4,
+    borderTopWidth: 4,
+    borderTopLeftRadius: 12,
+  },
+  topRightCorner: {
+    top: -2,
+    right: -2,
+    borderRightWidth: 4,
+    borderTopWidth: 4,
+    borderTopRightRadius: 12,
+  },
+  bottomLeftCorner: {
+    bottom: -2,
+    left: -2,
+    borderLeftWidth: 4,
+    borderBottomWidth: 4,
+    borderBottomLeftRadius: 12,
+  },
+  bottomRightCorner: {
+    bottom: -2,
+    right: -2,
+    borderRightWidth: 4,
+    borderBottomWidth: 4,
+    borderBottomRightRadius: 12,
+  },
+  laser: {
+    position: 'absolute',
+    left: '5%',
+    right: '5%',
+    height: 2,
+    backgroundColor: '#06b6d4',
+    shadowColor: '#06b6d4',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
+    elevation: 5,
   },
   cameraHeader: {
     position: 'absolute',
