@@ -16,20 +16,21 @@ export const AuthProvider = ({ children }) => {
         const sessionData = localStorage.getItem('userSession');
         if (sessionData) {
             const parsedData = JSON.parse(sessionData);
-            return parsedData.permissions || []; 
+            return parsedData.permissions || parsedData.user?.permissions || []; 
         }
         return [];
     });
 
     const login = (loginData) => {
+        const userPermissions = loginData.user?.permissions || loginData.permissions || [];
         const sessionData = {
             user: loginData.user,
             token: loginData.token,
-            permissions: loginData.permissions
+            permissions: userPermissions
         };
         localStorage.setItem('userSession', JSON.stringify(sessionData));
         setUser(loginData.user);
-        setPermissions(loginData.permissions);
+        setPermissions(userPermissions);
     };
 
     // Wrap logout in useCallback so it can be used in useEffect dependency arrays
