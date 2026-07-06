@@ -35,8 +35,8 @@ export default function MobileSetupPage() {
                 {/* Header Graphic */}
                 <div className="bg-gradient-to-br from-yellow-400 to-yellow-600 p-8 text-center text-gray-900">
                     <Smartphone className="w-16 h-16 mx-auto mb-4 opacity-90" />
-                    <h1 className="text-3xl font-extrabold tracking-tight">Forson ERP</h1>
-                    <p className="font-medium opacity-80 mt-1">Mobile Suite Setup</p>
+                    <h1 className="text-3xl font-extrabold tracking-tight">FORSON</h1>
+                    <p className="font-medium opacity-80 mt-1">Mobile Suite Application</p>
                 </div>
 
                 <div className="p-8">
@@ -63,7 +63,7 @@ export default function MobileSetupPage() {
                                 )}
                             </div>
 
-                            <button 
+                            <button
                                 onClick={handleDownload}
                                 className="w-full flex items-center justify-center space-x-3 bg-yellow-500 hover:bg-yellow-400 text-gray-900 font-bold py-4 px-6 rounded-xl transition-all duration-200 transform hover:scale-[1.02] active:scale-95 shadow-lg shadow-yellow-500/20"
                             >
