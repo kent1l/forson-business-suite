@@ -22,11 +22,16 @@ router.get('/setup/status', async (req, res) => {
 // GET /api/setup/mobile-version - Public endpoint to get the latest mobile app version
 router.get('/setup/mobile-version', async (req, res) => {
     try {
-        const result = await db.query("SELECT setting_value FROM settings WHERE setting_key = 'mobile_app_version'");
-        if (!result || !result.rows || result.rows.length === 0) {
-            return res.json({ version: '1.0.0' }); // Fallback
-        }
-        res.json({ version: result.rows[0].setting_value });
+        const result = await db.query("SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('mobile_app_version', 'mobile_app_release_notes')");
+        const settingsMap = result.rows.reduce((acc, row) => {
+            acc[row.setting_key] = row.setting_value;
+            return acc;
+        }, {});
+        
+        res.json({ 
+            version: settingsMap.mobile_app_version || '1.0.0',
+            releaseNotes: settingsMap.mobile_app_release_notes || ''
+        });
     } catch (err) {
         console.error('setupRoutes: Failed to fetch mobile version', err);
         res.status(500).json({ error: 'Database query failed' });

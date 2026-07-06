@@ -25,6 +25,20 @@ const MobileAppSettings = ({ settings, handleChange }) => (
                 Updating this version number will force all active mobile warehouse clients to download the latest `.apk` binary.
             </p>
         </div>
+        <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1 mt-4">Release Notes (Optional)</label>
+            <textarea 
+                name="mobile_app_release_notes" 
+                value={settings.mobile_app_release_notes || ''} 
+                onChange={handleChange} 
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg" 
+                rows="3"
+                placeholder="Added new barcode scanning features..." 
+            ></textarea>
+            <p className="mt-1 text-xs text-gray-500">
+                This message will be displayed on the update screen for all users.
+            </p>
+        </div>
     </div>
 );
 

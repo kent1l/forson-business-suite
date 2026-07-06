@@ -4,6 +4,7 @@ import api from '../api';
 
 export default function MobileSetupPage() {
     const [version, setVersion] = useState(null);
+    const [releaseNotes, setReleaseNotes] = useState('');
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -12,6 +13,7 @@ export default function MobileSetupPage() {
                 // Use a public endpoint that doesn't require authentication
                 const response = await api.get('/setup/mobile-version');
                 setVersion(response.data.version);
+                setReleaseNotes(response.data.releaseNotes);
             } catch (err) {
                 console.error("Failed to fetch mobile version", err);
                 setVersion('1.0.0'); // Fallback
@@ -50,9 +52,15 @@ export default function MobileSetupPage() {
                                     <span className="text-sm font-semibold tracking-wide">Version {version} Available</span>
                                 </div>
                                 <h2 className="text-xl font-bold text-gray-100 mb-2">Ready to Install</h2>
-                                <p className="text-gray-400 text-sm leading-relaxed">
+                                <p className="text-gray-400 text-sm leading-relaxed mb-4">
                                     Download the latest Android application bundle to access the warehouse scanner and inventory tools.
                                 </p>
+                                {releaseNotes && (
+                                    <div className="bg-gray-700/50 rounded-lg p-4 text-left border border-gray-600/50 mb-6">
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">What's New</h4>
+                                        <p className="text-sm text-gray-300 whitespace-pre-line">{releaseNotes}</p>
+                                    </div>
+                                )}
                             </div>
 
                             <button 
