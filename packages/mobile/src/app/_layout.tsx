@@ -1,5 +1,5 @@
 import { DarkTheme, DefaultTheme, ThemeProvider, Stack } from 'expo-router';
-import { useColorScheme, View, Text, ActivityIndicator, TouchableOpacity, Linking } from 'react-native';
+import { useColorScheme, View, Text, ActivityIndicator, TouchableOpacity, Linking, AppState } from 'react-native';
 import { useEffect, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Constants from 'expo-constants';
@@ -16,7 +16,7 @@ const queryClient = new QueryClient();
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const { user, isHydrated: authHydrated, hydrate: hydrateAuth } = useAuthStore();
-  const { isHydrated: settingsHydrated, hydrate: hydrateSettings } = useSettingsStore();
+  const { isHydrated: settingsHydrated, hydrate: hydrateSettings, serverIp } = useSettingsStore();
   const [updateRequired, setUpdateRequired] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState('');
   const [releaseNotes, setReleaseNotes] = useState('');
@@ -29,9 +29,7 @@ export default function TabLayout() {
   useEffect(() => {
     const checkVersion = async () => {
       try {
-        if (!settingsHydrated) return;
-        const serverIp = useSettingsStore.getState().serverIp;
-        if (!serverIp) return; // Wait for user to configure IP before checking
+        if (!settingsHydrated || !serverIp) return;
 
         const res = await apiClient.get('/setup/mobile-version');
         const latestVersion = res.data.version;
@@ -48,13 +46,27 @@ export default function TabLayout() {
             downloadIp = downloadIp.replace(':3001', ':8090');
           }
           setDownloadUrl(`${downloadIp}/downloads/FORSON.apk`);
+        } else {
+          setUpdateRequired(false);
         }
       } catch (err) {
         console.warn('OTA check skipped or failed:', err?.message || err);
       }
     };
+
     checkVersion();
-  }, [settingsHydrated]);
+
+    // Re-check when app comes to foreground
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        checkVersion();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [settingsHydrated, serverIp]);
 
   if (!authHydrated || !settingsHydrated) {
     return (
