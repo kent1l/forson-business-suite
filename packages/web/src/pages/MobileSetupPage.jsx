@@ -24,9 +24,28 @@ export default function MobileSetupPage() {
         fetchVersion();
     }, []);
 
-    const handleDownload = () => {
-        // Point to the static volume mount
-        window.location.href = '/downloads/FORSON.apk';
+    const handleDownload = async () => {
+        try {
+            // Fetch the file as a blob to forcibly set the correct Android APK MIME type.
+            // This prevents mobile browsers from sniffing the zip header and appending .zip
+            const response = await fetch('/downloads/FORSON.apk');
+            const blob = await response.blob();
+            const apkBlob = new Blob([blob], { type: 'application/vnd.android.package-archive' });
+            
+            const url = window.URL.createObjectURL(apkBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'FORSON.apk';
+            document.body.appendChild(link);
+            link.click();
+            
+            // Cleanup
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Blob download failed, falling back to direct navigation:', error);
+            window.location.href = '/downloads/FORSON.apk';
+        }
     };
 
     return (
