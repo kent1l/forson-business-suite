@@ -21,52 +21,23 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import apiClient from '../api/client';
 import useCycleCountStore from '../store/useCycleCountStore';
+import {
+  FRAME_INTERVAL_MS,
+  ROI_HALF_WIDTH,
+  createPipelineRefs,
+  isValidEanChecksum,
+  runConsensus,
+  type ScannerPipelineRefs,
+} from '../utils/scannerPipeline';
 
 const DEBOUNCE_MS = 300;
 
-const isBarcodeInViewfinder = (code: any, frame: any) => {
-  if (!code.frame) return true;
-
-  const { x, y, width, height } = code.frame;
-  const cx = x + width / 2;
-  const cy = y + height / 2;
-
-  const ncx = cx / frame.width;
-  const ncy = cy / frame.height;
-
-  const { height: screenHeight } = Dimensions.get('window');
-  const verticalTolerance = 120 / screenHeight;
-  const horizontalTolerance = 0.43;
-
-  const isRotated = frame.width > frame.height;
-
-  if (isRotated) {
-    const dy = Math.abs(ncx - 0.5);
-    const dx = Math.abs(ncy - 0.5);
-    return dy <= verticalTolerance && dx <= horizontalTolerance;
-  } else {
-    const dx = Math.abs(ncx - 0.5);
-    const dy = Math.abs(ncy - 0.5);
-    return dx <= horizontalTolerance && dy <= verticalTolerance;
-  }
-};
-
-const isValidEanChecksum = (barcode: string): boolean => {
-  if (!/^\d{12,13}$/.test(barcode)) return true;
-  const digits = barcode.split('').map(Number);
-  const checkDigit = digits.pop()!;
-  let sum = 0;
-  if (digits.length === 12) {
-    for (let i = 0; i < 12; i++) {
-      sum += digits[i] * (i % 2 === 0 ? 1 : 3);
-    }
-  } else {
-    for (let i = 0; i < 11; i++) {
-      sum += digits[i] * (i % 2 === 0 ? 3 : 1);
-    }
-  }
-  const calculated = (10 - (sum % 10)) % 10;
-  return calculated === checkDigit;
+// ROI viewfinder guard — Tier B of the pipeline.
+const isInROI = (code: any, frameWidth: number): boolean => {
+  if (!code.bounds || frameWidth === 0) return true;
+  const { minX, maxX } = code.bounds as { minX: number; maxX: number };
+  const normMidX = (minX + (maxX - minX) / 2) / frameWidth;
+  return Math.abs(normMidX - 0.5) <= ROI_HALF_WIDTH;
 };
 
 export default function UnassignedSearchScreen() {
@@ -76,7 +47,8 @@ export default function UnassignedSearchScreen() {
   // ── Search state ────────────────────────────────────────────────────────────
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
-  const scanConsensusRef = useRef<{ value: string; count: number }>({ value: '', count: 0 });
+  const pipelineRef = useRef<ScannerPipelineRefs>(createPipelineRefs());
+  const lastFrameTsRef = useRef<number>(0);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -165,7 +137,8 @@ export default function UnassignedSearchScreen() {
       Alert.alert('Permission Required', 'Camera permission is needed to scan barcodes.');
       return;
     }
-    scanConsensusRef.current = { value: '', count: 0 };
+    pipelineRef.current = createPipelineRefs();
+    lastFrameTsRef.current = 0;
     setHasPermission(true);
     scanLockRef.current = false;
     setIsCameraActive(true);
@@ -177,7 +150,8 @@ export default function UnassignedSearchScreen() {
     setIsCameraActive(false);
     setIsTorchOn(false);
     scanLockRef.current = false;
-    scanConsensusRef.current = { value: '', count: 0 };
+    pipelineRef.current = createPipelineRefs();
+    lastFrameTsRef.current = 0;
   }, []);
 
   // ── Barcode scan → exact lookup → immediate navigate ─────────────────────
@@ -186,35 +160,27 @@ export default function UnassignedSearchScreen() {
     onCodeScanned: useCallback(
       async (codes: any[], frame: any) => {
         if (!isCameraActive || scanLockRef.current || codes.length === 0) return;
+
+        // ── Tier A: Time-gated frame skip (33 ms @ 30 FPS) ──────────────────
+        const now = Date.now();
+        if (now - lastFrameTsRef.current < FRAME_INTERVAL_MS) return;
+        lastFrameTsRef.current = now;
+
         const code = codes[0];
-        const value = code.value;
+        const value: string | undefined = code.value;
         if (!value) return;
 
-        if (frame && !isBarcodeInViewfinder(code, frame)) {
-          return;
-        }
+        // ── Tier B: ROI viewport mask (central 40% horizontal band) ───────────
+        if (!isInROI(code, frame?.width ?? 0)) return;
 
-        // Validate EAN/UPC checksums to prevent OCR/scanning noise
-        if (/^\d{12,13}$/.test(value) && !isValidEanChecksum(value)) {
-          console.warn(`Rejected invalid checksum EAN: ${value}`);
-          return;
-        }
+        // EAN/UPC checksum pre-filter
+        if (/^\d{12,13}$/.test(value) && !isValidEanChecksum(value)) return;
 
-        // Require multi-frame consensus
-        if (scanConsensusRef.current.value === value) {
-          scanConsensusRef.current.count += 1;
-        } else {
-          scanConsensusRef.current.value = value;
-          scanConsensusRef.current.count = 1;
-        }
+        // ── Tier C: Sliding mode consensus evaluation ─────────────────────────
+        const consensus = runConsensus(pipelineRef.current, value);
+        if (!consensus) return;
 
-        if (scanConsensusRef.current.count < 3) {
-          return;
-        }
-
-        // Reset consensus on successful match
-        scanConsensusRef.current = { value: '', count: 0 };
-
+        // Consensus reached — lock, haptic, navigate
         scanLockRef.current = true;
         setIsCameraActive(false);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -222,11 +188,11 @@ export default function UnassignedSearchScreen() {
         closeScanner();
 
         try {
-          const list = await fetchParts(value);
+          const list = await fetchParts(consensus);
           if (list.length === 0) {
             Alert.alert(
               'Barcode Not Found',
-              `No part found for barcode "${value}". What would you like to do?`,
+              `No part found for barcode "${consensus}". What would you like to do?`,
               [
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Assign to Existing', onPress: () => {
@@ -242,7 +208,7 @@ export default function UnassignedSearchScreen() {
           }
           // Prefer exact barcode match; fall back to top result
           const exactMatch = list.find(
-            (p: any) => p.barcodes && p.barcodes.includes(value)
+            (p: any) => p.barcodes && p.barcodes.includes(consensus)
           ) ?? list[0];
           startAdHocCount(exactMatch);
           router.push('/count');
@@ -378,8 +344,10 @@ export default function UnassignedSearchScreen() {
                 device={device}
                 isActive={isCameraActive}
                 codeScanner={codeScanner as any}
-                torch={isTorchOn ? 'on' : 'off'}
-                zoom={device.neutralZoom ? device.neutralZoom * 1.5 : 1.5}
+                fps={30}
+                zoom={1.8}
+                exposure={-1}
+                torch="on"
                 enableZoomGesture={true}
               />
 
@@ -407,9 +375,9 @@ export default function UnassignedSearchScreen() {
                 <TouchableOpacity style={styles.iconButton} onPress={closeScanner}>
                   <Ionicons name="close" size={28} color="#fff" />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.iconButton} onPress={() => setIsTorchOn((p) => !p)}>
-                  <Ionicons name={isTorchOn ? 'flash' : 'flash-off'} size={24} color="#fff" />
-                </TouchableOpacity>
+                <View style={[styles.iconButton, { backgroundColor: 'rgba(251,191,36,0.35)' }]}>
+                  <Ionicons name="flash" size={24} color="#fbbf24" />
+                </View>
               </View>
             </View>
           ) : (
@@ -431,7 +399,7 @@ const styles = StyleSheet.create({
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
   scanResolveOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.65)',
     zIndex: 999,
     justifyContent: 'center',
@@ -539,7 +507,7 @@ const styles = StyleSheet.create({
 
   // Camera modal
   modalContainer: { flex: 1, backgroundColor: '#000' },
-  overlay: { ...StyleSheet.absoluteFillObject, zIndex: 5 },
+  overlay: { ...StyleSheet.absoluteFill, zIndex: 5 },
   overlayTop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)' },
   overlayBottom: {
     flex: 1,

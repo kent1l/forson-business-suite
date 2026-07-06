@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, Alert, ActivityIndicator, ScrollView, Modal, TouchableOpacity, Dimensions, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -8,50 +8,22 @@ import { Ionicons } from '@expo/vector-icons';
 import useCycleCountStore from '../store/useCycleCountStore';
 import MobileCounter from '../components/MobileCounter';
 import apiClient from '../api/client';
+import {
+  FRAME_INTERVAL_MS,
+  ROI_HALF_WIDTH,
+  createPipelineRefs,
+  isValidEanChecksum,
+  runConsensus,
+  type ScannerPipelineRefs,
+} from '../utils/scannerPipeline';
 
-const isBarcodeInViewfinder = (code: any, frame: any) => {
-  if (!code.frame) return true;
-
-  const { x, y, width, height } = code.frame;
-  const cx = x + width / 2;
-  const cy = y + height / 2;
-
-  const ncx = cx / frame.width;
-  const ncy = cy / frame.height;
-
-  const { height: screenHeight } = Dimensions.get('window');
-  const verticalTolerance = 120 / screenHeight;
-  const horizontalTolerance = 0.45;
-
-  const isRotated = frame.width > frame.height;
-
-  if (isRotated) {
-    const dy = Math.abs(ncx - 0.5);
-    const dx = Math.abs(ncy - 0.5);
-    return dy <= verticalTolerance && dx <= horizontalTolerance;
-  } else {
-    const dx = Math.abs(ncx - 0.5);
-    const dy = Math.abs(ncy - 0.5);
-    return dx <= horizontalTolerance && dy <= verticalTolerance;
-  }
-};
-
-const isValidEanChecksum = (barcode: string): boolean => {
-  if (!/^\d{12,13}$/.test(barcode)) return true;
-  const digits = barcode.split('').map(Number);
-  const checkDigit = digits.pop()!;
-  let sum = 0;
-  if (digits.length === 12) {
-    for (let i = 0; i < 12; i++) {
-      sum += digits[i] * (i % 2 === 0 ? 1 : 3);
-    }
-  } else {
-    for (let i = 0; i < 11; i++) {
-      sum += digits[i] * (i % 2 === 0 ? 3 : 1);
-    }
-  }
-  const calculated = (10 - (sum % 10)) % 10;
-  return calculated === checkDigit;
+// ROI viewfinder guard: rejects codes whose horizontal centre falls outside the
+// central 40% band (±ROI_HALF_WIDTH from mid) — Tier B of the pipeline.
+const isInROI = (code: any, frameWidth: number): boolean => {
+  if (!code.bounds || frameWidth === 0) return true;
+  const { minX, maxX } = code.bounds as { minX: number; maxX: number };
+  const normMidX = (minX + (maxX - minX) / 2) / frameWidth;
+  return Math.abs(normMidX - 0.5) <= ROI_HALF_WIDTH;
 };
 
 export default function CountScreen() {
@@ -81,7 +53,8 @@ export default function CountScreen() {
   const [isTorchOn, setIsTorchOn] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
-  const scanConsensusRef = useRef<{ value: string; count: number }>({ value: '', count: 0 });
+  const pipelineRef = useRef<ScannerPipelineRefs>(createPipelineRefs());
+  const lastFrameTsRef = useRef<number>(0);
 
   const device = useCameraDevice('back');
 
@@ -147,46 +120,40 @@ export default function CountScreen() {
       }
     : activeBatchData![currentLineIndex];
 
-  const handleCodeScanned = (codes: any[], frame: any) => {
-    if (codes.length > 0 && isCameraActive && !pendingBarcode) {
-      const code = codes[0];
-      const scannedValue = code.value;
-      if (scannedValue) {
-        if (frame && !isBarcodeInViewfinder(code, frame)) {
-          return;
-        }
+  const handleCodeScanned = useCallback((codes: any[], frame: any) => {
+    // Gate: must have a code, camera must be live, no pending confirmation
+    if (codes.length === 0 || !isCameraActive || pendingBarcode) return;
 
-        // Validate EAN/UPC checksums to prevent OCR/scanning noise
-        if (/^\d{12,13}$/.test(scannedValue) && !isValidEanChecksum(scannedValue)) {
-          console.warn(`Rejected invalid checksum EAN: ${scannedValue}`);
-          return;
-        }
+    // ── Tier A: Time-gated frame skip (33 ms @ 30 FPS) ───────────────────────
+    const now = Date.now();
+    if (now - lastFrameTsRef.current < FRAME_INTERVAL_MS) return;
+    lastFrameTsRef.current = now;
 
-        // Require multi-frame consensus
-        if (scanConsensusRef.current.value === scannedValue) {
-          scanConsensusRef.current.count += 1;
-        } else {
-          scanConsensusRef.current.value = scannedValue;
-          scanConsensusRef.current.count = 1;
-        }
+    const code = codes[0];
+    const scannedValue: string | undefined = code.value;
+    if (!scannedValue) return;
 
-        if (scanConsensusRef.current.count < 3) {
-          return;
-        }
+    // ── Tier B: ROI viewport mask (central 40% horizontal band) ──────────────
+    if (!isInROI(code, frame?.width ?? 0)) return;
 
-        // Reset consensus on successful match
-        scanConsensusRef.current = { value: '', count: 0 };
-        console.log(`Scanned barcode: ${scannedValue}`);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        setIsCameraActive(false);
-        setPendingBarcode(scannedValue);
-      }
+    // EAN/UPC checksum pre-filter
+    if (/^\d{12,13}$/.test(scannedValue) && !isValidEanChecksum(scannedValue)) {
+      return;
     }
-  };
+
+    // ── Tier C: Sliding mode consensus evaluation ─────────────────────────────
+    const consensus = runConsensus(pipelineRef.current, scannedValue);
+    if (!consensus) return;
+
+    // Consensus reached — fire haptic and surface to UI
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setIsCameraActive(false);
+    setPendingBarcode(consensus);
+  }, [isCameraActive, pendingBarcode]);
 
   const codeScanner = useCodeScanner({
-    codeTypes: ['ean-13', 'code-128', 'qr'],
-    onCodeScanned: handleCodeScanned
+    codeTypes: ['ean-13', 'code-128', 'qr', 'code-39'],
+    onCodeScanned: handleCodeScanned,
   });
 
   const handleSubmitCount = async (countedQty: number) => {
@@ -212,7 +179,7 @@ export default function CountScreen() {
         setIsSubmitting(false);
 
         if (currentLineIndex + 1 < activeBatchData!.length) {
-          setCurrentLineIndex(prev => prev + 1);
+          setCurrentLineIndex((prev: number) => prev + 1);
           setScannedBarcode(null);
         } else {
           Alert.alert('Batch Complete', 'All items submitted successfully.', [
@@ -249,7 +216,8 @@ export default function CountScreen() {
 
   const openCameraModal = () => {
     setPendingBarcode(null);
-    scanConsensusRef.current = { value: '', count: 0 };
+    pipelineRef.current = createPipelineRefs();
+    lastFrameTsRef.current = 0;
     setIsCameraActive(true);
     setIsCameraModalOpen(true);
   };
@@ -258,8 +226,8 @@ export default function CountScreen() {
     setIsCameraModalOpen(false);
     setIsCameraActive(false);
     setPendingBarcode(null);
-    setIsTorchOn(false);
-    scanConsensusRef.current = { value: '', count: 0 };
+    pipelineRef.current = createPipelineRefs();
+    lastFrameTsRef.current = 0;
   };
 
   const acceptBarcode = () => {
@@ -288,7 +256,8 @@ export default function CountScreen() {
 
   const retakeBarcode = () => {
     setPendingBarcode(null);
-    scanConsensusRef.current = { value: '', count: 0 };
+    pipelineRef.current = createPipelineRefs();
+    lastFrameTsRef.current = 0;
     setIsCameraActive(true);
   };
 
@@ -376,8 +345,10 @@ export default function CountScreen() {
                 device={device}
                 isActive={isCameraActive}
                 codeScanner={codeScanner as any}
-                torch={isTorchOn ? 'on' : 'off'}
-                zoom={device.neutralZoom ? device.neutralZoom * 1.5 : 1.5}
+                fps={30}
+                zoom={1.8}
+                exposure={-1}
+                torch="on"
                 enableZoomGesture={true}
               />
 
@@ -405,9 +376,9 @@ export default function CountScreen() {
                 <TouchableOpacity style={styles.iconButton} onPress={closeCameraModal}>
                   <Ionicons name="close" size={30} color="#fff" />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.iconButton} onPress={() => setIsTorchOn(!isTorchOn)}>
-                  <Ionicons name={isTorchOn ? "flash" : "flash-off"} size={26} color="#fff" />
-                </TouchableOpacity>
+                <View style={[styles.iconButton, { backgroundColor: 'rgba(251,191,36,0.35)' }]}>
+                  <Ionicons name="flash" size={26} color="#fbbf24" />
+                </View>
               </View>
 
               {/* Bottom Sheet for pending barcode */}
