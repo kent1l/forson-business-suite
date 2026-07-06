@@ -7,6 +7,7 @@ import MainLayout from './components/layout/MainLayout';
 import SetupPage from './pages/SetupPage';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import MobileSetupPage from './pages/MobileSetupPage';
 
 // AppContent remains the same, but it will now always have access to auth and settings
 function AppContent() {
@@ -40,6 +41,11 @@ function AppContent() {
 // The main App component will now handle the initial setup check
 function App() {
     const [needsSetup, setNeedsSetup] = useState(null);
+
+    // Intercept mobile setup route immediately to bypass auth and setup checks
+    if (window.location.pathname === '/mobile-setup') {
+        return <MobileSetupPage />;
+    }
 
     const checkSetupStatus = async () => {
         try {
