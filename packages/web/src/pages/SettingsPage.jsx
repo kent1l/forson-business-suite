@@ -9,6 +9,25 @@ import DataUtilsSettings from '../components/settings/DataUtilsSettings';
 import PermissionsSettings from '../components/settings/PermissionsSettings'; // <-- NEW: Import the component
 import PaymentMethodSettings from '../components/settings/PaymentMethodSettings';
 
+const MobileAppSettings = ({ settings, handleChange }) => (
+    <div className="space-y-4">
+        <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Mobile App Version (OTA Update)</label>
+            <input 
+                type="text" 
+                name="mobile_app_version" 
+                value={settings.mobile_app_version || ''} 
+                onChange={handleChange} 
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg" 
+                placeholder="1.0.0" 
+            />
+            <p className="mt-1 text-xs text-gray-500">
+                Updating this version number will force all active mobile warehouse clients to download the latest `.apk` binary.
+            </p>
+        </div>
+    </div>
+);
+
 const CompanyInfoSettings = ({ settings, handleChange }) => (
     <div className="space-y-4">
         <div>
@@ -481,6 +500,7 @@ const SettingsPage = ({ user }) => {
                                 <button type="button" onClick={() => setActiveTab('permissions')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'permissions' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Roles & Permissions</button>
                                 <button type="button" onClick={() => setActiveTab('backup')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'backup' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Backup & Restore</button>
                                 <button type="button" onClick={() => setActiveTab('data')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'data' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Data Utilities</button>
+                                <button type="button" onClick={() => setActiveTab('mobile_app')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'mobile_app' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Mobile App</button>
                             </nav>
                         </div>
 
@@ -491,8 +511,9 @@ const SettingsPage = ({ user }) => {
                         {activeTab === 'permissions' && <PermissionsSettings />}
                         {activeTab === 'backup' && <BackupSettings settings={settings} handleChange={handleChange} handleSave={handleSave} />}
                         {activeTab === 'data' && <DataUtilsSettings />}
+                        {activeTab === 'mobile_app' && <MobileAppSettings settings={settings} handleChange={handleChange} />}
 
-                        {['company', 'financial', 'cycle_count', 'backup'].includes(activeTab) && (
+                        {['company', 'financial', 'cycle_count', 'backup', 'mobile_app'].includes(activeTab) && (
                             <form onSubmit={handleSave}>
                                 <div className="pt-4 flex justify-end mt-6 border-t">
                                     <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
