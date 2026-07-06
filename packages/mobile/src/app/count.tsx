@@ -47,6 +47,28 @@ export default function CountScreen() {
   const [scannedBarcode, setScannedBarcode] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasPermission, setHasPermission] = useState(false);
+  const [serverOffset, setServerOffset] = useState<number>(0);
+  const [startTime, setStartTime] = useState<number | null>(null);
+
+  useEffect(() => {
+    const syncTime = async () => {
+      try {
+        const clientTimeBefore = Date.now();
+        const response = await apiClient.get('/inventory/cycle-count/server-time');
+        const clientTimeAfter = Date.now();
+        const serverTime = new Date(response.data.serverTime).getTime();
+        const latency = (clientTimeAfter - clientTimeBefore) / 2;
+        setServerOffset((serverTime + latency) - clientTimeAfter);
+      } catch (err) {
+        console.error('Failed to sync server time:', err);
+      }
+    };
+    syncTime();
+  }, []);
+
+  useEffect(() => {
+    setStartTime(Date.now());
+  }, [currentLineIndex, isAdHocMode]);
 
   // Camera Modal States
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
@@ -160,9 +182,10 @@ export default function CountScreen() {
   const handleSubmitCount = async (countedQty: number) => {
     setIsSubmitting(true);
     try {
+      const startedAt = startTime ? new Date(startTime + serverOffset).toISOString() : null;
       if (isAdHocMode) {
         // ── Ad-hoc path ──────────────────────────────────────────────────────
-        await submitAdHocCount(countedQty);
+        await submitAdHocCount(countedQty, startedAt);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         
         // Delay clearAdHocMode slightly to prevent state tearing/crashes during unmount
@@ -173,7 +196,7 @@ export default function CountScreen() {
         router.replace('/unassigned-search');
       } else {
         // ── Assigned batch path ──────────────────────────────────────────────
-        const payload: any = { counted_qty: countedQty };
+        const payload: any = { counted_qty: countedQty, started_at: startedAt };
         if (scannedBarcode) payload.scanned_barcode = scannedBarcode;
 
         await apiClient.post(`/inventory/cycle-count/lines/${currentLine.line_id}/submit`, payload);

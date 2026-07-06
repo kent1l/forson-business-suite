@@ -12,6 +12,32 @@ const CycleCountExecutionPage = () => {
     const [error, setError] = useState(null);
     const [activeItemIndex, setActiveItemIndex] = useState(null);
     const [showUnassignedWorkflow, setShowUnassignedWorkflow] = useState(false);
+    const [serverOffset, setServerOffset] = useState(0);
+    const [startTime, setStartTime] = useState(null);
+
+    useEffect(() => {
+        const syncTime = async () => {
+            try {
+                const clientTimeBefore = Date.now();
+                const response = await api.get('/inventory/cycle-count/server-time');
+                const clientTimeAfter = Date.now();
+                const serverTime = new Date(response.data.serverTime).getTime();
+                const latency = (clientTimeAfter - clientTimeBefore) / 2;
+                setServerOffset((serverTime + latency) - clientTimeAfter);
+            } catch (err) {
+                console.error('Failed to sync server time:', err);
+            }
+        };
+        syncTime();
+    }, []);
+
+    useEffect(() => {
+        if (activeItemIndex !== null || showUnassignedWorkflow) {
+            setStartTime(Date.now());
+        } else {
+            setStartTime(null);
+        }
+    }, [activeItemIndex, showUnassignedWorkflow]);
 
     const fetchTasks = useCallback(async () => {
         setLoading(true);
@@ -41,7 +67,8 @@ const CycleCountExecutionPage = () => {
 
     const handleItemSubmit = async (lineId, countedQty) => {
         try {
-            await api.post(`/inventory/cycle-count/lines/${lineId}/submit`, { counted_qty: countedQty });
+            const startedAt = startTime ? new Date(startTime + serverOffset).toISOString() : null;
+            await api.post(`/inventory/cycle-count/lines/${lineId}/submit`, { counted_qty: countedQty, started_at: startedAt });
             toast.success('Count recorded successfully.');
 
             // Advance to next item or finish
@@ -62,7 +89,8 @@ const CycleCountExecutionPage = () => {
 
     const handleUnassignedSubmit = async (partId, countedQty) => {
         try {
-            await api.post('/inventory/cycle-count/unassigned-find', { part_id: partId, counted_qty: countedQty });
+            const startedAt = startTime ? new Date(startTime + serverOffset).toISOString() : null;
+            await api.post('/inventory/cycle-count/unassigned-find', { part_id: partId, counted_qty: countedQty, started_at: startedAt });
             toast.success('Unassigned item count recorded successfully.');
             setShowUnassignedWorkflow(false);
         } catch (err) {

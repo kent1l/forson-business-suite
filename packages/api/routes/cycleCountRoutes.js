@@ -4,6 +4,11 @@ const { protect, hasPermission } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
+// GET /api/inventory/cycle-count/server-time
+router.get('/inventory/cycle-count/server-time', protect, (req, res) => {
+    res.json({ serverTime: new Date().toISOString() });
+});
+
 // GET /api/inventory/cycle-count/my-tasks
 router.get('/inventory/cycle-count/my-tasks', protect, hasPermission('cycle_count:execute'), async (req, res) => {
     try {
@@ -154,12 +159,29 @@ router.patch('/inventory/cycle-count/lines/:id/edit-count', protect, hasPermissi
         const MAX_FINANCIAL_IMPACT = parseFloat(settings['CYCLE_COUNT_MAX_FINANCIAL_IMPACT'] || '5.00');
 
         // 3. Re-snapshot current system qty and WAC
-        const partResult = await client.query(`
-            SELECT
-                p.wac_cost,
-                COALESCE((SELECT SUM(quantity) FROM inventory_transaction WHERE part_id = $1), 0) AS system_qty
-            FROM part p WHERE p.part_id = $1
-        `, [line.part_id]);
+        const started_at = req.body.started_at || line.started_at;
+        let system_qty_query;
+        let queryParams;
+        if (started_at) {
+            system_qty_query = `
+                SELECT 
+                    p.wac_cost,
+                    COALESCE((SELECT SUM(quantity) FROM inventory_transaction WHERE part_id = $1 AND transaction_date <= $2), 0) AS system_qty
+                FROM part p 
+                WHERE p.part_id = $1
+            `;
+            queryParams = [line.part_id, new Date(started_at)];
+        } else {
+            system_qty_query = `
+                SELECT 
+                    p.wac_cost,
+                    COALESCE((SELECT SUM(quantity) FROM inventory_transaction WHERE part_id = $1), 0) AS system_qty
+                FROM part p 
+                WHERE p.part_id = $1
+            `;
+            queryParams = [line.part_id];
+        }
+        const partResult = await client.query(system_qty_query, queryParams);
 
         const system_qty_snapshot = parseFloat(partResult.rows[0].system_qty || 0);
         const wac_cost = parseFloat(partResult.rows[0].wac_cost || 0);
@@ -185,10 +207,10 @@ router.patch('/inventory/cycle-count/lines/:id/edit-count', protect, hasPermissi
         // 5. Update line with new count
         const updateResult = await client.query(`
             UPDATE cycle_count_line
-            SET counted_qty = $1, system_qty_snapshot = $2, status = $3, counted_at = CURRENT_TIMESTAMP
-            WHERE line_id = $4
+            SET counted_qty = $1, system_qty_snapshot = $2, status = $3, counted_at = CURRENT_TIMESTAMP, started_at = $4
+            WHERE line_id = $5
             RETURNING *
-        `, [countedQuantity, system_qty_snapshot, status, id]);
+        `, [countedQuantity, system_qty_snapshot, status, started_at ? new Date(started_at) : null, id]);
 
         // 6. Update part_inventory_stats
         await client.query(`
@@ -212,7 +234,7 @@ router.patch('/inventory/cycle-count/lines/:id/edit-count', protect, hasPermissi
 // POST /api/inventory/cycle-count/lines/:id/submit
 router.post('/inventory/cycle-count/lines/:id/submit', protect, hasPermission('cycle_count:execute'), async (req, res) => {
     const { id } = req.params;
-    const { counted_qty, scanned_barcode } = req.body;
+    const { counted_qty, scanned_barcode, started_at } = req.body;
 
     if (counted_qty === undefined) {
         return res.status(400).json({ message: 'counted_qty is required' });
@@ -258,13 +280,28 @@ router.post('/inventory/cycle-count/lines/:id/submit', protect, hasPermission('c
         }
 
         // 2. Snapshot current system quantity and fetch WAC cost with a lock on the part
-        const partResult = await client.query(`
-            SELECT 
-                p.wac_cost,
-                COALESCE((SELECT SUM(quantity) FROM inventory_transaction WHERE part_id = $1), 0) AS system_qty
-            FROM part p 
-            WHERE p.part_id = $1
-        `, [line.part_id]);
+        let system_qty_query;
+        let queryParams;
+        if (started_at) {
+            system_qty_query = `
+                SELECT 
+                    p.wac_cost,
+                    COALESCE((SELECT SUM(quantity) FROM inventory_transaction WHERE part_id = $1 AND transaction_date <= $2), 0) AS system_qty
+                FROM part p 
+                WHERE p.part_id = $1
+            `;
+            queryParams = [line.part_id, new Date(started_at)];
+        } else {
+            system_qty_query = `
+                SELECT 
+                    p.wac_cost,
+                    COALESCE((SELECT SUM(quantity) FROM inventory_transaction WHERE part_id = $1), 0) AS system_qty
+                FROM part p 
+                WHERE p.part_id = $1
+            `;
+            queryParams = [line.part_id];
+        }
+        const partResult = await client.query(system_qty_query, queryParams);
 
         const system_qty_snapshot = parseFloat(partResult.rows[0].system_qty || 0);
         const wac_cost = parseFloat(partResult.rows[0].wac_cost || 0);
@@ -306,10 +343,11 @@ router.post('/inventory/cycle-count/lines/:id/submit', protect, hasPermission('c
                 counted_qty = $1,
                 system_qty_snapshot = $2,
                 status = $3,
-                counted_at = CURRENT_TIMESTAMP
-            WHERE line_id = $4
+                counted_at = CURRENT_TIMESTAMP,
+                started_at = $4
+            WHERE line_id = $5
             RETURNING *
-        `, [countedQuantity, system_qty_snapshot, status, id]);
+        `, [countedQuantity, system_qty_snapshot, status, started_at ? new Date(started_at) : null, id]);
 
         // 5. Also update part_inventory_stats last_counted_at
         await client.query(`
@@ -333,7 +371,7 @@ router.post('/inventory/cycle-count/lines/:id/submit', protect, hasPermission('c
 // POST /api/inventory/cycle-count/unassigned-find
 router.post('/inventory/cycle-count/unassigned-find', protect, hasPermission('cycle_count:execute'), async (req, res) => {
     const { employee_id } = req.user;
-    const { part_id, counted_qty } = req.body;
+    const { part_id, counted_qty, started_at } = req.body;
 
     if (!part_id || counted_qty === undefined) {
         return res.status(400).json({ message: 'part_id and counted_qty are required' });
@@ -344,14 +382,29 @@ router.post('/inventory/cycle-count/unassigned-find', protect, hasPermission('cy
         await client.query('BEGIN');
 
         // 1. Ensure part exists, fetch WAC, and snapshot qty
-        const partResult = await client.query(`
-            SELECT
-                p.part_id,
-                p.wac_cost,
-                COALESCE((SELECT SUM(quantity) FROM inventory_transaction WHERE part_id = $1), 0) AS stock_on_hand
-            FROM part p
-            WHERE p.part_id = $1
-        `, [part_id]);
+        let system_qty_query;
+        let queryParams;
+        if (started_at) {
+            system_qty_query = `
+                SELECT 
+                    p.wac_cost,
+                    COALESCE((SELECT SUM(quantity) FROM inventory_transaction WHERE part_id = $1 AND transaction_date <= $2), 0) AS stock_on_hand
+                FROM part p 
+                WHERE p.part_id = $1
+            `;
+            queryParams = [part_id, new Date(started_at)];
+        } else {
+            system_qty_query = `
+                SELECT
+                    p.part_id,
+                    p.wac_cost,
+                    COALESCE((SELECT SUM(quantity) FROM inventory_transaction WHERE part_id = $1), 0) AS stock_on_hand
+                FROM part p
+                WHERE p.part_id = $1
+            `;
+            queryParams = [part_id];
+        }
+        const partResult = await client.query(system_qty_query, queryParams);
 
         if (partResult.rows.length === 0) {
             await client.query('ROLLBACK');
@@ -420,10 +473,10 @@ router.post('/inventory/cycle-count/unassigned-find', protect, hasPermission('cy
 
         // 3. Insert line
         const lineResult = await client.query(`
-            INSERT INTO cycle_count_line (batch_id, part_id, status, system_qty_snapshot, counted_qty, is_unassigned_find, counted_at)
-            VALUES ($1, $2, $3, $4, $5, TRUE, CURRENT_TIMESTAMP)
+            INSERT INTO cycle_count_line (batch_id, part_id, status, system_qty_snapshot, counted_qty, is_unassigned_find, counted_at, started_at)
+            VALUES ($1, $2, $3, $4, $5, TRUE, CURRENT_TIMESTAMP, $6)
             RETURNING *
-        `, [batch_id, part_id, status, system_qty_snapshot, countedQuantity]);
+        `, [batch_id, part_id, status, system_qty_snapshot, countedQuantity, started_at ? new Date(started_at) : null]);
 
         // 4. Update part_inventory_stats
         await client.query(`
