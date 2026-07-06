@@ -26,7 +26,7 @@ export default function MobileSetupPage() {
 
     const handleDownload = () => {
         // Point to the static volume mount
-        window.location.href = '/downloads/forson-erp-latest.apk';
+        window.location.href = '/downloads/FORSON.apk';
     };
 
     return (

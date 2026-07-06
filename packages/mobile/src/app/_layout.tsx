@@ -47,7 +47,7 @@ export default function TabLayout() {
           if (downloadIp.includes(':3001')) {
             downloadIp = downloadIp.replace(':3001', ':8090');
           }
-          setDownloadUrl(`${downloadIp}/downloads/forson-erp-latest.apk`);
+          setDownloadUrl(`${downloadIp}/downloads/FORSON.apk`);
         }
       } catch (err) {
         console.warn('OTA check skipped or failed:', err?.message || err);
