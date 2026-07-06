@@ -72,7 +72,7 @@ export default function CountScreen() {
 
   // Camera Modal States
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
-  const [isTorchOn, setIsTorchOn] = useState(true);
+  const [isTorchOn, setIsTorchOn] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
   const pipelineRef = useRef<ScannerPipelineRefs>(createPipelineRefs());
@@ -250,7 +250,7 @@ export default function CountScreen() {
     setIsCameraModalOpen(false);
     setIsCameraActive(false);
     setPendingBarcode(null);
-    setIsTorchOn(true);
+    setIsTorchOn(false);
     pipelineRef.current = createPipelineRefs();
     lastFrameTsRef.current = 0;
   };

@@ -56,7 +56,7 @@ export default function UnassignedSearchScreen() {
   // ── Camera state ────────────────────────────────────────────────────────────
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
-  const [isTorchOn, setIsTorchOn] = useState(true);
+  const [isTorchOn, setIsTorchOn] = useState(false);
   const [hasPermission, setHasPermission] = useState(false);
   const [isScanResolving, setIsScanResolving] = useState(false);
   const scanLockRef = useRef(false);
@@ -149,7 +149,7 @@ export default function UnassignedSearchScreen() {
   const closeScanner = useCallback(() => {
     setIsScannerOpen(false);
     setIsCameraActive(false);
-    setIsTorchOn(true);
+    setIsTorchOn(false);
     scanLockRef.current = false;
     pipelineRef.current = createPipelineRefs();
     lastFrameTsRef.current = 0;
