@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Forson Cycle Count Mobile",
+    "name": "FORSON",
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -45,9 +45,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#fbd602",
           "android": {
-            "image": "./assets/images/splash-icon.png",
+            "image": "./assets/images/forson-android-icon-foreground.png",
             "imageWidth": 76
           }
         }
