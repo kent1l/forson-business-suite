@@ -23,7 +23,6 @@ import apiClient from '../api/client';
 import useCycleCountStore from '../store/useCycleCountStore';
 import {
   FRAME_INTERVAL_MS,
-  ROI_HALF_WIDTH,
   createPipelineRefs,
   isValidEanChecksum,
   runConsensus,
@@ -32,12 +31,32 @@ import {
 
 const DEBOUNCE_MS = 300;
 
-// ROI viewfinder guard — Tier B of the pipeline.
-const isInROI = (code: any, frameWidth: number): boolean => {
-  if (!code.bounds || frameWidth === 0) return true;
-  const { minX, maxX } = code.bounds as { minX: number; maxX: number };
-  const normMidX = (minX + (maxX - minX) / 2) / frameWidth;
-  return Math.abs(normMidX - 0.5) <= ROI_HALF_WIDTH;
+// ROI viewfinder guard: rejects codes whose bounds fall outside the
+// viewfinder cutout in the UI — Tier B of the pipeline.
+const isInROI = (code: any, frameWidth: number, frameHeight: number): boolean => {
+  if (!code.bounds || frameWidth === 0 || frameHeight === 0) return true;
+
+  const { minX, maxX, minY, maxY } = code.bounds as { minX: number; maxX: number; minY: number; maxY: number };
+  const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+
+  // Camera preview uses resizeMode="cover", filling the screen
+  const frameLong = Math.max(frameWidth, frameHeight);
+  const frameShort = Math.min(frameWidth, frameHeight);
+
+  const scale = Math.max(screenWidth / frameShort, screenHeight / frameLong);
+  const offsetX = (screenWidth - frameShort * scale) / 2;
+  const offsetY = (screenHeight - frameLong * scale) / 2;
+
+  const barcodeMidLong = (minX + maxX) / 2;
+  const barcodeMidShort = (minY + maxY) / 2;
+
+  const screenMidX = barcodeMidShort * scale + offsetX;
+  const screenMidY = barcodeMidLong * scale + offsetY;
+
+  const inVertical = Math.abs(screenMidY - screenHeight / 2) <= 100; // 200px viewfinder cutout height (100px from center)
+  const inHorizontal = Math.abs(screenMidX - screenWidth / 2) <= screenWidth * 0.4; // 80% viewfinder cutout width (40% from center)
+
+  return inVertical && inHorizontal;
 };
 
 export default function UnassignedSearchScreen() {
@@ -171,8 +190,8 @@ export default function UnassignedSearchScreen() {
         const value: string | undefined = code.value;
         if (!value) return;
 
-        // ── Tier B: ROI viewport mask (central 40% horizontal band) ───────────
-        if (!isInROI(code, frame?.width ?? 0)) return;
+        // ── Tier B: ROI viewport mask (viewfinder cutout only) ───────────────
+        if (!isInROI(code, frame?.width ?? 0, frame?.height ?? 0)) return;
 
         // EAN/UPC checksum pre-filter
         if (/^\d{12,13}$/.test(value) && !isValidEanChecksum(value)) return;
