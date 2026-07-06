@@ -56,6 +56,8 @@ services:
       - backend 
     ports:
       - "8090:80"
+    volumes:
+      - ./mobile-builds:/usr/share/nginx/html/downloads
 
   # --- Backup Service ---
   backup:

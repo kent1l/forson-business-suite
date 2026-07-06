@@ -19,6 +19,20 @@ router.get('/setup/status', async (req, res) => {
     }
 });
 
+// GET /api/setup/mobile-version - Public endpoint to get the latest mobile app version
+router.get('/setup/mobile-version', async (req, res) => {
+    try {
+        const result = await db.query("SELECT setting_value FROM settings WHERE setting_key = 'mobile_app_version'");
+        if (!result || !result.rows || result.rows.length === 0) {
+            return res.json({ version: '1.0.0' }); // Fallback
+        }
+        res.json({ version: result.rows[0].setting_value });
+    } catch (err) {
+        console.error('setupRoutes: Failed to fetch mobile version', err);
+        res.status(500).json({ error: 'Database query failed' });
+    }
+});
+
 // POST /api/setup/create-admin - Create the very first admin account
 router.post('/setup/create-admin', async (req, res) => {
     console.log('[DEBUG] HIT: POST /api/setup/create-admin'); // Log when the route is actually called

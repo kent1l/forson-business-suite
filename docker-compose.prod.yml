@@ -71,6 +71,7 @@ services:
     volumes:
       - ./nginx/ssl:/etc/nginx/ssl:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./mobile-builds:/usr/share/nginx/html/downloads
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--spider", "http://localhost/health"]
       interval: 30s
