@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, Alert, ActivityIndicator, ScrollView, Modal, TouchableOpacity, Dimensions, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Camera, useCameraDevice, useCodeScanner } from 'react-native-vision-camera';
+import { Camera, useCameraDevice, useCodeScanner, useCameraFormat } from 'react-native-vision-camera';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import useCycleCountStore from '../store/useCycleCountStore';
@@ -50,13 +50,14 @@ export default function CountScreen() {
 
   // Camera Modal States
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
-  const [isTorchOn, setIsTorchOn] = useState(false);
+  const [isTorchOn, setIsTorchOn] = useState(true);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
   const pipelineRef = useRef<ScannerPipelineRefs>(createPipelineRefs());
   const lastFrameTsRef = useRef<number>(0);
 
   const device = useCameraDevice('back');
+  const format = useCameraFormat(device, [{ fps: 30 }]);
 
   const laserAnim = useRef(new Animated.Value(0)).current;
 
@@ -226,6 +227,7 @@ export default function CountScreen() {
     setIsCameraModalOpen(false);
     setIsCameraActive(false);
     setPendingBarcode(null);
+    setIsTorchOn(true);
     pipelineRef.current = createPipelineRefs();
     lastFrameTsRef.current = 0;
   };
@@ -343,12 +345,13 @@ export default function CountScreen() {
               <Camera
                 style={StyleSheet.absoluteFill}
                 device={device}
+                format={format}
                 isActive={isCameraActive}
                 codeScanner={codeScanner as any}
                 fps={30}
-                zoom={1.8}
+                zoom={Math.min(Math.max(1.8, device.minZoom ?? 1), device.maxZoom ?? 1.8)}
                 exposure={-1}
-                torch="on"
+                torch={device.hasTorch && isTorchOn ? 'on' : 'off'}
                 enableZoomGesture={true}
               />
 
@@ -376,9 +379,9 @@ export default function CountScreen() {
                 <TouchableOpacity style={styles.iconButton} onPress={closeCameraModal}>
                   <Ionicons name="close" size={30} color="#fff" />
                 </TouchableOpacity>
-                <View style={[styles.iconButton, { backgroundColor: 'rgba(251,191,36,0.35)' }]}>
-                  <Ionicons name="flash" size={26} color="#fbbf24" />
-                </View>
+                <TouchableOpacity style={[styles.iconButton, isTorchOn && { backgroundColor: 'rgba(251,191,36,0.35)' }]} onPress={() => setIsTorchOn(!isTorchOn)}>
+                  <Ionicons name={isTorchOn ? "flash" : "flash-off"} size={26} color={isTorchOn ? "#fbbf24" : "#fff"} />
+                </TouchableOpacity>
               </View>
 
               {/* Bottom Sheet for pending barcode */}
