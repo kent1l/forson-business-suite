@@ -48,7 +48,7 @@
           "backgroundColor": "#fbd602",
           "android": {
             "image": "./assets/images/forson-android-icon-foreground.png",
-            "imageWidth": 76
+            "imageWidth": 250
           }
         }
       ]
