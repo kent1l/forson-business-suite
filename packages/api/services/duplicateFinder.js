@@ -167,12 +167,17 @@ class DuplicateFinder {
         // Boost: Extracted numeric tokens match exactly (+0.20)
         const nums1 = this.extractNumericTokens(detail1 + ' ' + name1);
         const nums2 = this.extractNumericTokens(detail2 + ' ' + name2);
+        let hasNumericMismatch = false;
         if (nums1.length > 0 && nums2.length > 0) {
             const sortedNums1 = [...nums1].sort().join(',');
             const sortedNums2 = [...nums2].sort().join(',');
             if (sortedNums1 === sortedNums2) {
                 score += 0.20;
                 reasons.push('numeric_tokens_match');
+            } else {
+                hasNumericMismatch = true;
+                score -= 0.10;
+                reasons.push('numeric_tokens_mismatch');
             }
         }
 
@@ -194,9 +199,9 @@ class DuplicateFinder {
             reasons.push('high_text_similarity');
         }
 
-        // To safely skip AI, we demand both a high final score AND a solid text structure overlap 
-        // (to prevent skipping AI for items that share fake part numbers like '10MM' but are entirely different parts).
-        if (score >= 0.95 && diceSimilarity > 0.60) {
+        // To safely skip AI, we demand both a high final score AND a solid text structure overlap,
+        // and crucially, we FORBID skipping the AI if there is ANY mismatch in numeric tokens (like 12V vs 24V).
+        if (score >= 0.95 && diceSimilarity > 0.60 && !hasNumericMismatch) {
             reasons.push('obvious_match');
         }
 
