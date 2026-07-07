@@ -1,5 +1,5 @@
 const { meiliClient } = require('../meilisearch');
-
+const llmRouter = require('./llmRouter');
 /**
  * Service for finding potential duplicate parts using Cascade Record Linkage
  * Phase 1: Deterministic Blocking (SQL)
@@ -32,6 +32,59 @@ class DuplicateFinder {
         if (!text) return [];
         const matches = text.match(/\b\d+\b/g) || [];
         return matches.map(m => parseInt(m)).filter(n => !isNaN(n));
+    }
+
+    static calculateDiceCoefficient(str1, str2) {
+        if (!str1 || !str2) return 0;
+        if (str1 === str2) return 1;
+        const getBigrams = str => {
+            const bigrams = new Set();
+            for (let i = 0; i < str.length - 1; i++) {
+                bigrams.add(str.substring(i, i + 2));
+            }
+            return bigrams;
+        };
+        const bg1 = getBigrams(str1);
+        const bg2 = getBigrams(str2);
+        let intersection = 0;
+        for (let bg of bg1) {
+            if (bg2.has(bg)) intersection++;
+        }
+        return (2.0 * intersection) / (bg1.size + bg2.size) || 0;
+    }
+
+    static calculateJaroWinkler(s1, s2) {
+        if (s1 === s2) return 1.0;
+        if (!s1 || !s2) return 0.0;
+        const m = s1.length, n = s2.length;
+        const matchWindow = Math.floor(Math.max(m, n) / 2) - 1;
+        let matches = 0, transpositions = 0;
+        const s1Matches = new Array(m).fill(false), s2Matches = new Array(n).fill(false);
+        for (let i = 0; i < m; i++) {
+            const start = Math.max(0, i - matchWindow), end = Math.min(n - 1, i + matchWindow);
+            for (let j = start; j <= end; j++) {
+                if (!s2Matches[j] && s1[i] === s2[j]) {
+                    s1Matches[i] = true; s2Matches[j] = true; matches++; break;
+                }
+            }
+        }
+        if (matches === 0) return 0.0;
+        let k = 0;
+        for (let i = 0; i < m; i++) {
+            if (s1Matches[i]) {
+                while (!s2Matches[k]) k++;
+                if (s1[i] !== s2[k]) transpositions++;
+                k++;
+            }
+        }
+        transpositions /= 2.0;
+        const jaro = ((matches / m) + (matches / n) + ((matches - transpositions) / matches)) / 3.0;
+        let prefix = 0;
+        const maxPrefix = Math.min(4, Math.min(m, n));
+        for (let i = 0; i < maxPrefix; i++) {
+            if (s1[i] === s2[i]) prefix++; else break;
+        }
+        return jaro + (prefix * 0.1 * (1.0 - jaro));
     }
 
     /**
@@ -79,6 +132,18 @@ class DuplicateFinder {
             reasons.push('different_brands_disqualification');
         }
 
+        // Strict Color Disqualification Rule:
+        const colors = ['black', 'white', 'yellow', 'orange', 'green', 'blue', 'brown', 'red', 'gray', 'grey'];
+        const getColor = (text) => colors.find(c => new RegExp(`\\b${c}\\b`, 'i').test(text));
+        
+        const color1 = getColor(detail1 + ' ' + name1);
+        const color2 = getColor(detail2 + ' ' + name2);
+        
+        if (color1 && color2 && color1 !== color2) {
+            score = -1.0;
+            reasons.push('different_colors_disqualification');
+        }
+
         // Massive Penalty/Disqualification: Candidates have *different*, explicitly defined part numbers
         // Only penalize if BOTH have defined part numbers and they DO NOT share any.
         if (pns1.length > 0 && pns2.length > 0 && sharedPns.length === 0) {
@@ -109,6 +174,24 @@ class DuplicateFinder {
                 score += 0.20;
                 reasons.push('numeric_tokens_match');
             }
+        }
+
+        // Mathematical Algorithmic Gate:
+        // Compute structural text overlap (Sørensen-Dice) and typo-resistant part number matching (Jaro-Winkler)
+        const diceSimilarity = this.calculateDiceCoefficient(name1 + ' ' + detail1, name2 + ' ' + detail2);
+        const jaroWinklerPartNum = (pns1.length > 0 && pns2.length > 0) 
+            ? Math.max(...pns1.map(pn1 => Math.max(...pns2.map(pn2 => this.calculateJaroWinkler(pn1, pn2)))))
+            : 0;
+
+        // Strict Algorithmic Guardrail:
+        // If descriptions share less than 40% bigram structure AND their part numbers aren't extremely close matches, discard instantly.
+        if (diceSimilarity < 0.40 && jaroWinklerPartNum < 0.85) {
+            score = -1.0;
+            reasons.push('low_mathematical_similarity_disqualification');
+        } else if (diceSimilarity > 0.80) {
+            // Apply a slight confidence boost if textual structure is extremely identical
+            score += 0.15;
+            reasons.push('high_text_similarity');
         }
 
         return { score: Math.max(-1.0, Math.min(score, 1.0)), reasons };
@@ -142,6 +225,10 @@ class DuplicateFinder {
         const edgeDetails = new Map();
         const processedPairs = new Set();
         
+        // Fetch all user exclusions
+        const exclusionsRes = await this.db.query('SELECT part_id_1, part_id_2 FROM part_exclusion');
+        const exclusions = new Set(exclusionsRes.rows.map(r => `${r.part_id_1}_${r.part_id_2}`));
+        
         // Helper to generate a unique pair ID regardless of order
         const getPairId = (id1, id2) => {
             const [a, b] = [parseInt(id1), parseInt(id2)].sort((x, y) => x - y);
@@ -153,6 +240,7 @@ class DuplicateFinder {
             const part2Id = parseInt(pair.part2.part_id);
             const pairId = getPairId(part1Id, part2Id);
 
+            if (exclusions.has(pairId)) return;
             if (processedPairs.has(pairId)) return;
             processedPairs.add(pairId);
 
@@ -195,6 +283,27 @@ class DuplicateFinder {
         } catch (error) {
             console.error('Meilisearch fuzzy blocking failed, falling back/skipping:', error);
         }
+
+        // Phase 4: LLM Verification (AI Guardrail)
+        const edgeVerificationPromises = Array.from(edgeDetails.entries()).map(async ([edgeId, edge]) => {
+            const [aStr, bStr] = edgeId.split('_');
+            const part1 = partById.get(parseInt(aStr));
+            const part2 = partById.get(parseInt(bStr));
+            
+            try {
+                const isDuplicate = await llmRouter.verifyDuplicate(part1, part2);
+                if (!isDuplicate) {
+                    edgeDetails.delete(edgeId);
+                    adjacency.get(parseInt(aStr)).delete(parseInt(bStr));
+                    adjacency.get(parseInt(bStr)).delete(parseInt(aStr));
+                }
+            } catch (error) {
+                console.error('LLM verification failed for edge, keeping it by default:', error);
+            }
+        });
+        
+        // Run AI verification in parallel (batching can be handled by router if needed)
+        await Promise.all(edgeVerificationPromises);
 
         // Extract connected components (O(V+E))
         const duplicateGroups = [];
