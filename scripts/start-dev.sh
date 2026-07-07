@@ -61,5 +61,8 @@ fi
 log "Running database migrations inside backend container..."
 docker compose exec backend node scripts/migrate.js up
 
+log "Synchronizing mobile app version with database..."
+./scripts/sync-mobile-version.sh --dev
+
 log "Development environment is ready."
 log "If needed, make this script executable: chmod +x scripts/start-dev.sh"

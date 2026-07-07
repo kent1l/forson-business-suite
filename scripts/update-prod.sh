@@ -104,6 +104,9 @@ sleep 3
 log "Step 5: Executing database migrations..."
 sudo docker compose -f docker-compose.prod.yml exec -T backend node scripts/migrate.js up
 
+log "Synchronizing mobile app version with database..."
+./scripts/sync-mobile-version.sh --prod
+
 log "Step 6: Performing safe image cleanup..."
 sudo docker image prune -f > /dev/null 2>&1
 

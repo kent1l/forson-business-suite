@@ -22,5 +22,8 @@ docker compose exec db psql -U postgres -d forson_business_suite -f /docker-entr
 log "Applying migrations to latest commit..."
 docker compose exec backend node scripts/migrate.js up
 
+log "Synchronizing mobile app version with database..."
+./scripts/sync-mobile-version.sh --dev
+
 log "Database reset complete."
 log "If needed, make this script executable: chmod +x scripts/reset-dev-db.sh"
