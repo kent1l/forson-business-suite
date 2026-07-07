@@ -284,8 +284,31 @@ class DuplicateFinder {
             console.error('Meilisearch fuzzy blocking failed, falling back/skipping:', error);
         }
 
+        // Phase 3b: Strict Trim before AI Verification to avoid token waste
+        if (edgeDetails.size > limit) {
+            const sortedEdges = Array.from(edgeDetails.entries()).sort((a, b) => b[1].score - a[1].score);
+            const topEdges = sortedEdges.slice(0, limit);
+            edgeDetails.clear();
+            adjacency.clear(); 
+            for (const [edgeId, edge] of topEdges) {
+                edgeDetails.set(edgeId, edge);
+                const [aStr, bStr] = edgeId.split('_');
+                const a = parseInt(aStr);
+                const b = parseInt(bStr);
+                if (!adjacency.has(a)) adjacency.set(a, new Set());
+                if (!adjacency.has(b)) adjacency.set(b, new Set());
+                adjacency.get(a).add(b);
+                adjacency.get(b).add(a);
+            }
+        }
+
         // Phase 4: LLM Verification (AI Guardrail)
         const edgeVerificationPromises = Array.from(edgeDetails.entries()).map(async ([edgeId, edge]) => {
+            // Optimization: Skip LLM for obvious matches
+            if (edge.reasons.includes('obvious_match')) {
+                return;
+            }
+
             const [aStr, bStr] = edgeId.split('_');
             const part1 = partById.get(parseInt(aStr));
             const part2 = partById.get(parseInt(bStr));

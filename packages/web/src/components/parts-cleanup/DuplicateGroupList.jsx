@@ -8,6 +8,7 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
     const [duplicateGroups, setDuplicateGroups] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [isCompact, setIsCompact] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [expandedGroups, setExpandedGroups] = useState({});
 
@@ -206,6 +207,17 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                             🤖 AI-Verified Only
                         </button>
                         <button
+                            onClick={() => {
+                                const obviousGroups = duplicateGroups.filter(g => g.reasons && (g.reasons.includes('obvious_match') || g.confidence === 'Very High' || g.confidence === 'High'));
+                                onSelectionChange(obviousGroups);
+                                toast.success(`Selected ${obviousGroups.length} obvious/high-confidence groups`);
+                            }}
+                            title="Quickly select all duplicates with high structural math scores"
+                            className="inline-flex items-center px-3 py-2 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 text-sm font-medium shadow-sm transition-colors"
+                        >
+                            ✓ Obvious/High Confidence
+                        </button>
+                        <button
                             onClick={fetchDuplicateGroups}
                             title="Refresh duplicate groups"
                             className="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm shadow-sm transition-colors"
@@ -223,9 +235,21 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                         <h3 className="text-sm font-medium text-blue-900">
                             Found {filteredGroups.length} duplicate group{filteredGroups.length !== 1 ? 's' : ''}
                         </h3>
-                        <p className="text-sm text-blue-700">
-                            {selectedGroups.length} group{selectedGroups.length !== 1 ? 's' : ''} selected for merge
-                        </p>
+                        <div className="text-sm text-gray-500 flex items-center gap-4">
+                            <span>
+                                Found {duplicateGroups.length} potential duplicate groups
+                                {selectedGroups.length > 0 && ` (${selectedGroups.length} selected)`}
+                            </span>
+                            <label className="flex items-center cursor-pointer ml-4 border-l pl-4 border-gray-300">
+                                <input
+                                    type="checkbox"
+                                    checked={isCompact}
+                                    onChange={(e) => setIsCompact(e.target.checked)}
+                                    className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                />
+                                Compact View
+                            </label>
+                        </div>
                     </div>
                     {selectedGroups.length > 0 && (
                         <div className="text-sm text-blue-700">
@@ -257,10 +281,43 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                 </div>
             ) : (
                 <div className="space-y-4">
-                    {filteredGroups.map((group) => {
-                        const isSelected = isGroupSelected(group.groupId);
-                        const isExpanded = expandedGroups[group.groupId];
+                    {filteredGroups.map(group => {
+                        const isSelected = selectedGroups.some(g => g.groupId === group.groupId);
                         
+                        if (isCompact) {
+                            return (
+                                <div 
+                                    key={group.groupId} 
+                                    onClick={() => handleGroupSelection(group, !isSelected)}
+                                    className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-colors ${
+                                        isSelected ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-4 flex-1">
+                                        <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onChange={() => {}}
+                                            className="h-4 w-4 text-blue-600 rounded border-gray-300"
+                                        />
+                                        <div className="text-sm font-medium w-16">
+                                            {group.confidence || `${(group.score * 100).toFixed(0)}%`}
+                                        </div>
+                                        <div className="text-sm text-gray-600 flex-1 truncate">
+                                            {group.parts.map(p => p.display_name || p.internal_sku).join(' ⚡ ')}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            {group.reasons.map((r, i) => (
+                                                <span key={i} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">
+                                                    {r.replace('_', ' ')}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        }
+
                         return (
                             <div
                                 key={group.groupId}
@@ -296,7 +353,7 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
 
                                                 {/* Quick preview of parts */}
                                                 <div className="space-y-1">
-                                                    {group.parts.slice(0, isExpanded ? undefined : 2).map((part) => (
+                                                    {group.parts.slice(0, expandedGroups[group.groupId] ? undefined : 2).map((part) => (
                                                         <div key={part.part_id} className="text-xs text-gray-700">
                                                             <span className="font-mono">{part.internal_sku}</span> - 
                                                             <span className="ml-1">{part.display_name || 'Unnamed Part'}</span>
@@ -308,7 +365,7 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                                                         </div>
                                                     ))}
                                                     
-                                                    {!isExpanded && group.parts.length > 2 && (
+                                                    {!expandedGroups[group.groupId] && group.parts.length > 2 && (
                                                         <div className="text-xs text-gray-500">
                                                             +{group.parts.length - 2} more part{group.parts.length - 2 !== 1 ? 's' : ''}
                                                         </div>
