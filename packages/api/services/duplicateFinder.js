@@ -294,6 +294,7 @@ class DuplicateFinder {
                 const aiResult = await llmRouter.verifyDuplicate(part1, part2);
                 // Handle both boolean (old) and object (new) returns safely
                 const isDuplicate = typeof aiResult === 'object' ? aiResult.isDuplicate : aiResult;
+                const isSkipped = typeof aiResult === 'object' ? aiResult.skipped : false;
                 const aiReason = typeof aiResult === 'object' ? aiResult.reason : null;
                 const aiModel = typeof aiResult === 'object' ? aiResult.model : null;
 
@@ -301,7 +302,7 @@ class DuplicateFinder {
                     edgeDetails.delete(edgeId);
                     adjacency.get(parseInt(aStr)).delete(parseInt(bStr));
                     adjacency.get(parseInt(bStr)).delete(parseInt(aStr));
-                } else {
+                } else if (!isSkipped) {
                     edge.reasons.push('ai_verified');
                     if (aiReason) edge.ai_reason = aiReason;
                     if (aiModel) edge.ai_model = aiModel;

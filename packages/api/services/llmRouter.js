@@ -58,7 +58,7 @@ Respond ONLY with a JSON object:
     async callGemini(prompt) {
         if (this.geminiKeys.length === 0) {
             console.warn('No Gemini API keys found. Skipping AI verification.');
-            return true;
+            return { isDuplicate: true, skipped: true, reason: 'Skipped - No Gemini API Key' };
         }
 
         const key = this.geminiKeys[this.geminiIndex];
@@ -87,7 +87,7 @@ Respond ONLY with a JSON object:
     async callOpenAI(prompt) {
         if (!this.openaiKey) {
             console.warn('No OpenAI API key found. Skipping AI verification.');
-            return true;
+            return { isDuplicate: true, skipped: true, reason: 'Skipped - No OpenAI API Key' };
         }
 
         const url = 'https://api.openai.com/v1/chat/completions';
@@ -117,7 +117,7 @@ Respond ONLY with a JSON object:
     async callOpenRouter(prompt) {
         if (!this.openrouterKey) {
             console.warn('No OpenRouter API key found. Skipping AI verification.');
-            return true;
+            return { isDuplicate: true, skipped: true, reason: 'Skipped - No OpenRouter API Key' };
         }
 
         const url = 'https://openrouter.ai/api/v1/chat/completions';
