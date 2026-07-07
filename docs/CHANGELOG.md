@@ -1,5 +1,23 @@
 # Changelog
 
+## v2.2.0 - 2026-07-07
+
+### Added
+- **OTA Update Controls and Download Portal**: Introduced custom admin settings for managing mobile OTA update metadata, release notes, and version status. Built a dedicated warehouse client update/download portal supporting local update checks and direct APK downloads.
+- **Cycle Count Started-At tracking**: Added `started_at` tracking to cycle counts to enable precise snapshots of system stock level relative to transaction history.
+- **Mobile Device Provisioning**: Implemented QR-based mobile device provisioning and simplified APK deployment handling.
+- **Barcode Viewfinder Visuals & Controls**: Added toggleable torch control, animated laser viewfinder, and spatial filtering to mobile barcode scanners.
+- **Auto-Sync and Foreground Checks**: Integrated a background `sync-mobile-version` script to development/production workflows, and added a mobile AppState listener to automatically re-check OTA updates when the app returns to the foreground.
+
+### Fixed
+- **Camera Torch Defaults**: Set default camera torch state to off across all mobile scanner views.
+- **Tapped Item Start Index**: Configured cycle counts to begin at the tapped item's line index rather than resetting to the top.
+- **Barcode Frame Orientation**: Adjusted barcode coordinates calculation to correctly account for camera frame orientation.
+
+### Refactored / Optimized
+- **Reusable Scanning Pipeline**: Extracted scanner logic into a unified, high-performance scanning pipeline with ROI coordinate alignment, frame throttling, and EAN checksum/consensus validation.
+- **Standardized Branding**: Updated splash screens, Android adaptive icons, and header labels to standardize branding under the "FORSON" identity.
+
 ## v2.1.3 - 2026-07-05
 
 ### Fixed
