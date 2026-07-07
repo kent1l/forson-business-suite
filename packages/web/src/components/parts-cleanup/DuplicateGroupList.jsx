@@ -208,14 +208,14 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                         </button>
                         <button
                             onClick={() => {
-                                const obviousGroups = duplicateGroups.filter(g => g.reasons && (g.reasons.includes('obvious_match') || g.confidence === 'Very High' || g.confidence === 'High'));
-                                onSelectionChange(obviousGroups);
-                                toast.success(`Selected ${obviousGroups.length} obvious/high-confidence groups`);
+                                const highConfidenceGroups = duplicateGroups.filter(g => g.confidence === 'Very High' || g.confidence === 'High');
+                                onSelectionChange(highConfidenceGroups);
+                                toast.success(`Selected ${highConfidenceGroups.length} high-confidence groups`);
                             }}
-                            title="Quickly select all duplicates with high structural math scores"
+                            title="Quickly select all duplicates with High or Very High math scores"
                             className="inline-flex items-center px-3 py-2 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 text-sm font-medium shadow-sm transition-colors"
                         >
-                            ✓ Obvious/High Confidence
+                            ✓ Select High Confidence
                         </button>
                         <button
                             onClick={fetchDuplicateGroups}
@@ -283,6 +283,7 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                 <div className="space-y-4">
                     {filteredGroups.map(group => {
                         const isSelected = selectedGroups.some(g => g.groupId === group.groupId);
+                        const isExpanded = expandedGroups[group.groupId];
                         
                         if (isCompact) {
                             return (

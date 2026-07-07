@@ -304,11 +304,6 @@ class DuplicateFinder {
 
         // Phase 4: LLM Verification (AI Guardrail)
         const edgeVerificationPromises = Array.from(edgeDetails.entries()).map(async ([edgeId, edge]) => {
-            // Optimization: Skip LLM for obvious matches
-            if (edge.reasons.includes('obvious_match')) {
-                return;
-            }
-
             const [aStr, bStr] = edgeId.split('_');
             const part1 = partById.get(parseInt(aStr));
             const part2 = partById.get(parseInt(bStr));
@@ -502,7 +497,7 @@ class DuplicateFinder {
             FROM parts_view p
             WHERE p.merged_into_part_id IS NULL
               AND ($1 = '' OR p.display_name ILIKE $1 OR p.internal_sku ILIKE $1 OR p.detail ILIKE $1)
-            ORDER BY p.modified_at DESC
+            ORDER BY p.date_modified DESC
             LIMIT $2
         `;
         
