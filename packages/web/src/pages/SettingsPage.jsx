@@ -4,10 +4,83 @@ import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
+import { QrCode } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import BackupSettings from '../components/settings/BackupSettings';
 import DataUtilsSettings from '../components/settings/DataUtilsSettings';
 import PermissionsSettings from '../components/settings/PermissionsSettings'; // <-- NEW: Import the component
 import PaymentMethodSettings from '../components/settings/PaymentMethodSettings';
+
+const MobileAppSettings = ({ settings, handleChange }) => {
+    const [showQR, setShowQR] = useState(false);
+    return (
+        <div className="space-y-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Mobile App Version (OTA Update)</label>
+                <input 
+                    type="text" 
+                    name="mobile_app_version" 
+                    value={settings.mobile_app_version || ''} 
+                    onChange={handleChange} 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg" 
+                    placeholder="1.0.0" 
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                    Updating this version number will force all active mobile warehouse clients to download the latest `.apk` binary.
+                </p>
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 mt-4">Release Notes (Optional)</label>
+                <textarea 
+                    name="mobile_app_release_notes" 
+                    value={settings.mobile_app_release_notes || ''} 
+                    onChange={handleChange} 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg" 
+                    rows="3"
+                    placeholder="Added new barcode scanning features..." 
+                ></textarea>
+                <p className="mt-1 text-xs text-gray-500">
+                    This message will be displayed on the update screen for all users.
+                </p>
+            </div>
+            
+            <div className="pt-4 border-t border-gray-200 mt-6">
+                <h3 className="text-sm font-medium text-gray-700 mb-2">Device Provisioning</h3>
+                <p className="text-xs text-gray-500 mb-3">
+                    Generate a QR code that warehouse staff can scan to instantly access the mobile setup portal and download the app.
+                </p>
+                <button 
+                    type="button" 
+                    onClick={() => setShowQR(true)}
+                    className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                    <QrCode className="h-5 w-5 mr-2 text-gray-400" />
+                    Show QR Code
+                </button>
+            </div>
+            
+            <Modal isOpen={showQR} onClose={() => setShowQR(false)} title="Provisioning QR Code">
+                <div className="flex flex-col items-center justify-center p-6 text-center">
+                    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-4 inline-block">
+                        <QRCodeSVG 
+                            value={`${window.location.origin}/mobile-setup`} 
+                            size={256}
+                            level="H"
+                            includeMargin={true}
+                        />
+                    </div>
+                    <h4 className="text-lg font-bold text-gray-900 mb-1">Scan to Install</h4>
+                    <p className="text-sm text-gray-500">
+                        Point a device camera at this QR code to open the OTA download portal.
+                    </p>
+                    <div className="mt-6 bg-gray-50 rounded px-4 py-2 text-xs font-mono text-gray-600 border border-gray-200 w-full truncate">
+                        {`${window.location.origin}/mobile-setup`}
+                    </div>
+                </div>
+            </Modal>
+        </div>
+    );
+};
 
 const CompanyInfoSettings = ({ settings, handleChange }) => (
     <div className="space-y-4">
@@ -481,6 +554,7 @@ const SettingsPage = ({ user }) => {
                                 <button type="button" onClick={() => setActiveTab('permissions')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'permissions' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Roles & Permissions</button>
                                 <button type="button" onClick={() => setActiveTab('backup')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'backup' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Backup & Restore</button>
                                 <button type="button" onClick={() => setActiveTab('data')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'data' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Data Utilities</button>
+                                <button type="button" onClick={() => setActiveTab('mobile_app')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'mobile_app' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Mobile App</button>
                             </nav>
                         </div>
 
@@ -491,8 +565,9 @@ const SettingsPage = ({ user }) => {
                         {activeTab === 'permissions' && <PermissionsSettings />}
                         {activeTab === 'backup' && <BackupSettings settings={settings} handleChange={handleChange} handleSave={handleSave} />}
                         {activeTab === 'data' && <DataUtilsSettings />}
+                        {activeTab === 'mobile_app' && <MobileAppSettings settings={settings} handleChange={handleChange} />}
 
-                        {['company', 'financial', 'cycle_count', 'backup'].includes(activeTab) && (
+                        {['company', 'financial', 'cycle_count', 'backup', 'mobile_app'].includes(activeTab) && (
                             <form onSubmit={handleSave}>
                                 <div className="pt-4 flex justify-end mt-6 border-t">
                                     <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">

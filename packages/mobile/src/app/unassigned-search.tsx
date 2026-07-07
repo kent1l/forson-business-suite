@@ -11,16 +11,59 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  Dimensions,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Camera, useCameraDevice, useCodeScanner } from 'react-native-vision-camera';
+import { Camera, useCameraDevice, useCodeScanner, useCameraFormat } from 'react-native-vision-camera';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import apiClient from '../api/client';
 import useCycleCountStore from '../store/useCycleCountStore';
+import {
+  FRAME_INTERVAL_MS,
+  createPipelineRefs,
+  isValidEanChecksum,
+  runConsensus,
+  type ScannerPipelineRefs,
+} from '../utils/scannerPipeline';
 
 const DEBOUNCE_MS = 300;
+
+// ROI viewfinder guard: rejects codes whose bounds fall outside the
+// viewfinder cutout in the UI — Tier B of the pipeline.
+const isInROI = (code: any, frameWidth: number, frameHeight: number): boolean => {
+  if (!code.bounds || frameWidth === 0 || frameHeight === 0) return true;
+
+  const { minX, maxX, minY, maxY } = code.bounds as { minX: number; maxX: number; minY: number; maxY: number };
+  const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+
+  // Camera preview uses resizeMode="cover", filling the screen
+  const frameLong = Math.max(frameWidth, frameHeight);
+  const frameShort = Math.min(frameWidth, frameHeight);
+
+  const scale = Math.max(screenWidth / frameShort, screenHeight / frameLong);
+  const offsetX = (screenWidth - frameShort * scale) / 2;
+  const offsetY = (screenHeight - frameLong * scale) / 2;
+
+  let barcodeMidLong, barcodeMidShort;
+  if (frameWidth >= frameHeight) {
+    barcodeMidLong = (minX + maxX) / 2;
+    barcodeMidShort = (minY + maxY) / 2;
+  } else {
+    barcodeMidLong = (minY + maxY) / 2;
+    barcodeMidShort = (minX + maxX) / 2;
+  }
+
+  const screenMidX = barcodeMidShort * scale + offsetX;
+  const screenMidY = barcodeMidLong * scale + offsetY;
+
+  const inVertical = Math.abs(screenMidY - screenHeight / 2) <= 100; // 200px viewfinder cutout height (100px from center)
+  const inHorizontal = Math.abs(screenMidX - screenWidth / 2) <= screenWidth * 0.4; // 80% viewfinder cutout width (40% from center)
+
+  return inVertical && inHorizontal;
+};
 
 export default function UnassignedSearchScreen() {
   const router = useRouter();
@@ -29,6 +72,8 @@ export default function UnassignedSearchScreen() {
   // ── Search state ────────────────────────────────────────────────────────────
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
+  const pipelineRef = useRef<ScannerPipelineRefs>(createPipelineRefs());
+  const lastFrameTsRef = useRef<number>(0);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -42,6 +87,35 @@ export default function UnassignedSearchScreen() {
   const scanLockRef = useRef(false);
 
   const device = useCameraDevice('back');
+  const format = useCameraFormat(device, [{ fps: 30 }]);
+
+  const laserAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (isCameraActive) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(laserAnim, {
+            toValue: 1,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(laserAnim, {
+            toValue: 0,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    } else {
+      laserAnim.setValue(0);
+    }
+  }, [isCameraActive]);
+
+  const laserTranslateY = laserAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [10, 190],
+  });
 
   // ── Core search function (shared by debounce + barcode scan) ─────────────
   const fetchParts = useCallback(async (q: string): Promise<any[]> => {
@@ -89,6 +163,8 @@ export default function UnassignedSearchScreen() {
       Alert.alert('Permission Required', 'Camera permission is needed to scan barcodes.');
       return;
     }
+    pipelineRef.current = createPipelineRefs();
+    lastFrameTsRef.current = 0;
     setHasPermission(true);
     scanLockRef.current = false;
     setIsCameraActive(true);
@@ -100,17 +176,37 @@ export default function UnassignedSearchScreen() {
     setIsCameraActive(false);
     setIsTorchOn(false);
     scanLockRef.current = false;
+    pipelineRef.current = createPipelineRefs();
+    lastFrameTsRef.current = 0;
   }, []);
 
   // ── Barcode scan → exact lookup → immediate navigate ─────────────────────
   const codeScanner = useCodeScanner({
     codeTypes: ['ean-13', 'code-128', 'qr', 'code-39'],
     onCodeScanned: useCallback(
-      async (codes: any[]) => {
+      async (codes: any[], frame: any) => {
         if (!isCameraActive || scanLockRef.current || codes.length === 0) return;
-        const value = codes[0].value;
+
+        // ── Tier A: Time-gated frame skip (33 ms @ 30 FPS) ──────────────────
+        const now = Date.now();
+        if (now - lastFrameTsRef.current < FRAME_INTERVAL_MS) return;
+        lastFrameTsRef.current = now;
+
+        const code = codes[0];
+        const value: string | undefined = code.value;
         if (!value) return;
 
+        // ── Tier B: ROI viewport mask (viewfinder cutout only) ───────────────
+        if (!isInROI(code, frame?.width ?? 0, frame?.height ?? 0)) return;
+
+        // EAN/UPC checksum pre-filter
+        if (/^\d{12,13}$/.test(value) && !isValidEanChecksum(value)) return;
+
+        // ── Tier C: Sliding mode consensus evaluation ─────────────────────────
+        const consensus = runConsensus(pipelineRef.current, value);
+        if (!consensus) return;
+
+        // Consensus reached — lock, haptic, navigate
         scanLockRef.current = true;
         setIsCameraActive(false);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -118,11 +214,11 @@ export default function UnassignedSearchScreen() {
         closeScanner();
 
         try {
-          const list = await fetchParts(value);
+          const list = await fetchParts(consensus);
           if (list.length === 0) {
             Alert.alert(
               'Barcode Not Found',
-              `No part found for barcode "${value}". What would you like to do?`,
+              `No part found for barcode "${consensus}". What would you like to do?`,
               [
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Assign to Existing', onPress: () => {
@@ -138,7 +234,7 @@ export default function UnassignedSearchScreen() {
           }
           // Prefer exact barcode match; fall back to top result
           const exactMatch = list.find(
-            (p: any) => p.barcodes && p.barcodes.includes(value)
+            (p: any) => p.barcodes && p.barcodes.includes(consensus)
           ) ?? list[0];
           startAdHocCount(exactMatch);
           router.push('/count');
@@ -272,9 +368,14 @@ export default function UnassignedSearchScreen() {
               <Camera
                 style={StyleSheet.absoluteFill}
                 device={device}
+                format={format}
                 isActive={isCameraActive}
                 codeScanner={codeScanner as any}
-                torch={isTorchOn ? 'on' : 'off'}
+                fps={30}
+                zoom={Math.min(Math.max(1.8, device.minZoom ?? 1), device.maxZoom ?? 1.8)}
+                exposure={-1}
+                torch={device.hasTorch && isTorchOn ? 'on' : 'off'}
+                enableZoomGesture={true}
               />
 
               {/* Overlay */}
@@ -282,10 +383,18 @@ export default function UnassignedSearchScreen() {
                 <View style={styles.overlayTop} />
                 <View style={styles.overlayMiddle}>
                   <View style={styles.overlaySide} />
-                  <View style={styles.viewfinderCutout} />
+                  <View style={styles.viewfinderCutout}>
+                    <View style={[styles.corner, styles.topLeftCorner]} />
+                    <View style={[styles.corner, styles.topRightCorner]} />
+                    <View style={[styles.corner, styles.bottomLeftCorner]} />
+                    <View style={[styles.corner, styles.bottomRightCorner]} />
+                    <Animated.View style={[styles.laser, { transform: [{ translateY: laserTranslateY }] }]} />
+                  </View>
                   <View style={styles.overlaySide} />
                 </View>
-                <View style={styles.overlayBottom} />
+                <View style={styles.overlayBottom}>
+                  <Text style={styles.scanInstruction}>Align barcode within the frame</Text>
+                </View>
               </View>
 
               {/* Camera controls */}
@@ -293,9 +402,8 @@ export default function UnassignedSearchScreen() {
                 <TouchableOpacity style={styles.iconButton} onPress={closeScanner}>
                   <Ionicons name="close" size={28} color="#fff" />
                 </TouchableOpacity>
-                <Text style={styles.cameraHint}>Align barcode with frame</Text>
-                <TouchableOpacity style={styles.iconButton} onPress={() => setIsTorchOn((p) => !p)}>
-                  <Ionicons name={isTorchOn ? 'flash' : 'flash-off'} size={24} color="#fff" />
+                <TouchableOpacity style={[styles.iconButton, isTorchOn && { backgroundColor: 'rgba(251,191,36,0.35)' }]} onPress={() => setIsTorchOn(!isTorchOn)}>
+                  <Ionicons name={isTorchOn ? 'flash' : 'flash-off'} size={24} color={isTorchOn ? '#fbbf24' : '#fff'} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -318,7 +426,7 @@ const styles = StyleSheet.create({
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
   scanResolveOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.65)',
     zIndex: 999,
     justifyContent: 'center',
@@ -426,16 +534,82 @@ const styles = StyleSheet.create({
 
   // Camera modal
   modalContainer: { flex: 1, backgroundColor: '#000' },
-  overlay: { ...StyleSheet.absoluteFillObject, zIndex: 5 },
-  overlayTop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.62)' },
-  overlayBottom: { flex: 1, backgroundColor: 'rgba(0,0,0,0.62)' },
+  overlay: { ...StyleSheet.absoluteFill, zIndex: 5 },
+  overlayTop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)' },
+  overlayBottom: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    alignItems: 'center',
+    paddingTop: 24,
+  },
+  scanInstruction: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+    letterSpacing: 0.5,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
   overlayMiddle: { height: 200, flexDirection: 'row' },
-  overlaySide: { flex: 1, backgroundColor: 'rgba(0,0,0,0.62)' },
+  overlaySide: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)' },
   viewfinderCutout: {
     width: '75%',
-    borderWidth: 2,
-    borderColor: '#3b82f6',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    borderRadius: 16,
     backgroundColor: 'transparent',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  corner: {
+    position: 'absolute',
+    borderColor: '#06b6d4',
+    width: 24,
+    height: 24,
+  },
+  topLeftCorner: {
+    top: -2,
+    left: -2,
+    borderLeftWidth: 4,
+    borderTopWidth: 4,
+    borderTopLeftRadius: 12,
+  },
+  topRightCorner: {
+    top: -2,
+    right: -2,
+    borderRightWidth: 4,
+    borderTopWidth: 4,
+    borderTopRightRadius: 12,
+  },
+  bottomLeftCorner: {
+    bottom: -2,
+    left: -2,
+    borderLeftWidth: 4,
+    borderBottomWidth: 4,
+    borderBottomLeftRadius: 12,
+  },
+  bottomRightCorner: {
+    bottom: -2,
+    right: -2,
+    borderRightWidth: 4,
+    borderBottomWidth: 4,
+    borderBottomRightRadius: 12,
+  },
+  laser: {
+    position: 'absolute',
+    left: '5%',
+    right: '5%',
+    height: 2,
+    backgroundColor: '#06b6d4',
+    shadowColor: '#06b6d4',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
+    elevation: 5,
   },
   cameraHeader: {
     position: 'absolute',

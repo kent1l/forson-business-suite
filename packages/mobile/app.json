@@ -1,10 +1,15 @@
 {
   "expo": {
-    "name": "Forson Cycle Count Mobile",
+    "name": "FORSON",
     "slug": "mobile",
-    "version": "1.0.0",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/forson-icon.png",
+    "splash": {
+      "image": "./assets/images/forson-android-icon-foreground.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#fbd602"
+    },
     "scheme": "mobile",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -45,11 +50,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "android": {
-            "image": "./assets/images/splash-icon.png",
-            "imageWidth": 76
-          }
+          "backgroundColor": "#fbd602",
+          "image": "./assets/images/forson-android-icon-foreground.png",
+          "resizeMode": "contain"
         }
       ]
     ],

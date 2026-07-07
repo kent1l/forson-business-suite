@@ -1,13 +1,54 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Alert, ActivityIndicator, ScrollView, Modal, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { View, Text, StyleSheet, Alert, ActivityIndicator, ScrollView, Modal, TouchableOpacity, Dimensions, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Camera, useCameraDevice, useCodeScanner } from 'react-native-vision-camera';
+import { Camera, useCameraDevice, useCodeScanner, useCameraFormat } from 'react-native-vision-camera';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import useCycleCountStore from '../store/useCycleCountStore';
 import MobileCounter from '../components/MobileCounter';
 import apiClient from '../api/client';
+import {
+  FRAME_INTERVAL_MS,
+  createPipelineRefs,
+  isValidEanChecksum,
+  runConsensus,
+  type ScannerPipelineRefs,
+} from '../utils/scannerPipeline';
+
+// ROI viewfinder guard: rejects codes whose bounds fall outside the
+// viewfinder cutout in the UI — Tier B of the pipeline.
+const isInROI = (code: any, frameWidth: number, frameHeight: number): boolean => {
+  if (!code.bounds || frameWidth === 0 || frameHeight === 0) return true;
+
+  const { minX, maxX, minY, maxY } = code.bounds as { minX: number; maxX: number; minY: number; maxY: number };
+  const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+
+  // Camera preview uses resizeMode="cover", filling the screen
+  const frameLong = Math.max(frameWidth, frameHeight);
+  const frameShort = Math.min(frameWidth, frameHeight);
+
+  const scale = Math.max(screenWidth / frameShort, screenHeight / frameLong);
+  const offsetX = (screenWidth - frameShort * scale) / 2;
+  const offsetY = (screenHeight - frameLong * scale) / 2;
+
+  let barcodeMidLong, barcodeMidShort;
+  if (frameWidth >= frameHeight) {
+    barcodeMidLong = (minX + maxX) / 2;
+    barcodeMidShort = (minY + maxY) / 2;
+  } else {
+    barcodeMidLong = (minY + maxY) / 2;
+    barcodeMidShort = (minX + maxX) / 2;
+  }
+
+  const screenMidX = barcodeMidShort * scale + offsetX;
+  const screenMidY = barcodeMidLong * scale + offsetY;
+
+  const inVertical = Math.abs(screenMidY - screenHeight / 2) <= 100; // 200px viewfinder cutout height (100px from center)
+  const inHorizontal = Math.abs(screenMidX - screenWidth / 2) <= screenWidth * 0.4; // 80% viewfinder cutout width (40% from center)
+
+  return inVertical && inHorizontal;
+};
 
 export default function CountScreen() {
   const router = useRouter();
@@ -18,19 +59,79 @@ export default function CountScreen() {
     currentAdHocItem,
     submitAdHocCount,
     clearAdHocMode,
+    activeLineId,
   } = useCycleCountStore();
-  const [currentLineIndex, setCurrentLineIndex] = useState(0);
+  const [currentLineIndex, setCurrentLineIndex] = useState(() => {
+    if (activeBatchData && activeLineId) {
+      const idx = activeBatchData.findIndex((line: any) => line.line_id === activeLineId);
+      return idx !== -1 ? idx : 0;
+    }
+    return 0;
+  });
   const [scannedBarcode, setScannedBarcode] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasPermission, setHasPermission] = useState(false);
+  const [serverOffset, setServerOffset] = useState<number>(0);
+  const [startTime, setStartTime] = useState<number | null>(null);
+
+  useEffect(() => {
+    const syncTime = async () => {
+      try {
+        const clientTimeBefore = Date.now();
+        const response = await apiClient.get('/inventory/cycle-count/server-time');
+        const clientTimeAfter = Date.now();
+        const serverTime = new Date(response.data.serverTime).getTime();
+        const latency = (clientTimeAfter - clientTimeBefore) / 2;
+        setServerOffset((serverTime + latency) - clientTimeAfter);
+      } catch (err) {
+        console.error('Failed to sync server time:', err);
+      }
+    };
+    syncTime();
+  }, []);
+
+  useEffect(() => {
+    setStartTime(Date.now());
+  }, [currentLineIndex, isAdHocMode]);
 
   // Camera Modal States
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
+  const pipelineRef = useRef<ScannerPipelineRefs>(createPipelineRefs());
+  const lastFrameTsRef = useRef<number>(0);
 
   const device = useCameraDevice('back');
+  const format = useCameraFormat(device, [{ fps: 30 }]);
+
+  const laserAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (isCameraActive) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(laserAnim, {
+            toValue: 1,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(laserAnim, {
+            toValue: 0,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    } else {
+      laserAnim.setValue(0);
+    }
+  }, [isCameraActive]);
+
+  const laserTranslateY = laserAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [10, 190],
+  });
 
   useEffect(() => {
     (async () => {
@@ -66,29 +167,49 @@ export default function CountScreen() {
       }
     : activeBatchData![currentLineIndex];
 
-  const handleCodeScanned = (codes: any[]) => {
-    if (codes.length > 0 && isCameraActive && !pendingBarcode) {
-      const scannedValue = codes[0].value;
-      if (scannedValue) {
-        console.log(`Scanned barcode: ${scannedValue}`);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        setIsCameraActive(false);
-        setPendingBarcode(scannedValue);
-      }
+  const handleCodeScanned = useCallback((codes: any[], frame: any) => {
+    // Gate: must have a code, camera must be live, no pending confirmation
+    if (codes.length === 0 || !isCameraActive || pendingBarcode) return;
+
+    // ── Tier A: Time-gated frame skip (33 ms @ 30 FPS) ───────────────────────
+    const now = Date.now();
+    if (now - lastFrameTsRef.current < FRAME_INTERVAL_MS) return;
+    lastFrameTsRef.current = now;
+
+    const code = codes[0];
+    const scannedValue: string | undefined = code.value;
+    if (!scannedValue) return;
+
+    // ── Tier B: ROI viewport mask (viewfinder cutout only) ───────────────────
+    if (!isInROI(code, frame?.width ?? 0, frame?.height ?? 0)) return;
+
+    // EAN/UPC checksum pre-filter
+    if (/^\d{12,13}$/.test(scannedValue) && !isValidEanChecksum(scannedValue)) {
+      return;
     }
-  };
+
+    // ── Tier C: Sliding mode consensus evaluation ─────────────────────────────
+    const consensus = runConsensus(pipelineRef.current, scannedValue);
+    if (!consensus) return;
+
+    // Consensus reached — fire haptic and surface to UI
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setIsCameraActive(false);
+    setPendingBarcode(consensus);
+  }, [isCameraActive, pendingBarcode]);
 
   const codeScanner = useCodeScanner({
-    codeTypes: ['ean-13', 'code-128', 'qr'],
-    onCodeScanned: handleCodeScanned
+    codeTypes: ['ean-13', 'code-128', 'qr', 'code-39'],
+    onCodeScanned: handleCodeScanned,
   });
 
   const handleSubmitCount = async (countedQty: number) => {
     setIsSubmitting(true);
     try {
+      const startedAt = startTime ? new Date(startTime + serverOffset).toISOString() : null;
       if (isAdHocMode) {
         // ── Ad-hoc path ──────────────────────────────────────────────────────
-        await submitAdHocCount(countedQty);
+        await submitAdHocCount(countedQty, startedAt);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         
         // Delay clearAdHocMode slightly to prevent state tearing/crashes during unmount
@@ -99,14 +220,14 @@ export default function CountScreen() {
         router.replace('/unassigned-search');
       } else {
         // ── Assigned batch path ──────────────────────────────────────────────
-        const payload: any = { counted_qty: countedQty };
+        const payload: any = { counted_qty: countedQty, started_at: startedAt };
         if (scannedBarcode) payload.scanned_barcode = scannedBarcode;
 
         await apiClient.post(`/inventory/cycle-count/lines/${currentLine.line_id}/submit`, payload);
         setIsSubmitting(false);
 
         if (currentLineIndex + 1 < activeBatchData!.length) {
-          setCurrentLineIndex(prev => prev + 1);
+          setCurrentLineIndex((prev: number) => prev + 1);
           setScannedBarcode(null);
         } else {
           Alert.alert('Batch Complete', 'All items submitted successfully.', [
@@ -143,6 +264,8 @@ export default function CountScreen() {
 
   const openCameraModal = () => {
     setPendingBarcode(null);
+    pipelineRef.current = createPipelineRefs();
+    lastFrameTsRef.current = 0;
     setIsCameraActive(true);
     setIsCameraModalOpen(true);
   };
@@ -152,6 +275,8 @@ export default function CountScreen() {
     setIsCameraActive(false);
     setPendingBarcode(null);
     setIsTorchOn(false);
+    pipelineRef.current = createPipelineRefs();
+    lastFrameTsRef.current = 0;
   };
 
   const acceptBarcode = () => {
@@ -180,6 +305,8 @@ export default function CountScreen() {
 
   const retakeBarcode = () => {
     setPendingBarcode(null);
+    pipelineRef.current = createPipelineRefs();
+    lastFrameTsRef.current = 0;
     setIsCameraActive(true);
   };
 
@@ -265,20 +392,33 @@ export default function CountScreen() {
               <Camera
                 style={StyleSheet.absoluteFill}
                 device={device}
+                format={format}
                 isActive={isCameraActive}
                 codeScanner={codeScanner as any}
-                torch={isTorchOn ? 'on' : 'off'}
+                fps={30}
+                zoom={Math.min(Math.max(1.8, device.minZoom ?? 1), device.maxZoom ?? 1.8)}
+                exposure={-1}
+                torch={device.hasTorch && isTorchOn ? 'on' : 'off'}
+                enableZoomGesture={true}
               />
 
               {/* Overlay Viewfinder */}
-              <View style={styles.overlay}>
+              <View style={styles.overlay} pointerEvents="none">
                 <View style={styles.overlayTop} />
                 <View style={styles.overlayMiddle}>
                   <View style={styles.overlaySide} />
-                  <View style={styles.viewfinderCutout} />
+                  <View style={styles.viewfinderCutout}>
+                    <View style={[styles.corner, styles.topLeftCorner]} />
+                    <View style={[styles.corner, styles.topRightCorner]} />
+                    <View style={[styles.corner, styles.bottomLeftCorner]} />
+                    <View style={[styles.corner, styles.bottomRightCorner]} />
+                    <Animated.View style={[styles.laser, { transform: [{ translateY: laserTranslateY }] }]} />
+                  </View>
                   <View style={styles.overlaySide} />
                 </View>
-                <View style={styles.overlayBottom} />
+                <View style={styles.overlayBottom}>
+                  <Text style={styles.scanInstruction}>Align barcode within the frame</Text>
+                </View>
               </View>
 
               {/* Camera Header Actions */}
@@ -286,8 +426,8 @@ export default function CountScreen() {
                 <TouchableOpacity style={styles.iconButton} onPress={closeCameraModal}>
                   <Ionicons name="close" size={30} color="#fff" />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.iconButton} onPress={() => setIsTorchOn(!isTorchOn)}>
-                  <Ionicons name={isTorchOn ? "flash" : "flash-off"} size={26} color="#fff" />
+                <TouchableOpacity style={[styles.iconButton, isTorchOn && { backgroundColor: 'rgba(251,191,36,0.35)' }]} onPress={() => setIsTorchOn(!isTorchOn)}>
+                  <Ionicons name={isTorchOn ? "flash" : "flash-off"} size={26} color={isTorchOn ? "#fbbf24" : "#fff"} />
                 </TouchableOpacity>
               </View>
 
@@ -454,11 +594,25 @@ const styles = StyleSheet.create({
   },
   overlayTop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.65)',
   },
   overlayBottom: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    alignItems: 'center',
+    paddingTop: 24,
+  },
+  scanInstruction: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+    letterSpacing: 0.5,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    overflow: 'hidden',
   },
   overlayMiddle: {
     height: 200,
@@ -466,14 +620,63 @@ const styles = StyleSheet.create({
   },
   overlaySide: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.65)',
   },
   viewfinderCutout: {
     width: '80%',
     height: '100%',
-    borderWidth: 2,
-    borderColor: '#3b82f6',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    borderRadius: 16,
     backgroundColor: 'transparent',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  corner: {
+    position: 'absolute',
+    borderColor: '#06b6d4',
+    width: 24,
+    height: 24,
+  },
+  topLeftCorner: {
+    top: -2,
+    left: -2,
+    borderLeftWidth: 4,
+    borderTopWidth: 4,
+    borderTopLeftRadius: 12,
+  },
+  topRightCorner: {
+    top: -2,
+    right: -2,
+    borderRightWidth: 4,
+    borderTopWidth: 4,
+    borderTopRightRadius: 12,
+  },
+  bottomLeftCorner: {
+    bottom: -2,
+    left: -2,
+    borderLeftWidth: 4,
+    borderBottomWidth: 4,
+    borderBottomLeftRadius: 12,
+  },
+  bottomRightCorner: {
+    bottom: -2,
+    right: -2,
+    borderRightWidth: 4,
+    borderBottomWidth: 4,
+    borderBottomRightRadius: 12,
+  },
+  laser: {
+    position: 'absolute',
+    left: '5%',
+    right: '5%',
+    height: 2,
+    backgroundColor: '#06b6d4',
+    shadowColor: '#06b6d4',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
+    elevation: 5,
   },
   bottomSheet: {
     position: 'absolute',
