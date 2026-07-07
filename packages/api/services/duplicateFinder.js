@@ -295,6 +295,7 @@ class DuplicateFinder {
                 // Handle both boolean (old) and object (new) returns safely
                 const isDuplicate = typeof aiResult === 'object' ? aiResult.isDuplicate : aiResult;
                 const aiReason = typeof aiResult === 'object' ? aiResult.reason : null;
+                const aiModel = typeof aiResult === 'object' ? aiResult.model : null;
 
                 if (!isDuplicate) {
                     edgeDetails.delete(edgeId);
@@ -303,6 +304,7 @@ class DuplicateFinder {
                 } else {
                     edge.reasons.push('ai_verified');
                     if (aiReason) edge.ai_reason = aiReason;
+                    if (aiModel) edge.ai_model = aiModel;
                 }
             } catch (error) {
                 console.error('LLM verification failed for edge, keeping it by default:', error);
@@ -345,6 +347,7 @@ class DuplicateFinder {
             const componentScores = [];
             const componentReasons = new Set();
             const componentAiReasons = new Set();
+            let aiModelUsed = null;
 
             for (const edgeId of edgeDetails.keys()) {
                 const [aStr, bStr] = edgeId.split('_');
@@ -356,6 +359,7 @@ class DuplicateFinder {
                 componentScores.push(edge.score);
                 for (const reason of edge.reasons) componentReasons.add(reason);
                 if (edge.ai_reason) componentAiReasons.add(edge.ai_reason);
+                if (edge.ai_model) aiModelUsed = edge.ai_model;
             }
 
             if (componentScores.length === 0) continue;
@@ -369,6 +373,7 @@ class DuplicateFinder {
                 confidence: this.constructor.getConfidenceLevel(averageScore),
                 reasons: Array.from(componentReasons),
                 ai_reasons: Array.from(componentAiReasons),
+                ai_model: aiModelUsed,
                 parts: componentParts
             });
         }

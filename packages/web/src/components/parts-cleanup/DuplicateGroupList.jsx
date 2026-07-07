@@ -92,23 +92,26 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
         }
     };
 
-    const renderPipelineTrace = (reasons = []) => {
+    const renderPipelineTrace = (reasons = [], ai_model = '') => {
         const hasMath = reasons.includes('high_text_similarity') || reasons.includes('numeric_tokens_match') || reasons.includes('same_brand_and_group');
         const hasFuzzy = reasons.includes('meilisearch_fuzzy_match');
         const hasExact = reasons.includes('exact_internal_sku') || reasons.includes('exact_part_number');
         const hasAI = reasons.includes('ai_verified');
 
+        const steps = [];
+        if (hasExact) steps.push(<span key="exact" className="px-2 py-0.5 rounded whitespace-nowrap bg-green-100 text-green-800 border border-green-200">1. Exact Match</span>);
+        if (hasFuzzy) steps.push(<span key="fuzzy" className="px-2 py-0.5 rounded whitespace-nowrap bg-blue-100 text-blue-800 border border-blue-200">2. Fuzzy Search</span>);
+        if (hasMath) steps.push(<span key="math" className="px-2 py-0.5 rounded whitespace-nowrap bg-purple-100 text-purple-800 border border-purple-200">3. Math Gate</span>);
+        if (hasAI) steps.push(<span key="ai" className="px-2 py-0.5 rounded whitespace-nowrap bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-800 border border-yellow-300 shadow-sm">🤖 4. AI Verified {ai_model ? `(${ai_model})` : ''}</span>);
+
         return (
             <div className="flex items-center space-x-1 mt-1 text-xs font-medium overflow-x-auto pb-1">
-                <span className={`px-2 py-0.5 rounded whitespace-nowrap ${hasExact ? 'bg-green-100 text-green-800 border border-green-200' : 'bg-gray-100 text-gray-400'}`}>1. Exact Match</span>
-                <span className="text-gray-300">→</span>
-                <span className={`px-2 py-0.5 rounded whitespace-nowrap ${hasFuzzy ? 'bg-blue-100 text-blue-800 border border-blue-200' : 'bg-gray-100 text-gray-400'}`}>2. Fuzzy Search</span>
-                <span className="text-gray-300">→</span>
-                <span className={`px-2 py-0.5 rounded whitespace-nowrap ${hasMath ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-gray-100 text-gray-400'}`}>3. Math Gate</span>
-                <span className="text-gray-300">→</span>
-                <span className={`px-2 py-0.5 rounded whitespace-nowrap ${hasAI ? 'bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-800 border border-yellow-300 shadow-sm' : 'bg-gray-100 text-gray-400'}`}>
-                    {hasAI ? '🤖 4. AI Verified' : '4. AI Verification'}
-                </span>
+                {steps.map((step, index) => (
+                    <span key={index} className="flex items-center space-x-1">
+                        {step}
+                        {index < steps.length - 1 && <span className="text-gray-300">→</span>}
+                    </span>
+                ))}
             </div>
         );
     };
@@ -264,7 +267,7 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                                                     <h3 className="text-sm font-medium text-gray-900 mb-1">
                                                         {group.confidence ? `Confidence: ${group.confidence}` : `Similarity: ${(group.score * 100).toFixed(1)}%`}
                                                     </h3>
-                                                    {renderPipelineTrace(group.reasons)}
+                                                    {renderPipelineTrace(group.reasons, group.ai_model)}
                                                 </div>
                                                 
                                                 <div className="text-sm text-gray-600 mb-2">
