@@ -1,4 +1,8 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
+// Fallback if it's one directory up
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
+
 const llmRouter = require('../services/llmRouter');
 
 async function testAI() {
