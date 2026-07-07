@@ -32,8 +32,14 @@ const isInROI = (code: any, frameWidth: number, frameHeight: number): boolean =>
   const offsetX = (screenWidth - frameShort * scale) / 2;
   const offsetY = (screenHeight - frameLong * scale) / 2;
 
-  const barcodeMidLong = (minX + maxX) / 2;
-  const barcodeMidShort = (minY + maxY) / 2;
+  let barcodeMidLong, barcodeMidShort;
+  if (frameWidth >= frameHeight) {
+    barcodeMidLong = (minX + maxX) / 2;
+    barcodeMidShort = (minY + maxY) / 2;
+  } else {
+    barcodeMidLong = (minY + maxY) / 2;
+    barcodeMidShort = (minX + maxX) / 2;
+  }
 
   const screenMidX = barcodeMidShort * scale + offsetX;
   const screenMidY = barcodeMidLong * scale + offsetY;
