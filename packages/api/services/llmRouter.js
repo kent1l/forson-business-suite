@@ -10,6 +10,7 @@ class LLMRouter {
         const geminiPool = process.env.GEMINI_API_KEY_POOL || process.env.GEMINI_API_KEY || '';
         this.geminiKeys = geminiPool.split(',').map(k => k.trim()).filter(Boolean);
         this.geminiIndex = 0;
+        this.geminiModel = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 
         // OpenAI settings
         this.openaiKey = process.env.OPENAI_API_KEY || '';
@@ -63,7 +64,7 @@ Respond ONLY with a JSON object:
         const key = this.geminiKeys[this.geminiIndex];
         this.geminiIndex = (this.geminiIndex + 1) % this.geminiKeys.length; // Rotate keys
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.geminiModel}:generateContent?key=${key}`;
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
