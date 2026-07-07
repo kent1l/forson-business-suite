@@ -181,11 +181,22 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                         </div>
                     </div>
                     
-                    <div className="w-full sm:w-auto flex items-end">
+                    <div className="w-full sm:w-auto flex items-end space-x-2">
+                        <button
+                            onClick={() => {
+                                const aiVerifiedGroups = duplicateGroups.filter(g => g.reasons && g.reasons.includes('ai_verified'));
+                                onSelectionChange(aiVerifiedGroups);
+                                toast.success(`Selected ${aiVerifiedGroups.length} AI-verified groups`);
+                            }}
+                            title="Quickly select all duplicates that were verified by AI"
+                            className="inline-flex items-center px-3 py-2 bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-800 border border-yellow-300 rounded-lg hover:from-yellow-200 hover:to-yellow-300 text-sm font-medium shadow-sm transition-all"
+                        >
+                            🤖 Select All AI-Verified
+                        </button>
                         <button
                             onClick={fetchDuplicateGroups}
                             title="Refresh duplicate groups"
-                            className="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                            className="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm shadow-sm transition-colors"
                         >
                             Refresh
                         </button>

@@ -115,6 +115,45 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
         }
     };
 
+    const autoSelectCanonicals = () => {
+        const newKeepParts = {};
+        
+        selectedDuplicateGroups.forEach(group => {
+            let bestPart = null;
+            let highestScore = -1;
+            
+            group.parts.forEach(part => {
+                let score = 0;
+                
+                // Layer 1: Data Richness (10 pts per field)
+                const valuableFields = ['display_name', 'detail', 'brand_name', 'group_name', 'cost_price', 'sale_price', 'internal_sku'];
+                valuableFields.forEach(f => {
+                    if (part[f] && part[f].toString().trim() !== '') score += 10;
+                });
+                
+                // Layer 1b: Array richness (2 pts per array item)
+                if (part.part_numbers?.length) score += (part.part_numbers.length * 2);
+                if (part.applications?.length) score += (part.applications.length * 2);
+                
+                // Layer 2: Recency (fractional tie-breaker)
+                const updateDate = new Date(part.modified_at || part.created_at || 0).getTime();
+                score += (updateDate / 10000000000000); 
+
+                // Note: AI (Layer 3) is deferred to the backend deduplication logic to keep this UI instantaneous.
+
+                if (score > highestScore) {
+                    highestScore = score;
+                    bestPart = part;
+                }
+            });
+            
+            if (bestPart) newKeepParts[group.groupId] = bestPart;
+        });
+        
+        setKeepParts(newKeepParts);
+        toast.success(`✨ Smart Auto-Selected canonicals for ${selectedDuplicateGroups.length} groups!`);
+    };
+
     // API calls
     const generateMergePreview = async () => {
         setLoading(true);
@@ -373,6 +412,22 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
             case STEPS.CHOOSE_CANONICAL:
                 return (
                     <div className="space-y-6">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-purple-50 border border-purple-200 p-4 rounded-lg gap-4 shadow-sm">
+                            <div>
+                                <h3 className="font-bold text-purple-900 text-lg flex items-center gap-2">
+                                    ✨ Smart Canonical Selector
+                                </h3>
+                                <p className="text-sm text-purple-800 mt-1">
+                                    Instantly select the best part to keep for every group using a multi-layered algorithm (Data Richness → Recency).
+                                </p>
+                            </div>
+                            <button
+                                onClick={autoSelectCanonicals}
+                                className="whitespace-nowrap px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-semibold shadow-md transition-all active:scale-95"
+                            >
+                                ✨ Auto-Select All
+                            </button>
+                        </div>
                         {selectedDuplicateGroups.map(group => (
                             <div key={group.groupId} className="bg-white rounded-lg border border-gray-200 p-6">
                                 <h3 className="text-lg font-semibold mb-4">
@@ -558,8 +613,8 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
                 {renderStepContent()}
             </div>
 
-            {/* Navigation */}
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
+            {/* Navigation (Sticky Floating Footer) */}
+            <div className="sticky bottom-4 z-50 bg-white rounded-lg border border-gray-200 p-4 shadow-[0_-4px_10px_rgba(0,0,0,0.05)] mt-8">
                 <div className="flex justify-between items-center">
                     <button
                         onClick={goPrevious}
