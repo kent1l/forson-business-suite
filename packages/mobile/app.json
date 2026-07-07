@@ -5,6 +5,11 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/forson-icon.png",
+    "splash": {
+      "image": "./assets/images/forson-android-icon-foreground.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#fbd602"
+    },
     "scheme": "mobile",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -46,10 +51,8 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#fbd602",
-          "android": {
-            "image": "./assets/images/forson-android-icon-foreground.png",
-            "imageWidth": 500
-          }
+          "image": "./assets/images/forson-android-icon-foreground.png",
+          "resizeMode": "contain"
         }
       ]
     ],

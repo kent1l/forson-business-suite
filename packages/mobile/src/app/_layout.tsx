@@ -35,7 +35,7 @@ export default function TabLayout() {
         const latestVersion = res.data.version;
         const notes = res.data.releaseNotes;
         const currentVersion = Constants.expoConfig?.version || '1.0.0';
-        
+
         if (latestVersion && latestVersion !== currentVersion) {
           setUpdateRequired(true);
           setReleaseNotes(notes);
@@ -81,7 +81,7 @@ export default function TabLayout() {
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fbd602', padding: 20 }}>
         <Text style={{ fontSize: 24, fontWeight: 'bold', marginBottom: 12, color: '#111827' }}>Update Required</Text>
         <Text style={{ fontSize: 16, textAlign: 'center', marginBottom: releaseNotes ? 20 : 30, color: '#374151', lineHeight: 24 }}>
-          A newer version of the Forson ERP mobile suite has been deployed to the warehouse server. You must update your client to continue.
+          A newer version of the FORSON App has been deployed to the server. You must update your client to continue.
         </Text>
         {!!releaseNotes && (
           <View style={{ backgroundColor: 'rgba(17, 24, 39, 0.05)', padding: 15, borderRadius: 10, width: '100%', marginBottom: 30, borderWidth: 1, borderColor: 'rgba(17, 24, 39, 0.1)' }}>
@@ -89,7 +89,7 @@ export default function TabLayout() {
             <Text style={{ color: '#374151', lineHeight: 20 }}>{releaseNotes}</Text>
           </View>
         )}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={{ backgroundColor: '#111827', paddingVertical: 16, paddingHorizontal: 32, borderRadius: 12, elevation: 4 }}
           onPress={() => Linking.openURL(downloadUrl)}
         >
