@@ -20,6 +20,8 @@ export default function TabLayout() {
   const [updateRequired, setUpdateRequired] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState('');
   const [releaseNotes, setReleaseNotes] = useState('');
+  const [latestVer, setLatestVer] = useState('');
+  const [currentVer, setCurrentVer] = useState('');
 
   useEffect(() => {
     hydrateAuth();
@@ -36,6 +38,9 @@ export default function TabLayout() {
         const notes = res.data.releaseNotes;
         const currentVersion = Constants.expoConfig?.version || '1.0.0';
 
+        setLatestVer(latestVersion || '1.0.0');
+        setCurrentVer(currentVersion);
+
         if (latestVersion && latestVersion !== currentVersion) {
           setUpdateRequired(true);
           setReleaseNotes(notes);
@@ -45,7 +50,7 @@ export default function TabLayout() {
           if (downloadIp.includes(':3001')) {
             downloadIp = downloadIp.replace(':3001', ':8090');
           }
-          setDownloadUrl(`${downloadIp}/downloads/FORSON.apk`);
+          setDownloadUrl(`${downloadIp}/mobile-setup`);
         } else {
           setUpdateRequired(false);
         }
@@ -80,6 +85,12 @@ export default function TabLayout() {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fbd602', padding: 20 }}>
         <Text style={{ fontSize: 24, fontWeight: 'bold', marginBottom: 12, color: '#111827' }}>Update Required</Text>
+        
+        <View style={{ backgroundColor: 'rgba(17, 24, 39, 0.05)', padding: 12, borderRadius: 8, marginBottom: 20, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(17, 24, 39, 0.1)' }}>
+          <Text style={{ fontSize: 14, color: '#374151' }}>Current Version: <Text style={{ fontWeight: 'bold' }}>{currentVer}</Text></Text>
+          <Text style={{ fontSize: 14, color: '#374151', marginTop: 4 }}>Required Version: <Text style={{ fontWeight: 'bold', color: '#b91c1c' }}>{latestVer}</Text></Text>
+        </View>
+
         <Text style={{ fontSize: 16, textAlign: 'center', marginBottom: releaseNotes ? 20 : 30, color: '#374151', lineHeight: 24 }}>
           A newer version of the FORSON App has been deployed to the server. You must update your client to continue.
         </Text>
