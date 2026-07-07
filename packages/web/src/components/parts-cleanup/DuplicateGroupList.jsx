@@ -181,7 +181,19 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                         </div>
                     </div>
                     
-                    <div className="w-full sm:w-auto flex items-end space-x-2">
+                    <div className="w-full sm:w-auto flex items-end space-x-2 flex-wrap gap-y-2">
+                        <button
+                            onClick={() => {
+                                if (selectedGroups.length === filteredGroups.length && filteredGroups.length > 0) {
+                                    onSelectionChange([]);
+                                } else {
+                                    onSelectionChange([...filteredGroups]);
+                                }
+                            }}
+                            className="inline-flex items-center px-3 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium shadow-sm transition-colors"
+                        >
+                            {selectedGroups.length === filteredGroups.length && filteredGroups.length > 0 ? 'Deselect All' : 'Select All'}
+                        </button>
                         <button
                             onClick={() => {
                                 const aiVerifiedGroups = duplicateGroups.filter(g => g.reasons && g.reasons.includes('ai_verified'));
@@ -191,7 +203,7 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                             title="Quickly select all duplicates that were verified by AI"
                             className="inline-flex items-center px-3 py-2 bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-800 border border-yellow-300 rounded-lg hover:from-yellow-200 hover:to-yellow-300 text-sm font-medium shadow-sm transition-all"
                         >
-                            🤖 Select All AI-Verified
+                            🤖 AI-Verified Only
                         </button>
                         <button
                             onClick={fetchDuplicateGroups}
