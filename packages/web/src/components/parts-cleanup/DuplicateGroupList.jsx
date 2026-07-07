@@ -301,8 +301,8 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                                             onChange={() => {}}
                                             className="h-4 w-4 text-blue-600 rounded border-gray-300"
                                         />
-                                        <div className="text-sm font-medium w-16">
-                                            {group.confidence || `${(group.score * 100).toFixed(0)}%`}
+                                        <div className="text-sm font-medium w-32">
+                                            {group.confidence} ({(group.score * 100).toFixed(1)}%)
                                         </div>
                                         <div className="text-sm text-gray-600 flex-1 truncate">
                                             {group.parts.map(p => p.display_name || p.internal_sku).join(' ⚡ ')}
@@ -342,7 +342,7 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                                             <div className="flex-1">
                                                 <div className="flex flex-col mb-2">
                                                     <h3 className="text-sm font-medium text-gray-900 mb-1">
-                                                        {group.confidence ? `Confidence: ${group.confidence}` : `Similarity: ${(group.score * 100).toFixed(1)}%`}
+                                                        Confidence: {group.confidence} <span className="text-gray-500 font-normal">({(group.score * 100).toFixed(1)}% Math Score)</span>
                                                     </h3>
                                                     {renderPipelineTrace(group.reasons, group.ai_model)}
                                                 </div>

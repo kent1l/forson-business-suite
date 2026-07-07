@@ -194,6 +194,12 @@ class DuplicateFinder {
             reasons.push('high_text_similarity');
         }
 
+        // To safely skip AI, we demand both a high final score AND a solid text structure overlap 
+        // (to prevent skipping AI for items that share fake part numbers like '10MM' but are entirely different parts).
+        if (score >= 0.95 && diceSimilarity > 0.60) {
+            reasons.push('obvious_match');
+        }
+
         return { score: Math.max(-1.0, Math.min(score, 1.0)), reasons };
     }
 
@@ -255,14 +261,9 @@ class DuplicateFinder {
             adjacency.get(part1Id).add(part2Id);
             adjacency.get(part2Id).add(part1Id);
 
-            const allReasons = [...(pair.reasons || []), ...reasons];
-            if (score >= 0.95) {
-                allReasons.push('obvious_match');
-            }
-
             edgeDetails.set(pairId, {
                 score,
-                reasons: allReasons
+                reasons: [...(pair.reasons || []), ...reasons]
             });
         };
 

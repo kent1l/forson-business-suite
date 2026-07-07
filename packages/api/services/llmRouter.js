@@ -144,8 +144,19 @@ Respond ONLY with a JSON object:
         }
 
         const data = await response.json();
-        const text = data.choices?.[0]?.message?.content;
-        const result = JSON.parse(text);
+        let text = data.choices?.[0]?.message?.content || '{}';
+        
+        // Clean markdown backticks if the model decided to format it as code
+        text = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+        
+        let result;
+        try {
+            result = JSON.parse(text);
+        } catch (e) {
+            console.error('OpenRouter JSON parse error. Raw text:', text);
+            return { isDuplicate: true, skipped: true, reason: 'AI JSON parsing failed' };
+        }
+        
         return { isDuplicate: result.isDuplicate === true, reason: result.reason || '', provider: 'openrouter', model: this.openrouterModel };
     }
 }
