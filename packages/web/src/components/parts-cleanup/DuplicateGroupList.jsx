@@ -76,6 +76,43 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
         }));
     };
 
+    const excludeGroup = async (group) => {
+        if (group.parts.length < 2) return;
+        // Exclude the first two parts (most common use case)
+        try {
+            await api.post('/parts/merge/exclude', {
+                partId1: group.parts[0].part_id,
+                partId2: group.parts[1].part_id
+            });
+            toast.success('Parts excluded from future scans');
+            setDuplicateGroups(prev => prev.filter(g => g.groupId !== group.groupId));
+            onSelectionChange(selectedGroups.filter(g => g.groupId !== group.groupId));
+        } catch (err) {
+            toast.error('Failed to exclude parts');
+        }
+    };
+
+    const renderPipelineTrace = (reasons = []) => {
+        const hasMath = reasons.includes('high_text_similarity') || reasons.includes('numeric_tokens_match') || reasons.includes('same_brand_and_group');
+        const hasFuzzy = reasons.includes('meilisearch_fuzzy_match');
+        const hasExact = reasons.includes('exact_internal_sku') || reasons.includes('exact_part_number');
+        const hasAI = reasons.includes('ai_verified');
+
+        return (
+            <div className="flex items-center space-x-1 mt-1 text-xs font-medium overflow-x-auto pb-1">
+                <span className={`px-2 py-0.5 rounded whitespace-nowrap ${hasExact ? 'bg-green-100 text-green-800 border border-green-200' : 'bg-gray-100 text-gray-400'}`}>1. Exact Match</span>
+                <span className="text-gray-300">→</span>
+                <span className={`px-2 py-0.5 rounded whitespace-nowrap ${hasFuzzy ? 'bg-blue-100 text-blue-800 border border-blue-200' : 'bg-gray-100 text-gray-400'}`}>2. Fuzzy Search</span>
+                <span className="text-gray-300">→</span>
+                <span className={`px-2 py-0.5 rounded whitespace-nowrap ${hasMath ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-gray-100 text-gray-400'}`}>3. Math Gate</span>
+                <span className="text-gray-300">→</span>
+                <span className={`px-2 py-0.5 rounded whitespace-nowrap ${hasAI ? 'bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-800 border border-yellow-300 shadow-sm' : 'bg-gray-100 text-gray-400'}`}>
+                    {hasAI ? '🤖 4. AI Verified' : '4. AI Verification'}
+                </span>
+            </div>
+        );
+    };
+
     const filteredGroups = duplicateGroups.filter(group => {
         if (!searchTerm) return true;
         
@@ -223,20 +260,11 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                                                 className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                                             />
                                             <div className="flex-1">
-                                                <div className="flex items-center space-x-2 mb-2">
-                                                    <h3 className="text-sm font-medium text-gray-900">
+                                                <div className="flex flex-col mb-2">
+                                                    <h3 className="text-sm font-medium text-gray-900 mb-1">
                                                         {group.confidence ? `Confidence: ${group.confidence}` : `Similarity: ${(group.score * 100).toFixed(1)}%`}
                                                     </h3>
-                                                    <div className="flex flex-wrap gap-1">
-                                                        {group.reasons?.map((reason, index) => (
-                                                            <span
-                                                                key={index}
-                                                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
-                                                            >
-                                                                {reason}
-                                                            </span>
-                                                        ))}
-                                                    </div>
+                                                    {renderPipelineTrace(group.reasons)}
                                                 </div>
                                                 
                                                 <div className="text-sm text-gray-600 mb-2">
@@ -267,20 +295,41 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                                             </div>
                                         </div>
 
-                                        <button
-                                            onClick={() => toggleGroupExpansion(group.groupId)}
-                                            className="text-gray-400 hover:text-gray-600 ml-2"
-                                        >
-                                            <Icon 
-                                                path={isExpanded ? ICONS.chevronUp : ICONS.chevronDown} 
-                                                className="h-5 w-5" 
-                                            />
-                                        </button>
+                                        <div className="flex items-center space-x-3 ml-4">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    excludeGroup(group);
+                                                }}
+                                                className="text-xs px-3 py-1 bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 rounded-md transition-colors font-medium"
+                                                title="Mark as NOT duplicates to exclude from future scans"
+                                            >
+                                                ⛔ Exclude
+                                            </button>
+                                            <button
+                                                onClick={() => toggleGroupExpansion(group.groupId)}
+                                                className="text-gray-400 hover:text-gray-600 bg-gray-50 hover:bg-gray-100 p-1 rounded-full transition-colors"
+                                            >
+                                                <Icon 
+                                                    path={isExpanded ? ICONS.chevronUp : ICONS.chevronDown} 
+                                                    className="h-5 w-5" 
+                                                />
+                                            </button>
+                                        </div>
                                     </div>
 
-                                    {/* Expanded details */}
                                     {isExpanded && (
                                         <div className="mt-4 pt-4 border-t border-gray-200">
+                                            {group.ai_reasons && group.ai_reasons.length > 0 && (
+                                                <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800 shadow-sm">
+                                                    <strong className="flex items-center gap-1 mb-1">🤖 AI Assessment Note:</strong>
+                                                    <ul className="list-disc pl-5 space-y-1">
+                                                        {group.ai_reasons.map((reason, idx) => (
+                                                            <li key={idx} className="italic text-xs">{reason}</li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            )}
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                                                 {group.parts.map((part) => (
                                                     <div

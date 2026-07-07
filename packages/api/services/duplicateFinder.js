@@ -291,11 +291,18 @@ class DuplicateFinder {
             const part2 = partById.get(parseInt(bStr));
             
             try {
-                const isDuplicate = await llmRouter.verifyDuplicate(part1, part2);
+                const aiResult = await llmRouter.verifyDuplicate(part1, part2);
+                // Handle both boolean (old) and object (new) returns safely
+                const isDuplicate = typeof aiResult === 'object' ? aiResult.isDuplicate : aiResult;
+                const aiReason = typeof aiResult === 'object' ? aiResult.reason : null;
+
                 if (!isDuplicate) {
                     edgeDetails.delete(edgeId);
                     adjacency.get(parseInt(aStr)).delete(parseInt(bStr));
                     adjacency.get(parseInt(bStr)).delete(parseInt(aStr));
+                } else {
+                    edge.reasons.push('ai_verified');
+                    if (aiReason) edge.ai_reason = aiReason;
                 }
             } catch (error) {
                 console.error('LLM verification failed for edge, keeping it by default:', error);
@@ -337,6 +344,7 @@ class DuplicateFinder {
 
             const componentScores = [];
             const componentReasons = new Set();
+            const componentAiReasons = new Set();
 
             for (const edgeId of edgeDetails.keys()) {
                 const [aStr, bStr] = edgeId.split('_');
@@ -347,6 +355,7 @@ class DuplicateFinder {
                 const edge = edgeDetails.get(edgeId);
                 componentScores.push(edge.score);
                 for (const reason of edge.reasons) componentReasons.add(reason);
+                if (edge.ai_reason) componentAiReasons.add(edge.ai_reason);
             }
 
             if (componentScores.length === 0) continue;
@@ -359,6 +368,7 @@ class DuplicateFinder {
                 score: averageScore,
                 confidence: this.constructor.getConfidenceLevel(averageScore),
                 reasons: Array.from(componentReasons),
+                ai_reasons: Array.from(componentAiReasons),
                 parts: componentParts
             });
         }

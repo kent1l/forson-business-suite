@@ -81,7 +81,7 @@ Respond ONLY with a JSON object:
         const data = await response.json();
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
         const result = JSON.parse(text);
-        return result.isDuplicate === true;
+        return { isDuplicate: result.isDuplicate === true, reason: result.reason || '' };
     }
 
     async callOpenAI(prompt) {
@@ -111,7 +111,7 @@ Respond ONLY with a JSON object:
         const data = await response.json();
         const text = data.choices?.[0]?.message?.content;
         const result = JSON.parse(text);
-        return result.isDuplicate === true;
+        return { isDuplicate: result.isDuplicate === true, reason: result.reason || '' };
     }
 
     async callOpenRouter(prompt) {
@@ -141,7 +141,7 @@ Respond ONLY with a JSON object:
         const data = await response.json();
         const text = data.choices?.[0]?.message?.content;
         const result = JSON.parse(text);
-        return result.isDuplicate === true;
+        return { isDuplicate: result.isDuplicate === true, reason: result.reason || '' };
     }
 }
 
