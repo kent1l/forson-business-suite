@@ -41,11 +41,7 @@ function AppContent() {
 // The main App component will now handle the initial setup check
 function App() {
     const [needsSetup, setNeedsSetup] = useState(null);
-
-    // Intercept mobile setup route immediately to bypass auth and setup checks
-    if (window.location.pathname === '/mobile-setup') {
-        return <MobileSetupPage />;
-    }
+    const isMobileSetup = window.location.pathname === '/mobile-setup';
 
     const checkSetupStatus = async () => {
         try {
@@ -59,8 +55,15 @@ function App() {
     };
 
     useEffect(() => {
-        checkSetupStatus();
-    }, []);
+        if (!isMobileSetup) {
+            checkSetupStatus();
+        }
+    }, [isMobileSetup]);
+
+    // Intercept mobile setup route immediately to bypass auth and setup checks
+    if (isMobileSetup) {
+        return <MobileSetupPage />;
+    }
 
     // Display a loading indicator while checking the setup status
     if (needsSetup === null) {
