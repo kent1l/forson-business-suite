@@ -255,9 +255,14 @@ class DuplicateFinder {
             adjacency.get(part1Id).add(part2Id);
             adjacency.get(part2Id).add(part1Id);
 
+            const allReasons = [...(pair.reasons || []), ...reasons];
+            if (score >= 0.95) {
+                allReasons.push('obvious_match');
+            }
+
             edgeDetails.set(pairId, {
                 score,
-                reasons: [...(pair.reasons || []), ...reasons]
+                reasons: allReasons
             });
         };
 
@@ -315,6 +320,9 @@ class DuplicateFinder {
                 const part2 = partById.get(parseInt(bStr));
                 
                 try {
+                    if (edge.reasons && edge.reasons.includes('obvious_match')) {
+                        return; // Optimization: Skip AI for matches with >= 0.95 score
+                    }
                     const aiResult = await llmRouter.verifyDuplicate(part1, part2);
                     // Handle both boolean (old) and object (new) returns safely
                     const isDuplicate = typeof aiResult === 'object' ? aiResult.isDuplicate : aiResult;
