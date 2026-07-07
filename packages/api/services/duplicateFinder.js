@@ -300,6 +300,8 @@ class DuplicateFinder {
                 adjacency.get(a).add(b);
                 adjacency.get(b).add(a);
             }
+        }
+
         // Phase 4: LLM Verification (AI Guardrail)
         const edges = Array.from(edgeDetails.entries());
         const batchSize = 5;
