@@ -300,38 +300,40 @@ class DuplicateFinder {
                 adjacency.get(a).add(b);
                 adjacency.get(b).add(a);
             }
-        }
-
         // Phase 4: LLM Verification (AI Guardrail)
-        const edgeVerificationPromises = Array.from(edgeDetails.entries()).map(async ([edgeId, edge]) => {
-            const [aStr, bStr] = edgeId.split('_');
-            const part1 = partById.get(parseInt(aStr));
-            const part2 = partById.get(parseInt(bStr));
-            
-            try {
-                const aiResult = await llmRouter.verifyDuplicate(part1, part2);
-                // Handle both boolean (old) and object (new) returns safely
-                const isDuplicate = typeof aiResult === 'object' ? aiResult.isDuplicate : aiResult;
-                const isSkipped = typeof aiResult === 'object' ? aiResult.skipped : false;
-                const aiReason = typeof aiResult === 'object' ? aiResult.reason : null;
-                const aiModel = typeof aiResult === 'object' ? aiResult.model : null;
-
-                if (!isDuplicate) {
-                    edgeDetails.delete(edgeId);
-                    adjacency.get(parseInt(aStr)).delete(parseInt(bStr));
-                    adjacency.get(parseInt(bStr)).delete(parseInt(aStr));
-                } else if (!isSkipped) {
-                    edge.reasons.push('ai_verified');
-                    if (aiReason) edge.ai_reason = aiReason;
-                    if (aiModel) edge.ai_model = aiModel;
-                }
-            } catch (error) {
-                console.error('LLM verification failed for edge, keeping it by default:', error);
-            }
-        });
+        const edges = Array.from(edgeDetails.entries());
+        const batchSize = 5;
         
-        // Run AI verification in parallel (batching can be handled by router if needed)
-        await Promise.all(edgeVerificationPromises);
+        for (let i = 0; i < edges.length; i += batchSize) {
+            const batch = edges.slice(i, i + batchSize);
+            
+            await Promise.all(batch.map(async ([edgeId, edge]) => {
+                const [aStr, bStr] = edgeId.split('_');
+                const part1 = partById.get(parseInt(aStr));
+                const part2 = partById.get(parseInt(bStr));
+                
+                try {
+                    const aiResult = await llmRouter.verifyDuplicate(part1, part2);
+                    // Handle both boolean (old) and object (new) returns safely
+                    const isDuplicate = typeof aiResult === 'object' ? aiResult.isDuplicate : aiResult;
+                    const isSkipped = typeof aiResult === 'object' ? aiResult.skipped : false;
+                    const aiReason = typeof aiResult === 'object' ? aiResult.reason : null;
+                    const aiModel = typeof aiResult === 'object' ? aiResult.model : null;
+
+                    if (!isDuplicate) {
+                        edgeDetails.delete(edgeId);
+                        adjacency.get(parseInt(aStr)).delete(parseInt(bStr));
+                        adjacency.get(parseInt(bStr)).delete(parseInt(aStr));
+                    } else if (!isSkipped) {
+                        edge.reasons.push('ai_verified');
+                        if (aiReason) edge.ai_reason = aiReason;
+                        if (aiModel) edge.ai_model = aiModel;
+                    }
+                } catch (error) {
+                    console.error('LLM verification failed for edge, keeping it by default:', error);
+                }
+            }));
+        }
 
         // Extract connected components (O(V+E))
         const duplicateGroups = [];

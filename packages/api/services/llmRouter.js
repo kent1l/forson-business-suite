@@ -22,21 +22,26 @@ class LLMRouter {
     }
 
     async verifyDuplicate(part1, part2) {
+        const formatPns = (pns) => {
+            if (!pns || !Array.isArray(pns)) return 'None';
+            return pns.map(p => typeof p === 'object' ? p.part_number : p).join(', ') || 'None';
+        };
+
         const prompt = `You are an inventory deduplication agent.
 Verify if these two descriptions refer to the EXACT same physical inventory item (e.g. same brand, size, specifications). 
 Different colors, sizes, materials, or part numbers mean they are DISTINCT items.
 
 Item 1:
 Name: ${part1.display_name}
-Detail: ${part1.detail}
-Brand: ${part1.brand_name}
-Part Numbers: ${JSON.stringify(part1.part_numbers)}
+Detail: ${part1.detail || 'None'}
+Brand: ${part1.brand_name || 'None'}
+Part Numbers: ${formatPns(part1.part_numbers)}
 
 Item 2:
 Name: ${part2.display_name}
-Detail: ${part2.detail}
-Brand: ${part2.brand_name}
-Part Numbers: ${JSON.stringify(part2.part_numbers)}
+Detail: ${part2.detail || 'None'}
+Brand: ${part2.brand_name || 'None'}
+Part Numbers: ${formatPns(part2.part_numbers)}
 
 Respond ONLY with a JSON object:
 {
