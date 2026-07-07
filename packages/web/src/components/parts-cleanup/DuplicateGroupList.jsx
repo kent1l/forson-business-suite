@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
 
-const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThreshold, useOptimized }) => {
+const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThreshold }) => {
     const [duplicateGroups, setDuplicateGroups] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -17,14 +17,10 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
         
         try {
             const params = {
-                excludeMerged: true
+                excludeMerged: true,
+                algo: 'v2',
+                minScore: similarityThreshold
             };
-            if (useOptimized) {
-                params.algo = 'v2';
-                params.minScore = similarityThreshold;
-            } else {
-                params.minSimilarity = similarityThreshold;
-            }
             const response = await api.get('/parts/merge/duplicates', { params });
             
             setDuplicateGroups(response.data.groups || []);
@@ -35,7 +31,7 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
         } finally {
             setLoading(false);
         }
-    }, [similarityThreshold, useOptimized]);
+    }, [similarityThreshold]);
 
     useEffect(() => {
         fetchDuplicateGroups();

@@ -57,7 +57,6 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
     const [loading, setLoading] = useState(false);
     const [hasStartedSearch, setHasStartedSearch] = useState(false);
     const [similarityThreshold, setSimilarityThreshold] = useState(0.8);
-    const [useOptimized, setUseOptimized] = useState(false);
     const [selectionMode, setSelectionMode] = useState(SELECTION_MODES.AUTOMATIC);
     const [manualSearchQuery, setManualSearchQuery] = useState('');
     const [manualSearchResults, setManualSearchResults] = useState([]);
@@ -352,18 +351,6 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
                                         </select>
                                     </div>
                                     
-                                    <div className="flex items-center">
-                                        <input
-                                            type="checkbox"
-                                            checked={useOptimized}
-                                            onChange={(e) => setUseOptimized(e.target.checked)}
-                                            className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                                        />
-                                        <label className="text-sm font-medium text-gray-700">
-                                            Use Optimized Algorithm
-                                        </label>
-                                    </div>
-                                    
                                     <button
                                         onClick={() => setHasStartedSearch(true)}
                                         className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 font-semibold"
@@ -380,7 +367,6 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
                         selectedGroups={selectedDuplicateGroups}
                         onSelectionChange={setSelectedDuplicateGroups}
                         similarityThreshold={similarityThreshold}
-                        useOptimized={useOptimized}
                     />
                 );
             
