@@ -127,6 +127,75 @@ const formatEta = (seconds) => {
 
 const TERMINAL_STATUSES = ['completed', 'failed', 'cancelled'];
 
+const DedupeWorkerSettings = () => {
+    const [workerStatus, setWorkerStatus] = useState({ enabled: true, pending: 0, processing: 0 });
+    const [workerLoading, setWorkerLoading] = useState(false);
+
+    const fetchWorkerStatus = async () => {
+        try {
+            const res = await api.get('/parts/merge/worker-status');
+            setWorkerStatus(res.data);
+        } catch (e) {
+            console.error('Failed to fetch worker status', e);
+        }
+    };
+
+    const toggleWorker = async () => {
+        try {
+            setWorkerLoading(true);
+            const res = await api.post('/parts/merge/worker-toggle', { enabled: !workerStatus.enabled });
+            setWorkerStatus(prev => ({ ...prev, enabled: res.data.enabled }));
+            toast.success(`Background worker ${res.data.enabled ? 'enabled' : 'disabled'}`);
+        } catch (e) {
+            toast.error('Failed to toggle background worker');
+        } finally {
+            setWorkerLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchWorkerStatus();
+        const interval = setInterval(fetchWorkerStatus, 10000);
+        return () => clearInterval(interval);
+    }, []);
+
+    return (
+        <div>
+            <h3 className="text-lg font-medium text-gray-900">Background AI Deduplication Scan</h3>
+            <div className="p-4 border rounded-lg mt-4 flex justify-between items-center bg-gray-50">
+                <div>
+                    <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                        🤖 AI Exclusion Worker
+                    </h4>
+                    <p className="text-sm text-gray-500 mt-1">
+                        Continuously scans for potential duplicates and uses AI to discard false positives. 
+                        <span className="ml-2 px-2 py-0.5 bg-yellow-100 text-yellow-800 rounded-full text-xs font-medium">Pending: {workerStatus.pending}</span>
+                        <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">Processing: {workerStatus.processing}</span>
+                    </p>
+                </div>
+                <div className="flex items-center">
+                    <label className="flex items-center cursor-pointer">
+                        <div className="relative">
+                            <input 
+                                type="checkbox" 
+                                className="sr-only" 
+                                checked={workerStatus.enabled}
+                                onChange={toggleWorker}
+                                disabled={workerLoading}
+                            />
+                            <div className={`block w-14 h-8 rounded-full ${workerStatus.enabled ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                            <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition ${workerStatus.enabled ? 'transform translate-x-6' : ''}`}></div>
+                        </div>
+                        <div className="ml-3 text-sm font-medium text-gray-700">
+                            {workerStatus.enabled ? 'Active' : 'Paused'}
+                        </div>
+                    </label>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const DataUtilsSettings = () => {
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [showProgressModal, setShowProgressModal] = useState(false);
@@ -255,6 +324,8 @@ const DataUtilsSettings = () => {
                     </div>
                 </div>
             </div>
+
+            <DedupeWorkerSettings />
 
             <Modal isOpen={showConfirmModal} onClose={() => setShowConfirmModal(false)} title="Confirm Search Index Repair">
                 <div className="space-y-4">
