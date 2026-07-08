@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 const ConflictResolver = ({ selectedGroups, keepParts, rules, onRulesChange }) => {
     const [expandedGroups, setExpandedGroups] = useState({});
+    const [showConflicts, setShowConflicts] = useState(false);
 
     const toggleGroupExpansion = (groupId) => {
         setExpandedGroups(prev => ({
@@ -67,7 +68,27 @@ const ConflictResolver = ({ selectedGroups, keepParts, rules, onRulesChange }) =
 
     return (
         <div className="space-y-6">
-            {/* Global Merge Rules */}
+            {/* Auto-Resolved Banner */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-green-50 border border-green-200 p-4 rounded-lg gap-4 shadow-sm">
+                <div>
+                    <h3 className="font-bold text-green-900 text-lg flex items-center gap-2">
+                        ✅ Auto-Resolved Conflicts
+                    </h3>
+                    <p className="text-sm text-green-800 mt-1">
+                        All data conflicts have been instantly resolved in favor of your chosen Canonical parts.
+                    </p>
+                </div>
+                <button
+                    onClick={() => setShowConflicts(!showConflicts)}
+                    className="whitespace-nowrap px-4 py-2 bg-white text-green-700 border border-green-300 rounded-lg hover:bg-green-100 font-semibold shadow-sm transition-colors"
+                >
+                    {showConflicts ? 'Hide Manual Override' : 'View & Manual Override'}
+                </button>
+            </div>
+
+            {showConflicts && (
+                <>
+                    {/* Global Merge Rules */}
             <div className="bg-white rounded-lg border border-gray-200 p-6">
                 <h2 className="text-lg font-semibold mb-4">Merge Rules</h2>
                 <div className="space-y-4">
@@ -251,6 +272,9 @@ const ConflictResolver = ({ selectedGroups, keepParts, rules, onRulesChange }) =
                 <div className="text-center py-8 text-gray-500">
                     No groups selected for conflict resolution
                 </div>
+            )}
+            
+                </>
             )}
         </div>
     );

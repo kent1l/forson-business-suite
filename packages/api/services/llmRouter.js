@@ -22,21 +22,26 @@ class LLMRouter {
     }
 
     async verifyDuplicate(part1, part2) {
+        const formatPns = (pns) => {
+            if (!pns || !Array.isArray(pns)) return 'None';
+            return pns.map(p => typeof p === 'object' ? p.part_number : p).join(', ') || 'None';
+        };
+
         const prompt = `You are an inventory deduplication agent.
 Verify if these two descriptions refer to the EXACT same physical inventory item (e.g. same brand, size, specifications). 
 Different colors, sizes, materials, or part numbers mean they are DISTINCT items.
 
 Item 1:
 Name: ${part1.display_name}
-Detail: ${part1.detail}
-Brand: ${part1.brand_name}
-Part Numbers: ${JSON.stringify(part1.part_numbers)}
+Detail: ${part1.detail || 'None'}
+Brand: ${part1.brand_name || 'None'}
+Part Numbers: ${formatPns(part1.part_numbers)}
 
 Item 2:
 Name: ${part2.display_name}
-Detail: ${part2.detail}
-Brand: ${part2.brand_name}
-Part Numbers: ${JSON.stringify(part2.part_numbers)}
+Detail: ${part2.detail || 'None'}
+Brand: ${part2.brand_name || 'None'}
+Part Numbers: ${formatPns(part2.part_numbers)}
 
 Respond ONLY with a JSON object:
 {
@@ -58,7 +63,7 @@ Respond ONLY with a JSON object:
     async callGemini(prompt) {
         if (this.geminiKeys.length === 0) {
             console.warn('No Gemini API keys found. Skipping AI verification.');
-            return true;
+            return { isDuplicate: true, skipped: true, reason: 'Skipped - No Gemini API Key' };
         }
 
         const key = this.geminiKeys[this.geminiIndex];
@@ -81,13 +86,13 @@ Respond ONLY with a JSON object:
         const data = await response.json();
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
         const result = JSON.parse(text);
-        return result.isDuplicate === true;
+        return { isDuplicate: result.isDuplicate === true, reason: result.reason || '', provider: 'google', model: this.geminiModel };
     }
 
     async callOpenAI(prompt) {
         if (!this.openaiKey) {
             console.warn('No OpenAI API key found. Skipping AI verification.');
-            return true;
+            return { isDuplicate: true, skipped: true, reason: 'Skipped - No OpenAI API Key' };
         }
 
         const url = 'https://api.openai.com/v1/chat/completions';
@@ -111,37 +116,80 @@ Respond ONLY with a JSON object:
         const data = await response.json();
         const text = data.choices?.[0]?.message?.content;
         const result = JSON.parse(text);
-        return result.isDuplicate === true;
+        return { isDuplicate: result.isDuplicate === true, reason: result.reason || '', provider: 'openai', model: this.openaiModel };
     }
 
-    async callOpenRouter(prompt) {
-        if (!this.openrouterKey) {
-            console.warn('No OpenRouter API key found. Skipping AI verification.');
-            return true;
+    async callOpenRouter(prompt, retries = 3, overrideModel = null, useFallback = true) {
+        const modelToUse = overrideModel || this.openrouterModel;
+        
+        if (!modelToUse) {
+            return { isDuplicate: true, skipped: true, reason: 'No OpenRouter model configured' };
         }
 
-        const url = 'https://openrouter.ai/api/v1/chat/completions';
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${this.openrouterKey}`
-            },
-            body: JSON.stringify({
-                model: this.openrouterModel,
-                messages: [{ role: 'user', content: prompt }],
-                response_format: { type: 'json_object' }
-            })
-        });
+        for (let attempt = 1; attempt <= retries; attempt++) {
+            try {
+                const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                        'HTTP-Referer': 'http://localhost:5173',
+                        'X-Title': 'Forson Business Suite',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: modelToUse,
+                        messages: [{ role: 'user', content: prompt }],
+                        response_format: { type: 'json_object' }
+                    })
+                });
 
-        if (!response.ok) {
-            throw new Error(`OpenRouter API returned status ${response.status}: ${await response.text()}`);
+                if (!response.ok) {
+                    if (response.status === 429 && attempt < retries) {
+                        console.warn(`OpenRouter 429 Rate Limit. Retrying in ${attempt * 2}s...`);
+                        await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+                        continue;
+                    }
+                    throw new Error(`OpenRouter API returned status ${response.status}: ${await response.text()}`);
+                }
+
+                const responseText = await response.text();
+                if (!responseText.trim()) {
+                    throw new Error('OpenRouter returned empty response body');
+                }
+
+                let data;
+                try {
+                    data = JSON.parse(responseText);
+                } catch (e) {
+                    throw new Error('OpenRouter response body was not valid JSON');
+                }
+
+                let text = data.choices?.[0]?.message?.content || '{}';
+                
+                // Clean markdown backticks if the model decided to format it as code
+                text = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+                
+                let result;
+                try {
+                    result = JSON.parse(text);
+                } catch (e) {
+                    console.error('OpenRouter inner JSON parse error. Raw text:', text);
+                    return { isDuplicate: true, skipped: true, reason: 'AI JSON parsing failed' };
+                }
+                
+                return { isDuplicate: result.isDuplicate === true, reason: result.reason || '', provider: 'openrouter', model: modelToUse };
+            } catch (error) {
+                console.error(`OpenRouter Attempt ${attempt} failed with model ${modelToUse}:`, error.message);
+                if (attempt === retries) {
+                    if (useFallback && process.env.OPENROUTER_FALLBACK_MODEL) {
+                        console.warn(`Primary model failed after ${retries} attempts. Falling back to secondary model: ${process.env.OPENROUTER_FALLBACK_MODEL}`);
+                        return this.callOpenRouter(prompt, retries, process.env.OPENROUTER_FALLBACK_MODEL, false);
+                    }
+                    return { isDuplicate: true, skipped: true, reason: `AI failed: ${error.message}` };
+                }
+                await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+            }
         }
-
-        const data = await response.json();
-        const text = data.choices?.[0]?.message?.content;
-        const result = JSON.parse(text);
-        return result.isDuplicate === true;
     }
 }
 

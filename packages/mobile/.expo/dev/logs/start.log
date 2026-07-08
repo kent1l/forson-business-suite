@@ -112,3 +112,10 @@
 {"_e":"metro:bundling:done","_t":1782362763297,"id":"f","total":1,"ms":133.288643}
 {"_e":"metro:bundling:started","_t":1782364223218,"id":"g","platform":"android","environment":null,"entry":"node_modules/expo-router/entry.js"}
 {"_e":"metro:bundling:done","_t":1782364223774,"id":"g","total":1,"ms":555.809864}
+{"_e":"root:init","_t":1783467329782,"format":"v0-jsonl","version":"56.1.15"}
+{"_e":"env:mode","_t":1783467329801,"nodeEnv":"development","babelEnv":"development","mode":"development"}
+{"_e":"env:load","_t":1783467329864,"mode":"development","files":[],"env":{}}
+{"_e":"devserver:start","_t":1783467339110,"mode":"development","web":true,"baseUrl":"","asyncRoutes":false,"routerRoot":"../../../src/app","serverComponents":false,"serverActions":false,"serverRendering":true,"apiRoutes":false,"exporting":false}
+{"_e":"metro:config","_t":1783467349123,"serverRoot":"../../..","projectRoot":"../../..","exporting":false,"flags":{"autolinkingModuleResolution":false,"serverActions":false,"serverComponents":false,"reactCompiler":true,"optimizeGraph":false,"treeshaking":false,"logbox":false}}
+{"_e":"metro:server_log","_t":1783467357045,"level":"warn","data":["Failed to download the latest version of React Native DevTools. Using a fallback version instead. Connect to the internet or check your network settings."]}
+{"_e":"metro:instantiate","_t":1783467375839,"atlas":false,"workers":3,"host":"::","port":8081}
