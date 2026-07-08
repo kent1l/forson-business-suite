@@ -50,7 +50,9 @@ class DeduplicationEngine {
                 FROM part_number pn
                 WHERE pn.deleted_at IS NULL
                   AND pn.part_number IS NOT NULL
-                  AND pn.part_number != ''
+                  -- Fix A: require at least 6 alphanumeric chars after normalization
+                  -- This drops generic dimension tokens like '1', '12V', '10MM', '1000'
+                  AND LENGTH(UPPER(REGEXP_REPLACE(pn.part_number, '[^a-zA-Z0-9]', '', 'g'))) >= 6
             ),
             duplicated_pns AS (
                 SELECT normalized_pn
@@ -259,6 +261,12 @@ class DeduplicationEngine {
         const pnClusters = await this.findExactPartNumberClusters();
         const skuClusters = await this.findExactSkuClusters();
 
+        // Collects cross-brand same-PN clusters to be routed to Phase 3 AI review
+        const crossBrandClusters = [];
+
+        // Brands that carry no meaningful identity — treat as neutral for brand comparison
+        const NO_BRAND_TOKENS = new Set(['NO BRAND', 'UNKNOWN', 'GENERIC', 'N/A', 'NONE', '']);
+
         for (const [key, idSet] of [...pnClusters, ...skuClusters]) {
             const ids = [...idSet].sort((a, b) => a - b);
             const groupKey = crypto.createHash('sha256').update(ids.join(',')).digest('hex');
@@ -267,6 +275,28 @@ class DeduplicationEngine {
             const parts = ids.map(id => partById.get(id)).filter(Boolean);
             if (parts.length < 2) continue;
 
+            // Fix D: skip if parts span completely different part categories
+            const groupNames = [...new Set(
+                parts.map(p => (p.group_name || '').trim().toUpperCase()).filter(Boolean)
+            )];
+            if (groupNames.length > 1) {
+                console.warn(`[DedupEngine] Skipping cross-category exact match: ${groupNames.join(' vs ')} (PN: ${key})`);
+                continue;
+            }
+
+            // Fix B: split by brand — same brand → 'exact', cross-brand → AI review
+            const meaningfulBrands = [...new Set(
+                parts.map(p => (p.brand_name || '').trim().toUpperCase())
+                     .filter(b => !NO_BRAND_TOKENS.has(b))
+            )];
+
+            if (meaningfulBrands.length > 1) {
+                // Multiple distinct brands share this PN — route to AI for adjudication
+                crossBrandClusters.push(new Set(ids));
+                continue;
+            }
+
+            // Same brand (or all no-brand) + same PN → high-confidence true duplicate
             suggestionsToInsert.push({
                 batchId,
                 groupKey,
@@ -278,7 +308,7 @@ class DeduplicationEngine {
                 partData: parts
             });
         }
-        onProgress(`Phase 1 complete. Found ${suggestionsToInsert.length} exact groups.`);
+        onProgress(`Phase 1 complete. Found ${suggestionsToInsert.length} exact groups. ${crossBrandClusters.length} cross-brand clusters queued for AI review.`);
 
         // ── FUZZY BLOCKING + AI ANALYSIS ─────────────────────────────
         onProgress('Phase 2: Semantic blocking with Meilisearch...');
@@ -295,7 +325,11 @@ class DeduplicationEngine {
             onProgress('Phase 2 failed (Meilisearch error). Continuing with exact matches only.');
         }
 
+        // Fix B: merge cross-brand exact clusters into the AI analysis queue
+        fuzzyClusters = [...fuzzyClusters, ...crossBrandClusters];
+
         // ── AI ANALYSIS per cluster ───────────────────────────────────
+        // Includes both Meilisearch fuzzy clusters and cross-brand exact clusters (Fix B)
         onProgress(`Phase 3: AI group analysis on ${fuzzyClusters.length} clusters...`);
         for (let i = 0; i < fuzzyClusters.length; i++) {
             const cluster = fuzzyClusters[i];

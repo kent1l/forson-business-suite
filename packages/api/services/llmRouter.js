@@ -220,17 +220,33 @@ Respond ONLY with a JSON object:
 
         const partsList = parts.map(formatPart).join('\n\n');
         const partIds = parts.map(p => p.part_id);
-
-        const prompt = `You are an automotive parts inventory deduplication expert.
+        const prompt = `You are an automotive parts inventory deduplication expert for a parts store.
 
 You will be given a list of parts from an inventory system. Your job is to identify which parts are the SAME physical item that was entered more than once (duplicates), and group them together.
 
 IMPORTANT RULES:
-1. Different sizes, specs, or voltages (e.g., 12V vs 24V, 15/16 vs 1") = DIFFERENT items. Do NOT group them.
-2. Different brands (e.g., SEIKEN vs TOYOTA) = DIFFERENT items UNLESS they are known OEM vs aftermarket cross-references for the exact same part.
-3. Vendor prefixes in part numbers are common (e.g., SC-47575R and 47575R are the same part number). Strip vendor prefixes when comparing.
-4. Parts with no overlapping part numbers but identical names may or may not be duplicates — be conservative.
-5. If you are not confident, assign 'low' confidence. Do not guess.
+1. Different sizes, specs, voltages, or dimensions (e.g., 12V vs 24V, 15/16" vs 1") = DIFFERENT items. Do NOT group them.
+
+2. Different BRANDS = DIFFERENT inventory items, EVEN IF they share the same part number.
+   In automotive parts, OEM part numbers are printed on aftermarket products as cross-references.
+   For example: SEIKEN 47575R and DENSO 47575R are SEPARATE stock items sold at different prices
+   from different suppliers. DO NOT group them.
+   EXCEPTION: You MAY group cross-brand parts ONLY IF:
+   a) One brand is clearly unset or generic (brand is exactly "NO BRAND", "GENERIC", "N/A", "UNKNOWN", or blank),
+      AND the part names and categories are otherwise identical — strongly suggesting a data-entry duplicate.
+   b) The internal_sku fields share nearly the same prefix pattern, strongly suggesting the same catalog
+      entry was entered twice with a minor variation.
+
+3. Vendor prefixes in part numbers are common WITHIN THE SAME BRAND (e.g., SC-47575R and 47575R from
+   the same brand are the same number — the "SC-" is a supplier prefix). Strip vendor prefixes when
+   comparing part numbers, but ONLY when the brand is the same.
+
+4. Different part categories = NEVER duplicates, even if they share a part number.
+   A coincidental part number match between an ALTERNATOR and a VALVE SEAL is not a duplication signal.
+
+5. Parts with no overlapping part numbers and different brand names are almost certainly NOT duplicates.
+   Be very conservative — if unsure, do NOT include the pair in any group.
+
 6. A part can only belong to ONE group.
 
 Parts to analyze:
@@ -241,7 +257,7 @@ Respond ONLY with a valid JSON object in this exact format:
   "groups": [
     {
       "partIds": [101, 102],
-      "reason": "Both are RUBBER CUP (SEIKEN) with part number 47575R — SC-47575R and 47575R are the same number with a vendor prefix",
+      "reason": "Both are RUBBER CUP (SEIKEN) with part number 47575R — SC-47575R and 47575R are the same number with a vendor prefix, same brand",
       "confidence": "high"
     }
   ]
