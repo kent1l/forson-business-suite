@@ -346,7 +346,7 @@ router.get('/parts/merge/:id/details-for-merge', protect, hasPermission('parts:m
 // Route: POST /api/parts/merge/exclude
 // Excludes two parts from future duplicate scans
 router.post('/parts/merge/exclude', protect, hasPermission('parts:merge'), async (req, res) => {
-    const { partId1, partId2 } = req.body;
+    const { partId1, partId2, reason = 'Manually excluded by user' } = req.body;
     if (!partId1 || !partId2) {
         return res.status(400).json({ message: 'Missing part IDs' });
     }
@@ -355,11 +355,12 @@ router.post('/parts/merge/exclude', protect, hasPermission('parts:merge'), async
     const id2 = Math.max(parseInt(partId1), parseInt(partId2));
 
     try {
-        await db.query(`
-            INSERT INTO part_exclusion (part_id_1, part_id_2)
-            VALUES ($1, $2)
-            ON CONFLICT DO NOTHING
-        `, [id1, id2]);
+        await req.db.query(`
+            INSERT INTO part_exclusion (part_id_1, part_id_2, source, reason)
+            VALUES ($1, $2, 'USER', $3)
+            ON CONFLICT (part_id_1, part_id_2) DO UPDATE
+            SET source = 'USER', reason = $3
+        `, [id1, id2, reason]);
         res.json({ success: true, message: 'Parts successfully excluded from duplicate scans.' });
     } catch (error) {
         console.error('Failed to insert exclusion:', error);

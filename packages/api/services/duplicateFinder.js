@@ -414,6 +414,17 @@ class DuplicateFinder {
                         edgeDetails.delete(edgeId);
                         adjacency.get(a).delete(b);
                         adjacency.get(b).delete(a);
+                        
+                        // Cache the AI rejection to prevent scanning this false positive again
+                        const reasonText = aiReason ? `AI (${aiModel || 'LLM'}): ${aiReason}` : 'AI determined parts are not duplicates';
+                        this.db.query(`
+                            INSERT INTO part_exclusion (part_id_1, part_id_2, source, reason)
+                            VALUES ($1, $2, 'AI', $3)
+                            ON CONFLICT (part_id_1, part_id_2) DO UPDATE 
+                            SET source = 'AI', reason = $3
+                        `, [Math.min(a, b), Math.max(a, b), reasonText]).catch(err => {
+                            console.error('Failed to cache AI exclusion:', err);
+                        });
                     } else {
                         uf.union(a, b);
                         if (!isSkipped) {
