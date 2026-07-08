@@ -248,9 +248,9 @@ class DuplicateFinder {
         const edgeDetails = new Map();
         const processedPairs = new Set();
         
-        // Fetch all user exclusions
-        const exclusionsRes = await this.db.query('SELECT part_id_1, part_id_2 FROM part_exclusion');
-        const exclusions = new Set(exclusionsRes.rows.map(r => `${r.part_id_1}_${r.part_id_2}`));
+        // Fetch all AI cached matches and exclusions
+        const cacheRes = await this.db.query('SELECT part_id_1, part_id_2, is_duplicate FROM ai_match_cache');
+        const aiCache = new Map(cacheRes.rows.map(r => [`${r.part_id_1}_${r.part_id_2}`, r.is_duplicate]));
         
         // Helper to generate a unique pair ID regardless of order
         const getPairId = (id1, id2) => {
@@ -263,12 +263,19 @@ class DuplicateFinder {
             const part2Id = parseInt(pair.part2.part_id);
             const pairId = getPairId(part1Id, part2Id);
 
-            if (exclusions.has(pairId)) return;
             if (processedPairs.has(pairId)) return;
             processedPairs.add(pairId);
 
+            // Instant Cache Hit: False Positive
+            if (aiCache.has(pairId) && aiCache.get(pairId) === false) return;
+
             const { score, reasons } = this.constructor.calculateCompositeScore(pair.part1, pair.part2, baseScore);
             if (score < minScore) return;
+
+            // Instant Cache Hit: True Positive
+            if (aiCache.has(pairId) && aiCache.get(pairId) === true) {
+                reasons.push('ai_cached_positive');
+            }
 
             partById.set(part1Id, pair.part1);
             partById.set(part2Id, pair.part2);
@@ -351,40 +358,49 @@ class DuplicateFinder {
             }
         };
 
-        // Pre-union obvious matches to establish baseline components
+        // Pre-union obvious matches and cached positive matches to establish baseline components
         for (const [edgeId, edge] of edges) {
-            if (edge.reasons && edge.reasons.includes('obvious_match')) {
+            if (edge.reasons && (edge.reasons.includes('obvious_match') || edge.reasons.includes('ai_cached_positive'))) {
                 const [aStr, bStr] = edgeId.split('_');
                 uf.union(parseInt(aStr), parseInt(bStr));
             }
         }
 
-        let aiRequests = 0;
-        let aiDuplicatesFound = 0;
-        let aiResponded = 0;
-        let transitiveSkipped = 0;
-        
-        let aiEdgesToProcess = 0;
-        for (const [edgeId, edge] of edges) {
-            if (!edge.reasons || !edge.reasons.includes('obvious_match')) {
-                aiEdgesToProcess++;
-            }
-        }
-        
-        const batchSize = 5;
-        reportProgress('ai_verification', 'Phase 4: LLM Verification (AI Guardrail)...', { sent: aiRequests, responded: aiResponded, total: aiEdgesToProcess });
-
-        for (let i = 0; i < edges.length; i += batchSize) {
-            const batch = edges.slice(i, i + batchSize);
-            
-            await Promise.all(batch.map(async ([edgeId, edge]) => {
+        if (options.skipAI) {
+            reportProgress('ai_verification', 'Skipping AI Verification (Background worker enabled)...', { sent: 0, responded: 0, total: 0 });
+            // Union all remaining edges since we are bypassing AI verification.
+            // Any false positives should already be excluded by the background worker.
+            for (const [edgeId, edge] of edges) {
                 const [aStr, bStr] = edgeId.split('_');
+                uf.union(parseInt(aStr), parseInt(bStr));
+            }
+        } else {
+            let aiRequests = 0;
+            let aiDuplicatesFound = 0;
+            let aiResponded = 0;
+            let transitiveSkipped = 0;
+            
+            let aiEdgesToProcess = 0;
+            for (const [edgeId, edge] of edges) {
+                if (!edge.reasons || (!edge.reasons.includes('obvious_match') && !edge.reasons.includes('ai_cached_positive'))) {
+                    aiEdgesToProcess++;
+                }
+            }
+            
+            const batchSize = 5;
+            reportProgress('ai_verification', 'Phase 4: LLM Verification (AI Guardrail)...', { sent: aiRequests, responded: aiResponded, total: aiEdgesToProcess });
+
+            for (let i = 0; i < edges.length; i += batchSize) {
+                const batch = edges.slice(i, i + batchSize);
+                
+                await Promise.all(batch.map(async ([edgeId, edge]) => {
+                    const [aStr, bStr] = edgeId.split('_');
                 const a = parseInt(aStr);
                 const b = parseInt(bStr);
                 
                 try {
-                    if (edge.reasons && edge.reasons.includes('obvious_match')) {
-                        return; // Already unioned
+                    if (edge.reasons && (edge.reasons.includes('obvious_match') || edge.reasons.includes('ai_cached_positive'))) {
+                        return; // Already unioned or cached positive
                     }
                     
                     // Optimization: Skip AI if already in the same component via transitive links
@@ -409,22 +425,23 @@ class DuplicateFinder {
                     const isSkipped = typeof aiResult === 'object' ? aiResult.skipped : false;
                     const aiReason = typeof aiResult === 'object' ? aiResult.reason : null;
                     const aiModel = typeof aiResult === 'object' ? aiResult.model : null;
+                    
+                    const reasonText = aiReason ? `AI (${aiModel || 'LLM'}): ${aiReason}` : 'AI verification result';
+
+                    // Cache the AI verdict universally in ai_match_cache
+                    this.db.query(`
+                        INSERT INTO ai_match_cache (part_id_1, part_id_2, is_duplicate, source, reason)
+                        VALUES ($1, $2, $3, 'AI', $4)
+                        ON CONFLICT (part_id_1, part_id_2) DO UPDATE 
+                        SET is_duplicate = $3, source = 'AI', reason = $4
+                    `, [Math.min(a, b), Math.max(a, b), isDuplicate, reasonText]).catch(err => {
+                        console.error('Failed to cache AI verdict:', err);
+                    });
 
                     if (!isDuplicate) {
                         edgeDetails.delete(edgeId);
                         adjacency.get(a).delete(b);
                         adjacency.get(b).delete(a);
-                        
-                        // Cache the AI rejection to prevent scanning this false positive again
-                        const reasonText = aiReason ? `AI (${aiModel || 'LLM'}): ${aiReason}` : 'AI determined parts are not duplicates';
-                        this.db.query(`
-                            INSERT INTO part_exclusion (part_id_1, part_id_2, source, reason)
-                            VALUES ($1, $2, 'AI', $3)
-                            ON CONFLICT (part_id_1, part_id_2) DO UPDATE 
-                            SET source = 'AI', reason = $3
-                        `, [Math.min(a, b), Math.max(a, b), reasonText]).catch(err => {
-                            console.error('Failed to cache AI exclusion:', err);
-                        });
                     } else {
                         uf.union(a, b);
                         if (!isSkipped) {
@@ -440,6 +457,7 @@ class DuplicateFinder {
                 }
             }));
         }
+        } // End of else block for skipAI
 
         // Extract connected components (O(V+E))
         const duplicateGroups = [];

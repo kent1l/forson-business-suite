@@ -121,19 +121,19 @@ async function processNextPart() {
 
         const candidates = await findCandidates(sourcePart);
         
-        // Fix inefficiency: Only fetch exclusions specifically related to this part instead of the entire table
-        const exclusionsRes = await pool.query(`
-            SELECT part_id_1, part_id_2 FROM part_exclusion 
+        // Fix inefficiency: Only fetch exclusions/matches specifically related to this part instead of the entire table
+        const cacheRes = await pool.query(`
+            SELECT part_id_1, part_id_2, is_duplicate FROM ai_match_cache 
             WHERE part_id_1 = $1 OR part_id_2 = $1
         `, [partId]);
-        const exclusions = new Set(exclusionsRes.rows.map(r => `${r.part_id_1}_${r.part_id_2}`));
+        const aiCache = new Map(cacheRes.rows.map(r => [`${r.part_id_1}_${r.part_id_2}`, r.is_duplicate]));
 
         for (const candidate of candidates) {
             const targetPart = candidate.part;
             const [a, b] = [sourcePart.part_id, targetPart.part_id].sort((x, y) => x - y);
             const pairId = `${a}_${b}`;
 
-            if (exclusions.has(pairId)) continue;
+            if (aiCache.has(pairId)) continue; // Skip if already evaluated by AI
 
             const { score, reasons } = DuplicateFinder.calculateCompositeScore(sourcePart, targetPart, candidate.baseScore);
             
@@ -154,17 +154,19 @@ async function processNextPart() {
                     const aiReason = typeof aiResult === 'object' ? aiResult.reason : null;
                     const aiModel = typeof aiResult === 'object' ? aiResult.model : 'LLM';
                     
+                    const reasonText = aiReason ? `AI (${aiModel}): ${aiReason}` : 'AI verification result (Background)';
+                    
+                    await pool.query(`
+                        INSERT INTO ai_match_cache (part_id_1, part_id_2, is_duplicate, source, reason)
+                        VALUES ($1, $2, $3, 'AI', $4)
+                        ON CONFLICT (part_id_1, part_id_2) DO UPDATE 
+                        SET is_duplicate = $3, source = 'AI', reason = $4
+                    `, [a, b, isDuplicate, reasonText]);
+                    
                     if (!isDuplicate) {
-                        const reasonText = aiReason ? `AI (${aiModel}): ${aiReason}` : 'AI determined parts are not duplicates (Background)';
-                        await pool.query(`
-                            INSERT INTO part_exclusion (part_id_1, part_id_2, source, reason)
-                            VALUES ($1, $2, 'AI', $3)
-                            ON CONFLICT (part_id_1, part_id_2) DO UPDATE 
-                            SET source = 'AI', reason = $3
-                        `, [a, b, reasonText]);
-                        console.log(`[DedupeWorker] Marked ${pairId} as exclusion.`);
+                        console.log(`[DedupeWorker] Marked ${pairId} as false positive (exclusion).`);
                     } else {
-                        console.log(`[DedupeWorker] AI confirmed ${pairId} is a positive match. Discarding per design.`);
+                        console.log(`[DedupeWorker] Marked ${pairId} as true positive (match).`);
                     }
                 } catch (e) {
                     console.error(`[DedupeWorker] AI verification failed for ${pairId}:`, e.message);
