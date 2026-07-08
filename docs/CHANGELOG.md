@@ -1,5 +1,23 @@
 # Changelog
 
+## v2.3.0 - 2026-07-08
+
+### Added
+- **AI-Verified Duplicate Parts Assessment**: Implemented LLM-based duplicate verification, algorithmic similarity scoring, and manual part exclusion persistence with `source` and `reason` fields.
+- **Real-Time Progress Tracking (SSE)**: Added Server-Sent Events (SSE) support for streaming live progress updates during duplicate detection workflows.
+- **Smart Auto-Selection & Union-Find Optimization**: Integrated a transitive union-find optimization, a smart auto-selection algorithm, and bulk high-confidence selection options.
+- **Advanced Model Fallbacks**: Configured OpenRouter service retries and fallback models (via `OPENROUTER_FALLBACK_MODEL` environment variable), and allowed customization of the Gemini model.
+- **Visual Analytics & Status UI**: Added AI verification statistics, tag rendering (obvious vs. transitive matches), model information tracking, and a compact view toggle to the Parts Cleanup dashboard.
+
+### Fixed
+- **Numeric Token Validation**: Prevented AI match skipping during token mismatch detection in the duplicate finder pipeline.
+- **Resilient AI Verification**: Allowed explicit skipping of AI verification when API keys are missing.
+
+### Refactored / Optimized
+- **Duplicate Detection v2**: Standardized duplicate detection on the optimized v2 algorithm, including Dice similarity improvements and heuristic threshold adjustments.
+- **Batch Processing**: Implemented batch processing for LLM verification to optimize performance and token usage.
+- **Configuration Pathing**: Updated dotenv initialization to search parent paths for `.env` files.
+
 ## v2.2.0 - 2026-07-07
 
 ### Added
