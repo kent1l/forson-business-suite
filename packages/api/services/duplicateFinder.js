@@ -30,8 +30,9 @@ class DuplicateFinder {
 
     static extractNumericTokens(text) {
         if (!text) return [];
-        const matches = text.match(/\b\d+\b/g) || [];
-        return matches.map(m => parseInt(m)).filter(n => !isNaN(n));
+        // Matches numbers with optional decimals and optional alphabetical suffixes (e.g., 12.5, 12V, 10kg)
+        const matches = text.match(/\d+(?:\.\d+)?[a-zA-Z]*/g) || [];
+        return matches;
     }
 
     static calculateDiceCoefficient(str1, str2) {
@@ -313,8 +314,37 @@ class DuplicateFinder {
             }
         }
 
-        // Phase 4: LLM Verification (AI Guardrail)
-        const edges = Array.from(edgeDetails.entries());
+        // Phase 4: LLM Verification (AI Guardrail) with Transitive Optimization
+        const edges = Array.from(edgeDetails.entries()).sort((a, b) => b[1].score - a[1].score);
+        
+        const uf = {
+            parent: new Map(),
+            find(i) {
+                if (!this.parent.has(i)) this.parent.set(i, i);
+                if (this.parent.get(i) === i) return i;
+                const p = this.find(this.parent.get(i));
+                this.parent.set(i, p);
+                return p;
+            },
+            union(i, j) {
+                const rootI = this.find(i);
+                const rootJ = this.find(j);
+                if (rootI !== rootJ) {
+                    this.parent.set(rootI, rootJ);
+                    return true;
+                }
+                return false;
+            }
+        };
+
+        // Pre-union obvious matches to establish baseline components
+        for (const [edgeId, edge] of edges) {
+            if (edge.reasons && edge.reasons.includes('obvious_match')) {
+                const [aStr, bStr] = edgeId.split('_');
+                uf.union(parseInt(aStr), parseInt(bStr));
+            }
+        }
+
         const batchSize = 5;
         
         for (let i = 0; i < edges.length; i += batchSize) {
@@ -322,14 +352,24 @@ class DuplicateFinder {
             
             await Promise.all(batch.map(async ([edgeId, edge]) => {
                 const [aStr, bStr] = edgeId.split('_');
-                const part1 = partById.get(parseInt(aStr));
-                const part2 = partById.get(parseInt(bStr));
+                const a = parseInt(aStr);
+                const b = parseInt(bStr);
                 
                 try {
                     if (edge.reasons && edge.reasons.includes('obvious_match')) {
-                        return; // Optimization: Skip AI for matches with >= 0.95 score
+                        return; // Already unioned
                     }
+                    
+                    // Optimization: Skip AI if already in the same component via transitive links
+                    if (uf.find(a) === uf.find(b)) {
+                        edge.reasons.push('transitive_match');
+                        return;
+                    }
+
+                    const part1 = partById.get(a);
+                    const part2 = partById.get(b);
                     const aiResult = await llmRouter.verifyDuplicate(part1, part2);
+                    
                     // Handle both boolean (old) and object (new) returns safely
                     const isDuplicate = typeof aiResult === 'object' ? aiResult.isDuplicate : aiResult;
                     const isSkipped = typeof aiResult === 'object' ? aiResult.skipped : false;
@@ -338,15 +378,19 @@ class DuplicateFinder {
 
                     if (!isDuplicate) {
                         edgeDetails.delete(edgeId);
-                        adjacency.get(parseInt(aStr)).delete(parseInt(bStr));
-                        adjacency.get(parseInt(bStr)).delete(parseInt(aStr));
-                    } else if (!isSkipped) {
-                        edge.reasons.push('ai_verified');
-                        if (aiReason) edge.ai_reason = aiReason;
-                        if (aiModel) edge.ai_model = aiModel;
+                        adjacency.get(a).delete(b);
+                        adjacency.get(b).delete(a);
+                    } else {
+                        uf.union(a, b);
+                        if (!isSkipped) {
+                            edge.reasons.push('ai_verified');
+                            if (aiReason) edge.ai_reason = aiReason;
+                            if (aiModel) edge.ai_model = aiModel;
+                        }
                     }
                 } catch (error) {
                     console.error('LLM verification failed for edge, keeping it by default:', error);
+                    uf.union(a, b);
                 }
             }));
         }
