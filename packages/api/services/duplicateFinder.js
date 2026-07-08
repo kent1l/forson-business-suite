@@ -229,8 +229,12 @@ class DuplicateFinder {
     }
 
     async findOptimizedDuplicateGroups(options = {}) {
-        const { query = '', limit = 50 } = options;
+        const { query = '', limit = 50, progressCallback = null } = options;
         const minScore = options.minScore !== undefined ? options.minScore : (options.minSimilarity !== undefined ? options.minSimilarity : 0.50);
+
+        const reportProgress = (stage, message, details = {}) => {
+            if (progressCallback) progressCallback({ stage, message, ...details });
+        };
 
         const adjacency = new Map();
         const partById = new Map();
@@ -275,6 +279,7 @@ class DuplicateFinder {
 
         // Phase 1: Deterministic Blocking (The Fast Net)
         // Group items that share exact, distinct identifiers (internal_sku or part_number)
+        reportProgress('deterministic', 'Phase 1: Finding exact matches (SQL)...');
         const deterministicPairs = await this.findDeterministicPairs(query, limit);
         
         for (const pair of deterministicPairs) {
@@ -285,6 +290,7 @@ class DuplicateFinder {
 
         // Phase 2: Semantic/Fuzzy Blocking (The Wide Net) using Meilisearch
         try {
+            reportProgress('semantic', 'Phase 2: Fuzzy searching for similar parts (Meilisearch)...');
             const fuzzyPairs = await this.findFuzzyMeilisearchPairs(query, limit);
 
             for (const pair of fuzzyPairs) {
@@ -297,6 +303,7 @@ class DuplicateFinder {
         }
 
         // Phase 3b: Strict Trim before AI Verification to avoid token waste
+        reportProgress('scoring', 'Phase 3: Calculating similarity scores and applying business rules...');
         if (edgeDetails.size > limit) {
             const sortedEdges = Array.from(edgeDetails.entries()).sort((a, b) => b[1].score - a[1].score);
             const topEdges = sortedEdges.slice(0, limit);
@@ -347,8 +354,18 @@ class DuplicateFinder {
 
         let aiRequests = 0;
         let aiDuplicatesFound = 0;
-        const batchSize = 5;
+        let aiResponded = 0;
         
+        let aiEdgesToProcess = 0;
+        for (const [edgeId, edge] of edges) {
+            if (!edge.reasons || !edge.reasons.includes('obvious_match')) {
+                aiEdgesToProcess++;
+            }
+        }
+        
+        const batchSize = 5;
+        reportProgress('ai_verification', 'Phase 4: LLM Verification (AI Guardrail)...', { sent: aiRequests, responded: aiResponded, total: aiEdgesToProcess });
+
         for (let i = 0; i < edges.length; i += batchSize) {
             const batch = edges.slice(i, i + batchSize);
             
@@ -365,13 +382,18 @@ class DuplicateFinder {
                     // Optimization: Skip AI if already in the same component via transitive links
                     if (uf.find(a) === uf.find(b)) {
                         edge.reasons.push('transitive_match');
+                        aiResponded++; // Mark as skipped/handled
+                        reportProgress('ai_verification', 'Waiting for AI responses...', { sent: aiRequests, responded: aiResponded, total: aiEdgesToProcess });
                         return;
                     }
 
                     const part1 = partById.get(a);
                     const part2 = partById.get(b);
-                    const aiResult = await llmRouter.verifyDuplicate(part1, part2);
                     aiRequests++;
+                    reportProgress('ai_verification', 'Waiting for AI responses...', { sent: aiRequests, responded: aiResponded, total: aiEdgesToProcess });
+                    const aiResult = await llmRouter.verifyDuplicate(part1, part2);
+                    aiResponded++;
+                    reportProgress('ai_verification', 'Waiting for AI responses...', { sent: aiRequests, responded: aiResponded, total: aiEdgesToProcess });
                     
                     // Handle both boolean (old) and object (new) returns safely
                     const isDuplicate = typeof aiResult === 'object' ? aiResult.isDuplicate : aiResult;

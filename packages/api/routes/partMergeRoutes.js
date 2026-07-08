@@ -16,6 +16,52 @@ router.use((req, res, next) => {
 const duplicateFinder = new DuplicateFinder(db);
 const partMergeService = new PartMergeService(db);
 
+// Route: GET /parts/merge/duplicates/stream
+// Get potential duplicate parts with live SSE progress tracking
+router.get('/parts/merge/duplicates/stream', protect, hasPermission('parts:merge'), async (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const sendEvent = (type, data) => {
+        res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    try {
+        const {
+            limit = 50,
+            excludeMerged = true,
+            minScore = 0.6
+        } = req.query;
+
+        const result = await duplicateFinder.findOptimizedDuplicateGroups({
+            minScore: parseFloat(minScore),
+            limit: parseInt(limit),
+            excludeMerged: excludeMerged === 'true',
+            progressCallback: (progress) => {
+                sendEvent('progress', progress);
+            }
+        });
+
+        sendEvent('complete', {
+            groups: result.groups,
+            aiStats: result.stats,
+            metadata: {
+                total: result.groups.length,
+                algo: 'v2',
+                minScore: parseFloat(minScore),
+                limit: parseInt(limit),
+                excludeMerged: excludeMerged === 'true'
+            }
+        });
+        res.end();
+    } catch (error) {
+        console.error('Error finding duplicates stream:', error);
+        sendEvent('error', { message: 'Internal Server Error' });
+        res.end();
+    }
+});
+
 // Route: GET /api/parts/merge/duplicates
 // Get potential duplicate parts grouped by similarity
 router.get('/parts/merge/duplicates', protect, hasPermission('parts:merge'), async (req, res) => {

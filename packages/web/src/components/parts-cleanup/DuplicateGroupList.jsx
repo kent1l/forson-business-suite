@@ -7,6 +7,7 @@ import { ICONS } from '../../constants';
 const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThreshold }) => {
     const [duplicateGroups, setDuplicateGroups] = useState([]);
     const [aiStats, setAiStats] = useState(null);
+    const [progress, setProgress] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [isCompact, setIsCompact] = useState(false);
@@ -16,22 +17,65 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
     const fetchDuplicateGroups = useCallback(async () => {
         setLoading(true);
         setError(null);
+        setProgress(null);
         
         try {
-            const params = {
-                excludeMerged: true,
+            const sessionData = JSON.parse(localStorage.getItem('userSession'));
+            const token = sessionData?.token || '';
+            const query = new URLSearchParams({
+                excludeMerged: 'true',
                 algo: 'v2',
                 minScore: similarityThreshold
-            };
-            const response = await api.get('/parts/merge/duplicates', { params });
-            
-            setDuplicateGroups(response.data.groups || []);
-            setAiStats(response.data.aiStats || null);
+            }).toString();
+
+            const response = await fetch(`/api/parts/merge/duplicates/stream?${query}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (!response.ok) throw new Error('Failed to fetch stream');
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n\n');
+                
+                for (let i = 0; i < lines.length - 1; i++) {
+                    const eventText = lines[i];
+                    if (!eventText.trim()) continue;
+
+                    const eventMatch = eventText.match(/event: (.*?)\n/);
+                    const dataMatch = eventText.match(/data: (.*)/);
+                    
+                    if (eventMatch && dataMatch) {
+                        const eventType = eventMatch[1];
+                        const eventData = JSON.parse(dataMatch[1]);
+                        
+                        if (eventType === 'progress') {
+                            setProgress(eventData);
+                        } else if (eventType === 'complete') {
+                            setDuplicateGroups(eventData.groups || []);
+                            setAiStats(eventData.aiStats || null);
+                            setLoading(false);
+                            setProgress(null);
+                        } else if (eventType === 'error') {
+                            throw new Error(eventData.message || 'Stream error');
+                        }
+                    }
+                }
+                buffer = lines[lines.length - 1]; 
+            }
         } catch (err) {
             console.error('Error fetching duplicate groups:', err);
             setError('Failed to fetch duplicate groups. Please try again.');
             toast.error('Failed to load duplicate groups');
-        } finally {
             setLoading(false);
         }
     }, [similarityThreshold]);
@@ -139,9 +183,31 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center py-12">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                <span className="ml-3 text-gray-600">Finding duplicate parts...</span>
+            <div className="flex flex-col items-center justify-center py-16 bg-white border border-gray-200 rounded-lg shadow-sm">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-4"></div>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Analyzing Parts Catalog</h3>
+                <span className="text-sm text-gray-600 mb-6 font-medium">
+                    {progress?.message || 'Starting deduplication pipeline...'}
+                </span>
+                
+                <div className="w-full max-w-md bg-gray-100 rounded-full h-2.5 mb-2 overflow-hidden shadow-inner">
+                    {progress?.stage === 'deterministic' && <div className="bg-blue-500 h-2.5 rounded-full w-1/4 transition-all duration-500"></div>}
+                    {progress?.stage === 'semantic' && <div className="bg-blue-500 h-2.5 rounded-full w-2/4 transition-all duration-500"></div>}
+                    {progress?.stage === 'scoring' && <div className="bg-blue-500 h-2.5 rounded-full w-3/4 transition-all duration-500"></div>}
+                    {progress?.stage === 'ai_verification' && (
+                        <div 
+                            className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+                            style={{ width: `${75 + (progress.total > 0 ? (progress.responded / progress.total) * 25 : 0)}%` }}
+                        ></div>
+                    )}
+                </div>
+                
+                {progress?.stage === 'ai_verification' && progress.total > 0 && (
+                    <div className="text-sm text-yellow-700 font-medium bg-yellow-50 px-4 py-1.5 rounded-full border border-yellow-200 mt-2 flex items-center gap-2">
+                        <span>🤖 AI Verification:</span>
+                        <span>{progress.responded} of {progress.total} requests completed</span>
+                    </div>
+                )}
             </div>
         );
     }
