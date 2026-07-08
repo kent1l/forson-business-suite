@@ -94,12 +94,21 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
         const hasFuzzy = reasons.includes('meilisearch_fuzzy_match');
         const hasExact = reasons.includes('exact_internal_sku') || reasons.includes('exact_part_number');
         const hasAI = reasons.includes('ai_verified');
+        const hasObvious = reasons.includes('obvious_match');
+        const hasTransitive = reasons.includes('transitive_match');
 
         const steps = [];
-        if (hasExact) steps.push(<span key="exact" className="px-2 py-0.5 rounded whitespace-nowrap bg-green-100 text-green-800 border border-green-200">1. Exact Match</span>);
-        if (hasFuzzy) steps.push(<span key="fuzzy" className="px-2 py-0.5 rounded whitespace-nowrap bg-blue-100 text-blue-800 border border-blue-200">2. Fuzzy Search</span>);
-        if (hasMath) steps.push(<span key="math" className="px-2 py-0.5 rounded whitespace-nowrap bg-purple-100 text-purple-800 border border-purple-200">3. Math Gate</span>);
-        if (hasAI) steps.push(<span key="ai" className="px-2 py-0.5 rounded whitespace-nowrap bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-800 border border-yellow-300 shadow-sm">🤖 4. AI Verified {ai_model ? `(${ai_model})` : ''}</span>);
+        if (hasExact) steps.push(<span key="exact" className="px-2 py-0.5 rounded whitespace-nowrap bg-green-100 text-green-800 border border-green-200">Exact Match</span>);
+        if (hasFuzzy) steps.push(<span key="fuzzy" className="px-2 py-0.5 rounded whitespace-nowrap bg-blue-100 text-blue-800 border border-blue-200">Fuzzy Search</span>);
+        if (hasMath) steps.push(<span key="math" className="px-2 py-0.5 rounded whitespace-nowrap bg-purple-100 text-purple-800 border border-purple-200">Math Gate</span>);
+        
+        if (hasAI) {
+            steps.push(<span key="ai" className="px-2 py-0.5 rounded whitespace-nowrap bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-800 border border-yellow-300 shadow-sm">🤖 AI Verified {ai_model ? `(${ai_model})` : ''}</span>);
+        } else if (hasObvious) {
+            steps.push(<span key="obvious" className="px-2 py-0.5 rounded whitespace-nowrap bg-gradient-to-r from-emerald-100 to-emerald-200 text-emerald-800 border border-emerald-300 shadow-sm">⚡ Obvious Match (AI Skipped)</span>);
+        } else if (hasTransitive) {
+            steps.push(<span key="transitive" className="px-2 py-0.5 rounded whitespace-nowrap bg-gradient-to-r from-indigo-100 to-indigo-200 text-indigo-800 border border-indigo-300 shadow-sm">🔗 Transitive Link (AI Skipped)</span>);
+        }
 
         return (
             <div className="flex items-center space-x-1 mt-1 text-xs font-medium overflow-x-auto pb-1">
