@@ -16,115 +16,7 @@ router.use((req, res, next) => {
 const duplicateFinder = new DuplicateFinder(db);
 const partMergeService = new PartMergeService(db);
 
-// Route: GET /parts/merge/duplicates/stream
-// Get potential duplicate parts with live SSE progress tracking
-router.get('/parts/merge/duplicates/stream', protect, hasPermission('parts:merge'), async (req, res) => {
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
 
-    const sendEvent = (type, data) => {
-        res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
-    };
-
-    // Heartbeat to prevent NGINX/browser timeouts during slow AI processing
-    const heartbeat = setInterval(() => {
-        sendEvent('ping', { timestamp: Date.now() });
-    }, 15000);
-
-    req.on('close', () => {
-        clearInterval(heartbeat);
-    });
-
-    try {
-        const {
-            limit = 50,
-            excludeMerged = true,
-            minScore = 0.6
-        } = req.query;
-
-        const result = await duplicateFinder.findOptimizedDuplicateGroups({
-            minScore: parseFloat(minScore),
-            limit: parseInt(limit),
-            excludeMerged: excludeMerged === 'true',
-            progressCallback: (progress) => {
-                sendEvent('progress', progress);
-            }
-        });
-
-        sendEvent('complete', {
-            groups: result.groups,
-            aiStats: result.stats,
-            metadata: {
-                total: result.groups.length,
-                algo: 'v2',
-                minScore: parseFloat(minScore),
-                limit: parseInt(limit),
-                excludeMerged: excludeMerged === 'true'
-            }
-        });
-        clearInterval(heartbeat);
-        res.end();
-    } catch (error) {
-        clearInterval(heartbeat);
-        console.error('Error finding duplicates stream:', error);
-        sendEvent('error', { message: 'Internal Server Error' });
-        res.end();
-    }
-});
-
-// Route: GET /api/parts/merge/duplicates
-// Get potential duplicate parts grouped by similarity
-router.get('/parts/merge/duplicates', protect, hasPermission('parts:merge'), async (req, res) => {
-    try {
-        const {
-            minSimilarity = 0.75,
-            limit = 50,
-            excludeMerged = true,
-            algo = 'v1', // v1: current, v2: optimized with confidence
-            minScore = 0.6 // for v2: min confidence score
-        } = req.query;
-
-        let groups;
-        let aiStats = null;
-        if (algo === 'v2') {
-            const result = await duplicateFinder.findOptimizedDuplicateGroups({
-                minScore: parseFloat(minScore),
-                limit: parseInt(limit),
-                excludeMerged: excludeMerged === 'true'
-            });
-            groups = result.groups;
-            aiStats = result.stats;
-        } else {
-            groups = await duplicateFinder.findDuplicateGroups({
-                minSimilarity: parseFloat(minSimilarity),
-                limit: parseInt(limit),
-                excludeMerged: excludeMerged === 'true'
-            });
-        }
-
-        res.json({
-            success: true,
-            groups,
-            aiStats,
-            metadata: {
-                total: groups.length,
-                algo,
-                ...(algo === 'v2' ? { minScore } : { minSimilarity }),
-                limit,
-                excludeMerged
-            }
-        });
-    } catch (error) {
-        console.error('Error finding duplicates:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to find duplicate parts',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-    }
-});
 
 // Route: GET /api/parts/merge/search-for-merge
 // Search for parts similar to a given part (for manual merge initiation)
@@ -384,19 +276,39 @@ router.post('/parts/merge/exclude', protect, hasPermission('parts:merge'), async
 // Gets the status of the background dedupe worker
 router.get('/parts/merge/worker-status', protect, hasPermission('parts:merge'), async (req, res) => {
     try {
-        const settingRes = await req.db.query("SELECT setting_value FROM public.settings WHERE setting_key = 'DEDUPE_BACKGROUND_WORKER_ENABLED'");
+        const settingRes = await req.db.query(
+            `SELECT setting_value FROM public.settings WHERE setting_key = 'DEDUPE_BACKGROUND_WORKER_ENABLED'`
+        );
         const enabled = settingRes.rowCount > 0 ? settingRes.rows[0].setting_value !== 'false' : true;
-        
-        const countRes = await req.db.query("SELECT status, count(*) FROM public.dedupe_scan_queue GROUP BY status");
-        let pending = 0;
-        let processing = 0;
-        
+
+        // Get the last 3 batches for history display
+        const batchRes = await req.db.query(`
+            SELECT batch_id, status, started_at, completed_at, total_groups, ai_calls_made, error_message
+            FROM public.duplicate_suggestion_batch
+            ORDER BY batch_id DESC
+            LIMIT 3
+        `);
+
+        // Count pending suggestions by tier
+        const countRes = await req.db.query(`
+            SELECT confidence, COUNT(*) as count
+            FROM public.duplicate_suggestion_group
+            WHERE status = 'pending'
+            GROUP BY confidence
+        `);
+        const pendingSuggestions = { exact: 0, high: 0, medium: 0, low: 0, total: 0 };
         for (const row of countRes.rows) {
-            if (row.status === 'pending') pending = parseInt(row.count);
-            if (row.status === 'processing') processing = parseInt(row.count);
+            pendingSuggestions[row.confidence] = parseInt(row.count);
+            pendingSuggestions.total += parseInt(row.count);
         }
-        
-        res.json({ success: true, enabled, pending, processing });
+
+        res.json({
+            success: true,
+            enabled,
+            latestBatch: batchRes.rows[0] || null,
+            batchHistory: batchRes.rows,
+            pendingSuggestions
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to get worker status' });
     }
@@ -418,6 +330,178 @@ router.post('/parts/merge/worker-toggle', protect, hasPermission('parts:merge'),
         res.json({ success: true, enabled });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to toggle worker' });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Route: GET /api/parts/merge/suggestions
+// Returns pre-computed duplicate suggestions from the suggestion table.
+// This is instant — no computation happens on this request.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/parts/merge/suggestions', protect, hasPermission('parts:merge'), async (req, res) => {
+    try {
+        const { confidence, limit = 100, offset = 0 } = req.query;
+
+        // Build WHERE clause based on optional confidence filter
+        const conditions = [`status = 'pending'`];
+        const params = [];
+        if (confidence && ['exact', 'high', 'medium', 'low'].includes(confidence)) {
+            params.push(confidence);
+            conditions.push(`confidence = $${params.length}`);
+        }
+
+        params.push(parseInt(limit));
+        params.push(parseInt(offset));
+
+        const sql = `
+            SELECT
+                suggestion_id, group_key, confidence, confidence_score,
+                detection_method, ai_reason, part_ids, part_data,
+                status, created_at
+            FROM public.duplicate_suggestion_group
+            WHERE ${conditions.join(' AND ')}
+            ORDER BY
+                CASE confidence
+                    WHEN 'exact'   THEN 1
+                    WHEN 'high'    THEN 2
+                    WHEN 'medium'  THEN 3
+                    WHEN 'low'     THEN 4
+                END,
+                confidence_score DESC
+            LIMIT $${params.length - 1} OFFSET $${params.length}
+        `;
+
+        const result = await req.db.query(sql, params);
+
+        // Also get counts by confidence tier
+        const countRes = await req.db.query(`
+            SELECT confidence, COUNT(*) as count
+            FROM public.duplicate_suggestion_group
+            WHERE status = 'pending'
+            GROUP BY confidence
+        `);
+        const counts = { exact: 0, high: 0, medium: 0, low: 0 };
+        for (const row of countRes.rows) counts[row.confidence] = parseInt(row.count);
+
+        // Get the latest batch info
+        const batchRes = await req.db.query(`
+            SELECT batch_id, status, started_at, completed_at, total_groups, ai_calls_made, error_message
+            FROM public.duplicate_suggestion_batch
+            ORDER BY batch_id DESC
+            LIMIT 1
+        `);
+        const latestBatch = batchRes.rows[0] || null;
+
+        // Transform part_data from JSONB back to the format the UI expects
+        const groups = result.rows.map(row => ({
+            groupId: `suggestion_${row.suggestion_id}`,
+            suggestionId: row.suggestion_id,
+            score: row.confidence_score,
+            confidence: row.confidence === 'exact' ? 'Exact Match'
+                       : row.confidence === 'high'   ? 'High'
+                       : row.confidence === 'medium' ? 'Medium' : 'Low',
+            confidenceTier: row.confidence, // raw value for UI tier logic
+            reasons: [row.detection_method],
+            ai_reasons: row.ai_reason ? [row.ai_reason] : [],
+            detection_method: row.detection_method,
+            parts: row.part_data, // Already the full part objects
+            created_at: row.created_at
+        }));
+
+        res.json({
+            success: true,
+            groups,
+            counts,
+            latestBatch,
+            metadata: { total: groups.length, limit: parseInt(limit), offset: parseInt(offset) }
+        });
+    } catch (error) {
+        console.error('Error fetching suggestions:', error);
+        res.status(500).json({ success: false, message: 'Failed to fetch suggestions' });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Route: POST /api/parts/merge/suggestions/:id/dismiss
+// Marks a suggestion as dismissed (user said "not duplicates").
+// Also writes to part_exclusion for the relevant pairs.
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/parts/merge/suggestions/:id/dismiss', protect, hasPermission('parts:merge'), async (req, res) => {
+    const suggestionId = parseInt(req.params.id);
+    if (isNaN(suggestionId)) {
+        return res.status(400).json({ success: false, message: 'Invalid suggestion ID' });
+    }
+
+    try {
+        // Get the suggestion to know which pairs to exclude
+        const sgRes = await req.db.query(
+            `SELECT part_ids FROM public.duplicate_suggestion_group WHERE suggestion_id = $1`,
+            [suggestionId]
+        );
+        if (sgRes.rowCount === 0) {
+            return res.status(404).json({ success: false, message: 'Suggestion not found' });
+        }
+
+        const partIds = sgRes.rows[0].part_ids;
+        const actorId = req.user.employee_id;
+
+        // Mark as dismissed
+        await req.db.query(`
+            UPDATE public.duplicate_suggestion_group
+            SET status = 'dismissed', dismissed_at = NOW(), dismissed_by = $1, updated_at = NOW()
+            WHERE suggestion_id = $2
+        `, [actorId, suggestionId]);
+
+        // Write exclusion pairs so the AI doesn't re-suggest these
+        for (let i = 0; i < partIds.length; i++) {
+            for (let j = i + 1; j < partIds.length; j++) {
+                const id1 = Math.min(partIds[i], partIds[j]);
+                const id2 = Math.max(partIds[i], partIds[j]);
+                await req.db.query(`
+                    INSERT INTO part_exclusion (part_id_1, part_id_2, source, reason)
+                    VALUES ($1, $2, 'USER', 'Dismissed from suggestions by user')
+                    ON CONFLICT (part_id_1, part_id_2) DO NOTHING
+                `, [id1, id2]);
+            }
+        }
+
+        res.json({ success: true, message: 'Suggestion dismissed and pair excluded from future scans.' });
+    } catch (error) {
+        console.error('Error dismissing suggestion:', error);
+        res.status(500).json({ success: false, message: 'Failed to dismiss suggestion' });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Route: POST /api/parts/merge/trigger-scan
+// Triggers an on-demand deduplication scan in the background.
+// Returns immediately — scan runs asynchronously.
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/parts/merge/trigger-scan', protect, hasPermission('parts:merge'), async (req, res) => {
+    try {
+        // Check if a scan is already running
+        const runningRes = await req.db.query(
+            `SELECT batch_id FROM public.duplicate_suggestion_batch WHERE status = 'running' LIMIT 1`
+        );
+        if (runningRes.rowCount > 0) {
+            return res.json({
+                success: false,
+                message: 'A scan is already running. Please wait for it to complete.',
+                batchId: runningRes.rows[0].batch_id
+            });
+        }
+
+        // Trigger the scan asynchronously (don't await — return immediately to the client)
+        if (typeof global.runDeduplicationScan === 'function') {
+            global.runDeduplicationScan().catch(err =>
+                console.error('[TriggerScan] Scan failed:', err.message)
+            );
+        }
+
+        res.json({ success: true, message: 'Deduplication scan started in background.' });
+    } catch (error) {
+        console.error('Error triggering scan:', error);
+        res.status(500).json({ success: false, message: 'Failed to trigger scan' });
     }
 });
 
