@@ -96,7 +96,7 @@ async function isWorkerEnabled() {
 
 async function processNextPart() {
     const enabled = await isWorkerEnabled();
-    if (!enabled) return false;
+    if (!enabled) return { processed: false, aiCallsMade: 0 };
 
     // 1. Get next part
     const res = await pool.query(`
@@ -106,17 +106,19 @@ async function processNextPart() {
         LIMIT 1 FOR UPDATE SKIP LOCKED
     `);
 
-    if (res.rowCount === 0) return false;
+    if (res.rowCount === 0) return { processed: false, aiCallsMade: 0 };
     const partId = res.rows[0].part_id;
 
     await pool.query(`UPDATE public.dedupe_scan_queue SET status = 'processing' WHERE part_id = $1`, [partId]);
+
+    let aiCallsMade = 0;
 
     try {
         const sourcePart = await getPartById(partId);
         if (!sourcePart) {
             // Part was deleted or merged
             await pool.query(`DELETE FROM public.dedupe_scan_queue WHERE part_id = $1`, [partId]);
-            return true;
+            return { processed: true, aiCallsMade: 0 };
         }
 
         const candidates = await findCandidates(sourcePart);
@@ -149,6 +151,7 @@ async function processNextPart() {
                 console.log(`[DedupeWorker] Verifying edge ${pairId} (Score: ${score})...`);
                 
                 try {
+                    aiCallsMade++;
                     const aiResult = await llmRouter.verifyDuplicate(sourcePart, targetPart);
                     const isDuplicate = typeof aiResult === 'object' ? aiResult.isDuplicate : aiResult;
                     const aiReason = typeof aiResult === 'object' ? aiResult.reason : null;
@@ -183,7 +186,7 @@ async function processNextPart() {
         await pool.query(`DELETE FROM public.dedupe_scan_queue WHERE part_id = $1`, [partId]);
     }
 
-    return true;
+    return { processed: true, aiCallsMade };
 }
 
 async function startWorker() {
@@ -191,13 +194,15 @@ async function startWorker() {
     
     while (true) {
         try {
-            const processed = await processNextPart();
+            const { processed, aiCallsMade } = await processNextPart();
             if (!processed) {
                 // Queue is empty, wait 60 seconds
                 await delay(60000);
             } else {
-                // Wait 1 second before next part
-                await delay(1000);
+                // If we didn't make any AI calls, process the next item immediately (0 delay)
+                // If we did make AI calls, the 10s delay was already handled inside the function, 
+                // but we add a tiny 100ms breather to prevent CPU spinning.
+                await delay(100);
             }
         } catch (e) {
             console.error('[DedupeWorker] Worker loop error:', e);
