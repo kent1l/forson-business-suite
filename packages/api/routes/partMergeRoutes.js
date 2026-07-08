@@ -16,6 +16,52 @@ router.use((req, res, next) => {
 const duplicateFinder = new DuplicateFinder(db);
 const partMergeService = new PartMergeService(db);
 
+// Route: GET /parts/merge/duplicates/stream
+// Get potential duplicate parts with live SSE progress tracking
+router.get('/parts/merge/duplicates/stream', protect, hasPermission('parts:merge'), async (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const sendEvent = (type, data) => {
+        res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    try {
+        const {
+            limit = 50,
+            excludeMerged = true,
+            minScore = 0.6
+        } = req.query;
+
+        const result = await duplicateFinder.findOptimizedDuplicateGroups({
+            minScore: parseFloat(minScore),
+            limit: parseInt(limit),
+            excludeMerged: excludeMerged === 'true',
+            progressCallback: (progress) => {
+                sendEvent('progress', progress);
+            }
+        });
+
+        sendEvent('complete', {
+            groups: result.groups,
+            aiStats: result.stats,
+            metadata: {
+                total: result.groups.length,
+                algo: 'v2',
+                minScore: parseFloat(minScore),
+                limit: parseInt(limit),
+                excludeMerged: excludeMerged === 'true'
+            }
+        });
+        res.end();
+    } catch (error) {
+        console.error('Error finding duplicates stream:', error);
+        sendEvent('error', { message: 'Internal Server Error' });
+        res.end();
+    }
+});
+
 // Route: GET /api/parts/merge/duplicates
 // Get potential duplicate parts grouped by similarity
 router.get('/parts/merge/duplicates', protect, hasPermission('parts:merge'), async (req, res) => {
@@ -29,12 +75,15 @@ router.get('/parts/merge/duplicates', protect, hasPermission('parts:merge'), asy
         } = req.query;
 
         let groups;
+        let aiStats = null;
         if (algo === 'v2') {
-            groups = await duplicateFinder.findOptimizedDuplicateGroups({
+            const result = await duplicateFinder.findOptimizedDuplicateGroups({
                 minScore: parseFloat(minScore),
                 limit: parseInt(limit),
                 excludeMerged: excludeMerged === 'true'
             });
+            groups = result.groups;
+            aiStats = result.stats;
         } else {
             groups = await duplicateFinder.findDuplicateGroups({
                 minSimilarity: parseFloat(minSimilarity),
@@ -46,6 +95,7 @@ router.get('/parts/merge/duplicates', protect, hasPermission('parts:merge'), asy
         res.json({
             success: true,
             groups,
+            aiStats,
             metadata: {
                 total: groups.length,
                 algo,
@@ -290,6 +340,31 @@ router.get('/parts/merge/:id/details-for-merge', protect, hasPermission('parts:m
             message: 'Failed to get part details',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
+    }
+});
+
+// Route: POST /api/parts/merge/exclude
+// Excludes two parts from future duplicate scans
+router.post('/parts/merge/exclude', protect, hasPermission('parts:merge'), async (req, res) => {
+    const { partId1, partId2, reason = 'Manually excluded by user' } = req.body;
+    if (!partId1 || !partId2) {
+        return res.status(400).json({ message: 'Missing part IDs' });
+    }
+    
+    const id1 = Math.min(parseInt(partId1), parseInt(partId2));
+    const id2 = Math.max(parseInt(partId1), parseInt(partId2));
+
+    try {
+        await req.db.query(`
+            INSERT INTO part_exclusion (part_id_1, part_id_2, source, reason)
+            VALUES ($1, $2, 'USER', $3)
+            ON CONFLICT (part_id_1, part_id_2) DO UPDATE
+            SET source = 'USER', reason = $3
+        `, [id1, id2, reason]);
+        res.json({ success: true, message: 'Parts successfully excluded from duplicate scans.' });
+    } catch (error) {
+        console.error('Failed to insert exclusion:', error);
+        res.status(500).json({ message: 'Failed to exclude parts' });
     }
 });
 

@@ -4,38 +4,81 @@ import toast from 'react-hot-toast';
 import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
 
-const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThreshold, useOptimized }) => {
+const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThreshold }) => {
     const [duplicateGroups, setDuplicateGroups] = useState([]);
+    const [aiStats, setAiStats] = useState(null);
+    const [progress, setProgress] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [isCompact, setIsCompact] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [expandedGroups, setExpandedGroups] = useState({});
 
     const fetchDuplicateGroups = useCallback(async () => {
         setLoading(true);
         setError(null);
+        setProgress(null);
         
         try {
-            const params = {
-                excludeMerged: true
-            };
-            if (useOptimized) {
-                params.algo = 'v2';
-                params.minScore = similarityThreshold;
-            } else {
-                params.minSimilarity = similarityThreshold;
+            const sessionData = JSON.parse(localStorage.getItem('userSession'));
+            const token = sessionData?.token || '';
+            const query = new URLSearchParams({
+                excludeMerged: 'true',
+                algo: 'v2',
+                minScore: similarityThreshold
+            }).toString();
+
+            const response = await fetch(`/api/parts/merge/duplicates/stream?${query}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (!response.ok) throw new Error('Failed to fetch stream');
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n\n');
+                
+                for (let i = 0; i < lines.length - 1; i++) {
+                    const eventText = lines[i];
+                    if (!eventText.trim()) continue;
+
+                    const eventMatch = eventText.match(/event: (.*?)\n/);
+                    const dataMatch = eventText.match(/data: (.*)/);
+                    
+                    if (eventMatch && dataMatch) {
+                        const eventType = eventMatch[1];
+                        const eventData = JSON.parse(dataMatch[1]);
+                        
+                        if (eventType === 'progress') {
+                            setProgress(eventData);
+                        } else if (eventType === 'complete') {
+                            setDuplicateGroups(eventData.groups || []);
+                            setAiStats(eventData.aiStats || null);
+                            setLoading(false);
+                            setProgress(null);
+                        } else if (eventType === 'error') {
+                            throw new Error(eventData.message || 'Stream error');
+                        }
+                    }
+                }
+                buffer = lines[lines.length - 1]; 
             }
-            const response = await api.get('/parts/merge/duplicates', { params });
-            
-            setDuplicateGroups(response.data.groups || []);
         } catch (err) {
             console.error('Error fetching duplicate groups:', err);
             setError('Failed to fetch duplicate groups. Please try again.');
             toast.error('Failed to load duplicate groups');
-        } finally {
             setLoading(false);
         }
-    }, [similarityThreshold, useOptimized]);
+    }, [similarityThreshold]);
 
     useEffect(() => {
         fetchDuplicateGroups();
@@ -76,6 +119,50 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
         }));
     };
 
+    const excludeGroup = async (group) => {
+        if (group.parts.length < 2) return;
+        // Exclude the first two parts (most common use case)
+        try {
+            await api.post('/parts/merge/exclude', {
+                partId1: group.parts[0].part_id,
+                partId2: group.parts[1].part_id
+            });
+            toast.success('Parts excluded from future scans');
+            setDuplicateGroups(prev => prev.filter(g => g.groupId !== group.groupId));
+            onSelectionChange(selectedGroups.filter(g => g.groupId !== group.groupId));
+        } catch (err) {
+            toast.error('Failed to exclude parts');
+        }
+    };
+
+    const renderPipelineTrace = (reasons = [], ai_model = '') => {
+        const hasMath = reasons.includes('high_text_similarity') || reasons.includes('numeric_tokens_match') || reasons.includes('same_brand_and_group');
+        const hasFuzzy = reasons.includes('meilisearch_fuzzy_match');
+        const hasExact = reasons.includes('exact_internal_sku') || reasons.includes('exact_part_number');
+        const hasAI = reasons.includes('ai_verified');
+        const hasObvious = reasons.includes('obvious_match');
+        const hasTransitive = reasons.includes('transitive_match');
+
+        const steps = [];
+        if (hasExact) steps.push(<span key="exact" className="px-2 py-0.5 rounded whitespace-nowrap bg-green-100 text-green-800 border border-green-200">Exact Match</span>);
+        if (hasFuzzy) steps.push(<span key="fuzzy" className="px-2 py-0.5 rounded whitespace-nowrap bg-blue-100 text-blue-800 border border-blue-200">Fuzzy Search</span>);
+        if (hasMath) steps.push(<span key="math" className="px-2 py-0.5 rounded whitespace-nowrap bg-purple-100 text-purple-800 border border-purple-200">Math Gate</span>);
+        if (hasObvious) steps.push(<span key="obvious" className="px-2 py-0.5 rounded whitespace-nowrap bg-gradient-to-r from-emerald-100 to-emerald-200 text-emerald-800 border border-emerald-300 shadow-sm">⚡ Obvious Match (AI Skipped)</span>);
+        if (hasTransitive) steps.push(<span key="transitive" className="px-2 py-0.5 rounded whitespace-nowrap bg-gradient-to-r from-indigo-100 to-indigo-200 text-indigo-800 border border-indigo-300 shadow-sm">🔗 Transitive Link (AI Skipped)</span>);
+        if (hasAI) steps.push(<span key="ai" className="px-2 py-0.5 rounded whitespace-nowrap bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-800 border border-yellow-300 shadow-sm">🤖 AI Verified {ai_model ? `(${ai_model})` : ''}</span>);
+
+        return (
+            <div className="flex items-center space-x-1 mt-1 text-xs font-medium overflow-x-auto pb-1">
+                {steps.map((step, index) => (
+                    <span key={index} className="flex items-center space-x-1">
+                        {step}
+                        {index < steps.length - 1 && <span className="text-gray-300">→</span>}
+                    </span>
+                ))}
+            </div>
+        );
+    };
+
     const filteredGroups = duplicateGroups.filter(group => {
         if (!searchTerm) return true;
         
@@ -96,9 +183,31 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center py-12">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                <span className="ml-3 text-gray-600">Finding duplicate parts...</span>
+            <div className="flex flex-col items-center justify-center py-16 bg-white border border-gray-200 rounded-lg shadow-sm">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-4"></div>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Analyzing Parts Catalog</h3>
+                <span className="text-sm text-gray-600 mb-6 font-medium">
+                    {progress?.message || 'Starting deduplication pipeline...'}
+                </span>
+                
+                <div className="w-full max-w-md bg-gray-100 rounded-full h-2.5 mb-2 overflow-hidden shadow-inner">
+                    {progress?.stage === 'deterministic' && <div className="bg-blue-500 h-2.5 rounded-full w-1/4 transition-all duration-500"></div>}
+                    {progress?.stage === 'semantic' && <div className="bg-blue-500 h-2.5 rounded-full w-2/4 transition-all duration-500"></div>}
+                    {progress?.stage === 'scoring' && <div className="bg-blue-500 h-2.5 rounded-full w-3/4 transition-all duration-500"></div>}
+                    {progress?.stage === 'ai_verification' && (
+                        <div 
+                            className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+                            style={{ width: `${75 + (progress.total > 0 ? (progress.responded / progress.total) * 25 : 0)}%` }}
+                        ></div>
+                    )}
+                </div>
+                
+                {progress?.stage === 'ai_verification' && progress.total > 0 && (
+                    <div className="text-sm text-yellow-700 font-medium bg-yellow-50 px-4 py-1.5 rounded-full border border-yellow-200 mt-2 flex items-center gap-2">
+                        <span>🤖 AI Verification:</span>
+                        <span>{progress.responded} of {progress.total} pairs processed</span>
+                    </div>
+                )}
             </div>
         );
     }
@@ -145,11 +254,45 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                         </div>
                     </div>
                     
-                    <div className="w-full sm:w-auto flex items-end">
+                    <div className="w-full sm:w-auto flex items-end space-x-2 flex-wrap gap-y-2">
+                        <button
+                            onClick={() => {
+                                if (selectedGroups.length === filteredGroups.length && filteredGroups.length > 0) {
+                                    onSelectionChange([]);
+                                } else {
+                                    onSelectionChange([...filteredGroups]);
+                                }
+                            }}
+                            className="inline-flex items-center px-3 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium shadow-sm transition-colors"
+                        >
+                            {selectedGroups.length === filteredGroups.length && filteredGroups.length > 0 ? 'Deselect All' : 'Select All'}
+                        </button>
+                        <button
+                            onClick={() => {
+                                const aiVerifiedGroups = duplicateGroups.filter(g => g.reasons && g.reasons.includes('ai_verified'));
+                                onSelectionChange(aiVerifiedGroups);
+                                toast.success(`Selected ${aiVerifiedGroups.length} AI-verified groups`);
+                            }}
+                            title="Quickly select all duplicates that were verified by AI"
+                            className="inline-flex items-center px-3 py-2 bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-800 border border-yellow-300 rounded-lg hover:from-yellow-200 hover:to-yellow-300 text-sm font-medium shadow-sm transition-all"
+                        >
+                            🤖 AI-Verified Only
+                        </button>
+                        <button
+                            onClick={() => {
+                                const highConfidenceGroups = duplicateGroups.filter(g => g.confidence === 'Very High' || g.confidence === 'High');
+                                onSelectionChange(highConfidenceGroups);
+                                toast.success(`Selected ${highConfidenceGroups.length} high-confidence groups`);
+                            }}
+                            title="Quickly select all duplicates with High or Very High math scores"
+                            className="inline-flex items-center px-3 py-2 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 text-sm font-medium shadow-sm transition-colors"
+                        >
+                            ✓ Select High Confidence
+                        </button>
                         <button
                             onClick={fetchDuplicateGroups}
                             title="Refresh duplicate groups"
-                            className="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                            className="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm shadow-sm transition-colors"
                         >
                             Refresh
                         </button>
@@ -164,9 +307,28 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                         <h3 className="text-sm font-medium text-blue-900">
                             Found {filteredGroups.length} duplicate group{filteredGroups.length !== 1 ? 's' : ''}
                         </h3>
-                        <p className="text-sm text-blue-700">
-                            {selectedGroups.length} group{selectedGroups.length !== 1 ? 's' : ''} selected for merge
-                        </p>
+                        <div className="text-sm text-gray-500 flex items-center gap-4">
+                            <span>
+                                Found {duplicateGroups.length} potential duplicate groups
+                                {selectedGroups.length > 0 && ` (${selectedGroups.length} selected)`}
+                            </span>
+                            {aiStats && (
+                                <span className="flex items-center ml-4 pl-4 border-l border-gray-300 text-yellow-700 bg-yellow-50 px-2 py-0.5 rounded-full text-xs font-medium border border-yellow-200">
+                                    🤖 AI scanned {aiStats.aiRequests} pair{aiStats.aiRequests !== 1 ? 's' : ''}
+                                    {aiStats.transitiveSkipped > 0 && ` (${aiStats.transitiveSkipped} skipped via transitive logic)`}, 
+                                    found {aiStats.aiDuplicatesFound} duplicate{aiStats.aiDuplicatesFound !== 1 ? 's' : ''}
+                                </span>
+                            )}
+                            <label className="flex items-center cursor-pointer ml-4 border-l pl-4 border-gray-300">
+                                <input
+                                    type="checkbox"
+                                    checked={isCompact}
+                                    onChange={(e) => setIsCompact(e.target.checked)}
+                                    className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                />
+                                Compact View
+                            </label>
+                        </div>
                     </div>
                     {selectedGroups.length > 0 && (
                         <div className="text-sm text-blue-700">
@@ -198,10 +360,44 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                 </div>
             ) : (
                 <div className="space-y-4">
-                    {filteredGroups.map((group) => {
-                        const isSelected = isGroupSelected(group.groupId);
+                    {filteredGroups.map(group => {
+                        const isSelected = selectedGroups.some(g => g.groupId === group.groupId);
                         const isExpanded = expandedGroups[group.groupId];
                         
+                        if (isCompact) {
+                            return (
+                                <div 
+                                    key={group.groupId} 
+                                    onClick={() => handleGroupSelection(group, !isSelected)}
+                                    className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-colors ${
+                                        isSelected ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-4 flex-1">
+                                        <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onChange={() => {}}
+                                            className="h-4 w-4 text-blue-600 rounded border-gray-300"
+                                        />
+                                        <div className="text-sm font-medium w-32">
+                                            {group.confidence} ({(group.score * 100).toFixed(1)}%)
+                                        </div>
+                                        <div className="text-sm text-gray-600 flex-1 truncate">
+                                            {group.parts.map(p => p.display_name || p.internal_sku).join(' ⚡ ')}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            {group.reasons.map((r, i) => (
+                                                <span key={i} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">
+                                                    {r.replace('_', ' ')}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        }
+
                         return (
                             <div
                                 key={group.groupId}
@@ -223,20 +419,11 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                                                 className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                                             />
                                             <div className="flex-1">
-                                                <div className="flex items-center space-x-2 mb-2">
-                                                    <h3 className="text-sm font-medium text-gray-900">
-                                                        {group.confidence ? `Confidence: ${group.confidence}` : `Similarity: ${(group.score * 100).toFixed(1)}%`}
+                                                <div className="flex flex-col mb-2">
+                                                    <h3 className="text-sm font-medium text-gray-900 mb-1">
+                                                        Confidence: {group.confidence} <span className="text-gray-500 font-normal">({(group.score * 100).toFixed(1)}% Math Score)</span>
                                                     </h3>
-                                                    <div className="flex flex-wrap gap-1">
-                                                        {group.reasons?.map((reason, index) => (
-                                                            <span
-                                                                key={index}
-                                                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
-                                                            >
-                                                                {reason}
-                                                            </span>
-                                                        ))}
-                                                    </div>
+                                                    {renderPipelineTrace(group.reasons, group.ai_model)}
                                                 </div>
                                                 
                                                 <div className="text-sm text-gray-600 mb-2">
@@ -246,7 +433,7 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
 
                                                 {/* Quick preview of parts */}
                                                 <div className="space-y-1">
-                                                    {group.parts.slice(0, isExpanded ? undefined : 2).map((part) => (
+                                                    {group.parts.slice(0, expandedGroups[group.groupId] ? undefined : 2).map((part) => (
                                                         <div key={part.part_id} className="text-xs text-gray-700">
                                                             <span className="font-mono">{part.internal_sku}</span> - 
                                                             <span className="ml-1">{part.display_name || 'Unnamed Part'}</span>
@@ -258,7 +445,7 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                                                         </div>
                                                     ))}
                                                     
-                                                    {!isExpanded && group.parts.length > 2 && (
+                                                    {!expandedGroups[group.groupId] && group.parts.length > 2 && (
                                                         <div className="text-xs text-gray-500">
                                                             +{group.parts.length - 2} more part{group.parts.length - 2 !== 1 ? 's' : ''}
                                                         </div>
@@ -267,20 +454,41 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                                             </div>
                                         </div>
 
-                                        <button
-                                            onClick={() => toggleGroupExpansion(group.groupId)}
-                                            className="text-gray-400 hover:text-gray-600 ml-2"
-                                        >
-                                            <Icon 
-                                                path={isExpanded ? ICONS.chevronUp : ICONS.chevronDown} 
-                                                className="h-5 w-5" 
-                                            />
-                                        </button>
+                                        <div className="flex items-center space-x-3 ml-4">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    excludeGroup(group);
+                                                }}
+                                                className="text-xs px-3 py-1 bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 rounded-md transition-colors font-medium"
+                                                title="Mark as NOT duplicates to exclude from future scans"
+                                            >
+                                                ⛔ Exclude
+                                            </button>
+                                            <button
+                                                onClick={() => toggleGroupExpansion(group.groupId)}
+                                                className="text-gray-400 hover:text-gray-600 bg-gray-50 hover:bg-gray-100 p-1 rounded-full transition-colors"
+                                            >
+                                                <Icon 
+                                                    path={isExpanded ? ICONS.chevronUp : ICONS.chevronDown} 
+                                                    className="h-5 w-5" 
+                                                />
+                                            </button>
+                                        </div>
                                     </div>
 
-                                    {/* Expanded details */}
                                     {isExpanded && (
                                         <div className="mt-4 pt-4 border-t border-gray-200">
+                                            {group.ai_reasons && group.ai_reasons.length > 0 && (
+                                                <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800 shadow-sm">
+                                                    <strong className="flex items-center gap-1 mb-1">🤖 AI Assessment Note:</strong>
+                                                    <ul className="list-disc pl-5 space-y-1">
+                                                        {group.ai_reasons.map((reason, idx) => (
+                                                            <li key={idx} className="italic text-xs">{reason}</li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            )}
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                                                 {group.parts.map((part) => (
                                                     <div

@@ -1,5 +1,5 @@
 const { meiliClient } = require('../meilisearch');
-
+const llmRouter = require('./llmRouter');
 /**
  * Service for finding potential duplicate parts using Cascade Record Linkage
  * Phase 1: Deterministic Blocking (SQL)
@@ -30,8 +30,65 @@ class DuplicateFinder {
 
     static extractNumericTokens(text) {
         if (!text) return [];
-        const matches = text.match(/\b\d+\b/g) || [];
-        return matches.map(m => parseInt(m)).filter(n => !isNaN(n));
+        // Matches numbers with optional decimals and optional alphabetical suffixes (e.g., 12.5, 12V, 10kg)
+        const matches = text.match(/\d+(?:\.\d+)?[a-zA-Z]*/g) || [];
+        return matches;
+    }
+
+    static calculateDiceCoefficient(str1, str2) {
+        if (!str1 || !str2) return 0;
+        if (str1 === str2) return 1;
+        const getBigrams = str => {
+            const map = new Map();
+            for (let i = 0; i < str.length - 1; i++) {
+                const bg = str.substring(i, i + 2);
+                map.set(bg, (map.get(bg) || 0) + 1);
+            }
+            return map;
+        };
+        const bg1 = getBigrams(str1);
+        const bg2 = getBigrams(str2);
+        let intersection = 0;
+        for (const [bg, count1] of bg1.entries()) {
+            const count2 = bg2.get(bg) || 0;
+            intersection += Math.min(count1, count2);
+        }
+        const totalSize = Math.max(1, (str1.length - 1) + (str2.length - 1));
+        return (2.0 * intersection) / totalSize;
+    }
+
+    static calculateJaroWinkler(s1, s2) {
+        if (s1 === s2) return 1.0;
+        if (!s1 || !s2) return 0.0;
+        const m = s1.length, n = s2.length;
+        const matchWindow = Math.floor(Math.max(m, n) / 2) - 1;
+        let matches = 0, transpositions = 0;
+        const s1Matches = new Array(m).fill(false), s2Matches = new Array(n).fill(false);
+        for (let i = 0; i < m; i++) {
+            const start = Math.max(0, i - matchWindow), end = Math.min(n - 1, i + matchWindow);
+            for (let j = start; j <= end; j++) {
+                if (!s2Matches[j] && s1[i] === s2[j]) {
+                    s1Matches[i] = true; s2Matches[j] = true; matches++; break;
+                }
+            }
+        }
+        if (matches === 0) return 0.0;
+        let k = 0;
+        for (let i = 0; i < m; i++) {
+            if (s1Matches[i]) {
+                while (!s2Matches[k]) k++;
+                if (s1[i] !== s2[k]) transpositions++;
+                k++;
+            }
+        }
+        transpositions /= 2.0;
+        const jaro = ((matches / m) + (matches / n) + ((matches - transpositions) / matches)) / 3.0;
+        let prefix = 0;
+        const maxPrefix = Math.min(4, Math.min(m, n));
+        for (let i = 0; i < maxPrefix; i++) {
+            if (s1[i] === s2[i]) prefix++; else break;
+        }
+        return jaro + (prefix * 0.1 * (1.0 - jaro));
     }
 
     /**
@@ -79,6 +136,18 @@ class DuplicateFinder {
             reasons.push('different_brands_disqualification');
         }
 
+        // Strict Color Disqualification Rule:
+        const colors = ['black', 'white', 'yellow', 'orange', 'green', 'blue', 'brown', 'red', 'gray', 'grey'];
+        const getColor = (text) => colors.find(c => new RegExp(`\\b${c}\\b`, 'i').test(text));
+        
+        const color1 = getColor(detail1 + ' ' + name1);
+        const color2 = getColor(detail2 + ' ' + name2);
+        
+        if (color1 && color2 && color1 !== color2) {
+            score = -1.0;
+            reasons.push('different_colors_disqualification');
+        }
+
         // Massive Penalty/Disqualification: Candidates have *different*, explicitly defined part numbers
         // Only penalize if BOTH have defined part numbers and they DO NOT share any.
         if (pns1.length > 0 && pns2.length > 0 && sharedPns.length === 0) {
@@ -92,23 +161,56 @@ class DuplicateFinder {
         }
 
         // Boost: Candidates share the same `brand` and `group`. (+0.30)
+        // Skip generic placeholder brands to prevent false positive clustering
+        const genericBrands = ['no brand', 'none', 'n/a', 'generic'];
         if (normalizedBrand1 && normalizedBrand2 && part1.group_name && part2.group_name) {
             if (normalizedBrand1 === normalizedBrand2 && part1.group_name === part2.group_name) {
-                score += 0.30;
-                reasons.push('same_brand_and_group');
+                if (!genericBrands.includes(normalizedBrand1)) {
+                    score += 0.30;
+                    reasons.push('same_brand_and_group');
+                }
             }
         }
 
         // Boost: Extracted numeric tokens match exactly (+0.20)
         const nums1 = this.extractNumericTokens(detail1 + ' ' + name1);
         const nums2 = this.extractNumericTokens(detail2 + ' ' + name2);
+        let hasNumericMismatch = false;
         if (nums1.length > 0 && nums2.length > 0) {
             const sortedNums1 = [...nums1].sort().join(',');
             const sortedNums2 = [...nums2].sort().join(',');
             if (sortedNums1 === sortedNums2) {
                 score += 0.20;
                 reasons.push('numeric_tokens_match');
+            } else {
+                hasNumericMismatch = true;
+                score -= 0.10;
+                reasons.push('numeric_tokens_mismatch');
             }
+        }
+
+        // Mathematical Algorithmic Gate:
+        // Compute structural text overlap (Sørensen-Dice) and typo-resistant part number matching (Jaro-Winkler)
+        const diceSimilarity = this.calculateDiceCoefficient(name1 + ' ' + detail1, name2 + ' ' + detail2);
+        const jaroWinklerPartNum = (pns1.length > 0 && pns2.length > 0) 
+            ? Math.max(...pns1.map(pn1 => Math.max(...pns2.map(pn2 => this.calculateJaroWinkler(pn1, pn2)))))
+            : 0;
+
+        // Strict Algorithmic Guardrail:
+        // If descriptions share less than 40% bigram structure AND their part numbers aren't extremely close matches, discard instantly.
+        if (diceSimilarity < 0.40 && jaroWinklerPartNum < 0.85) {
+            score = -1.0;
+            reasons.push('low_mathematical_similarity_disqualification');
+        } else if (diceSimilarity > 0.80) {
+            // Apply a slight confidence boost if textual structure is extremely identical
+            score += 0.15;
+            reasons.push('high_text_similarity');
+        }
+
+        // To safely skip AI, we demand both a high final score AND a solid text structure overlap,
+        // and crucially, we FORBID skipping the AI if there is ANY mismatch in numeric tokens (like 12V vs 24V).
+        if (score >= 0.95 && diceSimilarity > 0.75 && !hasNumericMismatch) {
+            reasons.push('obvious_match');
         }
 
         return { score: Math.max(-1.0, Math.min(score, 1.0)), reasons };
@@ -134,13 +236,21 @@ class DuplicateFinder {
     }
 
     async findOptimizedDuplicateGroups(options = {}) {
-        const { query = '', limit = 50 } = options;
+        const { query = '', limit = 50, progressCallback = null } = options;
         const minScore = options.minScore !== undefined ? options.minScore : (options.minSimilarity !== undefined ? options.minSimilarity : 0.50);
+
+        const reportProgress = (stage, message, details = {}) => {
+            if (progressCallback) progressCallback({ stage, message, ...details });
+        };
 
         const adjacency = new Map();
         const partById = new Map();
         const edgeDetails = new Map();
         const processedPairs = new Set();
+        
+        // Fetch all user exclusions
+        const exclusionsRes = await this.db.query('SELECT part_id_1, part_id_2 FROM part_exclusion');
+        const exclusions = new Set(exclusionsRes.rows.map(r => `${r.part_id_1}_${r.part_id_2}`));
         
         // Helper to generate a unique pair ID regardless of order
         const getPairId = (id1, id2) => {
@@ -153,6 +263,7 @@ class DuplicateFinder {
             const part2Id = parseInt(pair.part2.part_id);
             const pairId = getPairId(part1Id, part2Id);
 
+            if (exclusions.has(pairId)) return;
             if (processedPairs.has(pairId)) return;
             processedPairs.add(pairId);
 
@@ -175,6 +286,7 @@ class DuplicateFinder {
 
         // Phase 1: Deterministic Blocking (The Fast Net)
         // Group items that share exact, distinct identifiers (internal_sku or part_number)
+        reportProgress('deterministic', 'Phase 1: Finding exact matches (SQL)...');
         const deterministicPairs = await this.findDeterministicPairs(query, limit);
         
         for (const pair of deterministicPairs) {
@@ -185,6 +297,7 @@ class DuplicateFinder {
 
         // Phase 2: Semantic/Fuzzy Blocking (The Wide Net) using Meilisearch
         try {
+            reportProgress('semantic', 'Phase 2: Fuzzy searching for similar parts (Meilisearch)...');
             const fuzzyPairs = await this.findFuzzyMeilisearchPairs(query, limit);
 
             for (const pair of fuzzyPairs) {
@@ -194,6 +307,138 @@ class DuplicateFinder {
             }
         } catch (error) {
             console.error('Meilisearch fuzzy blocking failed, falling back/skipping:', error);
+        }
+
+        // Phase 3b: Strict Trim before AI Verification to avoid token waste
+        reportProgress('scoring', 'Phase 3: Calculating similarity scores and applying business rules...');
+        if (edgeDetails.size > limit) {
+            const sortedEdges = Array.from(edgeDetails.entries()).sort((a, b) => b[1].score - a[1].score);
+            const topEdges = sortedEdges.slice(0, limit);
+            edgeDetails.clear();
+            adjacency.clear(); 
+            for (const [edgeId, edge] of topEdges) {
+                edgeDetails.set(edgeId, edge);
+                const [aStr, bStr] = edgeId.split('_');
+                const a = parseInt(aStr);
+                const b = parseInt(bStr);
+                if (!adjacency.has(a)) adjacency.set(a, new Set());
+                if (!adjacency.has(b)) adjacency.set(b, new Set());
+                adjacency.get(a).add(b);
+                adjacency.get(b).add(a);
+            }
+        }
+
+        // Phase 4: LLM Verification (AI Guardrail) with Transitive Optimization
+        const edges = Array.from(edgeDetails.entries()).sort((a, b) => b[1].score - a[1].score);
+        
+        const uf = {
+            parent: new Map(),
+            find(i) {
+                if (!this.parent.has(i)) this.parent.set(i, i);
+                if (this.parent.get(i) === i) return i;
+                const p = this.find(this.parent.get(i));
+                this.parent.set(i, p);
+                return p;
+            },
+            union(i, j) {
+                const rootI = this.find(i);
+                const rootJ = this.find(j);
+                if (rootI !== rootJ) {
+                    this.parent.set(rootI, rootJ);
+                    return true;
+                }
+                return false;
+            }
+        };
+
+        // Pre-union obvious matches to establish baseline components
+        for (const [edgeId, edge] of edges) {
+            if (edge.reasons && edge.reasons.includes('obvious_match')) {
+                const [aStr, bStr] = edgeId.split('_');
+                uf.union(parseInt(aStr), parseInt(bStr));
+            }
+        }
+
+        let aiRequests = 0;
+        let aiDuplicatesFound = 0;
+        let aiResponded = 0;
+        let transitiveSkipped = 0;
+        
+        let aiEdgesToProcess = 0;
+        for (const [edgeId, edge] of edges) {
+            if (!edge.reasons || !edge.reasons.includes('obvious_match')) {
+                aiEdgesToProcess++;
+            }
+        }
+        
+        const batchSize = 5;
+        reportProgress('ai_verification', 'Phase 4: LLM Verification (AI Guardrail)...', { sent: aiRequests, responded: aiResponded, total: aiEdgesToProcess });
+
+        for (let i = 0; i < edges.length; i += batchSize) {
+            const batch = edges.slice(i, i + batchSize);
+            
+            await Promise.all(batch.map(async ([edgeId, edge]) => {
+                const [aStr, bStr] = edgeId.split('_');
+                const a = parseInt(aStr);
+                const b = parseInt(bStr);
+                
+                try {
+                    if (edge.reasons && edge.reasons.includes('obvious_match')) {
+                        return; // Already unioned
+                    }
+                    
+                    // Optimization: Skip AI if already in the same component via transitive links
+                    if (uf.find(a) === uf.find(b)) {
+                        edge.reasons.push('transitive_match');
+                        aiResponded++; // Mark as skipped/handled
+                        transitiveSkipped++;
+                        reportProgress('ai_verification', 'Waiting for AI responses...', { sent: aiRequests, responded: aiResponded, total: aiEdgesToProcess });
+                        return;
+                    }
+
+                    const part1 = partById.get(a);
+                    const part2 = partById.get(b);
+                    aiRequests++;
+                    reportProgress('ai_verification', 'Waiting for AI responses...', { sent: aiRequests, responded: aiResponded, total: aiEdgesToProcess });
+                    const aiResult = await llmRouter.verifyDuplicate(part1, part2);
+                    aiResponded++;
+                    reportProgress('ai_verification', 'Waiting for AI responses...', { sent: aiRequests, responded: aiResponded, total: aiEdgesToProcess });
+                    
+                    // Handle both boolean (old) and object (new) returns safely
+                    const isDuplicate = typeof aiResult === 'object' ? aiResult.isDuplicate : aiResult;
+                    const isSkipped = typeof aiResult === 'object' ? aiResult.skipped : false;
+                    const aiReason = typeof aiResult === 'object' ? aiResult.reason : null;
+                    const aiModel = typeof aiResult === 'object' ? aiResult.model : null;
+
+                    if (!isDuplicate) {
+                        edgeDetails.delete(edgeId);
+                        adjacency.get(a).delete(b);
+                        adjacency.get(b).delete(a);
+                        
+                        // Cache the AI rejection to prevent scanning this false positive again
+                        const reasonText = aiReason ? `AI (${aiModel || 'LLM'}): ${aiReason}` : 'AI determined parts are not duplicates';
+                        this.db.query(`
+                            INSERT INTO part_exclusion (part_id_1, part_id_2, source, reason)
+                            VALUES ($1, $2, 'AI', $3)
+                            ON CONFLICT (part_id_1, part_id_2) DO UPDATE 
+                            SET source = 'AI', reason = $3
+                        `, [Math.min(a, b), Math.max(a, b), reasonText]).catch(err => {
+                            console.error('Failed to cache AI exclusion:', err);
+                        });
+                    } else {
+                        uf.union(a, b);
+                        if (!isSkipped) {
+                            aiDuplicatesFound++;
+                            edge.reasons.push('ai_verified');
+                            if (aiReason) edge.ai_reason = aiReason;
+                            if (aiModel) edge.ai_model = aiModel;
+                        }
+                    }
+                } catch (error) {
+                    console.error('LLM verification failed for edge, keeping it by default:', error);
+                    uf.union(a, b);
+                }
+            }));
         }
 
         // Extract connected components (O(V+E))
@@ -228,6 +473,8 @@ class DuplicateFinder {
 
             const componentScores = [];
             const componentReasons = new Set();
+            const componentAiReasons = new Set();
+            let aiModelUsed = null;
 
             for (const edgeId of edgeDetails.keys()) {
                 const [aStr, bStr] = edgeId.split('_');
@@ -238,6 +485,8 @@ class DuplicateFinder {
                 const edge = edgeDetails.get(edgeId);
                 componentScores.push(edge.score);
                 for (const reason of edge.reasons) componentReasons.add(reason);
+                if (edge.ai_reason) componentAiReasons.add(edge.ai_reason);
+                if (edge.ai_model) aiModelUsed = edge.ai_model;
             }
 
             if (componentScores.length === 0) continue;
@@ -250,11 +499,16 @@ class DuplicateFinder {
                 score: averageScore,
                 confidence: this.constructor.getConfidenceLevel(averageScore),
                 reasons: Array.from(componentReasons),
+                ai_reasons: Array.from(componentAiReasons),
+                ai_model: aiModelUsed,
                 parts: componentParts
             });
         }
 
-        return duplicateGroups.sort((a, b) => b.score - a.score).slice(0, limit);
+        return {
+            groups: duplicateGroups.sort((a, b) => b.score - a.score).slice(0, limit),
+            stats: { aiRequests, aiDuplicatesFound, transitiveSkipped }
+        };
     }
 
     async findDeterministicPairs(query, limit) {
@@ -354,7 +608,7 @@ class DuplicateFinder {
             FROM parts_view p
             WHERE p.merged_into_part_id IS NULL
               AND ($1 = '' OR p.display_name ILIKE $1 OR p.internal_sku ILIKE $1 OR p.detail ILIKE $1)
-            ORDER BY p.modified_at DESC
+            ORDER BY p.date_modified DESC
             LIMIT $2
         `;
         
