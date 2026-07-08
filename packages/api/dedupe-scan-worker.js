@@ -94,9 +94,9 @@ async function isWorkerEnabled() {
     return true; // default true
 }
 
-async function processNextPart() {
+async function processNextFastScan() {
     const enabled = await isWorkerEnabled();
-    if (!enabled) return { processed: false, aiCallsMade: 0 };
+    if (!enabled) return false;
 
     // 1. Get next part
     const res = await pool.query(`
@@ -106,24 +106,21 @@ async function processNextPart() {
         LIMIT 1 FOR UPDATE SKIP LOCKED
     `);
 
-    if (res.rowCount === 0) return { processed: false, aiCallsMade: 0 };
+    if (res.rowCount === 0) return false;
     const partId = res.rows[0].part_id;
 
     await pool.query(`UPDATE public.dedupe_scan_queue SET status = 'processing' WHERE part_id = $1`, [partId]);
-
-    let aiCallsMade = 0;
 
     try {
         const sourcePart = await getPartById(partId);
         if (!sourcePart) {
             // Part was deleted or merged
             await pool.query(`DELETE FROM public.dedupe_scan_queue WHERE part_id = $1`, [partId]);
-            return { processed: true, aiCallsMade: 0 };
+            return true;
         }
 
         const candidates = await findCandidates(sourcePart);
         
-        // Fix inefficiency: Only fetch exclusions/matches specifically related to this part instead of the entire table
         const cacheRes = await pool.query(`
             SELECT part_id_1, part_id_2, is_duplicate FROM ai_match_cache 
             WHERE part_id_1 = $1 OR part_id_2 = $1
@@ -139,80 +136,138 @@ async function processNextPart() {
 
             const { score, reasons } = DuplicateFinder.calculateCompositeScore(sourcePart, targetPart, candidate.baseScore);
             
-            // If the score is extremely high and there are NO numeric mismatches, it's an obvious match.
             // Bypassing AI saves cost and API limits. It is a true positive.
             if (score >= 0.95 && reasons.includes('obvious_match')) {
-                console.log(`[DedupeWorker] Skipping AI for obvious match ${pairId} (Score: ${score}).`);
                 continue;
             }
 
-            // Only verify if score is high enough but not guaranteed (e.g., above 0.5)
+            // Only queue for AI verification if score is borderline
             if (score >= 0.5) {
-                console.log(`[DedupeWorker] Verifying edge ${pairId} (Score: ${score})...`);
-                
-                try {
-                    aiCallsMade++;
-                    const aiResult = await llmRouter.verifyDuplicate(sourcePart, targetPart);
-                    const isDuplicate = typeof aiResult === 'object' ? aiResult.isDuplicate : aiResult;
-                    const aiReason = typeof aiResult === 'object' ? aiResult.reason : null;
-                    const aiModel = typeof aiResult === 'object' ? aiResult.model : 'LLM';
-                    
-                    const reasonText = aiReason ? `AI (${aiModel}): ${aiReason}` : 'AI verification result (Background)';
-                    
-                    await pool.query(`
-                        INSERT INTO ai_match_cache (part_id_1, part_id_2, is_duplicate, source, reason)
-                        VALUES ($1, $2, $3, 'AI', $4)
-                        ON CONFLICT (part_id_1, part_id_2) DO UPDATE 
-                        SET is_duplicate = $3, source = 'AI', reason = $4
-                    `, [a, b, isDuplicate, reasonText]);
-                    
-                    if (!isDuplicate) {
-                        console.log(`[DedupeWorker] Marked ${pairId} as false positive (exclusion).`);
-                    } else {
-                        console.log(`[DedupeWorker] Marked ${pairId} as true positive (match).`);
-                    }
-                } catch (e) {
-                    console.error(`[DedupeWorker] AI verification failed for ${pairId}:`, e.message);
-                }
-
-                // Strictly wait 10 seconds between AI calls to avoid rate limits
-                await delay(10000); 
+                await pool.query(`
+                    INSERT INTO ai_verification_queue (part_id_1, part_id_2, status)
+                    VALUES ($1, $2, 'pending')
+                    ON CONFLICT (part_id_1, part_id_2) DO NOTHING
+                `, [a, b]);
             }
         }
     } catch (e) {
-        console.error(`[DedupeWorker] Error processing part ${partId}:`, e);
+        console.error(`[DedupeWorker] FastScan error processing part ${partId}:`, e);
     } finally {
         // Delete from queue when done
         await pool.query(`DELETE FROM public.dedupe_scan_queue WHERE part_id = $1`, [partId]);
     }
 
-    return { processed: true, aiCallsMade };
+    return true;
 }
 
-async function startWorker() {
-    console.log('[DedupeWorker] Starting Dedupe Scan Background Worker...');
-    
+async function processNextAIVerification() {
+    const enabled = await isWorkerEnabled();
+    if (!enabled) return false;
+
+    // 1. Get next pair to verify
+    const res = await pool.query(`
+        SELECT part_id_1, part_id_2 FROM public.ai_verification_queue
+        WHERE status = 'pending'
+        ORDER BY updated_at ASC
+        LIMIT 1 FOR UPDATE SKIP LOCKED
+    `);
+
+    if (res.rowCount === 0) return false;
+    const { part_id_1, part_id_2 } = res.rows[0];
+
+    await pool.query(`UPDATE public.ai_verification_queue SET status = 'processing' WHERE part_id_1 = $1 AND part_id_2 = $2`, [part_id_1, part_id_2]);
+
+    try {
+        const sourcePart = await getPartById(part_id_1);
+        const targetPart = await getPartById(part_id_2);
+        
+        // If either part no longer exists, just clear it
+        if (!sourcePart || !targetPart) {
+            await pool.query(`DELETE FROM public.ai_verification_queue WHERE part_id_1 = $1 AND part_id_2 = $2`, [part_id_1, part_id_2]);
+            return true;
+        }
+
+        const pairId = `${part_id_1}_${part_id_2}`;
+        
+        // Check cache just in case it was verified out of band (e.g. by UI)
+        const cacheCheck = await pool.query(`SELECT is_duplicate FROM ai_match_cache WHERE part_id_1 = $1 AND part_id_2 = $2`, [part_id_1, part_id_2]);
+        if (cacheCheck.rowCount > 0) {
+            await pool.query(`DELETE FROM public.ai_verification_queue WHERE part_id_1 = $1 AND part_id_2 = $2`, [part_id_1, part_id_2]);
+            return true;
+        }
+
+        console.log(`[DedupeAI] Verifying edge ${pairId}...`);
+        
+        const aiResult = await llmRouter.verifyDuplicate(sourcePart, targetPart);
+        const isDuplicate = typeof aiResult === 'object' ? aiResult.isDuplicate : aiResult;
+        const aiReason = typeof aiResult === 'object' ? aiResult.reason : null;
+        const aiModel = typeof aiResult === 'object' ? aiResult.model : 'LLM';
+        
+        const reasonText = aiReason ? `AI (${aiModel}): ${aiReason}` : 'AI verification result (Background)';
+        
+        await pool.query(`
+            INSERT INTO ai_match_cache (part_id_1, part_id_2, is_duplicate, source, reason)
+            VALUES ($1, $2, $3, 'AI', $4)
+            ON CONFLICT (part_id_1, part_id_2) DO UPDATE 
+            SET is_duplicate = $3, source = 'AI', reason = $4
+        `, [part_id_1, part_id_2, isDuplicate, reasonText]);
+        
+        if (!isDuplicate) {
+            console.log(`[DedupeAI] Marked ${pairId} as false positive (exclusion).`);
+        } else {
+            console.log(`[DedupeAI] Marked ${pairId} as true positive (match).`);
+        }
+
+        // Delay 10s after successful API call
+        await delay(10000); 
+
+    } catch (e) {
+        console.error(`[DedupeAI] Verification failed for ${part_id_1}_${part_id_2}:`, e.message);
+        // Will be left as 'processing' or could be reset to 'pending' depending on retry logic
+        await pool.query(`UPDATE public.ai_verification_queue SET status = 'pending' WHERE part_id_1 = $1 AND part_id_2 = $2`, [part_id_1, part_id_2]);
+        await delay(10000); 
+    } finally {
+        await pool.query(`DELETE FROM public.ai_verification_queue WHERE part_id_1 = $1 AND part_id_2 = $2`, [part_id_1, part_id_2]);
+    }
+
+    return true;
+}
+
+async function startFastScanner() {
+    console.log('[DedupeWorker] Starting Fast Scanner...');
     while (true) {
         try {
-            const { processed, aiCallsMade } = await processNextPart();
+            const processed = await processNextFastScan();
             if (!processed) {
-                // Queue is empty, wait 60 seconds
-                await delay(60000);
+                await delay(5000); // Wait 5s if queue is empty
             } else {
-                // If we didn't make any AI calls, process the next item immediately (0 delay)
-                // If we did make AI calls, the 10s delay was already handled inside the function, 
-                // but we add a tiny 100ms breather to prevent CPU spinning.
-                await delay(100);
+                await delay(50); // Max speed with tiny breather
             }
         } catch (e) {
-            console.error('[DedupeWorker] Worker loop error:', e);
+            console.error('[DedupeWorker] Fast Scanner error:', e);
+            await delay(10000);
+        }
+    }
+}
+
+async function startAIVerifier() {
+    console.log('[DedupeWorker] Starting AI Verifier...');
+    while (true) {
+        try {
+            const processed = await processNextAIVerification();
+            if (!processed) {
+                await delay(10000); // Wait 10s if queue is empty
+            }
+        } catch (e) {
+            console.error('[DedupeWorker] AI Verifier error:', e);
             await delay(10000);
         }
     }
 }
 
 function init() {
-    startWorker();
+    startFastScanner();
+    startAIVerifier();
 }
 
 module.exports = {
