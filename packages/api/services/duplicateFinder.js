@@ -148,16 +148,28 @@ class DuplicateFinder {
             reasons.push('different_colors_disqualification');
         }
 
-        // Massive Penalty/Disqualification: Candidates have *different*, explicitly defined part numbers
-        // Only penalize if BOTH have defined part numbers and they DO NOT share any.
+        // Penalty/Disqualification: Candidates have *different*, explicitly defined part numbers.
+        // Only penalize if BOTH have part numbers and none are exact matches.
+        // IMPORTANT: We must be JW-aware here. Vendor-prefix variants like SC-47575R vs 47575R
+        // have zero exact overlap but JW ≈ 0.92 — they should NOT receive the full -0.80 penalty.
         if (pns1.length > 0 && pns2.length > 0 && sharedPns.length === 0) {
-            score -= 0.80;
-            reasons.push('different_part_numbers_penalty');
+            // Compute the best Jaro-Winkler across all cross-pairs of part numbers
+            const bestPnJw = Math.max(
+                ...pns1.map(pn1 => Math.max(...pns2.map(pn2 => this.calculateJaroWinkler(pn1, pn2))))
+            );
+            if (bestPnJw >= 0.80) {
+                // Vendor-prefix / size-suffix variant (e.g. SC-47575R vs 47575R, 010-47575 vs 47575R).
+                // Apply only a soft penalty; let Dice + AI decide.
+                score -= 0.15;
+                reasons.push('fuzzy_part_number_variant');
+            } else {
+                // Genuinely different part numbers — apply strong disqualification.
+                score -= 0.80;
+                reasons.push('different_part_numbers_penalty');
+            }
         } else if (sharedPns.length > 0) {
-            // Give a boost if they share part numbers but only if it's not already accounted for
-            // We'll give a small boost for shared part numbers to maintain logic,
-            // though phase 1 might have already found it.
             score += 0.10;
+            reasons.push('shared_part_numbers_boost');
         }
 
         // Boost: Candidates share the same `brand` and `group`. (+0.30)
@@ -643,7 +655,7 @@ class DuplicateFinder {
             if (!searchQuery) continue;
 
             const searchRes = await index.search(searchQuery, {
-                limit: 5,
+                limit: 10,
                 attributesToRetrieve: ['part_id']
             });
 
