@@ -22,6 +22,7 @@ router.get('/parts/merge/duplicates/stream', protect, hasPermission('parts:merge
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
 
     const sendEvent = (type, data) => {
         res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
