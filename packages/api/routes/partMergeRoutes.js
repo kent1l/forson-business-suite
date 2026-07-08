@@ -28,6 +28,15 @@ router.get('/parts/merge/duplicates/stream', protect, hasPermission('parts:merge
         res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
     };
 
+    // Heartbeat to prevent NGINX/browser timeouts during slow AI processing
+    const heartbeat = setInterval(() => {
+        sendEvent('ping', { timestamp: Date.now() });
+    }, 15000);
+
+    req.on('close', () => {
+        clearInterval(heartbeat);
+    });
+
     try {
         const {
             limit = 50,
@@ -55,8 +64,10 @@ router.get('/parts/merge/duplicates/stream', protect, hasPermission('parts:merge
                 excludeMerged: excludeMerged === 'true'
             }
         });
+        clearInterval(heartbeat);
         res.end();
     } catch (error) {
+        clearInterval(heartbeat);
         console.error('Error finding duplicates stream:', error);
         sendEvent('error', { message: 'Internal Server Error' });
         res.end();

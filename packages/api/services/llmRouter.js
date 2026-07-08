@@ -73,6 +73,7 @@ Respond ONLY with a JSON object:
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            signal: AbortSignal.timeout(30000),
             body: JSON.stringify({
                 contents: [{ parts: [{ text: prompt }] }],
                 generationConfig: { responseMimeType: 'application/json' }
@@ -102,6 +103,7 @@ Respond ONLY with a JSON object:
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${this.openaiKey}`
             },
+            signal: AbortSignal.timeout(30000),
             body: JSON.stringify({
                 model: this.openaiModel,
                 messages: [{ role: 'user', content: prompt }],
@@ -136,6 +138,7 @@ Respond ONLY with a JSON object:
                         'X-Title': 'Forson Business Suite',
                         'Content-Type': 'application/json'
                     },
+                    signal: AbortSignal.timeout(30000),
                     body: JSON.stringify({
                         model: modelToUse,
                         messages: [{ role: 'user', content: prompt }],
