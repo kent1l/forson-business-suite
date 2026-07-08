@@ -11,8 +11,7 @@ const pool = new Pool({
     database: process.env.DB_NAME || 'forson_business_suite',
 });
 
-const meiliHost = process.env.MEILISEARCH_HOST || 'http://localhost:7700';
-const meiliKey = process.env.MEILISEARCH_MASTER_KEY || '';
+const duplicateFinder = new DuplicateFinder(pool);
 
 // Delay helper
 const delay = ms => new Promise(res => setTimeout(res, ms));
@@ -34,59 +33,53 @@ async function getPartById(partId) {
 async function findCandidates(part) {
     const candidates = new Map();
 
-    // 1. Deterministic (Same SKU)
-    if (part.internal_sku) {
-        const skuRes = await pool.query(`
-            SELECT p.*,
-                   COALESCE(
-                       (SELECT json_agg(jsonb_build_object('part_number', pn.part_number))
-                        FROM part_number pn
-                        WHERE pn.part_id = p.part_id AND pn.deleted_at IS NULL),
-                   '[]'::json) as part_numbers_array
-            FROM parts_view p
-            WHERE p.internal_sku = $1 AND p.part_id != $2 AND p.merged_into_part_id IS NULL
-        `, [part.internal_sku, part.part_id]);
-        
-        for (const row of skuRes.rows) {
-            candidates.set(row.part_id, { part: row, baseScore: 0.8 });
+    try {
+        // Phase 1: Deterministic (Same SKU)
+        const deterministicPairs = await duplicateFinder.findDeterministicPairs(part.internal_sku || part.display_name, 10);
+        for (const pair of deterministicPairs) {
+            // findDeterministicPairs returns pairs { part1, part2 }. 
+            // We need to extract the 'other' part.
+            const otherPart = pair.part1.part_id === part.part_id ? pair.part2 : pair.part1;
+            if (otherPart.part_id !== part.part_id) {
+                candidates.set(otherPart.part_id, { part: otherPart, baseScore: 0.8 });
+            }
         }
+    } catch (e) {
+        console.error('[DedupeWorker] Phase 1 error:', e.message);
     }
 
-    // 2. Fuzzy Meilisearch
-    if (part.display_name) {
-        try {
-            const msRes = await fetch(`${meiliHost}/indexes/parts/search`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${meiliKey}`
-                },
-                body: JSON.stringify({
-                    q: part.display_name,
-                    limit: 10,
-                    filter: `part_id != ${part.part_id}`
-                })
-            });
-            if (msRes.ok) {
-                const msData = await msRes.json();
-                for (const hit of msData.hits) {
-                    if (!candidates.has(hit.part_id)) {
-                        const hitPart = await getPartById(hit.part_id);
-                        if (hitPart) {
-                            candidates.set(hit.part_id, { part: hitPart, baseScore: 0.4 });
-                        }
-                    }
-                }
+    try {
+        // Phase 2: Fuzzy Meilisearch
+        const fuzzyPairs = await duplicateFinder.findFuzzyMeilisearchPairs(part.display_name, 10);
+        for (const pair of fuzzyPairs) {
+            const otherPart = pair.part1.part_id === part.part_id ? pair.part2 : pair.part1;
+            if (otherPart.part_id !== part.part_id && !candidates.has(otherPart.part_id)) {
+                candidates.set(otherPart.part_id, { part: otherPart, baseScore: 0.4 });
             }
-        } catch (e) {
-            console.error('Meilisearch fetch error:', e.message);
         }
+    } catch (e) {
+        console.error('[DedupeWorker] Phase 2 error:', e.message);
     }
 
     return Array.from(candidates.values());
 }
 
+async function isWorkerEnabled() {
+    try {
+        const res = await pool.query("SELECT setting_value FROM public.settings WHERE setting_key = 'DEDUPE_BACKGROUND_WORKER_ENABLED'");
+        if (res.rowCount > 0 && res.rows[0].setting_value === 'false') {
+            return false;
+        }
+    } catch (e) {
+        // If table or setting doesn't exist yet, default to true
+    }
+    return true;
+}
+
 async function processNextPart() {
+    const enabled = await isWorkerEnabled();
+    if (!enabled) return false;
+
     // 1. Get next part
     const res = await pool.query(`
         SELECT part_id FROM public.dedupe_scan_queue
@@ -119,8 +112,15 @@ async function processNextPart() {
 
             if (exclusions.has(pairId)) continue;
 
-            const { score } = DuplicateFinder.calculateCompositeScore(sourcePart, targetPart, candidate.baseScore);
+            const { score, reasons } = DuplicateFinder.calculateCompositeScore(sourcePart, targetPart, candidate.baseScore);
             
+            // If the score is extremely high and there are NO numeric mismatches, it's an obvious match.
+            // Bypassing AI saves cost and API limits. It is a true positive.
+            if (score >= 0.95 && reasons.includes('obvious_match')) {
+                console.log(`[DedupeWorker] Skipping AI for obvious match ${pairId} (Score: ${score}).`);
+                continue;
+            }
+
             // Only verify if score is high enough but not guaranteed (e.g., above 0.5)
             if (score >= 0.5) {
                 console.log(`[DedupeWorker] Verifying edge ${pairId} (Score: ${score})...`);

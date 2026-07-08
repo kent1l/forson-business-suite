@@ -380,4 +380,45 @@ router.post('/parts/merge/exclude', protect, hasPermission('parts:merge'), async
     }
 });
 
+// Route: GET /api/parts/merge/worker-status
+// Gets the status of the background dedupe worker
+router.get('/parts/merge/worker-status', protect, hasPermission('parts:merge'), async (req, res) => {
+    try {
+        const settingRes = await req.db.query("SELECT setting_value FROM public.settings WHERE setting_key = 'DEDUPE_BACKGROUND_WORKER_ENABLED'");
+        const enabled = settingRes.rowCount > 0 ? settingRes.rows[0].setting_value !== 'false' : true;
+        
+        const countRes = await req.db.query("SELECT status, count(*) FROM public.dedupe_scan_queue GROUP BY status");
+        let pending = 0;
+        let processing = 0;
+        
+        for (const row of countRes.rows) {
+            if (row.status === 'pending') pending = parseInt(row.count);
+            if (row.status === 'processing') processing = parseInt(row.count);
+        }
+        
+        res.json({ success: true, enabled, pending, processing });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to get worker status' });
+    }
+});
+
+// Route: POST /api/parts/merge/worker-toggle
+// Toggles the background dedupe worker
+router.post('/parts/merge/worker-toggle', protect, hasPermission('parts:merge'), async (req, res) => {
+    try {
+        const { enabled } = req.body;
+        const value = enabled ? 'true' : 'false';
+        
+        await req.db.query(`
+            INSERT INTO public.settings (setting_key, setting_value, description)
+            VALUES ('DEDUPE_BACKGROUND_WORKER_ENABLED', $1, 'Enable background AI deduplication worker')
+            ON CONFLICT (setting_key) DO UPDATE SET setting_value = $1
+        `, [value]);
+        
+        res.json({ success: true, enabled });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to toggle worker' });
+    }
+});
+
 module.exports = router;
