@@ -29,12 +29,15 @@ router.get('/parts/merge/duplicates', protect, hasPermission('parts:merge'), asy
         } = req.query;
 
         let groups;
+        let aiStats = null;
         if (algo === 'v2') {
-            groups = await duplicateFinder.findOptimizedDuplicateGroups({
+            const result = await duplicateFinder.findOptimizedDuplicateGroups({
                 minScore: parseFloat(minScore),
                 limit: parseInt(limit),
                 excludeMerged: excludeMerged === 'true'
             });
+            groups = result.groups;
+            aiStats = result.stats;
         } else {
             groups = await duplicateFinder.findDuplicateGroups({
                 minSimilarity: parseFloat(minSimilarity),
@@ -46,6 +49,7 @@ router.get('/parts/merge/duplicates', protect, hasPermission('parts:merge'), asy
         res.json({
             success: true,
             groups,
+            aiStats,
             metadata: {
                 total: groups.length,
                 algo,

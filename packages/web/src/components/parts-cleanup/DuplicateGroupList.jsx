@@ -6,6 +6,7 @@ import { ICONS } from '../../constants';
 
 const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThreshold }) => {
     const [duplicateGroups, setDuplicateGroups] = useState([]);
+    const [aiStats, setAiStats] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [isCompact, setIsCompact] = useState(false);
@@ -25,6 +26,7 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
             const response = await api.get('/parts/merge/duplicates', { params });
             
             setDuplicateGroups(response.data.groups || []);
+            setAiStats(response.data.aiStats || null);
         } catch (err) {
             console.error('Error fetching duplicate groups:', err);
             setError('Failed to fetch duplicate groups. Please try again.');
@@ -244,6 +246,11 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                                 Found {duplicateGroups.length} potential duplicate groups
                                 {selectedGroups.length > 0 && ` (${selectedGroups.length} selected)`}
                             </span>
+                            {aiStats && (
+                                <span className="flex items-center ml-4 pl-4 border-l border-gray-300 text-yellow-700 bg-yellow-50 px-2 py-0.5 rounded-full text-xs font-medium border border-yellow-200">
+                                    🤖 AI scanned {aiStats.aiRequests} pair{aiStats.aiRequests !== 1 ? 's' : ''}, found {aiStats.aiDuplicatesFound} duplicate{aiStats.aiDuplicatesFound !== 1 ? 's' : ''}
+                                </span>
+                            )}
                             <label className="flex items-center cursor-pointer ml-4 border-l pl-4 border-gray-300">
                                 <input
                                     type="checkbox"

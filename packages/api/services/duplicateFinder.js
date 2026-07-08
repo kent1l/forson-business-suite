@@ -345,6 +345,8 @@ class DuplicateFinder {
             }
         }
 
+        let aiRequests = 0;
+        let aiDuplicatesFound = 0;
         const batchSize = 5;
         
         for (let i = 0; i < edges.length; i += batchSize) {
@@ -369,6 +371,7 @@ class DuplicateFinder {
                     const part1 = partById.get(a);
                     const part2 = partById.get(b);
                     const aiResult = await llmRouter.verifyDuplicate(part1, part2);
+                    aiRequests++;
                     
                     // Handle both boolean (old) and object (new) returns safely
                     const isDuplicate = typeof aiResult === 'object' ? aiResult.isDuplicate : aiResult;
@@ -383,6 +386,7 @@ class DuplicateFinder {
                     } else {
                         uf.union(a, b);
                         if (!isSkipped) {
+                            aiDuplicatesFound++;
                             edge.reasons.push('ai_verified');
                             if (aiReason) edge.ai_reason = aiReason;
                             if (aiModel) edge.ai_model = aiModel;
@@ -459,7 +463,10 @@ class DuplicateFinder {
             });
         }
 
-        return duplicateGroups.sort((a, b) => b.score - a.score).slice(0, limit);
+        return {
+            groups: duplicateGroups.sort((a, b) => b.score - a.score).slice(0, limit),
+            stats: { aiRequests, aiDuplicatesFound }
+        };
     }
 
     async findDeterministicPairs(query, limit) {
