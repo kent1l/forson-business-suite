@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.3.1 - 2026-07-08
+
+### Fixed
+- **SSE Event Buffering**: Added `X-Accel-Buffering: no` header to the duplicate parts finder stream to prevent Nginx response buffering and ensure real-time delivery of progress events.
+
 ## v2.3.0 - 2026-07-08
 
 ### Added
