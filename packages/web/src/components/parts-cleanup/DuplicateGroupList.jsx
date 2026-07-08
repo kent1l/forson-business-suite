@@ -205,7 +205,7 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                 {progress?.stage === 'ai_verification' && progress.total > 0 && (
                     <div className="text-sm text-yellow-700 font-medium bg-yellow-50 px-4 py-1.5 rounded-full border border-yellow-200 mt-2 flex items-center gap-2">
                         <span>🤖 AI Verification:</span>
-                        <span>{progress.responded} of {progress.total} requests completed</span>
+                        <span>{progress.responded} of {progress.total} pairs processed</span>
                     </div>
                 )}
             </div>
@@ -314,7 +314,9 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                             </span>
                             {aiStats && (
                                 <span className="flex items-center ml-4 pl-4 border-l border-gray-300 text-yellow-700 bg-yellow-50 px-2 py-0.5 rounded-full text-xs font-medium border border-yellow-200">
-                                    🤖 AI scanned {aiStats.aiRequests} pair{aiStats.aiRequests !== 1 ? 's' : ''}, found {aiStats.aiDuplicatesFound} duplicate{aiStats.aiDuplicatesFound !== 1 ? 's' : ''}
+                                    🤖 AI scanned {aiStats.aiRequests} pair{aiStats.aiRequests !== 1 ? 's' : ''}
+                                    {aiStats.transitiveSkipped > 0 && ` (${aiStats.transitiveSkipped} skipped via transitive logic)`}, 
+                                    found {aiStats.aiDuplicatesFound} duplicate{aiStats.aiDuplicatesFound !== 1 ? 's' : ''}
                                 </span>
                             )}
                             <label className="flex items-center cursor-pointer ml-4 border-l pl-4 border-gray-300">

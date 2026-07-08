@@ -39,19 +39,22 @@ class DuplicateFinder {
         if (!str1 || !str2) return 0;
         if (str1 === str2) return 1;
         const getBigrams = str => {
-            const bigrams = new Set();
+            const map = new Map();
             for (let i = 0; i < str.length - 1; i++) {
-                bigrams.add(str.substring(i, i + 2));
+                const bg = str.substring(i, i + 2);
+                map.set(bg, (map.get(bg) || 0) + 1);
             }
-            return bigrams;
+            return map;
         };
         const bg1 = getBigrams(str1);
         const bg2 = getBigrams(str2);
         let intersection = 0;
-        for (let bg of bg1) {
-            if (bg2.has(bg)) intersection++;
+        for (const [bg, count1] of bg1.entries()) {
+            const count2 = bg2.get(bg) || 0;
+            intersection += Math.min(count1, count2);
         }
-        return (2.0 * intersection) / (bg1.size + bg2.size) || 0;
+        const totalSize = Math.max(1, (str1.length - 1) + (str2.length - 1));
+        return (2.0 * intersection) / totalSize;
     }
 
     static calculateJaroWinkler(s1, s2) {
@@ -158,10 +161,14 @@ class DuplicateFinder {
         }
 
         // Boost: Candidates share the same `brand` and `group`. (+0.30)
+        // Skip generic placeholder brands to prevent false positive clustering
+        const genericBrands = ['no brand', 'none', 'n/a', 'generic'];
         if (normalizedBrand1 && normalizedBrand2 && part1.group_name && part2.group_name) {
             if (normalizedBrand1 === normalizedBrand2 && part1.group_name === part2.group_name) {
-                score += 0.30;
-                reasons.push('same_brand_and_group');
+                if (!genericBrands.includes(normalizedBrand1)) {
+                    score += 0.30;
+                    reasons.push('same_brand_and_group');
+                }
             }
         }
 
@@ -202,7 +209,7 @@ class DuplicateFinder {
 
         // To safely skip AI, we demand both a high final score AND a solid text structure overlap,
         // and crucially, we FORBID skipping the AI if there is ANY mismatch in numeric tokens (like 12V vs 24V).
-        if (score >= 0.95 && diceSimilarity > 0.60 && !hasNumericMismatch) {
+        if (score >= 0.95 && diceSimilarity > 0.75 && !hasNumericMismatch) {
             reasons.push('obvious_match');
         }
 
@@ -355,6 +362,7 @@ class DuplicateFinder {
         let aiRequests = 0;
         let aiDuplicatesFound = 0;
         let aiResponded = 0;
+        let transitiveSkipped = 0;
         
         let aiEdgesToProcess = 0;
         for (const [edgeId, edge] of edges) {
@@ -383,6 +391,7 @@ class DuplicateFinder {
                     if (uf.find(a) === uf.find(b)) {
                         edge.reasons.push('transitive_match');
                         aiResponded++; // Mark as skipped/handled
+                        transitiveSkipped++;
                         reportProgress('ai_verification', 'Waiting for AI responses...', { sent: aiRequests, responded: aiResponded, total: aiEdgesToProcess });
                         return;
                     }
@@ -487,7 +496,7 @@ class DuplicateFinder {
 
         return {
             groups: duplicateGroups.sort((a, b) => b.score - a.score).slice(0, limit),
-            stats: { aiRequests, aiDuplicatesFound }
+            stats: { aiRequests, aiDuplicatesFound, transitiveSkipped }
         };
     }
 
