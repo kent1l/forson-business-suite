@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSettings } from '../../contexts/SettingsContext';
 
-const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment, physicalReceipt = '', paymentMethods = [] }) => {
+const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment, physicalReceipt = '', paymentMethods = [], initialMethod = '' }) => {
     const { settings } = useSettings();
     
     const [selectedMethod, setSelectedMethod] = useState('');
@@ -19,14 +19,23 @@ const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment, physicalReceip
             setReference('');
             const availablePaymentMethods = paymentMethods.length > 0 ? paymentMethods : 
                 (settings?.PAYMENT_METHODS ? settings.PAYMENT_METHODS.split(',') : ['Cash']);
-            const defaultMethod = availablePaymentMethods[0] || 'Cash';
+            
+            let defaultMethod = availablePaymentMethods[0] || 'Cash';
+            if (initialMethod) {
+                const found = availablePaymentMethods.find(m => {
+                    const name = typeof m === 'object' ? m.name : m;
+                    const type = typeof m === 'object' ? m.type : '';
+                    return name.toLowerCase() === initialMethod.toLowerCase() || type.toLowerCase() === initialMethod.toLowerCase();
+                });
+                if (found) defaultMethod = found;
+            }
             const methodName = typeof defaultMethod === 'object' ? defaultMethod.name : defaultMethod;
             setSelectedMethod(methodName);
             if (methodName.toLowerCase() === 'cash') {
                 setTimeout(() => cashInputRef.current?.focus(), 100);
             }
         }
-    }, [isOpen, paymentMethods, settings?.PAYMENT_METHODS]);
+    }, [isOpen, paymentMethods, settings?.PAYMENT_METHODS, initialMethod]);
 
     const changeDue = (parseFloat(cashTendered) || 0) - total;
 

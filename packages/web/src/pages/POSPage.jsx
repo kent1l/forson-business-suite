@@ -174,6 +174,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
     const [isSplitPaymentModalOpen, setIsSplitPaymentModalOpen] = useState(false);
     const [paymentMethods, setPaymentMethods] = useState([]);
+    const [initialPaymentMethod, setInitialPaymentMethod] = useState('');
     const [currentItem, setCurrentItem] = useState(null);
     const [showSaved, setShowSaved] = useState(false);
     const [lastSale, setLastSale] = useState(null);
@@ -536,9 +537,22 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
         if (splitPaymentsEnabled) {
             setIsSplitPaymentModalOpen(true);
         } else {
+            setInitialPaymentMethod('');
             setIsPaymentModalOpen(true);
         }
     }, [lines.length, selectedCustomer, settings?.ENABLE_SPLIT_PAYMENTS]);
+
+    const handleTriggerPayMethod = useCallback((type) => {
+        if (lines.length === 0) return;
+        if (!selectedCustomer) return toast.error("Please select a customer.");
+
+        if (type === 'cash' || type === 'card') {
+            setInitialPaymentMethod(type);
+            setIsPaymentModalOpen(true);
+        } else if (type === 'split') {
+            setIsSplitPaymentModalOpen(true);
+        }
+    }, [lines.length, selectedCustomer]);
 
     const handleConfirmPayment = (paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo, reference = null) => {
         // Check if physical receipt number is empty
@@ -880,6 +894,24 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
         return () => window.removeEventListener('keydown', onKey);
     }, [lines, selectedCustomer, handleCheckout]);
 
+    // Keyboard shortcut (Alt+1/2/3) for quick checkout selections
+    useEffect(() => {
+        const onKey = (e) => {
+            if (e.altKey && e.key === '1') {
+                e.preventDefault();
+                handleTriggerPayMethod('cash');
+            } else if (e.altKey && e.key === '2') {
+                e.preventDefault();
+                handleTriggerPayMethod('card');
+            } else if (e.altKey && e.key === '3') {
+                e.preventDefault();
+                handleTriggerPayMethod('split');
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [handleTriggerPayMethod]);
+
     // Keyboard shortcut (Ctrl+F / Cmd+F) to focus search bar
     useEffect(() => {
         const onKey = (e) => {
@@ -979,6 +1011,45 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                     </div>
                     <button onClick={() => setIsNewPartModalOpen(true)} className="bg-blue-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-700 transition whitespace-nowrap">
                        New Part
+                    </button>
+                </div>
+                {/* Keyboard Shortcut Pills */}
+                <div className="flex flex-wrap items-center gap-3">
+                    <button
+                        onClick={() => handleTriggerPayMethod('cash')}
+                        disabled={lines.length === 0}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition shadow-sm ${
+                            lines.length > 0
+                                ? 'bg-white hover:bg-slate-50 border-gray-200 text-slate-700 cursor-pointer'
+                                : 'bg-slate-50 border-gray-200 text-slate-400 cursor-not-allowed'
+                        }`}
+                    >
+                        <span className={`w-2 h-2 rounded-full ${lines.length > 0 ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
+                        Cash <kbd className="px-1.5 py-0.5 text-[10px] bg-slate-100 rounded text-slate-500 font-mono border border-slate-200">Alt+1</kbd>
+                    </button>
+                    <button
+                        onClick={() => handleTriggerPayMethod('card')}
+                        disabled={lines.length === 0}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition shadow-sm ${
+                            lines.length > 0
+                                ? 'bg-white hover:bg-slate-50 border-gray-200 text-slate-700 cursor-pointer'
+                                : 'bg-slate-50 border-gray-200 text-slate-400 cursor-not-allowed'
+                        }`}
+                    >
+                        <span className={`w-2 h-2 rounded-full ${lines.length > 0 ? 'bg-blue-500' : 'bg-slate-300'}`}></span>
+                        Card <kbd className="px-1.5 py-0.5 text-[10px] bg-slate-100 rounded text-slate-500 font-mono border border-slate-200">Alt+2</kbd>
+                    </button>
+                    <button
+                        onClick={() => handleTriggerPayMethod('split')}
+                        disabled={lines.length === 0}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition shadow-sm ${
+                            lines.length > 0
+                                ? 'bg-white hover:bg-slate-50 border-gray-200 text-slate-700 cursor-pointer'
+                                : 'bg-slate-50 border-gray-200 text-slate-400 cursor-not-allowed'
+                        }`}
+                    >
+                        <span className={`w-2 h-2 rounded-full ${lines.length > 0 ? 'bg-indigo-500' : 'bg-slate-300'}`}></span>
+                        Split Payment <kbd className="px-1.5 py-0.5 text-[10px] bg-slate-100 rounded text-slate-500 font-mono border border-slate-200">Alt+3</kbd>
                     </button>
                 </div>
                 <div className="flex flex-col md:flex-row flex-1 gap-6">
@@ -1119,7 +1190,9 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                 onConfirmPayment={handleConfirmPayment}
                 physicalReceipt={physicalReceiptInput}
                 paymentMethods={paymentMethods}
+                initialMethod={initialPaymentMethod}
             />
+
             {settings?.ENABLE_SPLIT_PAYMENTS === 'true' && (
                 <SplitPaymentModal
                     isOpen={isSplitPaymentModalOpen}
