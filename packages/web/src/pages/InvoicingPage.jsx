@@ -268,7 +268,7 @@ const InvoicingPage = ({ user }) => {
     // Handle split payment confirmation for invoicing
     const handleConfirmSplitPayment = async (payments, physicalReceiptNo, { employeeId } = {}) => {
         try {
-            // First create the invoice without payments
+            // Create the invoice with payments (atomic single-step)
             const invoicePayload = {
                 customer_id: selectedCustomer,
                 employee_id: employeeId || user.employee_id,
@@ -284,23 +284,19 @@ const InvoicingPage = ({ user }) => {
                     tax_rate_id: line.tax_rate_id || null,
                     is_tax_inclusive_price: line.is_tax_inclusive_price || false
                 })),
+                payments: payments.map(p => ({
+                    ...p,
+                    reference: formatPhysicalReceiptNumber(physicalReceiptNo) || p.reference
+                }))
             };
 
             const invoiceResponse = await api.post('/invoices', invoicePayload);
-            const invoiceId = invoiceResponse.data.invoice_id;
             const returnedPhysicalReceiptNo = invoiceResponse.data.physical_receipt_no;
 
             // Check if physical receipt number was auto-incremented
             if (returnedPhysicalReceiptNo && returnedPhysicalReceiptNo !== formatPhysicalReceiptNumber(physicalReceiptNo)) {
                 toast.success(`Invoice created! Physical receipt number was auto-incremented to: ${returnedPhysicalReceiptNo}`);
             }
-
-            // Then add payments to the invoice
-            await api.post(`/invoices/${invoiceId}/payments`, {
-                payments,
-                physical_receipt_no: returnedPhysicalReceiptNo || formatPhysicalReceiptNumber(physicalReceiptNo),
-                employee_id: employeeId || user.employee_id
-            });
 
             // Success - reset form
             setLines([]);

@@ -266,7 +266,7 @@ const SplitPaymentModal = ({
         try {
             // Format payments for API
             const formattedPayments = payments.map(payment => {
-                const method = paymentMethods.find(m => m.method_id === payment.method_id);
+                const method = paymentMethods.find(m => String(m.method_id) === String(payment.method_id));
                 const amountPaid = parseFloat(payment.amount_paid);
                 const tenderedAmount = parseFloat(payment.tendered_amount) || null;
 

@@ -79,21 +79,7 @@ router.post('/refunds', protect, hasPermission('invoicing:create'), async (req, 
             await client.query(transactionQuery, [part_id, quantity, sale_price, creditNoteNumber, employee_id, `Refund for Invoice #${invoice_number}`]);
         }
 
-        // 4. Update the original invoice status
-        const { rows: [invoiceTotals] } = await client.query(
-            `SELECT
-                i.total_amount,
-                COALESCE((SELECT SUM(total_amount) FROM credit_note WHERE invoice_id = i.invoice_id), 0) as total_refunded
-             FROM invoice i WHERE i.invoice_id = $1`,
-            [invoice_id]
-        );
-
-        let newStatus = 'Partially Refunded';
-        if (parseFloat(invoiceTotals.total_refunded) >= parseFloat(invoiceTotals.total_amount)) {
-            newStatus = 'Fully Refunded';
-        }
-
-        await client.query('UPDATE invoice SET status = $1 WHERE invoice_id = $2', [newStatus, invoice_id]);
+        // 4. Update the original invoice status is handled automatically by the update_invoice_balance_after_payment trigger on credit_note table
 
         await client.query('COMMIT');
         res.status(201).json({ message: 'Refund processed successfully', creditNoteNumber });

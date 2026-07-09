@@ -504,33 +504,6 @@ const POSPage = ({ user, lines, setLines }) => {
         const normalizedPRN = normalizePhysicalReceipt(physicalReceiptInput || physicalReceiptNo || '');
 
         try {
-            // Step 1: Create invoice without payment data - backend will calculate tax
-            const invoicePayload = {
-                customer_id: selectedCustomer.customer_id,
-                employee_id: user.employee_id,
-                physical_receipt_no: normalizedPRN || null,
-                tax_rate_id: selectedTaxRate?.tax_rate_id || null,
-                lines: lines.map(line => ({
-                    part_id: line.part_id,
-                    quantity: line.quantity,
-                    sale_price: line.sale_price,
-                    discount_amount: line.discount_amount || 0,
-                    tax_rate_id: line.tax_rate_id || null,
-                    is_tax_inclusive_price: line.is_tax_inclusive_price || false
-                })),
-            };
-
-            const invoiceResponse = await api.post('/invoices', invoicePayload);
-            const invoiceId = invoiceResponse.data.invoice_id;
-            const newInvoiceNumber = invoiceResponse.data.invoice_number;
-            
-            // Use backend-calculated totals for payment processing
-            const backendTotal = invoiceResponse.data.total_amount;
-            const backendSubtotal = invoiceResponse.data.subtotal_ex_tax;
-            const backendTax = invoiceResponse.data.tax_total;
-            const taxBreakdown = invoiceResponse.data.tax_breakdown;
-
-            // Step 2: Add payment using the updated payment routes
             // Coerce provided paymentMethod into a proper method_id; also determine methodName
             let methodId = paymentMethod;
             let methodName = paymentMethod;
@@ -548,22 +521,47 @@ const POSPage = ({ user, lines, setLines }) => {
                     methodId = `legacy_${paymentMethod}`;
                 }
             }
-            
-            const paymentPayload = {
+
+            // Step 1: Create invoice with payment data (atomic single-step)
+            const invoicePayload = {
+                customer_id: selectedCustomer.customer_id,
+                employee_id: user.employee_id,
+                physical_receipt_no: normalizedPRN || null,
+                tax_rate_id: selectedTaxRate?.tax_rate_id || null,
+                lines: lines.map(line => ({
+                    part_id: line.part_id,
+                    quantity: line.quantity,
+                    sale_price: line.sale_price,
+                    discount_amount: line.discount_amount || 0,
+                    tax_rate_id: line.tax_rate_id || null,
+                    is_tax_inclusive_price: line.is_tax_inclusive_price || false
+                })),
                 payments: [{
-                    method_id: methodId, // Coerced to method_id or legacy_* string
-                    amount_paid: Number(backendTotal) || 0, // Use backend-calculated total
+                    method_id: methodId,
+                    amount_paid: Number(total) || 0,
                     tendered_amount: typeof tenderedAmount !== 'undefined' && tenderedAmount !== null ? Number(tenderedAmount) : null,
                     reference: normalizedPRN || null,
                     metadata: {
-                        method_name: methodName, // Use the actual method name
+                        method_name: methodName,
                         source: 'pos'
                     }
-                }],
-                physical_receipt_no: normalizedPRN
+                }]
             };
 
-            await api.post(`/invoices/${invoiceId}/payments`, paymentPayload);
+            const invoiceResponse = await api.post('/invoices', invoicePayload);
+            const newInvoiceNumber = invoiceResponse.data.invoice_number;
+            const returnedPhysicalReceiptNo = invoiceResponse.data.physical_receipt_no;
+            
+            // Check if physical receipt number was auto-incremented
+            if (returnedPhysicalReceiptNo && returnedPhysicalReceiptNo !== normalizedPRN) {
+                toast.success(`Physical receipt number auto-incremented to: ${returnedPhysicalReceiptNo}`, { duration: 5000 });
+            }
+
+            // Use backend-calculated totals for receipt processing
+            const backendTotal = invoiceResponse.data.total_amount;
+            const backendSubtotal = invoiceResponse.data.subtotal_ex_tax;
+            const backendTax = invoiceResponse.data.tax_total;
+            const taxBreakdown = invoiceResponse.data.tax_breakdown;
 
             // Success handling with backend-calculated values
             const saleDataForReceipt = { 
@@ -573,7 +571,7 @@ const POSPage = ({ user, lines, setLines }) => {
                 tax: backendTax,
                 tax_breakdown: taxBreakdown,
                 invoice_number: newInvoiceNumber, 
-                physical_receipt_no: normalizedPRN || null 
+                physical_receipt_no: returnedPhysicalReceiptNo || null 
             };
             setLastSale(saleDataForReceipt);
             setLines([]);
