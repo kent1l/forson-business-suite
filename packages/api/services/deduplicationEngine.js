@@ -275,7 +275,18 @@ class DeduplicationEngine {
             const parts = ids.map(id => partById.get(id)).filter(Boolean);
             if (parts.length < 2) continue;
 
-            // Fix D: skip if parts span completely different part categories
+            // 1. Compare if they belong to the same brand (unbranded/neutral brand tokens still pass)
+            const meaningfulBrands = [...new Set(
+                parts.map(p => (p.brand_name || '').trim().toUpperCase())
+                     .filter(b => !NO_BRAND_TOKENS.has(b))
+            )];
+
+            // Prevent queuing to AI pairs that have the same part number and group but have distinct brand.
+            if (meaningfulBrands.length > 1) {
+                continue;
+            }
+
+            // 2. Compare if they belong to the same category/group
             const groupNames = [...new Set(
                 parts.map(p => (p.group_name || '').trim().toUpperCase()).filter(Boolean)
             )];
@@ -284,31 +295,29 @@ class DeduplicationEngine {
                 continue;
             }
 
-            // Fix B: split by brand — same brand → 'exact', cross-brand → AI review
-            const meaningfulBrands = [...new Set(
-                parts.map(p => (p.brand_name || '').trim().toUpperCase())
-                     .filter(b => !NO_BRAND_TOKENS.has(b))
+            // 3. Compare exact match of part detail
+            const details = [...new Set(
+                parts.map(p => (p.detail || '').trim().toUpperCase())
             )];
 
-            if (meaningfulBrands.length > 1) {
-                // Multiple distinct brands share this PN — route to AI for adjudication
+            if (details.length === 1) {
+                // Exact match of part number, brand, category, and detail -> Auto-promote to exact duplicate
+                suggestionsToInsert.push({
+                    batchId,
+                    groupKey,
+                    confidence: 'exact',
+                    confidenceScore: 1.0,
+                    detectionMethod: pnClusters.has(key) ? 'exact_part_number' : 'exact_sku',
+                    aiReason: `Parts share the same normalized part number or SKU, brand, category, and detail: ${key}`,
+                    partIds: ids,
+                    partData: parts
+                });
+            } else {
+                // Same brand, PN, and group, but differing details -> Queue for AI review
                 crossBrandClusters.push(new Set(ids));
-                continue;
             }
-
-            // Same brand (or all no-brand) + same PN → high-confidence true duplicate
-            suggestionsToInsert.push({
-                batchId,
-                groupKey,
-                confidence: 'exact',
-                confidenceScore: 1.0,
-                detectionMethod: pnClusters.has(key) ? 'exact_part_number' : 'exact_sku',
-                aiReason: `Parts share the same normalized part number or SKU: ${key}`,
-                partIds: ids,
-                partData: parts
-            });
         }
-        onProgress(`Phase 1 complete. Found ${suggestionsToInsert.length} exact groups. ${crossBrandClusters.length} cross-brand clusters queued for AI review.`);
+        onProgress(`Phase 1 complete. Found ${suggestionsToInsert.length} exact groups. ${crossBrandClusters.length} same-brand differing-detail clusters queued for AI review.`);
 
         // ── FUZZY BLOCKING + AI ANALYSIS ─────────────────────────────
         onProgress('Phase 2: Semantic blocking with Meilisearch...');
