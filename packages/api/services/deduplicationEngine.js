@@ -21,6 +21,31 @@ function normalizePartNumber(pn) {
     return pn.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
 }
 
+// Helper: Extract engine part size tokens (STD, 0.25, 0.50, etc.)
+function extractSizeToken(text) {
+    if (!text) return null;
+    const match = text.match(/\b(STD|0\.25|0\.50|0\.75|1\.00|1\.50|020|030|040|050)\b/i);
+    return match ? match[1].toUpperCase() : null;
+}
+
+// Helper: Extract gasket material tokens (CARBON, STEEL, METAL, etc.)
+function extractMaterialToken(text) {
+    if (!text) return null;
+    const match = text.match(/\b(CARBON|STEEL|METAL|COPPER|PAPER|GRAPHITE)\b/i);
+    return match ? match[1].toUpperCase() : null;
+}
+
+function getPartSize(p) {
+    const pns = (p.part_numbers || []).map(pn => typeof pn === 'object' ? pn.part_number : pn).join(' ');
+    const combinedText = `${p.display_name} ${p.detail} ${pns}`.toUpperCase();
+    return extractSizeToken(combinedText);
+}
+
+function getPartMaterial(p) {
+    const combinedText = `${p.display_name} ${p.detail}`.toUpperCase();
+    return extractMaterialToken(combinedText);
+}
+
 class DeduplicationEngine {
     constructor(db) {
         this.db = db;
@@ -292,6 +317,20 @@ class DeduplicationEngine {
             )];
             if (groupNames.length > 1) {
                 console.warn(`[DedupEngine] Skipping cross-category exact match: ${groupNames.join(' vs ')} (PN: ${key})`);
+                continue;
+            }
+
+            // 2b. Compare size tokens (STD vs 0.25 etc. for piston rings/bearings)
+            const sizes = [...new Set(parts.map(getPartSize).filter(Boolean))];
+            if (sizes.length > 1) {
+                console.warn(`[DedupEngine] Skipping exact match due to conflicting sizes: ${sizes.join(' vs ')} (PN: ${key})`);
+                continue;
+            }
+
+            // 2c. Compare gasket materials (CARBON vs STEEL etc.)
+            const materials = [...new Set(parts.map(getPartMaterial).filter(Boolean))];
+            if (materials.length > 1) {
+                console.warn(`[DedupEngine] Skipping exact match due to conflicting materials: ${materials.join(' vs ')} (PN: ${key})`);
                 continue;
             }
 

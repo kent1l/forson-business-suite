@@ -226,6 +226,8 @@ You will be given a list of parts from an inventory system. Your job is to ident
 
 IMPORTANT RULES:
 1. Different sizes, specs, voltages, or dimensions (e.g., 12V vs 24V, 15/16" vs 1") = DIFFERENT items. Do NOT group them.
+   - PISTON RINGS / BEARINGS / ENGINE PARTS: STD (Standard) vs oversizes (0.25, 0.50, 0.75, 1.00, 1.50, 020, 030, 040) are DIFFERENT items. NEVER group standard with an oversize, or different oversizes together.
+   - GASKETS (especially Cylinder Head Gaskets): Different materials (e.g., CARBON, STEEL, METAL, COPPER, PAPER, GRAPHITE) represent distinct products. NEVER group different materials together.
 
 2. Different BRANDS = DIFFERENT inventory items, EVEN IF they share the same part number.
    In automotive parts, OEM part numbers are printed on aftermarket products as cross-references.
