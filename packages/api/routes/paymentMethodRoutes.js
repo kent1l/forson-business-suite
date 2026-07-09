@@ -436,7 +436,9 @@ router.post('/invoices/:id/payments', ...invoicePaymentsMiddlewares, async (req,
                 return res.status(400).json({ message: `Invalid payment method: ${method_id}` });
             }
 
-            methodConfig = method.rows[0].config;
+            methodConfig = typeof method.rows[0].config === 'string' 
+                ? JSON.parse(method.rows[0].config) 
+                : method.rows[0].config;
 
             // Validate required reference
             if (methodConfig.requires_reference && (!reference || reference.trim() === '')) {

@@ -45,7 +45,7 @@ export default function POSSettlementScreen() {
 
   // ── Submission state ───────────────────────────────────────────────────────
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [successData, setSuccessData] = useState<{ visible: boolean; invoiceNumber?: string }>({ visible: false });
+  const [successData, setSuccessData] = useState<{ visible: boolean; invoiceNumber?: string; changeAmount?: number }>({ visible: false });
 
   // ── Load data on mount ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -125,7 +125,7 @@ export default function POSSettlementScreen() {
       const result = await usePosStore.getState().submitInvoice(paymentData);
 
       haptics.txComplete();
-      setSuccessData({ visible: true, invoiceNumber: result.invoice_number });
+      setSuccessData({ visible: true, invoiceNumber: result.invoice_number, changeAmount: change > 0 ? change : undefined });
 
       setTimeout(() => {
         setSuccessData({ visible: false });
@@ -305,7 +305,7 @@ export default function POSSettlementScreen() {
         </View>
       </SafeAreaView>
 
-      <SuccessOverlay visible={successData.visible} invoiceNumber={successData.invoiceNumber} />
+      <SuccessOverlay visible={successData.visible} invoiceNumber={successData.invoiceNumber} changeAmount={successData.changeAmount} />
     </>
   );
 }
