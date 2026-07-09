@@ -18,9 +18,9 @@ However, the UI Layout, Visual Hierarchy, Gestures, and Dimensional Rules outlin
 
 Please follow these steps chronologically:
 
-1. **Analyze:** Scan the repository (specifically packages/mobile, packages/api/routes, and any existing Zustand stores). If available, utilize Graphify to understand the codebase context.  
-2. **Propose:** Briefly output your intended directory structure and the backend endpoints you plan to interact with for the checkout/settlement phase.  
-3. **Implement:** Write the components and state logic adhering strictly to the constraints below.  
+1. **Analyze:** Scan the repository (specifically `packages/mobile`, `packages/api/routes`, and any existing Zustand stores). Note the use of Expo Router in `packages/mobile/src/app/_layout.tsx`. If available, utilize Graphify to understand the codebase context.  
+2. **Propose:** Briefly output your intended directory structure (using Expo Router file-based routing) and the backend endpoints you plan to interact with (`POST /invoices`, `POST /invoices/:id/payments`) for the checkout/settlement phase.  
+3. **Implement:** Write the components and state logic adhering strictly to the constraints below, integrating with the `apiClient` (`api/client.js`).  
    \</Execution\_Plan\>
 
 ## **\<Strict\_UI\_Constraints\>**
@@ -58,8 +58,8 @@ Implement a global haptic utility using the native Android Vibrator API or our p
 
 ### **A. Search & Camera Input (\<SearchBar /\>)**
 
-* **Input Field:** Apply autoCapitalize="characters". Implement a strict **300ms debounce** on text input before querying the local database. Determine the best hook pattern for this in our stack.  
-* **Hardware Hook:** Bind the Android physical **Volume Down** button to globally trigger the react-native-vision-camera instance. Analyze the native device event listeners available in our environment.
+* **Input Field:** Apply autoCapitalize="characters". Implement a strict **300ms debounce** on text input before querying the inventory. Determine the best hook pattern for this in our stack.  
+* **Hardware Hook & Scanner:** Bind the Android physical **Volume Down** button to globally trigger the react-native-vision-camera (v4) instance. MUST utilize the existing 3-tier pipeline (`FRAME_INTERVAL_MS`, `ROI_HALF_WIDTH`, sliding window consensus) located in `packages/mobile/src/utils/scannerPipeline.ts` rather than re-implementing barcode reading logic.
 
 ### **B. Product List Node (\<ProductListItem /\>)**
 
@@ -84,7 +84,8 @@ We need a highly performant, non-mutating state store for the POS cart. Analyze 
 
 ### **2\. Settlement & Checkout Pipeline**
 
-Analyze our existing backend endpoints (e.g., packages/api/routes/...) to construct a JSON payload that accurately passes cart\_items, payment\_method (Cash, Account, Cheque), and tendered\_amount to the server.
+Analyze our existing backend endpoints (`packages/api/routes/invoiceRoutes.js` and `POST /invoices` / `POST /invoices/:id/payments`) to construct a JSON payload that accurately passes cart\_items, payment\_method (Cash, Account, Cheque), and tendered\_amount to the server.
+**CRITICAL PARITY REQUIREMENT:** Tax and discount calculations MUST defer to `services/taxCalculationService.js` on the backend, or re-use the exact same logic on the client, rather than re-implementing client-side logic inconsistently from the Web POS.
 
 * **Cash Mode:** Auto-focus the tendered input amount. Wire a real-time reactive function to calculate tendered \- grandTotal and display the **Change** in Emerald Green.  
 * **The "Instant Reset" Loop:** Upon receiving a 200 OK from the server, implement this exact UX sequence:  
