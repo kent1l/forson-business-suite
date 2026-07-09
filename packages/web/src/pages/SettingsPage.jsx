@@ -10,6 +10,7 @@ import BackupSettings from '../components/settings/BackupSettings';
 import DataUtilsSettings from '../components/settings/DataUtilsSettings';
 import PermissionsSettings from '../components/settings/PermissionsSettings'; // <-- NEW: Import the component
 import PaymentMethodSettings from '../components/settings/PaymentMethodSettings';
+import DeduplicationSettings from '../components/settings/DeduplicationSettings';
 
 const MobileAppSettings = ({ settings, handleChange }) => {
     const [showQR, setShowQR] = useState(false);
@@ -550,6 +551,7 @@ const SettingsPage = ({ user }) => {
                                 <button type="button" onClick={() => setActiveTab('financial')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'financial' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Financial</button>
                                                                 <button type="button" onClick={() => setActiveTab('payment_methods')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'payment_methods' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Payment Methods</button>
                                 <button type="button" onClick={() => setActiveTab('cycle_count')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'cycle_count' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Cycle Count</button>
+                                <button type="button" onClick={() => setActiveTab('deduplication')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'deduplication' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Deduplication</button>
                                 <button type="button" onClick={() => setActiveTab('tax_rates')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'tax_rates' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Tax Rates</button>
                                 <button type="button" onClick={() => setActiveTab('permissions')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'permissions' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Roles & Permissions</button>
                                 <button type="button" onClick={() => setActiveTab('backup')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'backup' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Backup & Restore</button>
@@ -562,6 +564,7 @@ const SettingsPage = ({ user }) => {
                         {activeTab === 'financial' && <FinancialSettings settings={settings} handleChange={handleChange} />}
                         {activeTab === 'tax_rates' && <TaxRateSettings settings={settings} handleChange={handleChange} />}
                         {activeTab === 'cycle_count' && <CycleCountSettings settings={settings} handleChange={handleChange} />}
+                        {activeTab === 'deduplication' && <DeduplicationSettings />}
                         {activeTab === 'permissions' && <PermissionsSettings />}
                         {activeTab === 'backup' && <BackupSettings settings={settings} handleChange={handleChange} handleSave={handleSave} />}
                         {activeTab === 'data' && <DataUtilsSettings />}

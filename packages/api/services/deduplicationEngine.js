@@ -328,13 +328,26 @@ class DeduplicationEngine {
         // Fix B: merge cross-brand exact clusters into the AI analysis queue
         fuzzyClusters = [...fuzzyClusters, ...crossBrandClusters];
 
+        // Update database with total clusters count to track progress in settings UI
+        await this.db.query(
+            "UPDATE public.duplicate_suggestion_batch SET total_clusters = $1 WHERE batch_id = $2",
+            [fuzzyClusters.length, batchId]
+        );
+
         // ── AI ANALYSIS per cluster ───────────────────────────────────
         // Includes both Meilisearch fuzzy clusters and cross-brand exact clusters (Fix B)
         onProgress(`Phase 3: AI group analysis on ${fuzzyClusters.length} clusters...`);
         for (let i = 0; i < fuzzyClusters.length; i++) {
             const cluster = fuzzyClusters[i];
             const parts = [...cluster].map(id => partById.get(id)).filter(Boolean);
-            if (parts.length < 2) continue;
+            if (parts.length < 2) {
+                // Update progress even if cluster is skipped
+                await this.db.query(
+                    "UPDATE public.duplicate_suggestion_batch SET processed_clusters = $1, ai_calls_made = $2 WHERE batch_id = $3",
+                    [i + 1, aiCallsMade, batchId]
+                );
+                continue;
+            }
 
             onProgress(`Phase 3: Analyzing cluster ${i + 1}/${fuzzyClusters.length} (${parts.length} parts)...`);
 
@@ -375,6 +388,12 @@ class DeduplicationEngine {
                 console.error(`[DedupEngine] AI analysis failed for cluster ${i + 1}:`, e.message);
                 // Continue with next cluster — one failure should not stop the entire scan
             }
+
+            // Update progress in database
+            await this.db.query(
+                "UPDATE public.duplicate_suggestion_batch SET processed_clusters = $1, ai_calls_made = $2 WHERE batch_id = $3",
+                [i + 1, aiCallsMade, batchId]
+            );
 
             // Small delay between AI calls to avoid rate limiting
             if (i < fuzzyClusters.length - 1) {

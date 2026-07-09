@@ -283,7 +283,7 @@ router.get('/parts/merge/worker-status', protect, hasPermission('parts:merge'), 
 
         // Get the last 3 batches for history display
         const batchRes = await req.db.query(`
-            SELECT batch_id, status, started_at, completed_at, total_groups, ai_calls_made, error_message
+            SELECT batch_id, status, started_at, completed_at, total_groups, ai_calls_made, error_message, total_clusters, processed_clusters
             FROM public.duplicate_suggestion_batch
             ORDER BY batch_id DESC
             LIMIT 3
