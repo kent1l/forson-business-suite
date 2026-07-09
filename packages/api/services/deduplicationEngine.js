@@ -204,11 +204,13 @@ class DeduplicationEngine {
         // to avoid re-asking the AI about pairs it already knows about
         const partIds = parts.map(p => p.part_id);
 
-        // Load all known exclusions for parts in this cluster
+        // Load all known exclusions for parts in this cluster from both tables
         const exclusionRes = await this.db.query(`
-            SELECT part_id_1, part_id_2
-            FROM part_exclusion
+            SELECT part_id_1, part_id_2 FROM public.part_exclusion
             WHERE part_id_1 = ANY($1) OR part_id_2 = ANY($1)
+            UNION
+            SELECT part_id_1, part_id_2 FROM public.ai_match_cache
+            WHERE is_duplicate = false AND (part_id_1 = ANY($1) OR part_id_2 = ANY($1))
         `, [partIds]);
         const exclusionPairs = new Set(exclusionRes.rows.map(r => `${r.part_id_1}_${r.part_id_2}`));
 

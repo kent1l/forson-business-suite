@@ -265,6 +265,14 @@ router.post('/parts/merge/exclude', protect, hasPermission('parts:merge'), async
             ON CONFLICT (part_id_1, part_id_2) DO UPDATE
             SET source = 'USER', reason = $3
         `, [id1, id2, reason]);
+
+        await req.db.query(`
+            INSERT INTO ai_match_cache (part_id_1, part_id_2, is_duplicate, source, reason)
+            VALUES ($1, $2, false, 'USER', $3)
+            ON CONFLICT (part_id_1, part_id_2) DO UPDATE
+            SET source = 'USER', reason = $3, is_duplicate = false, updated_at = NOW()
+        `, [id1, id2, reason]);
+
         res.json({ success: true, message: 'Parts successfully excluded from duplicate scans.' });
     } catch (error) {
         console.error('Failed to insert exclusion:', error);
@@ -459,9 +467,16 @@ router.post('/parts/merge/suggestions/:id/dismiss', protect, hasPermission('part
             for (let j = i + 1; j < partIds.length; j++) {
                 const id1 = Math.min(partIds[i], partIds[j]);
                 const id2 = Math.max(partIds[i], partIds[j]);
+
                 await req.db.query(`
                     INSERT INTO part_exclusion (part_id_1, part_id_2, source, reason)
                     VALUES ($1, $2, 'USER', 'Dismissed from suggestions by user')
+                    ON CONFLICT (part_id_1, part_id_2) DO NOTHING
+                `, [id1, id2]);
+
+                await req.db.query(`
+                    INSERT INTO ai_match_cache (part_id_1, part_id_2, is_duplicate, source, reason)
+                    VALUES ($1, $2, false, 'USER', 'Dismissed from suggestions by user')
                     ON CONFLICT (part_id_1, part_id_2) DO NOTHING
                 `, [id1, id2]);
             }
