@@ -1,5 +1,20 @@
 # Changelog
 
+## v2.4.0 - 2026-07-09
+
+### Added
+- **Background Deduplication Worker**: Implemented a background deduplication worker with status tracking, scan state persistence, and AI verification rate-limiting to isolate heavy AI workflows from HTTP request-response lifecycles.
+- **Background Scan Monitoring UI**: Created dashboard components for monitoring batch progress, listing scan statistics, and controlling background deduplication runs.
+- **AI Match Cache**: Integrated a persistent AI match caching table (`ai_match_cache`) replacing the simple part exclusions mechanism to bypass redundant LLM adjudication.
+- **Persistent Suggestion Tables**: Replaced real-time stream duplicate fetching with persistent suggestion tables for faster UI list loads and decoupled processing.
+- **Refined Heuristics & Validations**:
+  - Restricted exact duplicate auto-promotion to parts with matching details.
+  - Skipped distinct brand groupings and restricted cross-brand matching to AI-adjudicated clusters.
+  - Added category-matching enforcement, filtered out short part numbers, and validated size and material attributes in the deduplication engine.
+
+### Refactored / Optimized
+- **Pruned Codebase**: Cleaned up unused dependencies, removed legacy normalization helpers, and improved error logging in part merge and duplicate finder services.
+
 ## v2.3.1 - 2026-07-08
 
 ### Fixed
