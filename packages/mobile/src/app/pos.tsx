@@ -1,0 +1,323 @@
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
+  useColorScheme,
+  TextInput,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Ionicons } from '@expo/vector-icons';
+import apiClient from '../api/client';
+import usePosStore from '../store/usePosStore';
+import SearchBar from '@/components/pos/SearchBar';
+import ProductListItem from '@/components/pos/ProductListItem';
+import CartItem from '@/components/pos/CartItem';
+import PriceOverrideSheet from '@/components/pos/PriceOverrideSheet';
+import { formatPHP } from '@/utils/currency';
+import * as haptics from '@/utils/haptics';
+
+export default function POSScreen() {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const router = useRouter();
+
+  // ── Search state ───────────────────────────────────────────────────────────
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchInputRef = useRef<TextInput>(null);
+
+  // ── Cart store ─────────────────────────────────────────────────────────────
+  const cart = usePosStore((s: any) => s.cart);
+  const grandTotal = usePosStore((s: any) => s.grandTotal);
+  const isPriceOverrideOpen = usePosStore((s: any) => s.isPriceOverrideOpen);
+  const overrideItem = usePosStore((s: any) => s.overrideItem);
+
+  // ── Snackbar (undo remove) ─────────────────────────────────────────────────
+  const [snackbar, setSnackbar] = useState<{ visible: boolean; item: any | null }>({ visible: false, item: null });
+  const snackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showUndoSnackbar = useCallback((item: any) => {
+    if (snackTimerRef.current) clearTimeout(snackTimerRef.current);
+    setSnackbar({ visible: true, item });
+    snackTimerRef.current = setTimeout(() => setSnackbar({ visible: false, item: null }), 3000);
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    if (!snackbar.item) return;
+    if (snackTimerRef.current) clearTimeout(snackTimerRef.current);
+    usePosStore.getState().addToCart({ ...snackbar.item, _forceQty: snackbar.item.quantity });
+    setSnackbar({ visible: false, item: null });
+  }, [snackbar.item]);
+
+  // ── Search logic ───────────────────────────────────────────────────────────
+  const doSearch = useCallback(async (keyword: string) => {
+    if (!keyword.trim()) { setResults([]); return; }
+    setIsSearching(true);
+    try {
+      const { data } = await apiClient.get('/power-search/parts', { params: { keyword } });
+      setResults(data || []);
+    } catch {
+      setResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
+
+  const handleQueryChange = useCallback((text: string) => {
+    setQuery(text);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => doSearch(text), 300);
+  }, [doSearch]);
+
+  const handleScanResult = useCallback((barcode: string) => {
+    setQuery(barcode);
+    doSearch(barcode);
+  }, [doSearch]);
+
+  // ── Cart actions ───────────────────────────────────────────────────────────
+  const handleAddToCart = useCallback((product: any) => {
+    haptics.success();
+    usePosStore.getState().addToCart(product);
+  }, []);
+
+  const handleRemove = useCallback((partId: number) => {
+    const item = usePosStore.getState().cart.find((i: any) => i.part_id === partId);
+    usePosStore.getState().removeFromCart(partId);
+    if (item) showUndoSnackbar(item);
+  }, [showUndoSnackbar]);
+
+  const handleQtyChange = useCallback((partId: number, qty: number) => {
+    if (qty < 1) {
+      const item = usePosStore.getState().cart.find((i: any) => i.part_id === partId);
+      usePosStore.getState().removeFromCart(partId);
+      if (item) showUndoSnackbar(item);
+    } else {
+      usePosStore.getState().updateQuantity(partId, qty);
+    }
+  }, [showUndoSnackbar]);
+
+  const handleLongPress = useCallback((item: any) => {
+    Alert.alert(
+      item.display_name || item.detail,
+      [
+        item.part_numbers ? `SKU: ${item.part_numbers}` : null,
+        item.brand_name ? `Brand: ${item.brand_name}` : null,
+        `Stock: ${item.stock_qty ?? 'N/A'}`,
+        `Unit Price: ${formatPHP(item.sale_price)}`,
+      ].filter(Boolean).join('\n'),
+    );
+  }, []);
+
+  const bg = isDark ? '#111827' : '#f9fafb';
+  const cartBg = isDark ? '#1f2937' : '#fff';
+
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaView style={[styles.safe, { backgroundColor: bg }]} edges={['top', 'left', 'right']}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={0}
+        >
+          {/* App bar */}
+          <View style={styles.appBar}>
+            <Text style={styles.appBarTitle}>Point of Sale</Text>
+            {cart.length > 0 && (
+              <TouchableOpacity
+                onPress={() => { haptics.error(); usePosStore.getState().clearCart(); }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="trash-outline" size={22} color="#ef4444" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Top 15%: Search */}
+          <View style={[styles.topArea, { zIndex: 10, elevation: 8 }]}>
+            <SearchBar
+              value={query}
+              onChangeText={handleQueryChange}
+              onScanResult={handleScanResult}
+              searchInputRef={searchInputRef}
+            />
+          </View>
+
+          {/* Middle 40%: Results */}
+          {/* TODO: Evaluate @shopify/flash-list for 10k+ row performance vs FlatList */}
+          <View style={[styles.middleArea, { backgroundColor: bg }]}>
+            <FlatList
+              data={results}
+              keyExtractor={(item) => String(item.part_id)}
+              renderItem={({ item }) => (
+                <ProductListItem item={item} onPress={handleAddToCart} />
+              )}
+              overScrollMode="never"
+              keyboardShouldPersistTaps="handled"
+              ListEmptyComponent={
+                <View style={styles.emptyResults}>
+                  <Text style={[styles.emptyText, isDark && styles.emptyTextDark]}>
+                    {isSearching ? 'Searching...' : query.trim() ? `No results for "${query}"` : 'Search or scan a barcode to add items'}
+                  </Text>
+                </View>
+              }
+            />
+          </View>
+
+          {/* Bottom 45%: Cart */}
+          <View style={[styles.bottomArea, { backgroundColor: cartBg, borderTopColor: isDark ? '#374151' : '#e5e7eb' }]}>
+            <View style={styles.cartHeader}>
+              <Text style={[styles.cartTitle, isDark && styles.cartTitleDark]}>
+                Cart {cart.length > 0 ? `(${cart.length})` : ''}
+              </Text>
+              <Text style={[styles.cartTotal, isDark && styles.cartTotalDark]}>
+                {formatPHP(grandTotal)}
+              </Text>
+            </View>
+
+            <FlatList
+              data={cart}
+              keyExtractor={(item: any) => String(item.part_id)}
+              renderItem={({ item }: any) => (
+                <CartItem
+                  item={item}
+                  onRemove={handleRemove}
+                  onQuantityChange={handleQtyChange}
+                  onPriceOverride={(i) => { haptics.tap(); usePosStore.getState().openPriceOverride(i); }}
+                  onLongPress={handleLongPress}
+                />
+              )}
+              overScrollMode="never"
+              keyboardShouldPersistTaps="handled"
+              ListEmptyComponent={
+                <View style={styles.emptyCart}>
+                  <Ionicons name="cart-outline" size={36} color={isDark ? '#4b5563' : '#d1d5db'} />
+                  <Text style={[styles.emptyCartText, isDark && styles.emptyTextDark]}>Cart is empty</Text>
+                </View>
+              }
+            />
+
+            <View style={[styles.chargeBar, { borderTopColor: isDark ? '#374151' : '#f3f4f6' }]}>
+              <TouchableOpacity
+                style={[styles.chargeBtn, cart.length === 0 && styles.chargeBtnDisabled]}
+                disabled={cart.length === 0}
+                onPress={() => { haptics.tap(); router.push('/pos-settlement'); }}
+              >
+                <Ionicons name="card-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+                <Text style={styles.chargeBtnText}>
+                  Charge {cart.length > 0 ? formatPHP(grandTotal) : ''}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+
+        {/* Price override sheet */}
+        <PriceOverrideSheet
+          visible={isPriceOverrideOpen}
+          item={overrideItem}
+          onClose={() => usePosStore.getState().closePriceOverride()}
+          onConfirm={(partId, price) => { usePosStore.getState().updatePrice(partId, price); haptics.success(); }}
+        />
+
+        {/* Undo snackbar */}
+        {snackbar.visible && (
+          <View style={styles.snackbar}>
+            <Text style={styles.snackText}>Item removed.</Text>
+            <TouchableOpacity onPress={handleUndo}>
+              <Text style={styles.snackUndo}>UNDO</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </SafeAreaView>
+    </GestureHandlerRootView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1 },
+  appBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#111827',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 6,
+  },
+  appBarTitle: { color: '#fff', fontSize: 18, fontWeight: '800', letterSpacing: 0.3 },
+  topArea: {
+    flex: 0.15,
+    backgroundColor: '#111827',
+    paddingHorizontal: 12,
+    paddingBottom: 10,
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  middleArea: { flex: 0.40 },
+  bottomArea: { flex: 0.45, borderTopWidth: 1 },
+  emptyResults: { paddingTop: 24, alignItems: 'center', paddingHorizontal: 24 },
+  emptyText: { color: '#9ca3af', fontSize: 14, textAlign: 'center' },
+  emptyTextDark: { color: '#6b7280' },
+  cartHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  cartTitle: { fontSize: 15, fontWeight: '700', color: '#111827' },
+  cartTitleDark: { color: '#f9fafb' },
+  cartTotal: { fontSize: 16, fontWeight: '800', color: '#10B981' },
+  cartTotalDark: { color: '#34d399' },
+  emptyCart: { alignItems: 'center', paddingTop: 20, gap: 8 },
+  emptyCartText: { color: '#9ca3af', fontSize: 14 },
+  chargeBar: { padding: 12, borderTopWidth: 1 },
+  chargeBtn: {
+    backgroundColor: '#10B981',
+    borderRadius: 14,
+    paddingVertical: 16,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 3,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+  },
+  chargeBtnDisabled: { backgroundColor: '#d1d5db', shadowOpacity: 0, elevation: 0 },
+  chargeBtnText: { color: '#fff', fontSize: 17, fontWeight: '800', letterSpacing: 0.5 },
+  snackbar: {
+    position: 'absolute',
+    bottom: 100,
+    left: 16,
+    right: 16,
+    backgroundColor: '#111827',
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  snackText: { color: '#fff', fontSize: 14 },
+  snackUndo: { color: '#10B981', fontWeight: '800', fontSize: 14 },
+});

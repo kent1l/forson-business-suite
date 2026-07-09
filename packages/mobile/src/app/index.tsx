@@ -164,6 +164,17 @@ export default function DashboardScreen() {
               <Ionicons name="settings-outline" size={24} color="#3b82f6" />
               <Text style={styles.menuButtonText}>Go to Settings</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.menuButton, { borderColor: '#10B981' }]}
+              onPress={() => {
+                setProfileMenuVisible(false);
+                router.push('/pos');
+              }}
+            >
+              <Ionicons name="cart-outline" size={24} color="#10B981" />
+              <Text style={[styles.menuButtonText, { color: '#10B981' }]}>Point of Sale</Text>
+            </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </Modal>

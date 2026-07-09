@@ -126,6 +126,8 @@ export default function TabLayout() {
           <Stack.Screen name="my-progress" />
           <Stack.Screen name="profile" />
           <Stack.Screen name="settings" />
+          <Stack.Screen name="pos" />
+          <Stack.Screen name="pos-settlement" options={{ animation: 'slide_from_right' }} />
         </Stack>
       </ThemeProvider>
     </QueryClientProvider>
