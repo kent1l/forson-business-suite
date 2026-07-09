@@ -60,65 +60,96 @@ Respond ONLY with a JSON object:
         }
     }
 
-    async callGemini(prompt) {
+    async callGemini(prompt, retries = 3) {
         if (this.geminiKeys.length === 0) {
             console.warn('No Gemini API keys found. Skipping AI verification.');
             return { isDuplicate: true, skipped: true, reason: 'Skipped - No Gemini API Key' };
         }
 
         const key = this.geminiKeys[this.geminiIndex];
-        this.geminiIndex = (this.geminiIndex + 1) % this.geminiKeys.length; // Rotate keys
+        this.geminiIndex = (this.geminiIndex + 1) % this.geminiKeys.length;
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.geminiModel}:generateContent?key=${key}`;
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            signal: AbortSignal.timeout(30000),
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { responseMimeType: 'application/json' }
-            })
-        });
 
-        if (!response.ok) {
-            throw new Error(`Gemini API returned status ${response.status}: ${await response.text()}`);
+        for (let attempt = 1; attempt <= retries; attempt++) {
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: AbortSignal.timeout(30000),
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: { responseMimeType: 'application/json' }
+                    })
+                });
+
+                if (!response.ok) {
+                    if (response.status === 429 && attempt < retries) {
+                        console.warn(`[LLM] Gemini 429 Rate Limit. Retrying in ${attempt * 2}s...`);
+                        await new Promise(r => setTimeout(r, attempt * 2000));
+                        continue;
+                    }
+                    throw new Error(`Gemini API returned status ${response.status}: ${await response.text()}`);
+                }
+
+                const data = await response.json();
+                const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                const result = JSON.parse(text);
+                return { isDuplicate: result.isDuplicate === true, reason: result.reason || '', provider: 'google', model: this.geminiModel };
+            } catch (error) {
+                console.error(`[LLM] Gemini attempt ${attempt} failed:`, error.message);
+                if (attempt === retries) {
+                    return { isDuplicate: true, skipped: true, reason: `Gemini failed: ${error.message}` };
+                }
+                await new Promise(r => setTimeout(r, attempt * 2000));
+            }
         }
-
-        const data = await response.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        const result = JSON.parse(text);
-        return { isDuplicate: result.isDuplicate === true, reason: result.reason || '', provider: 'google', model: this.geminiModel };
     }
 
-    async callOpenAI(prompt) {
+    async callOpenAI(prompt, retries = 3) {
         if (!this.openaiKey) {
             console.warn('No OpenAI API key found. Skipping AI verification.');
             return { isDuplicate: true, skipped: true, reason: 'Skipped - No OpenAI API Key' };
         }
 
         const url = 'https://api.openai.com/v1/chat/completions';
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${this.openaiKey}`
-            },
-            signal: AbortSignal.timeout(30000),
-            body: JSON.stringify({
-                model: this.openaiModel,
-                messages: [{ role: 'user', content: prompt }],
-                response_format: { type: 'json_object' }
-            })
-        });
+        for (let attempt = 1; attempt <= retries; attempt++) {
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${this.openaiKey}`
+                    },
+                    signal: AbortSignal.timeout(30000),
+                    body: JSON.stringify({
+                        model: this.openaiModel,
+                        messages: [{ role: 'user', content: prompt }],
+                        response_format: { type: 'json_object' }
+                    })
+                });
 
-        if (!response.ok) {
-            throw new Error(`OpenAI API returned status ${response.status}: ${await response.text()}`);
+                if (!response.ok) {
+                    if (response.status === 429 && attempt < retries) {
+                        console.warn(`[LLM] OpenAI 429 Rate Limit. Retrying in ${attempt * 2}s...`);
+                        await new Promise(r => setTimeout(r, attempt * 2000));
+                        continue;
+                    }
+                    throw new Error(`OpenAI API returned status ${response.status}: ${await response.text()}`);
+                }
+
+                const data = await response.json();
+                const text = data.choices?.[0]?.message?.content;
+                const result = JSON.parse(text);
+                return { isDuplicate: result.isDuplicate === true, reason: result.reason || '', provider: 'openai', model: this.openaiModel };
+            } catch (error) {
+                console.error(`[LLM] OpenAI attempt ${attempt} failed:`, error.message);
+                if (attempt === retries) {
+                    return { isDuplicate: true, skipped: true, reason: `OpenAI failed: ${error.message}` };
+                }
+                await new Promise(r => setTimeout(r, attempt * 2000));
+            }
         }
-
-        const data = await response.json();
-        const text = data.choices?.[0]?.message?.content;
-        const result = JSON.parse(text);
-        return { isDuplicate: result.isDuplicate === true, reason: result.reason || '', provider: 'openai', model: this.openaiModel };
     }
 
     async callOpenRouter(prompt, retries = 3, overrideModel = null, useFallback = true) {
@@ -278,7 +309,6 @@ Only include groups that contain 2 or more parts. Parts that are NOT duplicates 
         }
     }
 
-    // Internal helper — calls Gemini and parses group response
     async _callGeminiForGroup(prompt, partIds) {
         if (this.geminiKeys.length === 0) {
             console.warn('[LLM] No Gemini API key. Returning empty groups.');
@@ -288,42 +318,72 @@ Only include groups that contain 2 or more parts. Parts that are NOT duplicates 
         this.geminiIndex = (this.geminiIndex + 1) % this.geminiKeys.length;
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.geminiModel}:generateContent?key=${key}`;
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            signal: AbortSignal.timeout(45000),
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { responseMimeType: 'application/json' }
-            })
-        });
+        const retries = 3;
+        for (let attempt = 1; attempt <= retries; attempt++) {
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: AbortSignal.timeout(45000),
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: { responseMimeType: 'application/json' }
+                    })
+                });
 
-        if (!response.ok) {
-            throw new Error(`Gemini API error ${response.status}: ${await response.text()}`);
+                if (!response.ok) {
+                    if (response.status === 429 && attempt < retries) {
+                        console.warn(`[LLM] Gemini (group) 429 Rate Limit. Retrying in ${attempt * 2}s...`);
+                        await new Promise(r => setTimeout(r, attempt * 2000));
+                        continue;
+                    }
+                    throw new Error(`Gemini API error ${response.status}: ${await response.text()}`);
+                }
+                const data = await response.json();
+                const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                const result = JSON.parse(text);
+                return this._validateGroupResult(result, partIds);
+            } catch (error) {
+                console.error(`[LLM] Gemini (group) attempt ${attempt} failed:`, error.message);
+                if (attempt === retries) return { groups: [], skipped: true };
+                await new Promise(r => setTimeout(r, attempt * 2000));
+            }
         }
-        const data = await response.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        const result = JSON.parse(text);
-        return this._validateGroupResult(result, partIds);
     }
 
     // Internal helper — calls OpenAI and parses group response
     async _callOpenAIForGroup(prompt, partIds) {
         if (!this.openaiKey) return { groups: [], skipped: true };
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.openaiKey}` },
-            signal: AbortSignal.timeout(45000),
-            body: JSON.stringify({
-                model: this.openaiModel,
-                messages: [{ role: 'user', content: prompt }],
-                response_format: { type: 'json_object' }
-            })
-        });
-        if (!response.ok) throw new Error(`OpenAI error ${response.status}`);
-        const data = await response.json();
-        const result = JSON.parse(data.choices?.[0]?.message?.content);
-        return this._validateGroupResult(result, partIds);
+        const retries = 3;
+        for (let attempt = 1; attempt <= retries; attempt++) {
+            try {
+                const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.openaiKey}` },
+                    signal: AbortSignal.timeout(45000),
+                    body: JSON.stringify({
+                        model: this.openaiModel,
+                        messages: [{ role: 'user', content: prompt }],
+                        response_format: { type: 'json_object' }
+                    })
+                });
+                if (!response.ok) {
+                    if (response.status === 429 && attempt < retries) {
+                        console.warn(`[LLM] OpenAI (group) 429 Rate Limit. Retrying in ${attempt * 2}s...`);
+                        await new Promise(r => setTimeout(r, attempt * 2000));
+                        continue;
+                    }
+                    throw new Error(`OpenAI error ${response.status}`);
+                }
+                const data = await response.json();
+                const result = JSON.parse(data.choices?.[0]?.message?.content);
+                return this._validateGroupResult(result, partIds);
+            } catch (error) {
+                console.error(`[LLM] OpenAI (group) attempt ${attempt} failed:`, error.message);
+                if (attempt === retries) return { groups: [], skipped: true };
+                await new Promise(r => setTimeout(r, attempt * 2000));
+            }
+        }
     }
 
     // Internal helper — calls OpenRouter and parses group response

@@ -137,30 +137,35 @@ class DeduplicationEngine {
         // adjacency[partId] = Set of part IDs that appeared in its Meili results
         const adjacency = new Map();
 
-        for (const partId of candidatePartIds) {
-            const part = partById.get(partId);
-            if (!part) continue;
-            const searchQuery = part.display_name || part.internal_sku || '';
-            if (!searchQuery) continue;
+        // Run Meilisearch queries in parallel chunks to reduce sequential HTTP overhead
+        const MEILI_CHUNK = 10;
+        for (let i = 0; i < candidatePartIds.length; i += MEILI_CHUNK) {
+            const chunk = candidatePartIds.slice(i, i + MEILI_CHUNK);
+            await Promise.all(chunk.map(async (partId) => {
+                const part = partById.get(partId);
+                if (!part) return;
+                const searchQuery = part.display_name || part.internal_sku || '';
+                if (!searchQuery) return;
 
-            try {
-                const searchRes = await index.search(searchQuery, {
-                    limit: 15,                              // Increased from old value of 5
-                    attributesToRetrieve: ['part_id']
-                });
+                try {
+                    const searchRes = await index.search(searchQuery, {
+                        limit: 15,
+                        attributesToRetrieve: ['part_id']
+                    });
 
-                for (const hit of searchRes.hits) {
-                    const hitId = hit.part_id;
-                    if (hitId === partId) continue; // Exclude self
-                    if (!candidatePartIds.includes(hitId)) continue; // Only consider candidates we loaded
-                    if (!adjacency.has(partId)) adjacency.set(partId, new Set());
-                    if (!adjacency.has(hitId)) adjacency.set(hitId, new Set());
-                    adjacency.get(partId).add(hitId);
-                    adjacency.get(hitId).add(partId);    // Bidirectional
+                    for (const hit of searchRes.hits) {
+                        const hitId = hit.part_id;
+                        if (hitId === partId) continue;
+                        if (!candidatePartIds.includes(hitId)) continue;
+                        if (!adjacency.has(partId)) adjacency.set(partId, new Set());
+                        if (!adjacency.has(hitId)) adjacency.set(hitId, new Set());
+                        adjacency.get(partId).add(hitId);
+                        adjacency.get(hitId).add(partId);
+                    }
+                } catch (e) {
+                    console.error(`[DedupEngine] Meilisearch error for part ${partId}:`, e.message);
                 }
-            } catch (e) {
-                console.error(`[DedupEngine] Meilisearch error for part ${partId}:`, e.message);
-            }
+            }));
         }
 
         // Extract connected components from the adjacency graph (BFS)
@@ -223,8 +228,7 @@ class DeduplicationEngine {
         const aiResult = await llmRouter.analyzeGroup(parts);
         if (aiResult.skipped) return [];
 
-        // Filter out any groups that contain excluded pairs
-        return aiResult.groups.filter(group => {
+        const validGroups = aiResult.groups.filter(group => {
             for (let i = 0; i < group.partIds.length; i++) {
                 for (let j = i + 1; j < group.partIds.length; j++) {
                     if (isExcluded(group.partIds[i], group.partIds[j])) return false;
@@ -232,6 +236,39 @@ class DeduplicationEngine {
             }
             return true;
         });
+
+        // Cache AI verdicts for all cross-pairs in this cluster
+        // — confirmed duplicates and confirmed non-duplicates both get written
+        const confirmedDupeSet = new Set();
+        for (const group of validGroups) {
+            for (let i = 0; i < group.partIds.length; i++) {
+                for (let j = i + 1; j < group.partIds.length; j++) {
+                    const [a, b] = [group.partIds[i], group.partIds[j]].sort((x, y) => x - y);
+                    confirmedDupeSet.add(`${a}_${b}`);
+                }
+            }
+        }
+
+        const cacheWrites = [];
+        for (let i = 0; i < partIds.length; i++) {
+            for (let j = i + 1; j < partIds.length; j++) {
+                const [a, b] = [partIds[i], partIds[j]].sort((x, y) => x - y);
+                const pairKey = `${a}_${b}`;
+                if (exclusionPairs.has(pairKey)) continue; // already cached
+                const isDuplicate = confirmedDupeSet.has(pairKey);
+                cacheWrites.push(
+                    this.db.query(`
+                        INSERT INTO public.ai_match_cache (part_id_1, part_id_2, is_duplicate, source, reason)
+                        VALUES ($1, $2, $3, 'AI_GROUP', $4)
+                        ON CONFLICT (part_id_1, part_id_2) DO NOTHING
+                    `, [a, b, isDuplicate, isDuplicate ? 'Confirmed duplicate by group AI analysis' : 'Confirmed non-duplicate by group AI analysis'])
+                    .catch(err => console.error('[DedupEngine] Cache write failed:', err.message))
+                );
+            }
+        }
+        await Promise.all(cacheWrites);
+
+        return validGroups;
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -247,26 +284,58 @@ class DeduplicationEngine {
      */
     async runFullScan(batchId, onProgress = () => {}) {
 
-        // ── Load all active (non-merged) parts ───────────────────────
+        // ── Load parts: prefer pending queue entries (delta scan), fall back to full catalog ──
         onProgress('Loading parts catalog...');
-        const partsResult = await this.db.query(`
-            SELECT
-                p.part_id, p.internal_sku, p.display_name, p.detail,
-                p.brand_name, p.group_name,
-                p.date_created as created_at, p.date_modified as modified_at,
-                COALESCE(
-                    (SELECT json_agg(jsonb_build_object('part_number', pn.part_number))
-                     FROM part_number pn
-                     WHERE pn.part_id = p.part_id AND pn.deleted_at IS NULL),
-                '[]'::json) as part_numbers
-            FROM parts_view p
-            WHERE p.merged_into_part_id IS NULL
-            ORDER BY p.part_id
+        const queueRes = await this.db.query(`
+            SELECT part_id FROM public.dedupe_scan_queue
+            WHERE status = 'pending'
+            LIMIT 5000
         `);
-        const allParts = partsResult.rows;
+        const queuedPartIds = queueRes.rows.map(r => r.part_id);
+        const isDeltaScan = queuedPartIds.length > 0;
+
+        let partsQuery;
+        if (isDeltaScan) {
+            onProgress(`Delta scan: loading ${queuedPartIds.length} queued part(s)...`);
+            partsQuery = await this.db.query(`
+                SELECT
+                    p.part_id, p.internal_sku, p.display_name, p.detail,
+                    p.brand_name, p.group_name,
+                    p.date_created as created_at, p.date_modified as modified_at,
+                    COALESCE(
+                        (SELECT json_agg(jsonb_build_object('part_number', pn.part_number))
+                         FROM part_number pn
+                         WHERE pn.part_id = p.part_id AND pn.deleted_at IS NULL),
+                    '[]'::json) as part_numbers
+                FROM parts_view p
+                WHERE p.merged_into_part_id IS NULL
+                  AND p.part_id = ANY($1)
+                ORDER BY p.part_id
+            `, [queuedPartIds]);
+        } else {
+            onProgress('Full scan: loading entire parts catalog...');
+            partsQuery = await this.db.query(`
+                SELECT
+                    p.part_id, p.internal_sku, p.display_name, p.detail,
+                    p.brand_name, p.group_name,
+                    p.date_created as created_at, p.date_modified as modified_at,
+                    COALESCE(
+                        (SELECT json_agg(jsonb_build_object('part_number', pn.part_number))
+                         FROM part_number pn
+                         WHERE pn.part_id = p.part_id AND pn.deleted_at IS NULL),
+                    '[]'::json) as part_numbers
+                FROM parts_view p
+                WHERE p.merged_into_part_id IS NULL
+                ORDER BY p.part_id
+            `);
+        }
+
+        const allParts = partsQuery.rows;
         const partById = new Map(allParts.map(p => [p.part_id, p]));
         const allPartIds = allParts.map(p => p.part_id);
-        onProgress(`Loaded ${allParts.length} parts.`);
+        // processedPartIds is returned to the worker so it can mark queue rows 'done'
+        const processedPartIds = isDeltaScan ? queuedPartIds : [];
+        onProgress(`Loaded ${allParts.length} parts (${isDeltaScan ? 'delta' : 'full'} scan).`);
 
         // Track which suggestion group_keys already exist (to skip re-inserting)
         const existingKeysRes = await this.db.query(
@@ -404,6 +473,19 @@ class DeduplicationEngine {
                 }
 
                 for (const chunk of chunks) {
+                    // Mid-batch abort: check if the worker has been disabled since the scan started
+                    const settingRes = await this.db.query(
+                        `SELECT setting_value FROM public.settings WHERE setting_key = 'DEDUPE_BACKGROUND_WORKER_ENABLED'`
+                    );
+                    const stillEnabled = settingRes.rowCount > 0
+                        ? settingRes.rows[0].setting_value !== 'false'
+                        : true;
+                    if (!stillEnabled) {
+                        onProgress('Worker disabled mid-batch. Stopping Phase 3 early.');
+                        // Write what we have collected so far before exiting
+                        break;
+                    }
+
                     const aiGroups = await this.analyzeClusterWithAI(chunk);
                     aiCallsMade++;
 
@@ -425,7 +507,7 @@ class DeduplicationEngine {
                             partIds: ids,
                             partData: groupParts
                         });
-                        existingKeys.add(groupKey); // Prevent duplicates in this run
+                        existingKeys.add(groupKey);
                     }
                 }
             } catch (e) {
@@ -467,7 +549,7 @@ class DeduplicationEngine {
         }
 
         onProgress(`Scan complete. ${suggestionsToInsert.length} groups written. ${aiCallsMade} AI calls made.`);
-        return { totalGroups: suggestionsToInsert.length, aiCallsMade };
+        return { totalGroups: suggestionsToInsert.length, aiCallsMade, processedPartIds };
     }
 }
 

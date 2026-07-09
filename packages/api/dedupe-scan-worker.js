@@ -5,12 +5,15 @@
  * suggestions to the duplicate_suggestion_group table.
  *
  * Lifecycle:
- *   1. On startup: call reset_stale_dedupe_rows() to recover from crashes
+ *   1. On startup:
+ *      a. reset_stale_dedupe_rows() — requeue 'processing' queue rows stuck >10m
+ *      b. resetStaleBatches()       — mark 'running' batches stuck >30m as 'failed'
  *   2. Check if a scan is already running (prevents double-runs)
  *   3. Create a new batch record (status='running')
  *   4. Run DeduplicationEngine.runFullScan()
  *   5. Update batch record to status='complete'
- *   6. Wait SCAN_INTERVAL_MS, then repeat
+ *   6. Mark processed queue rows as 'done'
+ *   7. Wait SCAN_INTERVAL_MS, then repeat
  *
  * Can also be triggered on-demand via POST /api/parts/merge/trigger-scan
  */
@@ -69,7 +72,7 @@ async function runScanCycle() {
     console.log(`[DedupeWorker] Starting batch #${batchId}`);
 
     try {
-        const { totalGroups, aiCallsMade } = await engine.runFullScan(
+        const { totalGroups, aiCallsMade, processedPartIds } = await engine.runFullScan(
             batchId,
             (msg) => console.log(`[DedupeWorker] Batch #${batchId}: ${msg}`)
         );
@@ -82,6 +85,16 @@ async function runScanCycle() {
                 ai_calls_made = $2
             WHERE batch_id = $3
         `, [totalGroups, aiCallsMade, batchId]);
+
+        // Mark scanned parts as 'done' in the queue so delta scans skip them next time
+        if (processedPartIds && processedPartIds.length > 0) {
+            await pool.query(
+                `UPDATE public.dedupe_scan_queue SET status = 'done', updated_at = NOW()
+                 WHERE part_id = ANY($1)`,
+                [processedPartIds]
+            );
+            console.log(`[DedupeWorker] Marked ${processedPartIds.length} queue entries as done.`);
+        }
 
         console.log(`[DedupeWorker] Batch #${batchId} complete. Groups: ${totalGroups}, AI calls: ${aiCallsMade}`);
 
@@ -99,12 +112,35 @@ async function runScanCycle() {
     }
 }
 
+/**
+ * Marks any batch stuck in 'running' for more than 30 minutes as 'failed'.
+ * Prevents the manual-trigger guard from blocking new scans indefinitely after a crash.
+ */
+async function resetStaleBatches() {
+    const res = await pool.query(`
+        UPDATE public.duplicate_suggestion_batch
+        SET status = 'failed',
+            completed_at = NOW(),
+            error_message = 'Automatically failed: batch was still running on worker startup (crash recovery).'
+        WHERE status = 'running'
+          AND started_at < NOW() - INTERVAL '30 minutes'
+        RETURNING batch_id
+    `);
+    if (res.rowCount > 0) {
+        const ids = res.rows.map(r => r.batch_id).join(', ');
+        console.log(`[DedupeWorker] Crash-recovered ${res.rowCount} stale batch(es): #${ids}`);
+    }
+}
+
 async function startWorker() {
     console.log('[DedupeWorker] Starting...');
 
-    // Reset any rows stuck in 'processing' from a previous crash
+    // Reset dedupe_scan_queue rows stuck in 'processing' from a previous crash
     await pool.query(`SELECT public.reset_stale_dedupe_rows()`);
-    console.log('[DedupeWorker] Stale rows reset.');
+    console.log('[DedupeWorker] Stale queue rows reset.');
+
+    // Reset duplicate_suggestion_batch rows stuck in 'running' from a previous crash
+    await resetStaleBatches();
 
     // Run first scan immediately on startup
     await runScanCycle();
