@@ -7,7 +7,8 @@ const { startMeiliListener } = require('./meili-listener');
 const { startMeiliApplicationsListener } = require('./meili-app-listener');
 const { startMeiliOutboxWorker } = require('./meili-outbox-worker');
 const { startSearchRepairWorker } = require('./search-repair-worker');
-const { init: startDedupeScanWorker } = require('./dedupe-scan-worker');
+const { startWorker: startDedupeScanWorker, runScanCycle } = require('./dedupe-scan-worker');
+global.runDeduplicationScan = runScanCycle;
 const { startCycleCountEngine } = require('./services/cycleCountService');
 
 // Set default timezone to Philippine Time

@@ -13,72 +13,50 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
     const [isCompact, setIsCompact] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [expandedGroups, setExpandedGroups] = useState({});
+    const [latestBatch, setLatestBatch] = useState(null);
+    const [counts, setCounts] = useState({});
+    const [triggeringRefresh, setTriggeringRefresh] = useState(false);
 
     const fetchDuplicateGroups = useCallback(async () => {
         setLoading(true);
         setError(null);
         setProgress(null);
-        
+
         try {
-            const sessionData = JSON.parse(localStorage.getItem('userSession'));
-            const token = sessionData?.token || '';
-            const query = new URLSearchParams({
-                excludeMerged: 'true',
-                algo: 'v2',
-                minScore: similarityThreshold
-            }).toString();
+            // Read from pre-computed suggestions table — instant, no computation
+            const params = new URLSearchParams({ limit: 200 });
+            if (similarityThreshold >= 0.9) params.set('confidence', 'exact');
+            else if (similarityThreshold >= 0.8) params.set('confidence', 'high');
+            // medium/low: no filter, show all
 
-            const response = await fetch(`/api/parts/merge/duplicates/stream?${query}`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-
-            if (!response.ok) throw new Error('Failed to fetch stream');
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n\n');
-                
-                for (let i = 0; i < lines.length - 1; i++) {
-                    const eventText = lines[i];
-                    if (!eventText.trim()) continue;
-
-                    const eventMatch = eventText.match(/event: (.*?)\n/);
-                    const dataMatch = eventText.match(/data: (.*)/);
-                    
-                    if (eventMatch && dataMatch) {
-                        const eventType = eventMatch[1];
-                        const eventData = JSON.parse(dataMatch[1]);
-                        
-                        if (eventType === 'progress') {
-                            setProgress(eventData);
-                        } else if (eventType === 'complete') {
-                            setDuplicateGroups(eventData.groups || []);
-                            setAiStats(eventData.aiStats || null);
-                            setLoading(false);
-                            setProgress(null);
-                        } else if (eventType === 'error') {
-                            throw new Error(eventData.message || 'Stream error');
-                        }
-                    }
-                }
-                buffer = lines[lines.length - 1]; 
-            }
+            const response = await api.get(`/parts/merge/suggestions?${params}`);
+            setDuplicateGroups(response.data.groups || []);
+            setLatestBatch(response.data.latestBatch || null);
+            setCounts(response.data.counts || {});
         } catch (err) {
-            console.error('Error fetching duplicate groups:', err);
-            setError('Failed to fetch duplicate groups. Please try again.');
-            toast.error('Failed to load duplicate groups');
+            console.error('Error fetching suggestions:', err);
+            setError('Failed to load duplicate suggestions. Please try again.');
+            toast.error('Failed to load duplicate suggestions');
+        } finally {
             setLoading(false);
         }
     }, [similarityThreshold]);
+
+    const triggerRefreshScan = async () => {
+        setTriggeringRefresh(true);
+        try {
+            const response = await api.post('/parts/merge/trigger-scan');
+            if (response.data.success) {
+                toast.success('Deduplication scan started! Results will update when complete.');
+            } else {
+                toast.error(response.data.message || 'Could not start scan.');
+            }
+        } catch {
+            toast.error('Failed to trigger scan.');
+        } finally {
+            setTriggeringRefresh(false);
+        }
+    };
 
     useEffect(() => {
         fetchDuplicateGroups();
@@ -120,46 +98,41 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
     };
 
     const excludeGroup = async (group) => {
-        if (group.parts.length < 2) return;
-        // Exclude the first two parts (most common use case)
         try {
-            await api.post('/parts/merge/exclude', {
-                partId1: group.parts[0].part_id,
-                partId2: group.parts[1].part_id
-            });
-            toast.success('Parts excluded from future scans');
+            if (group.suggestionId) {
+                // New suggestion-based dismiss
+                await api.post(`/parts/merge/suggestions/${group.suggestionId}/dismiss`);
+            } else if (group.parts.length >= 2) {
+                // Legacy fallback for groups not from suggestion table
+                await api.post('/parts/merge/exclude', {
+                    partId1: group.parts[0].part_id,
+                    partId2: group.parts[1].part_id
+                });
+            }
+            toast.success('Group dismissed. Parts excluded from future scans.');
             setDuplicateGroups(prev => prev.filter(g => g.groupId !== group.groupId));
             onSelectionChange(selectedGroups.filter(g => g.groupId !== group.groupId));
-        } catch (err) {
-            toast.error('Failed to exclude parts');
+        } catch {
+            toast.error('Failed to dismiss group.');
         }
     };
 
-    const renderPipelineTrace = (reasons = [], ai_model = '') => {
-        const hasMath = reasons.includes('high_text_similarity') || reasons.includes('numeric_tokens_match') || reasons.includes('same_brand_and_group');
-        const hasFuzzy = reasons.includes('meilisearch_fuzzy_match');
-        const hasExact = reasons.includes('exact_internal_sku') || reasons.includes('exact_part_number');
-        const hasAI = reasons.includes('ai_verified');
-        const hasObvious = reasons.includes('obvious_match');
-        const hasTransitive = reasons.includes('transitive_match');
-
-        const steps = [];
-        if (hasExact) steps.push(<span key="exact" className="px-2 py-0.5 rounded whitespace-nowrap bg-green-100 text-green-800 border border-green-200">Exact Match</span>);
-        if (hasFuzzy) steps.push(<span key="fuzzy" className="px-2 py-0.5 rounded whitespace-nowrap bg-blue-100 text-blue-800 border border-blue-200">Fuzzy Search</span>);
-        if (hasMath) steps.push(<span key="math" className="px-2 py-0.5 rounded whitespace-nowrap bg-purple-100 text-purple-800 border border-purple-200">Math Gate</span>);
-        if (hasObvious) steps.push(<span key="obvious" className="px-2 py-0.5 rounded whitespace-nowrap bg-gradient-to-r from-emerald-100 to-emerald-200 text-emerald-800 border border-emerald-300 shadow-sm">⚡ Obvious Match (AI Skipped)</span>);
-        if (hasTransitive) steps.push(<span key="transitive" className="px-2 py-0.5 rounded whitespace-nowrap bg-gradient-to-r from-indigo-100 to-indigo-200 text-indigo-800 border border-indigo-300 shadow-sm">🔗 Transitive Link (AI Skipped)</span>);
-        if (hasAI) steps.push(<span key="ai" className="px-2 py-0.5 rounded whitespace-nowrap bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-800 border border-yellow-300 shadow-sm">🤖 AI Verified {ai_model ? `(${ai_model})` : ''}</span>);
-
+    const renderConfidenceBadge = (group) => {
+        const tier = group.confidenceTier || 'low';
+        const configs = {
+            exact:  { bg: 'bg-green-100',  text: 'text-green-800',  border: 'border-green-300',  label: '🟢 Exact Match',     desc: 'Identical normalized part number' },
+            high:   { bg: 'bg-blue-100',   text: 'text-blue-800',   border: 'border-blue-300',   label: '🔵 AI Confirmed',    desc: 'AI verified with high confidence' },
+            medium: { bg: 'bg-yellow-100', text: 'text-yellow-800', border: 'border-yellow-300', label: '🟡 AI Suggested',    desc: 'AI suggested, review recommended' },
+            low:    { bg: 'bg-gray-100',   text: 'text-gray-700',   border: 'border-gray-300',   label: '⚪ Low Confidence',  desc: 'Weak signal — inspect carefully' },
+        };
+        const c = configs[tier] || configs.low;
         return (
-            <div className="flex items-center space-x-1 mt-1 text-xs font-medium overflow-x-auto pb-1">
-                {steps.map((step, index) => (
-                    <span key={index} className="flex items-center space-x-1">
-                        {step}
-                        {index < steps.length - 1 && <span className="text-gray-300">→</span>}
-                    </span>
-                ))}
-            </div>
+            <span
+                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${c.bg} ${c.text} ${c.border}`}
+                title={c.desc}
+            >
+                {c.label}
+            </span>
         );
     };
 
@@ -185,29 +158,10 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
         return (
             <div className="flex flex-col items-center justify-center py-16 bg-white border border-gray-200 rounded-lg shadow-sm">
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-4"></div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Analyzing Parts Catalog</h3>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Loading Suggestions</h3>
                 <span className="text-sm text-gray-600 mb-6 font-medium">
-                    {progress?.message || 'Starting deduplication pipeline...'}
+                    Reading pre-computed duplicate groups...
                 </span>
-                
-                <div className="w-full max-w-md bg-gray-100 rounded-full h-2.5 mb-2 overflow-hidden shadow-inner">
-                    {progress?.stage === 'deterministic' && <div className="bg-blue-500 h-2.5 rounded-full w-1/4 transition-all duration-500"></div>}
-                    {progress?.stage === 'semantic' && <div className="bg-blue-500 h-2.5 rounded-full w-2/4 transition-all duration-500"></div>}
-                    {progress?.stage === 'scoring' && <div className="bg-blue-500 h-2.5 rounded-full w-3/4 transition-all duration-500"></div>}
-                    {progress?.stage === 'ai_verification' && (
-                        <div 
-                            className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
-                            style={{ width: `${75 + (progress.total > 0 ? (progress.responded / progress.total) * 25 : 0)}%` }}
-                        ></div>
-                    )}
-                </div>
-                
-                {progress?.stage === 'ai_verification' && progress.total > 0 && (
-                    <div className="text-sm text-yellow-700 font-medium bg-yellow-50 px-4 py-1.5 rounded-full border border-yellow-200 mt-2 flex items-center gap-2">
-                        <span>🤖 AI Verification:</span>
-                        <span>{progress.responded} of {progress.total} pairs processed</span>
-                    </div>
-                )}
             </div>
         );
     }
@@ -269,7 +223,9 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                         </button>
                         <button
                             onClick={() => {
-                                const aiVerifiedGroups = duplicateGroups.filter(g => g.reasons && g.reasons.includes('ai_verified'));
+                                const aiVerifiedGroups = duplicateGroups.filter(g =>
+                                    g.confidenceTier === 'high' || g.confidenceTier === 'medium' || g.confidenceTier === 'low'
+                                );
                                 onSelectionChange(aiVerifiedGroups);
                                 toast.success(`Selected ${aiVerifiedGroups.length} AI-verified groups`);
                             }}
@@ -280,11 +236,13 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                         </button>
                         <button
                             onClick={() => {
-                                const highConfidenceGroups = duplicateGroups.filter(g => g.confidence === 'Very High' || g.confidence === 'High');
+                                const highConfidenceGroups = duplicateGroups.filter(g =>
+                                    g.confidenceTier === 'exact' || g.confidenceTier === 'high'
+                                );
                                 onSelectionChange(highConfidenceGroups);
                                 toast.success(`Selected ${highConfidenceGroups.length} high-confidence groups`);
                             }}
-                            title="Quickly select all duplicates with High or Very High math scores"
+                            title="Quickly select all duplicates with High or Exact confidence"
                             className="inline-flex items-center px-3 py-2 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 text-sm font-medium shadow-sm transition-colors"
                         >
                             ✓ Select High Confidence
@@ -300,41 +258,47 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                 </div>
             </div>
 
-            {/* Summary */}
+            {/* Summary + Batch Info */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                     <div>
                         <h3 className="text-sm font-medium text-blue-900">
-                            Found {filteredGroups.length} duplicate group{filteredGroups.length !== 1 ? 's' : ''}
+                            {filteredGroups.length} suggestion{filteredGroups.length !== 1 ? 's' : ''} found
+                            {selectedGroups.length > 0 && ` (${selectedGroups.length} selected)`}
                         </h3>
-                        <div className="text-sm text-gray-500 flex items-center gap-4">
-                            <span>
-                                Found {duplicateGroups.length} potential duplicate groups
-                                {selectedGroups.length > 0 && ` (${selectedGroups.length} selected)`}
-                            </span>
-                            {aiStats && (
-                                <span className="flex items-center ml-4 pl-4 border-l border-gray-300 text-yellow-700 bg-yellow-50 px-2 py-0.5 rounded-full text-xs font-medium border border-yellow-200">
-                                    🤖 AI scanned {aiStats.aiRequests} pair{aiStats.aiRequests !== 1 ? 's' : ''}
-                                    {aiStats.transitiveSkipped > 0 && ` (${aiStats.transitiveSkipped} skipped via transitive logic)`}, 
-                                    found {aiStats.aiDuplicatesFound} duplicate{aiStats.aiDuplicatesFound !== 1 ? 's' : ''}
-                                </span>
-                            )}
-                            <label className="flex items-center cursor-pointer ml-4 border-l pl-4 border-gray-300">
-                                <input
-                                    type="checkbox"
-                                    checked={isCompact}
-                                    onChange={(e) => setIsCompact(e.target.checked)}
-                                    className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                                />
-                                Compact View
-                            </label>
+                        <div className="flex gap-3 mt-1 text-xs text-gray-600 flex-wrap">
+                            {counts.exact > 0 && <span className="text-green-700 font-medium">🟢 {counts.exact} Exact</span>}
+                            {counts.high > 0 && <span className="text-blue-700 font-medium">🔵 {counts.high} High</span>}
+                            {counts.medium > 0 && <span className="text-yellow-700 font-medium">🟡 {counts.medium} Medium</span>}
+                            {counts.low > 0 && <span className="text-gray-600">⚪ {counts.low} Low</span>}
                         </div>
+                        {latestBatch && (
+                            <div className="mt-1 text-xs text-gray-500">
+                                Last scan: {new Date(latestBatch.completed_at || latestBatch.started_at).toLocaleString()}
+                                {latestBatch.status === 'running' && ' (scan in progress...)'}
+                                {latestBatch.status === 'failed' && ` — failed: ${latestBatch.error_message}`}
+                            </div>
+                        )}
                     </div>
-                    {selectedGroups.length > 0 && (
-                        <div className="text-sm text-blue-700">
-                            Total parts to merge: {selectedGroups.reduce((sum, g) => sum + g.parts.length - 1, 0)}
-                        </div>
-                    )}
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={triggerRefreshScan}
+                            disabled={triggeringRefresh || latestBatch?.status === 'running'}
+                            className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                            title="Trigger a new background scan. Results appear when complete."
+                        >
+                            {triggeringRefresh ? 'Starting...' : '🔄 Refresh Scan'}
+                        </button>
+                        <label className="flex items-center cursor-pointer ml-2">
+                            <input
+                                type="checkbox"
+                                checked={isCompact}
+                                onChange={(e) => setIsCompact(e.target.checked)}
+                                className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            />
+                            Compact View
+                        </label>
+                    </div>
                 </div>
             </div>
 
@@ -380,8 +344,8 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                                             onChange={() => {}}
                                             className="h-4 w-4 text-blue-600 rounded border-gray-300"
                                         />
-                                        <div className="text-sm font-medium w-32">
-                                            {group.confidence} ({(group.score * 100).toFixed(1)}%)
+                                        <div className="flex items-center w-32">
+                                            {renderConfidenceBadge(group)}
                                         </div>
                                         <div className="text-sm text-gray-600 flex-1 truncate">
                                             {group.parts.map(p => p.display_name || p.internal_sku).join(' ⚡ ')}
@@ -420,10 +384,14 @@ const DuplicateGroupList = ({ selectedGroups, onSelectionChange, similarityThres
                                             />
                                             <div className="flex-1">
                                                 <div className="flex flex-col mb-2">
-                                                    <h3 className="text-sm font-medium text-gray-900 mb-1">
-                                                        Confidence: {group.confidence} <span className="text-gray-500 font-normal">({(group.score * 100).toFixed(1)}% Math Score)</span>
+                                                    <h3 className="text-sm font-medium text-gray-900 mb-1 flex items-center gap-2">
+                                                        {renderConfidenceBadge(group)}
+                                                        {group.ai_reasons?.length > 0 && (
+                                                            <span className="text-xs text-gray-500 font-normal italic">
+                                                                {group.ai_reasons[0]}
+                                                            </span>
+                                                        )}
                                                     </h3>
-                                                    {renderPipelineTrace(group.reasons, group.ai_model)}
                                                 </div>
                                                 
                                                 <div className="text-sm text-gray-600 mb-2">

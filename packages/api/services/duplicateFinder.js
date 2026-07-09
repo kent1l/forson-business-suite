@@ -251,6 +251,10 @@ class DuplicateFinder {
         const { query = '', limit = 50, progressCallback = null } = options;
         const minScore = options.minScore !== undefined ? options.minScore : (options.minSimilarity !== undefined ? options.minSimilarity : 0.50);
 
+        let aiRequests = 0;
+        let aiDuplicatesFound = 0;
+        let transitiveSkipped = 0;
+
         const reportProgress = (stage, message, details = {}) => {
             if (progressCallback) progressCallback({ stage, message, ...details });
         };
@@ -382,18 +386,18 @@ class DuplicateFinder {
             reportProgress('ai_verification', 'Skipping AI Verification (Background worker enabled)...', { sent: 0, responded: 0, total: 0 });
             // Union all remaining edges since we are bypassing AI verification.
             // Any false positives should already be excluded by the background worker.
-            for (const [edgeId, edge] of edges) {
+            for (const [edgeId] of edges) {
                 const [aStr, bStr] = edgeId.split('_');
                 uf.union(parseInt(aStr), parseInt(bStr));
             }
         } else {
-            let aiRequests = 0;
-            let aiDuplicatesFound = 0;
+            aiRequests = 0;
+            aiDuplicatesFound = 0;
             let aiResponded = 0;
-            let transitiveSkipped = 0;
+            transitiveSkipped = 0;
             
             let aiEdgesToProcess = 0;
-            for (const [edgeId, edge] of edges) {
+            for (const [, edge] of edges) {
                 if (!edge.reasons || (!edge.reasons.includes('obvious_match') && !edge.reasons.includes('ai_cached_positive'))) {
                     aiEdgesToProcess++;
                 }

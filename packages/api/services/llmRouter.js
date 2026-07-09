@@ -163,7 +163,7 @@ Respond ONLY with a JSON object:
                 let data;
                 try {
                     data = JSON.parse(responseText);
-                } catch (e) {
+                } catch {
                     throw new Error('OpenRouter response body was not valid JSON');
                 }
 
@@ -175,7 +175,7 @@ Respond ONLY with a JSON object:
                 let result;
                 try {
                     result = JSON.parse(text);
-                } catch (e) {
+                } catch {
                     console.error('OpenRouter inner JSON parse error. Raw text:', text);
                     return { isDuplicate: true, skipped: true, reason: 'AI JSON parsing failed' };
                 }
@@ -193,6 +193,178 @@ Respond ONLY with a JSON object:
                 await new Promise(resolve => setTimeout(resolve, attempt * 2000));
             }
         }
+    }
+    /**
+     * Analyzes a cluster of candidate parts and groups them into duplicate sets.
+     * This is the primary detection method — replaces pair-by-pair verification.
+     *
+     * @param {Array} parts - Array of part objects (up to 20)
+     * @returns {Object} { groups: [{ partIds: [], reason: '', confidence: 'high'|'medium'|'low' }] }
+     */
+    async analyzeGroup(parts) {
+        // Format each part into a clean text block for the AI
+        const formatPart = (p, index) => {
+            const pns = (p.part_numbers || [])
+                .map(pn => typeof pn === 'object' ? pn.part_number : pn)
+                .join(', ') || 'None';
+            return [
+                `[Part ${index + 1}] ID: ${p.part_id}`,
+                `  Name: ${p.display_name || 'N/A'}`,
+                `  Detail: ${p.detail || 'N/A'}`,
+                `  Brand: ${p.brand_name || 'N/A'}`,
+                `  Group/Category: ${p.group_name || 'N/A'}`,
+                `  SKU: ${p.internal_sku || 'N/A'}`,
+                `  Part Numbers: ${pns}`,
+            ].join('\n');
+        };
+
+        const partsList = parts.map(formatPart).join('\n\n');
+        const partIds = parts.map(p => p.part_id);
+        const prompt = `You are an automotive parts inventory deduplication expert for a parts store.
+
+You will be given a list of parts from an inventory system. Your job is to identify which parts are the SAME physical item that was entered more than once (duplicates), and group them together.
+
+IMPORTANT RULES:
+1. Different sizes, specs, voltages, or dimensions (e.g., 12V vs 24V, 15/16" vs 1") = DIFFERENT items. Do NOT group them.
+   - PISTON RINGS / BEARINGS / ENGINE PARTS: STD (Standard) vs oversizes (0.25, 0.50, 0.75, 1.00, 1.50, 020, 030, 040) are DIFFERENT items. NEVER group standard with an oversize, or different oversizes together.
+   - GASKETS (especially Cylinder Head Gaskets): Different materials (e.g., CARBON, STEEL, METAL, COPPER, PAPER, GRAPHITE) represent distinct products. NEVER group different materials together.
+
+2. Different BRANDS = DIFFERENT inventory items, EVEN IF they share the same part number.
+   In automotive parts, OEM part numbers are printed on aftermarket products as cross-references.
+   For example: SEIKEN 47575R and DENSO 47575R are SEPARATE stock items sold at different prices
+   from different suppliers. DO NOT group them.
+   EXCEPTION: You MAY group cross-brand parts ONLY IF:
+   a) One brand is clearly unset or generic (brand is exactly "NO BRAND", "GENERIC", "N/A", "UNKNOWN", or blank),
+      AND the part names and categories are otherwise identical — strongly suggesting a data-entry duplicate.
+   b) The internal_sku fields share nearly the same prefix pattern, strongly suggesting the same catalog
+      entry was entered twice with a minor variation.
+
+3. Vendor prefixes in part numbers are common WITHIN THE SAME BRAND (e.g., SC-47575R and 47575R from
+   the same brand are the same number — the "SC-" is a supplier prefix). Strip vendor prefixes when
+   comparing part numbers, but ONLY when the brand is the same.
+
+4. Different part categories = NEVER duplicates, even if they share a part number.
+   A coincidental part number match between an ALTERNATOR and a VALVE SEAL is not a duplication signal.
+
+5. Parts with no overlapping part numbers and different brand names are almost certainly NOT duplicates.
+   Be very conservative — if unsure, do NOT include the pair in any group.
+
+6. A part can only belong to ONE group.
+
+Parts to analyze:
+${partsList}
+
+Respond ONLY with a valid JSON object in this exact format:
+{
+  "groups": [
+    {
+      "partIds": [101, 102],
+      "reason": "Both are RUBBER CUP (SEIKEN) with part number 47575R — SC-47575R and 47575R are the same number with a vendor prefix, same brand",
+      "confidence": "high"
+    }
+  ]
+}
+
+Only include groups that contain 2 or more parts. Parts that are NOT duplicates of anything else should NOT appear in any group. If no duplicates are found, return { "groups": [] }.`;
+
+        switch (this.provider) {
+            case 'openai':
+                return this._callOpenAIForGroup(prompt, partIds);
+            case 'openrouter':
+                return this._callOpenRouterForGroup(prompt, partIds);
+            case 'google':
+            default:
+                return this._callGeminiForGroup(prompt, partIds);
+        }
+    }
+
+    // Internal helper — calls Gemini and parses group response
+    async _callGeminiForGroup(prompt, partIds) {
+        if (this.geminiKeys.length === 0) {
+            console.warn('[LLM] No Gemini API key. Returning empty groups.');
+            return { groups: [], skipped: true };
+        }
+        const key = this.geminiKeys[this.geminiIndex];
+        this.geminiIndex = (this.geminiIndex + 1) % this.geminiKeys.length;
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.geminiModel}:generateContent?key=${key}`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: AbortSignal.timeout(45000),
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { responseMimeType: 'application/json' }
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Gemini API error ${response.status}: ${await response.text()}`);
+        }
+        const data = await response.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        const result = JSON.parse(text);
+        return this._validateGroupResult(result, partIds);
+    }
+
+    // Internal helper — calls OpenAI and parses group response
+    async _callOpenAIForGroup(prompt, partIds) {
+        if (!this.openaiKey) return { groups: [], skipped: true };
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.openaiKey}` },
+            signal: AbortSignal.timeout(45000),
+            body: JSON.stringify({
+                model: this.openaiModel,
+                messages: [{ role: 'user', content: prompt }],
+                response_format: { type: 'json_object' }
+            })
+        });
+        if (!response.ok) throw new Error(`OpenAI error ${response.status}`);
+        const data = await response.json();
+        const result = JSON.parse(data.choices?.[0]?.message?.content);
+        return this._validateGroupResult(result, partIds);
+    }
+
+    // Internal helper — calls OpenRouter and parses group response
+    async _callOpenRouterForGroup(prompt, partIds) {
+        if (!this.openrouterKey && !this.openrouterModel) return { groups: [], skipped: true };
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                'HTTP-Referer': 'http://localhost:5173',
+                'X-Title': 'Forson Business Suite',
+                'Content-Type': 'application/json'
+            },
+            signal: AbortSignal.timeout(45000),
+            body: JSON.stringify({
+                model: this.openrouterModel,
+                messages: [{ role: 'user', content: prompt }],
+                response_format: { type: 'json_object' }
+            })
+        });
+        if (!response.ok) throw new Error(`OpenRouter error ${response.status}`);
+        const data = await response.json();
+        let text = data.choices?.[0]?.message?.content || '{}';
+        text = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+        const result = JSON.parse(text);
+        return this._validateGroupResult(result, partIds);
+    }
+
+    /**
+     * Validates the AI's group result — ensures part IDs are real and groups have ≥ 2 members.
+     */
+    _validateGroupResult(result, validPartIds) {
+        const validIdSet = new Set(validPartIds);
+        const groups = (result?.groups || [])
+            .map(g => ({
+                partIds: (g.partIds || []).filter(id => validIdSet.has(id)),
+                reason: g.reason || '',
+                confidence: ['high', 'medium', 'low'].includes(g.confidence) ? g.confidence : 'low'
+            }))
+            .filter(g => g.partIds.length >= 2);
+        return { groups };
     }
 }
 
