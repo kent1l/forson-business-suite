@@ -17,6 +17,7 @@ import CustomerForm from '../components/forms/CustomerForm';
 import PartForm from '../components/forms/PartForm';
 import Combobox from '../components/ui/Combobox';
 import PaymentModal from '../components/ui/PaymentModal';
+import SplitPaymentModal from '../components/ui/SplitPaymentModal';
 import PriceQuantityModal from '../components/ui/PriceQuantityModal';
 import Receipt from '../components/ui/Receipt';
 import SavedSalesPanel from '../components/pos/SavedSalesPanel';
@@ -171,6 +172,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
     const [isNewCustomerModalOpen, setIsNewCustomerModalOpen] = useState(false);
     const [isNewPartModalOpen, setIsNewPartModalOpen] = useState(false);
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+    const [isSplitPaymentModalOpen, setIsSplitPaymentModalOpen] = useState(false);
     const [paymentMethods, setPaymentMethods] = useState([]);
     const [currentItem, setCurrentItem] = useState(null);
     const [showSaved, setShowSaved] = useState(false);
@@ -530,24 +532,29 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
         if (lines.length === 0) return toast.error("Please add items to the cart.");
         if (!selectedCustomer) return toast.error("Please select a customer.");
         
-        setIsPaymentModalOpen(true);
-    }, [lines.length, selectedCustomer]);
+        const splitPaymentsEnabled = settings?.ENABLE_SPLIT_PAYMENTS === 'true';
+        if (splitPaymentsEnabled) {
+            setIsSplitPaymentModalOpen(true);
+        } else {
+            setIsPaymentModalOpen(true);
+        }
+    }, [lines.length, selectedCustomer, settings?.ENABLE_SPLIT_PAYMENTS]);
 
-    const handleConfirmPayment = (paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo) => {
+    const handleConfirmPayment = (paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo, reference = null) => {
         // Check if physical receipt number is empty
         const normalizedPRN = normalizePhysicalReceipt(physicalReceiptInput || physicalReceiptNo || '');
         if (!normalizedPRN) {
             // Store payment data for later use
-            setPendingPaymentData({ paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo });
+            setPendingPaymentData({ paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo, reference });
             setIsReceiptConfirmOpen(true);
             return;
         }
         
         // If receipt number is provided, proceed with payment
-        processPayment(paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo);
+        processPayment(paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo, reference);
     };
 
-    const processPayment = async (paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo) => {
+    const processPayment = async (paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo, reference = null) => {
         // Enforce full payment on POS: always send amount_paid equal to the final total.
         console.debug(`POS payment: method=${paymentMethod}, tendered=${tenderedAmount}, amountPaid=${amountPaid}, enforced=${total}`);
         const normalizedPRN = normalizePhysicalReceipt(physicalReceiptInput || physicalReceiptNo || '');
@@ -589,7 +596,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                     method_id: methodId,
                     amount_paid: Number(total) || 0,
                     tendered_amount: typeof tenderedAmount !== 'undefined' && tenderedAmount !== null ? Number(tenderedAmount) : null,
-                    reference: normalizedPRN || null,
+                    reference: reference || null,
                     metadata: {
                         method_name: methodName,
                         source: 'pos'
@@ -653,6 +660,91 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                 toast.error(err.response.data?.message || 'Physical Receipt No already exists.');
             } else {
                 toast.error('Failed to process sale.');
+            }
+        }
+    };
+
+    const handleConfirmSplitPayment = async (payments, physicalReceiptNo, { employeeId } = {}) => {
+        try {
+            const normalizedPRN = normalizePhysicalReceipt(physicalReceiptInput || physicalReceiptNo || '');
+            
+            const invoicePayload = {
+                customer_id: selectedCustomer.customer_id,
+                employee_id: employeeId || user.employee_id,
+                physical_receipt_no: normalizedPRN || null,
+                tax_rate_id: selectedTaxRate?.tax_rate_id || null,
+                lines: lines.map(line => ({
+                    part_id: line.part_id,
+                    quantity: line.quantity,
+                    sale_price: line.sale_price,
+                    discount_amount: line.discount_amount || 0,
+                    tax_rate_id: line.tax_rate_id || null,
+                    is_tax_inclusive_price: line.is_tax_inclusive_price || false
+                })),
+                payments: payments.map(p => ({
+                    ...p,
+                    reference: normalizedPRN || p.reference
+                }))
+            };
+
+            const invoiceResponse = await api.post('/invoices', invoicePayload);
+            const newInvoiceNumber = invoiceResponse.data.invoice_number;
+            const returnedPhysicalReceiptNo = invoiceResponse.data.physical_receipt_no;
+            
+            if (returnedPhysicalReceiptNo && returnedPhysicalReceiptNo !== normalizedPRN) {
+                toast.success(`Physical receipt number auto-incremented to: ${returnedPhysicalReceiptNo}`, { duration: 5000 });
+            }
+
+            const backendTotal = invoiceResponse.data.total_amount;
+            const backendSubtotal = invoiceResponse.data.subtotal_ex_tax;
+            const backendTax = invoiceResponse.data.tax_total;
+            const taxBreakdown = invoiceResponse.data.tax_breakdown;
+
+            const saleDataForReceipt = { 
+                lines, 
+                total: backendTotal, 
+                subtotal: backendSubtotal, 
+                tax: backendTax,
+                tax_breakdown: taxBreakdown,
+                invoice_number: newInvoiceNumber, 
+                physical_receipt_no: returnedPhysicalReceiptNo || null 
+            };
+            setLastSale(saleDataForReceipt);
+            setLines([]);
+            const walkIn = customers.find(c => c.first_name.toLowerCase() === 'walk-in');
+            setSelectedCustomer(walkIn || null);
+            setPhysicalReceiptInput('');
+            setSelectedTaxRate(null);
+            setIsSplitPaymentModalOpen(false);
+
+            toast.success(
+                (t) => (
+                    <div className="flex items-center">
+                        <span className="mr-4">Sale completed!</span>
+                        <button
+                            onClick={() => {
+                                toast.dismiss(t.id);
+                                handlePrintReceipt(saleDataForReceipt);
+                            }}
+                            className="px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
+                        >
+                            Print Receipt
+                        </button>
+                    </div>
+                ), { duration: 10000 }
+            );
+
+        } catch (err) {
+            console.error('POS split payment error:', err);
+            const backendMessage = err?.response?.data?.message || err?.response?.data?.error || err?.message;
+            if (err?.response?.status === 409) {
+                toast.error(backendMessage || 'Physical Receipt No already exists.');
+                return;
+            }
+            if (backendMessage) {
+                toast.error(backendMessage);
+            } else {
+                toast.error('Failed to process split payments.');
             }
         }
     };
@@ -1028,6 +1120,18 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                 physicalReceipt={physicalReceiptInput}
                 paymentMethods={paymentMethods}
             />
+            {settings?.ENABLE_SPLIT_PAYMENTS === 'true' && (
+                <SplitPaymentModal
+                    isOpen={isSplitPaymentModalOpen}
+                    onClose={() => setIsSplitPaymentModalOpen(false)}
+                    totalDue={total || 0}
+                    onConfirm={handleConfirmSplitPayment}
+                    physicalReceiptNo={physicalReceiptInput}
+                    onPhysicalReceiptChange={setPhysicalReceiptInput}
+                    employeeId={user?.employee_id}
+                    customerName={selectedCustomer ? `${selectedCustomer.first_name} ${selectedCustomer.last_name || ''}`.trim() : ''}
+                />
+            )}
             {/* Void confirmation modal (centered, styled like system) */}
             <Modal isOpen={isVoidConfirmOpen} onClose={() => setIsVoidConfirmOpen(false)} title="Confirm Void" centered>
                 <div className="py-4">
