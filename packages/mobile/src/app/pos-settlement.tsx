@@ -67,7 +67,7 @@ export default function POSSettlementScreen() {
 
         // Defaults
         const cashMethod = methods.find((m: any) =>
-          m.method_name?.toLowerCase() === 'cash'
+          (m.name || m.method_name)?.toLowerCase() === 'cash'
         ) || methods[0];
         setSelectedMethod(cashMethod || null);
 
@@ -88,12 +88,12 @@ export default function POSSettlementScreen() {
 
   // Auto-focus tendered input when Cash is selected
   useEffect(() => {
-    if (selectedMethod?.method_name?.toLowerCase() === 'cash') {
+    if ((selectedMethod?.name || selectedMethod?.method_name || '').toLowerCase() === 'cash') {
       setTimeout(() => tenderedRef.current?.focus(), 350);
     }
   }, [selectedMethod]);
 
-  const isCash = selectedMethod?.method_name?.toLowerCase() === 'cash';
+  const isCash = (selectedMethod?.name || selectedMethod?.method_name || '').toLowerCase() === 'cash';
   const tendered = parseFloat(tenderedAmount) || 0;
   const change = isCash ? tendered - grandTotal : 0;
 
@@ -116,7 +116,8 @@ export default function POSSettlementScreen() {
         employee_id: user?.employee_id,
         amount_paid: grandTotal,
         tendered_amount: isCash ? tendered : null,
-        payment_method: selectedMethod?.method_name || 'Cash',
+        payment_method: selectedMethod?.name || selectedMethod?.method_name || 'Cash',
+        payment_method_id: selectedMethod?.method_id ?? selectedMethod?.payment_method_id,
         terms: 'COD',
         tax_rate_id: selectedTaxRate?.tax_rate_id || null,
       };
@@ -190,15 +191,17 @@ export default function POSSettlementScreen() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10 }}>
               <View style={styles.pillRow}>
                 {paymentMethods.map((m) => {
-                  const selected = selectedMethod?.payment_method_id === m.payment_method_id;
+                  const mId = m.method_id ?? m.payment_method_id;
+                  const mName = m.name ?? m.method_name;
+                  const selected = (selectedMethod?.method_id ?? selectedMethod?.payment_method_id) === mId;
                   return (
                     <TouchableOpacity
-                      key={m.payment_method_id}
+                      key={mId}
                       style={[styles.pill, selected && styles.pillSelected]}
                       onPress={() => { haptics.tap(); setSelectedMethod(m); }}
                     >
                       <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
-                        {m.method_name}
+                        {mName}
                       </Text>
                     </TouchableOpacity>
                   );

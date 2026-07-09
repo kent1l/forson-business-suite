@@ -100,18 +100,34 @@ const usePosStore = create((set, get) => ({
       sale_price: item.sale_price,
       discount_amount: 0,
     }));
-    const payload = {
+    // Step 1: Create the invoice header and lines
+    const invoicePayload = {
       customer_id: paymentData.customer_id,
       employee_id: paymentData.employee_id,
       lines,
-      amount_paid: paymentData.amount_paid,
-      tendered_amount: paymentData.tendered_amount,
-      payment_method: paymentData.payment_method,
-      terms: paymentData.terms || 'COD',
+      physical_receipt_no: paymentData.physical_receipt_no || null,
       tax_rate_id: paymentData.tax_rate_id || null,
     };
-    const { data } = await apiClient.post('/invoices', payload);
-    return data;
+    const { data: invoiceData } = await apiClient.post('/invoices', invoicePayload);
+    const invoiceId = invoiceData.invoice_id;
+
+    // Step 2: Post the payment using the new payment route
+    const paymentPayload = {
+      payments: [{
+        method_id: paymentData.payment_method_id,
+        amount_paid: Number(invoiceData.total_amount) || 0,
+        tendered_amount: paymentData.tendered_amount !== null && paymentData.tendered_amount !== undefined ? Number(paymentData.tendered_amount) : null,
+        reference: paymentData.physical_receipt_no || null,
+        metadata: {
+          method_name: paymentData.payment_method,
+          source: 'pos_mobile'
+        }
+      }],
+      physical_receipt_no: paymentData.physical_receipt_no || null
+    };
+    await apiClient.post(`/invoices/${invoiceId}/payments`, paymentPayload);
+
+    return invoiceData;
   },
 }));
 
