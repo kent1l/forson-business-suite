@@ -163,7 +163,7 @@ Respond ONLY with a JSON object:
                 let data;
                 try {
                     data = JSON.parse(responseText);
-                } catch (e) {
+                } catch {
                     throw new Error('OpenRouter response body was not valid JSON');
                 }
 
@@ -175,7 +175,7 @@ Respond ONLY with a JSON object:
                 let result;
                 try {
                     result = JSON.parse(text);
-                } catch (e) {
+                } catch {
                     console.error('OpenRouter inner JSON parse error. Raw text:', text);
                     return { isDuplicate: true, skipped: true, reason: 'AI JSON parsing failed' };
                 }

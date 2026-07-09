@@ -15,12 +15,6 @@ const crypto = require('crypto');
 const { meiliClient } = require('../meilisearch');
 const llmRouter = require('./llmRouter');
 
-// Normalize a part number to alphanumeric uppercase for comparison
-function normalizePartNumber(pn) {
-    if (!pn) return '';
-    return pn.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-}
-
 // Helper: Extract engine part size tokens (STD, 0.25, 0.50, etc.)
 function extractSizeToken(text) {
     if (!text) return null;

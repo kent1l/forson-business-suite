@@ -1,6 +1,5 @@
 const db = require('./db');
 const { syncPartWithMeili, removePartFromMeili } = require('./meilisearch');
-const { activeAliasCondition } = require('./helpers/partNumberSoftDelete');
 const { normalizePartData } = require('./helpers/normalizePart');
 
 const STATUS = Object.freeze({

@@ -310,6 +310,7 @@ router.get('/parts/merge/worker-status', protect, hasPermission('parts:merge'), 
             pendingSuggestions
         });
     } catch (error) {
+        console.error('Failed to get worker status:', error);
         res.status(500).json({ success: false, message: 'Failed to get worker status' });
     }
 });
@@ -329,6 +330,7 @@ router.post('/parts/merge/worker-toggle', protect, hasPermission('parts:merge'),
         
         res.json({ success: true, enabled });
     } catch (error) {
+        console.error('Failed to toggle worker setting:', error);
         res.status(500).json({ success: false, message: 'Failed to toggle worker' });
     }
 });

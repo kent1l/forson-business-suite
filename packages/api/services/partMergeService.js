@@ -73,9 +73,6 @@ class PartMergeService {
                 mergePartIds.map(id => this.getPartDetails(id, client))
             );
             
-            // Calculate the final merged part data
-            const resolvedPart = this.calculateResolvedPart(keepPart, mergeParts, rules);
-            
             // Update the keep part with merged data
             await this.updateKeepPart(client, keepPartId, keepPart, mergeParts, rules);
             
