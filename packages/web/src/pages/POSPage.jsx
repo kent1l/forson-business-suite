@@ -28,7 +28,7 @@ const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave,
     const cells = Array.from({ length: totalCells });
 
     return (
-        <div className="mt-4 w-full">
+        <div className="mt-1 w-full">
             <div className="grid grid-cols-3 sm:grid-cols-5 grid-rows-2 auto-rows-[10rem] sm:auto-rows-[9rem] gap-4 sm:gap-3">
                 {cells.map((_, i) => {
                     // top-left cell (index 0) -> Customer button
@@ -153,7 +153,7 @@ const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave,
 
 const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
     const { settings } = useSettings();
-    
+
     // Debug logging moved to useEffect to prevent infinite re-renders
     useEffect(() => {
         console.log('[POSPage] Component loaded');
@@ -208,13 +208,13 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
         }
     }, [searchTerm]);
 
-    const { getInputProps, getItemProps, reset } = useTypeahead({ 
-        items: searchResults, 
-        onSelect: (item) => { handleSelectPart(item); }, 
+    const { getInputProps, getItemProps, reset } = useTypeahead({
+        items: searchResults,
+        onSelect: (item) => { handleSelectPart(item); },
         onEnterUnselected: handleRapidScan,
         inputRef: searchInputRef,
-        inputId: 'pos-search-input', 
-        listboxId: 'pos-search-results' 
+        inputId: 'pos-search-input',
+        listboxId: 'pos-search-results'
     });
 
     // Saved sales hook (user-specific)
@@ -233,10 +233,10 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                     params: { keyword: searchTerm }
                 });
                 // Debug: log raw hits for applications field
-                console.debug('[POS] raw search results', response.data.map(r => ({part_id: r.part_id, apps: r.applications})));
+                console.debug('[POS] raw search results', response.data.map(r => ({ part_id: r.part_id, apps: r.applications })));
                 // Enrich applications (convert id arrays to objects) so the application text helper shows readable text
                 const enriched = await enrichPartsArray(response.data || []);
-                console.debug('[POS] enriched results', enriched.map(r => ({part_id: r.part_id, apps: r.applications})));
+                console.debug('[POS] enriched results', enriched.map(r => ({ part_id: r.part_id, apps: r.applications })));
                 setSearchResults(enriched);
             } catch (error) {
                 console.error("Search failed:", error);
@@ -276,7 +276,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                 setGroups(groupsRes.data);
                 setTaxRates(taxRatesRes.data);
                 setPaymentMethods(paymentMethodsRes.data || []);
-                
+
                 // Set default tax rate if available and none is currently selected
                 if (taxRatesRes.data.length > 0 && !selectedTaxRate) {
                     const defaultRate = taxRatesRes.data.find(r => r.is_default);
@@ -285,7 +285,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                     }
                 }
                 console.debug('[POS] Loaded payment methods', paymentMethodsRes.data);
-                
+
                 const customersData = await fetchCustomers();
                 if (customersData) {
                     const walkIn = customersData.find(c => c.first_name.toLowerCase() === 'walk-in');
@@ -308,7 +308,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
         setIsPriceModalOpen(true);
         setSearchTerm('');
         setSearchResults([]);
-    reset();
+        reset();
     };
 
     const handleConfirmAddItem = (confirmedItem) => {
@@ -337,7 +337,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                 const newPart = response.data;
                 setIsNewPartModalOpen(false);
                 handleConfirmAddItem({ ...newPart, quantity: 1, sale_price: newPart.last_sale_price || 0 });
-                
+
                 return 'Part added and added to cart!';
             },
             error: 'Failed to save part.'
@@ -382,7 +382,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
 
     const handleConvertToInvoice = useCallback(() => {
         if (!lines.length) return;
-        
+
         onNavigate('invoicing', {
             lines: lines.map(line => ({
                 part_id: line.part_id,
@@ -395,13 +395,13 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
             })),
             selectedCustomer: selectedCustomer?.customer_id || null
         });
-        
+
         setLines([]);
         const walkIn = customers.find(c => c.first_name.toLowerCase() === 'walk-in');
         setSelectedCustomer(walkIn || null);
         setPhysicalReceiptInput('');
         setSelectedTaxRate(null);
-        
+
         toast.success('Cart transferred to Invoicing page');
     }, [lines, selectedCustomer, onNavigate, customers, setLines, setSelectedCustomer]);
 
@@ -438,7 +438,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
     const removeLine = (partId) => {
         setLines(lines.filter(line => line.part_id !== partId));
     };
-    
+
     const { subtotal, tax, total, grossSubtotal, hasInclusive, anomaly } = useMemo(() => {
         // Calculate totals using backend-aligned logic but also retain the raw (gross) entered line totals
         // so we can present clearer labels and debug anomalies (e.g. unexpectedly huge tax share).
@@ -532,7 +532,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
     const handleCheckout = useCallback(() => {
         if (lines.length === 0) return toast.error("Please add items to the cart.");
         if (!selectedCustomer) return toast.error("Please select a customer.");
-        
+
         const splitPaymentsEnabled = settings?.ENABLE_SPLIT_PAYMENTS === 'true';
         if (splitPaymentsEnabled) {
             setIsSplitPaymentModalOpen(true);
@@ -563,7 +563,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
             setIsReceiptConfirmOpen(true);
             return;
         }
-        
+
         // If receipt number is provided, proceed with payment
         processPayment(paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo, reference);
     };
@@ -621,7 +621,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
             const invoiceResponse = await api.post('/invoices', invoicePayload);
             const newInvoiceNumber = invoiceResponse.data.invoice_number;
             const returnedPhysicalReceiptNo = invoiceResponse.data.physical_receipt_no;
-            
+
             // Check if physical receipt number was auto-incremented
             if (returnedPhysicalReceiptNo && returnedPhysicalReceiptNo !== normalizedPRN) {
                 toast.success(`Physical receipt number auto-incremented to: ${returnedPhysicalReceiptNo}`, { duration: 5000 });
@@ -634,14 +634,14 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
             const taxBreakdown = invoiceResponse.data.tax_breakdown;
 
             // Success handling with backend-calculated values
-            const saleDataForReceipt = { 
-                lines, 
-                total: backendTotal, 
-                subtotal: backendSubtotal, 
+            const saleDataForReceipt = {
+                lines,
+                total: backendTotal,
+                subtotal: backendSubtotal,
                 tax: backendTax,
                 tax_breakdown: taxBreakdown,
-                invoice_number: newInvoiceNumber, 
-                physical_receipt_no: returnedPhysicalReceiptNo || null 
+                invoice_number: newInvoiceNumber,
+                physical_receipt_no: returnedPhysicalReceiptNo || null
             };
             setLastSale(saleDataForReceipt);
             setLines([]);
@@ -681,7 +681,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
     const handleConfirmSplitPayment = async (payments, physicalReceiptNo, { employeeId } = {}) => {
         try {
             const normalizedPRN = normalizePhysicalReceipt(physicalReceiptInput || physicalReceiptNo || '');
-            
+
             const invoicePayload = {
                 customer_id: selectedCustomer.customer_id,
                 employee_id: employeeId || user.employee_id,
@@ -704,7 +704,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
             const invoiceResponse = await api.post('/invoices', invoicePayload);
             const newInvoiceNumber = invoiceResponse.data.invoice_number;
             const returnedPhysicalReceiptNo = invoiceResponse.data.physical_receipt_no;
-            
+
             if (returnedPhysicalReceiptNo && returnedPhysicalReceiptNo !== normalizedPRN) {
                 toast.success(`Physical receipt number auto-incremented to: ${returnedPhysicalReceiptNo}`, { duration: 5000 });
             }
@@ -714,14 +714,14 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
             const backendTax = invoiceResponse.data.tax_total;
             const taxBreakdown = invoiceResponse.data.tax_breakdown;
 
-            const saleDataForReceipt = { 
-                lines, 
-                total: backendTotal, 
-                subtotal: backendSubtotal, 
+            const saleDataForReceipt = {
+                lines,
+                total: backendTotal,
+                subtotal: backendSubtotal,
                 tax: backendTax,
                 tax_breakdown: taxBreakdown,
-                invoice_number: newInvoiceNumber, 
-                physical_receipt_no: returnedPhysicalReceiptNo || null 
+                invoice_number: newInvoiceNumber,
+                physical_receipt_no: returnedPhysicalReceiptNo || null
             };
             setLastSale(saleDataForReceipt);
             setLines([]);
@@ -762,7 +762,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
             }
         }
     };
-    
+
     const handleConfirmReceiptDialog = () => {
         if (pendingPaymentData) {
             const { paymentMethod, amountPaid, tenderedAmount, physicalReceiptNo } = pendingPaymentData;
@@ -791,7 +791,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
     };
 
     // useTypeahead handles keyboard navigation and selection for the search input
-    
+
     const handleCustomerSelect = (customerId) => {
         const customer = customers.find(c => c.customer_id === customerId);
         setSelectedCustomer(customer);
@@ -868,11 +868,11 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
 
     // Keyboard shortcut (Ctrl+S / Cmd+S) to save sale
     useEffect(() => {
-    const onKey = (e) => {
+        const onKey = (e) => {
             const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
             if ((isMac ? e.metaKey : e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
                 e.preventDefault();
-        if (canSave) handleSaveSale();
+                if (canSave) handleSaveSale();
             }
         };
         window.addEventListener('keydown', onKey);
@@ -975,7 +975,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
 
     return (
         <>
-            <div className="flex flex-col h-full gap-6">
+            <div className="flex flex-col h-full gap-1">
                 <div className="flex items-center space-x-2">
                     <div className="relative flex-grow">
                         <SearchBar
@@ -993,24 +993,24 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                                 {searchResults.map((part, index) => {
                                     const itemProps = getItemProps(index);
                                     return (
-                                            <li key={part.part_id} {...itemProps} className={`px-4 py-3 cursor-pointer ${itemProps['aria-selected'] ? 'bg-blue-100' : 'hover:bg-blue-50'}`}>
-                                                <div className="flex items-baseline justify-between">
-                                                    <div className="flex items-baseline space-x-2 flex-1 min-w-0">
-                                                        <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
-                                                        {part.applications && <div className="text-xs text-gray-500 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
-                                                    </div>
-                                                    <div className="text-sm font-semibold text-gray-700 ml-2">
-                                                        {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
-                                                    </div>
+                                        <li key={part.part_id} {...itemProps} className={`px-4 py-3 cursor-pointer ${itemProps['aria-selected'] ? 'bg-blue-100' : 'hover:bg-blue-50'}`}>
+                                            <div className="flex items-baseline justify-between">
+                                                <div className="flex items-baseline space-x-2 flex-1 min-w-0">
+                                                    <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
+                                                    {part.applications && <div className="text-xs text-gray-500 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
                                                 </div>
-                                            </li>
-                                        );
+                                                <div className="text-sm font-semibold text-gray-700 ml-2">
+                                                    {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
+                                                </div>
+                                            </div>
+                                        </li>
+                                    );
                                 })}
                             </ul>
                         )}
                     </div>
                     <button onClick={() => setIsNewPartModalOpen(true)} className="bg-blue-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-700 transition whitespace-nowrap">
-                       New Part
+                        New Part
                     </button>
                 </div>
                 {/* Keyboard Shortcut Pills */}
@@ -1018,11 +1018,10 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                     <button
                         onClick={() => handleTriggerPayMethod('cash')}
                         disabled={lines.length === 0}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition shadow-sm ${
-                            lines.length > 0
-                                ? 'bg-white hover:bg-slate-50 border-gray-200 text-slate-700 cursor-pointer'
-                                : 'bg-slate-50 border-gray-200 text-slate-400 cursor-not-allowed'
-                        }`}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition shadow-sm ${lines.length > 0
+                            ? 'bg-white hover:bg-slate-50 border-gray-200 text-slate-700 cursor-pointer'
+                            : 'bg-slate-50 border-gray-200 text-slate-400 cursor-not-allowed'
+                            }`}
                     >
                         <span className={`w-2 h-2 rounded-full ${lines.length > 0 ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
                         Cash <kbd className="px-1.5 py-0.5 text-[10px] bg-slate-100 rounded text-slate-500 font-mono border border-slate-200">Alt+1</kbd>
@@ -1030,11 +1029,10 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                     <button
                         onClick={() => handleTriggerPayMethod('card')}
                         disabled={lines.length === 0}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition shadow-sm ${
-                            lines.length > 0
-                                ? 'bg-white hover:bg-slate-50 border-gray-200 text-slate-700 cursor-pointer'
-                                : 'bg-slate-50 border-gray-200 text-slate-400 cursor-not-allowed'
-                        }`}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition shadow-sm ${lines.length > 0
+                            ? 'bg-white hover:bg-slate-50 border-gray-200 text-slate-700 cursor-pointer'
+                            : 'bg-slate-50 border-gray-200 text-slate-400 cursor-not-allowed'
+                            }`}
                     >
                         <span className={`w-2 h-2 rounded-full ${lines.length > 0 ? 'bg-blue-500' : 'bg-slate-300'}`}></span>
                         Card <kbd className="px-1.5 py-0.5 text-[10px] bg-slate-100 rounded text-slate-500 font-mono border border-slate-200">Alt+2</kbd>
@@ -1042,11 +1040,10 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                     <button
                         onClick={() => handleTriggerPayMethod('split')}
                         disabled={lines.length === 0}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition shadow-sm ${
-                            lines.length > 0
-                                ? 'bg-white hover:bg-slate-50 border-gray-200 text-slate-700 cursor-pointer'
-                                : 'bg-slate-50 border-gray-200 text-slate-400 cursor-not-allowed'
-                        }`}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition shadow-sm ${lines.length > 0
+                            ? 'bg-white hover:bg-slate-50 border-gray-200 text-slate-700 cursor-pointer'
+                            : 'bg-slate-50 border-gray-200 text-slate-400 cursor-not-allowed'
+                            }`}
                     >
                         <span className={`w-2 h-2 rounded-full ${lines.length > 0 ? 'bg-indigo-500' : 'bg-slate-300'}`}></span>
                         Split Payment <kbd className="px-1.5 py-0.5 text-[10px] bg-slate-100 rounded text-slate-500 font-mono border border-slate-200">Alt+3</kbd>
@@ -1068,78 +1065,78 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                         />
                     </div>
                     <div className="w-full md:w-1/3 bg-white rounded-xl border border-gray-200 flex flex-col order-1 md:order-2">
-                    <div className="p-4 border-b">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="flex flex-col">
-                                <div className="font-semibold text-sm mb-2 whitespace-nowrap">Physical Receipt No:</div>
-                                <div className="p-2 bg-gray-50 rounded-lg">
-                                    <input ref={physicalReceiptRef} value={physicalReceiptInput} onChange={(e) => setPhysicalReceiptInput(e.target.value)} onBlur={() => setPhysicalReceiptInput(normalizePhysicalReceipt(physicalReceiptInput))} placeholder="Enter receipt no (Ctrl+P)" className="w-full px-3 py-2 border rounded-md text-sm" />
-                                </div>
-                            </div>
-                            <div className="flex flex-col">
-                                <div className="font-semibold text-sm mb-2 whitespace-nowrap">Tax Rate:</div>
-                                <div className="p-2 bg-gray-50 rounded-lg">
-                                    <select
-                                        value={selectedTaxRate?.tax_rate_id || ''}
-                                        onChange={(e) => {
-                                            const rateId = e.target.value;
-                                            const rate = taxRates.find(r => r.tax_rate_id === parseInt(rateId));
-                                            setSelectedTaxRate(rate || null);
-                                        }}
-                                        className="w-full px-3 py-2 border rounded-md text-sm bg-white"
-                                    >
-                                        <option value="">Select tax rate...</option>
-                                        {taxRates.map(rate => (
-                                            <option key={rate.tax_rate_id} value={rate.tax_rate_id}>
-                                                {rate.rate_name} ({(rate.rate_percentage * 100).toFixed(2)}%)
-                                                {rate.is_default ? ' - Default' : ''}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="flex-1 p-4 overflow-y-auto">
-                        {lines.map(line => (
-                            <div key={line.part_id} className="flex items-start mb-4">
-                                <div className="flex-grow">
-                                    <p className="text-sm font-medium">{line.display_name}</p>
-                                    <div className="flex items-center mt-1">
-                                        <input type="number" value={line.quantity} onChange={(e) => handleLineChange(line.part_id, 'quantity', e.target.value)} className="w-16 px-2 py-1 border rounded-md text-sm" />
-                                        <span className="mx-2 text-sm text-gray-500">x</span>
-                                        <input type="number" step="0.01" value={line.sale_price} onChange={(e) => handleLineChange(line.part_id, 'sale_price', e.target.value)} className="w-24 px-2 py-1 border rounded-md text-sm" />
+                        <div className="p-4 border-b">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="flex flex-col">
+                                    <div className="font-semibold text-sm mb-2 whitespace-nowrap">Physical Receipt No:</div>
+                                    <div className="p-2 bg-gray-50 rounded-lg">
+                                        <input ref={physicalReceiptRef} value={physicalReceiptInput} onChange={(e) => setPhysicalReceiptInput(e.target.value)} onBlur={() => setPhysicalReceiptInput(normalizePhysicalReceipt(physicalReceiptInput))} placeholder="Enter receipt no (Ctrl+P)" className="w-full px-3 py-2 border rounded-md text-sm" />
                                     </div>
                                 </div>
-                                <p className="text-sm font-semibold pt-1">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{(line.quantity * line.sale_price).toFixed(2)}</p>
-                                <button onClick={() => removeLine(line.part_id)} className="ml-3 text-red-500 hover:text-red-700 pt-1"><Icon path={ICONS.close} className="h-5 w-5" /></button>
+                                <div className="flex flex-col">
+                                    <div className="font-semibold text-sm mb-2 whitespace-nowrap">Tax Rate:</div>
+                                    <div className="p-2 bg-gray-50 rounded-lg">
+                                        <select
+                                            value={selectedTaxRate?.tax_rate_id || ''}
+                                            onChange={(e) => {
+                                                const rateId = e.target.value;
+                                                const rate = taxRates.find(r => r.tax_rate_id === parseInt(rateId));
+                                                setSelectedTaxRate(rate || null);
+                                            }}
+                                            className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                        >
+                                            <option value="">Select tax rate...</option>
+                                            {taxRates.map(rate => (
+                                                <option key={rate.tax_rate_id} value={rate.tax_rate_id}>
+                                                    {rate.rate_name} ({(rate.rate_percentage * 100).toFixed(2)}%)
+                                                    {rate.is_default ? ' - Default' : ''}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
-                        ))}
-                        {lines.length === 0 && <p className="text-sm text-gray-500 text-center py-8">No items in cart.</p>}
-                    </div>
-                    <div className="p-4 border-t space-y-2">
-                        {/* When there are tax-inclusive items we show both gross entered total and net ex-tax base for clarity */}
-                        {hasInclusive && (
-                            <div className="flex justify-between text-xs text-slate-500">
-                                <span>Items Total (Entered)</span>
-                                <span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{grossSubtotal.toFixed(2)}</span>
-                            </div>
-                        )}
-                        <div className="flex justify-between text-sm" title={hasInclusive ? 'Net subtotal (exclusive of tax extracted from inclusive line prices)' : 'Sum of line totals before tax'}>
-                            <span>{hasInclusive ? 'Net Subtotal (Ex Tax)' : 'Subtotal'}</span>
-                            <span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{subtotal.toFixed(2)}</span>
                         </div>
-                        <div className="flex justify-between text-sm"><span>Tax</span><span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{tax.toFixed(2)}</span></div>
-                        <div className="flex justify-between font-bold text-lg"><span>Total</span><span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{total.toFixed(2)}</span></div>
-                        {anomaly && (
-                            <div className="mt-2 p-2 rounded bg-amber-50 border border-amber-200 text-[11px] text-amber-700 leading-snug">
-                                <strong>Tax Anomaly:</strong> {anomaly.type === 'HIGH_EFFECTIVE_RATE' && `Effective tax rate ${(anomaly.effectiveRate * 100).toFixed(2)}%`} {anomaly.type === 'RECOMPOSE_MISMATCH' && 'Mismatch between entered and recomposed totals.'}
+                        <div className="flex-1 p-4 overflow-y-auto">
+                            {lines.map(line => (
+                                <div key={line.part_id} className="flex items-start mb-4">
+                                    <div className="flex-grow">
+                                        <p className="text-sm font-medium">{line.display_name}</p>
+                                        <div className="flex items-center mt-1">
+                                            <input type="number" value={line.quantity} onChange={(e) => handleLineChange(line.part_id, 'quantity', e.target.value)} className="w-16 px-2 py-1 border rounded-md text-sm" />
+                                            <span className="mx-2 text-sm text-gray-500">x</span>
+                                            <input type="number" step="0.01" value={line.sale_price} onChange={(e) => handleLineChange(line.part_id, 'sale_price', e.target.value)} className="w-24 px-2 py-1 border rounded-md text-sm" />
+                                        </div>
+                                    </div>
+                                    <p className="text-sm font-semibold pt-1">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{(line.quantity * line.sale_price).toFixed(2)}</p>
+                                    <button onClick={() => removeLine(line.part_id)} className="ml-3 text-red-500 hover:text-red-700 pt-1"><Icon path={ICONS.close} className="h-5 w-5" /></button>
+                                </div>
+                            ))}
+                            {lines.length === 0 && <p className="text-sm text-gray-500 text-center py-8">No items in cart.</p>}
+                        </div>
+                        <div className="p-4 border-t space-y-2">
+                            {/* When there are tax-inclusive items we show both gross entered total and net ex-tax base for clarity */}
+                            {hasInclusive && (
+                                <div className="flex justify-between text-xs text-slate-500">
+                                    <span>Items Total (Entered)</span>
+                                    <span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{grossSubtotal.toFixed(2)}</span>
+                                </div>
+                            )}
+                            <div className="flex justify-between text-sm" title={hasInclusive ? 'Net subtotal (exclusive of tax extracted from inclusive line prices)' : 'Sum of line totals before tax'}>
+                                <span>{hasInclusive ? 'Net Subtotal (Ex Tax)' : 'Subtotal'}</span>
+                                <span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{subtotal.toFixed(2)}</span>
                             </div>
-                        )}
-                        <button onClick={handleCheckout} className="w-full mt-4 bg-green-600 text-white py-3 rounded-lg font-semibold text-lg hover:bg-green-700 transition">Checkout (Ctrl+Enter)</button>
+                            <div className="flex justify-between text-sm"><span>Tax</span><span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{tax.toFixed(2)}</span></div>
+                            <div className="flex justify-between font-bold text-lg"><span>Total</span><span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{total.toFixed(2)}</span></div>
+                            {anomaly && (
+                                <div className="mt-2 p-2 rounded bg-amber-50 border border-amber-200 text-[11px] text-amber-700 leading-snug">
+                                    <strong>Tax Anomaly:</strong> {anomaly.type === 'HIGH_EFFECTIVE_RATE' && `Effective tax rate ${(anomaly.effectiveRate * 100).toFixed(2)}%`} {anomaly.type === 'RECOMPOSE_MISMATCH' && 'Mismatch between entered and recomposed totals.'}
+                                </div>
+                            )}
+                            <button onClick={handleCheckout} className="w-full mt-4 bg-green-600 text-white py-3 rounded-lg font-semibold text-lg hover:bg-green-700 transition">Checkout (Ctrl+Enter)</button>
+                        </div>
                     </div>
                 </div>
-            </div>
             </div>
 
             <Modal isOpen={isPriceModalOpen} onClose={() => setIsPriceModalOpen(false)} title="Add Item to Sale">
