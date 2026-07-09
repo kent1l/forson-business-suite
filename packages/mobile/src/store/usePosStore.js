@@ -15,25 +15,27 @@ const usePosStore = create((set, get) => ({
   addToCart: (product) => {
     set((state) => {
       const existing = state.cart.find((i) => i.part_id === product.part_id);
+      const qtyToAdd = product._forceQty || 1;
       if (existing) {
         const cart = state.cart.map((i) =>
           i.part_id === product.part_id
-            ? { ...i, quantity: i.quantity + 1 }
+            ? { ...i, quantity: i.quantity + qtyToAdd }
             : i,
         );
         return { cart, grandTotal: _calcTotal(cart) };
       }
       const isSparkPlug = /spark\s*plug/i.test(
-        `${product.name || ''} ${product.detail || ''}`,
+        `${product.name || ''} ${product.detail || ''} ${product.display_name || ''}`,
       );
+      const initialQty = product._forceQty !== undefined ? product._forceQty : (isSparkPlug ? 4 : 1);
       const item = {
         part_id: product.part_id,
         detail: product.detail,
         display_name: product.display_name,
         part_numbers: product.part_numbers,
         brand_name: product.brand_name,
-        sale_price: product.sale_price,
-        quantity: isSparkPlug ? 4 : 1,
+        sale_price: product.last_sale_price ?? product.sale_price ?? 0,
+        quantity: initialQty,
         stock_qty: product.stock_qty,
         is_tax_inclusive_price: product.is_tax_inclusive_price,
       };

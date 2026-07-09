@@ -1,3 +1,4 @@
 export function formatPHP(amount: number): string {
-  return `₱${amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const val = typeof amount === 'number' && !isNaN(amount) ? amount : 0;
+  return `₱${val.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
