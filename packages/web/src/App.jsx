@@ -13,11 +13,17 @@ import MobileSetupPage from './pages/MobileSetupPage';
 function AppContent() {
     const { user, isAuthenticated, login, logout } = useAuth();
     const [currentPage, setCurrentPage] = useState('dashboard');
+    const [pageState, setPageState] = useState(null);
     const [posLines, setPosLines] = useState([]);
 
     const handleLogout = () => {
         logout();
         setPosLines([]);
+    };
+
+    const handleNavigate = (page, state = null) => {
+        setCurrentPage(page);
+        setPageState(state);
     };
 
     if (!isAuthenticated) {
@@ -30,7 +36,8 @@ function AppContent() {
                 user={user}
                 onLogout={handleLogout}
                 currentPage={currentPage}
-                onNavigate={setCurrentPage}
+                onNavigate={handleNavigate}
+                pageState={pageState}
                 posLines={posLines}
                 setPosLines={setPosLines}
             />

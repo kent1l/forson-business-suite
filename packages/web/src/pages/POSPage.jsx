@@ -22,7 +22,7 @@ import Receipt from '../components/ui/Receipt';
 import SavedSalesPanel from '../components/pos/SavedSalesPanel';
 
 // Grid with Save Sale + View Saved + Void Transaction
-const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave, handleVoid, canVoid, openCustomer, selectedCustomer }) => {
+const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave, handleVoid, canVoid, openCustomer, selectedCustomer, handleConvertToInvoice }) => {
     const totalCells = 10; // 5 cols x 2 rows
     const cells = Array.from({ length: totalCells });
 
@@ -119,6 +119,30 @@ const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave,
                         );
                     }
 
+                    if (i === 7) {
+                        return (
+                            <div key={i} className="col-span-1 row-start-2">
+                                <div
+                                    className={`flex flex-col w-full h-full rounded-lg border shadow-sm transition-all duration-150 ${canVoid ? 'bg-white hover:bg-slate-50 hover:shadow-md cursor-pointer border-indigo-300' : 'bg-slate-50 border-slate-200 opacity-60'}`}
+                                    onClick={() => canVoid && handleConvertToInvoice && handleConvertToInvoice()}
+                                    aria-disabled={!canVoid}
+                                    role="button"
+                                >
+                                    <div className={`flex-1 flex flex-col items-center justify-center px-2 text-center relative ${!canVoid ? 'opacity-55' : ''}`}>
+                                        <div className={`${canVoid ? 'text-indigo-600' : 'text-slate-300'} mb-1`}>
+                                            <Icon path={ICONS.invoice} className="h-9 w-9" />
+                                        </div>
+                                        <span className="font-semibold text-sm">Convert to Invoice</span>
+                                        <span className="text-[11px] text-slate-500">Send to Invoicing</span>
+                                    </div>
+                                    <div className="h-8 w-full flex items-stretch">
+                                        <div className="flex-1 border-t border-transparent rounded-b-lg flex items-center justify-center text-[11px] text-indigo-600 font-medium">&nbsp;</div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    }
+
                     return <div key={i} className="rounded-lg border border-dashed border-gray-200" />;
                 })}
             </div>
@@ -126,7 +150,7 @@ const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave,
     );
 };
 
-const POSPage = ({ user, lines, setLines }) => {
+const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
     const { settings } = useSettings();
     
     // Debug logging moved to useEffect to prevent infinite re-renders
@@ -352,6 +376,31 @@ const POSPage = ({ user, lines, setLines }) => {
             </div>
         ), { duration: 8000 });
     }, [customers, setLines]);
+
+    const handleConvertToInvoice = useCallback(() => {
+        if (!lines.length) return;
+        
+        onNavigate('invoicing', {
+            lines: lines.map(line => ({
+                part_id: line.part_id,
+                quantity: line.quantity,
+                sale_price: line.sale_price,
+                discount_amount: line.discount_amount || 0,
+                tax_rate_id: line.tax_rate_id || null,
+                is_tax_inclusive_price: line.is_tax_inclusive_price || false,
+                detail: line.detail
+            })),
+            selectedCustomer: selectedCustomer?.customer_id || null
+        });
+        
+        setLines([]);
+        const walkIn = customers.find(c => c.first_name.toLowerCase() === 'walk-in');
+        setSelectedCustomer(walkIn || null);
+        setPhysicalReceiptInput('');
+        setSelectedTaxRate(null);
+        
+        toast.success('Cart transferred to Invoicing page');
+    }, [lines, selectedCustomer, onNavigate, customers, setLines, setSelectedCustomer]);
 
     // Provide a callable version used by child components when brands/groups change
     const fetchInitialData = async () => {
@@ -852,6 +901,7 @@ const POSPage = ({ user, lines, setLines }) => {
                             canVoid={lines.length > 0}
                             openCustomer={() => setIsCustomerModalOpen(true)}
                             selectedCustomer={selectedCustomer}
+                            handleConvertToInvoice={handleConvertToInvoice}
                         />
                     </div>
                     <div className="w-full md:w-1/3 bg-white rounded-xl border border-gray-200 flex flex-col order-1 md:order-2">

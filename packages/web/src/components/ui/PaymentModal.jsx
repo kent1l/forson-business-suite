@@ -112,6 +112,36 @@ const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment, physicalReceip
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-lg"
                                 placeholder="0.00"
                             />
+                            {/* Quick Cash Suggestions */}
+                            <div className="flex gap-2 mt-2 overflow-x-auto py-1">
+                                {(() => {
+                                    if (total <= 0) return null;
+                                    const suggestions = new Set();
+                                    suggestions.add(total);
+                                    suggestions.add(Math.ceil(total / 10) * 10);
+                                    suggestions.add(Math.ceil(total / 50) * 50);
+                                    suggestions.add(Math.ceil(total / 100) * 100);
+                                    if (total > 100) suggestions.add(Math.ceil(total / 500) * 500);
+                                    if (total > 500) suggestions.add(Math.ceil(total / 1000) * 1000);
+                                    
+                                    const list = Array.from(suggestions)
+                                        .map(val => parseFloat(val.toFixed(2)))
+                                        .filter(val => val >= total)
+                                        .sort((a, b) => a - b)
+                                        .slice(0, 4);
+
+                                    return list.map(suggested => (
+                                        <button
+                                            key={suggested}
+                                            type="button"
+                                            onClick={() => setCashTendered(String(suggested))}
+                                            className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700 rounded-md border whitespace-nowrap transition-colors"
+                                        >
+                                            {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{suggested.toFixed(2)}
+                                        </button>
+                                    ));
+                                })()}
+                            </div>
                         </div>
                     )}
                     {/* Physical receipt input moved outside modal and is provided via `physicalReceipt` prop */}

@@ -14,7 +14,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { formatApplicationText } from '../helpers/applicationTextHelper';
 import { enrichPartsArray } from '../helpers/applicationCache';
 
-const InvoicingPage = ({ user }) => {
+const InvoicingPage = ({ user, onNavigate, pageState }) => {
     const { settings } = useSettings();
     const [customers, setCustomers] = useState([]);
     const [lines, setLines] = useState([]);
@@ -102,6 +102,24 @@ const InvoicingPage = ({ user }) => {
         
         fetchInitialData();
     }, [selectedTaxRate]);
+
+    useEffect(() => {
+        if (pageState && pageState.lines) {
+            const mappedLines = pageState.lines.map(item => ({
+                part_id: item.part_id,
+                quantity: item.quantity,
+                sale_price: item.sale_price,
+                discount_amount: item.discount_amount || 0,
+                tax_rate_id: item.tax_rate_id || null,
+                is_tax_inclusive_price: item.is_tax_inclusive_price || false,
+                detail: item.detail
+            }));
+            setLines(mappedLines);
+            if (pageState.selectedCustomer) {
+                setSelectedCustomer(String(pageState.selectedCustomer));
+            }
+        }
+    }, [pageState]);
 
     useEffect(() => {
         if (settings) {
@@ -206,6 +224,16 @@ const InvoicingPage = ({ user }) => {
     const handlePostInvoice = async () => {
         if (!selectedCustomer || lines.length === 0) {
             toast.error('Please select a customer and add at least one item.');
+            return;
+        }
+
+        const customer = customers.find(c => String(c.customer_id) === String(selectedCustomer));
+        const customerName = customer ? `${customer.first_name} ${customer.last_name || ''}`.trim().toLowerCase() : '';
+        const parsedTermsDays = parsePaymentTermsDays(terms);
+        const isWalkIn = customerName.includes('walk-in') || customerName.includes('walk in');
+
+        if (isWalkIn && parsedTermsDays > 0) {
+            toast.error('Payment terms other than COD are not allowed for Walk-In customers.');
             return;
         }
 
@@ -441,6 +469,19 @@ const InvoicingPage = ({ user }) => {
                                     <Icon path={ICONS.plus} className="h-5 w-5" />
                                 </button>
                             </div>
+                            {selectedCustomer && (() => {
+                                const cust = customers.find(c => String(c.customer_id) === String(selectedCustomer));
+                                if (!cust) return null;
+                                const balance = parseFloat(cust.balance_due) || 0;
+                                const limit = parseFloat(cust.credit_limit) || 0;
+                                const isOverLimit = balance > limit;
+                                return (
+                                    <div className={`mt-2 text-xs font-semibold ${isOverLimit ? 'text-red-600' : 'text-slate-500'}`}>
+                                        Outstanding Balance: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{balance.toFixed(2)} / Credit Limit: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{limit.toFixed(2)}
+                                        {isOverLimit && <span className="ml-2 bg-red-100 text-red-800 px-1.5 py-0.5 rounded text-[10px]">Over Limit!</span>}
+                                    </div>
+                                );
+                            })()}
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Tax Rate</label>
@@ -654,6 +695,10 @@ const InvoicingPage = ({ user }) => {
                     onPhysicalReceiptChange={setPhysicalReceiptNo}
                     requirePhysicalReceipt={true}
                     employeeId={user?.employee_id}
+                    customerName={(() => {
+                        const customer = customers.find(c => String(c.customer_id) === String(selectedCustomer));
+                        return customer ? `${customer.first_name} ${customer.last_name || ''}`.trim() : '';
+                    })()}
                 />
             )}
         </div>
