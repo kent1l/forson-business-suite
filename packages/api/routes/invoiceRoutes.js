@@ -60,6 +60,8 @@ router.get('/invoices', protect, hasPermission('invoicing:create'), async (req, 
                 e.first_name as employee_first_name,
                 e.last_name as employee_last_name,
                 r.refunded_amount,
+                r.refunded_amount_ex_tax,
+                r.refunded_tax_total,
                 GREATEST(i.total_amount - r.refunded_amount, 0) AS net_amount,
                 GREATEST((i.total_amount - r.refunded_amount) - i.amount_paid, 0) AS balance_due,
                 CASE 
@@ -76,7 +78,10 @@ router.get('/invoices', protect, hasPermission('invoicing:create'), async (req, 
             JOIN customer c ON i.customer_id = c.customer_id
             JOIN employee e ON i.employee_id = e.employee_id
             LEFT JOIN LATERAL (
-                SELECT COALESCE(SUM(cn.total_amount),0) AS refunded_amount
+                SELECT 
+                    COALESCE(SUM(cn.total_amount), 0) AS refunded_amount,
+                    COALESCE(SUM(cn.subtotal_ex_tax), 0) AS refunded_amount_ex_tax,
+                    COALESCE(SUM(cn.tax_total), 0) AS refunded_tax_total
                 FROM credit_note cn
                 WHERE cn.invoice_id = i.invoice_id
             ) r ON TRUE
@@ -142,7 +147,7 @@ router.get('/invoices/:id/lines', protect, hasPermission('invoicing:create'), as
 router.get('/invoices/:id/lines-with-refunds', protect, hasPermission('invoicing:create'), async (req, res) => {
     const { id } = req.params;
     try {
-        // Use a subquery to sum refunded quantities per invoice and part to avoid GROUP BY on il.*
+        // Use a subquery to sum refunded quantities per invoice line
         const query = `
             SELECT
                 il.*,
@@ -157,11 +162,10 @@ router.get('/invoices/:id/lines-with-refunds', protect, hasPermission('invoicing
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
             LEFT JOIN (
-                SELECT cnl.part_id, cn.invoice_id, SUM(cnl.quantity) AS quantity_refunded
+                SELECT cnl.invoice_line_id, SUM(cnl.quantity) AS quantity_refunded
                 FROM credit_note_line cnl
-                JOIN credit_note cn ON cnl.cn_id = cn.cn_id
-                GROUP BY cn.invoice_id, cnl.part_id
-            ) rf ON rf.part_id = il.part_id AND rf.invoice_id = il.invoice_id
+                GROUP BY cnl.invoice_line_id
+            ) rf ON rf.invoice_line_id = il.invoice_line_id
             WHERE il.invoice_id = $1
             ORDER BY p.detail;
         `;
@@ -175,7 +179,7 @@ router.get('/invoices/:id/lines-with-refunds', protect, hasPermission('invoicing
 
 // POST /invoices - Create a new invoice
 router.post('/invoices', async (req, res) => {
-    const { customer_id, employee_id, lines, amount_paid, tendered_amount, payment_method, terms, payment_terms_days, physical_receipt_no, tax_rate_id } = req.body;
+    const { customer_id, employee_id, lines, amount_paid, tendered_amount, payment_method, terms, payment_terms_days, physical_receipt_no, tax_rate_id, payments } = req.body;
 
     if (!customer_id || !employee_id || !lines || !Array.isArray(lines) || lines.length === 0) {
         return res.status(400).json({ message: 'Missing required fields.' });
@@ -307,22 +311,78 @@ router.post('/invoices', async (req, res) => {
             await client.query(transactionQuery, [part_id, -quantity, cost_at_sale, invoice_number, employee_id]);
         }
 
-        if (paid > 0) {
-            const paymentQuery = `
-                INSERT INTO customer_payment (customer_id, employee_id, amount, tendered_amount, payment_method, reference_number)
-                VALUES ($1, $2, $3, $4, $5, $6) RETURNING payment_id;
-            `;
-            const paymentMethodToUse = payment_method || 'Cash';
-            // store tendered_amount if provided; default to NULL
-            const tenderVal = typeof tendered_amount !== 'undefined' && tendered_amount !== null ? tendered_amount : null;
-            const paymentResult = await client.query(paymentQuery, [customer_id, employee_id, paid, tenderVal, paymentMethodToUse, invoice_number]);
-            const newPaymentId = paymentResult.rows[0].payment_id;
+        // Fetch customer details for validation
+        const customerResult = await client.query('SELECT first_name, last_name FROM customer WHERE customer_id = $1', [customer_id]);
+        const customerName = customerResult.rows.length > 0 ? `${customerResult.rows[0].first_name} ${customerResult.rows[0].last_name || ''}`.trim().toLowerCase() : '';
 
-            const allocationQuery = `
-                INSERT INTO invoice_payment_allocation (invoice_id, payment_id, amount_allocated)
-                VALUES ($1, $2, $3);
-            `;
-            await client.query(allocationQuery, [newInvoiceId, newPaymentId, paid]);
+        if (payments && Array.isArray(payments) && payments.length > 0) {
+            const totalPayments = payments.reduce((sum, p) => sum + parseFloat(p.amount_paid), 0);
+            if (totalPayments > total_amount + 0.01) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ message: 'Total payments exceed invoice amount.' });
+            }
+
+            for (const payment of payments) {
+                const { method_id, amount_paid: p_amount_paid, tendered_amount: p_tendered_amount, reference, metadata = {} } = payment;
+                let lookupParam = method_id;
+                try {
+                    if (typeof method_id === 'string' && /^\d+$/.test(method_id)) {
+                        lookupParam = parseInt(method_id, 10);
+                    }
+                } catch { }
+                const method = await client.query('SELECT * FROM payment_methods WHERE method_id = $1 AND enabled = true', [lookupParam]);
+                if (method.rows.length === 0) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ message: `Invalid payment method: ${method_id}` });
+                }
+                const methodConfig = typeof method.rows[0].config === 'string' ? JSON.parse(method.rows[0].config) : method.rows[0].config;
+                if (methodConfig.requires_reference && (!reference || reference.trim() === '')) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ message: `Reference is required for ${method.rows[0].name}` });
+                }
+                if (methodConfig.requires_receipt_no && (!prn)) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ message: `Physical receipt number is required for ${method.rows[0].name}` });
+                }
+                const tAmt = p_tendered_amount ? parseFloat(p_tendered_amount) : null;
+                const pAmt = parseFloat(p_amount_paid);
+                const changeAmt = tAmt && tAmt > pAmt ? tAmt - pAmt : 0;
+                if (changeAmt > 0 && !methodConfig.change_allowed) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ message: `Change is not allowed for ${method.rows[0].name}` });
+                }
+                const settlementType = methodConfig.settlement_type || (method.rows[0].type === 'cash' ? 'instant' : 'delayed');
+                
+                if (settlementType === 'on_account' && customerName.includes('walk-in')) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ message: 'On Account payment is not available for Walk-In customers.' });
+                }
+
+                const paymentStatus = settlementType === 'instant' ? 'settled' : settlementType === 'on_account' ? 'on_account' : 'pending';
+                await client.query(`
+                    INSERT INTO invoice_payments 
+                    (invoice_id, method_id, amount_paid, tendered_amount, change_amount, reference, metadata, created_by, payment_status, settled_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::varchar, CASE WHEN $9::varchar = 'settled' THEN CURRENT_TIMESTAMP ELSE NULL END)
+                `, [newInvoiceId, method.rows[0].method_id, pAmt, tAmt, changeAmt, reference, JSON.stringify(metadata), employee_id, paymentStatus]);
+            }
+        } else if (paid > 0) {
+            const methodCode = payment_method ? payment_method.toLowerCase().replace(/\s+/g, '_') : 'cash';
+            let method = await client.query("SELECT * FROM payment_methods WHERE code = $1 OR name ILIKE $1 LIMIT 1", [methodCode]);
+            if (method.rows.length === 0) {
+                method = await client.query("SELECT * FROM payment_methods WHERE type = 'cash' LIMIT 1");
+            }
+            if (method.rows.length > 0) {
+                const methodConfig = typeof method.rows[0].config === 'string' ? JSON.parse(method.rows[0].config) : method.rows[0].config;
+                const settlementType = methodConfig.settlement_type || (method.rows[0].type === 'cash' ? 'instant' : 'delayed');
+                const paymentStatus = settlementType === 'instant' ? 'settled' : settlementType === 'on_account' ? 'on_account' : 'pending';
+                const tenderVal = typeof tendered_amount !== 'undefined' && tendered_amount !== null ? tendered_amount : null;
+                const changeAmt = tenderVal && tenderVal > paid ? tenderVal - paid : 0;
+                await client.query(`
+                    INSERT INTO invoice_payments 
+                    (invoice_id, method_id, amount_paid, tendered_amount, change_amount, reference, created_by, payment_status, settled_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::varchar, CASE WHEN $8::varchar = 'settled' THEN CURRENT_TIMESTAMP ELSE NULL END)
+                `, [newInvoiceId, method.rows[0].method_id, paid, tenderVal, changeAmt, invoice_number, employee_id, paymentStatus]);
+            }
         }
 
 
@@ -383,33 +443,8 @@ router.put('/invoices/payments/:payment_id/settle', protect, hasPermission('invo
             return res.status(404).json({ message: 'Payment not found or already settled.' });
         }
 
-        const invoiceId = paymentRows[0].invoice_id;
-
-        // Update invoice balance and status based on all settled payments
-        await client.query(`
-            UPDATE invoice 
-            SET 
-                amount_paid = (
-                    SELECT COALESCE(SUM(ip.amount_paid), 0)
-                    FROM invoice_payments ip
-                    WHERE ip.invoice_id = $1 AND ip.payment_status = 'settled'
-                ),
-                status = CASE 
-                    WHEN (
-                        SELECT COALESCE(SUM(ip.amount_paid), 0)
-                        FROM invoice_payments ip
-                        WHERE ip.invoice_id = $1 AND ip.payment_status = 'settled'
-                    ) >= total_amount THEN 'Paid'
-                    WHEN (
-                        SELECT COALESCE(SUM(ip.amount_paid), 0)
-                        FROM invoice_payments ip
-                        WHERE ip.invoice_id = $1 AND ip.payment_status = 'settled'
-                    ) > 0 THEN 'Partially Paid'
-                    ELSE 'Unpaid'
-                END
-            WHERE invoice_id = $1
-        `, [invoiceId]);
-
+        // Update invoice balance and status is handled automatically by the update_invoice_balance_after_payment trigger on invoice_payments table
+        
         await client.query('COMMIT');
         res.json({ message: 'Payment settled successfully.' });
     } catch (err) {

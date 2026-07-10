@@ -13,7 +13,8 @@ const SplitPaymentModal = ({
     onConfirm,
     physicalReceiptNo = '',
     onPhysicalReceiptChange = () => {},
-    employeeId = null
+    employeeId = null,
+    customerName = ''
 }) => {
     const { settings } = useSettings();
     const [paymentMethods, setPaymentMethods] = useState([]);
@@ -188,6 +189,9 @@ const SplitPaymentModal = ({
                 errors.push(`Amount must be greater than 0`);
             }
             if (method) {
+                if (method.settlement_type === 'on_account' && (!customerName || customerName.trim().toLowerCase().includes('walk-in') || customerName.trim().toLowerCase().includes('walk in'))) {
+                    errors.push(`On Account is not available for Walk-In customers`);
+                }
                 if (method.config.requires_reference && !payment.reference.trim()) {
                     errors.push(`${method.config.reference_label || 'Reference'} is required for ${method.name}`);
                 }
@@ -266,7 +270,7 @@ const SplitPaymentModal = ({
         try {
             // Format payments for API
             const formattedPayments = payments.map(payment => {
-                const method = paymentMethods.find(m => m.method_id === payment.method_id);
+                const method = paymentMethods.find(m => String(m.method_id) === String(payment.method_id));
                 const amountPaid = parseFloat(payment.amount_paid);
                 const tenderedAmount = parseFloat(payment.tendered_amount) || null;
 
