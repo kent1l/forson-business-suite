@@ -11,8 +11,8 @@ interface Props {
 export default function ProductListItem({ item, onPress }: Props) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const stock = item.stock_qty ?? item.stock_on_hand ?? 0;
-  const isOutOfStock = stock <= 0;
+  const stock = Number(item.stock_qty ?? item.stock_on_hand ?? 0);
+  const isOutOfStock = isNaN(stock) || stock <= 0;
 
   return (
     <TouchableOpacity
@@ -32,15 +32,14 @@ export default function ProductListItem({ item, onPress }: Props) {
             {item.brand_name}
           </Text>
         ) : null}
-        {isOutOfStock && (
-          <Text style={styles.oos}>Out of Stock</Text>
-        )}
       </View>
       <View style={styles.right}>
         <Text style={[styles.price, isDark && styles.priceDark]}>
           {formatPHP(item.last_sale_price ?? item.sale_price ?? 0)}
         </Text>
-        {!isOutOfStock && (
+        {isOutOfStock ? (
+          <Text style={styles.oos}>Out of Stock</Text>
+        ) : (
           <Text style={[styles.stock, isDark && styles.stockDark]}>
             {stock} in stock
           </Text>
