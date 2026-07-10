@@ -11,6 +11,7 @@ import {
   useColorScheme,
   TextInput,
   useWindowDimensions,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -49,6 +50,41 @@ export default function POSScreen() {
       isInitialized.current = true;
     }
   }, [normalHeight]);
+
+  const lastCartHeightBeforeKeyboard = useRef(normalHeight);
+  const isKeyboardVisible = useRef(false);
+
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => {
+        isKeyboardVisible.current = true;
+        lastCartHeightBeforeKeyboard.current = cartHeight.value;
+        cartHeight.value = withSpring(collapsedHeight, {
+          damping: 20,
+          stiffness: 150,
+          mass: 0.8,
+        });
+      }
+    );
+
+    const hideSubscription = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        isKeyboardVisible.current = false;
+        cartHeight.value = withSpring(lastCartHeightBeforeKeyboard.current, {
+          damping: 20,
+          stiffness: 150,
+          mass: 0.8,
+        });
+      }
+    );
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, [collapsedHeight, normalHeight]);
 
   const startHeight = useSharedValue(0);
 
