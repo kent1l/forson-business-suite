@@ -13,7 +13,7 @@ import {
   useWindowDimensions,
   Keyboard,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, {
@@ -36,9 +36,10 @@ export default function POSScreen() {
   const isDark = colorScheme === 'dark';
   const router = useRouter();
 
+  const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
-  const collapsedHeight = 60;
-  const normalHeight = windowHeight * 0.45;
+  const collapsedHeight = 60 + insets.bottom;
+  const normalHeight = windowHeight * 0.45 + insets.bottom;
   const expandedHeight = windowHeight - 120;
 
   const cartHeight = useSharedValue(normalHeight);
@@ -320,7 +321,13 @@ export default function POSScreen() {
               }
             />
 
-            <View style={[styles.chargeBar, { borderTopColor: isDark ? '#374151' : '#f3f4f6' }]}>
+            <View style={[
+              styles.chargeBar,
+              {
+                borderTopColor: isDark ? '#374151' : '#f3f4f6',
+                paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 12,
+              }
+            ]}>
               <TouchableOpacity
                 style={[styles.chargeBtn, cart.length === 0 && styles.chargeBtnDisabled]}
                 disabled={cart.length === 0}
@@ -345,7 +352,7 @@ export default function POSScreen() {
 
         {/* Undo snackbar */}
         {snackbar.visible && (
-          <View style={styles.snackbar}>
+          <View style={[styles.snackbar, { bottom: 100 + insets.bottom }]}>
             <Text style={styles.snackText}>Item removed.</Text>
             <TouchableOpacity onPress={handleUndo}>
               <Text style={styles.snackUndo}>UNDO</Text>
@@ -432,7 +439,6 @@ const styles = StyleSheet.create({
   chargeBtnText: { color: '#fff', fontSize: 17, fontWeight: '800', letterSpacing: 0.5 },
   snackbar: {
     position: 'absolute',
-    bottom: 100,
     left: 16,
     right: 16,
     backgroundColor: '#111827',

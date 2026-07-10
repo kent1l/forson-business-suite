@@ -11,7 +11,7 @@ import {
   useColorScheme,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import apiClient from '../api/client';
@@ -26,6 +26,7 @@ export default function POSSettlementScreen() {
   const isDark = colorScheme === 'dark';
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
+  const insets = useSafeAreaInsets();
 
   const cart = usePosStore((s: any) => s.cart);
   const grandTotal = usePosStore((s: any) => s.grandTotal);
@@ -168,7 +169,7 @@ export default function POSSettlementScreen() {
 
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={[styles.content, { paddingBottom: 120 }]}
+          contentContainerStyle={[styles.content, { paddingBottom: 100 + insets.bottom }]}
           keyboardShouldPersistTaps="handled"
         >
           {/* Order summary */}
@@ -287,7 +288,14 @@ export default function POSSettlementScreen() {
         </ScrollView>
 
         {/* Complete Sale button */}
-        <View style={[styles.footer, { backgroundColor: cardBg, borderTopColor: isDark ? '#374151' : '#e5e7eb' }]}>
+        <View style={[
+          styles.footer,
+          {
+            backgroundColor: cardBg,
+            borderTopColor: isDark ? '#374151' : '#e5e7eb',
+            paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 16,
+          }
+        ]}>
           <TouchableOpacity
             style={[styles.completeBtn, isSubmitting && styles.completeBtnDisabled]}
             onPress={handleCompleteSale}
@@ -367,7 +375,6 @@ const styles = StyleSheet.create({
   changeAmount: { fontSize: 20, fontWeight: '800' },
   footer: {
     padding: 16,
-    paddingBottom: Platform.OS === 'ios' ? 30 : 16,
     borderTopWidth: 1,
   },
   completeBtn: {
