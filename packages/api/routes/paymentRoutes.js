@@ -109,7 +109,8 @@ router.get('/payments/refunds-approx', protect, hasPermission('ar:view'), async 
     try {
         const q = `SELECT COALESCE(SUM(total_amount),0) AS total_refunds
                    FROM credit_note
-                   WHERE (refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2;`;
+                   WHERE (refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
+                     AND refund_payment_method = 'Cash';`;
         const { rows } = await db.query(q, [startDate, endDate]);
         res.json({ total_refunds: rows[0].total_refunds });
     } catch (err) {

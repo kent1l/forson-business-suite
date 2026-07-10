@@ -147,7 +147,7 @@ router.get('/invoices/:id/lines', protect, hasPermission('invoicing:create'), as
 router.get('/invoices/:id/lines-with-refunds', protect, hasPermission('invoicing:create'), async (req, res) => {
     const { id } = req.params;
     try {
-        // Use a subquery to sum refunded quantities per invoice and part to avoid GROUP BY on il.*
+        // Use a subquery to sum refunded quantities per invoice line
         const query = `
             SELECT
                 il.*,
@@ -162,11 +162,10 @@ router.get('/invoices/:id/lines-with-refunds', protect, hasPermission('invoicing
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
             LEFT JOIN (
-                SELECT cnl.part_id, cn.invoice_id, SUM(cnl.quantity) AS quantity_refunded
+                SELECT cnl.invoice_line_id, SUM(cnl.quantity) AS quantity_refunded
                 FROM credit_note_line cnl
-                JOIN credit_note cn ON cnl.cn_id = cn.cn_id
-                GROUP BY cn.invoice_id, cnl.part_id
-            ) rf ON rf.part_id = il.part_id AND rf.invoice_id = il.invoice_id
+                GROUP BY cnl.invoice_line_id
+            ) rf ON rf.invoice_line_id = il.invoice_line_id
             WHERE il.invoice_id = $1
             ORDER BY p.detail;
         `;
