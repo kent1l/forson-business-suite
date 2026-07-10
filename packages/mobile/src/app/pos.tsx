@@ -10,10 +10,16 @@ import {
   Alert,
   useColorScheme,
   TextInput,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import apiClient from '../api/client';
 import usePosStore from '../store/usePosStore';
@@ -28,6 +34,69 @@ export default function POSScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const router = useRouter();
+
+  const { height: windowHeight } = useWindowDimensions();
+  const collapsedHeight = 60;
+  const normalHeight = windowHeight * 0.45;
+  const expandedHeight = windowHeight - 120;
+
+  const cartHeight = useSharedValue(normalHeight);
+  const isInitialized = useRef(false);
+
+  useEffect(() => {
+    if (!isInitialized.current && normalHeight > 0) {
+      cartHeight.value = normalHeight;
+      isInitialized.current = true;
+    }
+  }, [normalHeight]);
+
+  const startHeight = useSharedValue(0);
+
+  const gesture = Gesture.Pan()
+    .onStart(() => {
+      startHeight.value = cartHeight.value;
+    })
+    .onUpdate((event: any) => {
+      let newHeight = startHeight.value - event.translationY;
+      if (newHeight < collapsedHeight) {
+        newHeight = collapsedHeight;
+      } else if (newHeight > expandedHeight) {
+        newHeight = expandedHeight;
+      }
+      cartHeight.value = newHeight;
+    })
+    .onEnd((event: any) => {
+      const currentVal = cartHeight.value;
+      const velocityY = event.velocityY;
+      let target = normalHeight;
+
+      const snapPoints = [collapsedHeight, normalHeight, expandedHeight];
+
+      if (velocityY < -500) {
+        target = currentVal < normalHeight ? normalHeight : expandedHeight;
+      } else if (velocityY > 500) {
+        target = currentVal > normalHeight ? normalHeight : collapsedHeight;
+      } else {
+        let minDiff = Infinity;
+        for (const pt of snapPoints) {
+          const diff = Math.abs(currentVal - pt);
+          if (diff < minDiff) {
+            minDiff = diff;
+            target = pt;
+          }
+        }
+      }
+
+      cartHeight.value = withSpring(target, {
+        damping: 20,
+        stiffness: 150,
+        mass: 0.8,
+      });
+    });
+
+  const animCartStyle = useAnimatedStyle(() => ({
+    height: cartHeight.value,
+  }));
 
   // ── Search state ───────────────────────────────────────────────────────────
   const [query, setQuery] = useState('');
@@ -148,7 +217,7 @@ export default function POSScreen() {
               value={query}
               onChangeText={handleQueryChange}
               onScanResult={handleScanResult}
-              searchInputRef={searchInputRef}
+              searchInputRef={searchInputRef as any}
             />
           </View>
 
@@ -174,15 +243,24 @@ export default function POSScreen() {
           </View>
 
           {/* Bottom 45%: Cart */}
-          <View style={[styles.bottomArea, { backgroundColor: cartBg, borderTopColor: isDark ? '#374151' : '#e5e7eb' }]}>
-            <View style={styles.cartHeader}>
-              <Text style={[styles.cartTitle, isDark && styles.cartTitleDark]}>
-                Cart {cart.length > 0 ? `(${cart.length})` : ''}
-              </Text>
-              <Text style={[styles.cartTotal, isDark && styles.cartTotalDark]}>
-                {formatPHP(grandTotal)}
-              </Text>
-            </View>
+          <Animated.View style={[
+            styles.bottomArea,
+            animCartStyle,
+            { backgroundColor: cartBg, borderTopColor: isDark ? '#374151' : '#e5e7eb', overflow: 'hidden' }
+          ]}>
+            <GestureDetector gesture={gesture}>
+              <View style={styles.dragHandleContainer}>
+                <View style={[styles.dragHandle, isDark && styles.dragHandleDark]} />
+                <View style={styles.cartHeader}>
+                  <Text style={[styles.cartTitle, isDark && styles.cartTitleDark]}>
+                    Cart {cart.length > 0 ? `(${cart.length})` : ''}
+                  </Text>
+                  <Text style={[styles.cartTotal, isDark && styles.cartTotalDark]}>
+                    {formatPHP(grandTotal)}
+                  </Text>
+                </View>
+              </View>
+            </GestureDetector>
 
             <FlatList
               data={cart}
@@ -218,7 +296,7 @@ export default function POSScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </Animated.View>
         </KeyboardAvoidingView>
 
         {/* Price override sheet */}
@@ -256,18 +334,34 @@ const styles = StyleSheet.create({
   },
   appBarTitle: { color: '#fff', fontSize: 18, fontWeight: '800', letterSpacing: 0.3 },
   topArea: {
-    flex: 0.15,
     backgroundColor: '#111827',
     paddingHorizontal: 12,
-    paddingBottom: 10,
+    paddingBottom: 12,
+    paddingTop: 4,
     justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
   },
-  middleArea: { flex: 0.40 },
-  bottomArea: { flex: 0.45, borderTopWidth: 1 },
+  middleArea: { flex: 1 },
+  bottomArea: { borderTopWidth: 1 },
+  dragHandleContainer: {
+    paddingTop: 8,
+    paddingBottom: 2,
+    alignItems: 'stretch',
+  },
+  dragHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#d1d5db',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 4,
+  },
+  dragHandleDark: {
+    backgroundColor: '#4b5563',
+  },
   emptyResults: { paddingTop: 24, alignItems: 'center', paddingHorizontal: 24 },
   emptyText: { color: '#9ca3af', fontSize: 14, textAlign: 'center' },
   emptyTextDark: { color: '#6b7280' },
