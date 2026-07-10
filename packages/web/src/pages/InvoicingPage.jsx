@@ -387,12 +387,14 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                 hasInclusive = true;
                 taxBase = lineTotal / (1 + ratePercentage);
                 taxAmount = lineTotal - taxBase;
+                taxAmount = Math.round(taxAmount * 100) / 100; // per-line rounding
+                taxBase = lineTotal - taxAmount;
             } else {
                 taxBase = lineTotal;
                 taxAmount = lineTotal * ratePercentage;
+                taxAmount = Math.round(taxAmount * 100) / 100; // per-line rounding
             }
 
-            taxAmount = Math.round(taxAmount * 100) / 100; // per-line rounding
             netSubtotal += taxBase;
             calculatedTax += taxAmount;
         });
