@@ -60,6 +60,8 @@ router.get('/invoices', protect, hasPermission('invoicing:create'), async (req, 
                 e.first_name as employee_first_name,
                 e.last_name as employee_last_name,
                 r.refunded_amount,
+                r.refunded_amount_ex_tax,
+                r.refunded_tax_total,
                 GREATEST(i.total_amount - r.refunded_amount, 0) AS net_amount,
                 GREATEST((i.total_amount - r.refunded_amount) - i.amount_paid, 0) AS balance_due,
                 CASE 
@@ -76,7 +78,10 @@ router.get('/invoices', protect, hasPermission('invoicing:create'), async (req, 
             JOIN customer c ON i.customer_id = c.customer_id
             JOIN employee e ON i.employee_id = e.employee_id
             LEFT JOIN LATERAL (
-                SELECT COALESCE(SUM(cn.total_amount),0) AS refunded_amount
+                SELECT 
+                    COALESCE(SUM(cn.total_amount), 0) AS refunded_amount,
+                    COALESCE(SUM(cn.subtotal_ex_tax), 0) AS refunded_amount_ex_tax,
+                    COALESCE(SUM(cn.tax_total), 0) AS refunded_tax_total
                 FROM credit_note cn
                 WHERE cn.invoice_id = i.invoice_id
             ) r ON TRUE
