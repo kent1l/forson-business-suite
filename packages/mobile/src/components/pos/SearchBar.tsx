@@ -84,7 +84,13 @@ export default function SearchBar({ value, onChangeText, onScanResult, searchInp
   return (
     <>
       <View style={[styles.container, isDark && styles.containerDark]}>
-        <Ionicons name="search-outline" size={20} color="#9ca3af" style={styles.searchIcon} />
+        <TouchableOpacity
+          style={styles.leftBtn}
+          onPress={() => { haptics.tap(); openScanner(); }}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="barcode-outline" size={24} color="#9ca3af" />
+        </TouchableOpacity>
         <TextInput
           ref={searchInputRef}
           style={[styles.input, isDark && styles.inputDark]}
@@ -95,15 +101,16 @@ export default function SearchBar({ value, onChangeText, onScanResult, searchInp
           autoCapitalize="characters"
           autoCorrect={false}
           returnKeyType="search"
-          clearButtonMode="while-editing"
         />
-        <TouchableOpacity
-          style={styles.cameraBtn}
-          onPress={() => { haptics.tap(); openScanner(); }}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Ionicons name="camera-outline" size={24} color="#fff" />
-        </TouchableOpacity>
+        {!!value && (
+          <TouchableOpacity
+            style={styles.rightBtn}
+            onPress={() => { haptics.tap(); onChangeText(''); }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="close-outline" size={24} color="#9ca3af" />
+          </TouchableOpacity>
+        )}
       </View>
 
       <Modal visible={scannerOpen} animationType="slide" onRequestClose={closeScanner}>
@@ -154,8 +161,19 @@ const styles = StyleSheet.create({
   containerDark: {
     backgroundColor: '#1f2937',
   },
-  searchIcon: {
-    marginRight: 8,
+  leftBtn: {
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 6,
+  },
+  rightBtn: {
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 6,
   },
   input: {
     flex: 1,
@@ -166,15 +184,6 @@ const styles = StyleSheet.create({
   },
   inputDark: {
     color: '#f9fafb',
-  },
-  cameraBtn: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 10,
-    marginLeft: 8,
   },
   scannerContainer: {
     flex: 1,
