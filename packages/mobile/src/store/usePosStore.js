@@ -34,9 +34,9 @@ const usePosStore = create((set, get) => ({
         display_name: product.display_name,
         part_numbers: product.part_numbers,
         brand_name: product.brand_name,
-        sale_price: product.last_sale_price ?? product.sale_price ?? 0,
+        sale_price: parseFloat(product.last_sale_price ?? product.sale_price ?? 0),
         quantity: initialQty,
-        stock_qty: product.stock_qty,
+        stock_qty: product.stock_qty ?? product.stock_on_hand ?? 0,
         is_tax_inclusive_price: product.is_tax_inclusive_price,
       };
       const cart = [...state.cart, item];

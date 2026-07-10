@@ -218,7 +218,7 @@ export default function POSScreen() {
       [
         item.part_numbers ? `SKU: ${item.part_numbers}` : null,
         item.brand_name ? `Brand: ${item.brand_name}` : null,
-        `Stock: ${item.stock_qty ?? 'N/A'}`,
+        `Stock: ${item.stock_qty ?? item.stock_on_hand ?? 'N/A'}`,
         `Unit Price: ${formatPHP(item.sale_price)}`,
       ].filter(Boolean).join('\n'),
     );
