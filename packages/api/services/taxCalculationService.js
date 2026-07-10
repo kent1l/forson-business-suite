@@ -29,14 +29,15 @@ function calculateLineTax(line, part, taxRates, defaultTaxRate) {
         // Tax inclusive: extract tax from total
         taxBase = lineTotal / (1 + taxRatePercentage);
         taxAmount = lineTotal - taxBase;
+        taxAmount = Math.round(taxAmount * 100) / 100;
+        taxBase = lineTotal - taxAmount;
     } else {
         // Tax exclusive: add tax to base
         taxBase = lineTotal;
         taxAmount = lineTotal * taxRatePercentage;
+        taxAmount = Math.round(taxAmount * 100) / 100;
     }
     
-    // Round tax amount to 2 decimal places (per-line rounding policy)
-    taxAmount = Math.round(taxAmount * 100) / 100;
     
     return {
         tax_rate_id: taxRateId,

@@ -32,30 +32,91 @@ router.get('/tax-reports/summary', protect, hasPermission('reports:view'), async
         }
 
         const query = `
+            WITH invoice_net AS (
+                SELECT 
+                    i.invoice_id, 
+                    i.invoice_date, 
+                    COALESCE(i.subtotal_ex_tax, 0) - COALESCE(cn_totals.refunded_subtotal, 0) AS subtotal_ex_tax,
+                    COALESCE(i.tax_total, 0) - COALESCE(cn_totals.refunded_tax, 0) AS tax_total,
+                    COALESCE(i.total_amount, 0) - COALESCE(cn_totals.refunded_total, 0) AS total_amount
+                FROM invoice i
+                LEFT JOIN (
+                    SELECT invoice_id, 
+                           SUM(subtotal_ex_tax) as refunded_subtotal,
+                           SUM(tax_total) as refunded_tax,
+                           SUM(total_amount) as refunded_total
+                    FROM credit_note
+                    GROUP BY invoice_id
+                ) cn_totals ON i.invoice_id = cn_totals.invoice_id
+                WHERE i.status != 'Cancelled'
+            ),
+            breakdown_net AS (
+                SELECT 
+                    itb.invoice_id, 
+                    itb.tax_rate_id, 
+                    itb.rate_name, 
+                    itb.rate_percentage,
+                    itb.tax_base - COALESCE(cn_bk.refunded_base, 0) AS tax_base,
+                    itb.tax_amount - COALESCE(cn_bk.refunded_amount, 0) AS tax_amount
+                FROM invoice_tax_breakdown itb
+                LEFT JOIN (
+                    SELECT cn.invoice_id, cntb.tax_rate_id,
+                           SUM(cntb.tax_base) as refunded_base,
+                           SUM(cntb.tax_amount) as refunded_amount
+                    FROM credit_note cn
+                    JOIN credit_note_tax_breakdown cntb ON cn.cn_id = cntb.cn_id
+                    GROUP BY cn.invoice_id, cntb.tax_rate_id
+                ) cn_bk ON itb.invoice_id = cn_bk.invoice_id AND itb.tax_rate_id = cn_bk.tax_rate_id
+            ),
+            period_grouped AS (
+                SELECT 
+                    ${dateGroupClause} as period,
+                    to_char(${dateGroupClause}, '${dateFormat}') as period_label,
+                    COUNT(DISTINCT i.invoice_id) as invoice_count,
+                    SUM(i.subtotal_ex_tax) as total_subtotal,
+                    SUM(i.tax_total) as total_tax,
+                    SUM(i.total_amount) as total_amount,
+                    AVG(i.tax_total) as avg_tax_per_invoice
+                FROM invoice_net i
+                WHERE i.invoice_date >= $1 AND i.invoice_date <= $2
+                GROUP BY ${dateGroupClause}
+            ),
+            period_breakdown AS (
+                SELECT 
+                    ${dateGroupClause} as period,
+                    bn.rate_name,
+                    bn.rate_percentage,
+                    SUM(bn.tax_base) as tax_base,
+                    SUM(bn.tax_amount) as tax_amount,
+                    COUNT(DISTINCT bn.invoice_id) as invoice_count
+                FROM invoice_net i
+                JOIN breakdown_net bn ON i.invoice_id = bn.invoice_id
+                WHERE i.invoice_date >= $1 AND i.invoice_date <= $2
+                GROUP BY ${dateGroupClause}, bn.rate_name, bn.rate_percentage
+            )
             SELECT 
-                ${dateGroupClause} as period,
-                to_char(${dateGroupClause}, '${dateFormat}') as period_label,
-                COUNT(DISTINCT i.invoice_id) as invoice_count,
-                SUM(COALESCE(i.subtotal_ex_tax, 0)) as total_subtotal,
-                SUM(COALESCE(i.tax_total, 0)) as total_tax,
-                SUM(COALESCE(i.total_amount, 0)) as total_amount,
-                AVG(COALESCE(i.tax_total, 0)) as avg_tax_per_invoice,
-                json_agg(
-                    json_build_object(
-                        'rate_name', itb.rate_name,
-                        'rate_percentage', itb.rate_percentage,
-                        'tax_base', SUM(itb.tax_base),
-                        'tax_amount', SUM(itb.tax_amount),
-                        'invoice_count', COUNT(DISTINCT itb.invoice_id)
+                pg.period,
+                pg.period_label,
+                pg.invoice_count,
+                pg.total_subtotal,
+                pg.total_tax,
+                pg.total_amount,
+                pg.avg_tax_per_invoice,
+                (
+                    SELECT json_agg(
+                        json_build_object(
+                            'rate_name', pb.rate_name,
+                            'rate_percentage', pb.rate_percentage,
+                            'tax_base', pb.tax_base,
+                            'tax_amount', pb.tax_amount,
+                            'invoice_count', pb.invoice_count
+                        )
                     )
-                ) FILTER (WHERE itb.breakdown_id IS NOT NULL) as tax_breakdown_by_rate
-            FROM invoice i
-            LEFT JOIN invoice_tax_breakdown itb ON i.invoice_id = itb.invoice_id
-            WHERE i.invoice_date >= $1 
-            AND i.invoice_date <= $2
-            AND i.status != 'Cancelled'
-            GROUP BY ${dateGroupClause}
-            ORDER BY period DESC
+                    FROM period_breakdown pb
+                    WHERE pb.period = pg.period
+                ) as tax_breakdown_by_rate
+            FROM period_grouped pg
+            ORDER BY pg.period DESC
         `;
 
         const { rows } = await db.query(query, [startDate, endDate]);
@@ -120,34 +181,69 @@ router.get('/tax-reports/detailed', protect, hasPermission('reports:view'), asyn
         }
 
         const query = `
+            WITH invoice_net AS (
+                SELECT 
+                    i.invoice_id, 
+                    COALESCE(i.subtotal_ex_tax, 0) - COALESCE(cn_totals.refunded_subtotal, 0) AS subtotal_ex_tax,
+                    COALESCE(i.tax_total, 0) - COALESCE(cn_totals.refunded_tax, 0) AS tax_total,
+                    COALESCE(i.total_amount, 0) - COALESCE(cn_totals.refunded_total, 0) AS total_amount
+                FROM invoice i
+                LEFT JOIN (
+                    SELECT invoice_id, 
+                           SUM(subtotal_ex_tax) as refunded_subtotal,
+                           SUM(tax_total) as refunded_tax,
+                           SUM(total_amount) as refunded_total
+                    FROM credit_note
+                    GROUP BY invoice_id
+                ) cn_totals ON i.invoice_id = cn_totals.invoice_id
+                WHERE i.status != 'Cancelled'
+            ),
+            breakdown_net AS (
+                SELECT 
+                    itb.invoice_id, 
+                    itb.tax_rate_id, 
+                    itb.rate_name, 
+                    itb.rate_percentage,
+                    itb.tax_base - COALESCE(cn_bk.refunded_base, 0) AS tax_base,
+                    itb.tax_amount - COALESCE(cn_bk.refunded_amount, 0) AS tax_amount
+                FROM invoice_tax_breakdown itb
+                LEFT JOIN (
+                    SELECT cn.invoice_id, cntb.tax_rate_id,
+                           SUM(cntb.tax_base) as refunded_base,
+                           SUM(cntb.tax_amount) as refunded_amount
+                    FROM credit_note cn
+                    JOIN credit_note_tax_breakdown cntb ON cn.cn_id = cntb.cn_id
+                    GROUP BY cn.invoice_id, cntb.tax_rate_id
+                ) cn_bk ON itb.invoice_id = cn_bk.invoice_id AND itb.tax_rate_id = cn_bk.tax_rate_id
+            )
             SELECT 
                 i.invoice_id,
                 i.invoice_number,
                 i.invoice_date,
-                i.subtotal_ex_tax,
-                i.tax_total,
-                i.total_amount,
+                inet.subtotal_ex_tax,
+                inet.tax_total,
+                inet.total_amount,
                 i.tax_calculation_version,
                 c.first_name || ' ' || c.last_name as customer_name,
                 e.first_name || ' ' || e.last_name as employee_name,
-                json_agg(
-                    json_build_object(
-                        'tax_rate_id', itb.tax_rate_id,
-                        'rate_name', itb.rate_name,
-                        'rate_percentage', itb.rate_percentage,
-                        'tax_base', itb.tax_base,
-                        'tax_amount', itb.tax_amount,
-                        'line_count', itb.line_count
+                (
+                    SELECT json_agg(
+                        json_build_object(
+                            'tax_rate_id', bn.tax_rate_id,
+                            'rate_name', bn.rate_name,
+                            'rate_percentage', bn.rate_percentage,
+                            'tax_base', bn.tax_base,
+                            'tax_amount', bn.tax_amount
+                        )
                     )
+                    FROM breakdown_net bn
+                    WHERE bn.invoice_id = i.invoice_id
                 ) as tax_breakdown
             FROM invoice i
+            JOIN invoice_net inet ON i.invoice_id = inet.invoice_id
             JOIN customer c ON i.customer_id = c.customer_id
             JOIN employee e ON i.employee_id = e.employee_id
-            LEFT JOIN invoice_tax_breakdown itb ON i.invoice_id = itb.invoice_id
             ${whereClause}
-            GROUP BY i.invoice_id, i.invoice_number, i.invoice_date, i.subtotal_ex_tax, 
-                     i.tax_total, i.total_amount, i.tax_calculation_version,
-                     c.first_name, c.last_name, e.first_name, e.last_name
             ORDER BY i.invoice_date DESC
             LIMIT $${params.length + 1} OFFSET $${params.length + 2}
         `;
@@ -160,7 +256,7 @@ router.get('/tax-reports/detailed', protect, hasPermission('reports:view'), asyn
         const countQuery = `
             SELECT COUNT(DISTINCT i.invoice_id) as total_count
             FROM invoice i
-            LEFT JOIN invoice_tax_breakdown itb ON i.invoice_id = itb.invoice_id
+            ${whereClause.includes('itb.tax_rate_id') ? 'JOIN invoice_tax_breakdown itb ON i.invoice_id = itb.invoice_id' : ''}
             ${whereClause}
         `;
 
@@ -210,20 +306,56 @@ router.get('/tax-reports/export', protect, hasPermission('reports:view'), async 
 
     try {
         const query = `
+            WITH invoice_net AS (
+                SELECT 
+                    i.invoice_id, 
+                    COALESCE(i.subtotal_ex_tax, 0) - COALESCE(cn_totals.refunded_subtotal, 0) AS subtotal_ex_tax,
+                    COALESCE(i.tax_total, 0) - COALESCE(cn_totals.refunded_tax, 0) AS tax_total,
+                    COALESCE(i.total_amount, 0) - COALESCE(cn_totals.refunded_total, 0) AS total_amount
+                FROM invoice i
+                LEFT JOIN (
+                    SELECT invoice_id, 
+                           SUM(subtotal_ex_tax) as refunded_subtotal,
+                           SUM(tax_total) as refunded_tax,
+                           SUM(total_amount) as refunded_total
+                    FROM credit_note
+                    GROUP BY invoice_id
+                ) cn_totals ON i.invoice_id = cn_totals.invoice_id
+                WHERE i.status != 'Cancelled'
+            ),
+            breakdown_net AS (
+                SELECT 
+                    itb.invoice_id, 
+                    itb.tax_rate_id, 
+                    itb.rate_name, 
+                    itb.rate_percentage,
+                    itb.tax_base - COALESCE(cn_bk.refunded_base, 0) AS tax_base,
+                    itb.tax_amount - COALESCE(cn_bk.refunded_amount, 0) AS tax_amount
+                FROM invoice_tax_breakdown itb
+                LEFT JOIN (
+                    SELECT cn.invoice_id, cntb.tax_rate_id,
+                           SUM(cntb.tax_base) as refunded_base,
+                           SUM(cntb.tax_amount) as refunded_amount
+                    FROM credit_note cn
+                    JOIN credit_note_tax_breakdown cntb ON cn.cn_id = cntb.cn_id
+                    GROUP BY cn.invoice_id, cntb.tax_rate_id
+                ) cn_bk ON itb.invoice_id = cn_bk.invoice_id AND itb.tax_rate_id = cn_bk.tax_rate_id
+            )
             SELECT 
                 i.invoice_number,
                 i.invoice_date,
                 c.first_name || ' ' || c.last_name as customer_name,
-                i.subtotal_ex_tax,
-                i.tax_total,
-                i.total_amount,
-                itb.rate_name,
-                itb.rate_percentage,
-                itb.tax_base,
-                itb.tax_amount
+                inet.subtotal_ex_tax,
+                inet.tax_total,
+                inet.total_amount,
+                bn.rate_name,
+                bn.rate_percentage,
+                bn.tax_base,
+                bn.tax_amount
             FROM invoice i
+            JOIN invoice_net inet ON i.invoice_id = inet.invoice_id
             JOIN customer c ON i.customer_id = c.customer_id
-            LEFT JOIN invoice_tax_breakdown itb ON i.invoice_id = itb.invoice_id
+            LEFT JOIN breakdown_net bn ON i.invoice_id = bn.invoice_id
             WHERE i.invoice_date >= $1 
             AND i.invoice_date <= $2
             AND i.status != 'Cancelled'
@@ -291,21 +423,38 @@ router.get('/tax-reports/rates-usage', protect, hasPermission('reports:view'), a
         }
 
         const query = `
+            WITH breakdown_net AS (
+                SELECT 
+                    itb.invoice_id, 
+                    itb.tax_rate_id, 
+                    itb.tax_base - COALESCE(cn_bk.refunded_base, 0) AS tax_base,
+                    itb.tax_amount - COALESCE(cn_bk.refunded_amount, 0) AS tax_amount,
+                    itb.line_count
+                FROM invoice_tax_breakdown itb
+                LEFT JOIN (
+                    SELECT cn.invoice_id, cntb.tax_rate_id,
+                           SUM(cntb.tax_base) as refunded_base,
+                           SUM(cntb.tax_amount) as refunded_amount
+                    FROM credit_note cn
+                    JOIN credit_note_tax_breakdown cntb ON cn.cn_id = cntb.cn_id
+                    GROUP BY cn.invoice_id, cntb.tax_rate_id
+                ) cn_bk ON itb.invoice_id = cn_bk.invoice_id AND itb.tax_rate_id = cn_bk.tax_rate_id
+            )
             SELECT 
                 tr.tax_rate_id,
                 tr.rate_name,
                 tr.rate_percentage,
                 tr.is_default,
-                COUNT(DISTINCT itb.invoice_id) as invoices_count,
-                COUNT(itb.line_count) as total_lines,
-                SUM(itb.tax_base) as total_tax_base,
-                SUM(itb.tax_amount) as total_tax_collected,
-                AVG(itb.tax_amount) as avg_tax_per_breakdown,
+                COUNT(DISTINCT bn.invoice_id) as invoices_count,
+                SUM(bn.line_count) as total_lines,
+                SUM(bn.tax_base) as total_tax_base,
+                SUM(bn.tax_amount) as total_tax_collected,
+                AVG(bn.tax_amount) as avg_tax_per_breakdown,
                 MIN(i.invoice_date) as first_used,
                 MAX(i.invoice_date) as last_used
             FROM tax_rate tr
-            LEFT JOIN invoice_tax_breakdown itb ON tr.tax_rate_id = itb.tax_rate_id
-            LEFT JOIN invoice i ON itb.invoice_id = i.invoice_id ${whereClause.replace('WHERE', 'AND')}
+            LEFT JOIN breakdown_net bn ON tr.tax_rate_id = bn.tax_rate_id
+            LEFT JOIN invoice i ON bn.invoice_id = i.invoice_id ${whereClause.replace('WHERE', 'AND')}
             ${whereClause.replace('AND i.status != \'Cancelled\'', '').replace('WHERE i.status != \'Cancelled\'', '')}
             GROUP BY tr.tax_rate_id, tr.rate_name, tr.rate_percentage, tr.is_default
             ORDER BY total_tax_collected DESC NULLS LAST, tr.rate_name
