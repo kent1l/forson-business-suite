@@ -413,7 +413,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 5,
   },
   cartTitle: { fontSize: 15, fontWeight: '700', color: '#111827' },
   cartTitleDark: { color: '#f9fafb' },
