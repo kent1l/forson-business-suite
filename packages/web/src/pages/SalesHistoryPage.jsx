@@ -168,6 +168,9 @@ const SalesHistoryPage = () => {
 
         let cashCollected = 0; let nonCashCollected = 0; let changeReturned = 0;
         for (const p of payments) {
+            if (p.payment_status && p.payment_status !== 'settled') {
+                continue;
+            }
             const ref = (p.reference || '').toString().trim();
             const looksLikeInvoiceNo = /^INV/i.test(ref);
             if (looksLikeInvoiceNo && !currentInvoiceNumbers.has(ref)) {
@@ -194,6 +197,9 @@ const SalesHistoryPage = () => {
         // Enhanced payment method breakdown for detailed analysis
         const paymentMethodBreakdown = {};
         for (const p of payments) {
+            if (p.payment_status && p.payment_status !== 'settled') {
+                continue;
+            }
             const ref = (p.reference || '').toString().trim();
             const looksLikeInvoiceNo = /^INV/i.test(ref);
             if (looksLikeInvoiceNo && !currentInvoiceNumbers.has(ref)) {

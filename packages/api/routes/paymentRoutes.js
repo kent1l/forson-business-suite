@@ -88,7 +88,7 @@ router.get('/payments', protect, hasPermission('ar:view'), async (req, res) => {
     }
     try {
         const query = `
-            SELECT payment_id, customer_id, employee_id, created_at as payment_date, amount_paid as amount, tendered_amount, COALESCE(legacy_method, method_name) as payment_method, reference
+            SELECT payment_id, customer_id, employee_id, created_at as payment_date, amount_paid as amount, tendered_amount, COALESCE(legacy_method, method_name) as payment_method, reference, payment_status
             FROM payments_unified
             WHERE (created_at AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
             ORDER BY created_at ASC;`;

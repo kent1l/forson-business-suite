@@ -73,7 +73,7 @@ const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave,
                                             </div>
                                             <span className="font-semibold text-sm">Save Sale</span>
                                             <span className="text-[11px] text-slate-500">For later</span>
-                                            <span className="mt-1 text-[9px] font-mono uppercase tracking-wide text-slate-400">Ctrl+S</span>
+                                            <span className="mt-1 text-[9px] font-mono uppercase tracking-wide text-slate-400">Alt+S</span>
                                         </div>
                                     </div>
                                     <div className="h-8 w-full flex items-stretch">
@@ -110,7 +110,7 @@ const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave,
                                         </div>
                                         <span className="font-semibold text-sm">Void Transaction</span>
                                         <span className="text-[11px] text-slate-500">Clear cart</span>
-                                        <span className="mt-1 text-[9px] font-mono uppercase tracking-wide text-slate-400">F9</span>
+                                        <span className="mt-1 text-[9px] font-mono uppercase tracking-wide text-slate-400">Alt+X</span>
                                     </div>
                                     <div className="h-8 w-full flex items-stretch">
                                         <div className="flex-1 border-t border-transparent rounded-b-lg flex items-center justify-center text-[11px] text-red-600 font-medium">&nbsp;</div>
@@ -866,11 +866,10 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
         }
     }, [canSave, lines, selectedCustomer?.customer_id, selectedTaxRate?.tax_rate_id, subtotal, tax, total, saveSale, cartSignature]);
 
-    // Keyboard shortcut (Ctrl+S / Cmd+S) to save sale
+    // Keyboard shortcut (Alt+S) to save sale
     useEffect(() => {
         const onKey = (e) => {
-            const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
-            if ((isMac ? e.metaKey : e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+            if (e.altKey && (e.key === 's' || e.key === 'S')) {
                 e.preventDefault();
                 if (canSave) handleSaveSale();
             }
@@ -894,16 +893,13 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
         return () => window.removeEventListener('keydown', onKey);
     }, [lines, selectedCustomer, handleCheckout]);
 
-    // Keyboard shortcut (Alt+1/2/3) for quick checkout selections
+    // Keyboard shortcut (Alt+1/2) for quick checkout selections
     useEffect(() => {
         const onKey = (e) => {
             if (e.altKey && e.key === '1') {
                 e.preventDefault();
                 handleTriggerPayMethod('cash');
             } else if (e.altKey && e.key === '2') {
-                e.preventDefault();
-                handleTriggerPayMethod('card');
-            } else if (e.altKey && e.key === '3') {
                 e.preventDefault();
                 handleTriggerPayMethod('split');
             }
@@ -938,10 +934,10 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
         return () => window.removeEventListener('keydown', onKey);
     }, []);
 
-    // Keyboard shortcut (F9) to void transaction
+    // Keyboard shortcut (Alt+X) to void transaction
     useEffect(() => {
         const onKey = (e) => {
-            if (e.key === 'F9') {
+            if (e.altKey && (e.key === 'x' || e.key === 'X')) {
                 e.preventDefault();
                 if (lines.length > 0) {
                     openVoidConfirm();
@@ -976,78 +972,69 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
     return (
         <>
             <div className="flex flex-col h-full gap-1">
-                <div className="flex items-center space-x-2">
-                    <div className="relative flex-grow">
-                        <SearchBar
-                            {...getInputProps()}
-                            value={searchTerm}
-                            onChange={setSearchTerm}
-                            onClear={() => { setSearchTerm(''); setSearchResults([]); reset(); }}
-                            placeholder="Scan or search (Ctrl+F)..."
-                            disabled={false}
-                            className=""
-                            ref={searchInputRef}
-                        />
-                        {searchResults.length > 0 && (
-                            <ul id="pos-search-results" className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg search-results" role="listbox">
-                                {searchResults.map((part, index) => {
-                                    const itemProps = getItemProps(index);
-                                    return (
-                                        <li key={part.part_id} {...itemProps} className={`px-4 py-3 cursor-pointer ${itemProps['aria-selected'] ? 'bg-blue-100' : 'hover:bg-blue-50'}`}>
-                                            <div className="flex items-baseline justify-between">
-                                                <div className="flex items-baseline space-x-2 flex-1 min-w-0">
-                                                    <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
-                                                    {part.applications && <div className="text-xs text-gray-500 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
+                <div className="space-y-2">
+                    <div className="flex items-center space-x-2">
+                        <div className="relative flex-grow">
+                            <SearchBar
+                                {...getInputProps()}
+                                value={searchTerm}
+                                onChange={setSearchTerm}
+                                onClear={() => { setSearchTerm(''); setSearchResults([]); reset(); }}
+                                placeholder="Scan or search (Ctrl+F)..."
+                                disabled={false}
+                                className=""
+                                ref={searchInputRef}
+                            />
+                            {searchResults.length > 0 && (
+                                <ul id="pos-search-results" className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg search-results" role="listbox">
+                                    {searchResults.map((part, index) => {
+                                        const itemProps = getItemProps(index);
+                                        return (
+                                            <li key={part.part_id} {...itemProps} className={`px-4 py-3 cursor-pointer ${itemProps['aria-selected'] ? 'bg-blue-100' : 'hover:bg-blue-50'}`}>
+                                                <div className="flex items-baseline justify-between">
+                                                    <div className="flex items-baseline space-x-2 flex-1 min-w-0">
+                                                        <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
+                                                        {part.applications && <div className="text-xs text-gray-500 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
+                                                    </div>
+                                                    <div className="text-sm font-semibold text-gray-700 ml-2">
+                                                        {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
+                                                    </div>
                                                 </div>
-                                                <div className="text-sm font-semibold text-gray-700 ml-2">
-                                                    {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
-                                                </div>
-                                            </div>
-                                        </li>
-                                    );
-                                })}
-                            </ul>
-                        )}
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            )}
+                        </div>
+                        <button onClick={() => setIsNewPartModalOpen(true)} className="bg-blue-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-700 transition whitespace-nowrap">
+                            New Part
+                        </button>
                     </div>
-                    <button onClick={() => setIsNewPartModalOpen(true)} className="bg-blue-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-700 transition whitespace-nowrap">
-                        New Part
-                    </button>
-                </div>
-                {/* Keyboard Shortcut Pills */}
-                <div className="flex flex-wrap items-center gap-3">
-                    <button
-                        onClick={() => handleTriggerPayMethod('cash')}
-                        disabled={lines.length === 0}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition shadow-sm ${lines.length > 0
-                            ? 'bg-white hover:bg-slate-50 border-gray-200 text-slate-700 cursor-pointer'
-                            : 'bg-slate-50 border-gray-200 text-slate-400 cursor-not-allowed'
-                            }`}
-                    >
-                        <span className={`w-2 h-2 rounded-full ${lines.length > 0 ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
-                        Cash <kbd className="px-1.5 py-0.5 text-[10px] bg-slate-100 rounded text-slate-500 font-mono border border-slate-200">Alt+1</kbd>
-                    </button>
-                    <button
-                        onClick={() => handleTriggerPayMethod('card')}
-                        disabled={lines.length === 0}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition shadow-sm ${lines.length > 0
-                            ? 'bg-white hover:bg-slate-50 border-gray-200 text-slate-700 cursor-pointer'
-                            : 'bg-slate-50 border-gray-200 text-slate-400 cursor-not-allowed'
-                            }`}
-                    >
-                        <span className={`w-2 h-2 rounded-full ${lines.length > 0 ? 'bg-blue-500' : 'bg-slate-300'}`}></span>
-                        Card <kbd className="px-1.5 py-0.5 text-[10px] bg-slate-100 rounded text-slate-500 font-mono border border-slate-200">Alt+2</kbd>
-                    </button>
-                    <button
-                        onClick={() => handleTriggerPayMethod('split')}
-                        disabled={lines.length === 0}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition shadow-sm ${lines.length > 0
-                            ? 'bg-white hover:bg-slate-50 border-gray-200 text-slate-700 cursor-pointer'
-                            : 'bg-slate-50 border-gray-200 text-slate-400 cursor-not-allowed'
-                            }`}
-                    >
-                        <span className={`w-2 h-2 rounded-full ${lines.length > 0 ? 'bg-indigo-500' : 'bg-slate-300'}`}></span>
-                        Split Payment <kbd className="px-1.5 py-0.5 text-[10px] bg-slate-100 rounded text-slate-500 font-mono border border-slate-200">Alt+3</kbd>
-                    </button>
+                    {/* Keyboard Shortcut Pills */}
+                    <div className="flex flex-wrap items-center gap-2">
+                        <button
+                            onClick={() => handleTriggerPayMethod('cash')}
+                            disabled={lines.length === 0}
+                            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition shadow-sm ${lines.length > 0
+                                ? 'bg-white hover:bg-slate-50 border-gray-200 text-slate-700 cursor-pointer'
+                                : 'bg-slate-50 border-gray-200 text-slate-400 cursor-not-allowed'
+                                }`}
+                        >
+                            <span className={`w-1.5 h-1.5 rounded-full ${lines.length > 0 ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
+                            Cash <kbd className="px-1 py-0.2 text-[9px] bg-slate-100 rounded text-slate-500 font-mono border border-slate-200">Alt+1</kbd>
+                        </button>
+                        <button
+                            onClick={() => handleTriggerPayMethod('split')}
+                            disabled={lines.length === 0}
+                            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition shadow-sm ${lines.length > 0
+                                ? 'bg-white hover:bg-slate-50 border-gray-200 text-slate-700 cursor-pointer'
+                                : 'bg-slate-50 border-gray-200 text-slate-400 cursor-not-allowed'
+                                }`}
+                        >
+                            <span className={`w-1.5 h-1.5 rounded-full ${lines.length > 0 ? 'bg-indigo-500' : 'bg-slate-300'}`}></span>
+                            Split Payment <kbd className="px-1 py-0.2 text-[9px] bg-slate-100 rounded text-slate-500 font-mono border border-slate-200">Alt+2</kbd>
+                        </button>
+                    </div>
                 </div>
                 <div className="flex flex-col md:flex-row flex-1 gap-6">
                     <div className="w-full md:w-2/3 flex flex-col order-2 md:order-1">
