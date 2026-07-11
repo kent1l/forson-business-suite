@@ -56,6 +56,8 @@ Controlled by env vars (set in `.env`):
 
 Project has a knowledge graph at `graphify-out/` with god nodes, community structure, and cross-file relationships.
 
+When the user types `/graphify`, use the installed graphify skill or instructions before doing anything else.
+
 - For codebase questions, first run `graphify query "<question>"` when `graphify-out/graph.json` exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts.
 - Dirty graphify-out/ files are expected after hooks or incremental updates; do not skip graphify because of dirtiness. Only skip if the task is about stale graph output or the user says not to use it.
 - If `graphify-out/wiki/index.md` exists, use it for broad navigation instead of raw source browsing.
