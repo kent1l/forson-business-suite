@@ -16,6 +16,7 @@ import {
   useWindowDimensions,
   NativeSyntheticEvent,
   NativeScrollEvent,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -133,6 +134,7 @@ export default function MyProgressScreen() {
   const queryClient = useQueryClient();
   const { width: layoutWidth } = useWindowDimensions();
   const scrollViewRef = useRef<ScrollView>(null);
+  const scrollX = useRef(new Animated.Value(0)).current;
 
   const [filter, setFilter] = useState<Filter>('all');
   const [editingItem, setEditingItem] = useState<CountLine | null>(null);
@@ -189,6 +191,12 @@ export default function MyProgressScreen() {
     const index = keys.indexOf(filter);
     scrollViewRef.current?.scrollTo({ x: index * layoutWidth, animated: false });
   }, [layoutWidth]);
+
+  const translateX = scrollX.interpolate({
+    inputRange: [0, layoutWidth, layoutWidth * 2],
+    outputRange: [0, layoutWidth / 3, (layoutWidth / 3) * 2],
+    extrapolate: 'clamp',
+  });
 
   const renderItem = ({ item }: { item: CountLine }) => {
     const meta = STATUS_META[item.status] || STATUS_META['PENDING'];
@@ -261,23 +269,34 @@ export default function MyProgressScreen() {
       </View>
 
       {/* Filter tabs */}
-      <View style={styles.filterRow}>
-        {([
-          { key: 'all',     label: `All (${items.length})` },
-          { key: 'pending', label: `Pending Review (${pendingCount})` },
-          { key: 'done',    label: `Approved (${doneCount})` },
-        ] as { key: Filter; label: string }[]).map(({ key, label }) => (
-          <TouchableOpacity
-            key={key}
-            style={[styles.filterBtn, filter === key && styles.filterBtnActive]}
-            onPress={() => handleTabPress(key)}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.filterBtnText, filter === key && styles.filterBtnTextActive]}>
-              {label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+      <View style={styles.tabContainer}>
+        <View style={styles.filterRow}>
+          {([
+            { key: 'all',     label: `All (${items.length})` },
+            { key: 'pending', label: `Pending Review (${pendingCount})` },
+            { key: 'done',    label: `Approved (${doneCount})` },
+          ] as { key: Filter; label: string }[]).map(({ key, label }) => (
+            <TouchableOpacity
+              key={key}
+              style={styles.filterBtn}
+              onPress={() => handleTabPress(key)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.filterBtnText, filter === key && styles.filterBtnTextActive]}>
+                {label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <Animated.View
+          style={[
+            styles.indicator,
+            {
+              width: layoutWidth / 3,
+              transform: [{ translateX }],
+            },
+          ]}
+        />
       </View>
 
       {isLoading ? (
@@ -292,11 +311,15 @@ export default function MyProgressScreen() {
           </TouchableOpacity>
         </View>
       ) : (
-        <ScrollView
+        <Animated.ScrollView
           ref={scrollViewRef}
           horizontal
           pagingEnabled
           showsHorizontalScrollIndicator={false}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+            { useNativeDriver: true }
+          )}
           onMomentumScrollEnd={onScrollEnd}
           bounces={false}
           scrollEventThrottle={16}
@@ -344,7 +367,7 @@ export default function MyProgressScreen() {
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             />
           </View>
-        </ScrollView>
+        </Animated.ScrollView>
       )}
 
       {/* Edit modal */}
@@ -375,11 +398,12 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#111827' },
   backBtn:     { paddingVertical: 4, paddingHorizontal: 2 },
   backBtnText: { fontSize: 14, color: '#3b82f6', fontWeight: '600' },
-  filterRow:   { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
-  filterBtn:   { flex: 1, paddingVertical: 10, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  filterBtnActive:     { borderBottomColor: '#3b82f6' },
+  tabContainer: { position: 'relative', backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
+  filterRow:   { flexDirection: 'row' },
+  filterBtn:   { flex: 1, paddingVertical: 12, alignItems: 'center' },
   filterBtnText:       { fontSize: 12, color: '#6b7280', fontWeight: '500' },
   filterBtnTextActive: { color: '#2563eb', fontWeight: '700' },
+  indicator:   { position: 'absolute', bottom: 0, height: 3, backgroundColor: '#3b82f6', borderRadius: 1.5 },
   list:     { padding: 12, paddingBottom: 24 },
   card:     { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#e5e7eb', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 },
   cardTop:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 },
@@ -401,7 +425,7 @@ const styles = StyleSheet.create({
   errorText: { color: '#ef4444', fontSize: 15, marginBottom: 12 },
   retryBtn:     { backgroundColor: '#3b82f6', paddingHorizontal: 20, paddingVertical: 8, borderRadius: 8 },
   retryBtnText: { color: '#fff', fontWeight: '700' },
-  savingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', gap: 12 },
+  savingOverlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', gap: 12 },
   savingText:    { color: '#fff', fontSize: 16, fontWeight: '600' },
 });
 
