@@ -53,6 +53,12 @@ export default function CountScreen() {
     setStartTime(Date.now());
   }, [currentLineIndex, isAdHocMode]);
 
+  useEffect(() => {
+    return () => {
+      clearAdHocMode();
+    };
+  }, [clearAdHocMode]);
+
   // Camera Modal States
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
 
