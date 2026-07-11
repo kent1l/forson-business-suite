@@ -214,6 +214,23 @@ export default function UnassignedSearchScreen() {
         closeScanner();
 
         try {
+          let exactMatch = null;
+          try {
+            const { data } = await apiClient.get(`/parts/barcode/${consensus}`);
+            exactMatch = data;
+          } catch (err: any) {
+            if (err.response?.status !== 404) {
+              console.error('Barcode lookup error:', err);
+            }
+          }
+
+          if (exactMatch) {
+            startAdHocCount(exactMatch);
+            router.push('/count');
+            setIsScanResolving(false);
+            return;
+          }
+
           const list = await fetchParts(consensus);
           if (list.length === 0) {
             Alert.alert(
@@ -233,11 +250,12 @@ export default function UnassignedSearchScreen() {
             return;
           }
           // Prefer exact barcode match; fall back to top result
-          const exactMatch = list.find(
+          const exactMatchFromList = list.find(
             (p: any) => p.barcodes && p.barcodes.includes(consensus)
           ) ?? list[0];
-          startAdHocCount(exactMatch);
+          startAdHocCount(exactMatchFromList);
           router.push('/count');
+          setIsScanResolving(false);
         } catch (err: any) {
           Alert.alert('Error', err.response?.data?.message || 'Failed to look up barcode.');
           setIsScanResolving(false);

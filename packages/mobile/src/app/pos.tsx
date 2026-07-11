@@ -185,7 +185,22 @@ export default function POSScreen() {
     debounceRef.current = setTimeout(() => doSearch(text), 300);
   }, [doSearch]);
 
-  const handleScanResult = useCallback((barcode: string) => {
+  const handleScanResult = useCallback(async (barcode: string) => {
+    try {
+      const { data } = await apiClient.get(`/parts/barcode/${barcode}`);
+      if (data) {
+        haptics.success();
+        usePosStore.getState().addToCart(data);
+        setQuery('');
+        setResults([]);
+        return;
+      }
+    } catch (err: any) {
+      if (err.response?.status !== 404) {
+        console.error('Barcode lookup error:', err);
+      }
+    }
+
     setQuery(barcode);
     doSearch(barcode);
   }, [doSearch]);
