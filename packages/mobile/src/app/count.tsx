@@ -1,54 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, Alert, ActivityIndicator, ScrollView, Modal, TouchableOpacity, Dimensions, Animated } from 'react-native';
+import { View, Text, StyleSheet, Alert, ActivityIndicator, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Camera, useCameraDevice, useCodeScanner, useCameraFormat } from 'react-native-vision-camera';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import useCycleCountStore from '../store/useCycleCountStore';
 import MobileCounter from '../components/MobileCounter';
 import apiClient from '../api/client';
-import {
-  FRAME_INTERVAL_MS,
-  createPipelineRefs,
-  isValidEanChecksum,
-  runConsensus,
-  type ScannerPipelineRefs,
-} from '../utils/scannerPipeline';
-
-// ROI viewfinder guard: rejects codes whose bounds fall outside the
-// viewfinder cutout in the UI — Tier B of the pipeline.
-const isInROI = (code: any, frameWidth: number, frameHeight: number): boolean => {
-  if (!code.bounds || frameWidth === 0 || frameHeight === 0) return true;
-
-  const { minX, maxX, minY, maxY } = code.bounds as { minX: number; maxX: number; minY: number; maxY: number };
-  const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-
-  // Camera preview uses resizeMode="cover", filling the screen
-  const frameLong = Math.max(frameWidth, frameHeight);
-  const frameShort = Math.min(frameWidth, frameHeight);
-
-  const scale = Math.max(screenWidth / frameShort, screenHeight / frameLong);
-  const offsetX = (screenWidth - frameShort * scale) / 2;
-  const offsetY = (screenHeight - frameLong * scale) / 2;
-
-  let barcodeMidLong, barcodeMidShort;
-  if (frameWidth >= frameHeight) {
-    barcodeMidLong = (minX + maxX) / 2;
-    barcodeMidShort = (minY + maxY) / 2;
-  } else {
-    barcodeMidLong = (minY + maxY) / 2;
-    barcodeMidShort = (minX + maxX) / 2;
-  }
-
-  const screenMidX = barcodeMidShort * scale + offsetX;
-  const screenMidY = barcodeMidLong * scale + offsetY;
-
-  const inVertical = Math.abs(screenMidY - screenHeight / 2) <= 100; // 200px viewfinder cutout height (100px from center)
-  const inHorizontal = Math.abs(screenMidX - screenWidth / 2) <= screenWidth * 0.4; // 80% viewfinder cutout width (40% from center)
-
-  return inVertical && inHorizontal;
-};
+import PremiumScanner from '../components/ui/PremiumScanner';
 
 export default function CountScreen() {
   const router = useRouter();
@@ -70,7 +29,7 @@ export default function CountScreen() {
   });
   const [scannedBarcode, setScannedBarcode] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [hasPermission, setHasPermission] = useState(false);
+  const [hasPermission, setHasPermission] = useState(true);
   const [serverOffset, setServerOffset] = useState<number>(0);
   const [startTime, setStartTime] = useState<number | null>(null);
 
@@ -96,49 +55,6 @@ export default function CountScreen() {
 
   // Camera Modal States
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
-  const [isTorchOn, setIsTorchOn] = useState(false);
-  const [isCameraActive, setIsCameraActive] = useState(false);
-  const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
-  const pipelineRef = useRef<ScannerPipelineRefs>(createPipelineRefs());
-  const lastFrameTsRef = useRef<number>(0);
-
-  const device = useCameraDevice('back');
-  const format = useCameraFormat(device, [{ fps: 30 }]);
-
-  const laserAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (isCameraActive) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(laserAnim, {
-            toValue: 1,
-            duration: 2000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(laserAnim, {
-            toValue: 0,
-            duration: 2000,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    } else {
-      laserAnim.setValue(0);
-    }
-  }, [isCameraActive]);
-
-  const laserTranslateY = laserAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [10, 190],
-  });
-
-  useEffect(() => {
-    (async () => {
-      const status = await Camera.requestCameraPermission();
-      setHasPermission(status === 'granted');
-    })();
-  }, []);
 
   // Guard: in ad-hoc mode we need currentAdHocItem; in batch mode we need activeBatchData
   if (!isAdHocMode && (!activeBatchData || activeBatchData.length === 0)) {
@@ -167,41 +83,32 @@ export default function CountScreen() {
       }
     : activeBatchData![currentLineIndex];
 
-  const handleCodeScanned = useCallback((codes: any[], frame: any) => {
-    // Gate: must have a code, camera must be live, no pending confirmation
-    if (codes.length === 0 || !isCameraActive || pendingBarcode) return;
-
-    // ── Tier A: Time-gated frame skip (33 ms @ 30 FPS) ───────────────────────
-    const now = Date.now();
-    if (now - lastFrameTsRef.current < FRAME_INTERVAL_MS) return;
-    lastFrameTsRef.current = now;
-
-    const code = codes[0];
-    const scannedValue: string | undefined = code.value;
-    if (!scannedValue) return;
-
-    // ── Tier B: ROI viewport mask (viewfinder cutout only) ───────────────────
-    if (!isInROI(code, frame?.width ?? 0, frame?.height ?? 0)) return;
-
-    // EAN/UPC checksum pre-filter
-    if (/^\d{12,13}$/.test(scannedValue) && !isValidEanChecksum(scannedValue)) {
-      return;
+  const handleBarcodeScanned = (barcode: string) => {
+    if (currentLine.barcodes && currentLine.barcodes.includes(barcode)) {
+      setScannedBarcode(barcode);
+      closeCameraModal();
+    } else {
+      Alert.alert(
+        'Link Barcode',
+        `Do you want to link the scanned barcode (${barcode}) to this item?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Yes, Link It', 
+            onPress: () => {
+              setScannedBarcode(barcode);
+              closeCameraModal();
+            }
+          }
+        ]
+      );
     }
+  };
 
-    // ── Tier C: Sliding mode consensus evaluation ─────────────────────────────
-    const consensus = runConsensus(pipelineRef.current, scannedValue);
-    if (!consensus) return;
+  const handleResolveBarcode = async (barcode: string) => {
+    return { status: 'success' as const };
+  };
 
-    // Consensus reached — fire haptic and surface to UI
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setIsCameraActive(false);
-    setPendingBarcode(consensus);
-  }, [isCameraActive, pendingBarcode]);
-
-  const codeScanner = useCodeScanner({
-    codeTypes: ['ean-13', 'code-128', 'qr', 'code-39'],
-    onCodeScanned: handleCodeScanned,
-  });
 
   const handleSubmitCount = async (countedQty: number) => {
     setIsSubmitting(true);
@@ -263,51 +170,11 @@ export default function CountScreen() {
   const hasBarcode: boolean = Boolean(currentLine.barcodes && currentLine.barcodes.length > 0) || Boolean(scannedBarcode);
 
   const openCameraModal = () => {
-    setPendingBarcode(null);
-    pipelineRef.current = createPipelineRefs();
-    lastFrameTsRef.current = 0;
-    setIsCameraActive(true);
     setIsCameraModalOpen(true);
   };
 
   const closeCameraModal = () => {
     setIsCameraModalOpen(false);
-    setIsCameraActive(false);
-    setPendingBarcode(null);
-    setIsTorchOn(false);
-    pipelineRef.current = createPipelineRefs();
-    lastFrameTsRef.current = 0;
-  };
-
-  const acceptBarcode = () => {
-    if (pendingBarcode) {
-      if (currentLine.barcodes && currentLine.barcodes.includes(pendingBarcode)) {
-        setScannedBarcode(pendingBarcode);
-        closeCameraModal();
-      } else {
-        Alert.alert(
-          'Link Barcode',
-          `Do you want to link the scanned barcode (${pendingBarcode}) to this item?`,
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { 
-              text: 'Yes, Link It', 
-              onPress: () => {
-                setScannedBarcode(pendingBarcode);
-                closeCameraModal();
-              }
-            }
-          ]
-        );
-      }
-    }
-  };
-
-  const retakeBarcode = () => {
-    setPendingBarcode(null);
-    pipelineRef.current = createPipelineRefs();
-    lastFrameTsRef.current = 0;
-    setIsCameraActive(true);
   };
 
   return (
@@ -385,79 +252,14 @@ export default function CountScreen() {
       </View>
 
       {/* Camera Modal */}
-      <Modal visible={isCameraModalOpen} animationType="slide" transparent={false}>
-        <SafeAreaView style={styles.modalContainer}>
-          {hasPermission && device ? (
-            <View style={styles.cameraWrapper}>
-              <Camera
-                style={StyleSheet.absoluteFill}
-                device={device}
-                format={format}
-                isActive={isCameraActive}
-                codeScanner={codeScanner as any}
-                fps={30}
-                zoom={Math.min(Math.max(1.8, device.minZoom ?? 1), device.maxZoom ?? 1.8)}
-                exposure={-1}
-                torch={device.hasTorch && isTorchOn ? 'on' : 'off'}
-                enableZoomGesture={true}
-              />
-
-              {/* Overlay Viewfinder */}
-              <View style={styles.overlay} pointerEvents="none">
-                <View style={styles.overlayTop} />
-                <View style={styles.overlayMiddle}>
-                  <View style={styles.overlaySide} />
-                  <View style={styles.viewfinderCutout}>
-                    <View style={[styles.corner, styles.topLeftCorner]} />
-                    <View style={[styles.corner, styles.topRightCorner]} />
-                    <View style={[styles.corner, styles.bottomLeftCorner]} />
-                    <View style={[styles.corner, styles.bottomRightCorner]} />
-                    <Animated.View style={[styles.laser, { transform: [{ translateY: laserTranslateY }] }]} />
-                  </View>
-                  <View style={styles.overlaySide} />
-                </View>
-                <View style={styles.overlayBottom}>
-                  <Text style={styles.scanInstruction}>Align barcode within the frame</Text>
-                </View>
-              </View>
-
-              {/* Camera Header Actions */}
-              <View style={styles.cameraHeader}>
-                <TouchableOpacity style={styles.iconButton} onPress={closeCameraModal}>
-                  <Ionicons name="close" size={30} color="#fff" />
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.iconButton, isTorchOn && { backgroundColor: 'rgba(251,191,36,0.35)' }]} onPress={() => setIsTorchOn(!isTorchOn)}>
-                  <Ionicons name={isTorchOn ? "flash" : "flash-off"} size={26} color={isTorchOn ? "#fbbf24" : "#fff"} />
-                </TouchableOpacity>
-              </View>
-
-              {/* Bottom Sheet for pending barcode */}
-              {pendingBarcode && (
-                <View style={styles.bottomSheet}>
-                  <Text style={styles.bottomSheetTitle}>Barcode Scanned</Text>
-                  <Text style={styles.bottomSheetValue}>{pendingBarcode}</Text>
-
-                  <View style={styles.bottomSheetActions}>
-                    <TouchableOpacity style={[styles.bottomSheetBtn, styles.btnRetake]} onPress={retakeBarcode}>
-                      <Text style={styles.btnRetakeText}>[ Retake ]</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.bottomSheetBtn, styles.btnAccept]} onPress={acceptBarcode}>
-                      <Text style={styles.btnAcceptText}>[ Accept ]</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-            </View>
-          ) : (
-            <View style={styles.centerContainer}>
-              <Text style={styles.errorText}>Camera permission not granted.</Text>
-              <TouchableOpacity style={{marginTop: 20}} onPress={closeCameraModal}>
-                <Text style={{color: '#3b82f6', fontSize: 18}}>Close</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </SafeAreaView>
-      </Modal>
+      <PremiumScanner
+        visible={isCameraModalOpen}
+        onClose={closeCameraModal}
+        onBarcodeScanned={handleBarcodeScanned}
+        onResolveBarcode={handleResolveBarcode}
+        title={isAdHocMode ? "Ad-hoc Scan" : "Batch Scan"}
+        autoCloseOnSuccess={false}
+      />
     </SafeAreaView>
   );
 }

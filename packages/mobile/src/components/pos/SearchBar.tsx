@@ -4,21 +4,13 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Modal,
   Text,
   useColorScheme,
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Camera, useCameraDevice, useCodeScanner, useCameraFormat } from 'react-native-vision-camera';
-import {
-  createPipelineRefs,
-  FRAME_INTERVAL_MS,
-  isValidEanChecksum,
-  runConsensus,
-  type ScannerPipelineRefs,
-} from '@/utils/scannerPipeline';
 import * as haptics from '@/utils/haptics';
+import PremiumScanner from '../ui/PremiumScanner';
 
 interface Props {
   value: string;
@@ -31,55 +23,20 @@ export default function SearchBar({ value, onChangeText, onScanResult, searchInp
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [scannerOpen, setScannerOpen] = useState(false);
-  const [hasPermission, setHasPermission] = useState(false);
-  const [isCameraActive, setIsCameraActive] = useState(false);
-  const pipelineRef = useRef<ScannerPipelineRefs>(createPipelineRefs());
-  const lastFrameTsRef = useRef<number>(0);
-  const scanLockRef = useRef(false);
 
-  const device = useCameraDevice('back');
-  const format = useCameraFormat(device, [{ fps: 30 }]);
-
-  const openScanner = useCallback(async () => {
-    const status = await Camera.requestCameraPermission();
-    setHasPermission(status === 'granted');
-    if (status === 'granted') {
-      pipelineRef.current = createPipelineRefs();
-      lastFrameTsRef.current = 0;
-      scanLockRef.current = false;
-      setScannerOpen(true);
-      setIsCameraActive(true);
-    }
+  const openScanner = useCallback(() => {
+    setScannerOpen(true);
   }, []);
 
   const closeScanner = useCallback(() => {
-    setIsCameraActive(false);
     setScannerOpen(false);
-    scanLockRef.current = false;
   }, []);
 
-  const codeScanner = useCodeScanner({
-    codeTypes: ['qr', 'ean-13', 'ean-8', 'code-128', 'code-39', 'upc-a', 'upc-e'],
-    onCodeScanned: (codes, frame) => {
-      if (scanLockRef.current) return;
-      const now = Date.now();
-      if (now - lastFrameTsRef.current < FRAME_INTERVAL_MS) return;
-      lastFrameTsRef.current = now;
+  const handleBarcodeScanned = useCallback((barcode: string) => {
+    onScanResult(barcode);
+    closeScanner();
+  }, [onScanResult, closeScanner]);
 
-      for (const code of codes) {
-        if (!code.value) continue;
-        if (!isValidEanChecksum(code.value)) continue;
-        const consensus = runConsensus(pipelineRef.current, code.value);
-        if (consensus) {
-          scanLockRef.current = true;
-          haptics.success();
-          closeScanner();
-          onScanResult(consensus);
-          return;
-        }
-      }
-    },
-  });
 
   return (
     <>
@@ -113,33 +70,13 @@ export default function SearchBar({ value, onChangeText, onScanResult, searchInp
         )}
       </View>
 
-      <Modal visible={scannerOpen} animationType="slide" onRequestClose={closeScanner}>
-        <View style={styles.scannerContainer}>
-          {device && hasPermission ? (
-            <Camera
-              style={StyleSheet.absoluteFill}
-              device={device}
-              format={format}
-              isActive={isCameraActive}
-              codeScanner={codeScanner}
-            />
-          ) : (
-            <View style={styles.noCamera}>
-              <Text style={styles.noCameraText}>Camera permission required.</Text>
-            </View>
-          )}
-
-          {/* Viewfinder overlay */}
-          <View style={styles.overlay}>
-            <View style={styles.viewfinder} />
-            <Text style={styles.scanHint}>Align barcode within the frame</Text>
-          </View>
-
-          <TouchableOpacity style={styles.closeBtn} onPress={() => { haptics.tap(); closeScanner(); }}>
-            <Ionicons name="close-circle" size={44} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      </Modal>
+      <PremiumScanner
+        visible={scannerOpen}
+        onClose={closeScanner}
+        onBarcodeScanned={handleBarcodeScanned}
+        title="POS Scan"
+        autoCloseOnSuccess={true}
+      />
     </>
   );
 }
