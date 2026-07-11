@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,10 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
+  useWindowDimensions,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -127,6 +131,8 @@ type Filter = 'all' | 'pending' | 'done';
 export default function MyProgressScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { width: layoutWidth } = useWindowDimensions();
+  const scrollViewRef = useRef<ScrollView>(null);
 
   const [filter, setFilter] = useState<Filter>('all');
   const [editingItem, setEditingItem] = useState<CountLine | null>(null);
@@ -158,11 +164,31 @@ export default function MyProgressScreen() {
   const pendingCount = items.filter(i => i.status === 'PENDING_MANAGER_REVIEW').length;
   const doneCount    = items.filter(i => i.status !== 'PENDING_MANAGER_REVIEW').length;
 
-  const filtered = items.filter(i => {
-    if (filter === 'pending') return i.status === 'PENDING_MANAGER_REVIEW';
-    if (filter === 'done')    return i.status !== 'PENDING_MANAGER_REVIEW';
-    return true;
-  });
+  const pendingItems = items.filter(i => i.status === 'PENDING_MANAGER_REVIEW');
+  const doneItems    = items.filter(i => i.status !== 'PENDING_MANAGER_REVIEW');
+
+  const handleTabPress = (key: Filter) => {
+    setFilter(key);
+    const keys: Filter[] = ['all', 'pending', 'done'];
+    const index = keys.indexOf(key);
+    scrollViewRef.current?.scrollTo({ x: index * layoutWidth, animated: true });
+  };
+
+  const onScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const contentOffset = e.nativeEvent.contentOffset.x;
+    const page = Math.round(contentOffset / layoutWidth);
+    const keys: Filter[] = ['all', 'pending', 'done'];
+    const newFilter = keys[page];
+    if (newFilter && newFilter !== filter) {
+      setFilter(newFilter);
+    }
+  };
+
+  useEffect(() => {
+    const keys: Filter[] = ['all', 'pending', 'done'];
+    const index = keys.indexOf(filter);
+    scrollViewRef.current?.scrollTo({ x: index * layoutWidth, animated: false });
+  }, [layoutWidth]);
 
   const renderItem = ({ item }: { item: CountLine }) => {
     const meta = STATUS_META[item.status] || STATUS_META['PENDING'];
@@ -244,7 +270,7 @@ export default function MyProgressScreen() {
           <TouchableOpacity
             key={key}
             style={[styles.filterBtn, filter === key && styles.filterBtnActive]}
-            onPress={() => setFilter(key)}
+            onPress={() => handleTabPress(key)}
             activeOpacity={0.7}
           >
             <Text style={[styles.filterBtnText, filter === key && styles.filterBtnTextActive]}>
@@ -266,18 +292,59 @@ export default function MyProgressScreen() {
           </TouchableOpacity>
         </View>
       ) : (
-        <FlatList
-          data={filtered}
-          keyExtractor={i => i.line_id.toString()}
-          renderItem={renderItem}
-          contentContainerStyle={styles.list}
-          ListEmptyComponent={
-            <View style={styles.center}>
-              <Text style={styles.emptyText}>No items to show.</Text>
-            </View>
-          }
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        />
+        <ScrollView
+          ref={scrollViewRef}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={onScrollEnd}
+          bounces={false}
+          scrollEventThrottle={16}
+          style={styles.scrollView}
+        >
+          <View style={{ width: layoutWidth, height: '100%' }}>
+            <FlatList
+              data={items}
+              keyExtractor={i => i.line_id.toString()}
+              renderItem={renderItem}
+              contentContainerStyle={styles.list}
+              ListEmptyComponent={
+                <View style={styles.center}>
+                  <Text style={styles.emptyText}>No items to show.</Text>
+                </View>
+              }
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+            />
+          </View>
+          <View style={{ width: layoutWidth, height: '100%' }}>
+            <FlatList
+              data={pendingItems}
+              keyExtractor={i => i.line_id.toString()}
+              renderItem={renderItem}
+              contentContainerStyle={styles.list}
+              ListEmptyComponent={
+                <View style={styles.center}>
+                  <Text style={styles.emptyText}>No items to show.</Text>
+                </View>
+              }
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+            />
+          </View>
+          <View style={{ width: layoutWidth, height: '100%' }}>
+            <FlatList
+              data={doneItems}
+              keyExtractor={i => i.line_id.toString()}
+              renderItem={renderItem}
+              contentContainerStyle={styles.list}
+              ListEmptyComponent={
+                <View style={styles.center}>
+                  <Text style={styles.emptyText}>No items to show.</Text>
+                </View>
+              }
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+            />
+          </View>
+        </ScrollView>
       )}
 
       {/* Edit modal */}
@@ -303,6 +370,7 @@ export default function MyProgressScreen() {
 // ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   safeArea:    { flex: 1, backgroundColor: '#f3f4f6' },
+  scrollView:  { flex: 1 },
   header:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#e5e7eb', justifyContent: 'space-between' },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#111827' },
   backBtn:     { paddingVertical: 4, paddingHorizontal: 2 },
