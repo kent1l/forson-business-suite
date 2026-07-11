@@ -258,7 +258,7 @@ export default function CountScreen() {
         onBarcodeScanned={handleBarcodeScanned}
         onResolveBarcode={handleResolveBarcode}
         title={isAdHocMode ? "Ad-hoc Scan" : "Batch Scan"}
-        autoCloseOnSuccess={false}
+        autoCloseOnSuccess={true}
       />
     </SafeAreaView>
   );

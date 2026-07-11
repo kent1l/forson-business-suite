@@ -70,6 +70,7 @@ export default function PremiumScanner({
 
   const pipelineRef = useRef<ScannerPipelineRefs>(createPipelineRefs());
   const lastFrameTsRef = useRef<number>(0);
+  const scanLockRef = useRef(false);
 
   // Animation values
   const laserY = useSharedValue(0);
@@ -82,6 +83,7 @@ export default function PremiumScanner({
       resetScannerState();
     } else {
       setIsCameraActive(false);
+      scanLockRef.current = false;
     }
   }, [visible]);
 
@@ -112,12 +114,13 @@ export default function PremiumScanner({
     setIsResolving(false);
     setIsCameraActive(true);
     lastFrameTsRef.current = 0;
+    scanLockRef.current = false;
   };
 
   const codeScanner = useCodeScanner({
     codeTypes: ['ean-13', 'code-128', 'qr', 'code-39'],
     onCodeScanned: (codes, frame) => {
-      if (codes.length === 0 || !isCameraActive || isResolving || scannedBarcode) return;
+      if (codes.length === 0 || !isCameraActive || isResolving || scannedBarcode || scanLockRef.current) return;
 
       // Tier A: Frame rate budgeting (33ms interval)
       const now = Date.now();
@@ -145,6 +148,7 @@ export default function PremiumScanner({
       setConsensusCount(pipelineRef.current.window.length);
 
       if (consensus) {
+        scanLockRef.current = true;
         setIsCameraActive(false);
         setIsResolving(true);
         setScannedBarcode(consensus);
