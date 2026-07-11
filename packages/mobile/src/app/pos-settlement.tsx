@@ -98,6 +98,22 @@ export default function POSSettlementScreen() {
   const tendered = parseFloat(tenderedAmount) || 0;
   const change = isCash ? tendered - grandTotal : 0;
 
+  const getCashSuggestions = (total: number): number[] => {
+    if (total <= 0) return [];
+    const s = new Set<number>();
+    s.add(total);
+    s.add(Math.ceil(total / 10) * 10);
+    s.add(Math.ceil(total / 50) * 50);
+    s.add(Math.ceil(total / 100) * 100);
+    if (total > 100) s.add(Math.ceil(total / 500) * 500);
+    if (total > 500) s.add(Math.ceil(total / 1000) * 1000);
+    return Array.from(s)
+      .map(v => parseFloat(v.toFixed(2)))
+      .filter(v => v >= total)
+      .sort((a, b) => a - b)
+      .slice(0, 4);
+  };
+
   // ── Submit ─────────────────────────────────────────────────────────────────
   const handleCompleteSale = useCallback(async () => {
     if (!selectedCustomer) {
@@ -225,6 +241,32 @@ export default function POSSettlementScreen() {
                 placeholderTextColor="#9ca3af"
                 selectTextOnFocus
               />
+              {(() => {
+                const suggestions = getCashSuggestions(grandTotal);
+                return suggestions.length > 0 && (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
+                    <View style={styles.pillRow}>
+                      {suggestions.map((amount) => (
+                        <TouchableOpacity
+                          key={amount}
+                          style={[
+                            styles.suggestionPill,
+                            tendered === amount && styles.suggestionPillActive,
+                          ]}
+                          onPress={() => { haptics.tap(); setTenderedAmount(String(amount)); }}
+                        >
+                          <Text style={[
+                            styles.suggestionPillText,
+                            tendered === amount && styles.suggestionPillTextActive,
+                          ]}>
+                            {formatPHP(amount)}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </ScrollView>
+                );
+              })()}
               {tendered > 0 && (
                 <View style={styles.changeRow}>
                   <Text style={[styles.changeLabel, { color: subColor }]}>Change</Text>
@@ -370,6 +412,17 @@ const styles = StyleSheet.create({
     marginTop: 10,
     textAlign: 'center',
   },
+  suggestionPill: {
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#d1d5db',
+    backgroundColor: 'transparent',
+  },
+  suggestionPillActive: { backgroundColor: '#10B981', borderColor: '#10B981' },
+  suggestionPillText: { fontSize: 14, fontWeight: '600', color: '#6b7280' },
+  suggestionPillTextActive: { color: '#fff' },
   changeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 },
   changeLabel: { fontSize: 14 },
   changeAmount: { fontSize: 20, fontWeight: '800' },
