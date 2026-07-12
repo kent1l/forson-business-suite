@@ -46,7 +46,7 @@ export default function POSSettlementScreen() {
   const [tenderedAmount, setTenderedAmount] = useState('');
   const tenderedRef = useRef<TextInput>(null);
   const scrollViewRef = useRef<ScrollView>(null);
-  const customerCardRef = useRef<View>(null);
+  const customerCardY = useRef<number>(0);
 
   // ── Submission state ───────────────────────────────────────────────────────
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -68,15 +68,10 @@ export default function POSSettlementScreen() {
       return;
     }
     setCustomerDropdownOpen(true);
-    // Scroll the card to the top of the visible area once keyboard appears
     setTimeout(() => {
-      customerCardRef.current?.measureLayout(
-        scrollViewRef.current?.getScrollResponder()?.getInnerViewNode?.() as any,
-        (x, y) => { scrollViewRef.current?.scrollTo({ y: y - 12, animated: true }); },
-        () => {}
-      );
+      scrollViewRef.current?.scrollTo({ y: customerCardY.current - 12, animated: true });
       setTimeout(() => customerInputRef.current?.focus(), 80);
-    }, 100);
+    }, 50);
   };
 
   // ── Load data on mount ─────────────────────────────────────────────────────
@@ -313,7 +308,10 @@ export default function POSSettlementScreen() {
           )}
 
           {/* Customer */}
-          <View ref={customerCardRef} style={[styles.card, { backgroundColor: cardBg }]}>
+          <View
+            onLayout={(e) => { customerCardY.current = e.nativeEvent.layout.y; }}
+            style={[styles.card, { backgroundColor: cardBg }]}
+          >
             <Text style={[styles.sectionLabel, { color: subColor }]}>CUSTOMER</Text>
             {/* Dropdown trigger */}
             <TouchableOpacity
