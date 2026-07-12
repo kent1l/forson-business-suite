@@ -1,10 +1,12 @@
 import { create } from 'zustand';
+import * as SecureStore from 'expo-secure-store';
 import apiClient from '../api/client';
 
 const usePosStore = create((set, get) => ({
   // ── Cart state ────────────────────────────────────────────────────────────
   cart: [],
   grandTotal: 0,
+  savedCarts: [],
 
   // ── UI state ──────────────────────────────────────────────────────────────
   isPriceOverrideOpen: false,
@@ -71,6 +73,67 @@ const usePosStore = create((set, get) => ({
 
   clearCart: () => {
     set({ cart: [], grandTotal: 0 });
+  },
+
+  hydrateSavedCarts: async () => {
+    try {
+      const savedStr = await SecureStore.getItemAsync('pos_saved_carts');
+      if (savedStr) {
+        set({ savedCarts: JSON.parse(savedStr) });
+      }
+    } catch (e) {
+      console.error('Failed to hydrate saved carts:', e);
+    }
+  },
+
+  saveCurrentCart: async (name) => {
+    const { cart, savedCarts } = get();
+    if (cart.length === 0) return;
+
+    const newCart = {
+      id: String(Date.now()),
+      name: name || `Cart #${savedCarts.length + 1}`,
+      items: [...cart],
+      total: _calcTotal(cart),
+      savedAt: new Date().toISOString(),
+    };
+
+    const updated = [newCart, ...savedCarts];
+    try {
+      await SecureStore.setItemAsync('pos_saved_carts', JSON.stringify(updated));
+    } catch (e) {
+      console.error('Failed to save carts:', e);
+    }
+    set({ savedCarts: updated, cart: [], grandTotal: 0 });
+  },
+
+  loadSavedCart: async (id) => {
+    const { savedCarts } = get();
+    const cartToLoad = savedCarts.find(c => c.id === id);
+    if (!cartToLoad) return;
+
+    const updated = savedCarts.filter(c => c.id !== id);
+    try {
+      await SecureStore.setItemAsync('pos_saved_carts', JSON.stringify(updated));
+    } catch (e) {
+      console.error('Failed to save carts:', e);
+    }
+    set({
+      cart: cartToLoad.items,
+      grandTotal: _calcTotal(cartToLoad.items),
+      savedCarts: updated,
+    });
+  },
+
+  deleteSavedCart: async (id) => {
+    const { savedCarts } = get();
+    const updated = savedCarts.filter(c => c.id !== id);
+    try {
+      await SecureStore.setItemAsync('pos_saved_carts', JSON.stringify(updated));
+    } catch (e) {
+      console.error('Failed to save carts:', e);
+    }
+    set({ savedCarts: updated });
   },
 
   // ── Price override ────────────────────────────────────────────────────────

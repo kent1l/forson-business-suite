@@ -28,6 +28,7 @@ import SearchBar from '@/components/pos/SearchBar';
 import ProductListItem from '@/components/pos/ProductListItem';
 import CartItem from '@/components/pos/CartItem';
 import PriceOverrideSheet from '@/components/pos/PriceOverrideSheet';
+import SavedCartsSheet from '@/components/pos/SavedCartsSheet';
 import { formatPHP } from '@/utils/currency';
 import * as haptics from '@/utils/haptics';
 
@@ -44,6 +45,11 @@ export default function POSScreen() {
 
   const cartHeight = useSharedValue(normalHeight);
   const isInitialized = useRef(false);
+  const [isSavedCartsOpen, setIsSavedCartsOpen] = useState(false);
+
+  useEffect(() => {
+    usePosStore.getState().hydrateSavedCarts();
+  }, []);
 
   useEffect(() => {
     if (!isInitialized.current && normalHeight > 0) {
@@ -303,10 +309,16 @@ export default function POSScreen() {
             <GestureDetector gesture={gesture}>
               <View style={styles.dragHandleContainer}>
                 <View style={[styles.dragHandle, isDark && styles.dragHandleDark]} />
-                <View style={styles.cartHeader}>
-                  <Text style={[styles.cartTitle, isDark && styles.cartTitleDark]}>
-                    Cart {cart.length > 0 ? `(${cart.length})` : ''}
-                  </Text>
+                 <View style={styles.cartHeader}>
+                  <TouchableOpacity
+                    style={[styles.cartPill, isDark && styles.cartPillDark]}
+                    onPress={() => { haptics.tap?.(); setIsSavedCartsOpen(true); }}
+                  >
+                    <Text style={[styles.cartPillText, isDark && styles.cartPillTextDark]}>
+                      Cart {cart.length > 0 ? `(${cart.length})` : ''}
+                    </Text>
+                    <Ionicons name="chevron-down" size={14} color={isDark ? '#9ca3af' : '#4b5563'} style={{ marginLeft: 4 }} />
+                  </TouchableOpacity>
                   <Text style={[styles.cartTotal, isDark && styles.cartTotalDark]}>
                     {formatPHP(grandTotal)}
                   </Text>
@@ -363,6 +375,11 @@ export default function POSScreen() {
           item={overrideItem}
           onClose={() => usePosStore.getState().closePriceOverride()}
           onConfirm={(partId, price) => { usePosStore.getState().updatePrice(partId, price); haptics.success(); }}
+        />
+
+        <SavedCartsSheet
+          visible={isSavedCartsOpen}
+          onClose={() => setIsSavedCartsOpen(false)}
         />
 
         {/* Undo snackbar */}
@@ -430,8 +447,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 5,
   },
-  cartTitle: { fontSize: 15, fontWeight: '700', color: '#111827' },
-  cartTitleDark: { color: '#f9fafb' },
+  cartPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  cartPillDark: {
+    backgroundColor: '#374151',
+  },
+  cartPillText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1f2937',
+  },
+  cartPillTextDark: {
+    color: '#f9fafb',
+  },
   cartTotal: { fontSize: 16, fontWeight: '800', color: '#10B981' },
   cartTotalDark: { color: '#34d399' },
   emptyCart: { alignItems: 'center', paddingTop: 20, gap: 8 },
