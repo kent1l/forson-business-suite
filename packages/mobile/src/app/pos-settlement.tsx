@@ -19,6 +19,7 @@ import useAuthStore from '../store/useAuthStore';
 import usePosStore from '../store/usePosStore';
 import SuccessOverlay from '@/components/pos/SuccessOverlay';
 import StagingOverlay from '@/components/pos/StagingOverlay';
+import CustomerSearchModal from '@/components/pos/CustomerSearchModal';
 import { formatPHP } from '@/utils/currency';
 import * as haptics from '@/utils/haptics';
 
@@ -49,9 +50,11 @@ export default function POSSettlementScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successData, setSuccessData] = useState<{ visible: boolean; invoiceNumber?: string; changeAmount?: number }>({ visible: false });
   const [stagedVisible, setStagedVisible] = useState(false);
+  const [stagedSaleId, setStagedSaleId] = useState<number | null>(null);
   const [stagedTxId, setStagedTxId] = useState('');
   const [stagedCustomerName, setStagedCustomerName] = useState('');
   const [stagedAmount, setStagedAmount] = useState(0);
+  const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
 
   // ── Load data on mount ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -150,6 +153,7 @@ export default function POSSettlementScreen() {
       if (haptics && typeof haptics.txComplete === 'function') {
         haptics.txComplete();
       }
+      setStagedSaleId(result.staged_sale_id ?? null);
       setStagedTxId(result.invoice_number);
       setStagedCustomerName(result.customer_name);
       setStagedAmount(result.grand_total);
@@ -289,6 +293,15 @@ export default function POSSettlementScreen() {
             <Text style={[styles.sectionLabel, { color: subColor }]}>CUSTOMER</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10 }}>
               <View style={styles.pillRow}>
+                {/* Search pill — first in list */}
+                <TouchableOpacity
+                  style={[styles.pill, styles.pillSearch]}
+                  onPress={() => { haptics.tap(); setCustomerSearchOpen(true); }}
+                >
+                  <Ionicons name="search" size={14} color="#3B82F6" style={{ marginRight: 4 }} />
+                  <Text style={[styles.pillText, { color: '#3B82F6', fontWeight: '700' }]}>Search</Text>
+                </TouchableOpacity>
+
                 {customers.slice(0, 20).map((c) => {
                   const selected = selectedCustomer?.customer_id === c.customer_id;
                   const label = `${c.first_name} ${c.last_name || ''}`.trim();
@@ -363,6 +376,7 @@ export default function POSSettlementScreen() {
       <SuccessOverlay visible={successData.visible} invoiceNumber={successData.invoiceNumber} changeAmount={successData.changeAmount} />
       <StagingOverlay
         visible={stagedVisible}
+        stagedSaleId={stagedSaleId}
         transactionId={stagedTxId}
         customerName={stagedCustomerName}
         amount={stagedAmount}
@@ -371,6 +385,12 @@ export default function POSSettlementScreen() {
           usePosStore.getState().clearCart();
           router.back();
         }}
+      />
+      <CustomerSearchModal
+        visible={customerSearchOpen}
+        customers={customers}
+        onSelect={(c) => setSelectedCustomer(c)}
+        onClose={() => setCustomerSearchOpen(false)}
       />
     </>
   );
@@ -416,6 +436,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   pillSelected: { backgroundColor: '#10B981', borderColor: '#10B981' },
+  pillSearch: {
+    borderColor: '#3B82F6',
+    backgroundColor: 'rgba(59, 130, 246, 0.08)',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   pillText: { fontSize: 14, fontWeight: '600', color: '#6b7280' },
   pillTextSelected: { color: '#fff' },
   tenderedInput: {

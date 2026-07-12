@@ -113,6 +113,7 @@ const usePosStore = create((set, get) => ({
 
     const { data } = await apiClient.post('/sales/staging', stagingPayload);
     return {
+      staged_sale_id: data.staged_sale_id,
       invoice_number: data.staged_number,
       grand_total: stagingPayload.lines.reduce((s, l) => s + (l.sale_price * l.quantity), 0),
       customer_name: paymentData.customer_name
