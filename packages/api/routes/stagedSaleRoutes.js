@@ -79,13 +79,19 @@ router.get('/sales/staging', protect, async (req, res) => {
                 ss.physical_receipt_no,
                 (c.first_name || ' ' || COALESCE(c.last_name, '')) as customer_name,
                 (e.first_name || ' ' || e.last_name) as cashier_name,
-                pm.name as payment_method_name
+                pm.name as payment_method_name,
+                (
+                    SELECT STRING_AGG(pv.display_name, ' | ') 
+                    FROM staged_sale_line ssl
+                    JOIN parts_view pv ON ssl.part_id = pv.part_id
+                    WHERE ssl.staged_sale_id = ss.staged_sale_id
+                ) as items_summary
             FROM staged_sale ss
             JOIN customer c ON ss.customer_id = c.customer_id
             JOIN employee e ON ss.employee_id = e.employee_id
             JOIN payment_methods pm ON ss.payment_method_id = pm.method_id
             WHERE ss.status = $1
-            ORDER BY ss.staged_date DESC;
+            ORDER BY ss.staged_date ASC;
         `;
         const { rows } = await db.query(query, [status]);
         res.json(rows);
@@ -170,7 +176,7 @@ router.get('/sales/staging/:id', protect, async (req, res) => {
 // POST /sales/staging/:id/approve-post - Approve staged sale (accepts updated physical_receipt_no and tendered_amount)
 router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing:create'), async (req, res) => {
     const { id } = req.params;
-    const { physical_receipt_no, tendered_amount } = req.body; // accept optional edits from approval modal
+    const { physical_receipt_no, tendered_amount, customer_id } = req.body; // accept optional edits from approval modal
     const reviewerId = req.user.employee_id;
 
     const client = await db.getClient();
@@ -226,6 +232,8 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
         // Setup COD terms default
         const termsValidation = validatePaymentTerms({ terms: 'COD', invoice_date: new Date() });
 
+        const finalCustomerId = customer_id !== undefined ? customer_id : staged.customer_id;
+
         // Create actual invoice: Set both invoice_date, approved_at to CURRENT_TIMESTAMP, and submitted_at to original staging time
         const invoiceQuery = `
             INSERT INTO invoice (invoice_number, customer_id, employee_id, total_amount, subtotal_ex_tax, tax_total, amount_paid, status, terms, payment_terms_days, due_date, physical_receipt_no, tax_calculation_version, invoice_date, submitted_at, approved_at, approved_by)
@@ -234,7 +242,7 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
         `;
         const invoiceRes = await client.query(invoiceQuery, [
             invoice_number,
-            staged.customer_id,
+            finalCustomerId,
             staged.employee_id, // credit original checkout cashier
             total_amount,
             subtotal_ex_tax,
@@ -309,9 +317,9 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
         // Update staged sale status to APPROVED
         await client.query(`
             UPDATE staged_sale 
-            SET status = 'APPROVED', approved_by = $2, approved_at = CURRENT_TIMESTAMP, physical_receipt_no = $3, tendered_amount = $4
+            SET status = 'APPROVED', approved_by = $2, approved_at = CURRENT_TIMESTAMP, physical_receipt_no = $3, tendered_amount = $4, customer_id = $5
             WHERE staged_sale_id = $1
-        `, [id, reviewerId, prn, tendered_amount !== undefined ? tendered_amount : staged.tendered_amount]);
+        `, [id, reviewerId, prn, tendered_amount !== undefined ? tendered_amount : staged.tendered_amount, finalCustomerId]);
 
         await client.query('COMMIT');
         res.status(200).json({

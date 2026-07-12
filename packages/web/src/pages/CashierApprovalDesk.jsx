@@ -15,6 +15,12 @@ export default function CashierApprovalDesk({ onNavigate }) {
     const [loading, setLoading] = useState(false);
     const [actioning, setActioning] = useState(false);
 
+    // Customers list and searchable dropdown state
+    const [customers, setCustomers] = useState([]);
+    const [customerSearch, setCustomerSearch] = useState('');
+    const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false);
+    const [selectedCustomerId, setSelectedCustomerId] = useState(null);
+
     // Modal state for details review
     const [isDetailsOpen, setIsDetailsOpen] = useState(false);
     const [editablePrn, setEditablePrn] = useState('');
@@ -37,8 +43,18 @@ export default function CashierApprovalDesk({ onNavigate }) {
         }
     };
 
+    const fetchCustomers = async () => {
+        try {
+            const { data } = await api.get('/customers');
+            setCustomers(data || []);
+        } catch (error) {
+            console.error('Failed to fetch customers', error);
+        }
+    };
+
     useEffect(() => {
         fetchSales();
+        fetchCustomers();
     }, [activeFilter]);
 
     const handleRowClick = async (sale) => {
@@ -49,6 +65,11 @@ export default function CashierApprovalDesk({ onNavigate }) {
             setSelectedSale(data);
             setEditablePrn(data.physical_receipt_no || '');
             setEditableTendered(data.tendered_amount || '');
+            setSelectedCustomerId(data.customer_id);
+
+            // Find current customer details to pre-populate search input
+            const currentCust = customers.find(c => c.customer_id === data.customer_id);
+            setCustomerSearch(currentCust ? `${currentCust.first_name} ${currentCust.last_name || ''}`.trim() : data.customer_name || '');
         } catch (error) {
             toast.error('Failed to load transaction details.');
             setIsDetailsOpen(false);
@@ -66,7 +87,8 @@ export default function CashierApprovalDesk({ onNavigate }) {
         try {
             await api.post(`/sales/staging/${selectedSale.id}/approve-post`, {
                 physical_receipt_no: formattedPrn,
-                tendered_amount: editableTendered ? Number(editableTendered) : null
+                tendered_amount: editableTendered ? Number(editableTendered) : null,
+                customer_id: selectedCustomerId
             });
             toast.success(`Transaction #${selectedSale.id} approved & posted!`);
             setIsDetailsOpen(false);
@@ -92,7 +114,7 @@ export default function CashierApprovalDesk({ onNavigate }) {
                 tax_rate_id: selectedSale.tax_rate_id || null,
                 detail: item.name
             })),
-            selectedCustomer: selectedSale.customer_id,
+            selectedCustomer: selectedCustomerId, // Pass updated customer ID
             staged_sale_id: selectedSale.id // link staging record to resolve on post
         };
 
@@ -122,7 +144,8 @@ export default function CashierApprovalDesk({ onNavigate }) {
 
     const filteredSales = sales.filter(sale =>
         sale.id.toString().includes(searchQuery) ||
-        sale.customer_name?.toLowerCase().includes(searchQuery.toLowerCase())
+        sale.customer_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        sale.items_summary?.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     const computedChange = () => {
@@ -143,7 +166,7 @@ export default function CashierApprovalDesk({ onNavigate }) {
                 <div className="relative max-w-xs w-full">
                     <input
                         type="text"
-                        placeholder="Search staging ID or customer..."
+                        placeholder="Search staging ID, customer, or items..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -243,8 +266,48 @@ export default function CashierApprovalDesk({ onNavigate }) {
                     ) : selectedSale && (
                         <div className="space-y-6">
                             <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100 shadow-sm text-sm">
-                                <div><span className="text-slate-400 block text-[10px] uppercase font-bold">Staged By</span><span className="font-semibold text-slate-800">{selectedSale.cashier_name}</span></div>
-                                <div><span className="text-slate-400 block text-[10px] uppercase font-bold">Customer</span><span className="font-semibold text-slate-800">{selectedSale.customer_name}</span></div>
+                                <div>
+                                    <span className="text-slate-400 block text-[10px] uppercase font-bold mb-1">Staged By</span>
+                                    <span className="font-semibold text-slate-800">{selectedSale.cashier_name}</span>
+                                </div>
+                                <div className="relative">
+                                    <span className="text-slate-400 block text-[10px] uppercase font-bold mb-1">Customer</span>
+                                    <input
+                                        type="text"
+                                        value={customerSearch}
+                                        onChange={(e) => {
+                                            setCustomerSearch(e.target.value);
+                                            setCustomerDropdownOpen(true);
+                                        }}
+                                        onFocus={() => setCustomerDropdownOpen(true)}
+                                        onBlur={() => setTimeout(() => setCustomerDropdownOpen(false), 200)}
+                                        className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white font-medium text-slate-800"
+                                        placeholder="Search customer name..."
+                                    />
+                                    {customerDropdownOpen && (
+                                        <div className="absolute z-50 w-full mt-1 max-h-40 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg">
+                                            {customers
+                                                .filter(c => 
+                                                    `${c.first_name} ${c.last_name || ''}`.toLowerCase().includes(customerSearch.toLowerCase())
+                                                )
+                                                .map(c => (
+                                                    <button
+                                                        key={c.customer_id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSelectedCustomerId(c.customer_id);
+                                                            setCustomerSearch(`${c.first_name} ${c.last_name || ''}`.trim());
+                                                            setCustomerDropdownOpen(false);
+                                                        }}
+                                                        className="w-full text-left px-3 py-2 hover:bg-slate-50 text-xs text-slate-700 font-semibold border-b border-slate-100 last:border-0"
+                                                    >
+                                                        {c.first_name} {c.last_name}
+                                                    </button>
+                                                ))
+                                            }
+                                        </div>
+                                    )}
+                                </div>
                                 <div className="mt-2">
                                     <label className="block text-slate-400 text-[10px] uppercase font-bold mb-1">Physical Receipt Number (PRN)</label>
                                     <input
