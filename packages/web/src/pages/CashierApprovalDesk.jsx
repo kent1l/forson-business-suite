@@ -112,7 +112,8 @@ export default function CashierApprovalDesk({ onNavigate }) {
                 sale_price: Number(item.sale_price),
                 discount_amount: Number(item.discount_amount) || 0,
                 tax_rate_id: selectedSale.tax_rate_id || null,
-                detail: item.name
+                detail: item.name,
+                display_name: item.name
             })),
             selectedCustomer: selectedCustomerId, // Pass updated customer ID
             staged_sale_id: selectedSale.id // link staging record to resolve on post

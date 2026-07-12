@@ -391,7 +391,8 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                 discount_amount: line.discount_amount || 0,
                 tax_rate_id: line.tax_rate_id || null,
                 is_tax_inclusive_price: line.is_tax_inclusive_price || false,
-                detail: line.detail
+                detail: line.detail,
+                display_name: line.display_name
             })),
             selectedCustomer: selectedCustomer?.customer_id || null
         });
