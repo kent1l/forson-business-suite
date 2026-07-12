@@ -54,7 +54,9 @@ export default function POSSettlementScreen() {
   const [stagedTxId, setStagedTxId] = useState('');
   const [stagedCustomerName, setStagedCustomerName] = useState('');
   const [stagedAmount, setStagedAmount] = useState(0);
-  const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
+  const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false);
+  const [customerQuery, setCustomerQuery] = useState('');
+  const customerInputRef = useRef<TextInput>(null);
 
   // ── Load data on mount ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -291,34 +293,62 @@ export default function POSSettlementScreen() {
           {/* Customer */}
           <View style={[styles.card, { backgroundColor: cardBg }]}>
             <Text style={[styles.sectionLabel, { color: subColor }]}>CUSTOMER</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10 }}>
-              <View style={styles.pillRow}>
-                {/* Search pill — first in list */}
-                <TouchableOpacity
-                  style={[styles.pill, styles.pillSearch]}
-                  onPress={() => { haptics.tap(); setCustomerSearchOpen(true); }}
-                >
-                  <Ionicons name="search" size={14} color="#3B82F6" style={{ marginRight: 4 }} />
-                  <Text style={[styles.pillText, { color: '#3B82F6', fontWeight: '700' }]}>Search</Text>
-                </TouchableOpacity>
-
-                {customers.slice(0, 20).map((c) => {
-                  const selected = selectedCustomer?.customer_id === c.customer_id;
-                  const label = `${c.first_name} ${c.last_name || ''}`.trim();
-                  return (
-                    <TouchableOpacity
-                      key={c.customer_id}
-                      style={[styles.pill, selected && styles.pillSelected]}
-                      onPress={() => { haptics.tap(); setSelectedCustomer(c); }}
-                    >
-                      <Text style={[styles.pillText, selected && styles.pillTextSelected]} numberOfLines={1}>
-                        {label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+            {/* Dropdown trigger */}
+            <TouchableOpacity
+              style={[styles.dropdownTrigger, { borderColor: customerDropdownOpen ? '#3B82F6' : (isDark ? '#374151' : '#d1d5db'), backgroundColor: isDark ? '#111827' : '#f8fafc' }]}
+              onPress={() => {
+                haptics.tap();
+                setCustomerDropdownOpen(v => {
+                  if (!v) setTimeout(() => customerInputRef.current?.focus(), 80);
+                  else setCustomerQuery('');
+                  return !v;
+                });
+              }}
+              activeOpacity={0.75}
+            >
+              <Text style={[styles.dropdownValue, { color: textColor }]} numberOfLines={1}>
+                {selectedCustomer ? `${selectedCustomer.first_name} ${selectedCustomer.last_name || ''}`.trim() : 'Select customer...'}
+              </Text>
+              <Ionicons name={customerDropdownOpen ? 'chevron-up' : 'chevron-down'} size={16} color={subColor} />
+            </TouchableOpacity>
+            {/* Inline dropdown panel */}
+            {customerDropdownOpen && (
+              <View style={[styles.dropdownPanel, { backgroundColor: isDark ? '#1f2937' : '#fff', borderColor: isDark ? '#374151' : '#e5e7eb' }]}>
+                <View style={[styles.dropdownSearch, { borderColor: isDark ? '#374151' : '#d1d5db', backgroundColor: isDark ? '#111827' : '#f1f5f9' }]}>
+                  <Ionicons name="search-outline" size={15} color={subColor} />
+                  <TextInput
+                    ref={customerInputRef}
+                    value={customerQuery}
+                    onChangeText={setCustomerQuery}
+                    placeholder="Search customer..."
+                    placeholderTextColor={subColor}
+                    style={[styles.dropdownSearchInput, { color: textColor }]}
+                    clearButtonMode="while-editing"
+                  />
+                </View>
+                <ScrollView style={{ maxHeight: 200 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+                  {customers
+                    .filter(c => customerQuery.trim() === '' || `${c.first_name} ${c.last_name || ''}`.toLowerCase().includes(customerQuery.toLowerCase()))
+                    .map(c => {
+                      const label = `${c.first_name} ${c.last_name || ''}`.trim();
+                      const isSelected = selectedCustomer?.customer_id === c.customer_id;
+                      return (
+                        <TouchableOpacity
+                          key={c.customer_id}
+                          style={[styles.dropdownItem, isSelected && { backgroundColor: isDark ? '#1e3a5f' : '#eff6ff' }]}
+                          onPress={() => { haptics.tap(); setSelectedCustomer(c); setCustomerDropdownOpen(false); setCustomerQuery(''); }}
+                        >
+                          <Text style={[styles.dropdownItemText, { color: textColor }, isSelected && { color: '#3B82F6', fontWeight: '700' }]} numberOfLines={1}>
+                            {label}
+                          </Text>
+                          {isSelected && <Ionicons name="checkmark" size={16} color="#3B82F6" />}
+                        </TouchableOpacity>
+                      );
+                    })
+                  }
+                </ScrollView>
               </View>
-            </ScrollView>
+            )}
           </View>
 
           {/* Tax Rate */}
@@ -329,6 +359,8 @@ export default function POSSettlementScreen() {
                 <View style={styles.pillRow}>
                   {taxRates.map((r) => {
                     const selected = selectedTaxRate?.tax_rate_id === r.tax_rate_id;
+                    const pct = parseFloat(r.rate_percentage);
+                    const pctLabel = Number.isInteger(pct) ? `${pct}` : pct.toString().replace(/\.?0+$/, '');
                     return (
                       <TouchableOpacity
                         key={r.tax_rate_id}
@@ -336,7 +368,7 @@ export default function POSSettlementScreen() {
                         onPress={() => { haptics.tap(); setSelectedTaxRate(r); }}
                       >
                         <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
-                          {r.rate_name} ({r.rate_percentage}%)
+                          {r.rate_name} ({pctLabel}%)
                         </Text>
                       </TouchableOpacity>
                     );
@@ -386,12 +418,7 @@ export default function POSSettlementScreen() {
           router.back();
         }}
       />
-      <CustomerSearchModal
-        visible={customerSearchOpen}
-        customers={customers}
-        onSelect={(c) => setSelectedCustomer(c)}
-        onClose={() => setCustomerSearchOpen(false)}
-      />
+
     </>
   );
 }
@@ -444,6 +471,55 @@ const styles = StyleSheet.create({
   },
   pillText: { fontSize: 14, fontWeight: '600', color: '#6b7280' },
   pillTextSelected: { color: '#fff' },
+  dropdownTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
+  dropdownValue: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+    marginRight: 8,
+  },
+  dropdownPanel: {
+    marginTop: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  dropdownSearch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: 'transparent',
+  },
+  dropdownSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    padding: 0,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+    marginRight: 8,
+  },
   tenderedInput: {
     borderWidth: 1.5,
     borderRadius: 12,
