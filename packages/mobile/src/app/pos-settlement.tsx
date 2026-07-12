@@ -18,6 +18,8 @@ import apiClient from '../api/client';
 import useAuthStore from '../store/useAuthStore';
 import usePosStore from '../store/usePosStore';
 import SuccessOverlay from '@/components/pos/SuccessOverlay';
+import StagingOverlay from '@/components/pos/StagingOverlay';
+import CustomerSearchModal from '@/components/pos/CustomerSearchModal';
 import { formatPHP } from '@/utils/currency';
 import * as haptics from '@/utils/haptics';
 
@@ -43,10 +45,34 @@ export default function POSSettlementScreen() {
   const [selectedTaxRate, setSelectedTaxRate] = useState<any>(null);
   const [tenderedAmount, setTenderedAmount] = useState('');
   const tenderedRef = useRef<TextInput>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const customerCardY = useRef<number>(0);
 
   // ── Submission state ───────────────────────────────────────────────────────
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successData, setSuccessData] = useState<{ visible: boolean; invoiceNumber?: string; changeAmount?: number }>({ visible: false });
+  const [stagedVisible, setStagedVisible] = useState(false);
+  const [stagedSaleId, setStagedSaleId] = useState<number | null>(null);
+  const [stagedTxId, setStagedTxId] = useState('');
+  const [stagedCustomerName, setStagedCustomerName] = useState('');
+  const [stagedAmount, setStagedAmount] = useState(0);
+  const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false);
+  const [customerQuery, setCustomerQuery] = useState('');
+  const customerInputRef = useRef<TextInput>(null);
+
+  const openCustomerDropdown = () => {
+    haptics.tap();
+    if (customerDropdownOpen) {
+      setCustomerDropdownOpen(false);
+      setCustomerQuery('');
+      return;
+    }
+    setCustomerDropdownOpen(true);
+    setTimeout(() => {
+      scrollViewRef.current?.scrollTo({ y: customerCardY.current - 12, animated: true });
+      setTimeout(() => customerInputRef.current?.focus(), 80);
+    }, 50);
+  };
 
   // ── Load data on mount ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -130,6 +156,7 @@ export default function POSSettlementScreen() {
     try {
       const paymentData = {
         customer_id: selectedCustomer.customer_id,
+        customer_name: `${selectedCustomer.first_name || ''} ${selectedCustomer.last_name || ''}`.trim() || 'Walk-in',
         employee_id: user?.employee_id,
         amount_paid: grandTotal,
         tendered_amount: isCash ? tendered : null,
@@ -141,14 +168,14 @@ export default function POSSettlementScreen() {
 
       const result = await usePosStore.getState().submitInvoice(paymentData);
 
-      haptics.txComplete();
-      setSuccessData({ visible: true, invoiceNumber: result.invoice_number, changeAmount: change > 0 ? change : undefined });
-
-      setTimeout(() => {
-        setSuccessData({ visible: false });
-        usePosStore.getState().clearCart();
-        router.back();
-      }, 2000);
+      if (haptics && typeof haptics.txComplete === 'function') {
+        haptics.txComplete();
+      }
+      setStagedSaleId(result.staged_sale_id ?? null);
+      setStagedTxId(result.invoice_number);
+      setStagedCustomerName(result.customer_name);
+      setStagedAmount(result.grand_total);
+      setStagedVisible(true);
     } catch (err: any) {
       haptics.error();
       const msg = err?.response?.data?.message || err?.message || 'Transaction failed. Please try again.';
@@ -184,6 +211,7 @@ export default function POSSettlementScreen() {
         </View>
 
         <ScrollView
+          ref={scrollViewRef}
           style={{ flex: 1 }}
           contentContainerStyle={[styles.content, { paddingBottom: 100 + insets.bottom }]}
           keyboardShouldPersistTaps="handled"
@@ -280,27 +308,60 @@ export default function POSSettlementScreen() {
           )}
 
           {/* Customer */}
-          <View style={[styles.card, { backgroundColor: cardBg }]}>
+          <View
+            onLayout={(e) => { customerCardY.current = e.nativeEvent.layout.y; }}
+            style={[styles.card, { backgroundColor: cardBg }]}
+          >
             <Text style={[styles.sectionLabel, { color: subColor }]}>CUSTOMER</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10 }}>
-              <View style={styles.pillRow}>
-                {customers.slice(0, 20).map((c) => {
-                  const selected = selectedCustomer?.customer_id === c.customer_id;
-                  const label = `${c.first_name} ${c.last_name || ''}`.trim();
-                  return (
-                    <TouchableOpacity
-                      key={c.customer_id}
-                      style={[styles.pill, selected && styles.pillSelected]}
-                      onPress={() => { haptics.tap(); setSelectedCustomer(c); }}
-                    >
-                      <Text style={[styles.pillText, selected && styles.pillTextSelected]} numberOfLines={1}>
-                        {label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+            {/* Dropdown trigger */}
+            <TouchableOpacity
+              style={[styles.dropdownTrigger, { borderColor: customerDropdownOpen ? '#3B82F6' : (isDark ? '#374151' : '#d1d5db'), backgroundColor: isDark ? '#111827' : '#f8fafc' }]}
+              onPress={openCustomerDropdown}
+              activeOpacity={0.75}
+            >
+              <Text style={[styles.dropdownValue, { color: textColor }]} numberOfLines={1}>
+                {selectedCustomer ? `${selectedCustomer.first_name} ${selectedCustomer.last_name || ''}`.trim() : 'Select customer...'}
+              </Text>
+              <Ionicons name={customerDropdownOpen ? 'chevron-up' : 'chevron-down'} size={16} color={subColor} />
+            </TouchableOpacity>
+            {/* Inline dropdown panel */}
+            {customerDropdownOpen && (
+              <View style={[styles.dropdownPanel, { backgroundColor: isDark ? '#1f2937' : '#fff', borderColor: isDark ? '#374151' : '#e5e7eb' }]}>
+                <View style={[styles.dropdownSearch, { borderColor: isDark ? '#374151' : '#d1d5db', backgroundColor: isDark ? '#111827' : '#f1f5f9' }]}>
+                  <Ionicons name="search-outline" size={15} color={subColor} />
+                  <TextInput
+                    ref={customerInputRef}
+                    value={customerQuery}
+                    onChangeText={setCustomerQuery}
+                    placeholder="Search customer..."
+                    placeholderTextColor={subColor}
+                    style={[styles.dropdownSearchInput, { color: textColor }]}
+                    clearButtonMode="while-editing"
+                  />
+                </View>
+                <ScrollView style={{ maxHeight: 200 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+                  {customers
+                    .filter(c => customerQuery.trim() === '' || `${c.first_name} ${c.last_name || ''}`.toLowerCase().includes(customerQuery.toLowerCase()))
+                    .map(c => {
+                      const label = `${c.first_name} ${c.last_name || ''}`.trim();
+                      const isSelected = selectedCustomer?.customer_id === c.customer_id;
+                      return (
+                        <TouchableOpacity
+                          key={c.customer_id}
+                          style={[styles.dropdownItem, isSelected && { backgroundColor: isDark ? '#1e3a5f' : '#eff6ff' }]}
+                          onPress={() => { haptics.tap(); setSelectedCustomer(c); setCustomerDropdownOpen(false); setCustomerQuery(''); }}
+                        >
+                          <Text style={[styles.dropdownItemText, { color: textColor }, isSelected && { color: '#3B82F6', fontWeight: '700' }]} numberOfLines={1}>
+                            {label}
+                          </Text>
+                          {isSelected && <Ionicons name="checkmark" size={16} color="#3B82F6" />}
+                        </TouchableOpacity>
+                      );
+                    })
+                  }
+                </ScrollView>
               </View>
-            </ScrollView>
+            )}
           </View>
 
           {/* Tax Rate */}
@@ -311,6 +372,8 @@ export default function POSSettlementScreen() {
                 <View style={styles.pillRow}>
                   {taxRates.map((r) => {
                     const selected = selectedTaxRate?.tax_rate_id === r.tax_rate_id;
+                    const pct = parseFloat(r.rate_percentage) * 100;
+                    const pctLabel = Number.isInteger(pct) ? `${pct}` : pct.toFixed(2).replace(/\.?0+$/, '');
                     return (
                       <TouchableOpacity
                         key={r.tax_rate_id}
@@ -318,7 +381,7 @@ export default function POSSettlementScreen() {
                         onPress={() => { haptics.tap(); setSelectedTaxRate(r); }}
                       >
                         <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
-                          {r.rate_name} ({r.rate_percentage}%)
+                          {r.rate_name} ({pctLabel}%)
                         </Text>
                       </TouchableOpacity>
                     );
@@ -356,6 +419,19 @@ export default function POSSettlementScreen() {
       </SafeAreaView>
 
       <SuccessOverlay visible={successData.visible} invoiceNumber={successData.invoiceNumber} changeAmount={successData.changeAmount} />
+      <StagingOverlay
+        visible={stagedVisible}
+        stagedSaleId={stagedSaleId}
+        transactionId={stagedTxId}
+        customerName={stagedCustomerName}
+        amount={stagedAmount}
+        onStageAnother={() => {
+          setStagedVisible(false);
+          usePosStore.getState().clearCart();
+          router.back();
+        }}
+      />
+
     </>
   );
 }
@@ -400,8 +476,63 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   pillSelected: { backgroundColor: '#10B981', borderColor: '#10B981' },
+  pillSearch: {
+    borderColor: '#3B82F6',
+    backgroundColor: 'rgba(59, 130, 246, 0.08)',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   pillText: { fontSize: 14, fontWeight: '600', color: '#6b7280' },
   pillTextSelected: { color: '#fff' },
+  dropdownTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
+  dropdownValue: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+    marginRight: 8,
+  },
+  dropdownPanel: {
+    marginTop: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  dropdownSearch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: 'transparent',
+  },
+  dropdownSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    padding: 0,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+    marginRight: 8,
+  },
   tenderedInput: {
     borderWidth: 1.5,
     borderRadius: 12,

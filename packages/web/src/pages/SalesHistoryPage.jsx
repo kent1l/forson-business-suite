@@ -734,6 +734,8 @@ const SalesHistoryPage = () => {
                                     <SortableHeader column="invoice_number" sortConfig={sortConfig} onSort={handleSort}>Invoice #</SortableHeader>
                                     <SortableHeader column="physical_receipt_no" sortConfig={sortConfig} onSort={handleSort}>Physical Receipt No.</SortableHeader>
                                     <SortableHeader column="invoice_date" sortConfig={sortConfig} onSort={handleSort}>Date</SortableHeader>
+                                    <th className="p-3 text-sm font-semibold text-gray-700">Issuer</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-700">Approved By</th>
                                     <SortableHeader column="customer" sortConfig={sortConfig} onSort={handleSort}>Customer</SortableHeader>
                                     <SortableHeader column="status" sortConfig={sortConfig} onSort={handleSort}>Status</SortableHeader>
                                     <SortableHeader column="total_amount" sortConfig={sortConfig} onSort={handleSort}>
@@ -751,6 +753,8 @@ const SalesHistoryPage = () => {
                                         <td className="p-3 text-sm font-mono">{invoice.invoice_number}</td>
                                         <td className="p-3 text-sm font-mono text-gray-700">{invoice.physical_receipt_no || '-'}</td>
                                         <td className="p-3 text-sm">{format(toZonedTime(parseISO(invoice.invoice_date), 'Asia/Manila'), 'MM/dd/yyyy')}</td>
+                                        <td className="p-3 text-sm">{invoice.employee_first_name} {invoice.employee_last_name}</td>
+                                        <td className="p-3 text-sm">{invoice.approved_by_name || 'System Auto-Approved'}</td>
                                         <td className="p-3 text-sm">{invoice.customer_first_name} {invoice.customer_last_name}</td>
                                         <td className="p-3 text-sm">
                                             <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(invoice.status)}`}>

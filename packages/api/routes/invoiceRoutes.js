@@ -59,6 +59,7 @@ router.get('/invoices', protect, hasPermission('invoicing:create'), async (req, 
                 c.last_name as customer_last_name,
                 e.first_name as employee_first_name,
                 e.last_name as employee_last_name,
+                (appr.first_name || ' ' || appr.last_name) as approved_by_name,
                 r.refunded_amount,
                 r.refunded_amount_ex_tax,
                 r.refunded_tax_total,
@@ -77,6 +78,7 @@ router.get('/invoices', protect, hasPermission('invoicing:create'), async (req, 
             FROM invoice i
             JOIN customer c ON i.customer_id = c.customer_id
             JOIN employee e ON i.employee_id = e.employee_id
+            LEFT JOIN employee appr ON i.approved_by = appr.employee_id
             LEFT JOIN LATERAL (
                 SELECT 
                     COALESCE(SUM(cn.total_amount), 0) AS refunded_amount,
@@ -179,7 +181,7 @@ router.get('/invoices/:id/lines-with-refunds', protect, hasPermission('invoicing
 
 // POST /invoices - Create a new invoice
 router.post('/invoices', async (req, res) => {
-    const { customer_id, employee_id, lines, amount_paid, tendered_amount, payment_method, terms, payment_terms_days, physical_receipt_no, tax_rate_id, payments } = req.body;
+    const { customer_id, employee_id, lines, amount_paid, tendered_amount, payment_method, terms, payment_terms_days, physical_receipt_no, tax_rate_id, payments, staged_sale_id } = req.body;
 
     if (!customer_id || !employee_id || !lines || !Array.isArray(lines) || lines.length === 0) {
         return res.status(400).json({ message: 'Missing required fields.' });
@@ -278,8 +280,8 @@ router.post('/invoices', async (req, res) => {
         }
 
         const invoiceQuery = `
-            INSERT INTO invoice (invoice_number, customer_id, employee_id, total_amount, subtotal_ex_tax, tax_total, amount_paid, status, terms, payment_terms_days, due_date, physical_receipt_no, tax_calculation_version)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            INSERT INTO invoice (invoice_number, customer_id, employee_id, total_amount, subtotal_ex_tax, tax_total, amount_paid, status, terms, payment_terms_days, due_date, physical_receipt_no, tax_calculation_version, submitted_at, approved_at, approved_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $3)
             RETURNING invoice_id;
         `;
     // Debug: log computed financials to aid troubleshooting
@@ -385,6 +387,15 @@ router.post('/invoices', async (req, res) => {
             }
         }
 
+
+        // If a staged sale was converted, resolve it as APPROVED
+        if (staged_sale_id) {
+            await client.query(`
+                UPDATE staged_sale 
+                SET status = 'APPROVED', approved_by = $2, approved_at = CURRENT_TIMESTAMP
+                WHERE staged_sale_id = $1
+            `, [staged_sale_id, employee_id]);
+        }
 
         await client.query('COMMIT');
     res.status(201).json({ 

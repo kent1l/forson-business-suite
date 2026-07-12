@@ -112,7 +112,8 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                 discount_amount: item.discount_amount || 0,
                 tax_rate_id: item.tax_rate_id || null,
                 is_tax_inclusive_price: item.is_tax_inclusive_price || false,
-                detail: item.detail
+                detail: item.detail,
+                display_name: item.display_name || item.detail
             }));
             setLines(mappedLines);
             if (pageState.selectedCustomer) {

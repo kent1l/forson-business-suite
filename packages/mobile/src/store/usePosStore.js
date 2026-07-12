@@ -100,34 +100,24 @@ const usePosStore = create((set, get) => ({
       sale_price: item.sale_price,
       discount_amount: 0,
     }));
-    // Step 1: Create the invoice header and lines
-    const invoicePayload = {
+
+    const stagingPayload = {
       customer_id: paymentData.customer_id,
       employee_id: paymentData.employee_id,
       lines,
-      physical_receipt_no: paymentData.physical_receipt_no || null,
       tax_rate_id: paymentData.tax_rate_id || null,
+      payment_method_id: paymentData.payment_method_id,
+      tendered_amount: paymentData.tendered_amount !== null && paymentData.tendered_amount !== undefined ? Number(paymentData.tendered_amount) : null,
+      physical_receipt_no: paymentData.physical_receipt_no || null,
     };
-    const { data: invoiceData } = await apiClient.post('/invoices', invoicePayload);
-    const invoiceId = invoiceData.invoice_id;
 
-    // Step 2: Post the payment using the new payment route
-    const paymentPayload = {
-      payments: [{
-        method_id: paymentData.payment_method_id,
-        amount_paid: Number(invoiceData.total_amount) || 0,
-        tendered_amount: paymentData.tendered_amount !== null && paymentData.tendered_amount !== undefined ? Number(paymentData.tendered_amount) : null,
-        reference: paymentData.physical_receipt_no || null,
-        metadata: {
-          method_name: paymentData.payment_method,
-          source: 'pos_mobile'
-        }
-      }],
-      physical_receipt_no: paymentData.physical_receipt_no || null
+    const { data } = await apiClient.post('/sales/staging', stagingPayload);
+    return {
+      staged_sale_id: data.staged_sale_id,
+      invoice_number: data.staged_number,
+      grand_total: stagingPayload.lines.reduce((s, l) => s + (l.sale_price * l.quantity), 0),
+      customer_name: paymentData.customer_name
     };
-    await apiClient.post(`/invoices/${invoiceId}/payments`, paymentPayload);
-
-    return invoiceData;
   },
 }));
 

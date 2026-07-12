@@ -53,6 +53,7 @@ registerRoute('/api', './routes/customerRoutes');
 registerRoute('/api', './routes/invoiceRoutes');
 registerRoute('/api', './routes/paymentRoutes');
 registerRoute('/api', './routes/paymentMethodRoutes');
+registerRoute('/api', './routes/stagedSaleRoutes');
 registerRoute('/api', './routes/draftRoutes');
 registerRoute('/api', './routes/refundRoutes');
 registerRoute('/api', './routes/paymentTermRoutes');
