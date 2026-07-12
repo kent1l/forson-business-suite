@@ -45,6 +45,8 @@ export default function POSSettlementScreen() {
   const [selectedTaxRate, setSelectedTaxRate] = useState<any>(null);
   const [tenderedAmount, setTenderedAmount] = useState('');
   const tenderedRef = useRef<TextInput>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const customerCardRef = useRef<View>(null);
 
   // ── Submission state ───────────────────────────────────────────────────────
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -57,6 +59,25 @@ export default function POSSettlementScreen() {
   const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false);
   const [customerQuery, setCustomerQuery] = useState('');
   const customerInputRef = useRef<TextInput>(null);
+
+  const openCustomerDropdown = () => {
+    haptics.tap();
+    if (customerDropdownOpen) {
+      setCustomerDropdownOpen(false);
+      setCustomerQuery('');
+      return;
+    }
+    setCustomerDropdownOpen(true);
+    // Scroll the card to the top of the visible area once keyboard appears
+    setTimeout(() => {
+      customerCardRef.current?.measureLayout(
+        scrollViewRef.current?.getScrollResponder()?.getInnerViewNode?.() as any,
+        (x, y) => { scrollViewRef.current?.scrollTo({ y: y - 12, animated: true }); },
+        () => {}
+      );
+      setTimeout(() => customerInputRef.current?.focus(), 80);
+    }, 100);
+  };
 
   // ── Load data on mount ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -195,6 +216,7 @@ export default function POSSettlementScreen() {
         </View>
 
         <ScrollView
+          ref={scrollViewRef}
           style={{ flex: 1 }}
           contentContainerStyle={[styles.content, { paddingBottom: 100 + insets.bottom }]}
           keyboardShouldPersistTaps="handled"
@@ -291,19 +313,12 @@ export default function POSSettlementScreen() {
           )}
 
           {/* Customer */}
-          <View style={[styles.card, { backgroundColor: cardBg }]}>
+          <View ref={customerCardRef} style={[styles.card, { backgroundColor: cardBg }]}>
             <Text style={[styles.sectionLabel, { color: subColor }]}>CUSTOMER</Text>
             {/* Dropdown trigger */}
             <TouchableOpacity
               style={[styles.dropdownTrigger, { borderColor: customerDropdownOpen ? '#3B82F6' : (isDark ? '#374151' : '#d1d5db'), backgroundColor: isDark ? '#111827' : '#f8fafc' }]}
-              onPress={() => {
-                haptics.tap();
-                setCustomerDropdownOpen(v => {
-                  if (!v) setTimeout(() => customerInputRef.current?.focus(), 80);
-                  else setCustomerQuery('');
-                  return !v;
-                });
-              }}
+              onPress={openCustomerDropdown}
               activeOpacity={0.75}
             >
               <Text style={[styles.dropdownValue, { color: textColor }]} numberOfLines={1}>
@@ -359,8 +374,8 @@ export default function POSSettlementScreen() {
                 <View style={styles.pillRow}>
                   {taxRates.map((r) => {
                     const selected = selectedTaxRate?.tax_rate_id === r.tax_rate_id;
-                    const pct = parseFloat(r.rate_percentage);
-                    const pctLabel = Number.isInteger(pct) ? `${pct}` : pct.toString().replace(/\.?0+$/, '');
+                    const pct = parseFloat(r.rate_percentage) * 100;
+                    const pctLabel = Number.isInteger(pct) ? `${pct}` : pct.toFixed(2).replace(/\.?0+$/, '');
                     return (
                       <TouchableOpacity
                         key={r.tax_rate_id}
