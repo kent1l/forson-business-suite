@@ -224,6 +224,7 @@ export default function CashierApprovalDesk({ onNavigate }) {
                                 <tr>
                                     <th className="px-6 py-3">Staging ID</th>
                                     <th className="px-6 py-3">Date Staged</th>
+                                    <th className="px-6 py-3">Staged By</th>
                                     <th className="px-6 py-3">Customer</th>
                                     <th className="px-6 py-3">Receipt No (PRN)</th>
                                     <th className="px-6 py-3">Payment Method</th>
@@ -239,6 +240,7 @@ export default function CashierApprovalDesk({ onNavigate }) {
                                     >
                                         <td className="px-6 py-4 font-mono font-semibold text-slate-900">STG-{sale.id}</td>
                                         <td className="px-6 py-4 text-slate-500">{new Date(sale.timestamp).toLocaleString()}</td>
+                                        <td className="px-6 py-4 text-slate-600 text-sm">{sale.cashier_name}</td>
                                         <td className="px-6 py-4 text-slate-800 font-medium">{sale.customer_name}</td>
                                         <td className="px-6 py-4 font-mono text-slate-600">{sale.physical_receipt_no || '-'}</td>
                                         <td className="px-6 py-4"><span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700">{sale.payment_method_name}</span></td>
