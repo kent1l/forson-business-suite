@@ -244,6 +244,25 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                         </div>
                     )}
 
+                    <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg text-sm text-slate-700 mb-4 border border-slate-100 shadow-xs">
+                        <div>
+                            <span className="font-semibold text-slate-400 block text-[10px] uppercase tracking-wider mb-0.5">Issuer (Staged By)</span>
+                            <span className="font-medium">{invoice.employee_first_name} {invoice.employee_last_name}</span>
+                        </div>
+                        <div>
+                            <span className="font-semibold text-slate-400 block text-[10px] uppercase tracking-wider mb-0.5">Approved By</span>
+                            <span className="font-medium">{invoice.approved_by_name || 'System Auto-Approved'}</span>
+                        </div>
+                        <div className="border-t border-slate-200/60 pt-2">
+                            <span className="font-semibold text-slate-400 block text-[10px] uppercase tracking-wider mb-0.5">Submitted On</span>
+                            <span className="font-mono text-xs">{invoice.submitted_at ? new Date(invoice.submitted_at).toLocaleString('en-US') : 'N/A'}</span>
+                        </div>
+                        <div className="border-t border-slate-200/60 pt-2">
+                            <span className="font-semibold text-slate-400 block text-[10px] uppercase tracking-wider mb-0.5">Approved On</span>
+                            <span className="font-mono text-xs">{invoice.approved_at ? new Date(invoice.approved_at).toLocaleString('en-US') : 'N/A'}</span>
+                        </div>
+                    </div>
+
                     <div>
                         <h3 className="font-semibold text-gray-800">Items Sold</h3>
                         <ul className="divide-y divide-gray-200 mt-2">

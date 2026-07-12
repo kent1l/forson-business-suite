@@ -18,6 +18,7 @@ import apiClient from '../api/client';
 import useAuthStore from '../store/useAuthStore';
 import usePosStore from '../store/usePosStore';
 import SuccessOverlay from '@/components/pos/SuccessOverlay';
+import StagingOverlay from '@/components/pos/StagingOverlay';
 import { formatPHP } from '@/utils/currency';
 import * as haptics from '@/utils/haptics';
 
@@ -47,6 +48,10 @@ export default function POSSettlementScreen() {
   // ── Submission state ───────────────────────────────────────────────────────
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successData, setSuccessData] = useState<{ visible: boolean; invoiceNumber?: string; changeAmount?: number }>({ visible: false });
+  const [stagedVisible, setStagedVisible] = useState(false);
+  const [stagedTxId, setStagedTxId] = useState('');
+  const [stagedCustomerName, setStagedCustomerName] = useState('');
+  const [stagedAmount, setStagedAmount] = useState(0);
 
   // ── Load data on mount ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -130,6 +135,7 @@ export default function POSSettlementScreen() {
     try {
       const paymentData = {
         customer_id: selectedCustomer.customer_id,
+        customer_name: `${selectedCustomer.first_name || ''} ${selectedCustomer.last_name || ''}`.trim() || 'Walk-in',
         employee_id: user?.employee_id,
         amount_paid: grandTotal,
         tendered_amount: isCash ? tendered : null,
@@ -141,14 +147,13 @@ export default function POSSettlementScreen() {
 
       const result = await usePosStore.getState().submitInvoice(paymentData);
 
-      haptics.txComplete();
-      setSuccessData({ visible: true, invoiceNumber: result.invoice_number, changeAmount: change > 0 ? change : undefined });
-
-      setTimeout(() => {
-        setSuccessData({ visible: false });
-        usePosStore.getState().clearCart();
-        router.back();
-      }, 2000);
+      if (haptics && typeof haptics.txComplete === 'function') {
+        haptics.txComplete();
+      }
+      setStagedTxId(result.invoice_number);
+      setStagedCustomerName(result.customer_name);
+      setStagedAmount(result.grand_total);
+      setStagedVisible(true);
     } catch (err: any) {
       haptics.error();
       const msg = err?.response?.data?.message || err?.message || 'Transaction failed. Please try again.';
@@ -356,6 +361,17 @@ export default function POSSettlementScreen() {
       </SafeAreaView>
 
       <SuccessOverlay visible={successData.visible} invoiceNumber={successData.invoiceNumber} changeAmount={successData.changeAmount} />
+      <StagingOverlay
+        visible={stagedVisible}
+        transactionId={stagedTxId}
+        customerName={stagedCustomerName}
+        amount={stagedAmount}
+        onStageAnother={() => {
+          setStagedVisible(false);
+          usePosStore.getState().clearCart();
+          router.back();
+        }}
+      />
     </>
   );
 }

@@ -1,11 +1,29 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
 import { APP_VERSION_LABEL } from '../../constants/version';
 import { useAuth } from '../../contexts/AuthContext'; // <-- NEW: Import useAuth
+import api from '../../api'; // <-- Import api client
 
 const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
     const { user, hasPermission } = useAuth(); // <-- NEW: Use the auth context
+    const [pendingCount, setPendingCount] = useState(0);
+
+    // Fetch active pending staged transactions count
+    useEffect(() => {
+        const fetchPendingCount = async () => {
+            try {
+                const { data } = await api.get('/sales/staging?status=PENDING');
+                setPendingCount(data.length);
+            } catch (e) {
+                console.error('Failed to fetch pending staging count', e);
+            }
+        };
+
+        fetchPendingCount();
+        const interval = setInterval(fetchPendingCount, 10000); // refresh every 10 seconds
+        return () => clearInterval(interval);
+    }, []);
 
     const navItems = [
         { name: 'Dashboard', icon: ICONS.dashboard, page: 'dashboard', permission: 'dashboard:view' },
@@ -13,6 +31,7 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
         { name: 'Reporting', icon: ICONS.reporting, page: 'reporting', permission: 'reports:view' },
         { name: 'Power Search', icon: ICONS.power_search, page: 'power_search', permission: 'parts:view' }, // Assuming parts:view is sufficient
         { name: 'Invoicing', icon: ICONS.invoice, page: 'invoicing', permission: 'invoicing:create' },
+        { name: 'Approval Queue', icon: ICONS.ar, page: 'staged_sales', permission: 'invoicing:create' }, // <-- Added queue page
         { name: 'Documents', icon: ICONS.documents || ICONS.archive, page: 'documents', permission: 'documents:view' },
         { name: 'Cheques', icon: ICONS.receipt, page: 'cheques', permission: 'cheques:view' },
         { name: 'Sales History', icon: ICONS.history, page: 'sales_history', permission: 'invoicing:create' },
@@ -45,7 +64,14 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
                                 className={`flex items-center px-3 py-2.5 rounded-lg transition-colors duration-200 text-sm font-medium ${currentPage === item.page ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}
                             >
                                 <Icon path={item.icon} className="h-5 w-5" />
-                                <span className="ml-3">{item.name}</span>
+                                <span className="ml-3 flex-1 flex justify-between items-center">
+                                    <span>{item.name}</span>
+                                    {item.page === 'staged_sales' && pendingCount > 0 && (
+                                        <span className="bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse">
+                                            {pendingCount}
+                                        </span>
+                                    )}
+                                </span>
                             </a>
                         )
                     ))}
