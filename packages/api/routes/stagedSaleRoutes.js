@@ -111,7 +111,8 @@ router.get('/sales/staging/my-activity', protect, async (req, res) => {
                 COUNT(*) FILTER (WHERE status = 'PENDING') AS total_pending,
                 COUNT(*) FILTER (WHERE status = 'APPROVED') AS total_approved,
                 COUNT(*) FILTER (WHERE status = 'REJECTED') AS total_rejected,
-                COALESCE(SUM(total_amount) FILTER (WHERE status = 'APPROVED'), 0) AS total_revenue
+                COALESCE(SUM(total_amount) FILTER (WHERE status = 'APPROVED'), 0) AS total_revenue,
+                COALESCE(SUM(total_amount) FILTER (WHERE status = 'APPROVED' AND staged_date >= CURRENT_TIMESTAMP - INTERVAL '30 days'), 0) AS total_revenue_30d
             FROM staged_sale
             WHERE employee_id = $1;
         `;

@@ -210,7 +210,7 @@ export default function MyActivityScreen() {
   const pendingItems = items.filter(i => i.status === 'PENDING_MANAGER_REVIEW');
   const doneItems    = items.filter(i => i.status !== 'PENDING_MANAGER_REVIEW');
 
-  const stats = salesData?.stats ?? { total_pending: 0, total_approved: 0, total_rejected: 0, total_revenue: 0 };
+  const stats = salesData?.stats ?? { total_pending: 0, total_approved: 0, total_rejected: 0, total_revenue: 0, total_revenue_30d: 0 };
   const salesItems = salesData?.items ?? [];
 
   const handleTabPress = (key: Filter) => {
@@ -359,7 +359,7 @@ export default function MyActivityScreen() {
       currency: 'PHP',
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
-    }).format(stats.total_revenue);
+    }).format(stats.total_revenue_30d);
 
     return (
       <View style={styles.kpiGrid}>
@@ -386,11 +386,11 @@ export default function MyActivityScreen() {
         <View style={styles.kpiRow}>
           <View style={styles.kpiCard}>
             <View style={[styles.kpiIconBox, { backgroundColor: '#f0fdf4' }]}>
-              <Ionicons name="cart" size={18} color="#16a34a" />
+              <Ionicons name="checkmark-circle" size={18} color="#16a34a" />
             </View>
             <View>
-              <Text style={styles.kpiValue}>{stats.total_pending}</Text>
-              <Text style={styles.kpiLabel}>Sales Staged</Text>
+              <Text style={styles.kpiValue}>{stats.total_approved}</Text>
+              <Text style={styles.kpiLabel}>Transactions</Text>
             </View>
           </View>
           <View style={styles.kpiCard}>
@@ -399,7 +399,7 @@ export default function MyActivityScreen() {
             </View>
             <View>
               <Text style={styles.kpiValue}>{revenueFormatted}</Text>
-              <Text style={styles.kpiLabel}>Sales Revenue</Text>
+              <Text style={styles.kpiLabel}>Revenue (30d)</Text>
             </View>
           </View>
         </View>
