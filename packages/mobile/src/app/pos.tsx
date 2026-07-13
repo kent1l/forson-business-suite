@@ -382,7 +382,13 @@ export default function POSScreen() {
                       </TouchableOpacity>
 
                       <TouchableOpacity
-                        style={[styles.cartPill, isDark && styles.cartPillDark, { paddingHorizontal: 10 }]}
+                        style={[
+                          styles.cartPill,
+                          isDark && styles.cartPillDark,
+                          { paddingHorizontal: 10 },
+                          cart.length === 0 && { opacity: 0.4 }
+                        ]}
+                        disabled={cart.length === 0}
                         onPress={handleNewCart}
                         activeOpacity={0.72}
                       >
