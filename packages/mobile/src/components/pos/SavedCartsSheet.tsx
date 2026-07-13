@@ -164,20 +164,18 @@ export default function SavedCartsSheet({ visible, onClose }: Props) {
 
   return (
     <Modal visible={mounted} transparent statusBarTranslucent animationType="none" onRequestClose={close}>
-      {/* Animated backdrop */}
-      <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={close} />
-      </Animated.View>
-
-      {/* Sheet wrapper — sits at bottom with keyboard-avoidance */}
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        pointerEvents="box-none"
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={styles.anchor} pointerEvents="box-none">
-          <Animated.View style={[styles.sheet, { backgroundColor: bg }, sheetStyle]}>
-            <Pressable onPress={Keyboard.dismiss} style={styles.sheetContent}>
+        {/* Animated backdrop */}
+        <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={close} />
+        </Animated.View>
+
+        {/* Sheet */}
+        <Animated.View style={[styles.sheet, { backgroundColor: bg }, sheetStyle]}>
+          <Pressable onPress={Keyboard.dismiss} style={styles.sheetContent}>
 
             {/* Drag handle */}
             <View style={[styles.handle, { backgroundColor: handleBg }]} />
@@ -280,7 +278,6 @@ export default function SavedCartsSheet({ visible, onClose }: Props) {
 
             </Pressable>
           </Animated.View>
-        </View>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -343,10 +340,6 @@ const styles = StyleSheet.create({
 
   backdrop: {
     backgroundColor: 'rgba(0,0,0,0.55)',
-  },
-
-  anchor: {
-    width: '100%',
   },
 
   sheet: {
