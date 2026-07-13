@@ -172,11 +172,12 @@ export default function SavedCartsSheet({ visible, onClose }: Props) {
       {/* Sheet wrapper — sits at bottom with keyboard-avoidance */}
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         pointerEvents="box-none"
       >
         <View style={styles.anchor} pointerEvents="box-none">
           <Animated.View style={[styles.sheet, { backgroundColor: bg }, sheetStyle]}>
+            <Pressable onPress={Keyboard.dismiss} style={styles.sheetContent}>
 
             {/* Drag handle */}
             <View style={[styles.handle, { backgroundColor: handleBg }]} />
@@ -277,6 +278,7 @@ export default function SavedCartsSheet({ visible, onClose }: Props) {
               )}
             />
 
+            </Pressable>
           </Animated.View>
         </View>
       </KeyboardAvoidingView>
@@ -548,5 +550,8 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  sheetContent: {
+    width: '100%',
   },
 });
