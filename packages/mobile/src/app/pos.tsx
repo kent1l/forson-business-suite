@@ -153,6 +153,7 @@ export default function POSScreen() {
   const grandTotal = usePosStore((s: any) => s.grandTotal);
   const isPriceOverrideOpen = usePosStore((s: any) => s.isPriceOverrideOpen);
   const overrideItem = usePosStore((s: any) => s.overrideItem);
+  const savedCarts = usePosStore((s: any) => s.savedCarts);
 
   // ── Snackbar (undo remove) ─────────────────────────────────────────────────
   const [snackbar, setSnackbar] = useState<{ visible: boolean; item: any | null }>({ visible: false, item: null });
@@ -318,6 +319,11 @@ export default function POSScreen() {
                       Cart {cart.length > 0 ? `(${cart.length})` : ''}
                     </Text>
                     <Ionicons name="chevron-down" size={14} color={isDark ? '#9ca3af' : '#4b5563'} style={{ marginLeft: 4 }} />
+                    {savedCarts.length > 0 && (
+                      <View style={styles.pillBadge}>
+                        <Text style={styles.pillBadgeText}>{savedCarts.length}</Text>
+                      </View>
+                    )}
                   </TouchableOpacity>
                   <Text style={[styles.cartTotal, isDark && styles.cartTotalDark]}>
                     {formatPHP(grandTotal)}
@@ -465,6 +471,21 @@ const styles = StyleSheet.create({
   },
   cartPillTextDark: {
     color: '#f9fafb',
+  },
+  pillBadge: {
+    marginLeft: 6,
+    backgroundColor: '#10B981',
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  pillBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '800',
   },
   cartTotal: { fontSize: 16, fontWeight: '800', color: '#10B981' },
   cartTotalDark: { color: '#34d399' },

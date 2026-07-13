@@ -90,6 +90,7 @@ const usePosStore = create((set, get) => ({
     const { cart, savedCarts } = get();
     if (cart.length === 0) return;
 
+    const MAX_SAVED = 10;
     const newCart = {
       id: String(Date.now()),
       name: name || `Cart #${savedCarts.length + 1}`,
@@ -98,13 +99,13 @@ const usePosStore = create((set, get) => ({
       savedAt: new Date().toISOString(),
     };
 
-    const updated = [newCart, ...savedCarts];
+    const updated = [newCart, ...savedCarts].slice(0, MAX_SAVED);
     try {
       await SecureStore.setItemAsync('pos_saved_carts', JSON.stringify(updated));
+      set({ savedCarts: updated, cart: [], grandTotal: 0 });
     } catch (e) {
       console.error('Failed to save carts:', e);
     }
-    set({ savedCarts: updated, cart: [], grandTotal: 0 });
   },
 
   loadSavedCart: async (id) => {
@@ -115,14 +116,14 @@ const usePosStore = create((set, get) => ({
     const updated = savedCarts.filter(c => c.id !== id);
     try {
       await SecureStore.setItemAsync('pos_saved_carts', JSON.stringify(updated));
+      set({
+        cart: cartToLoad.items,
+        grandTotal: _calcTotal(cartToLoad.items),
+        savedCarts: updated,
+      });
     } catch (e) {
-      console.error('Failed to save carts:', e);
+      console.error('Failed to load cart:', e);
     }
-    set({
-      cart: cartToLoad.items,
-      grandTotal: _calcTotal(cartToLoad.items),
-      savedCarts: updated,
-    });
   },
 
   deleteSavedCart: async (id) => {
@@ -130,10 +131,10 @@ const usePosStore = create((set, get) => ({
     const updated = savedCarts.filter(c => c.id !== id);
     try {
       await SecureStore.setItemAsync('pos_saved_carts', JSON.stringify(updated));
+      set({ savedCarts: updated });
     } catch (e) {
-      console.error('Failed to save carts:', e);
+      console.error('Failed to delete cart:', e);
     }
-    set({ savedCarts: updated });
   },
 
   // ── Price override ────────────────────────────────────────────────────────
