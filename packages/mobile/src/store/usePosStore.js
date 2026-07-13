@@ -25,7 +25,11 @@ const usePosStore = create((set, get) => ({
             ? { ...i, quantity: i.quantity + qtyToAdd }
             : i,
         );
-        return { cart, grandTotal: _calcTotal(cart) };
+        return {
+          cart,
+          grandTotal: _calcTotal(cart),
+          savedCarts: _syncSavedCarts(state.savedCarts, state.activeSavedCartId, cart),
+        };
       }
       const isSparkPlug = /spark\s*plug/i.test(
         `${product.name || ''} ${product.detail || ''} ${product.display_name || ''}`,
@@ -43,14 +47,22 @@ const usePosStore = create((set, get) => ({
         is_tax_inclusive_price: product.is_tax_inclusive_price,
       };
       const cart = [...state.cart, item];
-      return { cart, grandTotal: _calcTotal(cart) };
+      return {
+        cart,
+        grandTotal: _calcTotal(cart),
+        savedCarts: _syncSavedCarts(state.savedCarts, state.activeSavedCartId, cart),
+      };
     });
   },
 
   removeFromCart: (partId) => {
     set((state) => {
       const cart = state.cart.filter((i) => i.part_id !== partId);
-      return { cart, grandTotal: _calcTotal(cart) };
+      return {
+        cart,
+        grandTotal: _calcTotal(cart),
+        savedCarts: _syncSavedCarts(state.savedCarts, state.activeSavedCartId, cart),
+      };
     });
   },
 
@@ -59,7 +71,11 @@ const usePosStore = create((set, get) => ({
       const cart = state.cart.map((i) =>
         i.part_id === partId ? { ...i, quantity: Math.max(1, qty) } : i,
       );
-      return { cart, grandTotal: _calcTotal(cart) };
+      return {
+        cart,
+        grandTotal: _calcTotal(cart),
+        savedCarts: _syncSavedCarts(state.savedCarts, state.activeSavedCartId, cart),
+      };
     });
   },
 
@@ -68,7 +84,11 @@ const usePosStore = create((set, get) => ({
       const cart = state.cart.map((i) =>
         i.part_id === partId ? { ...i, sale_price: newPrice } : i,
       );
-      return { cart, grandTotal: _calcTotal(cart) };
+      return {
+        cart,
+        grandTotal: _calcTotal(cart),
+        savedCarts: _syncSavedCarts(state.savedCarts, state.activeSavedCartId, cart),
+      };
     });
   },
 
@@ -218,9 +238,28 @@ const usePosStore = create((set, get) => ({
   },
 }));
 
-// ── Internal helper ───────────────────────────────────────────────────────────
+// ── Internal helpers ──────────────────────────────────────────────────────────
 function _calcTotal(cart) {
   return cart.reduce((sum, i) => sum + i.quantity * i.sale_price, 0);
+}
+
+function _syncSavedCarts(savedCarts, activeId, newCartItems) {
+  if (!activeId) return savedCarts;
+  const updated = savedCarts.map(c => {
+    if (c.id === activeId) {
+      return {
+        ...c,
+        items: newCartItems,
+        total: _calcTotal(newCartItems),
+        savedAt: new Date().toISOString(),
+      };
+    }
+    return c;
+  });
+  SecureStore.setItemAsync('pos_saved_carts', JSON.stringify(updated)).catch(e => {
+    console.error('Failed to sync saved carts:', e);
+  });
+  return updated;
 }
 
 export default usePosStore;

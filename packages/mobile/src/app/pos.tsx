@@ -258,8 +258,20 @@ export default function POSScreen() {
     }
   }, []);
 
+  const activeSavedCartId = usePosStore((s: any) => s.activeSavedCartId);
+  const isSavedCartActive = activeSavedCartId !== null;
+  const activeSavedCart = savedCarts.find((c: any) => c.id === activeSavedCartId);
+
   const bg = isDark ? '#111827' : '#f9fafb';
-  const cartBg = isDark ? '#1f2937' : '#fff';
+  const cartBg = isSavedCartActive
+    ? (isDark ? '#022c22' : '#f0fdf4') // Emerald/green tint
+    : (isDark ? '#1f2937' : '#fff');
+
+  const cartBorderColor = isSavedCartActive
+    ? '#10B981'
+    : (isDark ? '#374151' : '#e5e7eb');
+
+  const cartBorderWidth = isSavedCartActive ? 2.5 : 1;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -317,18 +329,32 @@ export default function POSScreen() {
           <Animated.View style={[
             styles.bottomArea,
             animCartStyle,
-            { backgroundColor: cartBg, borderTopColor: isDark ? '#374151' : '#e5e7eb', overflow: 'hidden' }
+            { 
+              backgroundColor: cartBg, 
+              borderTopColor: cartBorderColor, 
+              borderTopWidth: cartBorderWidth,
+              overflow: 'hidden' 
+            }
           ]}>
             <GestureDetector gesture={gesture}>
               <View style={styles.dragHandleContainer}>
                 <View style={[styles.dragHandle, isDark && styles.dragHandleDark]} />
                  <View style={styles.cartHeader}>
                   <TouchableOpacity
-                    style={[styles.cartPill, isDark && styles.cartPillDark]}
+                    style={[
+                      styles.cartPill,
+                      isDark && styles.cartPillDark,
+                      isSavedCartActive && {
+                        borderColor: '#10B981',
+                        borderWidth: 1.5,
+                        backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.08)',
+                      }
+                    ]}
                     onPress={handleOpenSavedCarts}
                   >
                     <Text style={[styles.cartPillText, isDark && styles.cartPillTextDark]}>
                       Cart {cart.length > 0 ? `(${cart.length})` : ''}
+                      {isSavedCartActive && activeSavedCart ? ` · ${activeSavedCart.name}` : ''}
                     </Text>
                     <Ionicons name="chevron-down" size={14} color={isDark ? '#9ca3af' : '#4b5563'} style={{ marginLeft: 4 }} />
                     {savedCarts.length > 0 && (

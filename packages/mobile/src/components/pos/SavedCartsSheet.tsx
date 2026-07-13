@@ -103,28 +103,10 @@ export default function SavedCartsSheet({ visible, onClose }: Props) {
   }, [cart.length, nameText, close]);
 
   const handleLoad = useCallback((id: string) => {
-    if (cart.length > 0) {
-      Alert.alert(
-        'Load Saved Cart',
-        'This will replace your current cart items. Continue?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Load Cart',
-            onPress: () => {
-              haptics.success?.();
-              usePosStore.getState().loadSavedCart(id);
-              close();
-            },
-          },
-        ],
-      );
-    } else {
-      haptics.success?.();
-      usePosStore.getState().loadSavedCart(id);
-      close();
-    }
-  }, [cart.length, close]);
+    haptics.success?.();
+    usePosStore.getState().loadSavedCart(id);
+    close();
+  }, [close]);
 
   const handleDelete = useCallback((id: string, name: string) => {
     haptics.error?.();
