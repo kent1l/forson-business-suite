@@ -363,11 +363,17 @@ export default function POSScreen() {
                         ]}
                         onPress={handleOpenSavedCarts}
                       >
+                        <Ionicons 
+                          name="cart" 
+                          size={16} 
+                          color={isSavedCartActive ? '#10B981' : (isDark ? '#9ca3af' : '#4b5563')} 
+                          style={{ marginRight: 2 }} 
+                        />
                         <Text style={[styles.cartPillText, isDark && styles.cartPillTextDark]}>
-                          Cart {cart.length > 0 ? `(${cart.length})` : ''}
+                          {cart.length > 0 ? `${cart.length}` : '0'}
                           {isSavedCartActive && activeSavedCart ? ` · ${activeSavedCart.name}` : ''}
                         </Text>
-                        <Ionicons name="chevron-down" size={14} color={isDark ? '#9ca3af' : '#4b5563'} style={{ marginLeft: 4 }} />
+                        <Ionicons name="chevron-down" size={13} color={isDark ? '#9ca3af' : '#4b5563'} style={{ marginLeft: 3 }} />
                         {savedCarts.length > 0 && (
                           <View style={styles.pillBadge}>
                             <Text style={styles.pillBadgeText}>{savedCarts.length}</Text>
@@ -376,14 +382,11 @@ export default function POSScreen() {
                       </TouchableOpacity>
 
                       <TouchableOpacity
-                        style={[styles.cartPill, isDark && styles.cartPillDark]}
+                        style={[styles.cartPill, isDark && styles.cartPillDark, { paddingHorizontal: 10 }]}
                         onPress={handleNewCart}
                         activeOpacity={0.72}
                       >
-                        <Ionicons name="add" size={15} color={isDark ? '#9ca3af' : '#4b5563'} />
-                        <Text style={[styles.cartPillText, isDark && styles.cartPillTextDark, { marginLeft: 2 }]}>
-                          New
-                        </Text>
+                        <Ionicons name="add" size={18} color={isDark ? '#9ca3af' : '#4b5563'} />
                       </TouchableOpacity>
                     </View>
                     <Text style={[styles.cartTotal, isDark && styles.cartTotalDark]}>
