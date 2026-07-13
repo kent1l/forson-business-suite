@@ -138,15 +138,15 @@ export default function DashboardScreen() {
           {/* Row 2 */}
           <View style={styles.gridRow}>
             <TouchableOpacity
-              style={[styles.gridCard, { borderLeftColor: '#3b82f6', borderLeftWidth: 4 }]}
-              onPress={() => router.push('/my-progress')}
+              style={[styles.gridCard, { borderLeftColor: '#8b5cf6', borderLeftWidth: 4 }]}
+              onPress={() => router.push('/my-activity')}
               activeOpacity={0.8}
             >
-              <View style={[styles.iconBox, { backgroundColor: '#dbeafe' }]}>
-                <Ionicons name="analytics" size={24} color="#3b82f6" />
+              <View style={[styles.iconBox, { backgroundColor: '#ede9fe' }]}>
+                <Ionicons name="stats-chart" size={24} color="#8b5cf6" />
               </View>
-              <Text style={styles.gridTitle}>My Progress</Text>
-              <Text style={styles.gridSubtitle}>History & Audits</Text>
+              <Text style={styles.gridTitle}>My Activity</Text>
+              <Text style={styles.gridSubtitle}>Counts & Sales</Text>
             </TouchableOpacity>
 
             <TouchableOpacity

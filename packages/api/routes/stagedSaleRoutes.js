@@ -101,6 +101,49 @@ router.get('/sales/staging', protect, async (req, res) => {
     }
 });
 
+// GET /sales/staging/my-activity - Per-employee sales stats and recent items (for mobile "My Activity" screen)
+router.get('/sales/staging/my-activity', protect, async (req, res) => {
+    const employeeId = req.user.employee_id;
+
+    try {
+        const statsQuery = `
+            SELECT
+                COUNT(*) FILTER (WHERE status = 'PENDING') AS total_pending,
+                COUNT(*) FILTER (WHERE status = 'APPROVED') AS total_approved,
+                COUNT(*) FILTER (WHERE status = 'REJECTED') AS total_rejected,
+                COALESCE(SUM(total_amount) FILTER (WHERE status = 'APPROVED'), 0) AS total_revenue
+            FROM staged_sale
+            WHERE employee_id = $1;
+        `;
+        const { rows: statsRows } = await db.query(statsQuery, [employeeId]);
+
+        const itemsQuery = `
+            SELECT
+                ss.staged_sale_id AS id,
+                ss.staged_date,
+                ss.total_amount,
+                ('₱' || TO_CHAR(ss.total_amount, 'FM999,999,999.00')) AS total_formatted,
+                ss.status,
+                ss.physical_receipt_no,
+                (c.first_name || ' ' || COALESCE(c.last_name, '')) AS customer_name
+            FROM staged_sale ss
+            JOIN customer c ON ss.customer_id = c.customer_id
+            WHERE ss.employee_id = $1
+            ORDER BY ss.staged_date DESC
+            LIMIT 50;
+        `;
+        const { rows: items } = await db.query(itemsQuery, [employeeId]);
+
+        res.json({
+            stats: statsRows[0],
+            items,
+        });
+    } catch (err) {
+        console.error('Error fetching my sales activity:', err.message);
+        res.status(500).json({ message: 'Server error retrieving sales activity.' });
+    }
+});
+
 // GET /sales/staging/:id - Inspect a single staged transaction
 router.get('/sales/staging/:id', protect, async (req, res) => {
     const { id } = req.params;
