@@ -246,6 +246,18 @@ export default function POSScreen() {
     );
   }, []);
 
+  const handleOpenSavedCarts = useCallback(() => {
+    haptics.tap?.();
+    if (isKeyboardVisible.current) {
+      Keyboard.dismiss();
+      setTimeout(() => {
+        setIsSavedCartsOpen(true);
+      }, 150);
+    } else {
+      setIsSavedCartsOpen(true);
+    }
+  }, []);
+
   const bg = isDark ? '#111827' : '#f9fafb';
   const cartBg = isDark ? '#1f2937' : '#fff';
 
@@ -313,7 +325,7 @@ export default function POSScreen() {
                  <View style={styles.cartHeader}>
                   <TouchableOpacity
                     style={[styles.cartPill, isDark && styles.cartPillDark]}
-                    onPress={() => { haptics.tap?.(); setIsSavedCartsOpen(true); }}
+                    onPress={handleOpenSavedCarts}
                   >
                     <Text style={[styles.cartPillText, isDark && styles.cartPillTextDark]}>
                       Cart {cart.length > 0 ? `(${cart.length})` : ''}
