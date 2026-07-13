@@ -286,7 +286,7 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
 
         // Add payment method and insert payment transaction
         const methodQuery = await client.query('SELECT * FROM payment_methods WHERE method_id = $1', [staged.payment_method_id]);
-        if (methodQuery.rows.length > 0) {
+        if (methodQuery.rows.length > 0 && total_amount > 0) {
             const method = methodQuery.rows[0];
             const methodConfig = typeof method.config === 'string' ? JSON.parse(method.config) : method.config;
             const settlementType = methodConfig.settlement_type || (method.type === 'cash' ? 'instant' : 'delayed');
