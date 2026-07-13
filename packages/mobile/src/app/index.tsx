@@ -16,6 +16,7 @@ import { useRouter } from 'expo-router';
 import apiClient from '../api/client';
 import useCycleCountStore from '../store/useCycleCountStore';
 import useAuthStore from '../store/useAuthStore';
+import { usePermission } from '../hooks/usePermission';
 import { Ionicons } from '@expo/vector-icons';
 
 const fetchAssignedTasks = async () => {
@@ -27,6 +28,7 @@ export default function DashboardScreen() {
   const router = useRouter();
   const { setActiveBatch } = useCycleCountStore();
   const { user, logout } = useAuthStore();
+  const { hasPermission } = usePermission();
 
   const { data: tasks, isLoading, error, refetch } = useQuery({
     queryKey: ['assignedTasks'],
@@ -110,44 +112,50 @@ export default function DashboardScreen() {
         <View style={styles.grid}>
           {/* Row 1 */}
           <View style={styles.gridRow}>
-            <TouchableOpacity
-              style={[styles.gridCard, { borderLeftColor: '#10B981', borderLeftWidth: 4 }]}
-              onPress={() => router.push('/pos')}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.iconBox, { backgroundColor: '#e6f4ea' }]}>
-                <Ionicons name="cart" size={24} color="#10B981" />
-              </View>
-              <Text style={styles.gridTitle}>Point of Sale</Text>
-              <Text style={styles.gridSubtitle}>Checkout & Invoices</Text>
-            </TouchableOpacity>
+            {hasPermission('pos:use') && (
+              <TouchableOpacity
+                style={[styles.gridCard, { borderLeftColor: '#10B981', borderLeftWidth: 4 }]}
+                onPress={() => router.push('/pos')}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.iconBox, { backgroundColor: '#e6f4ea' }]}>
+                  <Ionicons name="cart" size={24} color="#10B981" />
+                </View>
+                <Text style={styles.gridTitle}>Point of Sale</Text>
+                <Text style={styles.gridSubtitle}>Checkout & Invoices</Text>
+              </TouchableOpacity>
+            )}
 
-            <TouchableOpacity
-              style={[styles.gridCard, { borderLeftColor: '#f59e0b', borderLeftWidth: 4 }]}
-              onPress={() => router.push('/unassigned-search')}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.iconBox, { backgroundColor: '#fef3c7' }]}>
-                <Ionicons name="barcode" size={24} color="#f59e0b" />
-              </View>
-              <Text style={styles.gridTitle}>Log Unassigned</Text>
-              <Text style={styles.gridSubtitle}>Cycle Count Ad-hoc</Text>
-            </TouchableOpacity>
+            {hasPermission('cycle_count:execute') && (
+              <TouchableOpacity
+                style={[styles.gridCard, { borderLeftColor: '#f59e0b', borderLeftWidth: 4 }]}
+                onPress={() => router.push('/unassigned-search')}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.iconBox, { backgroundColor: '#fef3c7' }]}>
+                  <Ionicons name="barcode" size={24} color="#f59e0b" />
+                </View>
+                <Text style={styles.gridTitle}>Log Unassigned</Text>
+                <Text style={styles.gridSubtitle}>Cycle Count Ad-hoc</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Row 2 */}
           <View style={styles.gridRow}>
-            <TouchableOpacity
-              style={[styles.gridCard, { borderLeftColor: '#8b5cf6', borderLeftWidth: 4 }]}
-              onPress={() => router.push('/my-activity')}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.iconBox, { backgroundColor: '#ede9fe' }]}>
-                <Ionicons name="stats-chart" size={24} color="#8b5cf6" />
-              </View>
-              <Text style={styles.gridTitle}>My Activity</Text>
-              <Text style={styles.gridSubtitle}>Counts & Sales</Text>
-            </TouchableOpacity>
+            {(hasPermission('pos:use') || hasPermission('cycle_count:execute')) && (
+              <TouchableOpacity
+                style={[styles.gridCard, { borderLeftColor: '#8b5cf6', borderLeftWidth: 4 }]}
+                onPress={() => router.push('/my-activity')}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.iconBox, { backgroundColor: '#ede9fe' }]}>
+                  <Ionicons name="stats-chart" size={24} color="#8b5cf6" />
+                </View>
+                <Text style={styles.gridTitle}>My Activity</Text>
+                <Text style={styles.gridSubtitle}>Counts & Sales</Text>
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               style={[styles.gridCard, { borderLeftColor: '#6366f1', borderLeftWidth: 4 }]}

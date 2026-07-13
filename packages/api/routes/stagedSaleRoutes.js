@@ -9,7 +9,7 @@ const { calculateInvoiceTax, storeTaxBreakdown, validateTaxCalculation } = requi
 const router = express.Router();
 
 // POST /sales/staging - Stage a transaction from Mobile POS
-router.post('/sales/staging', protect, async (req, res) => {
+router.post('/sales/staging', protect, hasPermission('pos:use'), async (req, res) => {
     const { customer_id, employee_id, lines, tax_rate_id, payment_method_id, tendered_amount, physical_receipt_no } = req.body;
 
     if (!customer_id || !employee_id || !lines || !Array.isArray(lines) || lines.length === 0) {
@@ -65,7 +65,7 @@ router.post('/sales/staging', protect, async (req, res) => {
 });
 
 // GET /sales/staging - Query staged transactions by status
-router.get('/sales/staging', protect, async (req, res) => {
+router.get('/sales/staging', protect, hasPermission('pos:use'), async (req, res) => {
     const { status = 'PENDING' } = req.query;
 
     try {
@@ -102,7 +102,7 @@ router.get('/sales/staging', protect, async (req, res) => {
 });
 
 // GET /sales/staging/my-activity - Per-employee sales stats and recent items (for mobile "My Activity" screen)
-router.get('/sales/staging/my-activity', protect, async (req, res) => {
+router.get('/sales/staging/my-activity', protect, hasPermission('pos:use'), async (req, res) => {
     const employeeId = req.user.employee_id;
 
     try {
@@ -146,7 +146,7 @@ router.get('/sales/staging/my-activity', protect, async (req, res) => {
 });
 
 // GET /sales/staging/:id - Inspect a single staged transaction
-router.get('/sales/staging/:id', protect, async (req, res) => {
+router.get('/sales/staging/:id', protect, hasPermission('pos:use'), async (req, res) => {
     const { id } = req.params;
 
     try {
@@ -381,7 +381,7 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
 });
 
 // POST /sales/staging/:id/reject - Reject transaction
-router.post('/sales/staging/:id/reject', protect, async (req, res) => {
+router.post('/sales/staging/:id/reject', protect, hasPermission('pos:use'), async (req, res) => {
     const { id } = req.params;
     const { reason, notes } = req.body;
     const reviewerId = req.user.employee_id;

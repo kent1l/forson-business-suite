@@ -22,13 +22,22 @@ import StagingOverlay from '@/components/pos/StagingOverlay';
 import CustomerSearchModal from '@/components/pos/CustomerSearchModal';
 import { formatPHP } from '@/utils/currency';
 import * as haptics from '@/utils/haptics';
+import { usePermission } from '@/hooks/usePermission';
 
 export default function POSSettlementScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const router = useRouter();
+  const { hasPermission } = usePermission();
   const user = useAuthStore((s) => s.user);
   const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    if (!hasPermission('pos:use')) {
+      Alert.alert('Access Denied', 'You do not have permission to use the Point of Sale.');
+      router.back();
+    }
+  }, []);
 
   const cart = usePosStore((s: any) => s.cart);
   const grandTotal = usePosStore((s: any) => s.grandTotal);
@@ -106,7 +115,7 @@ export default function POSSettlementScreen() {
         const defaultRate = rates.find((r: any) => r.is_default) || null;
         setSelectedTaxRate(defaultRate);
       } catch (err) {
-        // Non-fatal — user can still proceed
+        console.warn('Failed to load settlement data:', err?.response?.data || err?.message);
       } finally {
         setLoadingData(false);
       }

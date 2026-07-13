@@ -31,11 +31,20 @@ import PriceOverrideSheet from '@/components/pos/PriceOverrideSheet';
 import SavedCartsSheet from '@/components/pos/SavedCartsSheet';
 import { formatPHP } from '@/utils/currency';
 import * as haptics from '@/utils/haptics';
+import { usePermission } from '@/hooks/usePermission';
 
 export default function POSScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const router = useRouter();
+  const { hasPermission } = usePermission();
+
+  useEffect(() => {
+    if (!hasPermission('pos:use')) {
+      Alert.alert('Access Denied', 'You do not have permission to use the Point of Sale.');
+      router.back();
+    }
+  }, []);
 
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();

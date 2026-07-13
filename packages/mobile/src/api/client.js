@@ -49,6 +49,9 @@ apiClient.interceptors.response.use(
       useAuthStore.getState().logout();
       console.warn('Session expired or unauthorized. Logging out.');
     }
+    if (error.response && error.response.status === 403) {
+      console.warn('Permission denied:', error.response?.data?.message);
+    }
     return Promise.reject(error);
   }
 );
