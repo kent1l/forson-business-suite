@@ -43,8 +43,9 @@ export default function SavedCartsSheet({ visible, onClose }: Props) {
   // keep the Modal mounted through the exit animation
   const [mounted, setMounted] = useState(visible);
 
-  const cart       = usePosStore((s: any) => s.cart);
-  const savedCarts = usePosStore((s: any) => s.savedCarts);
+  const cart              = usePosStore((s: any) => s.cart);
+  const savedCarts         = usePosStore((s: any) => s.savedCarts);
+  const activeSavedCartId = usePosStore((s: any) => s.activeSavedCartId);
 
   const progress = useSharedValue(0); // 0 = closed, 1 = open
   const inputRef = useRef<TextInput>(null);
@@ -53,9 +54,14 @@ export default function SavedCartsSheet({ visible, onClose }: Props) {
   useEffect(() => {
     if (visible) {
       setMounted(true);
-      setNameText('');
+      if (activeSavedCartId) {
+        const activeCartObj = savedCarts.find((c: any) => c.id === activeSavedCartId);
+        setNameText(activeCartObj ? activeCartObj.name : '');
+      } else {
+        setNameText('');
+      }
     }
-  }, [visible]);
+  }, [visible, activeSavedCartId, savedCarts]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -205,7 +211,9 @@ export default function SavedCartsSheet({ visible, onClose }: Props) {
               <View style={[styles.saveCard, { backgroundColor: surface, borderColor: border }]}>
                 <View style={styles.saveCardHeader}>
                   <Ionicons name="bookmark-outline" size={15} color="#10B981" />
-                  <Text style={[styles.saveCardTitle, { color: text }]}>Hold Current Cart</Text>
+                  <Text style={[styles.saveCardTitle, { color: text }]}>
+                    {activeSavedCartId ? 'Update Held Cart' : 'Hold Current Cart'}
+                  </Text>
                   <Text style={[styles.saveCardCount, { color: subtext }]}>
                     {cart.length} {cart.length === 1 ? 'item' : 'items'}
                   </Text>
@@ -228,7 +236,9 @@ export default function SavedCartsSheet({ visible, onClose }: Props) {
                     activeOpacity={0.8}
                   >
                     <Ionicons name="bookmark" size={15} color="#fff" />
-                    <Text style={styles.saveBtnText}>Hold</Text>
+                    <Text style={styles.saveBtnText}>
+                      {activeSavedCartId ? 'Update' : 'Hold'}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </View>

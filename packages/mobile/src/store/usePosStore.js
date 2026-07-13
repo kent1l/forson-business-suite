@@ -7,6 +7,7 @@ const usePosStore = create((set, get) => ({
   cart: [],
   grandTotal: 0,
   savedCarts: [],
+  activeSavedCartId: null,
 
   // ── UI state ──────────────────────────────────────────────────────────────
   isPriceOverrideOpen: false,
@@ -72,7 +73,7 @@ const usePosStore = create((set, get) => ({
   },
 
   clearCart: () => {
-    set({ cart: [], grandTotal: 0 });
+    set({ cart: [], grandTotal: 0, activeSavedCartId: null });
   },
 
   hydrateSavedCarts: async () => {
@@ -87,22 +88,45 @@ const usePosStore = create((set, get) => ({
   },
 
   saveCurrentCart: async (name) => {
-    const { cart, savedCarts } = get();
+    const { cart, savedCarts, activeSavedCartId } = get();
     if (cart.length === 0) return;
 
-    const MAX_SAVED = 10;
-    const newCart = {
-      id: String(Date.now()),
-      name: name || `Cart #${savedCarts.length + 1}`,
-      items: [...cart],
-      total: _calcTotal(cart),
-      savedAt: new Date().toISOString(),
-    };
+    let updated;
+    if (activeSavedCartId) {
+      // Update existing held cart
+      updated = savedCarts.map(c => {
+        if (c.id === activeSavedCartId) {
+          return {
+            ...c,
+            name: name || c.name, // retain original name if new name is blank
+            items: [...cart],
+            total: _calcTotal(cart),
+            savedAt: new Date().toISOString(),
+          };
+        }
+        return c;
+      });
+    } else {
+      // Create new held cart
+      const newCart = {
+        id: String(Date.now()),
+        name: name || `Cart #${savedCarts.length + 1}`,
+        items: [...cart],
+        total: _calcTotal(cart),
+        savedAt: new Date().toISOString(),
+      };
+      const MAX_SAVED = 10;
+      updated = [newCart, ...savedCarts].slice(0, MAX_SAVED);
+    }
 
-    const updated = [newCart, ...savedCarts].slice(0, MAX_SAVED);
     try {
       await SecureStore.setItemAsync('pos_saved_carts', JSON.stringify(updated));
-      set({ savedCarts: updated, cart: [], grandTotal: 0 });
+      set({
+        savedCarts: updated,
+        cart: [],
+        grandTotal: 0,
+        activeSavedCartId: null,
+      });
     } catch (e) {
       console.error('Failed to save carts:', e);
     }
@@ -113,25 +137,22 @@ const usePosStore = create((set, get) => ({
     const cartToLoad = savedCarts.find(c => c.id === id);
     if (!cartToLoad) return;
 
+    set({
+      cart: cartToLoad.items,
+      grandTotal: _calcTotal(cartToLoad.items),
+      activeSavedCartId: id,
+    });
+  },
+
+  deleteSavedCart: async (id) => {
+    const { savedCarts, activeSavedCartId } = get();
     const updated = savedCarts.filter(c => c.id !== id);
     try {
       await SecureStore.setItemAsync('pos_saved_carts', JSON.stringify(updated));
       set({
-        cart: cartToLoad.items,
-        grandTotal: _calcTotal(cartToLoad.items),
         savedCarts: updated,
+        activeSavedCartId: activeSavedCartId === id ? null : activeSavedCartId
       });
-    } catch (e) {
-      console.error('Failed to load cart:', e);
-    }
-  },
-
-  deleteSavedCart: async (id) => {
-    const { savedCarts } = get();
-    const updated = savedCarts.filter(c => c.id !== id);
-    try {
-      await SecureStore.setItemAsync('pos_saved_carts', JSON.stringify(updated));
-      set({ savedCarts: updated });
     } catch (e) {
       console.error('Failed to delete cart:', e);
     }
@@ -157,7 +178,7 @@ const usePosStore = create((set, get) => ({
 
   // ── Submit ────────────────────────────────────────────────────────────────
   submitInvoice: async (paymentData) => {
-    const { cart } = get();
+    const { cart, activeSavedCartId, savedCarts } = get();
     const lines = cart.map((item) => ({
       part_id: item.part_id,
       quantity: item.quantity,
@@ -176,6 +197,18 @@ const usePosStore = create((set, get) => ({
     };
 
     const { data } = await apiClient.post('/sales/staging', stagingPayload);
+
+    // If it was a loaded saved cart, delete it from the queue now that it's complete!
+    if (activeSavedCartId) {
+      const updated = savedCarts.filter(c => c.id !== activeSavedCartId);
+      try {
+        await SecureStore.setItemAsync('pos_saved_carts', JSON.stringify(updated));
+        set({ savedCarts: updated, activeSavedCartId: null });
+      } catch (e) {
+        console.error('Failed to update saved carts on complete:', e);
+      }
+    }
+
     return {
       staged_sale_id: data.staged_sale_id,
       invoice_number: data.staged_number,
