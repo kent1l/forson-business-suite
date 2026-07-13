@@ -258,6 +258,16 @@ export default function POSScreen() {
     }
   }, []);
 
+  const handleNewCart = useCallback(() => {
+    haptics.tap?.();
+    if (cart.length > 0) {
+      usePosStore.getState().saveCurrentCart('');
+      haptics.success?.();
+    } else {
+      usePosStore.getState().clearCart();
+    }
+  }, [cart.length]);
+
   const activeSavedCartId = usePosStore((s: any) => s.activeSavedCartId);
   const isSavedCartActive = activeSavedCartId !== null;
   const activeSavedCart = savedCarts.find((c: any) => c.id === activeSavedCartId);
@@ -339,34 +349,47 @@ export default function POSScreen() {
             <GestureDetector gesture={gesture}>
               <View style={styles.dragHandleContainer}>
                 <View style={[styles.dragHandle, isDark && styles.dragHandleDark]} />
-                 <View style={styles.cartHeader}>
-                  <TouchableOpacity
-                    style={[
-                      styles.cartPill,
-                      isDark && styles.cartPillDark,
-                      isSavedCartActive && {
-                        borderColor: '#10B981',
-                        borderWidth: 1.5,
-                        backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.08)',
-                      }
-                    ]}
-                    onPress={handleOpenSavedCarts}
-                  >
-                    <Text style={[styles.cartPillText, isDark && styles.cartPillTextDark]}>
-                      Cart {cart.length > 0 ? `(${cart.length})` : ''}
-                      {isSavedCartActive && activeSavedCart ? ` · ${activeSavedCart.name}` : ''}
+                  <View style={styles.cartHeader}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <TouchableOpacity
+                        style={[
+                          styles.cartPill,
+                          isDark && styles.cartPillDark,
+                          isSavedCartActive && {
+                            borderColor: '#10B981',
+                            borderWidth: 1.5,
+                            backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.08)',
+                          }
+                        ]}
+                        onPress={handleOpenSavedCarts}
+                      >
+                        <Text style={[styles.cartPillText, isDark && styles.cartPillTextDark]}>
+                          Cart {cart.length > 0 ? `(${cart.length})` : ''}
+                          {isSavedCartActive && activeSavedCart ? ` · ${activeSavedCart.name}` : ''}
+                        </Text>
+                        <Ionicons name="chevron-down" size={14} color={isDark ? '#9ca3af' : '#4b5563'} style={{ marginLeft: 4 }} />
+                        {savedCarts.length > 0 && (
+                          <View style={styles.pillBadge}>
+                            <Text style={styles.pillBadgeText}>{savedCarts.length}</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.cartPill, isDark && styles.cartPillDark]}
+                        onPress={handleNewCart}
+                        activeOpacity={0.72}
+                      >
+                        <Ionicons name="add" size={15} color={isDark ? '#9ca3af' : '#4b5563'} />
+                        <Text style={[styles.cartPillText, isDark && styles.cartPillTextDark, { marginLeft: 2 }]}>
+                          New
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={[styles.cartTotal, isDark && styles.cartTotalDark]}>
+                      {formatPHP(grandTotal)}
                     </Text>
-                    <Ionicons name="chevron-down" size={14} color={isDark ? '#9ca3af' : '#4b5563'} style={{ marginLeft: 4 }} />
-                    {savedCarts.length > 0 && (
-                      <View style={styles.pillBadge}>
-                        <Text style={styles.pillBadgeText}>{savedCarts.length}</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                  <Text style={[styles.cartTotal, isDark && styles.cartTotalDark]}>
-                    {formatPHP(grandTotal)}
-                  </Text>
-                </View>
+                  </View>
               </View>
             </GestureDetector>
 
