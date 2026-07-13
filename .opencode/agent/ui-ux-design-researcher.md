@@ -1,8 +1,10 @@
 ---
 description: Senior expert UI/UX design researcher for web and mobile.
 mode: subagent
-permission:
-  edit: "*/scratch/*"
+permissions:
+  edit:
+    allow:
+      - "*/scratch/*"
   bash: deny
 ---
 
