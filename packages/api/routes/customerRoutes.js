@@ -34,14 +34,22 @@ router.get('/customers', protect, hasPermission('customers:view'), async (req, r
     }
     try {
         if (!paginated) {
-            const { rows } = await db.query(`SELECT * FROM customer ${whereClause} ORDER BY first_name, last_name`);
+            const { rows } = await db.query(`
+                SELECT c.*, 
+                       COALESCE((SELECT SUM(i.total_amount - i.amount_paid) FROM invoice i WHERE i.customer_id = c.customer_id AND i.status IN ('Unpaid', 'Partially Paid')), 0) AS balance_due 
+                FROM customer c ${whereClause} 
+                ORDER BY c.first_name, c.last_name
+            `);
             return res.json(rows);
         }
 
         const countRes = await db.query(`SELECT COUNT(*)::int AS total FROM customer ${whereClause}`);
         const total = countRes.rows[0]?.total || 0;
         const { rows } = await db.query(
-            `SELECT * FROM customer ${whereClause} ORDER BY first_name, last_name LIMIT $1 OFFSET $2`,
+            `SELECT c.*, 
+                    COALESCE((SELECT SUM(i.total_amount - i.amount_paid) FROM invoice i WHERE i.customer_id = c.customer_id AND i.status IN ('Unpaid', 'Partially Paid')), 0) AS balance_due 
+             FROM customer c ${whereClause} 
+             ORDER BY c.first_name, c.last_name LIMIT $1 OFFSET $2`,
             [limit, offset]
         );
         res.json(paginatedResponse({ data: rows, page, pageSize, total }));
@@ -150,8 +158,8 @@ router.post('/customers', protect, hasPermission('customers:edit'), async (req, 
     try {
         await client.query('BEGIN');
         const { rows } = await client.query(
-            'INSERT INTO customer (first_name, last_name, company_name, phone, email, address, is_active) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-            [customerData.first_name, customerData.last_name, customerData.company_name, customerData.phone, emailOrNull, customerData.address, customerData.is_active]
+            'INSERT INTO customer (first_name, last_name, company_name, phone, email, address, is_active, credit_limit) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
+            [customerData.first_name, customerData.last_name, customerData.company_name, customerData.phone, emailOrNull, customerData.address, customerData.is_active, customerData.credit_limit !== undefined ? customerData.credit_limit : 5000.00]
         );
         const newCustomer = rows[0];
         await manageTags(client, tags, newCustomer.customer_id);
@@ -176,8 +184,8 @@ router.put('/customers/:id', protect, hasPermission('customers:edit'), async (re
     try {
         await client.query('BEGIN');
         const { rows } = await client.query(
-            'UPDATE customer SET first_name = $1, last_name = $2, company_name = $3, phone = $4, email = $5, address = $6, is_active = $7 WHERE customer_id = $8 RETURNING *',
-            [customerData.first_name, customerData.last_name, customerData.company_name, customerData.phone, emailOrNull, customerData.address, customerData.is_active, id]
+            'UPDATE customer SET first_name = $1, last_name = $2, company_name = $3, phone = $4, email = $5, address = $6, is_active = $7, credit_limit = $8 WHERE customer_id = $9 RETURNING *',
+            [customerData.first_name, customerData.last_name, customerData.company_name, customerData.phone, emailOrNull, customerData.address, customerData.is_active, customerData.credit_limit !== undefined ? customerData.credit_limit : 5000.00, id]
         );
         const updatedCustomer = rows[0];
         await manageTags(client, tags, updatedCustomer.customer_id);

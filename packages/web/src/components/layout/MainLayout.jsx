@@ -23,14 +23,15 @@ import DocumentsPage from '../../pages/DocumentsPage';
 import ChequePrintingPage from '../../pages/ChequePrintingPage';
 import CycleCountExecutionPage from '../../pages/CycleCountExecutionPage';
 import ManagerReviewDesk from '../cycleCount/ManagerReviewDesk';
+import CashierApprovalDesk from '../../pages/CashierApprovalDesk';
 
-const MainLayout = ({ user, onLogout, onNavigate, currentPage, posLines, setPosLines }) => {
+const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLines, setPosLines }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
 
     const renderPage = () => {
         switch (currentPage) {
             case 'dashboard': return <Dashboard onNavigate={onNavigate} />;
-            case 'pos': return <POSPage user={user} lines={posLines} setLines={setPosLines} />;
+            case 'pos': return <POSPage user={user} lines={posLines} setLines={setPosLines} onNavigate={onNavigate} pageState={currentPage === 'pos' ? pageState : null} />;
             case 'reporting': return <ReportingPage />;
             case 'power_search': return <PowerSearchPage />;
             case 'suppliers': return <SuppliersPage user={user} />;
@@ -40,12 +41,13 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, posLines, setPosL
             case 'customers': return <CustomersPage user={user} />;
             case 'goods_receipt': return <GoodsReceiptPage user={user} onNavigate={onNavigate} />;
             case 'goods_receipt_history': return <GoodsReceiptHistoryPage user={user} />;
-            case 'invoicing': return <InvoicingPage user={user} />;
+            case 'invoicing': return <InvoicingPage user={user} onNavigate={onNavigate} pageState={currentPage === 'invoicing' ? pageState : null} />;
             case 'sales_history': return <SalesHistoryPage />; // <-- Add case for new page
             case 'documents': return <DocumentsPage />;
             case 'cheques': return <ChequePrintingPage />;
             case 'purchase_orders': return <PurchaseOrderPage />;
             case 'ar': return <AccountsReceivablePage />;
+            case 'staged_sales': return <CashierApprovalDesk onNavigate={onNavigate} />;
             case 'inventory': return <InventoryPage user={user} />;
             case 'cycle_count': return <CycleCountExecutionPage />;
             case 'manager_audit': return <ManagerReviewDesk />;

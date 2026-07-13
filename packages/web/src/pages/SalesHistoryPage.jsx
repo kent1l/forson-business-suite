@@ -72,22 +72,28 @@ const SalesHistoryPage = () => {
         if (!Array.isArray(invoices) || invoices.length === 0) {
             return {
                 grossSales: 0,
-                netSales: 0,
                 refunds: 0,
+                netSales: 0,
+                vatCollected: 0,
+                arOutstanding: 0,
                 invoicesIssued: 0,
                 netActiveInvoices: 0,
                 avgNetInvoice: 0,
-                amountCollected: 0,
-                collectionRate: 0,
-                arOutstanding: 0,
                 topCustomer: '-',
                 topCustomerNet: 0,
                 topCustomerShare: 0,
                 refundRate: 0,
                 cashCollectedNet: 0,
                 nonCashCollected: 0,
+                expectedNetCashDrawer: 0,
                 cashMix: 0,
-                approxNetCashAfterRefunds: 0
+                cashInflow: 0,
+                changeReturned: 0,
+                refundsApprox: 0,
+                totalCollections: 0,
+                amountCollected: 0,
+                collectionRate: 0,
+                paymentMethodBreakdown: {}
             };
         }
 
@@ -96,104 +102,103 @@ const SalesHistoryPage = () => {
             return Number.isFinite(n) ? n : 0;
         };
 
-        // Exclude Cancelled invoices from revenue metrics if such status exists
         const active = invoices.filter(inv => inv.status !== 'Cancelled');
 
-        let grossSales = 0;
-        let refunds = 0;
-        let netSales = 0;
-        let amountCollected = 0;
+        let grossSalesExclTax = 0;
+        let taxTotal = 0;
+        let refundsExclTax = 0;
+        let refundTaxTotal = 0;
         let arOutstanding = 0;
+        let amountCollected = 0;
 
         const customerNetMap = {};
         let netActiveInvoices = 0;
 
         for (const inv of active) {
-            const total = currencySafeNumber(inv.total_amount);
-            const refundedAmt = currencySafeNumber(inv.refunded_amount);
-            // net_amount provided by backend (already clamped) fallback compute if missing
-            const net = currencySafeNumber(inv.net_amount !== undefined ? inv.net_amount : Math.max(total - refundedAmt, 0));
-            const collected = Math.min(currencySafeNumber(inv.amount_paid), net); // cap collection at net
-            // balance_due may be negative if overpaid; always clamp to >= 0
-            const balanceRaw = inv.balance_due !== undefined
-                ? currencySafeNumber(inv.balance_due)
-                : (net - collected);
-            const balance = Math.max(balanceRaw, 0);
+            // Financials (Tax Exclusive)
+            const grossLine = currencySafeNumber(inv.subtotal_ex_tax !== undefined ? inv.subtotal_ex_tax : inv.total_amount);
+            const vatLine = currencySafeNumber(inv.tax_total || 0);
+            const refundLine = currencySafeNumber(inv.refunded_amount_ex_tax !== undefined ? inv.refunded_amount_ex_tax : inv.refunded_amount);
+            const refundVatLine = currencySafeNumber(inv.refunded_tax_total || 0);
 
-            grossSales += total; // Formula: Sum of total_amount for all active invoices
-            refunds += refundedAmt; // Formula: Sum of refunded_amount for all active invoices
-            netSales += net; // Formula: Sum of net_amount (total - refunds, clamped >=0) for all active invoices
-            amountCollected += collected; // Formula: Sum of min(amount_paid, net) to cap at net value
-            arOutstanding += balance; // Formula: Sum of max(balance_due, 0) to prevent negative A/R
-            if (net > 0) netActiveInvoices += 1; // Count invoices with positive net for averaging
+            const net = Math.max(grossLine - refundLine, 0);
+
+            grossSalesExclTax += grossLine;
+            taxTotal += vatLine;
+            refundsExclTax += refundLine;
+            refundTaxTotal += refundVatLine;
+
+            // Receivables (Tax Inclusive)
+            const netInclusive = currencySafeNumber(inv.net_amount !== undefined ? inv.net_amount : Math.max(currencySafeNumber(inv.total_amount) - currencySafeNumber(inv.refunded_amount), 0));
+            const collected = Math.min(currencySafeNumber(inv.amount_paid), netInclusive);
+            const balanceRaw = inv.balance_due !== undefined ? currencySafeNumber(inv.balance_due) : (netInclusive - collected);
+            
+            arOutstanding += Math.max(balanceRaw, 0);
+            amountCollected += collected;
+
+            if (net > 0) netActiveInvoices += 1;
 
             const customerName = `${inv.customer_first_name || ''} ${inv.customer_last_name || ''}`.trim() || 'Unknown';
-            customerNetMap[customerName] = (customerNetMap[customerName] || 0) + net; // Track net sales per customer
+            customerNetMap[customerName] = (customerNetMap[customerName] || 0) + net;
         }
 
-        const invoicesIssued = active.length; // Formula: Total count of active invoices
-        const avgNetInvoice = netActiveInvoices > 0 ? netSales / netActiveInvoices : 0; // Formula: Net Sales / Net Active Invoices (average net per invoice)
-        const collectionRate = netSales > 0 ? Math.min(amountCollected / netSales, 1) : 0; // Formula: Amount Collected / Net Sales (capped at 100%)
-        const refundRate = grossSales > 0 ? Math.min(refunds / grossSales, 1) : 0; // Formula: Refunds / Gross Sales (capped at 100%)
+        const invoicesIssued = active.length;
+        const avgNetInvoice = netActiveInvoices > 0 ? (grossSalesExclTax - refundsExclTax) / netActiveInvoices : 0;
+        const refundRate = grossSalesExclTax > 0 ? Math.min(refundsExclTax / grossSalesExclTax, 1) : 0;
 
-        // Determine top customer by net contribution
         let topCustomer = '-';
         let topCustomerNet = 0;
         for (const [cust, val] of Object.entries(customerNetMap)) {
             if (val > topCustomerNet) { topCustomer = cust; topCustomerNet = val; }
         }
-        const topCustomerShare = netSales > 0 ? topCustomerNet / netSales : 0; // Formula: Top Customer Net / Net Sales
+        const topCustomerShare = (grossSalesExclTax - refundsExclTax) > 0 ? topCustomerNet / (grossSalesExclTax - refundsExclTax) : 0;
 
-        // Enhanced payment method categorization using configurable payment methods
         const getCashMethodNames = () => {
             if (settings?.ENABLE_SPLIT_PAYMENTS === 'true' && paymentMethods.length > 0) {
-                // Use payment method configurations to determine cash methods
                 return paymentMethods
                     .filter(pm => pm.enabled && pm.type === 'cash')
                     .map(pm => pm.name.toLowerCase());
             } else {
-                // Fallback to legacy hardcoded cash methods
                 return ['cash'];
             }
         };
 
         const cashMethodNames = getCashMethodNames();
-
-        // Treat deleted invoices as non-existent: skip payments that were created by an invoice that no longer exists.
-        // Heuristic:
-        // - Payments created during invoice posting use reference_number = invoice_number (e.g., INV000123)
-        // - If a payment's reference_number looks like an invoice number and is NOT present in current invoices,
-        //   we exclude it from cash/non-cash aggregates.
         const currentInvoiceNumbers = new Set(active.map(inv => inv.invoice_number));
 
         let cashCollected = 0; let nonCashCollected = 0; let changeReturned = 0;
         for (const p of payments) {
+            if (p.payment_status && p.payment_status !== 'settled') {
+                continue;
+            }
             const ref = (p.reference || '').toString().trim();
             const looksLikeInvoiceNo = /^INV/i.test(ref);
             if (looksLikeInvoiceNo && !currentInvoiceNumbers.has(ref)) {
-                // This is likely the initial payment for a deleted invoice — ignore it.
                 continue;
             }
             const amt = currencySafeNumber(p.amount);
             const tendered = currencySafeNumber(p.tendered_amount) || amt;
-            const change = tendered > amt ? (tendered - amt) : 0; // Formula: Change = tendered - amount if tendered > amount
+            const change = tendered > amt ? (tendered - amt) : 0;
             const method = (p.payment_method || '').toString().trim().toLowerCase();
             if (cashMethodNames.includes(method)) {
-                cashCollected += tendered; // Sum tendered amounts for cash payments
-                changeReturned += change; // Sum change returned for cash
+                cashCollected += tendered;
+                changeReturned += change;
             } else {
-                nonCashCollected += amt; // Sum non-cash payments
+                nonCashCollected += amt;
             }
         }
-        const cashCollectedNet = Math.max(cashCollected - changeReturned, 0); // Formula: Cash Tendered - Change Returned (clamped >=0)
-        const totalCollectedForMix = cashCollected + nonCashCollected; // Total collected for mix calculation
-        const cashMix = totalCollectedForMix > 0 ? cashCollected / totalCollectedForMix : 0; // Formula: Cash Collected / Total Collected
 
-        const approxNetCashAfterRefunds = Math.max(cashCollectedNet - refundsApprox, 0); // Formula: Cash Net - Approximate Refunds (clamped >=0)
+        const cashCollectedNet = Math.max(cashCollected - changeReturned, 0);
+        const totalCollectedNet = cashCollectedNet + nonCashCollected;
+        const cashMix = totalCollectedNet > 0 ? cashCollectedNet / totalCollectedNet : 0;
 
-        // Enhanced payment method breakdown for detailed analysis
+        const expectedNetCashDrawer = Math.max(cashCollectedNet - refundsApprox, 0);
+
         const paymentMethodBreakdown = {};
         for (const p of payments) {
+            if (p.payment_status && p.payment_status !== 'settled') {
+                continue;
+            }
             const ref = (p.reference || '').toString().trim();
             const looksLikeInvoiceNo = /^INV/i.test(ref);
             if (looksLikeInvoiceNo && !currentInvoiceNumbers.has(ref)) {
@@ -214,23 +219,28 @@ const SalesHistoryPage = () => {
         }
 
         return {
-            grossSales,
-            netSales,
-            refunds,
+            grossSales: grossSalesExclTax,
+            refunds: refundsExclTax,
+            netSales: grossSalesExclTax - refundsExclTax,
+            vatCollected: Math.max(taxTotal - refundTaxTotal, 0),
+            arOutstanding,
             invoicesIssued,
             netActiveInvoices,
             avgNetInvoice,
-            amountCollected,
-            collectionRate,
-            arOutstanding,
             topCustomer,
             topCustomerNet,
             topCustomerShare,
             refundRate,
             cashCollectedNet,
             nonCashCollected,
+            expectedNetCashDrawer,
             cashMix,
-            approxNetCashAfterRefunds,
+            cashInflow: cashCollected,
+            changeReturned,
+            refundsApprox,
+            totalCollections: totalCollectedNet,
+            amountCollected,
+            collectionRate: (grossSalesExclTax - refundsExclTax) > 0 ? Math.min(amountCollected / (grossSalesExclTax - refundsExclTax + taxTotal - refundTaxTotal), 1) : 0,
             paymentMethodBreakdown
         };
     }, [invoices, payments, refundsApprox, paymentMethods, settings?.ENABLE_SPLIT_PAYMENTS]);
@@ -492,23 +502,23 @@ const SalesHistoryPage = () => {
                 </div>
                 {/* Compact view shows when collapsed */}
                 <div className={`mt-3 grid grid-cols-2 sm:grid-cols-5 gap-3 items-stretch ${summaryCollapsed ? '' : 'hidden'}`}>
-                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Net Sales = Gross - Refunds (excludes Cancelled)">
-                        <div className="text-[11px] text-gray-500">Net Sales</div>
+                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Net Sales = Gross - Refunds (excluding VAT, excludes Cancelled)">
+                        <div className="text-[11px] text-gray-500">Net Sales (Excl. VAT)</div>
                         <div className="text-sm font-semibold text-gray-800 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.netSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
-                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Amount Collected (capped at Net)">
-                        <div className="text-[11px] text-gray-500">Collected</div>
+                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Amount Collected (including VAT, capped at net invoice amount)">
+                        <div className="text-[11px] text-gray-500">Collected (Incl. VAT)</div>
                         <div className="text-sm font-semibold text-green-600 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.amountCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
-                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Approx Net Cash = Cash Net - Credit Notes (assumes all refunds were cash)">
-                        <div className="text-[11px] text-gray-500">Approx Net Cash (After Refunds)</div>
-                        <div className="text-sm font-semibold text-gray-800 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.approxNetCashAfterRefunds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Expected Register Cash = Cash Net (Tendered - Change) - Cash Refunds (Approx.)">
+                        <div className="text-[11px] text-gray-500">Expected Net Cash (Drawer)</div>
+                        <div className="text-sm font-semibold text-gray-800 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.expectedNetCashDrawer.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
-                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Collection Rate = Collected / Net Sales">
+                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Collection Rate = Collected / Total Net Invoiced (including VAT)">
                         <div className="text-[11px] text-gray-500">Collection Rate</div>
                         <div className="text-sm font-semibold text-gray-800">{(stats.collectionRate * 100).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%</div>
                     </div>
-                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Outstanding A/R = Sum of balances due">
+                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Outstanding A/R = Sum of unpaid balances due (including VAT)">
                         <div className="text-[11px] text-gray-500">A/R Outstanding</div>
                         <div className="text-sm font-semibold text-red-600 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.arOutstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
@@ -526,17 +536,54 @@ const SalesHistoryPage = () => {
                             // Build an array of card descriptors so we can stagger animations
                             [
                                 {
-                                    key: 'revenueGroup',
-                                    className: 'bg-gradient-to-br from-white to-gray-50 md:col-span-2',
+                                    key: 'operationalReconciliation',
+                                    className: 'bg-gradient-to-br from-white to-blue-50/30 md:col-span-2',
                                     content: (
                                         <>
                                             <div className="text-sm text-gray-500 flex items-center justify-between">
-                                                <span>Revenue</span>
-                                                <span className="text-[10px] uppercase tracking-wide text-gray-400">Gross / Refunds / Net</span>
+                                                <span className="font-medium text-blue-700 text-xs uppercase tracking-wider">Operational Cash Flow (Tax-Inclusive)</span>
+                                                <span className="text-[10px] uppercase tracking-wide text-gray-400">Drawer Count</span>
+                                            </div>
+                                            <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-3">
+                                                <div>
+                                                    <div className="text-xs text-gray-500">Expected Net Cash (Drawer)</div>
+                                                    <div className="font-semibold text-gray-800 text-base">
+                                                        {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.expectedNetCashDrawer.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-xs text-gray-500">Non-Cash Collections</div>
+                                                    <div className="font-semibold text-gray-800 text-base">
+                                                        {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.nonCashCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-[11px] text-gray-400">Tendered: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.cashInflow.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                                                    <div className="text-[11px] text-gray-400">Change: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.changeReturned.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-[11px] text-gray-400">Refunds Out: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.refundsApprox.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                                                    <div className="text-[11px] text-gray-400">Cash Mix: {(stats.cashMix * 100).toFixed(1)}%</div>
+                                                </div>
+                                            </div>
+                                            <div className="text-[10px] text-gray-400 mt-2">
+                                                Reconcile Expected Net Cash (Drawer) with physical till count.
+                                            </div>
+                                        </>
+                                    )
+                                },
+                                {
+                                    key: 'financialRevenue',
+                                    className: 'bg-gradient-to-br from-white to-green-50/20 md:col-span-2',
+                                    content: (
+                                        <>
+                                            <div className="text-sm text-gray-500 flex items-center justify-between">
+                                                <span className="font-medium text-green-700 text-xs uppercase tracking-wider">Accrual & Revenue Statistics (Excl. VAT)</span>
+                                                <span className="text-[10px] uppercase tracking-wide text-gray-400">Financial Reporting</span>
                                             </div>
                                             <div className="mt-2 grid grid-cols-3 gap-3 text-center">
                                                 <div>
-                                                    <div className="text-xs text-gray-500">Gross</div>
+                                                    <div className="text-xs text-gray-500">Gross Sales</div>
                                                     <div className="font-semibold text-gray-800 text-sm">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.grossSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                                                 </div>
                                                 <div>
@@ -544,12 +591,12 @@ const SalesHistoryPage = () => {
                                                     <div className="font-semibold text-yellow-600 text-sm">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.refunds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                                                 </div>
                                                 <div>
-                                                    <div className="text-xs text-gray-500">Net</div>
+                                                    <div className="text-xs text-gray-500">Net Sales</div>
                                                     <div className="font-semibold text-green-600 text-sm">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.netSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                                                 </div>
                                             </div>
                                             <div className="text-[11px] text-gray-500 mt-2 flex justify-between">
-                                                <span>Refund Rate {(stats.refundRate * 100).toLocaleString(undefined,{maximumFractionDigits:1})}%</span>
+                                                <span>Net VAT Collected: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.vatCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                                 <span>Range {dates.startDate} → {dates.endDate}</span>
                                             </div>
                                         </>
@@ -575,9 +622,8 @@ const SalesHistoryPage = () => {
                                         </>
                                     )
                                 },
-                                // Composite card: Top Customer | Collections | Net Active Invoices — aligned in one row
                                 {
-                                    key: 'top-collection-netactive',
+                                    key: 'top-customer-outstanding',
                                     className: 'md:col-span-2',
                                     content: (
                                         <>
@@ -585,20 +631,20 @@ const SalesHistoryPage = () => {
                                             <div className="mt-2 grid grid-cols-3 gap-3">
                                                 <div className="text-center">
                                                     <div className="text-xs text-gray-500">Top Customer</div>
-                                                    <div className="mt-1 text-lg font-semibold text-gray-800 truncate">{stats.topCustomer}</div>
-                                                    <div className="text-[11px] text-gray-500 mt-1">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.topCustomerNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({(stats.topCustomerShare*100).toLocaleString(undefined,{maximumFractionDigits:1})}%)</div>
+                                                    <div className="mt-1 text-sm font-semibold text-gray-800 truncate" title={stats.topCustomer}>{stats.topCustomer}</div>
+                                                    <div className="text-[10px] text-gray-500 mt-0.5">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.topCustomerNet.toLocaleString(undefined, { maximumFractionDigits: 2 })} ({(stats.topCustomerShare*100).toLocaleString(undefined,{maximumFractionDigits:1})}%)</div>
                                                 </div>
 
                                                 <div className="text-center">
-                                                    <div className="text-xs text-gray-500">Collections</div>
-                                                    <div className="mt-1 text-lg font-semibold text-green-600">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.amountCollected.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-                                                    <div className="text-[11px] text-gray-500 mt-1">A/R {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.arOutstanding.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} • {(stats.collectionRate*100).toLocaleString(undefined,{maximumFractionDigits:1})}%</div>
+                                                    <div className="text-xs text-gray-500">Total Collections</div>
+                                                    <div className="mt-1 text-sm font-semibold text-green-600">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.totalCollections.toLocaleString(undefined,{maximumFractionDigits:2})}</div>
+                                                    <div className="text-[10px] text-gray-500 mt-0.5">Rate: {(stats.collectionRate*100).toLocaleString(undefined,{maximumFractionDigits:1})}%</div>
                                                 </div>
 
                                                 <div className="text-center">
-                                                    <div className="text-xs text-gray-500">Net Active Invoices</div>
-                                                    <div className="mt-1 text-lg font-semibold text-gray-800">{stats.netActiveInvoices}</div>
-                                                    <div className="text-[11px] text-gray-500 mt-1">Avg {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.avgNetInvoice.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+                                                    <div className="text-xs text-gray-500">Outstanding A/R</div>
+                                                    <div className="mt-1 text-sm font-semibold text-red-600">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.arOutstanding.toLocaleString(undefined,{maximumFractionDigits:2})}</div>
+                                                    <div className="text-[10px] text-gray-500 mt-0.5">Active Invoices: {stats.netActiveInvoices}</div>
                                                 </div>
                                             </div>
                                         </>
@@ -688,6 +734,8 @@ const SalesHistoryPage = () => {
                                     <SortableHeader column="invoice_number" sortConfig={sortConfig} onSort={handleSort}>Invoice #</SortableHeader>
                                     <SortableHeader column="physical_receipt_no" sortConfig={sortConfig} onSort={handleSort}>Physical Receipt No.</SortableHeader>
                                     <SortableHeader column="invoice_date" sortConfig={sortConfig} onSort={handleSort}>Date</SortableHeader>
+                                    <th className="p-3 text-sm font-semibold text-gray-700">Issuer</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-700">Approved By</th>
                                     <SortableHeader column="customer" sortConfig={sortConfig} onSort={handleSort}>Customer</SortableHeader>
                                     <SortableHeader column="status" sortConfig={sortConfig} onSort={handleSort}>Status</SortableHeader>
                                     <SortableHeader column="total_amount" sortConfig={sortConfig} onSort={handleSort}>
@@ -705,6 +753,8 @@ const SalesHistoryPage = () => {
                                         <td className="p-3 text-sm font-mono">{invoice.invoice_number}</td>
                                         <td className="p-3 text-sm font-mono text-gray-700">{invoice.physical_receipt_no || '-'}</td>
                                         <td className="p-3 text-sm">{format(toZonedTime(parseISO(invoice.invoice_date), 'Asia/Manila'), 'MM/dd/yyyy')}</td>
+                                        <td className="p-3 text-sm">{invoice.employee_first_name} {invoice.employee_last_name}</td>
+                                        <td className="p-3 text-sm">{invoice.approved_by_name || 'System Auto-Approved'}</td>
                                         <td className="p-3 text-sm">{invoice.customer_first_name} {invoice.customer_last_name}</td>
                                         <td className="p-3 text-sm">
                                             <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(invoice.status)}`}>

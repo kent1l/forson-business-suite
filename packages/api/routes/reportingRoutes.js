@@ -33,11 +33,13 @@ router.get('/reports/sales-summary', protect, hasPermission('reports:view'), asy
         
         const summaryQuery = `
             SELECT
-                (SELECT COALESCE(SUM(total_amount), 0) FROM invoice WHERE (invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2) AS gross_sales,
-                (SELECT COALESCE(SUM(total_amount), 0) FROM credit_note WHERE (refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2) AS total_refunds,
-                (SELECT COALESCE(SUM(il.quantity * il.cost_at_sale), 0) FROM invoice_line il JOIN invoice i ON il.invoice_id = i.invoice_id WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2) AS total_cost_of_goods_sold,
+                (SELECT COALESCE(SUM(subtotal_ex_tax), 0) FROM invoice WHERE (invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND status != 'Cancelled') AS gross_sales,
+                (SELECT COALESCE(SUM(subtotal_ex_tax), 0) FROM credit_note WHERE (refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2) AS total_refunds,
+                (SELECT COALESCE(SUM(tax_total), 0) FROM invoice WHERE (invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND status != 'Cancelled') AS gross_vat,
+                (SELECT COALESCE(SUM(tax_total), 0) FROM credit_note WHERE (refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2) AS total_refund_vat,
+                (SELECT COALESCE(SUM(il.quantity * il.cost_at_sale), 0) FROM invoice_line il JOIN invoice i ON il.invoice_id = i.invoice_id WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND i.status != 'Cancelled') AS total_cost_of_goods_sold,
                 (SELECT COALESCE(SUM(cnl.quantity * p.wac_cost), 0) FROM credit_note_line cnl JOIN part p ON cnl.part_id = p.part_id JOIN credit_note cn ON cnl.cn_id = cn.cn_id WHERE (cn.refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2) AS total_cost_of_goods_returned,
-                (SELECT COUNT(*) FROM invoice WHERE (invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2) AS total_invoices
+                (SELECT COUNT(*) FROM invoice WHERE (invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND status != 'Cancelled') AS total_invoices
         `;
 
         const summaryPromise = client.query(summaryQuery, [startDate, endDate]);
@@ -62,11 +64,21 @@ router.get('/reports/sales-summary', protect, hasPermission('reports:view'), asy
         const details = detailsRes.rows;
         
         const summaryData = summaryRes.rows[0];
-        const netSales = parseFloat(summaryData.gross_sales) - parseFloat(summaryData.total_refunds);
+        const grossSales = parseFloat(summaryData.gross_sales);
+        const totalRefunds = parseFloat(summaryData.total_refunds);
+        const netSales = grossSales - totalRefunds;
+        
+        const grossVat = parseFloat(summaryData.gross_vat);
+        const refundVat = parseFloat(summaryData.total_refund_vat);
+        const netVatCollected = grossVat - refundVat;
+
         const netCost = parseFloat(summaryData.total_cost_of_goods_sold) - parseFloat(summaryData.total_cost_of_goods_returned);
         
         const summary = { 
-            totalSales: netSales, 
+            grossSales,
+            totalRefunds,
+            totalSales: netSales,
+            vatCollected: netVatCollected,
             totalCost: netCost, 
             profit: netSales - netCost, 
             totalInvoices: parseInt(summaryData.total_invoices, 10) 
@@ -440,7 +452,7 @@ router.get('/reports/profitability-by-product', protect, hasPermission('reports:
     const { paginated, page, pageSize, limit, offset } = parsePaginationQuery(req.query);
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
     
-    let whereClauses = ["(i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2"];
+    let whereClauses = ["(i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2", "i.status != 'Cancelled'"];
     let queryParams = [startDate, endDate];
 
     if (brandId) {
@@ -462,9 +474,9 @@ router.get('/reports/profitability-by-product', protect, hasPermission('reports:
                 (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
                 (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers,
                 SUM(il.quantity) AS total_quantity_sold,
-                SUM(il.quantity * il.sale_price) AS total_revenue,
+                SUM(il.tax_base) AS total_revenue,
                 SUM(il.quantity * il.cost_at_sale) AS total_cost, -- UPDATED: Use cost_at_sale
-                SUM(il.quantity * il.sale_price) - SUM(il.quantity * il.cost_at_sale) AS total_profit -- UPDATED: Use cost_at_sale
+                SUM(il.tax_base) - SUM(il.quantity * il.cost_at_sale) AS total_profit -- UPDATED: Use cost_at_sale
             FROM invoice_line il
             JOIN part p ON il.part_id = p.part_id
             JOIN invoice i ON il.invoice_id = i.invoice_id

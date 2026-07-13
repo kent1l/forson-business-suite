@@ -30,7 +30,7 @@ router.get('/payment-methods', protect, async (req, res) => {
     try {
         const { rows } = await db.query(`
             SELECT 
-                method_id, code, name, type, enabled, sort_order, config,
+                method_id, code, name, type, enabled, sort_order, settlement_type, config,
                 created_at, created_by, updated_at, updated_by
             FROM payment_methods 
             ORDER BY sort_order ASC, name ASC
@@ -58,7 +58,7 @@ router.get('/payment-methods/enabled', protect, async (req, res) => {
     try {
         const { rows } = await db.query(`
             SELECT 
-                method_id, code, name, type, enabled, sort_order, config
+                method_id, code, name, type, enabled, sort_order, settlement_type, config
             FROM payment_methods 
             WHERE enabled = true
             ORDER BY sort_order ASC, name ASC
@@ -110,10 +110,10 @@ router.post('/payment-methods', protect, hasPermission('settings:edit'), async (
 
     try {
         const { rows } = await db.query(`
-            INSERT INTO payment_methods (code, name, type, enabled, sort_order, config, created_by, updated_by)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
-            RETURNING method_id, code, name, type, enabled, sort_order, config, created_at
-        `, [code, name, type, enabled, sort_order, JSON.stringify(finalConfig), employee_id]);
+            INSERT INTO payment_methods (code, name, type, enabled, sort_order, settlement_type, config, created_by, updated_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
+            RETURNING method_id, code, name, type, enabled, sort_order, settlement_type, config, created_at
+        `, [code, name, type, enabled, sort_order, finalConfig.settlement_type, JSON.stringify(finalConfig), employee_id]);
 
         // Process the returned data to extract settlement_type
         const processedRow = {
@@ -185,10 +185,10 @@ router.put('/payment-methods/:id', protect, async (req, res) => {
         const { rows } = await client.query(`
             UPDATE payment_methods
             SET code = $1, name = $2, type = $3, enabled = $4, sort_order = $5,
-                config = $6, updated_at = CURRENT_TIMESTAMP, updated_by = $7
-            WHERE method_id = $8
-            RETURNING method_id, code, name, type, enabled, sort_order, config, updated_at
-        `, [code, name, type, enabled, sort_order, JSON.stringify(config), employee_id, id]);
+                settlement_type = $6, config = $7, updated_at = CURRENT_TIMESTAMP, updated_by = $8
+            WHERE method_id = $9
+            RETURNING method_id, code, name, type, enabled, sort_order, settlement_type, config, updated_at
+        `, [code, name, type, enabled, sort_order, config.settlement_type, JSON.stringify(config), employee_id, id]);
 
         await client.query('COMMIT');
         
@@ -436,7 +436,9 @@ router.post('/invoices/:id/payments', ...invoicePaymentsMiddlewares, async (req,
                 return res.status(400).json({ message: `Invalid payment method: ${method_id}` });
             }
 
-            methodConfig = method.rows[0].config;
+            methodConfig = typeof method.rows[0].config === 'string' 
+                ? JSON.parse(method.rows[0].config) 
+                : method.rows[0].config;
 
             // Validate required reference
             if (methodConfig.requires_reference && (!reference || reference.trim() === '')) {
@@ -472,7 +474,8 @@ router.post('/invoices/:id/payments', ...invoicePaymentsMiddlewares, async (req,
 
             // Determine settlement behavior
             const settlementType = methodConfig.settlement_type || (method.rows[0].type === 'cash' ? 'instant' : 'delayed');
-            const paymentStatus = settlementType === 'instant' ? 'settled' : 'pending';
+            const paymentStatus = settlementType === 'instant' ? 'settled' : 
+                                  settlementType === 'on_account' ? 'on_account' : 'pending';
 
             // Insert payment; fall back gracefully if settlement columns are not yet present
             const hasSettlement = await settlementColumnsSupported();

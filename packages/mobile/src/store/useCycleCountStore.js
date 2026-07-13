@@ -8,7 +8,13 @@ const useCycleCountStore = create((set, get) => ({
   activeLineId: null,
 
   setActiveBatch: (batchId, batchData = null, lineId = null) => {
-    set({ activeBatchId: batchId, activeBatchData: batchData, activeLineId: lineId });
+    set({
+      activeBatchId: batchId,
+      activeBatchData: batchData,
+      activeLineId: lineId,
+      isAdHocMode: false,
+      currentAdHocItem: null,
+    });
   },
 
   clearActiveBatch: () => {

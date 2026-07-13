@@ -8,6 +8,7 @@ const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
     const { user } = useAuth();
     const { settings } = useSettings();
     const [refundLines, setRefundLines] = useState({});
+    const [refundMethod, setRefundMethod] = useState('Cash');
 
     const handleCheckboxChange = (lineId, checked) => {
         const line = lines.find(l => l.invoice_line_id === lineId);
@@ -57,10 +58,11 @@ const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
             invoice_id: invoice.invoice_id,
             invoice_number: invoice.invoice_number,
             employee_id: user.employee_id,
+            refund_payment_method: refundMethod,
             lines: linesToRefund.map(line => ({
+                invoice_line_id: line.invoice_line_id,
                 part_id: line.part_id,
-                quantity: line.quantity,
-                sale_price: line.sale_price
+                quantity: line.quantity
             })),
         };
 
@@ -77,6 +79,22 @@ const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
 
     return (
         <div className="mt-4 pt-4 border-t">
+            <div className="mb-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Refund Payout Method:
+                </label>
+                <select
+                    value={refundMethod}
+                    onChange={(e) => setRefundMethod(e.target.value)}
+                    className="w-full md:w-64 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
+                >
+                    <option value="Cash">Cash Payout</option>
+                    <option value="GCash">GCash Transfer</option>
+                    <option value="Card">Card Reversal</option>
+                    <option value="Store Credit">Store Credit / Voucher</option>
+                    <option value="AR reduction">Accounts Receivable Reduction</option>
+                </select>
+            </div>
             <h4 className="font-semibold text-gray-800 mb-2">Select items to refund:</h4>
             <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
                 {lines.map(line => (

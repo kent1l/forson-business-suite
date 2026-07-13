@@ -43,7 +43,7 @@ router.get('/ar/dashboard-stats', protect, hasPermission('ar:view'), async (req,
                         CASE 
                             WHEN i.status = 'Paid' THEN 
                                 EXTRACT(days FROM (
-                                    (SELECT MAX(ip.created_at) FROM invoice_payments ip WHERE ip.invoice_id = i.invoice_id) 
+                                    (SELECT MAX(COALESCE(ip.settled_at, ip.created_at)) FROM invoice_payments ip WHERE ip.invoice_id = i.invoice_id) 
                                     - i.invoice_date
                                 ))
                             ELSE NULL

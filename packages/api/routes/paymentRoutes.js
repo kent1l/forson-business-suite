@@ -88,7 +88,7 @@ router.get('/payments', protect, hasPermission('ar:view'), async (req, res) => {
     }
     try {
         const query = `
-            SELECT payment_id, customer_id, employee_id, created_at as payment_date, amount_paid as amount, tendered_amount, COALESCE(legacy_method, method_name) as payment_method, reference
+            SELECT payment_id, customer_id, employee_id, created_at as payment_date, amount_paid as amount, tendered_amount, COALESCE(legacy_method, method_name) as payment_method, reference, payment_status
             FROM payments_unified
             WHERE (created_at AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
             ORDER BY created_at ASC;`;
@@ -109,7 +109,8 @@ router.get('/payments/refunds-approx', protect, hasPermission('ar:view'), async 
     try {
         const q = `SELECT COALESCE(SUM(total_amount),0) AS total_refunds
                    FROM credit_note
-                   WHERE (refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2;`;
+                   WHERE (refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
+                     AND refund_payment_method = 'Cash';`;
         const { rows } = await db.query(q, [startDate, endDate]);
         res.json({ total_refunds: rows[0].total_refunds });
     } catch (err) {
