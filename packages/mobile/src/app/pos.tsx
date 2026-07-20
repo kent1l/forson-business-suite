@@ -202,8 +202,10 @@ export default function POSScreen() {
   }, [doSearch]);
 
   const handleScanResult = useCallback(async (barcode: string) => {
+    const trimmed = barcode.trim();
+    if (!trimmed) return;
     try {
-      const { data } = await apiClient.get(`/parts/barcode/${barcode}`);
+      const { data } = await apiClient.get(`/parts/barcode/${encodeURIComponent(trimmed)}`);
       if (data) {
         haptics.success();
         usePosStore.getState().addToCart(data);
@@ -212,13 +214,14 @@ export default function POSScreen() {
         return;
       }
     } catch (err: any) {
-      if (err.response?.status !== 404) {
+      const status = err?.status ?? err?.response?.status;
+      if (status !== 404) {
         console.error('Barcode lookup error:', err);
       }
     }
 
-    setQuery(barcode);
-    doSearch(barcode);
+    setQuery(trimmed);
+    doSearch(trimmed);
   }, [doSearch]);
 
   // ── Cart actions ───────────────────────────────────────────────────────────

@@ -86,16 +86,19 @@ export default function UnassignedSearchScreen() {
 
   // ── Barcode scan → exact lookup → immediate navigate ─────────────────────
   const handleResolveBarcode = async (barcode: string) => {
+    const trimmed = barcode.trim();
+    if (!trimmed) return { status: 'not_found' as const };
     try {
       // 1. Try exact match lookup
-      const { data } = await apiClient.get(`/parts/barcode/${barcode}`);
+      const { data } = await apiClient.get(`/parts/barcode/${encodeURIComponent(trimmed)}`);
       if (data) {
         startAdHocCount(data);
         router.push('/count');
         return { status: 'success' as const };
       }
     } catch (err: any) {
-      if (err.response?.status !== 404) {
+      const status = err?.status ?? err?.response?.status;
+      if (status !== 404) {
         console.error('Barcode lookup error:', err);
         return { status: 'error' as const, message: 'Server lookup error' };
       }
@@ -103,18 +106,21 @@ export default function UnassignedSearchScreen() {
 
     // 2. Try search parts as fallback
     try {
-      const list = await fetchParts(barcode);
+      const list = await fetchParts(trimmed);
       if (list.length > 0) {
         // Prefer exact barcode match or fallback to top result
         const exactMatchFromList = list.find(
-          (p: any) => p.barcodes && p.barcodes.includes(barcode)
+          (p: any) => p.barcodes && p.barcodes.includes(trimmed)
         ) ?? list[0];
         startAdHocCount(exactMatchFromList);
         router.push('/count');
         return { status: 'success' as const };
       }
     } catch (err: any) {
-      console.error('Fetch parts lookup error:', err);
+      const status = err?.status ?? err?.response?.status;
+      if (status !== 404) {
+        console.error('Fetch parts lookup error:', err);
+      }
     }
 
     // 3. Not found - will trigger the 404 screen in PremiumScanner

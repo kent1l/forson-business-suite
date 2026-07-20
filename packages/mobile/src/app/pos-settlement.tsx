@@ -87,15 +87,15 @@ export default function POSSettlementScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const [pmRes, custRes, taxRes] = await Promise.all([
+        const [pmRes, custRes, taxRes] = await Promise.allSettled([
           apiClient.get('/payment-methods/enabled'),
           apiClient.get('/customers?status=active'),
           apiClient.get('/tax-rates'),
         ]);
 
-        const methods = pmRes.data || [];
-        const custs = custRes.data || [];
-        const rates = taxRes.data || [];
+        const methods = pmRes.status === 'fulfilled' ? (pmRes.value.data || []) : [];
+        const custs = custRes.status === 'fulfilled' ? (custRes.value.data || []) : [];
+        const rates = taxRes.status === 'fulfilled' ? (taxRes.value.data || []) : [];
 
         setPaymentMethods(methods);
         setCustomers(custs);
@@ -114,7 +114,7 @@ export default function POSSettlementScreen() {
 
         const defaultRate = rates.find((r: any) => r.is_default) || null;
         setSelectedTaxRate(defaultRate);
-      } catch (err) {
+      } catch (err: any) {
         console.warn('Failed to load settlement data:', err?.response?.data || err?.message);
       } finally {
         setLoadingData(false);

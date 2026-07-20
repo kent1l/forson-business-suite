@@ -41,14 +41,16 @@ const protect = async (req, res, next) => {
     }
 };
 
-// NEW: Middleware generator to check for a specific permission
+// NEW: Middleware generator to check for a specific permission (accepts string or array of strings)
 const hasPermission = (requiredPermission) => {
     return (req, res, next) => {
+        const requiredList = Array.isArray(requiredPermission) ? requiredPermission : [requiredPermission];
+
         // Extra debug: surface auth header and user presence to help trace 403s
         try {
             const authPresent = !!(req.headers && req.headers.authorization);
             const userPresent = !!req.user;
-            console.log(`hasPermission invoked: required=${requiredPermission} method=${req.method} url=${req.originalUrl} authHeaderPresent=${authPresent} userPresent=${userPresent}`);
+            console.log(`hasPermission invoked: required=${requiredList.join(',')} method=${req.method} url=${req.originalUrl} authHeaderPresent=${authPresent} userPresent=${userPresent}`);
         } catch {
             // ignore logging errors
         }
@@ -61,13 +63,13 @@ const hasPermission = (requiredPermission) => {
             return next();
         }
 
-        if (req.user && Array.isArray(req.user.permissions) && req.user.permissions.includes(requiredPermission)) {
-            console.log(`Permission allowed for ${req.method} ${req.originalUrl} user=${req.user?.username || 'unknown'} permission=${requiredPermission}`);
+        if (req.user && Array.isArray(req.user.permissions) && requiredList.some(p => req.user.permissions.includes(p))) {
+            console.log(`Permission allowed for ${req.method} ${req.originalUrl} user=${req.user?.username || 'unknown'} permissions=${requiredList.join(',')}`);
             return next();
         }
 
         // Detailed logging helps debug permission issues in development
-        console.warn(`Permission check failed for ${req.method} ${req.originalUrl} user=${req.user?.username || 'unknown'} permission_level=${req.user?.permission_level_id} required=${requiredPermission}`);
+        console.warn(`Permission check failed for ${req.method} ${req.originalUrl} user=${req.user?.username || 'unknown'} permission_level=${req.user?.permission_level_id} required=${requiredList.join(',')}`);
         return res.status(403).json({ message: 'Forbidden: You do not have the required permission.' });
     };
 };

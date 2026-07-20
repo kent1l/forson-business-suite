@@ -21,8 +21,8 @@ const manageTags = async (client, tags, customerId) => {
     }
 };
 
-// GET all customers
-router.get('/customers', protect, hasPermission('customers:view'), async (req, res) => {
+// GET all customers (allowed for customers:view or pos:use)
+router.get('/customers', protect, hasPermission(['customers:view', 'pos:use']), async (req, res) => {
     // Adding a filter for active/inactive/all customers
     const { status = 'active' } = req.query;
     const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);

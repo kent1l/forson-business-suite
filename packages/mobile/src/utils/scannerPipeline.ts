@@ -90,12 +90,30 @@ export function isValidEanChecksum(barcode: string): boolean {
  * 40% of the camera frame (0.30 – 0.70 normalised x).
  * Falls back to `true` when no bounds metadata is available.
  */
-export function isInROI(code: { bounds?: { minX: number; maxX: number; minY: number; maxY: number } }, frameWidth: number): boolean {
-  if (!code.bounds || frameWidth === 0) return true;
-  const { minX, maxX } = code.bounds;
+export function isInROI(
+  code: {
+    bounds?: { minX: number; maxX: number; minY: number; maxY: number };
+    frame?: { x: number; y: number; width: number; height: number };
+  },
+  frameWidth: number
+): boolean {
+  if (frameWidth === 0) return true;
+  let minX: number | undefined;
+  let maxX: number | undefined;
+
+  if (code.bounds) {
+    minX = code.bounds.minX;
+    maxX = code.bounds.maxX;
+  } else if (code.frame) {
+    minX = code.frame.x;
+    maxX = code.frame.x + code.frame.width;
+  }
+
+  if (minX === undefined || maxX === undefined) return true;
   const normMidX = (minX + (maxX - minX) / 2) / frameWidth;
   return Math.abs(normMidX - 0.5) <= ROI_HALF_WIDTH;
 }
+
 
 // ── Tier C: Sliding Mode Consensus ──────────────────────────────────────────
 /**

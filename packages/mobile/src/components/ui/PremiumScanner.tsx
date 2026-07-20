@@ -11,7 +11,7 @@ import {
   KeyboardAvoidingView,
   ActivityIndicator,
 } from 'react-native';
-import { Camera, useCameraDevice, useCodeScanner, useCameraFormat } from 'react-native-vision-camera';
+import { Camera, useCameraDevice, useCodeScanner, useCameraFormat, useCameraPermission } from 'react-native-vision-camera';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -59,6 +59,7 @@ export default function PremiumScanner({
   const theme = useTheme();
   const device = useCameraDevice('back');
   const format = useCameraFormat(device, [{ fps: 30 }]);
+  const { hasPermission, requestPermission } = useCameraPermission();
 
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [torch, setTorch] = useState<'off' | 'on'>('off');
@@ -79,13 +80,16 @@ export default function PremiumScanner({
 
   useEffect(() => {
     if (visible) {
-      setIsCameraActive(true);
+      if (!hasPermission) {
+        requestPermission();
+      }
+      setIsCameraActive(hasPermission);
       resetScannerState();
     } else {
       setIsCameraActive(false);
       scanLockRef.current = false;
     }
-  }, [visible]);
+  }, [visible, hasPermission]);
 
   useEffect(() => {
     if (visible && isCameraActive) {
@@ -132,7 +136,7 @@ export default function PremiumScanner({
       if (!value) return;
 
       // Tier B: Viewport ROI bounding verification
-      if (!isInROI(code, frame?.width ?? 0, frame?.height ?? 0)) return;
+      if (!isInROI(code, SCREEN_WIDTH)) return;
 
       // EAN checksum validation
       if (/^\d{12,13}$/.test(value) && !isValidEanChecksum(value)) {
@@ -249,7 +253,7 @@ export default function PremiumScanner({
   return (
     <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
       <View style={styles.container}>
-        {device && (
+        {device && hasPermission ? (
           <Camera
             style={StyleSheet.absoluteFill}
             device={device}
@@ -262,7 +266,22 @@ export default function PremiumScanner({
             exposure={-1}
             enableZoomGesture={true}
           />
-        )}
+        ) : !hasPermission ? (
+          <View style={styles.permissionContainer}>
+            <SymbolView
+              name={{ ios: 'camera.fill', android: 'camera', web: 'camera' }}
+              tintColor="#9CA3AF"
+              size={48}
+            />
+            <Text style={styles.permissionTitle}>Camera Permission Required</Text>
+            <Text style={styles.permissionSubtitle}>
+              Please grant camera access to scan barcodes.
+            </Text>
+            <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
+              <Text style={styles.permissionButtonText}>Grant Permission</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         {/* Success Screen Flash */}
         <Animated.View style={[styles.flashOverlay, flashAnimStyle]} pointerEvents="none" />
@@ -661,5 +680,37 @@ const styles = StyleSheet.create({
     opacity: 0.9,
     lineHeight: 20,
     marginBottom: Spacing.two,
+  },
+  permissionContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    backgroundColor: '#000',
+  },
+  permissionTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '700',
+    marginTop: Spacing.three,
+    marginBottom: Spacing.one,
+    textAlign: 'center',
+  },
+  permissionSubtitle: {
+    color: '#9CA3AF',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: Spacing.four,
+  },
+  permissionButton: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 24,
+  },
+  permissionButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 15,
   },
 });
