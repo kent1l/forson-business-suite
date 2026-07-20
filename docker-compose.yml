@@ -61,26 +61,32 @@ services:
 
   # --- Backup Service ---
   backup:
-    image: postgres:15-alpine # Use the same postgres image for pg_dump
+    build:
+      context: ./backup
+      dockerfile: Dockerfile
     container_name: forson_backup
     restart: always
     depends_on:
       - db
     volumes:
       - ./backups:/backups
-      - ./backup:/docker-entrypoint-initdb.d
+      - type: bind
+        source: ./backup
+        target: /scripts
+        read_only: true
     environment:
       - DB_HOST=db
       - DB_NAME=${DB_NAME}
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
       - BACKUP_PATH=/backups
-      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-7}
     command: >
-      bash -c "while true; do
-        /docker-entrypoint-initdb.d/backup.sh;
-        sleep 86400;
-      done"
+      /bin/sh -c "
+      cp /scripts/run.sh /tmp/run.sh &&
+      cp /scripts/backup.sh /tmp/backup.sh &&
+      chmod +x /tmp/run.sh /tmp/backup.sh &&
+      /tmp/run.sh
+      "
 
 # Define a named volume to persist the PostgreSQL data and Meilisearch data
 volumes:

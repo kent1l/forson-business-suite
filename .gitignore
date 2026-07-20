@@ -1,6 +1,11 @@
 # Dependency directories
 node_modules/
 
+# Backup secrets (never commit — copy from *.example files)
+backup/rclone.conf
+backup/id_rsa
+backup/id_rsa.pub
+
 # Environment variables
 .env
 .env.local

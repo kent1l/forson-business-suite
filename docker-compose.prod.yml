@@ -53,6 +53,7 @@ services:
       - "3001:3001"
     volumes:
       - ./database/migrations:/usr/database/migrations:ro
+      - backup_data:/backups
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--spider", "http://localhost:3001/health"]
       interval: 30s
@@ -80,7 +81,9 @@ services:
     logging: *default-logging
 
   backup:
-    image: postgres:15-alpine
+    build:
+      context: ./backup
+      dockerfile: Dockerfile
     container_name: forson_backup
     restart: unless-stopped
     depends_on:
@@ -92,34 +95,26 @@ services:
         target: /scripts
         read_only: true
     environment:
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: backup_manager
-      POSTGRES_USER: ${DB_USER}
+      # No POSTGRES_* vars — we are not running a local PostgreSQL instance
       DB_HOST: db
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       BACKUP_PATH: /backups
-      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
     command: >
       /bin/sh -c "
-      while ! pg_isready -h db -U ${DB_USER}; do
-        echo 'Waiting for main database to be ready...'
-        sleep 2
-      done;
+      cp /scripts/run.sh /tmp/run.sh &&
       cp /scripts/backup.sh /tmp/backup.sh &&
-      chmod +x /tmp/backup.sh;
-      while true; do
-        /tmp/backup.sh;
-        echo 'Backup completed successfully. Sleeping for 24 hours...';
-        sleep 86400;
-      done
+      chmod +x /tmp/run.sh /tmp/backup.sh &&
+      /tmp/run.sh
       "
     healthcheck:
-      test: ["CMD", "test", "-d", "/backups"]
+      # Healthy if at least one backup file was created within the last 25 hours
+      test: ["CMD", "sh", "-c", "find /backups -name '*.sql.gz' -mmin -1500 | grep -q ."]
       interval: 1h
       timeout: 10s
       retries: 3
+      start_period: 5m
     logging: *default-logging
 
 volumes:
