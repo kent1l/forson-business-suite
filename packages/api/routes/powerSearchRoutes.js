@@ -7,7 +7,7 @@ const router = express.Router();
 
 // GET /api/power-search/parts - Advanced multi-filter search using Meilisearch
 // Default behavior: only return active parts unless `status=all` or `status=inactive` is passed.
-router.get('/power-search/parts', protect, hasPermission('parts:view'), async (req, res) => {
+router.get('/power-search/parts', protect, hasPermission(['parts:view', 'pos:use']), async (req, res) => {
     const { keyword, status = 'active' } = req.query; // Other filters (brand, group, application, year) reserved for future enhancement
 
     try {
