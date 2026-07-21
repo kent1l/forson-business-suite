@@ -4,9 +4,12 @@
 # Secrets (rclone.conf, id_rsa) are expected at /scripts/ (bind-mounted from ./backup/).
 set -e
 
+export TZ="${TZ:-Asia/Manila}"
+
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [backup.sh] $1"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] [backup.sh] $1"
 }
+
 
 # --- Helper: read a value from the settings table ---
 db_setting() {

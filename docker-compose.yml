@@ -80,6 +80,8 @@ services:
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
       - BACKUP_PATH=/backups
+      - TZ=Asia/Manila
+
     command: >
       /bin/sh -c "
       cp /scripts/run.sh /tmp/run.sh &&

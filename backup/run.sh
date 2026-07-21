@@ -5,12 +5,15 @@
 # made via the Settings UI take effect within the next minute.
 set -e
 
+export TZ="${TZ:-Asia/Manila}"
+
 # --- Helper ---
 db_setting() {
     PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -tAq \
         -c "SELECT COALESCE(setting_value, '$2') FROM settings WHERE setting_key = '$1';" \
         2>/dev/null || echo "$2"
 }
+
 
 # --- Wait for DB ---
 echo "[run.sh] Waiting for database at $DB_HOST..."
