@@ -29,3 +29,6 @@ android/app/build/
 # Gradle
 android/.gradle/
 android/local.properties
+
+# Editor settings
+.vscode/
