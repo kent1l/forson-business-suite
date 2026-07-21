@@ -1,14 +1,24 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
+const multer = require('multer');
 const { exec } = require('child_process');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const router = express.Router();
 
-const BACKUP_DIR = path.resolve('/backups');
+const BACKUP_DIR = process.env.BACKUP_DIR
+    ? path.resolve(process.env.BACKUP_DIR)
+    : path.resolve('/backups');
 
-// Strict regex matching valid manual and scheduled backup file naming conventions
-const SAFE_FILENAME_REGEX = /^(forson-db-manual-|backup-)[a-zA-Z0-9_-]+\.sql\.gz$/;
+// Strict regex matching valid manual, uploaded, and scheduled backup file naming conventions
+const SAFE_FILENAME_REGEX = /^(forson-db-manual-|forson-db-upload-|backup-)[a-zA-Z0-9_-]+\.sql\.gz$/;
+
+// Configure multer for memory storage (100MB limit per upload)
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 100 * 1024 * 1024 }
+});
 
 // In-memory lock to prevent concurrent backup/restore operations
 let isOperationInProgress = false;
@@ -22,6 +32,13 @@ function safePath(filename) {
     return resolved.startsWith(BACKUP_DIR + path.sep) || resolved === BACKUP_DIR
         ? resolved
         : null;
+}
+
+// Helper to determine backup origin type
+function getBackupType(filename) {
+    if (filename.startsWith('forson-db-manual-')) return 'manual';
+    if (filename.startsWith('forson-db-upload-')) return 'upload';
+    return 'scheduled';
 }
 
 // Returns env with PGPASSWORD set (avoids password in process list / CLI args)
@@ -53,7 +70,7 @@ router.get('/', protect, hasPermission('backups:view'), (req, res) => {
                     filename: file,
                     size: stats.size,
                     createdAt: stats.mtime,
-                    type: file.startsWith('forson-db-manual-') ? 'manual' : 'scheduled'
+                    type: getBackupType(file)
                 };
             })
             .sort((a, b) => b.createdAt - a.createdAt);
@@ -90,6 +107,64 @@ router.post('/', protect, hasPermission('backups:create'), (req, res) => {
         }
         res.status(201).json({ message: 'Backup created successfully!', filename });
     });
+});
+
+// POST /api/backups/upload - Upload an external backup file (.sql.gz or .sql)
+router.post('/upload', protect, hasPermission('backups:create'), upload.single('file'), (req, res) => {
+    if (isOperationInProgress) {
+        return res.status(409).json({ message: 'A backup or restore operation is already in progress. Please wait.' });
+    }
+
+    if (!req.file || !req.file.buffer) {
+        return res.status(400).json({ message: 'Please select a backup file to upload.' });
+    }
+
+    const originalName = req.file.originalname || '';
+    const buffer = req.file.buffer;
+
+    // Validate extension
+    const isGzipExt = originalName.toLowerCase().endsWith('.sql.gz') || originalName.toLowerCase().endsWith('.gz');
+    const isSqlExt = originalName.toLowerCase().endsWith('.sql');
+
+    if (!isGzipExt && !isSqlExt) {
+        return res.status(400).json({ message: 'Invalid file extension. Only .sql.gz and .sql files are allowed.' });
+    }
+
+    // Magic bytes verification for gzip (0x1f 0x8b)
+    const isGzipMagic = buffer.length >= 2 && buffer[0] === 0x1f && buffer[1] === 0x8b;
+
+    if (isGzipExt && !isGzipMagic) {
+        return res.status(400).json({ message: 'File header mismatch. Uploaded file is not a valid gzipped backup or SQL dump.' });
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `forson-db-upload-${timestamp}.sql.gz`;
+    const filepath = path.join(BACKUP_DIR, filename);
+
+    try {
+        fs.mkdirSync(BACKUP_DIR, { recursive: true });
+
+        if (isGzipMagic) {
+            // Write validated gzipped backup file directly
+            fs.writeFileSync(filepath, buffer, { mode: 0o644 });
+        } else if (isSqlExt) {
+            // Compress raw SQL dump on the fly into .sql.gz
+            const gzipped = zlib.gzipSync(buffer);
+            fs.writeFileSync(filepath, gzipped, { mode: 0o644 });
+        } else {
+            return res.status(400).json({ message: 'File header mismatch. Uploaded file is not a valid gzipped backup or SQL dump.' });
+        }
+
+        res.status(201).json({
+            message: 'Backup file uploaded successfully!',
+            filename,
+            size: fs.statSync(filepath).size
+        });
+    } catch (err) {
+        console.error('Failed to save uploaded backup file:', err);
+        if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
+        res.status(500).json({ message: 'Failed to save uploaded backup file.' });
+    }
 });
 
 // POST /api/backups/restore - Restore from a backup
@@ -152,4 +227,6 @@ router.delete('/:filename', protect, hasPermission('backups:delete'), (req, res)
 });
 
 module.exports = router;
+
+
 

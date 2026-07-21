@@ -70,6 +70,7 @@ const Toggle = ({ name, label, checked, onChange }) => (
 const BackupSettings = ({ settings, handleChange, handleSave }) => {
     const [backups, setBackups] = useState([]);
     const [loading, setLoading] = useState(true);
+    const fileInputRef = React.useRef(null);
 
     const fetchBackups = useCallback(async () => {
         try {
@@ -93,6 +94,56 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
             success: (res) => { fetchBackups(); return res.data.message; },
             error:   (err) => err.response?.data?.message || 'Failed to start backup.',
         });
+    };
+
+    const handleFileChange = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const promise = api.post('/backups/upload', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+
+        toast.promise(promise, {
+            loading: `Uploading ${file.name}...`,
+            success: (res) => {
+                fetchBackups();
+                const uploadedFilename = res.data.filename;
+                promptRestoreAfterUpload(uploadedFilename);
+                return res.data.message;
+            },
+            error: (err) => err.response?.data?.message || 'Failed to upload backup file.',
+        });
+
+        e.target.value = '';
+    };
+
+    const promptRestoreAfterUpload = (filename) => {
+        toast((t) => (
+            <div className="text-center">
+                <p className="font-bold text-blue-600">📥 Backup File Uploaded</p>
+                <p className="text-sm my-2">
+                    Backup saved as <strong className="font-mono text-xs">{filename}</strong>. Would you like to restore the database from this file now?
+                </p>
+                <div className="flex justify-center space-x-2 mt-2">
+                    <button
+                        onClick={() => { toast.dismiss(t.id); confirmRestore(filename); }}
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-semibold"
+                    >
+                        Yes, Restore Now
+                    </button>
+                    <button
+                        onClick={() => toast.dismiss(t.id)}
+                        className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm"
+                    >
+                        Keep in List Only
+                    </button>
+                </div>
+            </div>
+        ), { duration: 10000 });
     };
 
     const handleRestore = (filename) => {
@@ -334,13 +385,29 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
             <div>
                 <div className="flex items-center justify-between mb-4">
                     <SectionHeader title="Available Backups" subtitle={null} />
-                    <button
-                        onClick={handleBackupNow}
-                        className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition text-sm"
-                    >
-                        <Icon path={ICONS.plus} className="h-4 w-4" />
-                        Backup Now
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            onChange={handleFileChange}
+                            accept=".sql.gz,.sql,.gz"
+                            className="hidden"
+                        />
+                        <button
+                            onClick={() => fileInputRef.current?.click()}
+                            className="flex items-center gap-2 bg-gray-100 text-gray-700 border border-gray-300 px-4 py-2 rounded-lg font-semibold hover:bg-gray-200 transition text-sm"
+                        >
+                            <span className="text-base">📤</span>
+                            Upload Backup
+                        </button>
+                        <button
+                            onClick={handleBackupNow}
+                            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition text-sm"
+                        >
+                            <Icon path={ICONS.plus} className="h-4 w-4" />
+                            Backup Now
+                        </button>
+                    </div>
                 </div>
                 <div className="border border-gray-200 rounded-lg overflow-hidden">
                     <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -358,7 +425,17 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
                             ) : backups.length > 0 ? (
                                 backups.map((backup) => (
                                     <tr key={backup.filename} className="hover:bg-gray-50 transition-colors">
-                                        <td className="px-4 py-3 font-mono text-xs text-gray-800 truncate max-w-xs">{backup.filename}</td>
+                                        <td className="px-4 py-3 font-mono text-xs text-gray-800 truncate max-w-xs">
+                                            <div className="flex items-center gap-2">
+                                                <span className="truncate">{backup.filename}</span>
+                                                {backup.type === 'upload' && (
+                                                    <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-purple-100 text-purple-700 rounded whitespace-nowrap">Uploaded</span>
+                                                )}
+                                                {backup.type === 'manual' && (
+                                                    <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 text-blue-700 rounded whitespace-nowrap">Manual</span>
+                                                )}
+                                            </div>
+                                        </td>
                                         <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatSize(backup.size)}</td>
                                         <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
                                             {format(toZonedTime(parseISO(backup.createdAt), 'Asia/Manila'), 'MM/dd/yyyy hh:mm a')}
@@ -380,7 +457,7 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
                                 <tr>
                                     <td colSpan="4" className="text-center p-8 text-gray-400">
                                         <p className="text-sm">No backups found.</p>
-                                        <p className="text-xs mt-1">Click <strong>Backup Now</strong> to create one, or wait for the scheduled backup.</p>
+                                        <p className="text-xs mt-1">Click <strong>Backup Now</strong> or <strong>Upload Backup</strong> to add one.</p>
                                     </td>
                                 </tr>
                             )}
@@ -395,5 +472,6 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
         </div>
     );
 };
+
 
 export default BackupSettings;
