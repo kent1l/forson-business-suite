@@ -44,9 +44,11 @@ export default function ExpenseList({
         return `₱${val.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     };
 
-    const formatDate = (dateStr) => {
-        if (!dateStr) return '-';
-        const d = new Date(dateStr + 'T00:00:00');
+    const formatDate = (dateVal) => {
+        if (!dateVal) return '-';
+        const str = typeof dateVal === 'string' ? dateVal.split('T')[0] : String(dateVal);
+        const d = new Date(str + 'T00:00:00');
+        if (isNaN(d.getTime())) return String(dateVal);
         return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
     };
 

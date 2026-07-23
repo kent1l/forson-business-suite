@@ -9,7 +9,7 @@ const router = express.Router();
 // Helper to select and join expense details
 const EXPENSE_SELECT_FIELDS = `
     e.expense_id,
-    e.expense_date,
+    TO_CHAR(e.expense_date, 'YYYY-MM-DD') AS expense_date,
     e.amount,
     e.payee,
     e.payment_method_id,

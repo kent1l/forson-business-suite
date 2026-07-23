@@ -27,10 +27,15 @@ export default function ExpenseForm({
     const [aiMeta, setAiMeta] = useState(null); // stores original AI suggestions for correction tracking
     const [errors, setErrors] = useState({});
 
+    const cleanDateStr = (val) => {
+        if (!val) return today;
+        return typeof val === 'string' ? val.split('T')[0] : today;
+    };
+
     useEffect(() => {
         if (initialData) {
             setFormData({
-                expense_date: initialData.expense_date || today,
+                expense_date: cleanDateStr(initialData.expense_date),
                 category_id: initialData.category?.category_id || initialData.category_id || '',
                 amount: initialData.amount || '',
                 payee: initialData.payee || '',
@@ -42,7 +47,7 @@ export default function ExpenseForm({
             setAiMeta(null);
         } else if (aiParsedData) {
             setFormData({
-                expense_date: aiParsedData.expense_date || today,
+                expense_date: cleanDateStr(aiParsedData.expense_date),
                 category_id: aiParsedData.category_id || '',
                 amount: aiParsedData.amount !== null && aiParsedData.amount !== undefined ? aiParsedData.amount : '',
                 payee: aiParsedData.payee || '',
