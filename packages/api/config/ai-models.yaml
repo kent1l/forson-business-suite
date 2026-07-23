@@ -44,4 +44,4 @@ pools:
       - provider: openrouter
         model: "meta-llama/llama-3.3-70b-instruct"
       - provider: groq
-        model: "llama-3.1-70b-versatile"
+        model: "llama-3.3-70b-versatile"

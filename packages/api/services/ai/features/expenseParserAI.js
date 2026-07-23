@@ -17,22 +17,32 @@ class ExpenseParserAI {
         }
 
         // 1. Fetch active categories
-        const categoriesRes = await db.query(
-            `SELECT category_id, category_name, description 
-             FROM expense_category 
-             WHERE is_active = true 
-             ORDER BY sort_order ASC, category_name ASC`
-        );
-        const categories = categoriesRes.rows;
+        let categories = [];
+        try {
+            const categoriesRes = await db.query(
+                `SELECT category_id, category_name, description 
+                 FROM expense_category 
+                 WHERE is_active = true 
+                 ORDER BY sort_order ASC, category_name ASC`
+            );
+            categories = categoriesRes.rows;
+        } catch {
+            // Non-blocking fallback if DB is unavailable
+        }
 
         // 2. Fetch active payment methods
-        const pmRes = await db.query(
-            `SELECT method_id, name 
-             FROM payment_methods 
-             WHERE enabled = true 
-             ORDER BY sort_order ASC`
-        );
-        const paymentMethods = pmRes.rows;
+        let paymentMethods = [];
+        try {
+            const pmRes = await db.query(
+                `SELECT method_id, name 
+                 FROM payment_methods 
+                 WHERE enabled = true 
+                 ORDER BY sort_order ASC`
+            );
+            paymentMethods = pmRes.rows;
+        } catch {
+            // Non-blocking fallback if DB is unavailable
+        }
 
         // 3. Fetch recent user corrections for few-shot learning
         let fewShotExamples = [];
