@@ -1,15 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
 
 /**
- * Industry-standard useLocalStorage hook.
- * - Initializes from localStorage on mount.
- * - Writes to localStorage on every set call.
- * - Dispatches a storage event so other tabs / components stay in sync.
- * - Gracefully falls back to defaultValue if localStorage is unavailable.
+ * useLocalStorage — persists state to localStorage with cross-tab sync.
  *
- * @param {string} key            - localStorage key
- * @param {*}      defaultValue   - value to use when key is absent or storage fails
- * @returns {[any, Function]}     - [storedValue, setValue]
+ * Cross-tab behaviour: browsers natively fire the `storage` event on all
+ * OTHER windows/tabs when localStorage changes. We listen for that here.
+ * We do NOT manually dispatch a StorageEvent for the current window —
+ * doing so would cause the listener to double-fire and immediately revert
+ * every state change (the "takes 2-5 clicks" bug).
+ *
+ * @param {string} key           - localStorage key
+ * @param {*}      defaultValue  - fallback when key is absent or storage fails
+ * @returns {[any, Function]}    - [storedValue, setValue]
  */
 function useLocalStorage(key, defaultValue) {
     const [storedValue, setStoredValue] = useState(() => {
@@ -26,16 +28,18 @@ function useLocalStorage(key, defaultValue) {
             const next = typeof value === 'function' ? value(prev) : value;
             try {
                 window.localStorage.setItem(key, JSON.stringify(next));
-                // Notify other tabs / hook instances
-                window.dispatchEvent(new StorageEvent('storage', { key, newValue: JSON.stringify(next) }));
+                // NOTE: Do NOT dispatch a StorageEvent here.
+                // The native storage event fires automatically for OTHER tabs.
+                // Dispatching it here would re-trigger our own onStorage listener
+                // and immediately toggle the value back (double-fire bug).
             } catch {
-                // localStorage unavailable (private browsing quota exceeded, etc.)
+                // localStorage unavailable (private browsing / quota exceeded)
             }
             return next;
         });
     }, [key]);
 
-    // Keep in sync when another tab or component writes to the same key
+    // Sync with other tabs / windows (not the current one)
     useEffect(() => {
         const onStorage = (e) => {
             if (e.key !== key) return;
