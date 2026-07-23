@@ -1,37 +1,17 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../../../.env') });
+const modelConfig = require('../services/ai/core/modelConfig');
 
+const googleTiers = modelConfig.providers.google.tiers;
 const GEMINI_MODELS = [
-    // Standard Gemini Models
-    'gemini-3.6-flash',
-    'gemini-3.5-flash-lite',
-    'gemini-3.5-flash',
-    'gemini-3.1-flash-lite',
-    'gemini-3.1-pro',
-    'gemini-3.0-flash',
-    'gemini-3-flash',
-    'gemini-2.5-flash-lite',
-    'gemini-2.5-flash',
-    'gemini-2.5-pro',
-    'gemini-2.0-flash-lite',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    
-    // Gemma Open Models
-    'gemma-4-31b-it',
-    'gemma-4-31b',
-    'gemma-4-26b-it',
-    'gemma-4-26b'
+    ...new Set([
+        ...googleTiers.ROUTINE,
+        ...googleTiers.REASONING,
+        ...googleTiers.MICRO
+    ])
 ];
 
-const OPENROUTER_MODELS = [
-    'openrouter/free',
-    'google/gemini-2.5-flash',
-    'google/gemini-3.5-flash',
-    'meta-llama/llama-3.3-70b-instruct',
-    'deepseek/deepseek-chat',
-    'qwen/qwen-2.5-coder-32b-instruct'
-];
+const OPENROUTER_MODELS = modelConfig.providers.openrouter.fallbackChain;
 
 async function testGeminiModel(key, model) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;

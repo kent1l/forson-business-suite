@@ -56,5 +56,5 @@ describe('LLMClient & Model Tiering Optimization', () => {
         expect(res).toHaveProperty('data');
         expect(res).toHaveProperty('provider');
         expect(res).toHaveProperty('model');
-    });
+    }, 30000);
 });

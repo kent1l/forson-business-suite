@@ -3,6 +3,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '../../../../.env') });
 require('dotenv').config({ path: path.resolve(process.cwd(), '../../.env') });
 require('dotenv').config({ path: path.resolve(process.cwd(), '.env') });
 const aiCache = require('./aiCache');
+const modelConfig = require('./modelConfig');
 
 /**
  * Advanced multi-provider LLM client with tier-based routing, automatic fallback cascade,
@@ -16,32 +17,23 @@ class LLMClient {
         const geminiPool = process.env.GEMINI_API_KEY_POOL || process.env.GEMINI_API_KEY || '';
         this.geminiKeys = geminiPool.split(',').map(k => k.trim()).filter(Boolean);
         this.geminiIndex = 0;
-        this.geminiModel = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
+        this.geminiModel = process.env.GEMINI_MODEL || modelConfig.providers.google.defaultModel;
 
         // OpenAI Settings
         this.openaiKey = process.env.OPENAI_API_KEY || '';
-        this.openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+        this.openaiModel = process.env.OPENAI_MODEL || modelConfig.providers.openai.defaultModel;
 
         // OpenRouter Settings
         this.openrouterKey = process.env.OPENROUTER_API_KEY || '';
-        this.openrouterModel = process.env.OPENROUTER_MODEL || 'openrouter/free';
+        this.openrouterModel = process.env.OPENROUTER_MODEL || modelConfig.providers.openrouter.defaultModel;
 
         // Gemini Tier Map
-        this.geminiTiers = {
-            ROUTINE: ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite'],
-            REASONING: ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3-flash', 'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3.1-pro'],
-            MICRO: ['gemma-4-31b', 'gemma-4-26b', 'gemma-4-31b-it', 'gemma-4-26b-it']
-        };
+        this.geminiTiers = modelConfig.providers.google.tiers;
 
         // OpenRouter Fallback Model Chain
         this.openrouterChain = [
             this.openrouterModel,
-            'google/gemini-3.5-flash',
-            'google/gemini-2.5-flash',
-            'openrouter/free',
-            'meta-llama/llama-3.3-70b-instruct',
-            'deepseek/deepseek-chat',
-            'qwen/qwen-2.5-coder-32b-instruct'
+            ...modelConfig.providers.openrouter.fallbackChain
         ].filter((item, index, self) => item && self.indexOf(item) === index);
 
         // State Tracking for Health & Deprecation
