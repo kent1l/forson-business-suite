@@ -76,12 +76,20 @@ async function ensureMigrationsTable(client) {
   `);
 
   if (checkRes.rows.length === 0) {
-    const initialSchemaPath = path.join(repoRoot, 'database', 'initial_schema.sql');
-    if (fs.existsSync(initialSchemaPath)) {
-      console.log('Fresh database detected. Applying baseline schema (database/initial_schema.sql)...');
+    const candidatePaths = [
+      path.join(repoRoot, 'database', 'initial_schema.sql'),
+      path.resolve(__dirname, '../../../database/initial_schema.sql'),
+      path.resolve(__dirname, '../../database/initial_schema.sql'),
+      '/database/initial_schema.sql'
+    ];
+    const initialSchemaPath = candidatePaths.find(p => fs.existsSync(p));
+    if (initialSchemaPath) {
+      console.log(`Fresh database detected. Applying baseline schema (${initialSchemaPath})...`);
       const schemaSql = fs.readFileSync(initialSchemaPath, 'utf8');
       await client.query(schemaSql);
       console.log('Baseline schema applied successfully.');
+    } else {
+      console.warn('Fresh database detected, but baseline initial_schema.sql was not found in candidate paths.');
     }
   }
 }
