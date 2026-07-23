@@ -683,6 +683,17 @@ FROM public.invoice_payments ip
 JOIN public.invoice i ON ip.invoice_id = i.invoice_id
 JOIN public.payment_methods pm ON ip.method_id = pm.method_id;
 
+-- Part Exclusion baseline table definition
+CREATE TABLE IF NOT EXISTS public.part_exclusion (
+    part_id_1 INT NOT NULL REFERENCES public.part(part_id) ON DELETE CASCADE,
+    part_id_2 INT NOT NULL REFERENCES public.part(part_id) ON DELETE CASCADE,
+    source VARCHAR(50) DEFAULT 'USER',
+    reason TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (part_id_1, part_id_2),
+    CONSTRAINT chk_order CHECK (part_id_1 < part_id_2)
+);
+
 --
 -- SEED DATA (Using 'ON CONFLICT DO NOTHING' for safety)
 --

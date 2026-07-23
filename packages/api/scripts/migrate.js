@@ -68,6 +68,30 @@ async function ensureMigrationsTable(client) {
     );
   `;
   await client.query(sql);
+
+  // Auto-apply initial baseline schema if migrating a fresh database
+  const checkRes = await client.query(`
+    SELECT 1 FROM information_schema.tables 
+    WHERE table_schema = 'public' AND table_name = 'invoice'
+  `);
+
+  if (checkRes.rows.length === 0) {
+    const candidatePaths = [
+      path.join(repoRoot, 'database', 'initial_schema.sql'),
+      path.resolve(__dirname, '../../../database/initial_schema.sql'),
+      path.resolve(__dirname, '../../database/initial_schema.sql'),
+      '/database/initial_schema.sql'
+    ];
+    const initialSchemaPath = candidatePaths.find(p => fs.existsSync(p));
+    if (initialSchemaPath) {
+      console.log(`Fresh database detected. Applying baseline schema (${initialSchemaPath})...`);
+      const schemaSql = fs.readFileSync(initialSchemaPath, 'utf8');
+      await client.query(schemaSql);
+      console.log('Baseline schema applied successfully.');
+    } else {
+      console.warn('Fresh database detected, but baseline initial_schema.sql was not found in candidate paths.');
+    }
+  }
 }
 
 function loadMigrations() {

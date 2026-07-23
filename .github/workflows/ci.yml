@@ -2,18 +2,18 @@ name: CI
 
 on:
   push:
-    branches: [ master ]
-    paths:
-      - 'packages/**'
-      - '.github/workflows/ci.yml'
+    branches: [ main, master, dev ]
   pull_request:
-    branches: [ master ]
-    paths:
-      - 'packages/**'
-      - '.github/workflows/ci.yml'
+    types: [ opened, synchronize, reopened ]
+    branches: [ main, master, dev ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
+    name: Test Suite
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -32,51 +32,40 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-          # --- FIX: Point cache to the directories with package-lock.json ---
-          cache-dependency-path: |
-            packages/api/package-lock.json
-            packages/web/package-lock.json
-          
-      - name: Install root dependencies
-        run: npm install
 
-      - name: Install API dependencies
-        run: npm install
-        working-directory: packages/api
+      - name: Install dependencies
+        run: npm ci || npm install
 
-      - name: Install Web dependencies
-        run: npm install
-        working-directory: packages/web
-          
-      - name: Run API ESLint
+      - name: Run Linters
         run: npm run lint
-        working-directory: packages/api
 
-      - name: Run Web ESLint
-        run: npm run lint
-        working-directory: packages/web
-          
-      - name: Run API tests
+      - name: Run Database Migrations
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: test
+          DB_PASSWORD: test
+          DB_NAME: test
+        run: npm run -w packages/api migrate -- --host localhost
+
+      - name: Run Test Suite
         env:
           NODE_ENV: test
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: test
-          POSTGRES_HOST: localhost
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: test
+          DB_PASSWORD: test
+          DB_NAME: test
         run: npm test
-        working-directory: packages/api
-        
-      - name: Run Web tests
-        run: npm test
-        working-directory: packages/web
-          
+
       - name: Upload test coverage
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
