@@ -3,7 +3,7 @@ services:
   
   # --- Database Service ---
   db:
-    image: postgres:15-alpine 
+    image: pgvector/pgvector:pg15 
     container_name: forson_db
     restart: always
     environment:
