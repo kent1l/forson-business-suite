@@ -69,17 +69,26 @@ const TOP_ITEMS = [
     { name: 'POS',        icon: ICONS.pos,       page: 'pos',       permission: 'pos:use' },
 ];
 
-// ─── Accordion: CSS grid-template-rows trick (GPU-accelerated, no layout thrash) ──
+// ─── Accordion: CSS grid-template-rows trick with smooth fade/slide ──
 function AccordionContent({ isOpen, children }) {
     return (
         <div
             style={{
                 display: 'grid',
                 gridTemplateRows: isOpen ? '1fr' : '0fr',
-                transition: 'grid-template-rows 180ms ease',
+                transition: 'grid-template-rows 260ms cubic-bezier(0.2, 0, 0, 1)',
             }}
         >
-            <div style={{ overflow: 'hidden' }}>{children}</div>
+            <div
+                style={{
+                    overflow: 'hidden',
+                    opacity: isOpen ? 1 : 0,
+                    transform: isOpen ? 'translateY(0)' : 'translateY(-4px)',
+                    transition: 'opacity 220ms cubic-bezier(0.2, 0, 0, 1), transform 220ms cubic-bezier(0.2, 0, 0, 1)',
+                }}
+            >
+                {children}
+            </div>
         </div>
     );
 }
@@ -99,8 +108,8 @@ function NavItem({ item, currentPage, onNavigate, setIsOpen, isCollapsed, pendin
                     if (setIsOpen) setIsOpen(false);
                 }}
                 className={[
-                    'flex items-center gap-3 rounded-lg text-sm font-medium',
-                    'transition-all duration-150 ease-in-out select-none',
+                    'flex items-center gap-3 rounded-lg text-sm font-medium select-none',
+                    'transition-all duration-200 ease-[cubic-bezier(0.2,0,0,1)]',
                     isCollapsed ? 'px-0 py-2.5 justify-center' : 'px-3 py-2',
                     isActive
                         ? 'bg-blue-600 text-white shadow-sm shadow-blue-200'
@@ -197,7 +206,7 @@ function CategoryGroup({ cat, currentPage, onNavigate, setIsOpen, isCollapsed, i
                 className={[
                     'w-full flex items-center justify-between gap-2',
                     'px-3 py-2.5 min-h-[36px] rounded-lg text-left',
-                    'transition-colors duration-100 cursor-pointer',
+                    'transition-colors duration-200 ease-[cubic-bezier(0.2,0,0,1)] cursor-pointer',
                     hasActive && !isOpen
                         ? 'text-blue-600 bg-blue-50'
                         : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50',
@@ -210,7 +219,7 @@ function CategoryGroup({ cat, currentPage, onNavigate, setIsOpen, isCollapsed, i
                     path={ICONS.chevronDown}
                     className={[
                         'h-3.5 w-3.5 shrink-0',
-                        'transition-transform duration-180 ease-in-out',
+                        'transition-transform duration-260 ease-[cubic-bezier(0.2,0,0,1)]',
                         isOpen ? 'rotate-0' : '-rotate-90',
                     ].join(' ')}
                 />
@@ -287,51 +296,58 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
                 className={[
                     'fixed top-0 left-0 h-full z-30 flex flex-col',
                     'bg-white border-r border-slate-200/80',
-                    // Width snaps instantly (no layout animation) — mobile slide uses transform only
-                    'transform transition-transform duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]',
+                    'transform transition-[width,transform] duration-300 ease-[cubic-bezier(0.2,0,0,1)]',
                     'md:relative md:translate-x-0',
                     isOpen ? 'translate-x-0' : '-translate-x-full',
                     isCollapsed ? 'w-64 md:w-[72px]' : 'w-64 md:w-60',
                 ].join(' ')}
             >
                 {/* ── Header ─────────────────────────────────────────── */}
-                <div className="h-16 flex items-center justify-between px-4 border-b border-slate-100 shrink-0">
-                    <div className="flex items-center gap-3 overflow-hidden">
-                        {/* Brand mark */}
-                        <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center font-black text-base shadow-md shadow-blue-200 shrink-0">
-                            F
-                        </div>
-                        {/* Brand name — fades out when collapsed */}
-                        <span
-                            className={[
-                                'font-bold text-slate-800 text-[15px] tracking-tight whitespace-nowrap',
-                                'transition-[opacity,width,transform] duration-300',
-                                isCollapsed
-                                    ? 'opacity-0 max-w-0 -translate-x-2 overflow-hidden'
-                                    : 'opacity-100 max-w-[140px] translate-x-0',
-                            ].join(' ')}
-                        >
-                            Forson <span className="text-blue-600">Suite</span>
-                        </span>
-                    </div>
+                <div
+                    className={[
+                        'h-16 flex items-center border-b border-slate-100 shrink-0 transition-all duration-300',
+                        isCollapsed ? 'justify-center px-0' : 'justify-between px-4',
+                    ].join(' ')}
+                >
+                    {!isCollapsed ? (
+                        <>
+                            <div className="flex items-center gap-3 overflow-hidden">
+                                {/* Brand mark */}
+                                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center font-black text-base shadow-md shadow-blue-200 shrink-0">
+                                    F
+                                </div>
+                                {/* Brand name */}
+                                <span className="font-bold text-slate-800 text-[15px] tracking-tight whitespace-nowrap transition-opacity duration-300">
+                                    Forson <span className="text-blue-600">Suite</span>
+                                </span>
+                            </div>
 
-                    {/* Collapse toggle — desktop only */}
-                    <button
-                        type="button"
-                        onClick={() => setIsCollapsed(v => !v)}
-                        title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                        className={[
-                            'hidden md:flex items-center justify-center',
-                            'h-8 w-8 rounded-lg',
-                            'text-slate-400 hover:text-slate-700 hover:bg-slate-100',
-                            'transition-colors duration-100 shrink-0 cursor-pointer',
-                        ].join(' ')}
-                    >
-                        <Icon
-                            path={isCollapsed ? ICONS.chevronRight : ICONS.chevronLeft}
-                            className="h-4 w-4"
-                        />
-                    </button>
+                            {/* Collapse toggle button */}
+                            <button
+                                type="button"
+                                onClick={() => setIsCollapsed(true)}
+                                title="Collapse sidebar"
+                                className="hidden md:flex items-center justify-center h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors duration-150 shrink-0 cursor-pointer"
+                            >
+                                <Icon path={ICONS.chevronLeft} className="h-4 w-4" />
+                            </button>
+                        </>
+                    ) : (
+                        /* Collapsed Header: Centered Brand Mark with Expand Toggle capability */
+                        <div className="relative group/logo flex items-center justify-center">
+                            <button
+                                type="button"
+                                onClick={() => setIsCollapsed(false)}
+                                title="Expand sidebar"
+                                className="relative h-9 w-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center font-black text-base shadow-md shadow-blue-200 transition-transform duration-200 hover:scale-105 cursor-pointer shrink-0"
+                            >
+                                <span>F</span>
+                                <div className="absolute inset-0 rounded-xl bg-slate-900/20 opacity-0 group-hover/logo:opacity-100 transition-opacity flex items-center justify-center">
+                                    <Icon path={ICONS.chevronRight} className="h-4 w-4 text-white" />
+                                </div>
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 {/* ── Nav body ────────────────────────────────────────── */}
