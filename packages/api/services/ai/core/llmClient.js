@@ -17,15 +17,15 @@ class LLMClient {
         const geminiPool = process.env.GEMINI_API_KEY_POOL || process.env.GEMINI_API_KEY || '';
         this.geminiKeys = geminiPool.split(',').map(k => k.trim()).filter(Boolean);
         this.geminiIndex = 0;
-        this.geminiModel = process.env.GEMINI_MODEL || modelConfig.providers.google.defaultModel;
+        this.geminiModel = modelConfig.providers.google.defaultModel;
 
         // OpenAI Settings
         this.openaiKey = process.env.OPENAI_API_KEY || '';
-        this.openaiModel = process.env.OPENAI_MODEL || modelConfig.providers.openai.defaultModel;
+        this.openaiModel = modelConfig.providers.openai.defaultModel;
 
         // OpenRouter Settings
         this.openrouterKey = process.env.OPENROUTER_API_KEY || '';
-        this.openrouterModel = process.env.OPENROUTER_MODEL || modelConfig.providers.openrouter.defaultModel;
+        this.openrouterModel = modelConfig.providers.openrouter.defaultModel;
 
         // Gemini Tier Map
         this.geminiTiers = modelConfig.providers.google.tiers;
