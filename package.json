@@ -7,8 +7,11 @@
 	],
 	"scripts": {
 		"postinstall": "patch-package",
-		"test": "npm run -w packages/api test",
-		"lint": "npm run -w packages/api lint"
+		"test": "npm run --workspaces --if-present test",
+		"test:api": "npm run -w packages/api test",
+		"test:web": "npm run -w packages/web test",
+		"test:mobile": "npm run -w packages/mobile test",
+		"lint": "npm run --workspaces --if-present lint"
 	},
 	"dependencies": {
 		"date-fns": "^4.1.0",
