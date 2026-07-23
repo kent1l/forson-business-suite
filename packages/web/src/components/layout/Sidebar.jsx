@@ -99,7 +99,7 @@ function NavItem({ item, currentPage, onNavigate, setIsOpen, isCollapsed, pendin
     const badge = item.badge ? pendingCount : 0;
 
     return (
-        <div className="relative group/item">
+        <div className="relative group/item flex justify-center w-full">
             <a
                 href="#"
                 onClick={(e) => {
@@ -108,19 +108,21 @@ function NavItem({ item, currentPage, onNavigate, setIsOpen, isCollapsed, pendin
                     if (setIsOpen) setIsOpen(false);
                 }}
                 className={[
-                    'flex items-center gap-3 rounded-lg text-sm font-medium select-none',
+                    'flex items-center text-sm font-medium select-none',
                     'transition-all duration-200 ease-[cubic-bezier(0.2,0,0,1)]',
-                    isCollapsed ? 'px-0 py-2.5 justify-center' : 'px-3 py-2',
+                    isCollapsed
+                        ? 'h-10 w-10 rounded-xl justify-center'
+                        : 'px-3 py-2.5 rounded-xl gap-3 w-full',
                     isActive
-                        ? 'bg-blue-600 text-white shadow-sm shadow-blue-200'
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
                         : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
                 ].join(' ')}
             >
                 <Icon
                     path={item.icon}
                     className={[
-                        'h-[18px] w-[18px] shrink-0 transition-colors duration-150',
-                        isActive ? 'text-white' : 'text-slate-400 group-hover/item:text-slate-700',
+                        'h-5 w-5 shrink-0 transition-colors duration-150',
+                        isActive ? 'text-white' : 'text-slate-500 group-hover/item:text-slate-800',
                     ].join(' ')}
                 />
 
@@ -137,7 +139,7 @@ function NavItem({ item, currentPage, onNavigate, setIsOpen, isCollapsed, pendin
 
                 {/* Collapsed mini-mode badge dot */}
                 {isCollapsed && badge > 0 && (
-                    <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-white" />
+                    <span className="absolute top-1 right-1 h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ring-white" />
                 )}
             </a>
 
@@ -177,10 +179,10 @@ function CategoryGroup({ cat, currentPage, onNavigate, setIsOpen, isCollapsed, i
     const hasActive = visibleItems.some(i => i.page === currentPage);
 
     if (isCollapsed) {
-        // Mini mode: render items directly with category divider
+        // Mini mode: render items directly centered with subtle divider line
         return (
-            <div className="space-y-0.5 pt-1">
-                <div className="h-px bg-slate-100 mx-2 mb-1.5" />
+            <div className="space-y-1 py-1 w-full flex flex-col items-center">
+                <div className="w-8 h-px bg-slate-200/80 my-1" />
                 {visibleItems.map(item => (
                     <NavItem
                         key={item.page}
@@ -313,7 +315,7 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
                         <>
                             <div className="flex items-center gap-3 overflow-hidden">
                                 {/* Brand mark */}
-                                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center font-black text-base shadow-md shadow-blue-200 shrink-0">
+                                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center font-black text-lg shadow-md shadow-blue-200 shrink-0">
                                     F
                                 </div>
                                 {/* Brand name */}
@@ -333,13 +335,13 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
                             </button>
                         </>
                     ) : (
-                        /* Collapsed Header: Centered Brand Mark with Expand Toggle capability */
-                        <div className="relative group/logo flex items-center justify-center">
+                        /* Collapsed Header: Centered 40px Brand Mark with Expand Toggle capability */
+                        <div className="relative group/logo flex items-center justify-center w-full">
                             <button
                                 type="button"
                                 onClick={() => setIsCollapsed(false)}
                                 title="Expand sidebar"
-                                className="relative h-9 w-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center font-black text-base shadow-md shadow-blue-200 transition-transform duration-200 hover:scale-105 cursor-pointer shrink-0"
+                                className="relative h-10 w-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center font-black text-lg shadow-md shadow-blue-200 transition-all duration-200 hover:scale-105 cursor-pointer shrink-0"
                             >
                                 <span>F</span>
                                 <div className="absolute inset-0 rounded-xl bg-slate-900/20 opacity-0 group-hover/logo:opacity-100 transition-opacity flex items-center justify-center">
@@ -356,9 +358,9 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
                     style={{ scrollbarWidth: 'thin', scrollbarColor: '#e2e8f0 transparent' }}
                 >
                     {/* Padding wrapper adjusts with collapsed state */}
-                    <div className={isCollapsed ? 'px-2' : 'px-3'}>
+                    <div className={isCollapsed ? 'px-0 flex flex-col items-center w-full' : 'px-3'}>
                         {/* Top standalone items */}
-                        <div className="space-y-0.5 mb-4">
+                        <div className={isCollapsed ? 'space-y-1 w-full flex flex-col items-center' : 'space-y-0.5 mb-4'}>
                             {filteredTopItems.map(item => (
                                 <NavItem
                                     key={item.page}
@@ -374,10 +376,10 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
                         </div>
 
                         {/* Separator */}
-                        <div className="h-px bg-slate-100 mb-4" />
+                        <div className={isCollapsed ? 'w-8 h-px bg-slate-200/80 my-2' : 'h-px bg-slate-100 mb-4'} />
 
                         {/* Category groups */}
-                        <div className="space-y-2">
+                        <div className={isCollapsed ? 'space-y-1 w-full flex flex-col items-center' : 'space-y-2'}>
                             {CATEGORIES.map(cat => (
                                 <CategoryGroup
                                     key={cat.key}
