@@ -2,18 +2,20 @@ name: CI
 
 on:
   push:
-    branches: [ master ]
-    paths:
-      - 'packages/**'
-      - '.github/workflows/ci.yml'
+    branches:
+      - main
   pull_request:
-    branches: [ master ]
-    paths:
-      - 'packages/**'
-      - '.github/workflows/ci.yml'
+    branches:
+      - main
+      - dev
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
+    name: Test Suite
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -31,51 +33,38 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
-      
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
-          # --- FIX: Point cache to the directories with package-lock.json ---
-          cache-dependency-path: |
-            packages/api/package-lock.json
-            packages/web/package-lock.json
-          
-      - name: Install root dependencies
-        run: npm install
 
-      - name: Install API dependencies
-        run: npm install
-        working-directory: packages/api
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Install Web dependencies
-        run: npm install
-        working-directory: packages/web
-          
-      - name: Run API ESLint
+      - name: Cache turbo build setup
+        uses: actions/cache@v4
+        with:
+          path: .turbo/cache
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+      - name: Run Lint
         run: npm run lint
-        working-directory: packages/api
 
-      - name: Run Web ESLint
-        run: npm run lint
-        working-directory: packages/web
-          
-      - name: Run API tests
+      - name: Run Tests
         env:
           NODE_ENV: test
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
           POSTGRES_DB: test
           POSTGRES_HOST: localhost
-        run: npm test
-        working-directory: packages/api
-        
-      - name: Run Web tests
-        run: npm test
-        working-directory: packages/web
-          
+        run: npm run test
+
       - name: Upload test coverage
         uses: actions/upload-artifact@v4
         with:
