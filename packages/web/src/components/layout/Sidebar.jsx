@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
 import { APP_VERSION_LABEL } from '../../constants/version';
@@ -69,33 +69,17 @@ const TOP_ITEMS = [
     { name: 'POS',        icon: ICONS.pos,       page: 'pos',       permission: 'pos:use' },
 ];
 
-// ─── Animated accordion content using CSS max-height trick ─────────────────
+// ─── Accordion: CSS grid-template-rows trick (GPU-accelerated, no layout thrash) ──
 function AccordionContent({ isOpen, children }) {
-    const ref = useRef(null);
-    const [height, setHeight] = useState(0);
-
-    useEffect(() => {
-        if (!ref.current) return;
-        // Observe size changes (items re-render, permissions change)
-        const ro = new ResizeObserver(() => {
-            if (ref.current) setHeight(ref.current.scrollHeight);
-        });
-        ro.observe(ref.current);
-        setHeight(ref.current.scrollHeight);
-        return () => ro.disconnect();
-    }, []);
-
     return (
         <div
             style={{
-                maxHeight: isOpen ? `${height}px` : '0px',
-                overflow: 'hidden',
-                transition: 'max-height 260ms cubic-bezier(0.4, 0, 0.2, 1)',
+                display: 'grid',
+                gridTemplateRows: isOpen ? '1fr' : '0fr',
+                transition: 'grid-template-rows 180ms ease',
             }}
         >
-            <div ref={ref}>
-                {children}
-            </div>
+            <div style={{ overflow: 'hidden' }}>{children}</div>
         </div>
     );
 }
@@ -212,8 +196,8 @@ function CategoryGroup({ cat, currentPage, onNavigate, setIsOpen, isCollapsed, i
                 onClick={onToggle}
                 className={[
                     'w-full flex items-center justify-between gap-2',
-                    'px-3 py-1.5 rounded-lg text-left',
-                    'transition-colors duration-150',
+                    'px-3 py-2.5 min-h-[36px] rounded-lg text-left',
+                    'transition-colors duration-100 cursor-pointer',
                     hasActive && !isOpen
                         ? 'text-blue-600 bg-blue-50'
                         : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50',
@@ -225,10 +209,10 @@ function CategoryGroup({ cat, currentPage, onNavigate, setIsOpen, isCollapsed, i
                 <Icon
                     path={ICONS.chevronDown}
                     className={[
-                        'h-3 w-3 shrink-0 transition-transform duration-260',
+                        'h-3.5 w-3.5 shrink-0',
+                        'transition-transform duration-180 ease-in-out',
                         isOpen ? 'rotate-0' : '-rotate-90',
                     ].join(' ')}
-                    style={{ transitionTimingFunction: 'cubic-bezier(0.4,0,0.2,1)' }}
                 />
             </button>
 
@@ -303,8 +287,8 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
                 className={[
                     'fixed top-0 left-0 h-full z-30 flex flex-col',
                     'bg-white border-r border-slate-200/80',
-                    // Mobile slide-in / desktop static
-                    'transform transition-[transform,width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
+                    // Width snaps instantly (no layout animation) — mobile slide uses transform only
+                    'transform transition-transform duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]',
                     'md:relative md:translate-x-0',
                     isOpen ? 'translate-x-0' : '-translate-x-full',
                     isCollapsed ? 'w-64 md:w-[72px]' : 'w-64 md:w-60',
@@ -338,14 +322,14 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
                         title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                         className={[
                             'hidden md:flex items-center justify-center',
-                            'h-7 w-7 rounded-lg',
+                            'h-8 w-8 rounded-lg',
                             'text-slate-400 hover:text-slate-700 hover:bg-slate-100',
-                            'transition-colors duration-150 shrink-0',
+                            'transition-colors duration-100 shrink-0 cursor-pointer',
                         ].join(' ')}
                     >
                         <Icon
                             path={isCollapsed ? ICONS.chevronRight : ICONS.chevronLeft}
-                            className="h-4 w-4 transition-transform duration-300"
+                            className="h-4 w-4"
                         />
                     </button>
                 </div>
