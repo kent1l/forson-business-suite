@@ -1,0 +1,20 @@
+version: "1.0"
+
+pools:
+  default_embedding_pool:
+    description: "Cascading embedding pool prioritizing free tiers with vector dimension 768"
+    dimensions: 768
+    fallback_chain:
+      - provider: gemini
+        model: "text-embedding-004"
+        api_key_env: "GEMINI_API_KEY"
+      - provider: openrouter
+        model: "nvidia/nemotron-3-embed-1b:free"
+        api_key_env: "OPENROUTER_API_KEY"
+      - provider: openrouter
+        model: "nvidia/llama-nemotron-embed-vl-1b-v2:free"
+        api_key_env: "OPENROUTER_API_KEY"
+      - provider: openai
+        model: "text-embedding-3-small"
+        dimensions_override: 768 # Ensure OpenAI outputs matching 768 dimensions if supported, or handle mapping
+        api_key_env: "OPENAI_API_KEY"

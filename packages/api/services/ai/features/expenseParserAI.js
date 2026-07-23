@@ -1,9 +1,10 @@
 const db = require('../../../db');
 const llmClient = require('../core/llmClient');
+const embeddingClient = require('../core/embeddingClient');
 const { wrapJsonInstruction } = require('../core/promptBuilder');
 
 /**
- * Feature module: AI-assisted Natural Language Expense Parser.
+ * Feature module: AI-assisted Natural Language Expense Parser with RAG pgvector dynamic few-shot retrieval.
  */
 class ExpenseParserAI {
     /**
@@ -44,21 +45,54 @@ class ExpenseParserAI {
             // Non-blocking fallback if DB is unavailable
         }
 
-        // 3. Fetch recent user corrections for few-shot learning
+        // 3. Dynamic RAG Few-Shot Retrieval via pgvector Cosine Similarity Search
         let fewShotExamples = [];
         try {
-            const correctionsRes = await db.query(
-                `SELECT c.field_name, c.ai_suggestion, c.user_correction, e.notes 
-                 FROM expense_ai_correction c
-                 JOIN expense e ON c.expense_id = e.expense_id
-                 ORDER BY c.created_at DESC 
-                 LIMIT 20`
-            );
-            fewShotExamples = correctionsRes.rows.map(r => 
-                `Input note: "${r.notes || ''}" | Corrected ${r.field_name}: from "${r.ai_suggestion}" to "${r.user_correction}"`
-            );
-        } catch {
-            // Non-blocking if table query fails
+            let queryVector = null;
+            try {
+                const embResult = await embeddingClient.generateEmbeddingWithPool(text.trim());
+                if (embResult?.vector) {
+                    queryVector = JSON.stringify(embResult.vector);
+                }
+            } catch (embErr) {
+                console.warn('[ExpenseParserAI] Failed to generate embedding vector for few-shot query:', embErr.message);
+            }
+
+            if (queryVector) {
+                const vectorRes = await db.query(
+                    `SELECT raw_input, corrected_category, corrected_data, field_name, ai_suggestion, user_correction
+                     FROM expense_ai_correction
+                     WHERE embedding IS NOT NULL
+                     ORDER BY embedding <=> $1
+                     LIMIT 3`,
+                    [queryVector]
+                );
+
+                if (vectorRes.rows.length > 0) {
+                    fewShotExamples = vectorRes.rows.map(r => {
+                        if (r.raw_input || r.corrected_category) {
+                            return `Input: "${r.raw_input || text.trim()}" -> Corrected Category: "${r.corrected_category || 'N/A'}" | Details: ${JSON.stringify(r.corrected_data || {})}`;
+                        }
+                        return `Field: ${r.field_name} | Suggestion: "${r.ai_suggestion}" -> Corrected: "${r.user_correction}"`;
+                    });
+                }
+            }
+
+            // Fallback to recent corrections if pgvector search returned no examples
+            if (fewShotExamples.length === 0) {
+                const correctionsRes = await db.query(
+                    `SELECT c.field_name, c.ai_suggestion, c.user_correction, e.notes 
+                     FROM expense_ai_correction c
+                     JOIN expense e ON c.expense_id = e.expense_id
+                     ORDER BY c.created_at DESC 
+                     LIMIT 5`
+                );
+                fewShotExamples = correctionsRes.rows.map(r => 
+                    `Input note: "${r.notes || ''}" | Corrected ${r.field_name}: from "${r.ai_suggestion}" to "${r.user_correction}"`
+                );
+            }
+        } catch (err) {
+            console.warn('[ExpenseParserAI] Few-shot retrieval error:', err.message);
         }
 
         // Today in Philippine Time
@@ -193,6 +227,46 @@ User expense description: "${text.trim()}"`;
             raw_llm_response: raw,
             provider: llmResult.provider || llmResult.providerUsed
         };
+    }
+
+    /**
+     * Stores a user correction record alongside its vector embedding for future RAG few-shot retrieval.
+     */
+    async recordCorrection({ expense_id, field_name, ai_suggestion, user_correction, raw_input, corrected_category, corrected_data }) {
+        let vectorJson = null;
+        const textToEmbed = raw_input || user_correction || ai_suggestion || '';
+        if (textToEmbed && textToEmbed.trim().length >= 3) {
+            try {
+                const embRes = await embeddingClient.generateEmbeddingWithPool(textToEmbed.trim());
+                if (embRes?.vector) {
+                    vectorJson = JSON.stringify(embRes.vector);
+                }
+            } catch (err) {
+                console.warn('[ExpenseParserAI] Failed to generate embedding for correction record:', err.message);
+            }
+        }
+
+        const query = `
+            INSERT INTO expense_ai_correction (
+                expense_id, field_name, ai_suggestion, user_correction, 
+                raw_input, corrected_category, corrected_data, embedding
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING correction_id
+        `;
+
+        const res = await db.query(query, [
+            expense_id || null,
+            field_name ? String(field_name).substring(0, 50) : 'category',
+            ai_suggestion ? String(ai_suggestion) : null,
+            user_correction ? String(user_correction) : null,
+            raw_input ? String(raw_input) : (textToEmbed || null),
+            corrected_category ? String(corrected_category).substring(0, 100) : null,
+            corrected_data ? JSON.stringify(corrected_data) : null,
+            vectorJson
+        ]);
+
+        return res.rows[0];
     }
 }
 
