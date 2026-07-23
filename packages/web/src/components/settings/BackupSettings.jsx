@@ -438,7 +438,7 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
                                         </td>
                                         <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatSize(backup.size)}</td>
                                         <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
-                                            {format(toZonedTime(parseISO(backup.createdAt), 'Asia/Manila'), 'MM/dd/yyyy hh:mm a')}
+                                            {format(toZonedTime(parseISO(backup.createdAt), settings.APP_TIMEZONE || 'Asia/Manila'), 'MM/dd/yyyy hh:mm a')}
                                         </td>
                                         <td className="px-4 py-3 text-right whitespace-nowrap space-x-3">
                                             <a

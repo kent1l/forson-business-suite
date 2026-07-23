@@ -4,18 +4,18 @@
 # Secrets (rclone.conf, id_rsa) are expected at /scripts/ (bind-mounted from ./backup/).
 set -e
 
-export TZ="${TZ:-Asia/Manila}"
-
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] [backup.sh] $1"
-}
-
-
 # --- Helper: read a value from the settings table ---
 db_setting() {
     PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -tAq \
         -c "SELECT COALESCE(setting_value, '$2') FROM settings WHERE setting_key = '$1';" \
         2>/dev/null || echo "$2"
+}
+
+# --- Read Application Timezone ---
+export TZ=$(db_setting APP_TIMEZONE "Asia/Manila")
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] [backup.sh] $1"
 }
 
 # --- Read local backup config ---

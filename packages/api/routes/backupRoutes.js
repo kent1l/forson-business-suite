@@ -4,8 +4,46 @@ const path = require('path');
 const zlib = require('zlib');
 const multer = require('multer');
 const { exec } = require('child_process');
+const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const router = express.Router();
+
+// Helper to get configured application timezone
+async function getAppTimezone() {
+    try {
+        const { rows } = await db.query("SELECT setting_value FROM settings WHERE setting_key = 'APP_TIMEZONE'");
+        return rows[0]?.setting_value || 'Asia/Manila';
+    } catch (err) {
+        console.error('Failed to fetch APP_TIMEZONE setting, defaulting to Asia/Manila:', err);
+        return 'Asia/Manila';
+    }
+}
+
+// Helper to get formatted timestamp for the target timezone
+function getLocalTimestamp(timeZone) {
+    try {
+        const now = new Date();
+        const formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        });
+        const parts = formatter.formatToParts(now);
+        const p = parts.reduce((acc, part) => {
+            acc[part.type] = part.value;
+            return acc;
+        }, {});
+        return `${p.year}-${p.month}-${p.day}T${p.hour}-${p.minute}-${p.second}`;
+    } catch (err) {
+        console.error(`Failed to format timestamp for timezone ${timeZone}, falling back to UTC:`, err);
+        return new Date().toISOString().replace(/[:.]/g, '-');
+    }
+}
 
 const BACKUP_DIR = process.env.BACKUP_DIR
     ? path.resolve(process.env.BACKUP_DIR)
@@ -79,12 +117,13 @@ router.get('/', protect, hasPermission('backups:view'), (req, res) => {
 });
 
 // POST /api/backups - Create a new on-demand backup
-router.post('/', protect, hasPermission('backups:create'), (req, res) => {
+router.post('/', protect, hasPermission('backups:create'), async (req, res) => {
     if (isOperationInProgress) {
         return res.status(409).json({ message: 'A backup or restore operation is already in progress. Please wait.' });
     }
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const timezone = await getAppTimezone();
+    const timestamp = getLocalTimestamp(timezone);
     const filename = `forson-db-manual-${timestamp}.sql.gz`;
     const filepath = path.join(BACKUP_DIR, filename);
 
@@ -110,7 +149,7 @@ router.post('/', protect, hasPermission('backups:create'), (req, res) => {
 });
 
 // POST /api/backups/upload - Upload an external backup file (.sql.gz or .sql)
-router.post('/upload', protect, hasPermission('backups:create'), upload.single('file'), (req, res) => {
+router.post('/upload', protect, hasPermission('backups:create'), upload.single('file'), async (req, res) => {
     if (isOperationInProgress) {
         return res.status(409).json({ message: 'A backup or restore operation is already in progress. Please wait.' });
     }
@@ -137,7 +176,8 @@ router.post('/upload', protect, hasPermission('backups:create'), upload.single('
         return res.status(400).json({ message: 'File header mismatch. Uploaded file is not a valid gzipped backup or SQL dump.' });
     }
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const timezone = await getAppTimezone();
+    const timestamp = getLocalTimestamp(timezone);
     const filename = `forson-db-upload-${timestamp}.sql.gz`;
     const filepath = path.join(BACKUP_DIR, filename);
 
