@@ -38,7 +38,7 @@ export default function ExpensesPage() {
             try {
                 const [catRes, pmRes] = await Promise.all([
                     api.get('/expense-categories'),
-                    api.get('/payment-methods')
+                    api.get('/payment-methods/enabled')
                 ]);
                 setCategories(catRes.data || []);
                 setPaymentMethods(pmRes.data || []);

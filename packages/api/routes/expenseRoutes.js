@@ -318,7 +318,7 @@ router.post('/expenses', protect, hasPermission('expenses:create'), async (req, 
 
         if (payment_method_id && !isNaN(parseInt(payment_method_id, 10))) {
             const pmRes = await db.query(
-                'SELECT method_id, name FROM payment_methods WHERE method_id = $1 AND is_active = true',
+                'SELECT method_id, name FROM payment_methods WHERE method_id = $1 AND enabled = true',
                 [parseInt(payment_method_id, 10)]
             );
             if (pmRes.rows.length > 0) {

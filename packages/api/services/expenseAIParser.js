@@ -25,7 +25,7 @@ async function parseExpenseText(text) {
     const pmRes = await db.query(
         `SELECT method_id, name 
          FROM payment_methods 
-         WHERE is_active = true 
+         WHERE enabled = true 
          ORDER BY sort_order ASC`
     );
     const paymentMethods = pmRes.rows;
