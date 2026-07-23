@@ -48,7 +48,7 @@ export default function ExpenseQuickEntry({ onParsed }) {
             </div>
 
             <p className="text-xs text-slate-400 mb-3">
-                Type in natural language (e.g. <span className="italic text-slate-300">"Paid 2,500 to Meralco for July store electricity yesterday, cash"</span>) to auto-fill form fields.
+                Type in natural language (e.g. <span className="italic text-slate-300">"Bayad 4,500 sa fibeco para sa kuryente gahapon, Cash"</span>) to auto-fill form fields.
             </p>
 
             <form onSubmit={handleParse} className="flex flex-col sm:flex-row items-stretch gap-2">
