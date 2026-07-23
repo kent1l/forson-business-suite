@@ -1,38 +1,108 @@
-#!/bin/bash
-
-# Exit immediately if a command exits with a non-zero status.
+#!/bin/sh
+# backup.sh — PostgreSQL backup with optional remote sync
+# All configuration is read from the 'settings' DB table at runtime.
+# Secrets (rclone.conf, id_rsa) are expected at /scripts/ (bind-mounted from ./backup/).
 set -e
 
-# --- Environment Variables ---
-# These are expected to be passed in from the docker-compose.yml file.
-# DB_HOST: The hostname of the database service (e.g., 'db').
-# DB_NAME: The name of the database to back up.
-# DB_USER: The username for the database.
-# DB_PASSWORD: The password for the database user.
-# BACKUP_PATH: The directory inside the container where backups are stored (e.g., '/backups').
-# BACKUP_RETENTION_DAYS: How many days to keep backup files.
+# --- Helper: read a value from the settings table ---
+db_setting() {
+    PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -tAq \
+        -c "SELECT COALESCE(setting_value, '$2') FROM settings WHERE setting_key = '$1';" \
+        2>/dev/null || echo "$2"
+}
 
-# --- Backup Execution ---
+# --- Read Application Timezone ---
+export TZ=$(db_setting APP_TIMEZONE "Asia/Manila")
 
-# Format the filename with the current date and time
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S %Z')] [backup.sh] $1"
+}
+
+# --- Read local backup config ---
+RETENTION=$(db_setting BACKUP_RETENTION_DAYS 7)
+
+# --- Create timestamped backup file ---
+mkdir -p "$BACKUP_PATH"
 FILENAME="$BACKUP_PATH/backup-$(date +%Y-%m-%dT%H-%M-%S).sql.gz"
 
-echo "Starting backup of database '$DB_NAME'..."
+log "Starting backup → $FILENAME"
 
-# Use pg_dump to create a compressed SQL dump of the database.
-# The PGPASSWORD environment variable is used by pg_dump for authentication.
-PGPASSWORD=$DB_PASSWORD pg_dump -h $DB_HOST -U $DB_USER -d $DB_NAME -F c -Z 9 > "$FILENAME"
+# Use plain SQL + gzip (compatible with both psql restore and pg_restore).
+# --clean --if-exists: DROP objects before recreating (safe for non-empty DB restore).
+# --no-owner --no-acl: portable dump (no role dependencies).
+PGPASSWORD="$DB_PASSWORD" pg_dump \
+    -h "$DB_HOST" \
+    -U "$DB_USER" \
+    -d "$DB_NAME" \
+    --clean --if-exists --no-owner --no-acl \
+    | gzip > "$FILENAME"
 
-echo "Backup successful: $FILENAME"
+# Verify dump file was created and is non-empty
+if [ ! -s "$FILENAME" ]; then
+    log "ERROR: Backup dump file is empty or missing! Aborting retention and remote sync."
+    rm -f "$FILENAME"
+    exit 1
+fi
 
-# --- Retention Policy / Cleanup ---
+# Ensure the backend container (appuser) can read the file
+chmod 644 "$FILENAME"
 
-echo "Applying retention policy: keeping last $BACKUP_RETENTION_DAYS days..."
+log "Backup complete: $FILENAME"
 
-# Find and delete backup files older than the specified retention period.
-# -mtime +N finds files modified more than N days ago.
-find $BACKUP_PATH -type f -name "*.sql.gz" -mtime +$BACKUP_RETENTION_DAYS -exec rm -f {} \;
+# --- Retention: delete local backups older than RETENTION days ---
+find "$BACKUP_PATH" -type f -name "*.sql.gz" -mtime +"$RETENTION" -exec rm -f {} \;
+log "Local retention applied ($RETENTION days)."
 
-echo "Cleanup complete."
-echo "---------------------"
+# ── Google Drive (rclone) ────────────────────────────────────────────────────
+GDRIVE_ENABLED=$(db_setting BACKUP_GDRIVE_ENABLED false)
+RCLONE_CONF="/scripts/rclone.conf"
+
+if [ "$GDRIVE_ENABLED" = "true" ]; then
+    if [ ! -f "$RCLONE_CONF" ]; then
+        log "WARNING: BACKUP_GDRIVE_ENABLED=true but $RCLONE_CONF not found. Skipping GDrive sync."
+    else
+        GDRIVE_REMOTE=$(db_setting BACKUP_GDRIVE_REMOTE "gdrive:forson-backups")
+        REMOTE_DAYS=$(db_setting BACKUP_REMOTE_RETENTION_DAYS 30)
+        log "Syncing to GDrive: $GDRIVE_REMOTE ..."
+        rclone copy "$FILENAME" "$GDRIVE_REMOTE" \
+            --config "$RCLONE_CONF" \
+            --log-level INFO
+        # Prune remote files older than REMOTE_DAYS days
+        rclone delete "$GDRIVE_REMOTE" \
+            --min-age "${REMOTE_DAYS}d" \
+            --config "$RCLONE_CONF" 2>/dev/null || true
+        log "GDrive sync complete."
+    fi
+fi
+
+# ── Tailscale rsync ──────────────────────────────────────────────────────────
+TAILSCALE_ENABLED=$(db_setting BACKUP_TAILSCALE_ENABLED false)
+SSH_KEY="/scripts/id_rsa"
+
+if [ "$TAILSCALE_ENABLED" = "true" ]; then
+    if [ ! -f "$SSH_KEY" ]; then
+        log "WARNING: BACKUP_TAILSCALE_ENABLED=true but $SSH_KEY not found. Skipping Tailscale sync."
+    else
+        TS_HOST=$(db_setting BACKUP_TAILSCALE_HOST "")
+        TS_PATH=$(db_setting BACKUP_TAILSCALE_PATH "~/forson-backups")
+        REMOTE_DAYS=$(db_setting BACKUP_REMOTE_RETENTION_DAYS 30)
+
+        if [ -z "$TS_HOST" ]; then
+            log "WARNING: BACKUP_TAILSCALE_HOST is empty. Skipping Tailscale sync."
+        else
+            log "rsyncing to Tailscale peer: $TS_HOST ..."
+            chmod 600 "$SSH_KEY"
+            rsync -avz \
+                -e "ssh -o StrictHostKeyChecking=no -o BatchMode=yes -i $SSH_KEY" \
+                "$FILENAME" \
+                "${TS_HOST}:${TS_PATH}/"
+            # Prune old files on remote
+            ssh -o StrictHostKeyChecking=no -o BatchMode=yes -i "$SSH_KEY" "$TS_HOST" \
+                "find ${TS_PATH} -name '*.sql.gz' -mtime +${REMOTE_DAYS} -delete 2>/dev/null; true"
+            log "Tailscale rsync complete."
+        fi
+    fi
+fi
+
+log "Done. ---------------------"
 

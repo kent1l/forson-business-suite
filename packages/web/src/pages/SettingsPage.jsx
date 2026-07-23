@@ -107,6 +107,29 @@ const CompanyInfoSettings = ({ settings, handleChange }) => (
             <label className="block text-sm font-medium text-gray-700 mb-1">Company Website</label>
             <input type="text" name="COMPANY_WEBSITE" value={settings.COMPANY_WEBSITE} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
         </div>
+        <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Application Timezone</label>
+            <select
+                name="APP_TIMEZONE"
+                value={settings.APP_TIMEZONE || 'Asia/Manila'}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+            >
+                <option value="Asia/Manila">Asia/Manila (PHT, UTC+8)</option>
+                <option value="Asia/Singapore">Asia/Singapore (SGT, UTC+8)</option>
+                <option value="Asia/Tokyo">Asia/Tokyo (JST, UTC+9)</option>
+                <option value="Asia/Hong_Kong">Asia/Hong_Kong (HKT, UTC+8)</option>
+                <option value="UTC">UTC (Coordinated Universal Time, UTC+0)</option>
+                <option value="Europe/London">Europe/London (GMT/BST, UTC+0/+1)</option>
+                <option value="Europe/Berlin">Europe/Berlin (CET/CEST, UTC+1/+2)</option>
+                <option value="America/New_York">America/New_York (EST/EDT, UTC-5/-4)</option>
+                <option value="America/Chicago">America/Chicago (CST/CDT, UTC-6/-5)</option>
+                <option value="America/Denver">America/Denver (MST/MDT, UTC-7/-6)</option>
+                <option value="America/Los_Angeles">America/Los_Angeles (PST/PDT, UTC-8/-7)</option>
+                <option value="Australia/Sydney">Australia/Sydney (AEST/AEDT, UTC+10/+11)</option>
+            </select>
+            <p className="mt-1 text-xs text-gray-500">Configures the default timezone used for reports, backups, and scheduler logs.</p>
+        </div>
     </div>
 );
 
