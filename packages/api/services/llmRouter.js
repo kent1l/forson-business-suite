@@ -425,7 +425,74 @@ Only include groups that contain 2 or more parts. Parts that are NOT duplicates 
             }))
             .filter(g => g.partIds.length >= 2);
         return { groups };
+    /**
+     * Generic structured JSON generation from prompt using active provider.
+     */
+    async generateJSON(prompt, timeoutMs = 10000) {
+        if (this.provider === 'openai') {
+            if (!this.openaiKey) throw new Error('No OpenAI API key configured');
+            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.openaiKey}`
+                },
+                signal: AbortSignal.timeout(timeoutMs),
+                body: JSON.stringify({
+                    model: this.openaiModel,
+                    messages: [{ role: 'user', content: prompt }],
+                    response_format: { type: 'json_object' }
+                })
+            });
+            if (!response.ok) throw new Error(`OpenAI API status ${response.status}`);
+            const data = await response.json();
+            const text = data.choices?.[0]?.message?.content || '{}';
+            return { data: JSON.parse(text), provider: 'openai', model: this.openaiModel };
+        } else if (this.provider === 'openrouter') {
+            if (!this.openrouterKey) throw new Error('No OpenRouter API key configured');
+            const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.openrouterKey}`,
+                    'HTTP-Referer': 'http://localhost:5173',
+                    'X-Title': 'Forson Business Suite',
+                    'Content-Type': 'application/json'
+                },
+                signal: AbortSignal.timeout(timeoutMs),
+                body: JSON.stringify({
+                    model: this.openrouterModel,
+                    messages: [{ role: 'user', content: prompt }],
+                    response_format: { type: 'json_object' }
+                })
+            });
+            if (!response.ok) throw new Error(`OpenRouter API status ${response.status}`);
+            const data = await response.json();
+            let text = data.choices?.[0]?.message?.content || '{}';
+            text = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+            return { data: JSON.parse(text), provider: 'openrouter', model: this.openrouterModel };
+        } else {
+            // Default to Google Gemini
+            if (this.geminiKeys.length === 0) throw new Error('No Gemini API keys configured');
+            const key = this.geminiKeys[this.geminiIndex];
+            this.geminiIndex = (this.geminiIndex + 1) % this.geminiKeys.length;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.geminiModel}:generateContent?key=${key}`;
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                signal: AbortSignal.timeout(timeoutMs),
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: { responseMimeType: 'application/json' }
+                })
+            });
+            if (!response.ok) throw new Error(`Gemini API status ${response.status}`);
+            const data = await response.json();
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!text) throw new Error('Empty response candidate from Gemini');
+            return { data: JSON.parse(text), provider: 'google', model: this.geminiModel };
+        }
     }
 }
 
 module.exports = new LLMRouter();
+
