@@ -22,6 +22,9 @@ Execute the following phases strictly in order. Do not proceed to Phase 4 withou
 - PAUSE. Ask: "Do you approve of this architectural plan?" 
 - *Crucial: Do not read raw files or generate application code yet.*
 
-**Phase 4: Targeted Execution**
+**Phase 4: Targeted Execution & Verification**
 - Upon developer approval, read only the targeted files identified in the plan.
 - Generate the requested feature code, adhering strictly to the zero-yapping and diff-first policies.
+- Add or update matching test suites under `packages/<package>/tests/` for all new or modified logic paths.
+- Run `npm test` to empirically verify clean execution before declaring completion.
+- Run `graphify update .` to keep the knowledge graph synchronized.
