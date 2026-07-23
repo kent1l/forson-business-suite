@@ -354,8 +354,14 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
 
                 {/* ── Nav body ────────────────────────────────────────── */}
                 <nav
-                    className="flex-1 overflow-y-auto overflow-x-hidden py-4 space-y-0.5"
-                    style={{ scrollbarWidth: 'thin', scrollbarColor: '#e2e8f0 transparent' }}
+                    className={`flex-1 overflow-y-auto overflow-x-hidden py-4 space-y-0.5 ${
+                        isCollapsed ? '[&::-webkit-scrollbar]:hidden' : ''
+                    }`}
+                    style={{
+                        scrollbarWidth: isCollapsed ? 'none' : 'thin',
+                        scrollbarColor: '#e2e8f0 transparent',
+                        msOverflowStyle: isCollapsed ? 'none' : 'auto',
+                    }}
                 >
                     {/* Padding wrapper adjusts with collapsed state */}
                     <div className={isCollapsed ? 'px-0 flex flex-col items-center w-full' : 'px-3'}>
