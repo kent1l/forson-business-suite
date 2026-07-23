@@ -3,6 +3,7 @@ const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const { parseExpenseText } = require('../services/expenseAIParser');
+const { expenseParserAI } = require('../services/ai');
 
 const router = express.Router();
 
@@ -351,15 +352,28 @@ router.post('/expenses', protect, hasPermission('expenses:create'), async (req, 
 
         const newExpenseId = insertRes.rows[0].expense_id;
 
-        // Record AI corrections if provided
+        // Record AI corrections with vector embeddings if provided
         if (Array.isArray(ai_corrections) && ai_corrections.length > 0) {
             for (const c of ai_corrections) {
                 if (c.field_name && (c.ai_suggestion !== c.user_correction)) {
-                    await db.query(
-                        `INSERT INTO expense_ai_correction (expense_id, field_name, ai_suggestion, user_correction)
-                         VALUES ($1, $2, $3, $4)`,
-                        [newExpenseId, String(c.field_name).substring(0, 50), String(c.ai_suggestion || ''), String(c.user_correction || '')]
-                    );
+                    try {
+                        await expenseParserAI.recordCorrection({
+                            expense_id: newExpenseId,
+                            field_name: c.field_name,
+                            ai_suggestion: c.ai_suggestion,
+                            user_correction: c.user_correction,
+                            raw_input: notes || c.raw_input || c.user_correction || c.ai_suggestion,
+                            corrected_category: (c.field_name === 'category_id' || c.field_name === 'category') ? c.user_correction : null,
+                            corrected_data: {
+                                field_name: c.field_name,
+                                ai_suggestion: c.ai_suggestion,
+                                user_correction: c.user_correction,
+                                notes: notes || null
+                            }
+                        });
+                    } catch (corrErr) {
+                        console.error('[ExpenseRoutes] Failed to record correction embedding:', corrErr.message);
+                    }
                 }
             }
         }
