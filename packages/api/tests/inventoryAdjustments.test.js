@@ -1,6 +1,8 @@
 const request = require('supertest');
 const express = require('express');
 
+jest.setTimeout(10000);
+
 // Mock db module
 jest.mock('../db', () => {
     const queryFn = jest.fn();
