@@ -19,7 +19,7 @@ class LLMClient {
 
         // OpenRouter Settings
         this.openrouterKey = process.env.OPENROUTER_API_KEY || '';
-        this.openrouterModel = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct';
+        this.openrouterModel = process.env.OPENROUTER_MODEL || 'openrouter/free';
     }
 
     /**
@@ -149,6 +149,9 @@ class LLMClient {
         let lastError = null;
         for (const modelCandidate of modelsToTry) {
             try {
+                // openrouter/free needs up to 45s for queue routing; specific models need 20s
+                const currentTimeout = modelCandidate === 'openrouter/free' ? 45000 : 20000;
+
                 const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
                     method: 'POST',
                     headers: {
@@ -157,7 +160,7 @@ class LLMClient {
                         'X-Title': 'Forson Business Suite',
                         'Content-Type': 'application/json'
                     },
-                    signal: AbortSignal.timeout(timeoutMs),
+                    signal: AbortSignal.timeout(currentTimeout),
                     body: JSON.stringify({
                         model: modelCandidate,
                         messages: [{ role: 'user', content: prompt }],
