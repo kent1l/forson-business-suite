@@ -425,6 +425,8 @@ Only include groups that contain 2 or more parts. Parts that are NOT duplicates 
             }))
             .filter(g => g.partIds.length >= 2);
         return { groups };
+    }
+
     /**
      * Generic structured JSON generation from prompt using active provider.
      */
