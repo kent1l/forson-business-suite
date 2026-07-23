@@ -1,131 +1,88 @@
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../../../.env') });
-const modelConfig = require('../services/ai/core/modelConfig');
+require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
+require('dotenv').config({ path: path.resolve(process.cwd(), '../../.env') });
+require('dotenv').config({ path: path.resolve(process.cwd(), '.env') });
 
-const googleTiers = modelConfig.providers.google.tiers;
-const GEMINI_MODELS = [
-    ...new Set([
-        ...googleTiers.ROUTINE,
-        ...googleTiers.REASONING,
-        ...googleTiers.MICRO
-    ])
-];
+const { modelLoader, llmClient, circuitBreaker } = require('../services/ai');
 
-const OPENROUTER_MODELS = modelConfig.providers.openrouter.fallbackChain;
-
-async function testGeminiModel(key, model) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
-    try {
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            signal: AbortSignal.timeout(10000),
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: 'Respond with short JSON: {"status":"ok"}' }] }],
-                generationConfig: { responseMimeType: 'application/json' }
-            })
-        });
-
-        const status = res.status;
-        const text = await res.text();
-
-        if (res.ok) {
-            return { model, status: 'SUCCESS', httpStatus: status, detail: 'OK' };
-        }
-
-        if (status === 429 || text.includes('RESOURCE_EXHAUSTED') || text.includes('Quota exceeded')) {
-            return { model, status: 'RATE_LIMITED', httpStatus: status, detail: 'Rate limit or quota exhausted (KEEP IN LIST)' };
-        }
-
-        if (status === 404 || text.includes('NOT_FOUND') || text.includes('is not found') || text.includes('deprecated') || text.includes('unsupported')) {
-            return { model, status: 'DEPRECATED_OR_INVALID', httpStatus: status, detail: text.substring(0, 120) };
-        }
-
-        return { model, status: 'ERROR', httpStatus: status, detail: text.substring(0, 120) };
-    } catch (err) {
-        return { model, status: 'NETWORK_ERROR', httpStatus: 0, detail: err.message };
-    }
-}
-
-async function testOpenRouterModel(key, model) {
-    try {
-        const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${key}`,
-                'Content-Type': 'application/json',
-                'HTTP-Referer': 'http://localhost:5173',
-                'X-Title': 'Forson Business Suite'
-            },
-            signal: AbortSignal.timeout(15000),
-            body: JSON.stringify({
-                model: model,
-                messages: [{ role: 'user', content: 'Respond with short JSON: {"status":"ok"}' }],
-                response_format: { type: 'json_object' }
-            })
-        });
-
-        const status = res.status;
-        const text = await res.text();
-
-        if (res.ok) {
-            return { model, status: 'SUCCESS', httpStatus: status, detail: 'OK' };
-        }
-
-        if (status === 429) {
-            return { model, status: 'RATE_LIMITED', httpStatus: status, detail: 'Rate limit / quota exhausted' };
-        }
-
-        if (status === 404 || text.includes('not found') || text.includes('does not exist')) {
-            return { model, status: 'DEPRECATED_OR_INVALID', httpStatus: status, detail: text.substring(0, 120) };
-        }
-
-        return { model, status: 'ERROR', httpStatus: status, detail: text.substring(0, 120) };
-    } catch (err) {
-        return { model, status: 'NETWORK_ERROR', httpStatus: 0, detail: err.message };
-    }
-}
-
-async function runVerification() {
+async function verifyAIModels() {
     console.log('====================================================');
-    console.log('   FORSON BUSINESS SUITE - AI MODEL VERIFICATION');
+    console.log('   Task-Specific Model Pool Verification Suite');
     console.log('====================================================\n');
 
-    const geminiKeys = (process.env.GEMINI_API_KEY_POOL || process.env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean);
-    const openrouterKey = process.env.OPENROUTER_API_KEY || '';
-    const openaiKey = process.env.OPENAI_API_KEY || '';
-
-    console.log(`[Config] Gemini Keys: ${geminiKeys.length} | OpenRouter Key: ${openrouterKey ? 'YES' : 'NO'} | OpenAI Key: ${openaiKey ? 'YES' : 'NO'}\n`);
-
-    if (geminiKeys.length > 0) {
-        console.log('--- Testing Direct Google Gemini API Models ---');
-        for (const model of GEMINI_MODELS) {
-            const result = await testGeminiModel(geminiKeys[0], model);
-            console.log(`Model: ${result.model.padEnd(25)} | Status: ${result.status.padEnd(22)} | HTTP: ${result.httpStatus} | Detail: ${result.detail}`);
-        }
-        console.log('\n');
-    } else {
-        console.log('[Notice] No direct GEMINI_API_KEY found in .env. Skipping direct Gemini API checks.\n');
+    // 1. Verify Configuration Loading
+    console.log('[1/4] Loading ai-models.yaml configuration...');
+    let config;
+    try {
+        config = modelLoader.loadConfig();
+        console.log(`✓ YAML Config Loaded Successfully (version ${config.version})`);
+        console.log(`  Configured Providers: ${Object.keys(config.providers).join(', ')}`);
+        console.log(`  Configured Pools: ${Object.keys(config.pools).join(', ')}\n`);
+    } catch (err) {
+        console.error('❌ Failed to load ai-models.yaml:', err.message);
+        process.exit(1);
     }
 
-    if (openrouterKey) {
-        console.log('--- Testing OpenRouter Fallback Models ---');
-        for (const model of OPENROUTER_MODELS) {
-            const result = await testOpenRouterModel(openrouterKey, model);
-            console.log(`Model: ${result.model.padEnd(35)} | Status: ${result.status.padEnd(22)} | HTTP: ${result.httpStatus} | Detail: ${result.detail}`);
+    const testPrompt = 'Return a valid JSON object: {"status": "ok", "message": "Verification test"}';
+
+    // 2. Test Execution across all pools
+    console.log('[2/4] Testing Model Pool Executions...');
+    const pools = Object.keys(config.pools);
+
+    for (const poolName of pools) {
+        console.log(`\n--- Testing Pool: [${poolName}] ---`);
+        const poolConfig = config.pools[poolName];
+        console.log(`Description: ${poolConfig.description || 'N/A'}`);
+        console.log(`Fallback Chain: ${poolConfig.fallback_chain.map(c => `${c.provider}:${c.model}`).join(' -> ')}`);
+
+        try {
+            const start = Date.now();
+            const res = await llmClient.executeWithPool(poolName, { prompt: testPrompt, timeoutMs: 15000, useCache: false });
+            const duration = Date.now() - start;
+            console.log(`✓ SUCCESS: Executed via Provider [${res.providerUsed}] Model [${res.modelUsed}] in ${duration}ms`);
+            console.log(`  Output Data: ${JSON.stringify(res.data)}`);
+        } catch (err) {
+            console.warn(`⚠️ POOL FAILED: ${poolName} - ${err.message}`);
         }
-        console.log('\n');
-    } else {
-        console.log('[Notice] No OPENROUTER_API_KEY found in .env.\n');
     }
 
-    console.log('====================================================');
-    console.log('   VERIFICATION COMPLETE');
+    // 3. Test Circuit Breaker & Fallback Chain Escalation
+    console.log('\n[3/4] Testing Circuit Breaker Cooldown & Fallback Cascade...');
+    const targetPool = 'expense_parser_pool';
+    const fallbackChain = config.pools[targetPool].fallback_chain;
+
+    if (fallbackChain.length >= 2) {
+        const primaryCandidate = fallbackChain[0];
+        console.log(`Simulating 429 Rate Limit Cooldown on Primary Candidate [${primaryCandidate.provider}:${primaryCandidate.model}]...`);
+        circuitBreaker.triggerCooldown(primaryCandidate.provider, primaryCandidate.model, 60000);
+
+        try {
+            const res = await llmClient.executeWithPool(targetPool, { prompt: testPrompt, timeoutMs: 15000, useCache: false });
+            console.log(`✓ SUCCESS: Skipped cooling candidate and failed over to [${res.providerUsed}] Model [${res.modelUsed}]`);
+        } catch (err) {
+            console.warn(`⚠️ Fallback execution failed: ${err.message}`);
+        } finally {
+            circuitBreaker.reset();
+        }
+    } else {
+        console.log('Skipping fallback cascade test (less than 2 candidates in pool)');
+    }
+
+    // 4. Test Backward Compatibility
+    console.log('\n[4/4] Testing LLMClient Backward Compatibility (generateJSON)...');
+    try {
+        const res = await llmClient.generateJSON('{"test": true}', { tier: 'ROUTINE' });
+        console.log(`✓ SUCCESS: generateJSON routine call returned from provider [${res.provider}] model [${res.model}]`);
+    } catch (err) {
+        console.warn(`⚠️ generateJSON test failed: ${err.message}`);
+    }
+
+    console.log('\n====================================================');
+    console.log('   Verification Complete');
     console.log('====================================================');
 }
 
-if (require.main === module) {
-    runVerification();
-}
-
-module.exports = { testGeminiModel, testOpenRouterModel, runVerification };
+verifyAIModels().catch(err => {
+    console.error('Fatal Verification Error:', err);
+    process.exit(1);
+});

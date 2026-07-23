@@ -2,302 +2,236 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../../../.env') });
 require('dotenv').config({ path: path.resolve(process.cwd(), '../../.env') });
 require('dotenv').config({ path: path.resolve(process.cwd(), '.env') });
+
 const aiCache = require('./aiCache');
-const modelConfig = require('./modelConfig');
+const modelLoader = require('./modelLoader');
+const circuitBreaker = require('./circuitBreaker');
+const schemaValidator = require('./schemaValidator');
+
+const geminiAdapter = require('../adapters/geminiAdapter');
+const groqAdapter = require('../adapters/groqAdapter');
+const openRouterAdapter = require('../adapters/openRouterAdapter');
 
 /**
- * Advanced multi-provider LLM client with tier-based routing, automatic fallback cascade,
- * dynamic deprecation/rate-limit tracking, and in-memory caching.
+ * Task-Specific Model Pool LLM Execution Engine
+ * Supports declarative fallback chains, provider rate-limit cooling,
+ * circuit breaker tracking, and structured JSON output validation.
  */
 class LLMClient {
     constructor() {
-        this.provider = (process.env.LLM_PROVIDER || 'google').toLowerCase();
+        this.providerAdapters = {
+            gemini: geminiAdapter,
+            groq: groqAdapter,
+            openrouter: openRouterAdapter
+        };
 
-        // Gemini Settings & API Key Pool
-        const geminiPool = process.env.GEMINI_API_KEY_POOL || process.env.GEMINI_API_KEY || '';
-        this.geminiKeys = geminiPool.split(',').map(k => k.trim()).filter(Boolean);
-        this.geminiIndex = 0;
-        this.geminiModel = modelConfig.providers.google.defaultModel;
+        // Expose circuitBreaker state for backwards compatibility
+        this.deprecatedModels = circuitBreaker.deprecatedModels;
+        this.rateLimitedUntil = circuitBreaker.rateLimitedUntil;
 
-        // OpenAI Settings
-        this.openaiKey = process.env.OPENAI_API_KEY || '';
-        this.openaiModel = modelConfig.providers.openai.defaultModel;
+        // Legacy tier mappings for backwards compatibility
+        this.geminiTiers = {
+            ROUTINE: ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'],
+            REASONING: ['gemini-3.6-flash', 'gemini-3.5-flash'],
+            MICRO: ['gemma-4-31b', 'gemma-4-26b']
+        };
+    }
 
-        // OpenRouter Settings
-        this.openrouterKey = process.env.OPENROUTER_API_KEY || '';
-        this.openrouterModel = modelConfig.providers.openrouter.defaultModel;
+    get provider() {
+        return (process.env.LLM_PROVIDER || 'google').toLowerCase();
+    }
 
-        // Gemini Tier Map
-        this.geminiTiers = modelConfig.providers.google.tiers;
+    get geminiKeys() {
+        const pool = process.env.GEMINI_API_KEY_POOL || process.env.GEMINI_API_KEY || '';
+        return pool.split(',').map(k => k.trim()).filter(Boolean);
+    }
 
-        // OpenRouter Fallback Model Chain
-        this.openrouterChain = [
-            this.openrouterModel,
-            ...modelConfig.providers.openrouter.fallbackChain
-        ].filter((item, index, self) => item && self.indexOf(item) === index);
+    get geminiIndex() {
+        return geminiAdapter.keyIndex;
+    }
 
-        // State Tracking for Health & Deprecation
-        this.deprecatedModels = new Set();
-        this.rateLimitedUntil = new Map(); // model -> timestamp
+    set geminiIndex(idx) {
+        geminiAdapter.keyIndex = idx;
+    }
+
+    get geminiModel() {
+        return 'gemini-3.5-flash-lite';
+    }
+
+    get openaiKey() {
+        return process.env.OPENAI_API_KEY || '';
+    }
+
+    get openaiModel() {
+        return 'gpt-4o-mini';
+    }
+
+    get openrouterKey() {
+        return process.env.OPENROUTER_API_KEY || '';
+    }
+
+    get openrouterModel() {
+        return 'openrouter/free';
     }
 
     /**
-     * Refresh environment variables from process.env if needed dynamically.
+     * Executes prompt using a specified model pool configured in ai-models.yaml.
+     * 
+     * @param {string} poolName Name of the pool defined in ai-models.yaml (e.g. 'expense_parser_pool')
+     * @param {Object|string} optionsOrPrompt Prompt string or options object
+     * @param {Object} [extraOptions] Options if prompt was passed as second argument
      */
-    _refreshConfig() {
-        const geminiPool = process.env.GEMINI_API_KEY_POOL || process.env.GEMINI_API_KEY || '';
-        this.geminiKeys = geminiPool.split(',').map(k => k.trim()).filter(Boolean);
-        this.openaiKey = process.env.OPENAI_API_KEY || '';
-        this.openrouterKey = process.env.OPENROUTER_API_KEY || '';
-    }
+    async executeWithPool(poolName, optionsOrPrompt, extraOptions = {}) {
+        let prompt;
+        let schema;
+        let timeoutMs = 30000;
+        let useCache = true;
+        let cacheKey = poolName;
 
-    /**
-     * Executes a prompt returning structured JSON.
-     * @param {string} prompt
-     * @param {Object|number} options Options object or timeoutMs number for backwards compatibility.
-     */
-    async generateJSON(prompt, options = {}) {
-        this._refreshConfig();
-        const timeoutMs = typeof options === 'number' ? options : (options.timeoutMs || 30000);
-        const tier = typeof options === 'object' && options.tier ? options.tier.toUpperCase() : 'ROUTINE';
-        const useCache = typeof options === 'object' && options.useCache !== undefined ? options.useCache : true;
+        if (typeof optionsOrPrompt === 'string') {
+            prompt = optionsOrPrompt;
+            schema = extraOptions.schema;
+            if (typeof extraOptions.timeoutMs === 'number') timeoutMs = extraOptions.timeoutMs;
+            if (typeof extraOptions.useCache === 'boolean') useCache = extraOptions.useCache;
+            if (extraOptions.cacheKey) cacheKey = extraOptions.cacheKey;
+            else if (extraOptions.tier) cacheKey = extraOptions.tier;
+        } else if (typeof optionsOrPrompt === 'object' && optionsOrPrompt !== null) {
+            prompt = optionsOrPrompt.prompt;
+            schema = optionsOrPrompt.schema;
+            if (typeof optionsOrPrompt.timeoutMs === 'number') timeoutMs = optionsOrPrompt.timeoutMs;
+            if (typeof optionsOrPrompt.useCache === 'boolean') useCache = optionsOrPrompt.useCache;
+            if (optionsOrPrompt.cacheKey) cacheKey = optionsOrPrompt.cacheKey;
+            else if (optionsOrPrompt.tier) cacheKey = optionsOrPrompt.tier;
+        } else {
+            throw new Error('Prompt must be specified for executeWithPool');
+        }
 
-        // 1. Check in-memory cache
+        if (!prompt || typeof prompt !== 'string') {
+            throw new Error('Prompt is required and must be a string');
+        }
+
+        // 1. Check in-memory prompt response cache
         if (useCache) {
-            const cached = aiCache.get(prompt, tier);
-            if (cached) {
-                return { data: cached, provider: 'cache', model: 'in-memory-cache' };
+            let cachedData = aiCache.get(prompt, cacheKey);
+            if (!cachedData && cacheKey !== poolName) {
+                cachedData = aiCache.get(prompt, poolName);
+            }
+            if (cachedData) {
+                return {
+                    data: cachedData,
+                    content: JSON.stringify(cachedData),
+                    provider: 'cache',
+                    providerUsed: 'cache',
+                    model: 'in-memory-cache',
+                    modelUsed: 'in-memory-cache',
+                    tokens: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+                };
             }
         }
+
+        // 2. Load pool configuration
+        const poolConfig = modelLoader.getPoolConfig(poolName);
+        const fallbackChain = poolConfig.fallback_chain || [];
 
         let lastError = null;
 
-        // 2. Attempt Google Gemini Direct API if keys are available
-        if (this.geminiKeys.length > 0) {
-            try {
-                const res = await this._callGeminiTierJSON(prompt, tier, timeoutMs);
-                if (useCache && res?.data) aiCache.set(prompt, tier, res.data);
-                return res;
-            } catch (err) {
-                console.warn(`[LLMClient] Direct Gemini tier ${tier} failed: ${err.message}. Cascading to fallback providers...`);
-                lastError = err;
-            }
-        }
+        // 3. Iterate through fallback chain candidates
+        for (const candidate of fallbackChain) {
+            const providerName = (candidate.provider || '').toLowerCase();
+            const model = candidate.model;
 
-        // 3. Fallback Provider 1: OpenRouter
-        if (this.openrouterKey) {
-            try {
-                const res = await this._callOpenRouterJSON(prompt, timeoutMs);
-                if (useCache && res?.data) aiCache.set(prompt, tier, res.data);
-                return res;
-            } catch (err) {
-                console.warn(`[LLMClient] OpenRouter fallback failed: ${err.message}. Cascading to OpenAI...`);
-                lastError = err;
-            }
-        }
+            if (!providerName || !model) continue;
 
-        // 4. Fallback Provider 2: OpenAI
-        if (this.openaiKey) {
-            try {
-                const res = await this._callOpenAIJSON(prompt, timeoutMs);
-                if (useCache && res?.data) aiCache.set(prompt, tier, res.data);
-                return res;
-            } catch (err) {
-                console.error(`[LLMClient] OpenAI fallback failed: ${err.message}`);
-                lastError = err;
-            }
-        }
-
-        throw lastError || new Error('All configured LLM providers and models failed');
-    }
-
-    /**
-     * Executes prompt across Gemini models in specified tier cascade.
-     */
-    async _callGeminiTierJSON(prompt, tier, timeoutMs) {
-        const candidates = (this.geminiTiers[tier] || this.geminiTiers.ROUTINE).filter(
-            m => !this.deprecatedModels.has(m)
-        );
-
-        if (candidates.length === 0) {
-            throw new Error(`No active Gemini models remaining in tier ${tier}`);
-        }
-
-        const now = Date.now();
-        let lastError = null;
-
-        for (const modelCandidate of candidates) {
-            // Skip if currently rate-limited (temporary backoff)
-            const coolOffUntil = this.rateLimitedUntil.get(modelCandidate);
-            if (coolOffUntil && coolOffUntil > now) {
-                console.warn(`[LLMClient] Skipping rate-limited model ${modelCandidate} (cool-off active)`);
+            // Check Circuit Breaker status
+            if (circuitBreaker.isDeprecated(providerName, model)) {
+                console.warn(`[llmClient] Skipping deprecated model ${providerName}:${model}`);
                 continue;
             }
 
-            const key = this.geminiKeys[this.geminiIndex];
-            this.geminiIndex = (this.geminiIndex + 1) % this.geminiKeys.length;
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelCandidate}:generateContent?key=${key}`;
+            if (circuitBreaker.isCoolingDown(providerName, model)) {
+                console.warn(`[llmClient] Skipping cooling down model ${providerName}:${model}`);
+                continue;
+            }
+
+            const adapter = this.providerAdapters[providerName];
+            if (!adapter) {
+                console.warn(`[llmClient] No adapter registered for provider '${providerName}'`);
+                continue;
+            }
 
             try {
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    signal: AbortSignal.timeout(timeoutMs),
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: prompt }] }],
-                        generationConfig: { responseMimeType: 'application/json' }
-                    })
-                });
+                const res = await adapter.generateContent({ model, prompt, timeoutMs });
+                const validatedData = schemaValidator.validate(res.data, schema);
 
-                const responseText = await response.text();
-
-                if (!response.ok) {
-                    if (response.status === 429 || responseText.includes('RESOURCE_EXHAUSTED') || responseText.includes('Quota exceeded')) {
-                        console.warn(`[LLMClient] Gemini model ${modelCandidate} rate-limited/quota exhausted (429). Setting 60s backoff.`);
-                        this.rateLimitedUntil.set(modelCandidate, Date.now() + 60000); // 60s backoff
-                        continue;
+                // Cache successful result
+                if (useCache && validatedData) {
+                    aiCache.set(prompt, cacheKey, validatedData);
+                    if (cacheKey !== poolName) {
+                        aiCache.set(prompt, poolName, validatedData);
                     }
-
-                    if (response.status === 404 || responseText.includes('NOT_FOUND') || responseText.includes('is not found') || responseText.includes('deprecated')) {
-                        console.error(`[LLMClient] Gemini model ${modelCandidate} deprecated or unsupported (HTTP ${response.status}). Removing from model list.`);
-                        this.deprecatedModels.add(modelCandidate);
-                        continue;
-                    }
-
-                    throw new Error(`Gemini model ${modelCandidate} error ${response.status}: ${responseText.substring(0, 150)}`);
                 }
 
-                const data = JSON.parse(responseText);
-                const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (!text) throw new Error(`Empty response candidate from Gemini model ${modelCandidate}`);
-
-                let parsed;
-                try {
-                    parsed = JSON.parse(text);
-                } catch {
-                    const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim();
-                    parsed = JSON.parse(cleaned);
-                }
-
-                return { data: parsed, provider: 'google', model: modelCandidate };
+                return {
+                    data: validatedData,
+                    content: res.content,
+                    tokens: res.tokens,
+                    modelUsed: res.modelUsed,
+                    providerUsed: res.providerUsed,
+                    model: res.modelUsed,
+                    provider: res.providerUsed
+                };
             } catch (err) {
-                console.warn(`[LLMClient] Gemini attempt with ${modelCandidate} failed: ${err.message}`);
                 lastError = err;
+                console.warn(`[llmClient] Candidate ${providerName}:${model} in pool '${poolName}' failed: ${err.message}`);
+
+                const errMessage = (err.message || '').toLowerCase();
+                const errText = (err.responseText || '').toLowerCase();
+                const is429 = err.status === 429 || errMessage.includes('429') || errText.includes('quota exceeded') || errText.includes('resource_exhausted');
+                const is5xx = err.status >= 500 || errMessage.includes('500') || errMessage.includes('503') || errMessage.includes('504');
+                const is404 = err.status === 404 || errMessage.includes('404') || errText.includes('not_found') || errText.includes('deprecated');
+
+                if (is404) {
+                    circuitBreaker.markDeprecated(providerName, model);
+                } else if (is429 || is5xx) {
+                    circuitBreaker.triggerCooldown(providerName, model, 60000);
+                } else {
+                    // Default temporary backoff on execution error
+                    circuitBreaker.triggerCooldown(providerName, model, 30000);
+                }
             }
         }
 
-        throw lastError || new Error(`All Gemini models in tier ${tier} failed or rate-limited`);
+        throw new Error(`All model candidates in pool '${poolName}' failed. Last error: ${lastError ? lastError.message : 'No active candidates'}`);
     }
 
     /**
-     * Internal OpenRouter call with model candidate fallback chain
+     * Backward-compatible JSON generation entry point.
+     * Maps legacy options/tier requests into task-specific pools.
      */
-    async _callOpenRouterJSON(prompt, timeoutMs) {
-        if (!this.openrouterKey) throw new Error('No OpenRouter API key configured');
+    async generateJSON(prompt, options = {}) {
+        let poolName = 'expense_parser_pool';
+        let timeoutMs = 30000;
+        let useCache = true;
+        let schema = null;
+        let tier = 'ROUTINE';
 
-        let lastError = null;
-        for (const modelCandidate of this.openrouterChain) {
-            if (this.deprecatedModels.has(modelCandidate)) continue;
-
-            const now = Date.now();
-            const coolOffUntil = this.rateLimitedUntil.get(modelCandidate);
-            if (coolOffUntil && coolOffUntil > now) continue;
-
-            try {
-                const effectiveTimeout = Math.max(
-                    timeoutMs || 30000,
-                    modelCandidate === 'openrouter/free' ? 45000 : 25000
-                );
-
-                const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${this.openrouterKey}`,
-                        'HTTP-Referer': 'http://localhost:5173',
-                        'X-Title': 'Forson Business Suite',
-                        'Content-Type': 'application/json'
-                    },
-                    signal: AbortSignal.timeout(effectiveTimeout),
-                    body: JSON.stringify({
-                        model: modelCandidate,
-                        messages: [{ role: 'user', content: prompt }],
-                        response_format: { type: 'json_object' }
-                    })
-                });
-
-                const responseText = await response.text();
-
-                if (!response.ok) {
-                    if (response.status === 429) {
-                        this.rateLimitedUntil.set(modelCandidate, Date.now() + 60000);
-                        continue;
-                    }
-
-                    if (response.status === 404 || responseText.includes('not found') || responseText.includes('does not exist')) {
-                        console.error(`[LLMClient] OpenRouter model ${modelCandidate} deprecated/not found. Removing.`);
-                        this.deprecatedModels.add(modelCandidate);
-                        continue;
-                    }
-
-                    throw new Error(`OpenRouter API status ${response.status}: ${responseText.substring(0, 150)}`);
-                }
-
-                const data = JSON.parse(responseText);
-                let text = data.choices?.[0]?.message?.content || '{}';
-                text = text.replace(/```json/gi, '').replace(/```/g, '').trim();
-                const parsedData = JSON.parse(text);
-
-                return { data: parsedData, provider: 'openrouter', model: modelCandidate };
-            } catch (err) {
-                console.warn(`[LLMClient] OpenRouter attempt with model ${modelCandidate} failed: ${err.message}`);
-                lastError = err;
+        if (typeof options === 'number') {
+            timeoutMs = options;
+        } else if (typeof options === 'object' && options !== null) {
+            if (options.tier) tier = String(options.tier).toUpperCase();
+            if (options.pool) {
+                poolName = options.pool;
+            } else if (tier === 'REASONING') {
+                poolName = 'expense_reasoning_pool';
             }
+            if (typeof options.timeoutMs === 'number') timeoutMs = options.timeoutMs;
+            if (typeof options.useCache === 'boolean') useCache = options.useCache;
+            if (options.schema) schema = options.schema;
         }
 
-        throw lastError || new Error('All OpenRouter candidate models failed');
-    }
-
-    /**
-     * Internal OpenAI call
-     */
-    async _callOpenAIJSON(prompt, timeoutMs, retries = 2) {
-        if (!this.openaiKey) throw new Error('No OpenAI API key configured');
-        const url = 'https://api.openai.com/v1/chat/completions';
-
-        for (let attempt = 1; attempt <= retries; attempt++) {
-            try {
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${this.openaiKey}`
-                    },
-                    signal: AbortSignal.timeout(timeoutMs),
-                    body: JSON.stringify({
-                        model: this.openaiModel,
-                        messages: [{ role: 'user', content: prompt }],
-                        response_format: { type: 'json_object' }
-                    })
-                });
-
-                if (!response.ok) {
-                    if (response.status === 429 && attempt < retries) {
-                        await new Promise(r => setTimeout(r, attempt * 2000));
-                        continue;
-                    }
-                    throw new Error(`OpenAI API error ${response.status}: ${await response.text()}`);
-                }
-
-                const data = await response.json();
-                const text = data.choices?.[0]?.message?.content || '{}';
-                return { data: JSON.parse(text), provider: 'openai', model: this.openaiModel };
-            } catch (error) {
-                console.error(`[LLMClient] OpenAI attempt ${attempt} failed:`, error.message);
-                if (attempt === retries) throw error;
-                await new Promise(r => setTimeout(r, attempt * 2000));
-            }
-        }
+        return this.executeWithPool(poolName, { prompt, schema, timeoutMs, useCache, tier, cacheKey: tier });
     }
 }
 
-module.exports = new LLMClient();
+const llmClientInstance = new LLMClient();
+module.exports = llmClientInstance;

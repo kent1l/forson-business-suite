@@ -38,13 +38,13 @@ Part Numbers: ${formatPns(part2.part_numbers)}`;
         const prompt = wrapJsonInstruction(basePrompt, schema);
 
         try {
-            const res = await llmClient.generateJSON(prompt, { tier: 'ROUTINE', timeoutMs: 30000 });
+            const res = await llmClient.executeWithPool('part_deduplication_pool', { prompt, timeoutMs: 30000 });
             const result = res.data || {};
             return {
                 isDuplicate: result.isDuplicate === true,
                 reason: result.reason || '',
-                provider: res.provider,
-                model: res.model
+                provider: res.provider || res.providerUsed,
+                model: res.model || res.modelUsed
             };
         } catch (error) {
             console.error('[PartDeduplicationAI] verifyDuplicate error:', error.message);
@@ -94,7 +94,7 @@ ${JSON.stringify(partsJson, null, 2)}`;
         const prompt = wrapJsonInstruction(basePrompt, schema);
 
         try {
-            const res = await llmClient.generateJSON(prompt, { tier: 'REASONING', timeoutMs: 45000 });
+            const res = await llmClient.executeWithPool('part_deduplication_pool', { prompt, timeoutMs: 45000 });
             return this._validateGroupResult(res.data, validPartIds);
         } catch (error) {
             console.error('[PartDeduplicationAI] analyzeGroup error:', error.message);

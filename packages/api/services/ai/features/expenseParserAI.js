@@ -92,7 +92,7 @@ User expense description: "${text.trim()}"`;
 
         let llmResult;
         try {
-            llmResult = await llmClient.generateJSON(prompt, { tier: 'ROUTINE', timeoutMs: 25000 });
+            llmResult = await llmClient.executeWithPool('expense_parser_pool', { prompt, timeoutMs: 25000 });
         } catch (err) {
             console.error('[ExpenseParserAI] LLM parse call failed:', err.message);
             const error = new Error('AI parsing service unavailable');
@@ -103,17 +103,17 @@ User expense description: "${text.trim()}"`;
 
         let raw = llmResult.data || {};
 
-        // Escalate to REASONING model if overall confidence is low or missing essential fields
+        // Escalate to expense_reasoning_pool if overall confidence is low (<0.60) or missing essential fields
         if ((!raw.confidence || raw.confidence.overall < 0.60) && raw.amount) {
             try {
-                console.warn('[ExpenseParserAI] Low confidence score. Escalating to REASONING tier model...');
-                const escalatedRes = await llmClient.generateJSON(prompt, { tier: 'REASONING', timeoutMs: 30000 });
+                console.warn('[ExpenseParserAI] Low confidence score. Escalating to expense_reasoning_pool...');
+                const escalatedRes = await llmClient.executeWithPool('expense_reasoning_pool', { prompt, timeoutMs: 30000 });
                 if (escalatedRes?.data?.confidence?.overall > (raw.confidence?.overall || 0)) {
                     llmResult = escalatedRes;
                     raw = escalatedRes.data;
                 }
             } catch (err) {
-                console.warn('[ExpenseParserAI] Escalation attempt failed, retaining ROUTINE result:', err.message);
+                console.warn('[ExpenseParserAI] Escalation attempt failed, retaining primary result:', err.message);
             }
         }
 
@@ -181,7 +181,7 @@ User expense description: "${text.trim()}"`;
                 confidence: normalizedConf
             },
             raw_llm_response: raw,
-            provider: llmResult.provider
+            provider: llmResult.provider || llmResult.providerUsed
         };
     }
 }

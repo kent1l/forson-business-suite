@@ -1,0 +1,47 @@
+version: "1.0"
+
+providers:
+  gemini:
+    enabled: true
+    api_key_env: "GEMINI_API_KEY"
+    pool_env: "GEMINI_API_KEY_POOL"
+    base_url: "https://generativelanguage.googleapis.com/v1beta"
+  groq:
+    enabled: true
+    api_key_env: "GROQ_API_KEY"
+    base_url: "https://api.groq.com/openai/v1"
+  openrouter:
+    enabled: true
+    api_key_env: "OPENROUTER_API_KEY"
+    base_url: "https://openrouter.ai/api/v1"
+
+pools:
+  expense_parser_pool:
+    description: "High-speed JSON parsing for natural language expenses"
+    confidence_threshold: 0.60
+    escalation_pool: "expense_reasoning_pool"
+    fallback_chain:
+      - provider: gemini
+        model: "gemini-3.5-flash-lite"
+      - provider: groq
+        model: "llama-3.3-70b-versatile"
+      - provider: openrouter
+        model: "openrouter/free"
+
+  expense_reasoning_pool:
+    description: "Escalation pool for ambiguous or low-confidence expense strings"
+    fallback_chain:
+      - provider: gemini
+        model: "gemini-3.6-flash"
+      - provider: openrouter
+        model: "deepseek/deepseek-chat"
+
+  part_deduplication_pool:
+    description: "Complex semantic clustering and cross-reference verification for auto parts"
+    fallback_chain:
+      - provider: gemini
+        model: "gemini-3.6-flash"
+      - provider: openrouter
+        model: "meta-llama/llama-3.3-70b-instruct"
+      - provider: groq
+        model: "llama-3.1-70b-versatile"
