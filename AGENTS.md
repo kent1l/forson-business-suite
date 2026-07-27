@@ -34,7 +34,7 @@ Monorepo with npm workspaces under `packages/*`:
 ## Testing
 
 - Jest with `supertest`. Tests live in `packages/api/test/` and `packages/api/tests/` — both match `**/test/**/*.test.js` and `**/tests/**/*.test.js`.
-- **Tests need a real PostgreSQL connection.** No mocking by default. CI spins up a `postgres:15` service container with `test/test/test` credentials.
+- **Tests need a real PostgreSQL connection.** No mocking by default. CI spins up a `pgvector/pgvector:pg15` service container with `test/test/test` credentials.
 - The `payment_terms_db_test.js` file is explicitly excluded from the jest config.
 
 ## Background Workers
