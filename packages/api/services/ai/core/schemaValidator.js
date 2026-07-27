@@ -1,4 +1,3 @@
-const { z } = require('zod');
 
 class SchemaValidator {
     /**
@@ -24,7 +23,7 @@ class SchemaValidator {
             return JSON.parse(cleaned);
         } catch (err) {
             // If direct parse fails, try searching for first '{' or '[' and last '}' or ']'
-            const firstBrace = cleaned.search(/[\{\[]/);
+            const firstBrace = cleaned.search(/[{[]/);
             const lastBrace = Math.max(cleaned.lastIndexOf('}'), cleaned.lastIndexOf(']'));
             if (firstBrace !== -1 && lastBrace > firstBrace) {
                 const extracted = cleaned.substring(firstBrace, lastBrace + 1);

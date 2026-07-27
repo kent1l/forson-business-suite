@@ -7,9 +7,8 @@
  */
 function sanitizeInput(text) {
     if (text === null || text === undefined) return '';
-    return String(text)
-        .replace(/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F]/g, '') // Strip control chars
-        .trim();
+    // eslint-disable-next-line no-control-regex
+    return String(text).replace(/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F]/g, '').trim();
 }
 
 /**
