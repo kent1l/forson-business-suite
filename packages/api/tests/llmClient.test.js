@@ -50,11 +50,22 @@ describe('LLMClient & Model Tiering Optimization', () => {
     });
 
     test('should successfully execute prompt using active provider cascade', async () => {
+        const spy = jest.spyOn(llmClient.providerAdapters.gemini, 'generateContent')
+            .mockResolvedValueOnce({
+                data: { count: 1 },
+                content: '{"count": 1}',
+                tokens: { promptTokens: 5, completionTokens: 5, totalTokens: 10 },
+                modelUsed: 'gemini-3.5-flash-lite',
+                providerUsed: 'gemini'
+            });
+
         const prompt = 'Return simple JSON object with count equal to 1';
-        const res = await llmClient.generateJSON(prompt, { tier: 'ROUTINE', timeoutMs: 15000 });
+        const res = await llmClient.generateJSON(prompt, { tier: 'ROUTINE', timeoutMs: 15000, useCache: false });
 
         expect(res).toHaveProperty('data');
         expect(res).toHaveProperty('provider');
         expect(res).toHaveProperty('model');
+
+        spy.mockRestore();
     }, 30000);
 });
