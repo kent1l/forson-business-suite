@@ -11,7 +11,7 @@ import {
   KeyboardAvoidingView,
   ActivityIndicator,
 } from 'react-native';
-import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
+import { Camera, useCameraDevice, useCameraPermission, useCameraFormat } from 'react-native-vision-camera';
 import { useBarcodeScannerOutput } from 'react-native-vision-camera-barcode-scanner';
 import Animated, {
   useSharedValue,
@@ -27,9 +27,10 @@ import {
   createPipelineRefs,
   runConsensus,
   isValidEanChecksum,
-  isInROI,
+  selectBestRoiBarcode,
   type ScannerPipelineRefs,
   FRAME_INTERVAL_MS,
+  BUDGET_WINDOW_SIZE,
   VIEWPORT_WIDTH_PCT,
   VIEWPORT_HEIGHT_PX,
 } from '@/utils/scannerPipeline';
@@ -63,15 +64,20 @@ export default function PremiumScanner({
 }: PremiumScannerProps) {
   const theme = useTheme();
   const device = useCameraDevice('back');
+  const format = useCameraFormat(device, [
+    { videoResolution: { width: 1920, height: 1080 } },
+    { fps: 30 },
+  ]);
   const { hasPermission, requestPermission } = useCameraPermission();
 
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [torch, setTorch] = useState<'off' | 'on'>('off');
   const [consensusCount, setConsensusCount] = useState(0);
   const [scannedBarcode, setScannedBarcode] = useState<string | null>(null);
-  const [drawerState, setDrawerState] = useState<'idle' | 'confirm' | '404' | 'error'>('idle');
+  const [drawerState, setDrawerState] = useState<'idle' | 'confirm' | '404' | 'error' | 'manual'>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isResolving, setIsResolving] = useState(false);
+  const [manualInputText, setManualInputText] = useState('');
 
   const pipelineRef = useRef<ScannerPipelineRefs>(createPipelineRefs());
   const lastFrameTsRef = useRef<number>(0);
@@ -96,7 +102,7 @@ export default function PremiumScanner({
   }, [visible, hasPermission]);
 
   useEffect(() => {
-    if (visible && isCameraActive) {
+    if (visible && isCameraActive && drawerState === 'idle') {
       laserY.value = withRepeat(
         withTiming(VIEWPORT_HEIGHT - 6, { duration: 1800, easing: Easing.inOut(Easing.ease) }),
         -1,
@@ -111,7 +117,7 @@ export default function PremiumScanner({
       laserY.value = 0;
       cornerScale.value = 1;
     }
-  }, [visible, isCameraActive]);
+  }, [visible, isCameraActive, drawerState]);
 
   const resetScannerState = () => {
     setConsensusCount(0);
@@ -120,8 +126,52 @@ export default function PremiumScanner({
     setDrawerState('idle');
     setErrorMessage(null);
     setIsResolving(false);
+    setManualInputText('');
     lastFrameTsRef.current = 0;
     scanLockRef.current = false;
+  };
+
+  const handleBarcodeAcquired = (candidateBarcode: string) => {
+    scanLockRef.current = true;
+    setIsResolving(true);
+    setScannedBarcode(candidateBarcode);
+
+    // Flash and haptic feedback
+    successFlash.value = 1;
+    successFlash.value = withTiming(0, { duration: 300 });
+    haptics.success();
+
+    if (onResolveBarcode) {
+      onResolveBarcode(candidateBarcode)
+        .then((result) => {
+          setIsResolving(false);
+          if (result.status === 'success') {
+            onBarcodeScanned(candidateBarcode);
+            if (autoCloseOnSuccess) {
+              onClose();
+            } else {
+              resetScannerState();
+            }
+          } else if (result.status === 'not_found') {
+            haptics.error();
+            setDrawerState('404');
+          } else {
+            haptics.error();
+            setErrorMessage(result.message || 'Error checking barcode');
+            setDrawerState('error');
+          }
+        })
+        .catch((err) => {
+          setIsResolving(false);
+          haptics.error();
+          setErrorMessage(err.message || 'Error checking barcode');
+          setDrawerState('error');
+        });
+    } else {
+      // Default confirm/accept drawer state
+      setIsResolving(false);
+      setDrawerState('confirm');
+    }
   };
 
   const barcodeOutput = useBarcodeScannerOutput({
@@ -134,19 +184,19 @@ export default function PremiumScanner({
       console.error('Barcode scanner error:', error);
     },
     onBarcodeScanned: (codes) => {
-      if (codes.length === 0 || !isCameraActive || isResolving || scannedBarcode || scanLockRef.current) return;
+      if (codes.length === 0 || !isCameraActive || isResolving || scannedBarcode || scanLockRef.current || drawerState !== 'idle') return;
 
       // Tier A: Frame rate budgeting (33ms interval)
       const now = Date.now();
       if (now - lastFrameTsRef.current < FRAME_INTERVAL_MS) return;
       lastFrameTsRef.current = now;
 
-      const code = codes[0];
+      // Tier B: Viewport ROI filtering & center-closest candidate selection
+      const code = selectBestRoiBarcode(codes, { width: SCREEN_WIDTH, height: SCREEN_HEIGHT });
+      if (!code) return;
+
       const value = code.rawValue ?? code.displayValue;
       if (!value) return;
-
-      // Tier B: Viewport ROI bounding verification (screen-space coordinate conversion)
-      if (!isInROI(code, { width: SCREEN_WIDTH, height: SCREEN_HEIGHT })) return;
 
       // EAN checksum validation
       if (/^\d{12,13}$/.test(value) && !isValidEanChecksum(value)) {
@@ -163,46 +213,7 @@ export default function PremiumScanner({
       setConsensusCount((prev) => (prev !== newCount ? newCount : prev));
 
       if (consensus) {
-        scanLockRef.current = true;
-        setIsResolving(true);
-        setScannedBarcode(consensus);
-
-        // Flash and haptic feedback
-        successFlash.value = 1;
-        successFlash.value = withTiming(0, { duration: 300 });
-        haptics.success();
-
-        if (onResolveBarcode) {
-          onResolveBarcode(consensus)
-            .then((result) => {
-              setIsResolving(false);
-              if (result.status === 'success') {
-                onBarcodeScanned(consensus);
-                if (autoCloseOnSuccess) {
-                  onClose();
-                } else {
-                  resetScannerState();
-                }
-              } else if (result.status === 'not_found') {
-                haptics.error();
-                setDrawerState('404');
-              } else {
-                haptics.error();
-                setErrorMessage(result.message || 'Error checking barcode');
-                setDrawerState('error');
-              }
-            })
-            .catch((err) => {
-              setIsResolving(false);
-              haptics.error();
-              setErrorMessage(err.message || 'Error checking barcode');
-              setDrawerState('error');
-            });
-        } else {
-          // Default confirm/accept drawer state
-          setIsResolving(false);
-          setDrawerState('confirm');
-        }
+        handleBarcodeAcquired(consensus);
       }
     },
   });
@@ -231,6 +242,29 @@ export default function PremiumScanner({
   const handleToggleTorch = () => {
     haptics.tap();
     setTorch((prev) => (prev === 'on' ? 'off' : 'on'));
+  };
+
+  const handleToggleManualInput = () => {
+    haptics.tap();
+    if (drawerState === 'manual') {
+      resetScannerState();
+    } else {
+      setDrawerState('manual');
+    }
+  };
+
+  const handleManualSubmit = () => {
+    const trimmed = manualInputText.trim();
+    if (!trimmed) return;
+
+    if (/^\d{12,13}$/.test(trimmed) && !isValidEanChecksum(trimmed)) {
+      haptics.error();
+      setErrorMessage('Invalid EAN/UPC Checksum');
+      setDrawerState('error');
+      return;
+    }
+
+    handleBarcodeAcquired(trimmed);
   };
 
   // Reanimated style bindings
@@ -267,10 +301,10 @@ export default function PremiumScanner({
           <Camera
             style={StyleSheet.absoluteFill}
             device={device}
+            format={format}
             isActive={isCameraActive}
             torch={device.hasTorch && torch === 'on' ? 'on' : 'off'}
             outputs={[barcodeOutput]}
-            constraints={[{ fps: 30 }]}
             enableZoomGesture={true}
           />
         ) : !hasPermission ? (
@@ -303,17 +337,30 @@ export default function PremiumScanner({
             />
           </TouchableOpacity>
           <Text style={styles.hudTitle}>{title}</Text>
-          <TouchableOpacity style={styles.hudButton} onPress={handleToggleTorch}>
-            <SymbolView
-              name={{
-                ios: torch === 'on' ? 'bolt.circle.fill' : 'bolt.slash.circle.fill',
-                android: torch === 'on' ? 'flash_on' : 'flash_off',
-                web: torch === 'on' ? 'flash_on' : 'flash_off',
-              }}
-              tintColor={torch === 'on' ? '#F59E0B' : '#fff'}
-              size={28}
-            />
-          </TouchableOpacity>
+          <View style={styles.hudRightButtons}>
+            <TouchableOpacity style={styles.hudButton} onPress={handleToggleManualInput}>
+              <SymbolView
+                name={{
+                  ios: drawerState === 'manual' ? 'keyboard.chevron.compact.down' : 'keyboard.fill',
+                  android: 'keyboard',
+                  web: 'keyboard',
+                }}
+                tintColor={drawerState === 'manual' ? '#10B981' : '#fff'}
+                size={24}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.hudButton} onPress={handleToggleTorch}>
+              <SymbolView
+                name={{
+                  ios: torch === 'on' ? 'bolt.circle.fill' : 'bolt.slash.circle.fill',
+                  android: torch === 'on' ? 'flash_on' : 'flash_off',
+                  web: torch === 'on' ? 'flash_on' : 'flash_off',
+                }}
+                tintColor={torch === 'on' ? '#F59E0B' : '#fff'}
+                size={28}
+              />
+            </TouchableOpacity>
+          </View>
         </GlassView>
 
         {/* Scanning ROI Cutout */}
@@ -358,7 +405,7 @@ export default function PremiumScanner({
                     <Text style={styles.instructions}>Align barcode within the frame</Text>
                     {/* Consensus Progress Dots */}
                     <View style={styles.consensusContainer}>
-                      {Array.from({ length: 6 }).map((_, i) => (
+                      {Array.from({ length: BUDGET_WINDOW_SIZE }).map((_, i) => (
                         <View
                           key={i}
                           style={[
@@ -370,6 +417,35 @@ export default function PremiumScanner({
                     </View>
                   </>
                 )}
+              </View>
+            )}
+
+            {drawerState === 'manual' && (
+              <View style={styles.drawerContent}>
+                <Text style={styles.scannedTitle}>Manual Barcode Entry</Text>
+                <View style={styles.manualInputRow}>
+                  <TextInput
+                    style={styles.manualTextInput}
+                    placeholder="Enter SKU / Barcode..."
+                    placeholderTextColor="rgba(255, 255, 255, 0.4)"
+                    value={manualInputText}
+                    onChangeText={setManualInputText}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    autoFocus={true}
+                    returnKeyType="done"
+                    onSubmitEditing={handleManualSubmit}
+                  />
+                  <TouchableOpacity
+                    style={[styles.actionBtn, styles.btnConfirm, !manualInputText.trim() && { opacity: 0.5 }]}
+                    onPress={handleManualSubmit}
+                    disabled={!manualInputText.trim()}>
+                    <Text style={styles.btnConfirmText}>Submit</Text>
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity style={[styles.actionBtnBlock, styles.btnCancel, { marginTop: Spacing.two }]} onPress={handleRetake}>
+                  <Text style={styles.btnCancelText}>Return to Camera</Text>
+                </TouchableOpacity>
               </View>
             )}
 
@@ -451,6 +527,7 @@ export default function PremiumScanner({
   );
 }
 
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -481,6 +558,11 @@ const styles = StyleSheet.create({
       },
     }),
   },
+  hudRightButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   hudButton: {
     width: 40,
     height: 40,
@@ -492,6 +574,25 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 16,
     letterSpacing: 0.5,
+  },
+  manualInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    marginTop: Spacing.two,
+    width: '100%',
+  },
+  manualTextInput: {
+    flex: 1,
+    height: 48,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   roiContainer: {
     flex: 1,

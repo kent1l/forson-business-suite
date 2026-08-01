@@ -1,13 +1,13 @@
 /**
  * scannerPipeline.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * Zero-allocation barcode scanning consensus pipeline for react-native-vision-camera v4.
+ * Zero-allocation barcode scanning consensus pipeline for react-native-vision-camera v4/v5.
  * Hermes-compatible — no ES features beyond ES2019.
  *
  * Architecture (3-Tier):
  *   Tier A  Time-gated frame skip  – 33 ms minimum inter-frame interval at 30 FPS
- *   Tier B  ROI viewport mask      – central 40% horizontal band
- *   Tier C  Sliding mode consensus – 6-element window, ≥4/6 majority (66.6%)
+ *   Tier B  ROI viewport mask      – central 85% width x 140px height band
+ *   Tier C  Sliding mode consensus – 3-element window, ≥2/3 majority (66.6%)
  */
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -17,6 +17,10 @@ export const MAJORITY_THRESHOLD = 2 as const;     // 2 out of 3 majority = 66.6%
 
 export const VIEWPORT_WIDTH_PCT = 0.85 as const;  // 85% screen width
 export const VIEWPORT_HEIGHT_PX = 140 as const;   // 140px fixed height
+
+// Static zero-allocation buffers for Levenshtein DP calculation
+const LEV_PREV_BUFFER: number[] = new Array(128).fill(0);
+const LEV_CURR_BUFFER: number[] = new Array(128).fill(0);
 
 // ── Types ────────────────────────────────────────────────────────────────────
 export interface RectBounds {
@@ -43,9 +47,11 @@ export function createPipelineRefs(): ScannerPipelineRefs {
 // ── Levenshtein Distance (zero-allocation, O(min(m,n)) space) ────────────────
 /**
  * Returns the edit distance between `a` and `b`.
- * Fast-returns (max(la, lb) + 1) when |la - lb| > 1 to save CPU cycles.
+ * Fast-path O(1) for exact match, O(N) zero-allocation for same length.
  */
 export function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+
   const la = a.length;
   const lb = b.length;
 
@@ -57,9 +63,21 @@ export function levenshtein(a: string, b: string): number {
   if (la === 0) return lb;
   if (lb === 0) return la;
 
-  // Single-row rolling DP — no matrix allocation
-  let prev = new Array<number>(lb + 1);
-  let curr = new Array<number>(lb + 1);
+  // Single-pass mismatch counter for equal-length strings (zero allocations)
+  if (la === lb) {
+    let diff = 0;
+    for (let i = 0; i < la; i++) {
+      if (a[i] !== b[i]) {
+        diff++;
+        if (diff > 1) break;
+      }
+    }
+    if (diff <= 1) return diff;
+  }
+
+  // Rolling DP with static reusable buffers (zero allocations for strings <= 128 chars)
+  const prev = LEV_PREV_BUFFER.length > lb ? LEV_PREV_BUFFER : new Array<number>(lb + 1);
+  const curr = LEV_CURR_BUFFER.length > lb ? LEV_CURR_BUFFER : new Array<number>(lb + 1);
 
   for (let j = 0; j <= lb; j++) prev[j] = j;
 
@@ -73,10 +91,9 @@ export function levenshtein(a: string, b: string): number {
         prev[j - 1] + cost,    // replace
       );
     }
-    // Swap buffers — no allocations inside the hot loop
-    const tmp = prev;
-    prev = curr;
-    curr = tmp;
+    for (let j = 0; j <= lb; j++) {
+      prev[j] = curr[j];
+    }
   }
 
   return prev[lb];
@@ -123,17 +140,6 @@ export function getScreenRoiRect(
 
 /**
  * Converts frame-space pixel coordinates to screen-space coordinates.
- *
- * Coordinate System Conversion Rationale:
- * Camera preview fills the screen using aspect-fill ('cover') mode.
- * MLKit returns barcode coordinates relative to the input camera frame resolution.
- *
- * We convert frame coordinates (x_f, y_f) to screen coordinates (x_s, y_s) via:
- *   scale = max(screenWidth / frameWidth, screenHeight / frameHeight)
- *   offsetX = (frameWidth * scale - screenWidth) / 2
- *   offsetY = (frameHeight * scale - screenHeight) / 2
- *   x_s = x_f * scale - offsetX
- *   y_s = y_f * scale - offsetY
  */
 export function frameToScreenRect(
   frameRect: RectBounds,
@@ -210,10 +216,6 @@ export function extractBarcodeRect(code: any): RectBounds | null {
 
 /**
  * Evaluates whether a barcode falls within the defined Region of Interest (ROI) rectangle.
- *
- * Performance & Smoothness Optimizations:
- * 1. Auto-detects frame resolution / orientation from raw coordinates (handles 1280x720 landscape vs 720x1280 portrait frame outputs).
- * 2. Applies a soft 20px padding to the ROI box so micro-jitter from hand movements doesn't cause frustrating scan drops.
  */
 export function isInROI(
   code: any,
@@ -248,15 +250,12 @@ export function isInROI(
       bottom: rawRect.bottom * screenDim.height,
     };
   } else {
-    // Dynamic Frame Dimension Inference:
-    // Determine if raw coordinates are in landscape vs portrait space based on coordinate magnitudes
+    // Dynamic Frame Dimension Inference
     let effectiveFrameDim = { ...frameDim };
     if (rawRect.right > effectiveFrameDim.width || rawRect.bottom > effectiveFrameDim.height) {
       if (rawRect.right > 720 && rawRect.right > rawRect.bottom) {
-        // Landscape orientation frame output (e.g. 1280x720)
         effectiveFrameDim = { width: 1280, height: 720 };
       } else {
-        // High-res portrait frame output (e.g. 1080x1920)
         effectiveFrameDim = {
           width: Math.max(720, rawRect.right),
           height: Math.max(1280, rawRect.bottom),
@@ -299,6 +298,71 @@ export function isInROI(
   return true;
 }
 
+/**
+ * Given an array of detected barcode objects from camera frame,
+ * filters for barcodes inside ROI and selects the one closest to the center of the ROI viewfinder.
+ */
+export function selectBestRoiBarcode(
+  codes: any[],
+  screenDim: Dimensions,
+  frameDim: Dimensions = { width: 720, height: 1280 },
+  customRoiRect?: RectBounds
+): any | null {
+  if (!codes || codes.length === 0) return null;
+
+  const roiRect = customRoiRect ?? getScreenRoiRect(screenDim.width, screenDim.height);
+  const roiCenterX = (roiRect.left + roiRect.right) / 2;
+  const roiCenterY = (roiRect.top + roiRect.bottom) / 2;
+
+  let bestCode = null;
+  let minDistanceSq = Infinity;
+
+  for (const code of codes) {
+    if (!isInROI(code, screenDim, frameDim, roiRect)) continue;
+
+    const rawRect = extractBarcodeRect(code);
+    if (!rawRect) {
+      if (!bestCode) bestCode = code;
+      continue;
+    }
+
+    let screenRect: RectBounds;
+    if (rawRect.right <= 1.0 && rawRect.bottom <= 1.0 && rawRect.left >= 0 && rawRect.top >= 0) {
+      screenRect = {
+        left: rawRect.left * screenDim.width,
+        right: rawRect.right * screenDim.width,
+        top: rawRect.top * screenDim.height,
+        bottom: rawRect.bottom * screenDim.height,
+      };
+    } else {
+      let effectiveFrameDim = { ...frameDim };
+      if (rawRect.right > effectiveFrameDim.width || rawRect.bottom > effectiveFrameDim.height) {
+        if (rawRect.right > 720 && rawRect.right > rawRect.bottom) {
+          effectiveFrameDim = { width: 1280, height: 720 };
+        } else {
+          effectiveFrameDim = {
+            width: Math.max(720, rawRect.right),
+            height: Math.max(1280, rawRect.bottom),
+          };
+        }
+      }
+      screenRect = frameToScreenRect(rawRect, effectiveFrameDim, screenDim);
+    }
+
+    const codeCenterX = (screenRect.left + screenRect.right) / 2;
+    const codeCenterY = (screenRect.top + screenRect.bottom) / 2;
+
+    const distSq = (codeCenterX - roiCenterX) ** 2 + (codeCenterY - roiCenterY) ** 2;
+
+    if (distSq < minDistanceSq) {
+      minDistanceSq = distSq;
+      bestCode = code;
+    }
+  }
+
+  return bestCode;
+}
+
 
 // ── Tier C: Sliding Mode Consensus ──────────────────────────────────────────
 /**
@@ -320,11 +384,8 @@ export function runConsensus(refs: ScannerPipelineRefs, incoming: string): strin
   if (dist === 0) {
     // Perfect match — append
     win.push(incoming);
-  } else if (dist === 1) {
-    // Single-character noise — preserve momentum using last stable value
-    win.push(last);
   } else {
-    // Item shift — wipe and re-seed
+    // String mismatch or item shift — re-seed window with new candidate
     refs.window = [incoming];
     return null;
   }
@@ -357,3 +418,4 @@ export function runConsensus(refs: ScannerPipelineRefs, incoming: string): strin
 
   return null;
 }
+

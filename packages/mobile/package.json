@@ -52,7 +52,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "node --test tests/*.test.js"
+    "test": "npx -y tsx --test tests/*.test.js"
   },
   "private": true,
   "expo": {
