@@ -93,6 +93,7 @@ export default function PremiumScanner({
       resetScannerState();
     } else {
       setIsCameraActive(false);
+      setTorch('off');
       scanLockRef.current = false;
     }
   }, [visible, hasPermission]);
@@ -123,6 +124,7 @@ export default function PremiumScanner({
     setErrorMessage(null);
     setIsResolving(false);
     setManualInputText('');
+    setTorch('off');
     lastFrameTsRef.current = 0;
     scanLockRef.current = false;
   };
@@ -299,7 +301,7 @@ export default function PremiumScanner({
             device={device}
             constraints={[{ fps: 30 }]}
             isActive={isCameraActive}
-            torch={device.hasTorch && torch === 'on' ? 'on' : 'off'}
+            torchMode={torch}
             outputs={[barcodeOutput]}
             enableZoomGesture={true}
           />
