@@ -30,13 +30,15 @@ import {
   isInROI,
   type ScannerPipelineRefs,
   FRAME_INTERVAL_MS,
+  VIEWPORT_WIDTH_PCT,
+  VIEWPORT_HEIGHT_PX,
 } from '@/utils/scannerPipeline';
 import { useTheme } from '@/hooks/use-theme';
 import { Spacing } from '@/constants/theme';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const VIEWPORT_WIDTH = SCREEN_WIDTH * 0.85;
-const VIEWPORT_HEIGHT = 140;
+const VIEWPORT_WIDTH = SCREEN_WIDTH * VIEWPORT_WIDTH_PCT;
+const VIEWPORT_HEIGHT = VIEWPORT_HEIGHT_PX;
 
 interface PremiumScannerProps {
   visible: boolean;
@@ -125,6 +127,9 @@ export default function PremiumScanner({
 
   const barcodeOutput = useBarcodeScannerOutput({
     barcodeFormats: ['ean-13', 'code-128', 'qr-code', 'code-39'],
+    onError: (error) => {
+      console.error('Barcode scanner error:', error);
+    },
     onBarcodeScanned: (codes) => {
       if (codes.length === 0 || !isCameraActive || isResolving || scannedBarcode || scanLockRef.current) return;
 
@@ -137,8 +142,8 @@ export default function PremiumScanner({
       const value = code.rawValue ?? code.displayValue;
       if (!value) return;
 
-      // Tier B: Viewport ROI bounding verification
-      if (!isInROI(code, SCREEN_WIDTH)) return;
+      // Tier B: Viewport ROI bounding verification (screen-space coordinate conversion)
+      if (!isInROI(code, { width: SCREEN_WIDTH, height: SCREEN_HEIGHT })) return;
 
       // EAN checksum validation
       if (/^\d{12,13}$/.test(value) && !isValidEanChecksum(value)) {
@@ -451,7 +456,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
   flashOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: '#fff',
     zIndex: 999,
   },

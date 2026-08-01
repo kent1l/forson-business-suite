@@ -14,9 +14,23 @@
 export const FRAME_INTERVAL_MS = 33 as const;     // 1000 ms / 30 FPS
 export const BUDGET_WINDOW_SIZE = 6 as const;
 export const MAJORITY_THRESHOLD = 4 as const;     // 4 out of 6 = 66.6%
-export const ROI_HALF_WIDTH = 0.20 as const;      // ±20% from centre = inner 40%
+
+export const VIEWPORT_WIDTH_PCT = 0.85 as const;  // 85% screen width
+export const VIEWPORT_HEIGHT_PX = 140 as const;   // 140px fixed height
 
 // ── Types ────────────────────────────────────────────────────────────────────
+export interface RectBounds {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+export interface Dimensions {
+  width: number;
+  height: number;
+}
+
 export interface ScannerPipelineRefs {
   lastFrameTs: number;
   window: string[];
@@ -84,38 +98,185 @@ export function isValidEanChecksum(barcode: string): boolean {
   return (10 - (sum % 10)) % 10 === checkDigit;
 }
 
-// ── Tier B: ROI Mask (central 40% horizontal band) ──────────────────────────
-/**
- * Returns true when the barcode's horizontal midpoint falls within the central
- * 40% of the camera frame (0.30 – 0.70 normalised x).
- * Falls back to `true` when no bounds metadata is available.
- */
-export function isInROI(
-  code: {
-    bounds?: { minX: number; maxX: number; minY: number; maxY: number };
-    boundingBox?: { x: number; y: number; width: number; height: number };
-    frame?: { x: number; y: number; width: number; height: number };
-  },
-  frameWidth: number
-): boolean {
-  if (frameWidth === 0) return true;
-  let minX: number | undefined;
-  let maxX: number | undefined;
+// ── Tier B: ROI Viewport Filtering & Coordinate Transformation ────────────────
 
+/**
+ * Single source of truth for screen-space ROI box bounds (matches viewfinder UI).
+ */
+export function getScreenRoiRect(
+  screenWidth: number,
+  screenHeight: number,
+  widthPct: number = VIEWPORT_WIDTH_PCT,
+  heightPx: number = VIEWPORT_HEIGHT_PX
+): RectBounds {
+  const width = screenWidth * widthPct;
+  const height = heightPx;
+  const left = (screenWidth - width) / 2;
+  const top = (screenHeight - height) / 2;
+  return {
+    left,
+    top,
+    right: left + width,
+    bottom: top + height,
+  };
+}
+
+/**
+ * Converts frame-space pixel coordinates to screen-space coordinates.
+ *
+ * Coordinate System Conversion Rationale:
+ * Camera preview fills the screen using aspect-fill ('cover') mode.
+ * MLKit returns barcode coordinates relative to the input camera frame resolution.
+ *
+ * We convert frame coordinates (x_f, y_f) to screen coordinates (x_s, y_s) via:
+ *   scale = max(screenWidth / frameWidth, screenHeight / frameHeight)
+ *   offsetX = (frameWidth * scale - screenWidth) / 2
+ *   offsetY = (frameHeight * scale - screenHeight) / 2
+ *   x_s = x_f * scale - offsetX
+ *   y_s = y_f * scale - offsetY
+ */
+export function frameToScreenRect(
+  frameRect: RectBounds,
+  frameDim: Dimensions,
+  screenDim: Dimensions
+): RectBounds {
+  const scale = Math.max(
+    screenDim.width / frameDim.width,
+    screenDim.height / frameDim.height
+  );
+  const offsetX = (frameDim.width * scale - screenDim.width) / 2;
+  const offsetY = (frameDim.height * scale - screenDim.height) / 2;
+
+  return {
+    left: frameRect.left * scale - offsetX,
+    right: frameRect.right * scale - offsetX,
+    top: frameRect.top * scale - offsetY,
+    bottom: frameRect.bottom * scale - offsetY,
+  };
+}
+
+/**
+ * Safely extracts bounding rectangle {left, right, top, bottom} from various barcode object schemas.
+ */
+export function extractBarcodeRect(code: any): RectBounds | null {
+  if (!code) return null;
+
+  // Nitro BarcodeSpec / MLKit Rect (left, right, top, bottom)
   if (code.boundingBox) {
-    minX = code.boundingBox.x;
-    maxX = code.boundingBox.x + code.boundingBox.width;
-  } else if (code.bounds) {
-    minX = code.bounds.minX;
-    maxX = code.bounds.maxX;
-  } else if (code.frame) {
-    minX = code.frame.x;
-    maxX = code.frame.x + code.frame.width;
+    const box = code.boundingBox;
+    const left = typeof box.left === 'number' ? box.left : box.x;
+    const top = typeof box.top === 'number' ? box.top : box.y;
+    const right = typeof box.right === 'number' ? box.right : (typeof box.x === 'number' && typeof box.width === 'number' ? box.x + box.width : left);
+    const bottom = typeof box.bottom === 'number' ? box.bottom : (typeof box.y === 'number' && typeof box.height === 'number' ? box.y + box.height : top);
+    if (left !== undefined && right !== undefined && top !== undefined && bottom !== undefined) {
+      return { left, top, right, bottom };
+    }
   }
 
-  if (minX === undefined || maxX === undefined) return true;
-  const normMidX = (minX + (maxX - minX) / 2) / frameWidth;
-  return Math.abs(normMidX - 0.5) <= ROI_HALF_WIDTH;
+  // VisionCamera v3/v4 bounds
+  if (code.bounds) {
+    const b = code.bounds;
+    if (typeof b.minX === 'number' && typeof b.maxX === 'number' && typeof b.minY === 'number' && typeof b.maxY === 'number') {
+      return { left: b.minX, right: b.maxX, top: b.minY, bottom: b.maxY };
+    }
+  }
+
+  // Frame object
+  if (code.frame) {
+    const f = code.frame;
+    if (typeof f.x === 'number' && typeof f.width === 'number' && typeof f.y === 'number' && typeof f.height === 'number') {
+      return { left: f.x, right: f.x + f.width, top: f.y, bottom: f.y + f.height };
+    }
+  }
+
+  // Corner points array
+  if (Array.isArray(code.cornerPoints) && code.cornerPoints.length > 0) {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const pt of code.cornerPoints) {
+      if (pt && typeof pt.x === 'number' && typeof pt.y === 'number') {
+        if (pt.x < minX) minX = pt.x;
+        if (pt.x > maxX) maxX = pt.x;
+        if (pt.y < minY) minY = pt.y;
+        if (pt.y > maxY) maxY = pt.y;
+      }
+    }
+    if (minX !== Infinity) {
+      return { left: minX, right: maxX, top: minY, bottom: maxY };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Evaluates whether a barcode falls within the defined Region of Interest (ROI) rectangle.
+ *
+ * In-Region Criteria & Assumptions:
+ * - Default mode ('center'): Checks if the center point (midX, midY) of the barcode falls strictly inside the ROI rectangle.
+ * - 'full' mode: Checks if the entire barcode bounding box is 100% contained within the ROI rectangle.
+ * - 'overlap' mode: Checks if any portion of the barcode intersects the ROI rectangle.
+ *
+ * Using 'center' containment ensures that barcodes positioned mostly outside the viewfinder box are ignored,
+ * preventing unintended scans while remaining easy for users to aim.
+ */
+export function isInROI(
+  code: any,
+  screenDim: Dimensions,
+  frameDim: Dimensions = { width: 720, height: 1280 },
+  customRoiRect?: RectBounds,
+  containmentMode: 'center' | 'full' | 'overlap' = 'center'
+): boolean {
+  if (!code) return false;
+
+  const rawRect = extractBarcodeRect(code);
+  if (!rawRect) return true; // Pass through if location data missing
+
+  const roiRect = customRoiRect ?? getScreenRoiRect(screenDim.width, screenDim.height);
+
+  let screenRect: RectBounds;
+  // Check if rawRect coordinates are normalized (0..1)
+  if (rawRect.right <= 1.0 && rawRect.bottom <= 1.0 && rawRect.left >= 0 && rawRect.top >= 0) {
+    screenRect = {
+      left: rawRect.left * screenDim.width,
+      right: rawRect.right * screenDim.width,
+      top: rawRect.top * screenDim.height,
+      bottom: rawRect.bottom * screenDim.height,
+    };
+  } else {
+    // Transform frame pixel coordinates to screen space using camera aspect-fill ('cover')
+    screenRect = frameToScreenRect(rawRect, frameDim, screenDim);
+  }
+
+  if (containmentMode === 'center') {
+    const midX = (screenRect.left + screenRect.right) / 2;
+    const midY = (screenRect.top + screenRect.bottom) / 2;
+    return (
+      midX >= roiRect.left &&
+      midX <= roiRect.right &&
+      midY >= roiRect.top &&
+      midY <= roiRect.bottom
+    );
+  }
+
+  if (containmentMode === 'full') {
+    return (
+      screenRect.left >= roiRect.left &&
+      screenRect.right <= roiRect.right &&
+      screenRect.top >= roiRect.top &&
+      screenRect.bottom <= roiRect.bottom
+    );
+  }
+
+  if (containmentMode === 'overlap') {
+    return !(
+      screenRect.right < roiRect.left ||
+      screenRect.left > roiRect.right ||
+      screenRect.bottom < roiRect.top ||
+      screenRect.top > roiRect.bottom
+    );
+  }
+
+  return true;
 }
 
 
