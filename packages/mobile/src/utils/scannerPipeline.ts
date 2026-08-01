@@ -12,8 +12,8 @@
 
 // ── Constants ────────────────────────────────────────────────────────────────
 export const FRAME_INTERVAL_MS = 33 as const;     // 1000 ms / 30 FPS
-export const BUDGET_WINDOW_SIZE = 6 as const;
-export const MAJORITY_THRESHOLD = 4 as const;     // 4 out of 6 = 66.6%
+export const BUDGET_WINDOW_SIZE = 3 as const;     // Reduced window for instant recognition
+export const MAJORITY_THRESHOLD = 2 as const;     // 2 out of 3 majority = 66.6%
 
 export const VIEWPORT_WIDTH_PCT = 0.85 as const;  // 85% screen width
 export const VIEWPORT_HEIGHT_PX = 140 as const;   // 140px fixed height
@@ -211,20 +211,17 @@ export function extractBarcodeRect(code: any): RectBounds | null {
 /**
  * Evaluates whether a barcode falls within the defined Region of Interest (ROI) rectangle.
  *
- * In-Region Criteria & Assumptions:
- * - Default mode ('center'): Checks if the center point (midX, midY) of the barcode falls strictly inside the ROI rectangle.
- * - 'full' mode: Checks if the entire barcode bounding box is 100% contained within the ROI rectangle.
- * - 'overlap' mode: Checks if any portion of the barcode intersects the ROI rectangle.
- *
- * Using 'center' containment ensures that barcodes positioned mostly outside the viewfinder box are ignored,
- * preventing unintended scans while remaining easy for users to aim.
+ * Performance & Smoothness Optimizations:
+ * 1. Auto-detects frame resolution / orientation from raw coordinates (handles 1280x720 landscape vs 720x1280 portrait frame outputs).
+ * 2. Applies a soft 20px padding to the ROI box so micro-jitter from hand movements doesn't cause frustrating scan drops.
  */
 export function isInROI(
   code: any,
   screenDim: Dimensions,
   frameDim: Dimensions = { width: 720, height: 1280 },
   customRoiRect?: RectBounds,
-  containmentMode: 'center' | 'full' | 'overlap' = 'center'
+  containmentMode: 'center' | 'full' | 'overlap' = 'center',
+  paddingPx: number = 20
 ): boolean {
   if (!code) return false;
 
@@ -232,6 +229,14 @@ export function isInROI(
   if (!rawRect) return true; // Pass through if location data missing
 
   const roiRect = customRoiRect ?? getScreenRoiRect(screenDim.width, screenDim.height);
+
+  // Expand ROI slightly with soft padding for smooth hand-movement tolerance
+  const paddedRoiRect: RectBounds = {
+    left: roiRect.left - paddingPx,
+    top: roiRect.top - paddingPx,
+    right: roiRect.right + paddingPx,
+    bottom: roiRect.bottom + paddingPx,
+  };
 
   let screenRect: RectBounds;
   // Check if rawRect coordinates are normalized (0..1)
@@ -243,36 +248,51 @@ export function isInROI(
       bottom: rawRect.bottom * screenDim.height,
     };
   } else {
-    // Transform frame pixel coordinates to screen space using camera aspect-fill ('cover')
-    screenRect = frameToScreenRect(rawRect, frameDim, screenDim);
+    // Dynamic Frame Dimension Inference:
+    // Determine if raw coordinates are in landscape vs portrait space based on coordinate magnitudes
+    let effectiveFrameDim = { ...frameDim };
+    if (rawRect.right > effectiveFrameDim.width || rawRect.bottom > effectiveFrameDim.height) {
+      if (rawRect.right > 720 && rawRect.right > rawRect.bottom) {
+        // Landscape orientation frame output (e.g. 1280x720)
+        effectiveFrameDim = { width: 1280, height: 720 };
+      } else {
+        // High-res portrait frame output (e.g. 1080x1920)
+        effectiveFrameDim = {
+          width: Math.max(720, rawRect.right),
+          height: Math.max(1280, rawRect.bottom),
+        };
+      }
+    }
+
+    screenRect = frameToScreenRect(rawRect, effectiveFrameDim, screenDim);
   }
 
   if (containmentMode === 'center') {
     const midX = (screenRect.left + screenRect.right) / 2;
     const midY = (screenRect.top + screenRect.bottom) / 2;
     return (
-      midX >= roiRect.left &&
-      midX <= roiRect.right &&
-      midY >= roiRect.top &&
-      midY <= roiRect.bottom
+      midX >= paddedRoiRect.left &&
+      midX <= paddedRoiRect.right &&
+      midY >= paddedRoiRect.top &&
+      midY <= paddedRoiRect.bottom
     );
   }
 
   if (containmentMode === 'full') {
     return (
-      screenRect.left >= roiRect.left &&
-      screenRect.right <= roiRect.right &&
-      screenRect.top >= roiRect.top &&
-      screenRect.bottom <= roiRect.bottom
+      screenRect.left >= paddedRoiRect.left &&
+      screenRect.right <= paddedRoiRect.right &&
+      screenRect.top >= paddedRoiRect.top &&
+      screenRect.bottom <= paddedRoiRect.bottom
     );
   }
 
   if (containmentMode === 'overlap') {
     return !(
-      screenRect.right < roiRect.left ||
-      screenRect.left > roiRect.right ||
-      screenRect.bottom < roiRect.top ||
-      screenRect.top > roiRect.bottom
+      screenRect.right < paddedRoiRect.left ||
+      screenRect.left > paddedRoiRect.right ||
+      screenRect.bottom < paddedRoiRect.top ||
+      screenRect.top > paddedRoiRect.bottom
     );
   }
 

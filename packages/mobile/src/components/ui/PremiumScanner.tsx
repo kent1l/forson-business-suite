@@ -156,7 +156,8 @@ export default function PremiumScanner({
 
       // Tier C: Sliding consensus evaluation
       const consensus = runConsensus(pipelineRef.current, value);
-      setConsensusCount(pipelineRef.current.window.length);
+      const newCount = pipelineRef.current.window.length;
+      setConsensusCount((prev) => (prev !== newCount ? newCount : prev));
 
       if (consensus) {
         scanLockRef.current = true;
