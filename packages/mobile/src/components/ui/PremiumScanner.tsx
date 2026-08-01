@@ -120,7 +120,6 @@ export default function PremiumScanner({
     setDrawerState('idle');
     setErrorMessage(null);
     setIsResolving(false);
-    setIsCameraActive(true);
     lastFrameTsRef.current = 0;
     scanLockRef.current = false;
   };
@@ -130,7 +129,7 @@ export default function PremiumScanner({
     onError: (error) => {
       const msg = (error as any)?.message || String(error);
       if (msg.includes('OperationCanceledException') || msg.includes('Camera is not active')) {
-        return; // Ignore benign CameraX teardown cancellation errors when pausing active state
+        return; // Ignore benign CameraX teardown cancellation errors
       }
       console.error('Barcode scanner error:', error);
     },
@@ -151,10 +150,10 @@ export default function PremiumScanner({
 
       // EAN checksum validation
       if (/^\d{12,13}$/.test(value) && !isValidEanChecksum(value)) {
+        scanLockRef.current = true;
         haptics.error();
         setErrorMessage('Invalid EAN/UPC Checksum');
         setDrawerState('error');
-        setIsCameraActive(false);
         return;
       }
 
@@ -165,7 +164,6 @@ export default function PremiumScanner({
 
       if (consensus) {
         scanLockRef.current = true;
-        setIsCameraActive(false);
         setIsResolving(true);
         setScannedBarcode(consensus);
 
@@ -270,12 +268,10 @@ export default function PremiumScanner({
             style={StyleSheet.absoluteFill}
             device={device}
             isActive={isCameraActive}
-            torch={isCameraActive && device.hasTorch && torch === 'on' ? 'on' : 'off'}
+            torch={device.hasTorch && torch === 'on' ? 'on' : 'off'}
             outputs={[barcodeOutput]}
             constraints={[{ fps: 30 }]}
-            zoom={isCameraActive ? Math.min(Math.max(1.8, device.minZoom ?? 1), device.maxZoom ?? 1.8) : undefined}
-            exposure={isCameraActive ? -1 : undefined}
-            enableZoomGesture={isCameraActive}
+            enableZoomGesture={true}
           />
         ) : !hasPermission ? (
           <View style={styles.permissionContainer}>
