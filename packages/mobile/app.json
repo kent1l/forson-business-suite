@@ -43,8 +43,7 @@
       [
         "react-native-vision-camera",
         {
-          "cameraPermissionText": "Allow Forson ERP to access your camera to scan barcodes.",
-          "enableCodeScanner": true
+          "cameraPermissionText": "Allow Forson ERP to access your camera to scan barcodes."
         }
       ],
       [
