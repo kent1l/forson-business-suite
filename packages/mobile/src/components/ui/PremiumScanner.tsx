@@ -44,6 +44,7 @@ interface PremiumScannerProps {
   onResolveBarcode?: (
     barcode: string
   ) => Promise<{ status: 'success' | 'not_found' | 'error'; message?: string }>;
+  onLinkBarcode?: (barcode: string) => void;
   title?: string;
   autoCloseOnSuccess?: boolean;
 }
@@ -53,6 +54,7 @@ export default function PremiumScanner({
   onClose,
   onBarcodeScanned,
   onResolveBarcode,
+  onLinkBarcode,
   title = 'Premium Scanner',
   autoCloseOnSuccess = true,
 }: PremiumScannerProps) {
@@ -399,13 +401,18 @@ export default function PremiumScanner({
                     style={[styles.actionBtnBlock, styles.btnConfirm]}
                     onPress={() => {
                       haptics.tap();
+                      const barcodeToLink = scannedBarcode;
                       onClose();
-                      // Auto-redirect instructions
-                      setTimeout(() => {
-                        alert(
-                          'To assign this barcode:\n1. Search for the item by name or SKU.\n2. Select it.\n3. Scan the barcode on the count screen.'
-                        );
-                      }, 200);
+                      if (onLinkBarcode && barcodeToLink) {
+                        onLinkBarcode(barcodeToLink);
+                      } else {
+                        // Auto-redirect instructions
+                        setTimeout(() => {
+                          alert(
+                            'To assign this barcode:\n1. Search for the item by name or SKU.\n2. Select it.\n3. Scan the barcode on the count screen.'
+                          );
+                        }, 200);
+                      }
                     }}>
                     <Text style={styles.btnConfirmText}>Link to Existing Part</Text>
                   </TouchableOpacity>
