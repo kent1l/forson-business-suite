@@ -93,6 +93,7 @@ export function isValidEanChecksum(barcode: string): boolean {
 export function isInROI(
   code: {
     bounds?: { minX: number; maxX: number; minY: number; maxY: number };
+    boundingBox?: { x: number; y: number; width: number; height: number };
     frame?: { x: number; y: number; width: number; height: number };
   },
   frameWidth: number
@@ -101,7 +102,10 @@ export function isInROI(
   let minX: number | undefined;
   let maxX: number | undefined;
 
-  if (code.bounds) {
+  if (code.boundingBox) {
+    minX = code.boundingBox.x;
+    maxX = code.boundingBox.x + code.boundingBox.width;
+  } else if (code.bounds) {
     minX = code.bounds.minX;
     maxX = code.bounds.maxX;
   } else if (code.frame) {

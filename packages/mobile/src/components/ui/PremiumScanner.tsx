@@ -11,7 +11,8 @@ import {
   KeyboardAvoidingView,
   ActivityIndicator,
 } from 'react-native';
-import { Camera, useCameraDevice, useCodeScanner, useCameraFormat, useCameraPermission } from 'react-native-vision-camera';
+import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
+import { useBarcodeScannerOutput } from 'react-native-vision-camera-barcode-scanner';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -60,7 +61,6 @@ export default function PremiumScanner({
 }: PremiumScannerProps) {
   const theme = useTheme();
   const device = useCameraDevice('back');
-  const format = useCameraFormat(device, [{ fps: 30 }]);
   const { hasPermission, requestPermission } = useCameraPermission();
 
   const [isCameraActive, setIsCameraActive] = useState(false);
@@ -123,9 +123,9 @@ export default function PremiumScanner({
     scanLockRef.current = false;
   };
 
-  const codeScanner = useCodeScanner({
-    codeTypes: ['ean-13', 'code-128', 'qr', 'code-39'],
-    onCodeScanned: (codes, frame) => {
+  const barcodeOutput = useBarcodeScannerOutput({
+    barcodeFormats: ['ean-13', 'code-128', 'qr-code', 'code-39'],
+    onBarcodeScanned: (codes) => {
       if (codes.length === 0 || !isCameraActive || isResolving || scannedBarcode || scanLockRef.current) return;
 
       // Tier A: Frame rate budgeting (33ms interval)
@@ -134,7 +134,7 @@ export default function PremiumScanner({
       lastFrameTsRef.current = now;
 
       const code = codes[0];
-      const value = code.value;
+      const value = code.rawValue ?? code.displayValue;
       if (!value) return;
 
       // Tier B: Viewport ROI bounding verification
@@ -259,11 +259,10 @@ export default function PremiumScanner({
           <Camera
             style={StyleSheet.absoluteFill}
             device={device}
-            format={format}
             isActive={isCameraActive}
             torch={device.hasTorch && torch === 'on' ? 'on' : 'off'}
-            codeScanner={codeScanner}
-            fps={30}
+            outputs={[barcodeOutput]}
+            constraints={[{ fps: 30 }]}
             zoom={Math.min(Math.max(1.8, device.minZoom ?? 1), device.maxZoom ?? 1.8)}
             exposure={-1}
             enableZoomGesture={true}

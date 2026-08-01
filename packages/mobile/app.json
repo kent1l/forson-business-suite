@@ -14,7 +14,10 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.forson.erp"
+      "bundleIdentifier": "com.forson.erp",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow Forson ERP to access your camera to scan barcodes."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -23,7 +26,10 @@
         "monochromeImage": "./assets/images/forson-android-icon-foreground.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.forson.erp"
+      "package": "com.forson.erp",
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "output": "static",
@@ -40,13 +46,6 @@
       ],
       "./withAndroidBuildFixes",
       "expo-router",
-      [
-        "react-native-vision-camera",
-        {
-          "cameraPermissionText": "Allow Forson ERP to access your camera to scan barcodes.",
-          "enableCodeScanner": true
-        }
-      ],
       [
         "expo-splash-screen",
         {
