@@ -20,6 +20,7 @@
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^4.22.2",
+    "js-yaml": "^4.1.0",
     "json2csv": "^6.0.0-alpha.2",
     "jsonwebtoken": "^9.0.2",
     "meilisearch": "^0.36.0",
@@ -30,7 +31,8 @@
     "pdf-lib": "^1.17.1",
     "pg": "^8.21.0",
     "puppeteer": "^23.6.0",
-    "yargs": "^17.7.2"
+    "yargs": "^17.7.2",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@eslint/js": "^9.34.0",

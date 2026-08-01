@@ -54,6 +54,15 @@ const CATEGORIES = [
         ],
     },
     {
+        key: 'finance',
+        title: 'Finance & Expenses',
+        icon: ICONS.receipt,
+        items: [
+            { name: 'Expenses',           icon: ICONS.receipt, page: 'expenses',           permission: 'expenses:view' },
+            { name: 'Expense Categories', icon: ICONS.tag,     page: 'expense_categories', permission: 'expenses:manage_categories' },
+        ],
+    },
+    {
         key: 'system',
         title: 'System & Analytics',
         icon: ICONS.reporting,

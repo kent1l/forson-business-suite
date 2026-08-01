@@ -66,7 +66,7 @@ npm run test:mobile
 - **API Tests require a live PostgreSQL database instance.**
 - Tests interact with the database via discrete environment variables (`DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`).
 - In local development, the PostgreSQL service runs via Docker (`forson_db` container).
-- In GitHub Actions CI, a `postgres:15` service container is dynamically provisioned on port 5432 and seeded with migrations prior to running `npm test`.
+- In GitHub Actions CI, a `pgvector/pgvector:pg15` service container is dynamically provisioned on port 5432 and seeded with migrations prior to running `npm test`.
 
 ### Third-Party Services & Global Mocks
 - **MeiliSearch**: Mocked globally in `packages/api/jest.setup.js` to prevent external network calls during automated testing.

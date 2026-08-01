@@ -123,7 +123,7 @@ const getSearchSyncAlerts = async () => {
 // GET /dashboard/stats - Fetch dashboard statistics
 router.get('/dashboard/stats', async (req, res) => {
   try {
-    const [totalPartsRes, lowStockRes, totalInvoicesRes] = await Promise.all([
+    const [totalPartsRes, lowStockRes, totalInvoicesRes, currentMonthExpensesRes, sparklineExpensesRes] = await Promise.all([
       db.query('SELECT COUNT(*) AS total_parts FROM part WHERE is_active = TRUE'),
       db.query(`
         SELECT COUNT(*) AS low_stock_items
@@ -131,19 +131,38 @@ router.get('/dashboard/stats', async (req, res) => {
         WHERE p.low_stock_warning = TRUE AND
               (SELECT COALESCE(SUM(it.quantity), 0) FROM inventory_transaction it WHERE it.part_id = p.part_id) <= p.warning_quantity
       `),
-      db.query('SELECT COUNT(*) AS total_invoices FROM invoice')
+      db.query('SELECT COUNT(*) AS total_invoices FROM invoice'),
+      db.query(`
+        SELECT COALESCE(SUM(amount), 0) AS total_expenses
+        FROM expense
+        WHERE is_void = false AND expense_date >= DATE_TRUNC('month', CURRENT_DATE)
+      `),
+      db.query(`
+        SELECT 
+            TO_CHAR(DATE_TRUNC('month', expense_date), 'Mon') AS month,
+            COALESCE(SUM(amount), 0)::numeric AS total
+        FROM expense
+        WHERE is_void = false AND expense_date >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '5 months')
+        GROUP BY DATE_TRUNC('month', expense_date)
+        ORDER BY DATE_TRUNC('month', expense_date) ASC
+      `)
     ]);
 
     const stats = {
       totalParts: parseInt(totalPartsRes.rows[0].total_parts, 10),
       lowStockItems: parseInt(lowStockRes.rows[0].low_stock_items, 10),
       pendingOrders: parseInt(totalInvoicesRes.rows[0].total_invoices, 10),
+      totalExpensesThisMonth: parseFloat(currentMonthExpensesRes.rows[0].total_expenses) || 0,
+      expenseSparkline: sparklineExpensesRes.rows.map(r => ({
+        month: r.month,
+        total: parseFloat(r.total) || 0
+      }))
     };
 
     res.json(stats);
 
   } catch (err) {
-    console.error(err.message);
+    console.error('Error fetching dashboard stats:', err.message);
     res.status(500).send('Server Error');
   }
 });
@@ -190,6 +209,7 @@ router.get('/dashboard/enhanced-stats', async (req, res) => {
             lowStockCountRes,
             recentSalesRes,
             topProductsRes,
+            totalExpensesRes,
             searchSyncHealth
         ] = await Promise.all([
             // Today's revenue
@@ -273,6 +293,12 @@ router.get('/dashboard/enhanced-stats', async (req, res) => {
                 ORDER BY total_revenue DESC
                 LIMIT 10
             `),
+            // Total Expenses (This Month)
+            db.query(`
+                SELECT COALESCE(SUM(amount), 0) as total_expenses
+                FROM expense
+                WHERE is_void = false AND expense_date >= DATE_TRUNC('month', CURRENT_DATE)
+            `),
             getSearchSyncHealth()
         ]);
 
@@ -289,18 +315,17 @@ router.get('/dashboard/enhanced-stats', async (req, res) => {
                     trend: revenueChange >= 0 ? 'up' : 'down'
                 },
                 outstandingAR: {
-                    value: parseFloat(outstandingARRes.rows[0].outstanding_ar),
-                    change: null,
-                    trend: null
+                    value: parseFloat(outstandingARRes.rows[0].outstanding_ar)
                 },
                 inventoryValue: {
-                    value: parseFloat(inventoryValueRes.rows[0].inventory_value),
-                    change: null,
-                    trend: null
+                    value: parseFloat(inventoryValueRes.rows[0].inventory_value)
                 },
                 lowStockCount: {
                     value: parseInt(lowStockCountRes.rows[0].low_stock_count),
                     urgent: parseInt(lowStockCountRes.rows[0].low_stock_count) > 0
+                },
+                totalExpensesMonth: {
+                    value: parseFloat(totalExpensesRes.rows[0].total_expenses) || 0
                 }
             },
             recentSales: recentSalesRes.rows,

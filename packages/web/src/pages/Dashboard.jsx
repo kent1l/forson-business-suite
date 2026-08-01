@@ -192,12 +192,24 @@ const Dashboard = ({ onNavigate }) => {
                     {hasPermission('inventory:view') && (
                         <EnhancedKPICard
                             title="Low Stock Alert"
-                            value={`${enhancedStats.kpis.lowStockCount.value} items`}
+                            value={`${enhancedStats.kpis.lowStockCount?.value || 0} items`}
                             icon="warning"
                             color="orange"
-                            urgent={enhancedStats.kpis.lowStockCount.urgent}
+                            urgent={enhancedStats.kpis.lowStockCount?.urgent}
                             loading={loading}
                             onClick={() => handleNavigation('inventory')}
+                        />
+                    )}
+                    {hasPermission('expenses:view') && (
+                        <EnhancedKPICard
+                            title="Monthly Expenses"
+                            value={enhancedStats.kpis.totalExpensesMonth?.value || 0}
+                            icon="receipt"
+                            color="red"
+                            loading={loading}
+                            onClick={() => handleNavigation('expenses')}
+                            subtitle="Current month operating cost"
+                            isMonetary
                         />
                     )}
                 </div>
