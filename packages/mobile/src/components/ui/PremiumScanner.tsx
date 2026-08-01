@@ -302,7 +302,7 @@ export default function PremiumScanner({
             device={device}
             constraints={[{ fps: 30 }]}
             isActive={isCameraActive}
-            torchMode={isCameraActive && torch === 'on' ? 'on' : 'off'}
+            torchMode={isCameraActive && torch === 'on' ? 'on' : undefined}
             outputs={[barcodeOutput]}
             enableZoomGesture={true}
           />
