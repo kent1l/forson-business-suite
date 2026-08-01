@@ -80,6 +80,20 @@ test('isInROI coordinate checks', () => {
     },
   };
   assert.strictEqual(isInROI(outsideCode, screenDim, screenDim), false);
+
+  // Landscape frame output (e.g. 1280x720) with code near top edge (left=50 out of 1280)
+  const topEdgeLandscapeCode = {
+    boundingBox: {
+      left: 50,
+      right: 150,
+      top: 300,
+      bottom: 400,
+    },
+  };
+  assert.strictEqual(isInROI(topEdgeLandscapeCode, screenDim, { width: 1280, height: 720 }), false);
+
+  // Code with missing location data must return false to strictly prevent scanning outside ROI
+  assert.strictEqual(isInROI({ rawValue: '123456789012' }, screenDim, screenDim), false);
 });
 
 test('selectBestRoiBarcode picks closest candidate to ROI center', () => {

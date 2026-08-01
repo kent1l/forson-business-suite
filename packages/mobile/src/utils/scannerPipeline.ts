@@ -167,35 +167,24 @@ export function frameToScreenRect(
 export function extractBarcodeRect(code: any): RectBounds | null {
   if (!code) return null;
 
-  // Nitro BarcodeSpec / MLKit Rect (left, right, top, bottom)
+  // 1. Nitro BarcodeSpec / MLKit Rect (left, right, top, bottom)
   if (code.boundingBox) {
     const box = code.boundingBox;
     const left = typeof box.left === 'number' ? box.left : box.x;
     const top = typeof box.top === 'number' ? box.top : box.y;
     const right = typeof box.right === 'number' ? box.right : (typeof box.x === 'number' && typeof box.width === 'number' ? box.x + box.width : left);
     const bottom = typeof box.bottom === 'number' ? box.bottom : (typeof box.y === 'number' && typeof box.height === 'number' ? box.y + box.height : top);
-    if (left !== undefined && right !== undefined && top !== undefined && bottom !== undefined) {
-      return { left, top, right, bottom };
+    if (typeof left === 'number' && typeof right === 'number' && typeof top === 'number' && typeof bottom === 'number') {
+      return {
+        left: Math.min(left, right),
+        right: Math.max(left, right),
+        top: Math.min(top, bottom),
+        bottom: Math.max(top, bottom),
+      };
     }
   }
 
-  // VisionCamera v3/v4 bounds
-  if (code.bounds) {
-    const b = code.bounds;
-    if (typeof b.minX === 'number' && typeof b.maxX === 'number' && typeof b.minY === 'number' && typeof b.maxY === 'number') {
-      return { left: b.minX, right: b.maxX, top: b.minY, bottom: b.maxY };
-    }
-  }
-
-  // Frame object
-  if (code.frame) {
-    const f = code.frame;
-    if (typeof f.x === 'number' && typeof f.width === 'number' && typeof f.y === 'number' && typeof f.height === 'number') {
-      return { left: f.x, right: f.x + f.width, top: f.y, bottom: f.y + f.height };
-    }
-  }
-
-  // Corner points array
+  // 2. Corner points array
   if (Array.isArray(code.cornerPoints) && code.cornerPoints.length > 0) {
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const pt of code.cornerPoints) {
@@ -211,7 +200,84 @@ export function extractBarcodeRect(code: any): RectBounds | null {
     }
   }
 
+  // 3. VisionCamera v3/v4 bounds
+  if (code.bounds) {
+    const b = code.bounds;
+    if (typeof b.minX === 'number' && typeof b.maxX === 'number' && typeof b.minY === 'number' && typeof b.maxY === 'number') {
+      return {
+        left: Math.min(b.minX, b.maxX),
+        right: Math.max(b.minX, b.maxX),
+        top: Math.min(b.minY, b.maxY),
+        bottom: Math.max(b.minY, b.maxY),
+      };
+    }
+  }
+
+  // 4. Frame object
+  if (code.frame) {
+    const f = code.frame;
+    if (typeof f.x === 'number' && typeof f.width === 'number' && typeof f.y === 'number' && typeof f.height === 'number') {
+      return { left: f.x, right: f.x + f.width, top: f.y, bottom: f.y + f.height };
+    }
+  }
+
   return null;
+}
+
+/**
+ * Converts raw barcode bounding box coordinates into screen-space coordinates.
+ */
+export function computeScreenRect(
+  rawRect: RectBounds,
+  screenDim: Dimensions,
+  frameDim: Dimensions = { width: 720, height: 1280 }
+): RectBounds {
+  // 1. Normalized (0..1) coordinates
+  if (rawRect.right <= 1.0 && rawRect.bottom <= 1.0 && rawRect.left >= 0 && rawRect.top >= 0) {
+    return {
+      left: rawRect.left * screenDim.width,
+      right: rawRect.right * screenDim.width,
+      top: rawRect.top * screenDim.height,
+      bottom: rawRect.bottom * screenDim.height,
+    };
+  }
+
+  // 2. Pixel coordinates
+  // Detect landscape camera frame orientation (width > height, e.g. 1280x720)
+  const isLandscapeFrame = frameDim.width > frameDim.height || (rawRect.right > 720 && rawRect.right > rawRect.bottom);
+
+  if (isLandscapeFrame) {
+    const frameW = Math.max(1280, frameDim.width, rawRect.right);
+    const frameH = Math.max(720, frameDim.height, rawRect.bottom);
+
+    // Landscape sensor frame space mapping to portrait screen:
+    // Frame X (0..frameW) maps to screen vertical Y,
+    // Frame Y (0..frameH) maps to screen horizontal X.
+    const normYMin = rawRect.left / frameW;
+    const normYMax = rawRect.right / frameW;
+    const normXMin = rawRect.top / frameH;
+    const normXMax = rawRect.bottom / frameH;
+
+    return {
+      left: normXMin * screenDim.width,
+      right: normXMax * screenDim.width,
+      top: normYMin * screenDim.height,
+      bottom: normYMax * screenDim.height,
+    };
+  }
+
+  // Portrait frame or screen space
+  let frameW = frameDim.width;
+  let frameH = frameDim.height;
+  if (rawRect.right <= screenDim.width && rawRect.bottom <= screenDim.height && frameDim.width === screenDim.width) {
+    frameW = screenDim.width;
+    frameH = screenDim.height;
+  } else {
+    frameW = Math.max(frameDim.width, rawRect.right);
+    frameH = Math.max(frameDim.height, rawRect.bottom);
+  }
+
+  return frameToScreenRect(rawRect, { width: frameW, height: frameH }, screenDim);
 }
 
 /**
@@ -223,16 +289,15 @@ export function isInROI(
   frameDim: Dimensions = { width: 720, height: 1280 },
   customRoiRect?: RectBounds,
   containmentMode: 'center' | 'full' | 'overlap' = 'center',
-  paddingPx: number = 20
+  paddingPx: number = 8
 ): boolean {
   if (!code) return false;
 
   const rawRect = extractBarcodeRect(code);
-  if (!rawRect) return true; // Pass through if location data missing
+  if (!rawRect) return false; // Require valid bounding coordinates for ROI check
 
   const roiRect = customRoiRect ?? getScreenRoiRect(screenDim.width, screenDim.height);
 
-  // Expand ROI slightly with soft padding for smooth hand-movement tolerance
   const paddedRoiRect: RectBounds = {
     left: roiRect.left - paddingPx,
     top: roiRect.top - paddingPx,
@@ -240,31 +305,7 @@ export function isInROI(
     bottom: roiRect.bottom + paddingPx,
   };
 
-  let screenRect: RectBounds;
-  // Check if rawRect coordinates are normalized (0..1)
-  if (rawRect.right <= 1.0 && rawRect.bottom <= 1.0 && rawRect.left >= 0 && rawRect.top >= 0) {
-    screenRect = {
-      left: rawRect.left * screenDim.width,
-      right: rawRect.right * screenDim.width,
-      top: rawRect.top * screenDim.height,
-      bottom: rawRect.bottom * screenDim.height,
-    };
-  } else {
-    // Dynamic Frame Dimension Inference
-    let effectiveFrameDim = { ...frameDim };
-    if (rawRect.right > effectiveFrameDim.width || rawRect.bottom > effectiveFrameDim.height) {
-      if (rawRect.right > 720 && rawRect.right > rawRect.bottom) {
-        effectiveFrameDim = { width: 1280, height: 720 };
-      } else {
-        effectiveFrameDim = {
-          width: Math.max(720, rawRect.right),
-          height: Math.max(1280, rawRect.bottom),
-        };
-      }
-    }
-
-    screenRect = frameToScreenRect(rawRect, effectiveFrameDim, screenDim);
-  }
+  const screenRect = computeScreenRect(rawRect, screenDim, frameDim);
 
   if (containmentMode === 'center') {
     const midX = (screenRect.left + screenRect.right) / 2;
@@ -326,28 +367,7 @@ export function selectBestRoiBarcode(
       continue;
     }
 
-    let screenRect: RectBounds;
-    if (rawRect.right <= 1.0 && rawRect.bottom <= 1.0 && rawRect.left >= 0 && rawRect.top >= 0) {
-      screenRect = {
-        left: rawRect.left * screenDim.width,
-        right: rawRect.right * screenDim.width,
-        top: rawRect.top * screenDim.height,
-        bottom: rawRect.bottom * screenDim.height,
-      };
-    } else {
-      let effectiveFrameDim = { ...frameDim };
-      if (rawRect.right > effectiveFrameDim.width || rawRect.bottom > effectiveFrameDim.height) {
-        if (rawRect.right > 720 && rawRect.right > rawRect.bottom) {
-          effectiveFrameDim = { width: 1280, height: 720 };
-        } else {
-          effectiveFrameDim = {
-            width: Math.max(720, rawRect.right),
-            height: Math.max(1280, rawRect.bottom),
-          };
-        }
-      }
-      screenRect = frameToScreenRect(rawRect, effectiveFrameDim, screenDim);
-    }
+    const screenRect = computeScreenRect(rawRect, screenDim, frameDim);
 
     const codeCenterX = (screenRect.left + screenRect.right) / 2;
     const codeCenterY = (screenRect.top + screenRect.bottom) / 2;
