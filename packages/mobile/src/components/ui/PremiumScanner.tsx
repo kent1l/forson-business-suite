@@ -238,6 +238,7 @@ export default function PremiumScanner({
   };
 
   const handleToggleTorch = () => {
+    if (!isCameraActive) return;
     haptics.tap();
     setTorch((prev) => (prev === 'on' ? 'off' : 'on'));
   };
@@ -301,7 +302,7 @@ export default function PremiumScanner({
             device={device}
             constraints={[{ fps: 30 }]}
             isActive={isCameraActive}
-            torchMode={torch}
+            torchMode={isCameraActive && torch === 'on' ? 'on' : 'off'}
             outputs={[barcodeOutput]}
             enableZoomGesture={true}
           />
