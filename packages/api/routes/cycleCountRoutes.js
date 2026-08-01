@@ -328,12 +328,12 @@ router.post('/inventory/cycle-count/lines/:id/submit', protect, hasPermission('c
         }
 
         // 3.6 Conditionally update barcode
-        if (scanned_barcode) {
+        if (scanned_barcode && scanned_barcode.trim()) {
             await client.query(`
                 INSERT INTO part_barcode (part_id, barcode)
                 VALUES ($1, $2)
                 ON CONFLICT (barcode) DO NOTHING
-            `, [line.part_id, scanned_barcode]);
+            `, [line.part_id, scanned_barcode.trim()]);
         }
 
         // 4. Update the line
@@ -371,7 +371,7 @@ router.post('/inventory/cycle-count/lines/:id/submit', protect, hasPermission('c
 // POST /api/inventory/cycle-count/unassigned-find
 router.post('/inventory/cycle-count/unassigned-find', protect, hasPermission('cycle_count:execute'), async (req, res) => {
     const { employee_id } = req.user;
-    const { part_id, counted_qty, started_at } = req.body;
+    const { part_id, counted_qty, started_at, scanned_barcode } = req.body;
 
     if (!part_id || counted_qty === undefined) {
         return res.status(400).json({ message: 'part_id and counted_qty are required' });
@@ -477,6 +477,15 @@ router.post('/inventory/cycle-count/unassigned-find', protect, hasPermission('cy
             VALUES ($1, $2, $3, $4, $5, TRUE, CURRENT_TIMESTAMP, $6)
             RETURNING *
         `, [batch_id, part_id, status, system_qty_snapshot, countedQuantity, started_at ? new Date(started_at) : null]);
+
+        // 3.5 Conditionally update barcode
+        if (scanned_barcode && scanned_barcode.trim()) {
+            await client.query(`
+                INSERT INTO part_barcode (part_id, barcode)
+                VALUES ($1, $2)
+                ON CONFLICT (barcode) DO NOTHING
+            `, [part_id, scanned_barcode.trim()]);
+        }
 
         // 4. Update part_inventory_stats
         await client.query(`

@@ -35,6 +35,7 @@ export default function UnassignedSearchScreen() {
   // ── Camera state ────────────────────────────────────────────────────────────
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isScanResolving, setIsScanResolving] = useState(false);
+  const [pendingBarcodeToLink, setPendingBarcodeToLink] = useState<string | null>(null);
 
   // ── Core search function (shared by debounce + barcode scan) ─────────────
   const fetchParts = useCallback(async (q: string): Promise<any[]> => {
@@ -131,10 +132,14 @@ export default function UnassignedSearchScreen() {
     closeScanner();
   };
 
+  const handleLinkBarcode = (barcode: string) => {
+    setPendingBarcodeToLink(barcode);
+  };
 
   // ── Part selection from list ──────────────────────────────────────────────
   const handleSelectPart = (part: any) => {
-    startAdHocCount(part);
+    startAdHocCount(part, pendingBarcodeToLink);
+    setPendingBarcodeToLink(null);
     router.push('/count');
   };
 
@@ -212,6 +217,18 @@ export default function UnassignedSearchScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Staged barcode banner */}
+        {pendingBarcodeToLink && (
+          <View style={{ backgroundColor: '#eff6ff', borderLeftWidth: 4, borderLeftColor: '#3b82f6', padding: 10, marginHorizontal: 16, marginBottom: 8, borderRadius: 4, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={{ color: '#1e40af', fontSize: 13, fontWeight: '600', flex: 1 }}>
+              Staged Barcode to Link: {pendingBarcodeToLink}
+            </Text>
+            <TouchableOpacity onPress={() => setPendingBarcodeToLink(null)}>
+              <Ionicons name="close" size={18} color="#1e40af" />
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Inline hint */}
         <Text style={styles.hintText}>
           Type to search · or tap{' '}
@@ -251,6 +268,7 @@ export default function UnassignedSearchScreen() {
         onClose={closeScanner}
         onBarcodeScanned={handleBarcodeScanned}
         onResolveBarcode={handleResolveBarcode}
+        onLinkBarcode={handleLinkBarcode}
         title="Scan Barcode"
         autoCloseOnSuccess={true}
       />

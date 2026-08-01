@@ -34,6 +34,12 @@ export default function CountScreen() {
   const [startTime, setStartTime] = useState<number | null>(null);
 
   useEffect(() => {
+    if (isAdHocMode && currentAdHocItem?.pendingBarcode) {
+      setScannedBarcode(currentAdHocItem.pendingBarcode);
+    }
+  }, [isAdHocMode, currentAdHocItem]);
+
+  useEffect(() => {
     const syncTime = async () => {
       try {
         const clientTimeBefore = Date.now();
@@ -122,7 +128,7 @@ export default function CountScreen() {
       const startedAt = startTime ? new Date(startTime + serverOffset).toISOString() : null;
       if (isAdHocMode) {
         // ── Ad-hoc path ──────────────────────────────────────────────────────
-        await submitAdHocCount(countedQty, startedAt);
+        await submitAdHocCount(countedQty, startedAt, scannedBarcode);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         
         // Delay clearAdHocMode slightly to prevent state tearing/crashes during unmount
