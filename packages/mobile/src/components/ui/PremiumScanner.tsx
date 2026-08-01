@@ -11,7 +11,7 @@ import {
   KeyboardAvoidingView,
   ActivityIndicator,
 } from 'react-native';
-import { Camera, useCameraDevice, useCameraPermission, useCameraFormat } from 'react-native-vision-camera';
+import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
 import { useBarcodeScannerOutput } from 'react-native-vision-camera-barcode-scanner';
 import Animated, {
   useSharedValue,
@@ -64,10 +64,6 @@ export default function PremiumScanner({
 }: PremiumScannerProps) {
   const theme = useTheme();
   const device = useCameraDevice('back');
-  const format = useCameraFormat(device, [
-    { videoResolution: { width: 1920, height: 1080 } },
-    { fps: 30 },
-  ]);
   const { hasPermission, requestPermission } = useCameraPermission();
 
   const [isCameraActive, setIsCameraActive] = useState(false);
@@ -301,7 +297,7 @@ export default function PremiumScanner({
           <Camera
             style={StyleSheet.absoluteFill}
             device={device}
-            format={format}
+            constraints={[{ fps: 30 }]}
             isActive={isCameraActive}
             torch={device.hasTorch && torch === 'on' ? 'on' : 'off'}
             outputs={[barcodeOutput]}
