@@ -128,6 +128,10 @@ export default function PremiumScanner({
   const barcodeOutput = useBarcodeScannerOutput({
     barcodeFormats: ['ean-13', 'code-128', 'qr-code', 'code-39'],
     onError: (error) => {
+      const msg = (error as any)?.message || String(error);
+      if (msg.includes('OperationCanceledException') || msg.includes('Camera is not active')) {
+        return; // Ignore benign CameraX teardown cancellation errors when pausing active state
+      }
       console.error('Barcode scanner error:', error);
     },
     onBarcodeScanned: (codes) => {
@@ -266,12 +270,12 @@ export default function PremiumScanner({
             style={StyleSheet.absoluteFill}
             device={device}
             isActive={isCameraActive}
-            torch={device.hasTorch && torch === 'on' ? 'on' : 'off'}
+            torch={isCameraActive && device.hasTorch && torch === 'on' ? 'on' : 'off'}
             outputs={[barcodeOutput]}
             constraints={[{ fps: 30 }]}
-            zoom={Math.min(Math.max(1.8, device.minZoom ?? 1), device.maxZoom ?? 1.8)}
-            exposure={-1}
-            enableZoomGesture={true}
+            zoom={isCameraActive ? Math.min(Math.max(1.8, device.minZoom ?? 1), device.maxZoom ?? 1.8) : undefined}
+            exposure={isCameraActive ? -1 : undefined}
+            enableZoomGesture={isCameraActive}
           />
         ) : !hasPermission ? (
           <View style={styles.permissionContainer}>
