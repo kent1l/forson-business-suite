@@ -76,10 +76,10 @@ router.get('/ar/aging-summary', protect, hasPermission('ar:view'), async (req, r
             WITH aging_buckets AS (
                 SELECT 
                     CASE 
-                        WHEN COALESCE(i.due_date, CURRENT_DATE - INTERVAL '91 days') >= CURRENT_DATE THEN 'Current'
-                        WHEN COALESCE(i.due_date, CURRENT_DATE - INTERVAL '91 days') >= CURRENT_DATE - INTERVAL '30 days' THEN '1-30 Days'
-                        WHEN COALESCE(i.due_date, CURRENT_DATE - INTERVAL '91 days') >= CURRENT_DATE - INTERVAL '60 days' THEN '31-60 Days'
-                        WHEN COALESCE(i.due_date, CURRENT_DATE - INTERVAL '91 days') >= CURRENT_DATE - INTERVAL '90 days' THEN '61-90 Days'
+                        WHEN COALESCE(i.due_date, i.invoice_date) >= CURRENT_DATE THEN 'Current'
+                        WHEN COALESCE(i.due_date, i.invoice_date) >= CURRENT_DATE - INTERVAL '30 days' THEN '1-30 Days'
+                        WHEN COALESCE(i.due_date, i.invoice_date) >= CURRENT_DATE - INTERVAL '60 days' THEN '31-60 Days'
+                        WHEN COALESCE(i.due_date, i.invoice_date) >= CURRENT_DATE - INTERVAL '90 days' THEN '61-90 Days'
                         ELSE '90+ Days'
                     END as bucket_name,
                     COALESCE(SUM(i.total_amount - i.amount_paid), 0) as bucket_value
@@ -87,10 +87,10 @@ router.get('/ar/aging-summary', protect, hasPermission('ar:view'), async (req, r
                 WHERE i.status IN ('Unpaid', 'Partially Paid')
                 GROUP BY 
                     CASE 
-                        WHEN COALESCE(i.due_date, CURRENT_DATE - INTERVAL '91 days') >= CURRENT_DATE THEN 'Current'
-                        WHEN COALESCE(i.due_date, CURRENT_DATE - INTERVAL '91 days') >= CURRENT_DATE - INTERVAL '30 days' THEN '1-30 Days'
-                        WHEN COALESCE(i.due_date, CURRENT_DATE - INTERVAL '91 days') >= CURRENT_DATE - INTERVAL '60 days' THEN '31-60 Days'
-                        WHEN COALESCE(i.due_date, CURRENT_DATE - INTERVAL '91 days') >= CURRENT_DATE - INTERVAL '90 days' THEN '61-90 Days'
+                        WHEN COALESCE(i.due_date, i.invoice_date) >= CURRENT_DATE THEN 'Current'
+                        WHEN COALESCE(i.due_date, i.invoice_date) >= CURRENT_DATE - INTERVAL '30 days' THEN '1-30 Days'
+                        WHEN COALESCE(i.due_date, i.invoice_date) >= CURRENT_DATE - INTERVAL '60 days' THEN '31-60 Days'
+                        WHEN COALESCE(i.due_date, i.invoice_date) >= CURRENT_DATE - INTERVAL '90 days' THEN '61-90 Days'
                         ELSE '90+ Days'
                     END
             )
@@ -140,10 +140,10 @@ router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req
                 MIN(i.due_date) as earliest_due_date,
                 COUNT(i.invoice_id) as invoice_count,
                 CASE 
-                    WHEN MIN(COALESCE(i.due_date, CURRENT_DATE - INTERVAL '91 days')) >= CURRENT_DATE THEN 'Current'
-                    WHEN MIN(COALESCE(i.due_date, CURRENT_DATE - INTERVAL '91 days')) >= CURRENT_DATE - INTERVAL '30 days' THEN '1-30 Days'
-                    WHEN MIN(COALESCE(i.due_date, CURRENT_DATE - INTERVAL '91 days')) >= CURRENT_DATE - INTERVAL '60 days' THEN '31-60 Days'
-                    WHEN MIN(COALESCE(i.due_date, CURRENT_DATE - INTERVAL '91 days')) >= CURRENT_DATE - INTERVAL '90 days' THEN '61-90 Days'
+                    WHEN MIN(COALESCE(i.due_date, i.invoice_date)) >= CURRENT_DATE THEN 'Current'
+                    WHEN MIN(COALESCE(i.due_date, i.invoice_date)) >= CURRENT_DATE - INTERVAL '30 days' THEN '1-30 Days'
+                    WHEN MIN(COALESCE(i.due_date, i.invoice_date)) >= CURRENT_DATE - INTERVAL '60 days' THEN '31-60 Days'
+                    WHEN MIN(COALESCE(i.due_date, i.invoice_date)) >= CURRENT_DATE - INTERVAL '90 days' THEN '61-90 Days'
                     ELSE '90+ Days'
                 END as status
             FROM customer c
@@ -198,12 +198,12 @@ router.get('/ar/customer-invoices/:customerId', protect, hasPermission('ar:view'
                 c.company_name,
                 c.first_name,
                 c.last_name,
-                EXTRACT(days FROM (CURRENT_DATE - COALESCE(i.due_date, CURRENT_DATE - INTERVAL '90 days'))) as days_overdue,
+                GREATEST(EXTRACT(days FROM (CURRENT_DATE - COALESCE(i.due_date, i.invoice_date))), 0) as days_overdue,
                 CASE 
-                    WHEN COALESCE(i.due_date, CURRENT_DATE - INTERVAL '91 days') >= CURRENT_DATE THEN 'Current'
-                    WHEN COALESCE(i.due_date, CURRENT_DATE - INTERVAL '91 days') >= CURRENT_DATE - INTERVAL '30 days' THEN '1-30 Days'
-                    WHEN COALESCE(i.due_date, CURRENT_DATE - INTERVAL '91 days') >= CURRENT_DATE - INTERVAL '60 days' THEN '31-60 Days'
-                    WHEN COALESCE(i.due_date, CURRENT_DATE - INTERVAL '91 days') >= CURRENT_DATE - INTERVAL '90 days' THEN '61-90 Days'
+                    WHEN COALESCE(i.due_date, i.invoice_date) >= CURRENT_DATE THEN 'Current'
+                    WHEN COALESCE(i.due_date, i.invoice_date) >= CURRENT_DATE - INTERVAL '30 days' THEN '1-30 Days'
+                    WHEN COALESCE(i.due_date, i.invoice_date) >= CURRENT_DATE - INTERVAL '60 days' THEN '31-60 Days'
+                    WHEN COALESCE(i.due_date, i.invoice_date) >= CURRENT_DATE - INTERVAL '90 days' THEN '61-90 Days'
                     ELSE '90+ Days'
                 END as status
             FROM invoice i
@@ -287,11 +287,11 @@ router.get('/ar/drill-down-invoices', protect, hasPermission('ar:view'), async (
 
         // Map bucket names to date conditions
         const bucketConditions = {
-            'current': 'COALESCE(i.due_date, CURRENT_DATE) >= CURRENT_DATE',
-            '1-30': 'COALESCE(i.due_date, CURRENT_DATE) >= CURRENT_DATE - INTERVAL \'30 days\' AND COALESCE(i.due_date, CURRENT_DATE) < CURRENT_DATE',
-            '31-60': 'COALESCE(i.due_date, CURRENT_DATE) >= CURRENT_DATE - INTERVAL \'60 days\' AND COALESCE(i.due_date, CURRENT_DATE) < CURRENT_DATE - INTERVAL \'30 days\'',
-            '61-90': 'COALESCE(i.due_date, CURRENT_DATE) >= CURRENT_DATE - INTERVAL \'90 days\' AND COALESCE(i.due_date, CURRENT_DATE) < CURRENT_DATE - INTERVAL \'60 days\'',
-            '90-plus': 'COALESCE(i.due_date, CURRENT_DATE - INTERVAL \'91 days\') < CURRENT_DATE - INTERVAL \'90 days\''
+            'current':  'COALESCE(i.due_date, i.invoice_date) >= CURRENT_DATE',
+            '1-30':     'COALESCE(i.due_date, i.invoice_date) >= CURRENT_DATE - INTERVAL \'30 days\' AND COALESCE(i.due_date, i.invoice_date) < CURRENT_DATE',
+            '31-60':    'COALESCE(i.due_date, i.invoice_date) >= CURRENT_DATE - INTERVAL \'60 days\' AND COALESCE(i.due_date, i.invoice_date) < CURRENT_DATE - INTERVAL \'30 days\'',
+            '61-90':    'COALESCE(i.due_date, i.invoice_date) >= CURRENT_DATE - INTERVAL \'90 days\' AND COALESCE(i.due_date, i.invoice_date) < CURRENT_DATE - INTERVAL \'60 days\'',
+            '90-plus':  'COALESCE(i.due_date, i.invoice_date) < CURRENT_DATE - INTERVAL \'90 days\''
         };
 
         const dateCondition = bucketConditions[bucket];
@@ -324,7 +324,7 @@ router.get('/ar/drill-down-invoices', protect, hasPermission('ar:view'), async (
                 c.company_name,
                 c.first_name,
                 c.last_name,
-                EXTRACT(days FROM (CURRENT_DATE - COALESCE(i.due_date, CURRENT_DATE - INTERVAL '90 days'))) as days_overdue
+                GREATEST(EXTRACT(days FROM (CURRENT_DATE - COALESCE(i.due_date, i.invoice_date))), 0) as days_overdue
             FROM invoice i
             LEFT JOIN customer c ON i.customer_id = c.customer_id
             WHERE i.status IN ('Unpaid', 'Partially Paid')
@@ -474,6 +474,40 @@ router.get('/ar/invoice-due-date-history/:invoiceId', protect, hasPermission('ar
     } catch (err) {
         console.error('AR Invoice Due Date History Error:', err.message);
         res.status(500).json({ message: 'Failed to fetch due date history' });
+    }
+});
+
+// GET /api/ar/verify-integrity - Check for drift between trigger-maintained amount_paid and raw payment sums
+router.get('/ar/verify-integrity', protect, hasPermission('ar:view'), async (req, res) => {
+    try {
+        const { rows } = await db.query(`
+            SELECT
+                i.invoice_id,
+                i.invoice_number,
+                i.amount_paid                                                            AS stored_amount_paid,
+                COALESCE(SUM(CASE WHEN ip.payment_status = 'settled'
+                             THEN ip.amount_paid ELSE 0 END), 0)                         AS computed_amount_paid,
+                i.amount_paid - COALESCE(SUM(CASE WHEN ip.payment_status = 'settled'
+                                THEN ip.amount_paid ELSE 0 END), 0)                      AS drift
+            FROM invoice i
+            LEFT JOIN invoice_payments ip ON ip.invoice_id = i.invoice_id
+            GROUP BY i.invoice_id, i.invoice_number, i.amount_paid
+            HAVING ABS(
+                i.amount_paid - COALESCE(SUM(CASE WHEN ip.payment_status = 'settled'
+                                THEN ip.amount_paid ELSE 0 END), 0)
+            ) > 0.01
+            ORDER BY ABS(i.amount_paid - COALESCE(SUM(CASE WHEN ip.payment_status = 'settled'
+                                THEN ip.amount_paid ELSE 0 END), 0)) DESC
+            LIMIT 100;
+        `);
+        res.json({
+            valid: rows.length === 0,
+            drift_count: rows.length,
+            issues: rows
+        });
+    } catch (err) {
+        console.error('AR Integrity Check Error:', err.message);
+        res.status(500).json({ message: 'Failed to run integrity check' });
     }
 });
 

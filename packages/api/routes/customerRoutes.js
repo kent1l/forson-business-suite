@@ -131,15 +131,20 @@ router.get('/customers/:id/unpaid-invoices', protect, hasPermission('ar:view'), 
                 i.invoice_id,
                 i.invoice_number,
                 i.invoice_date,
+                i.due_date,
                 i.total_amount,
-                COALESCE(SUM(ipa.amount_allocated), 0) as amount_paid,
-                (i.total_amount - COALESCE(SUM(ipa.amount_allocated), 0)) as balance_due
+                i.amount_paid,
+                COALESCE(cn.total_refunded, 0)                                                AS total_refunded,
+                GREATEST(i.total_amount - COALESCE(cn.total_refunded, 0) - i.amount_paid, 0) AS balance_due
             FROM invoice i
-            LEFT JOIN invoice_payment_allocation ipa ON i.invoice_id = ipa.invoice_id
-            WHERE i.customer_id = $1 AND i.status IN ('Unpaid', 'Partially Paid')
-            GROUP BY i.invoice_id
-            HAVING (i.total_amount - COALESCE(SUM(ipa.amount_allocated), 0)) > 0
-            ORDER BY i.invoice_date ASC;
+            LEFT JOIN LATERAL (
+                SELECT COALESCE(SUM(cn2.total_amount), 0) AS total_refunded
+                FROM credit_note cn2 WHERE cn2.invoice_id = i.invoice_id
+            ) cn ON TRUE
+            WHERE i.customer_id = $1
+              AND i.status IN ('Unpaid', 'Partially Paid')
+              AND GREATEST(i.total_amount - COALESCE(cn.total_refunded, 0) - i.amount_paid, 0) > 0
+            ORDER BY i.due_date ASC NULLS LAST, i.invoice_date ASC;
         `;
         const { rows } = await db.query(query, [id]);
         res.json(rows);
