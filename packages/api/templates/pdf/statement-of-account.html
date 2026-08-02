@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Statement of Account - {{customer.name}}</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        :root {
+            --font-family: 'Inter', sans-serif;
+            --primary-color: #1E293B;
+            --secondary-color: #475569;
+            --accent-color: #2563EB;
+            --border-color: #E2E8F0;
+            --table-header-bg: #F8FAFC;
+        }
+
+        @page {
+            size: A4;
+            margin: 1cm;
+        }
+
+        body {
+            font-family: var(--font-family);
+            font-size: 11px;
+            color: var(--secondary-color);
+            background-color: #fff;
+            margin: 0;
+            padding: 0;
+        }
+
+        .container {
+            padding: 16px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 2px solid var(--accent-color);
+            padding-bottom: 16px;
+            margin-bottom: 20px;
+        }
+
+        .company-details h1 {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--primary-color);
+            margin: 0 0 4px 0;
+        }
+
+        .company-details p {
+            margin: 2px 0;
+            font-size: 11px;
+        }
+
+        .statement-title {
+            text-align: right;
+        }
+
+        .statement-title h2 {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--accent-color);
+            margin: 0 0 4px 0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .statement-title p {
+            margin: 2px 0;
+            font-size: 11px;
+            color: var(--secondary-color);
+        }
+
+        .info-section {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            gap: 20px;
+        }
+
+        .info-box {
+            flex: 1;
+            background: #F8FAFC;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 12px 16px;
+        }
+
+        .info-box h3 {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--primary-color);
+            margin: 0 0 8px 0;
+            letter-spacing: 0.5px;
+        }
+
+        .info-box p {
+            margin: 3px 0;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+
+        .summary-card {
+            background: #F1F5F9;
+            border-radius: 6px;
+            padding: 10px;
+            text-align: center;
+        }
+
+        .summary-card .label {
+            font-size: 9px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: var(--secondary-color);
+            margin-bottom: 4px;
+        }
+
+        .summary-card .value {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--primary-color);
+            font-family: monospace;
+        }
+
+        .summary-card.highlight {
+            background: #EFF6FF;
+            border: 1px solid #BFDBFE;
+        }
+
+        .summary-card.highlight .value {
+            color: #1E40AF;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+
+        th {
+            background-color: var(--table-header-bg);
+            color: var(--primary-color);
+            font-weight: 600;
+            text-align: left;
+            padding: 8px 10px;
+            font-size: 10px;
+            text-transform: uppercase;
+            border-top: 1px solid var(--border-color);
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        td {
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 11px;
+        }
+
+        .text-right { text-align: right; }
+        .font-mono { font-family: monospace; }
+        .font-bold { font-weight: 700; }
+
+        .aging-table th {
+            text-align: center;
+        }
+        .aging-table td {
+            text-align: center;
+        }
+
+        .footer-note {
+            margin-top: 30px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 12px;
+            font-size: 10px;
+            color: var(--secondary-color);
+            display: flex;
+            justify-content: space-between;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="company-details">
+                <h1>{{company.name}}</h1>
+                <p>{{company.address}}</p>
+                <p>Phone: {{company.phone}} | Email: {{company.email}}</p>
+            </div>
+            <div class="statement-title">
+                <h2>Statement of Account</h2>
+                <p>Date: <strong>{{statement.date}}</strong></p>
+                <p>Period: <strong>{{statement.period}}</strong></p>
+            </div>
+        </div>
+
+        <!-- Info Section -->
+        <div class="info-section">
+            <div class="info-box">
+                <h3>Statement To</h3>
+                <p class="font-bold" style="font-size: 13px; color: var(--primary-color);">{{customer.name}}</p>
+                <p>{{customer.company_name}}</p>
+                <p>{{customer.address}}</p>
+                <p>Phone: {{customer.phone}} | Email: {{customer.email}}</p>
+            </div>
+            <div class="info-box">
+                <h3>Account Status Summary</h3>
+                <p>Credit Limit: <span class="font-mono font-bold">{{customer.credit_limit}}</span></p>
+                <p>Credit Hold Status: <span class="font-bold" style="color: {{customer.credit_hold_color}};">{{customer.credit_hold_status}}</span></p>
+                <p>Available Store Wallet: <span class="font-mono font-bold" style="color: #059669;">{{customer.wallet_balance}}</span></p>
+            </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="summary-grid">
+            <div class="summary-card">
+                <div class="label">Opening Balance</div>
+                <div class="value">{{summary.opening_balance}}</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">Total Invoiced</div>
+                <div class="value">{{summary.total_invoiced}}</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">Total Paid / Credited</div>
+                <div class="value">{{summary.total_settled}}</div>
+            </div>
+            <div class="summary-card highlight">
+                <div class="label">Net Balance Due</div>
+                <div class="value">{{summary.net_balance}}</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">Store Wallet</div>
+                <div class="value">{{customer.wallet_balance}}</div>
+            </div>
+        </div>
+
+        <!-- Itemized Transactions Table -->
+        <h3 style="font-size: 12px; color: var(--primary-color); text-transform: uppercase; margin-bottom: 8px;">Statement Details</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 12%;">Date</th>
+                    <th style="width: 18%;">Document / Ref #</th>
+                    <th style="width: 25%;">Transaction Description</th>
+                    <th style="width: 15%; text-align: right;">Amount</th>
+                    <th style="width: 15%; text-align: right;">Paid / Refunded</th>
+                    <th style="width: 15%; text-align: right;">Running Balance</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{ledger_rows}}
+            </tbody>
+        </table>
+
+        <!-- Aging Breakdown Table -->
+        <h3 style="font-size: 12px; color: var(--primary-color); text-transform: uppercase; margin-bottom: 8px;">Aging Breakdown</h3>
+        <table class="aging-table">
+            <thead>
+                <tr>
+                    <th>Current (0-30d)</th>
+                    <th>1 - 30 Days</th>
+                    <th>31 - 60 Days</th>
+                    <th>61 - 90 Days</th>
+                    <th>90+ Days Overdue</th>
+                    <th>Total Outstanding</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="font-mono">{{aging.current}}</td>
+                    <td class="font-mono">{{aging.days_1_30}}</td>
+                    <td class="font-mono">{{aging.days_31_60}}</td>
+                    <td class="font-mono">{{aging.days_61_90}}</td>
+                    <td class="font-mono" style="color: #DC2626; font-weight: 700;">{{aging.days_90_plus}}</td>
+                    <td class="font-mono font-bold" style="color: var(--primary-color);">{{aging.total}}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- Remittance & Footer -->
+        <div class="footer-note">
+            <div>
+                <strong>Payment Instructions:</strong><br/>
+                Please make checks payable to <em>{{company.name}}</em> or wire directly to Bank Account.<br/>
+                For billing inquiries, contact {{company.email}}.
+            </div>
+            <div style="text-align: right;">
+                <em>Thank you for your business!</em>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

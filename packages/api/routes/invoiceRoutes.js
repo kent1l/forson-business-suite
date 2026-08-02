@@ -241,6 +241,26 @@ router.post('/invoices', async (req, res) => {
         const dueDate = termsValidation.dueDate;
         const normalizedTerms = termsValidation.normalizedTerms;
 
+        // Credit Hold Enforcement for credit sales
+        if (normalizedTerms !== 'Cash') {
+            const { rows: custHold } = await client.query(
+                'SELECT credit_hold, credit_hold_reason FROM customer WHERE customer_id = $1',
+                [customer_id]
+            );
+            if (custHold.length > 0 && custHold[0].credit_hold) {
+                const hasOverrideParam = req.body.override_credit_limit === true || req.body.manager_override === true;
+                const hasManagerPermission = req.user?.permissions?.includes('ar:override_credit_limit');
+                if (!hasOverrideParam && !hasManagerPermission) {
+                    await client.query('ROLLBACK');
+                    return res.status(403).json({
+                        message: `Credit sale blocked: Customer is on credit hold (${custHold[0].credit_hold_reason || 'Credit Hold'}). Manager override required.`,
+                        credit_hold: true,
+                        reason: custHold[0].credit_hold_reason
+                    });
+                }
+            }
+        }
+
         // Normalize physical receipt number: trim and treat empty as null
         let prn = formatPhysicalReceiptNumber(physical_receipt_no);
         

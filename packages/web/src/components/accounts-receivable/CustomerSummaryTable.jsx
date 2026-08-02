@@ -1,46 +1,8 @@
 /**
  * Customer Summary Table Component for the Forson Business Suite
  *
- * A comprehensive table component that displays customer accounts receivable data
- * including customer details, invoice counts, due dates, balances, and payment status.
- * The component provides interactive features like customer selection, payment actions,
- * and CSV export functionality. It includes loading states and permission-based
- * action visibility.
- *
- * @component
- * @param {Object} props - Component props
- * @param {Array} props.customers - Array of customer objects with AR data
- * @param {string} props.customers[].customer_id - Unique customer identifier
- * @param {string} props.customers[].company_name - Company name (if applicable)
- * @param {string} props.customers[].first_name - Customer first name
- * @param {string} props.customers[].last_name - Customer last name
- * @param {number} props.customers[].invoice_count - Number of outstanding invoices
- * @param {string} props.customers[].earliest_due_date - ISO date string of next due date
- * @param {number} props.customers[].total_balance_due - Total outstanding balance
- * @param {Function} props.onCustomerClick - Callback when customer row is clicked
- * @param {Function} props.onReceivePayment - Callback when receive payment button is clicked
- * @param {boolean} props.hasPaymentPermission - Whether user can perform payment actions
- * @param {boolean} [props.loading=false] - Whether to show loading skeleton
- * @param {Function} props.onExport - Callback for CSV export functionality
- *
- * @example
- * const customers = [
- *   {
- *     customer_id: '123',
- *     company_name: 'ABC Corp',
- *     invoice_count: 3,
- *     earliest_due_date: '2024-01-15',
- *     total_balance_due: 25000
- *   }
- * ];
- *
- * <CustomerSummaryTable
- *   customers={customers}
- *   onCustomerClick={(customer) => showCustomerDetails(customer)}
- *   onReceivePayment={(customer) => openPaymentModal(customer)}
- *   hasPaymentPermission={true}
- *   onExport={() => exportCustomerData()}
- * />
+ * Enhanced with real-time text search, risk status filter, credit hold badges,
+ * and store wallet credit balance display.
  */
 import { formatCurrency } from '../../utils/currency';
 import { getCustomerStatusBadge } from '../../utils/status';
@@ -49,7 +11,6 @@ import SortableHeader from '../ui/SortableHeader';
 import { sortData } from '../../utils/sortData';
 import CustomerWalletBadge from './CustomerWalletBadge';
 
-// Enhanced Loading Skeleton Components
 const _TableSkeleton = () => (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden animate-pulse">
         <div className="p-6">
@@ -58,7 +19,8 @@ const _TableSkeleton = () => (
         <div className="border-t border-gray-200">
             {[...Array(5)].map((_, i) => (
                 <div key={i} className="px-6 py-4 border-b border-gray-200">
-                    <div className="grid grid-cols-6 gap-4">
+                    <div className="grid grid-cols-7 gap-4">
+                        <div className="h-4 bg-gray-200 rounded"></div>
                         <div className="h-4 bg-gray-200 rounded"></div>
                         <div className="h-4 bg-gray-200 rounded"></div>
                         <div className="h-4 bg-gray-200 rounded"></div>
@@ -72,7 +34,6 @@ const _TableSkeleton = () => (
     </div>
 );
 
-// Customer Summary Table Component
 const CustomerSummaryTable = ({
     customers,
     onCustomerClick,
@@ -82,25 +43,71 @@ const CustomerSummaryTable = ({
     onExport
 }) => {
     const [sortConfig, setSortConfig] = useState({ key: 'earliest_due_date', direction: 'ASC' });
-    const sortedCustomers = useMemo(() => sortData(customers, sortConfig, {
+    const [searchTerm, setSearchTerm] = useState('');
+    const [statusFilter, setStatusFilter] = useState('ALL');
+
+    // Filter customers by search term & risk status
+    const filteredCustomers = useMemo(() => {
+        return (customers || []).filter(c => {
+            const name = (c.company_name || `${c.first_name || ''} ${c.last_name || ''}`).toLowerCase();
+            const phone = (c.phone || '').toLowerCase();
+            const matchesSearch = !searchTerm || name.includes(searchTerm.toLowerCase()) || phone.includes(searchTerm.toLowerCase());
+
+            if (!matchesSearch) return false;
+
+            if (statusFilter === 'CREDIT_HOLD') return c.credit_hold === true;
+            if (statusFilter === 'CURRENT') return c.status === 'Current';
+            if (statusFilter === 'OVERDUE') return c.status !== 'Current' && Number(c.total_balance_due) > 0;
+            return true;
+        });
+    }, [customers, searchTerm, statusFilter]);
+
+    const sortedCustomers = useMemo(() => sortData(filteredCustomers, sortConfig, {
         customer_name: (row) => row.company_name || `${row.first_name || ''} ${row.last_name || ''}`.trim(),
-        status: (row) => getCustomerStatusBadge(row)?.text || ''
-    }), [customers, sortConfig]);
+        status: (row) => getCustomerStatusBadge(row)?.text || '',
+        wallet_balance: (row) => Number(row.wallet_balance || 0)
+    }), [filteredCustomers, sortConfig]);
+
     if (loading) return <_TableSkeleton />;
 
     return (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div className="p-6 flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-gray-800">Customer Accounts Receivable</h2>
-                <div className="flex gap-2">
+            <div className="p-6 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 border-b border-gray-100">
+                <div>
+                    <h2 className="text-xl font-semibold text-gray-800">Customer Accounts Receivable</h2>
+                    <p className="text-xs text-gray-500 mt-1">Overview of balances, wallet credits, and risk statuses</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                    {/* Search Input */}
+                    <input
+                        type="text"
+                        placeholder="Search name, company, phone..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 w-48 sm:w-64"
+                    />
+
+                    {/* Risk Status Filter */}
+                    <select
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                        className="px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    >
+                        <option value="ALL">All Statuses</option>
+                        <option value="CURRENT">Current / Good Standing</option>
+                        <option value="OVERDUE">Overdue Receivables</option>
+                        <option value="CREDIT_HOLD">Credit Hold Only</option>
+                    </select>
+
                     <button
                         onClick={onExport}
-                        className="text-sm px-3 py-1 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
+                        className="text-sm px-3 py-1.5 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors font-medium"
                     >
                         Export CSV
                     </button>
                 </div>
             </div>
+
             <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left text-gray-500">
                     <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b">
@@ -108,7 +115,8 @@ const CustomerSummaryTable = ({
                             <SortableHeader column="customer_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Customer</SortableHeader>
                             <SortableHeader column="invoice_count" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Invoice Count</SortableHeader>
                             <SortableHeader column="earliest_due_date" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Next Due Date</SortableHeader>
-                            <SortableHeader column="total_balance_due" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Total Balance</SortableHeader>
+                            <SortableHeader column="total_balance_due" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Receivable Due</SortableHeader>
+                            <SortableHeader column="wallet_balance" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Store Wallet</SortableHeader>
                             <SortableHeader column="status" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Status</SortableHeader>
                             {hasPaymentPermission && <th scope="col" className="px-6 py-3">Actions</th>}
                         </tr>
@@ -116,17 +124,23 @@ const CustomerSummaryTable = ({
                     <tbody>
                         {sortedCustomers.map((customer, index) => {
                             const statusBadge = getCustomerStatusBadge(customer);
+                            const walletBal = Number(customer.wallet_balance || 0);
+
                             return (
                                 <tr
                                     key={customer.customer_id || index}
                                     className="bg-white border-b hover:bg-gray-50 transition-colors"
                                 >
-                                    <td className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap cursor-pointer hover:text-blue-600 flex items-center justify-between"
+                                    <td className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap cursor-pointer hover:text-blue-600"
                                         onClick={() => onCustomerClick(customer)}>
-                                        <span>{customer.company_name || `${customer.first_name || ''} ${customer.last_name || ''}`.trim()}</span>
-                                        {parseFloat(customer.wallet_balance) > 0 && (
-                                            <CustomerWalletBadge balance={customer.wallet_balance} onClick={(e) => { e.stopPropagation(); onCustomerClick(customer); }} />
-                                        )}
+                                        <div className="flex items-center gap-2">
+                                            <span>{customer.company_name || `${customer.first_name || ''} ${customer.last_name || ''}`.trim()}</span>
+                                            {customer.credit_hold && (
+                                                <span className="bg-red-100 text-red-800 border border-red-300 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                                    CREDIT HOLD
+                                                </span>
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="px-6 py-4 text-center cursor-pointer"
                                         onClick={() => onCustomerClick(customer)}>
@@ -139,6 +153,14 @@ const CustomerSummaryTable = ({
                                     <td className="px-6 py-4 font-mono font-medium cursor-pointer"
                                         onClick={() => onCustomerClick(customer)}>
                                         {formatCurrency(customer.total_balance_due)}
+                                    </td>
+                                    <td className="px-6 py-4 font-mono cursor-pointer"
+                                        onClick={() => onCustomerClick(customer)}>
+                                        {walletBal > 0 ? (
+                                            <CustomerWalletBadge balance={walletBal} onClick={(e) => { e.stopPropagation(); onCustomerClick(customer); }} />
+                                        ) : (
+                                            <span className="text-gray-400">₱0.00</span>
+                                        )}
                                     </td>
                                     <td className="px-6 py-4 cursor-pointer"
                                         onClick={() => onCustomerClick(customer)}>
@@ -161,10 +183,10 @@ const CustomerSummaryTable = ({
                                 </tr>
                             );
                         })}
-                        {customers.length === 0 && (
+                        {sortedCustomers.length === 0 && (
                             <tr>
-                                <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
-                                    No customers with outstanding balances found
+                                <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
+                                    No matching customer accounts found
                                 </td>
                             </tr>
                         )}

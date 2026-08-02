@@ -8,6 +8,7 @@ const currency = (v) => `₱${(Number(v) || 0).toLocaleString('en-PH', { minimum
 const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
     const [unpaidInvoices, setUnpaidInvoices] = useState([]);
     const [enabledMethods, setEnabledMethods] = useState([]);
+    const [walletBalance, setWalletBalance] = useState(0);
     const [splits, setSplits] = useState([ // dynamic payment lines
         { id: 1, method_id: null, amount: '', reference: '' }
     ]);
@@ -18,6 +19,7 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
     // Derived totals
     const totalSplitAmount = useMemo(() => splits.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0), [splits]);
     const totalAllocated = useMemo(() => Object.values(allocations).reduce((sum, val) => sum + (parseFloat(val) || 0), 0), [allocations]);
+    const overpaymentAmount = useMemo(() => Math.max(0, totalSplitAmount - totalAllocated), [totalSplitAmount, totalAllocated]);
 
     // Initial state snapshot for dirty check
     const initialFormData = useMemo(() => ({
@@ -34,10 +36,11 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
 
     const isFormElement = (element) => element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.tagName === 'SELECT');
 
-    // Load unpaid invoices for this customer
+    // Load unpaid invoices for this customer & wallet info
     useEffect(() => {
-        if (!customer) return;
+        if (!customer?.customer_id) return;
         api.get(`/customers/${customer.customer_id}/unpaid-invoices`).then(res => setUnpaidInvoices(res.data || [])).catch(() => setUnpaidInvoices([]));
+        api.get(`/customers/${customer.customer_id}/wallet`).then(res => setWalletBalance(res.data?.balance || 0)).catch(() => setWalletBalance(0));
     }, [customer]);
 
     // Load enabled payment methods
@@ -99,53 +102,37 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                 toast.error('Select a valid payment method.');
                 return false;
             }
-            const amt = parseFloat(s.amount) || 0;
-            if (amt <= 0) {
-                toast.error('Each payment amount must be greater than 0.');
+            const amt = parseFloat(s.amount);
+            if (!Number.isFinite(amt) || amt <= 0) {
+                toast.error('Payment amounts must be positive.');
                 return false;
             }
-            const requiresRef = method?.config?.requires_reference;
-            if (requiresRef && (!s.reference || String(s.reference).trim() === '')) {
+            if (method.code === 'store_wallet' && amt > walletBalance) {
+                toast.error(`Insufficient store wallet balance (${currency(walletBalance)}) for this payment.`);
+                return false;
+            }
+            if (method.config?.requires_reference && !s.reference?.trim()) {
                 toast.error(`Reference is required for ${method.name}.`);
                 return false;
             }
-            const requiresReceipt = method?.config?.requires_receipt_no;
-            if (requiresReceipt && (!physicalReceiptNo || String(physicalReceiptNo).trim() === '')) {
-                toast.error(`Physical receipt number is required for ${method.name}.`);
-                return false;
-            }
-        }
-        // Validate allocations
-        const overAllocated = unpaidInvoices.some(inv => (parseFloat(allocations[inv.invoice_id]) || 0) > (parseFloat(inv.balance_due) || 0) + 0.01);
-        if (overAllocated) {
-            toast.error('Cannot allocate more than the invoice balance.');
-            return false;
-        }
-        const allocTotal = totalAllocated;
-        if (Math.abs(allocTotal - totalSplitAmount) > 0.009) {
-            toast.error('Allocated total must match total payment amount.');
-            return false;
-        }
-        if (allocTotal <= 0) {
-            toast.error('Allocate the payment to at least one invoice.');
-            return false;
         }
         return true;
-    }, [customer?.customer_id, splits, enabledMethods, physicalReceiptNo, unpaidInvoices, allocations, totalAllocated, totalSplitAmount]);
+    }, [customer?.customer_id, splits, enabledMethods, walletBalance]);
 
-    // Distribute split payments across allocated invoices and call per-invoice API
+    // Distribute payments across allocated invoices
     const submitPayments = useCallback(async () => {
-        // Build an array of invoices with remaining allocation
         const invoices = unpaidInvoices
-            .map(inv => ({ invoice_id: inv.invoice_id, remaining: parseFloat(allocations[inv.invoice_id]) || 0 }))
-            .filter(x => x.remaining > 0);
+            .map(inv => ({
+                invoice_id: inv.invoice_id,
+                allocated: parseFloat(allocations[inv.invoice_id]) || 0
+            }))
+            .filter(inv => inv.allocated > 0);
 
-        // Clone splits with remaining
         const lines = splits.map(s => ({
             method_id: s.method_id,
             amount_remaining: parseFloat(s.amount) || 0,
-            reference: s.reference || null,
-        })).filter(l => l.amount_remaining > 0);
+            reference: s.reference
+        }));
 
         const perInvoicePayloads = new Map(); // invoice_id => payments[]
 
@@ -153,22 +140,19 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
             let toDistribute = line.amount_remaining;
             for (const inv of invoices) {
                 if (toDistribute <= 0) break;
+                if (inv.remaining === undefined) inv.remaining = inv.allocated;
                 if (inv.remaining <= 0) continue;
                 const portion = Math.min(toDistribute, inv.remaining);
                 const arr = perInvoicePayloads.get(inv.invoice_id) || [];
                 arr.push({
                     method_id: line.method_id,
                     amount_paid: portion,
-                    // Avoid tendered_amount to prevent change complexities across multiple invoices
                     reference: line.reference || null,
                     metadata: { ar_batch: true, customer_id: customer.customer_id }
                 });
                 perInvoicePayloads.set(inv.invoice_id, arr);
                 inv.remaining -= portion;
                 toDistribute -= portion;
-            }
-            if (toDistribute > 0.005) {
-                throw new Error('Failed to distribute payment lines across invoices.');
             }
         }
 
@@ -215,7 +199,6 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
         return () => document.removeEventListener('keydown', handleKeyDown);
     }, [handleSubmit, onCancel, isFormDirty]);
 
-    // UI helpers
     const methodById = (id) => enabledMethods.find(m => String(m.method_id) === String(id));
 
     return (
@@ -225,6 +208,12 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                 <div>
                     <h3 className="text-lg font-semibold text-gray-900">Receive Payment</h3>
                     <p className="text-sm text-gray-500">{customer?.company_name || `${customer?.first_name || ''} ${customer?.last_name || ''}`}</p>
+                    <div className="mt-1 flex items-center gap-2">
+                        <span className="text-xs text-gray-600">Available Store Wallet:</span>
+                        <span className="text-xs font-bold font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                            {currency(walletBalance)}
+                        </span>
+                    </div>
                 </div>
                 <div className="flex items-end gap-3">
                     <div>
@@ -239,6 +228,16 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                     </div>
                 </div>
             </div>
+
+            {/* Overpayment Alert Prompt */}
+            {overpaymentAmount > 0 && (
+                <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg text-xs text-amber-800 flex items-center justify-between">
+                    <div>
+                        <span className="font-bold">Overpayment Detected: </span>
+                        <span>Excess payment of <strong>{currency(overpaymentAmount)}</strong> will be automatically credited to <strong>{customer?.company_name || customer?.first_name}</strong>'s Store Wallet balance.</span>
+                    </div>
+                </div>
+            )}
 
             {/* Main grid: left (payments) | right (allocations) */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -356,8 +355,8 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                                 <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-gray-900">{currency(totalAllocated)}</span>
                             </div>
                             <div className="flex items-center justify-between font-medium mt-1">
-                                <span className="text-gray-700">Unallocated</span>
-                                <span className={`inline-flex items-center rounded-full px-2.5 py-1 ${ (totalSplitAmount - totalAllocated) !== 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700' }`}>
+                                <span className="text-gray-700">Unallocated / Overpayment</span>
+                                <span className={`inline-flex items-center rounded-full px-2.5 py-1 ${ (totalSplitAmount - totalAllocated) > 0 ? 'bg-amber-100 text-amber-800 font-bold' : (totalSplitAmount - totalAllocated) < 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700' }`}>
                                     {currency(totalSplitAmount - totalAllocated)}
                                 </span>
                             </div>
@@ -381,7 +380,7 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
             {/* Actions */}
             <div className="flex justify-end gap-3 pt-2">
                 <button type="button" onClick={onCancel} className="px-4 py-2 border border-gray-300 rounded-lg text-gray-800 hover:bg-gray-50">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50" disabled={totalSplitAmount <= 0 || Math.abs(totalSplitAmount - totalAllocated) > 0.001}>
+                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50" disabled={totalSplitAmount <= 0}>
                     Receive Payment
                 </button>
             </div>

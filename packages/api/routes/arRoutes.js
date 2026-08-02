@@ -1,8 +1,11 @@
 const express = require('express');
+const fs = require('fs');
 const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const arLedger = require('../services/arLedgerService');
+const pdcService = require('../services/pdcService');
+const { generateStatementOfAccountPDF } = require('../helpers/pdf/soaPdf');
 const router = express.Router();
 
 // GET /ar/dashboard-stats - Get AR dashboard statistics
@@ -514,7 +517,7 @@ router.get('/ar/verify-integrity', protect, hasPermission('ar:view'), async (req
     }
 });
 
-module.exports = router;
+
 
 // GET /api/ar/ledger/:customerId - Chronological ledger history with running balance
 router.get('/ar/ledger/:customerId', protect, hasPermission('ar:view'), async (req, res) => {
@@ -594,3 +597,284 @@ router.post('/ar/ledger/:customerId/adjustment', protect, hasPermission('ar:mana
         client.release();
     }
 });
+
+// GET /ar/collections-clearance - List pending payments awaiting clearance across channels
+router.get('/ar/collections-clearance', protect, hasPermission('ar:view'), async (req, res) => {
+    try {
+        const list = await pdcService.getCollectionsClearanceList(db);
+        res.json({ success: true, count: list.length, data: list });
+    } catch (err) {
+        console.error('AR Collections Clearance List Error:', err.message);
+        res.status(500).json({ message: 'Failed to fetch collections clearance list' });
+    }
+});
+
+// POST /ar/collections-clearance/:paymentId/verify - Clear / settle a pending payment or PDC
+router.post('/ar/collections-clearance/:paymentId/verify', protect, hasPermission('ar:manage'), async (req, res) => {
+    const paymentId = parseInt(req.params.paymentId, 10);
+    if (!paymentId) return res.status(400).json({ message: 'Invalid payment ID' });
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        const result = await pdcService.verifyPayment(client, {
+            paymentId,
+            userId: req.user?.employee_id
+        });
+        await client.query('COMMIT');
+        res.json({ success: true, message: 'Payment verified and cleared', ...result });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('AR Verify Payment Error:', err.message);
+        res.status(500).json({ message: err.message || 'Failed to verify payment' });
+    } finally {
+        client.release();
+    }
+});
+
+// POST /ar/collections-clearance/:paymentId/fail - Fail / bounce a payment or PDC and trigger automated reversal
+router.post('/ar/collections-clearance/:paymentId/fail', protect, hasPermission('ar:manage'), async (req, res) => {
+    const paymentId = parseInt(req.params.paymentId, 10);
+    if (!paymentId) return res.status(400).json({ message: 'Invalid payment ID' });
+
+    const { bounce_fee, reason } = req.body;
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        const result = await pdcService.processBouncedCheque(client, {
+            paymentId,
+            bounceFee: bounce_fee,
+            reason,
+            userId: req.user?.employee_id
+        });
+        await client.query('COMMIT');
+        res.json({ success: true, message: 'Payment bounced and reversal processed', ...result });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('AR Fail Payment Error:', err.message);
+        res.status(500).json({ message: err.message || 'Failed to process bounced payment' });
+    } finally {
+        client.release();
+    }
+});
+
+// GET /ar/customers/:customerId/ledger - Interactive ledger history for SOA
+router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view'), async (req, res) => {
+    try {
+        const { customerId } = req.params;
+        const { startDate, endDate } = req.query;
+
+        // Customer details
+        const custRes = await db.query(`
+            SELECT c.*, COALESCE(w.balance, 0) as wallet_balance
+            FROM customer c
+            LEFT JOIN customer_wallet w ON c.customer_id = w.customer_id
+            WHERE c.customer_id = $1
+        `, [customerId]);
+
+        if (custRes.rows.length === 0) {
+            return res.status(404).json({ message: 'Customer not found' });
+        }
+        const customer = custRes.rows[0];
+
+        let startFilter = startDate ? new Date(startDate) : null;
+        let endFilter = endDate ? new Date(endDate) : null;
+
+        // Fetch all ledger entries for this customer
+        const ledgerRes = await db.query(`
+            SELECT 
+                l.ledger_id,
+                l.entry_type,
+                l.amount,
+                l.invoice_id,
+                l.payment_id,
+                l.cn_id,
+                l.reference_no,
+                l.created_at,
+                l.notes,
+                i.invoice_number,
+                p.payment_id as payment_ref_id
+            FROM ar_ledger l
+            LEFT JOIN invoice i ON l.invoice_id = i.invoice_id
+            LEFT JOIN invoice_payments p ON l.payment_id = p.payment_id
+            WHERE l.customer_id = $1
+            ORDER BY l.created_at ASC, l.ledger_id ASC
+        `, [customerId]);
+
+        let openingBalance = 0;
+        let totalInvoiced = 0;
+        let totalSettled = 0;
+        let currentRunning = 0;
+        const ledgerRows = [];
+
+        for (const entry of ledgerRes.rows) {
+            const amt = Number(entry.amount) || 0;
+            const entryDate = new Date(entry.created_at);
+
+            if (startFilter && entryDate < startFilter) {
+                openingBalance += amt;
+                currentRunning += amt;
+            } else if (!endFilter || entryDate <= endFilter) {
+                currentRunning += amt;
+                if (amt > 0) totalInvoiced += amt;
+                else totalSettled += Math.abs(amt);
+
+                ledgerRows.push({
+                    ledger_id: entry.ledger_id,
+                    date: entry.created_at,
+                    event_type: entry.entry_type,
+                    reference: entry.reference_no || entry.invoice_number || (entry.payment_id ? `#${entry.payment_id}` : '-'),
+                    description: entry.notes || entry.entry_type.replace(/_/g, ' '),
+                    debit_amount: amt > 0 ? amt : null,
+                    credit_amount: amt < 0 ? Math.abs(amt) : null,
+                    amount: amt,
+                    running_balance: currentRunning
+                });
+            }
+        }
+
+        if (!startFilter) {
+            // Set initial running balance
+            let bal = 0;
+            for (const r of ledgerRows) {
+                bal += r.amount;
+                r.running_balance = bal;
+            }
+        }
+
+        res.json({
+            customer: {
+                customer_id: customer.customer_id,
+                name: customer.company_name || `${customer.first_name || ''} ${customer.last_name || ''}`.trim(),
+                company_name: customer.company_name,
+                first_name: customer.first_name,
+                last_name: customer.last_name,
+                email: customer.email,
+                phone: customer.phone,
+                address: customer.address,
+                credit_limit: customer.credit_limit,
+                credit_hold: customer.credit_hold,
+                wallet_balance: customer.wallet_balance
+            },
+            opening_balance: openingBalance,
+            total_invoiced: totalInvoiced,
+            total_settled: totalSettled,
+            closing_balance: currentRunning,
+            ledger_rows: ledgerRows
+        });
+    } catch (err) {
+        console.error('AR Customer Ledger Error:', err);
+        res.status(500).json({ message: 'Failed to fetch customer ledger history' });
+    }
+});
+
+// GET /ar/customers/:customerId/soa/pdf - Export Statement of Account PDF
+router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'), async (req, res) => {
+    try {
+        const { customerId } = req.params;
+        const { startDate, endDate } = req.query;
+
+        // Fetch customer details
+        const custRes = await db.query(`
+            SELECT c.*, COALESCE(w.balance, 0) as wallet_balance
+            FROM customer c
+            LEFT JOIN customer_wallet w ON c.customer_id = w.customer_id
+            WHERE c.customer_id = $1
+        `, [customerId]);
+
+        if (custRes.rows.length === 0) {
+            return res.status(404).json({ message: 'Customer not found' });
+        }
+        const customer = custRes.rows[0];
+
+        // Fetch aging summary for customer
+        const agingRes = await db.query(`
+            SELECT
+                COALESCE(SUM(CASE WHEN (CURRENT_DATE - COALESCE(i.due_date::date, i.invoice_date::date)) <= 0 THEN (i.total_amount - i.amount_paid) ELSE 0 END), 0) as current,
+                COALESCE(SUM(CASE WHEN (CURRENT_DATE - COALESCE(i.due_date::date, i.invoice_date::date)) BETWEEN 1 AND 30 THEN (i.total_amount - i.amount_paid) ELSE 0 END), 0) as days_1_30,
+                COALESCE(SUM(CASE WHEN (CURRENT_DATE - COALESCE(i.due_date::date, i.invoice_date::date)) BETWEEN 31 AND 60 THEN (i.total_amount - i.amount_paid) ELSE 0 END), 0) as days_31_60,
+                COALESCE(SUM(CASE WHEN (CURRENT_DATE - COALESCE(i.due_date::date, i.invoice_date::date)) BETWEEN 61 AND 90 THEN (i.total_amount - i.amount_paid) ELSE 0 END), 0) as days_61_90,
+                COALESCE(SUM(CASE WHEN (CURRENT_DATE - COALESCE(i.due_date::date, i.invoice_date::date)) > 90 THEN (i.total_amount - i.amount_paid) ELSE 0 END), 0) as days_90_plus
+            FROM invoice i
+            WHERE i.customer_id = $1 AND (i.total_amount - i.amount_paid) > 0 AND i.status != 'Voided'
+        `, [customerId]);
+        const aging = agingRes.rows[0] || {};
+
+        // Fetch ledger entries
+        const startFilter = startDate ? new Date(startDate) : null;
+        const endFilter = endDate ? new Date(endDate) : null;
+
+        const ledgerRes = await db.query(`
+            SELECT 
+                l.ledger_id,
+                l.entry_type,
+                l.amount,
+                l.invoice_id,
+                l.payment_id,
+                l.cn_id,
+                l.reference_no,
+                l.created_at,
+                l.notes,
+                i.invoice_number
+            FROM ar_ledger l
+            LEFT JOIN invoice i ON l.invoice_id = i.invoice_id
+            WHERE l.customer_id = $1
+            ORDER BY l.created_at ASC, l.ledger_id ASC
+        `, [customerId]);
+
+        let openingBalance = 0;
+        let totalInvoiced = 0;
+        let totalSettled = 0;
+        let currentRunning = 0;
+        const ledgerRows = [];
+
+        for (const entry of ledgerRes.rows) {
+            const amt = Number(entry.amount) || 0;
+            const entryDate = new Date(entry.created_at);
+
+            if (startFilter && entryDate < startFilter) {
+                openingBalance += amt;
+                currentRunning += amt;
+            } else if (!endFilter || entryDate <= endFilter) {
+                currentRunning += amt;
+                if (amt > 0) totalInvoiced += amt;
+                else totalSettled += Math.abs(amt);
+
+                ledgerRows.push({
+                    date: entry.created_at,
+                    reference: entry.reference_no || entry.invoice_number || (entry.payment_id ? `#${entry.payment_id}` : '-'),
+                    description: entry.notes || entry.entry_type.replace(/_/g, ' '),
+                    debit_amount: amt > 0 ? amt : null,
+                    credit_amount: amt < 0 ? Math.abs(amt) : null,
+                    running_balance: currentRunning
+                });
+            }
+        }
+
+        const pdfPath = await generateStatementOfAccountPDF(customer, ledgerRows, aging, {
+            startDate: startFilter,
+            endDate: endFilter || new Date(),
+            openingBalance,
+            totalInvoiced,
+            totalSettled,
+            closingBalance: currentRunning
+        });
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename=SOA_${(customer.company_name || 'Customer').replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`);
+        return res.sendFile(pdfPath, (err) => {
+            if (err && !res.headersSent) {
+                console.error('Error sending SOA PDF file:', err);
+            }
+            if (pdfPath && fs.existsSync(pdfPath)) {
+                fs.unlink(pdfPath, () => {});
+            }
+        });
+    } catch (err) {
+        console.error('AR SOA PDF Error:', err);
+        res.status(500).json({ message: 'Failed to generate Statement of Account PDF' });
+    }
+});
+
+module.exports = router;
+

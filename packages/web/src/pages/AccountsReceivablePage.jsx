@@ -2,43 +2,28 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
-// eslint-disable-next-line no-unused-vars
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
-// eslint-disable-next-line no-unused-vars
 import Modal from '../components/ui/Modal';
-// eslint-disable-next-line no-unused-vars
 import ReceivePaymentForm from '../components/forms/ReceivePaymentForm';
 
 // Import extracted utilities and components
 import { formatCurrency } from '../utils/currency';
 import { exportToCSV } from '../utils/csv';
-import { getCustomerStatusBadge } from '../utils/status';
 import KPICard from '../components/ui/KPICard';
 import InvoiceAgingSummaryChart from '../components/accounts-receivable/InvoiceAgingSummaryChart';
 import CustomerSummaryTable from '../components/accounts-receivable/CustomerSummaryTable';
 import CustomerInvoiceDetailsModal from '../components/accounts-receivable/CustomerInvoiceDetailsModal';
+import CustomerWalletModal from '../components/accounts-receivable/CustomerWalletModal';
 import PaginationControls from '../components/ui/PaginationControls';
-
-// Utility for currency formatting - now imported from utils/currency.js
-
-// Loading skeleton components - now handled in individual component files
-
-// A reusable KPI card component - now imported from components/ui/KPICard.jsx
-
-// Export functionality - now imported from utils/csv.js
-
-// Invoice Aging Summary Chart Component - now imported from components/accounts-receivable/InvoiceAgingSummaryChart.jsx
-
-// Enhanced Status Badge Component for Customer Status - now imported from utils/status.js
-
-// Customer Summary Table Component - now imported from components/accounts-receivable/CustomerSummaryTable.jsx
 
 const AccountsReceivablePage = () => {
     const { hasPermission } = useAuth();
     
-    // State management
-    // eslint-disable-next-line no-unused-vars
+    // Active Navigation Tab
+    const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'ledger_soa' | 'pdc_desk' | 'wallet'
+
+    // State management for Overview & Aging Tab
     const [customers, setCustomers] = useState([]);
     const [customerSummary, setCustomerSummary] = useState([]);
     const [dashboardStats, setDashboardStats] = useState({
@@ -58,7 +43,6 @@ const AccountsReceivablePage = () => {
     const [loading, setLoading] = useState(true);
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-    const [retryCount, setRetryCount] = useState(0);
     const [autoRefresh, setAutoRefresh] = useState(false);
     const [dateRange, setDateRange] = useState({
         startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 days ago
@@ -80,7 +64,26 @@ const AccountsReceivablePage = () => {
     const [drillDownPageSize, setDrillDownPageSize] = useState(25);
     const [drillDownTotal, setDrillDownTotal] = useState(0);
 
-    const MAX_RETRIES = 3;
+    // State for Tab 2: Customer Ledger & SOA
+    const [soaCustomerId, setSoaCustomerId] = useState('');
+    const [soaLedger, setSoaLedger] = useState(null);
+    const [soaLoading, setSoaLoading] = useState(false);
+    const [soaDownloading, setSoaDownloading] = useState(false);
+
+    // State for Tab 3: PDC Desk
+    const [pdcItems, setPdcItems] = useState([]);
+    const [pdcStatusFilter, setPdcStatusFilter] = useState('ALL');
+    const [pdcLoading, setPdcLoading] = useState(false);
+    const [selectedPdcPayment, setSelectedPdcPayment] = useState(null);
+    const [clearanceDate, setClearanceDate] = useState(new Date().toISOString().split('T')[0]);
+    const [bounceReason, setBounceReason] = useState('');
+    const [bounceFee, setBounceFee] = useState('0.00');
+
+    // State for Tab 4: Wallet Management
+    const [walletCustomers, setWalletCustomers] = useState([]);
+    const [walletLoading, setWalletLoading] = useState(false);
+    const [selectedWalletCustomer, setSelectedWalletCustomer] = useState(null);
+    const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
 
     // Handle date range changes
     const handleDateRangeChange = useCallback((newDateRange) => {
@@ -93,7 +96,6 @@ const AccountsReceivablePage = () => {
             setDrillDownLoading(true);
             setSelectedAgingBucket(bucketName);
             
-            // Map bucket names to API parameters
             const bucketMap = {
                 'Current': 'current',
                 '1-30 Days': '1-30',
@@ -126,8 +128,8 @@ const AccountsReceivablePage = () => {
         }
     }, [dateRange, drillDownPage, drillDownPageSize]);
 
-    // Enhanced data fetching with retry logic
-    const fetchDashboardData = useCallback(async (isRetry = false) => {
+    // Fetch Overview Dashboard Data
+    const fetchDashboardData = useCallback(async () => {
         try {
             setLoading(true);
             
@@ -136,7 +138,6 @@ const AccountsReceivablePage = () => {
                 endDate: dateRange.endDate.toISOString()
             };
             
-            // Fetch all data in parallel with proper error handling
             const [customersRes, dashboardRes, agingRes, customerSummaryRes, trendsRes] = await Promise.all([
                 api.get('/customers/with-balances', { params: { paginated: 1, page: 1, pageSize: 100 } }),
                 api.get('/ar/dashboard-stats', { params: dateParams }).catch(() => ({ data: {} })),
@@ -149,132 +150,165 @@ const AccountsReceivablePage = () => {
             setCustomers(customersWithBalances);
             setTrends(trendsRes.data || {});
 
-            // Use API data if available, otherwise calculate from customers data
             if (dashboardRes.data && Object.keys(dashboardRes.data).length > 0) {
                 setDashboardStats(dashboardRes.data);
-            } else {
-                // Fallback calculation from customers data
-                const totalReceivables = customersWithBalances.reduce((sum, customer) => sum + Number(customer.balance_due || 0), 0);
-                const overdueCount = (customerSummaryRes.data?.data || []).length || customersWithBalances.filter(c => Number(c.balance_due || 0) > 0).length;
-
-                setDashboardStats({
-                    totalReceivables: totalReceivables,
-                    invoicesSent: 0, // Can't calculate without proper API
-                    overdueInvoices: overdueCount,
-                    avgCollectionPeriod: 30 // Default fallback
-                });
             }
 
-            // Set aging data
             if (agingRes.data && agingRes.data.length > 0) {
                 setAgingData(agingRes.data);
-            } else {
-                // Calculate mock aging data based on total receivables
-                const totalReceivables = dashboardStats.totalReceivables || customersWithBalances.reduce((sum, customer) => sum + Number(customer.balance_due || 0), 0);
-                const current = totalReceivables * 0.6;
-                const days1to30 = totalReceivables * 0.2;
-                const days31to60 = totalReceivables * 0.1;
-                const days61to90 = totalReceivables * 0.05;
-                const days90plus = totalReceivables * 0.05;
-                
-                setAgingData([
-                    { name: 'Current', value: current },
-                    { name: '1-30 Days', value: days1to30 },
-                    { name: '31-60 Days', value: days31to60 },
-                    { name: '61-90 Days', value: days61to90 },
-                    { name: '90+ Days', value: days90plus },
-                ]);
             }
 
-            // Set customer summary data
             setCustomerSummary(customerSummaryRes.data?.data || []);
             setCustomerSummaryTotal(customerSummaryRes.data?.total || 0);
-            setRetryCount(0); // Reset retry count on success
 
         } catch (err) {
             console.error('Failed to fetch dashboard data:', err);
-            
-            if (retryCount < MAX_RETRIES && !isRetry) {
-                setRetryCount(prev => prev + 1);
-                toast.error(`Fetch failed, retrying... (${retryCount + 1}/${MAX_RETRIES})`);
-                setTimeout(() => fetchDashboardData(true), 2000);
-            } else {
-                toast.error('Failed to fetch accounts receivable data.');
-            }
+            toast.error('Failed to fetch accounts receivable data.');
         } finally {
             setLoading(false);
         }
-    }, [dateRange, retryCount, dashboardStats.totalReceivables, customerSummaryPage, customerSummaryPageSize]);
+    }, [dateRange, customerSummaryPage, customerSummaryPageSize]);
 
-    // Auto-refresh functionality
-    useEffect(() => {
-        if (!autoRefresh) return;
-        
-        const interval = setInterval(() => {
+    // Fetch Customer Ledger for Tab 2
+    const fetchCustomerLedger = useCallback(async (customerId) => {
+        if (!customerId) return;
+        try {
+            setSoaLoading(true);
+            const res = await api.get(`/ar/customers/${customerId}/ledger`, {
+                params: {
+                    startDate: dateRange.startDate.toISOString(),
+                    endDate: dateRange.endDate.toISOString()
+                }
+            });
+            setSoaLedger(res.data);
+        } catch (err) {
+            console.error('Failed to load customer ledger:', err);
+            toast.error('Failed to load customer ledger history.');
+        } finally {
+            setSoaLoading(false);
+        }
+    }, [dateRange]);
+
+    // Handle Export SOA PDF
+    const handleExportSoaPdf = useCallback(async () => {
+        if (!soaCustomerId) {
+            toast.error('Please select a customer first');
+            return;
+        }
+        try {
+            setSoaDownloading(true);
+            const response = await api.get(`/ar/customers/${soaCustomerId}/soa/pdf`, {
+                params: {
+                    startDate: dateRange.startDate.toISOString(),
+                    endDate: dateRange.endDate.toISOString()
+                },
+                responseType: 'blob'
+            });
+
+            const blob = new Blob([response.data], { type: 'application/pdf' });
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            const safeName = (soaLedger?.customer?.name || 'Customer').replace(/[^A-Za-z0-9_-]/g, '_');
+            link.setAttribute('download', `Statement_of_Account_${safeName}.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+            toast.success('SOA PDF generated successfully!');
+        } catch (err) {
+            console.error('Failed to export SOA PDF:', err);
+            toast.error('Failed to generate SOA PDF.');
+        } finally {
+            setSoaDownloading(false);
+        }
+    }, [soaCustomerId, dateRange, soaLedger]);
+
+    // Fetch PDC Clearance Desk Items for Tab 3
+    const fetchPdcItems = useCallback(async () => {
+        try {
+            setPdcLoading(true);
+            const res = await api.get('/ar/collections-clearance', {
+                params: { pdc_status: pdcStatusFilter !== 'ALL' ? pdcStatusFilter : undefined }
+            });
+            setPdcItems(res.data?.data || res.data || []);
+        } catch (err) {
+            console.error('Failed to fetch PDC items:', err);
+            toast.error('Failed to load PDC clearance desk.');
+        } finally {
+            setPdcLoading(false);
+        }
+    }, [pdcStatusFilter]);
+
+    // Process PDC Clearance Verification
+    const handleVerifyClearance = async (paymentId) => {
+        try {
+            await api.post('/ar/collections-clearance', {
+                payment_id: paymentId,
+                clearance_date: clearanceDate
+            });
+            toast.success('Payment clearance verified!');
+            setSelectedPdcPayment(null);
+            fetchPdcItems();
             fetchDashboardData();
-        }, 30000); // 30 seconds
-        
-        return () => clearInterval(interval);
-    }, [autoRefresh, fetchDashboardData]);
+        } catch (err) {
+            console.error('Verify clearance error:', err);
+            toast.error(err?.response?.data?.message || 'Failed to verify clearance');
+        }
+    };
 
-    // Initial data fetch
+    // Process Bounced Cheque
+    const handleMarkBounced = async (paymentId) => {
+        try {
+            await api.post(`/ar/collections-clearance/${paymentId}/fail`, {
+                reason: bounceReason || 'Bounced Cheque / Insufficient Funds',
+                bounce_fee: parseFloat(bounceFee) || 0
+            });
+            toast.success('Bounced cheque reversal processed and credit hold applied!');
+            setSelectedPdcPayment(null);
+            fetchPdcItems();
+            fetchDashboardData();
+        } catch (err) {
+            console.error('Bounce cheque error:', err);
+            toast.error(err?.response?.data?.message || 'Failed to process bounced cheque');
+        }
+    };
+
+    // Fetch Wallet Overview for Tab 4
+    const fetchWalletCustomers = useCallback(async () => {
+        try {
+            setWalletLoading(true);
+            const res = await api.get('/ar/customer-liabilities');
+            setWalletCustomers(res.data?.data || res.data || []);
+        } catch (err) {
+            console.error('Failed to fetch wallet overview:', err);
+            toast.error('Failed to load wallet management data.');
+        } finally {
+            setWalletLoading(false);
+        }
+    }, []);
+
+    // Initial load per tab
     useEffect(() => {
         if (hasPermission('ar:view')) {
-            fetchDashboardData();
+            if (activeTab === 'overview') fetchDashboardData();
+            if (activeTab === 'pdc_desk') fetchPdcItems();
+            if (activeTab === 'wallet') fetchWalletCustomers();
         }
-    }, [hasPermission, fetchDashboardData]);
-
-    // Handle customer click to show invoice details
-    const handleCustomerClick = useCallback(async (customer) => {
-        try {
-            setCustomerInvoicesLoading(true);
-            setSelectedCustomerForInvoices(customer);
-            setCustomerInvoicesPage(1);
-            
-            const response = await api.get(`/ar/customer-invoices/${customer.customer_id}`, {
-                params: { page: 1, pageSize: customerInvoicesPageSize, paginated: 1 }
-            });
-            // Filter only payable invoices (balance_due > 0)
-            const invoiceRows = response.data?.data || response.data || [];
-            const payableInvoices = invoiceRows.filter(invoice => Number(invoice.balance_due) > 0) || [];
-            setCustomerInvoices(payableInvoices);
-            setCustomerInvoicesTotal(response.data?.total || payableInvoices.length);
-            
-        } catch (error) {
-            console.error('Failed to fetch customer invoices:', error);
-            toast.error('Failed to load customer invoice details');
-        } finally {
-            setCustomerInvoicesLoading(false);
-        }
-    }, [customerInvoicesPageSize]);
+    }, [activeTab, hasPermission, fetchDashboardData, fetchPdcItems, fetchWalletCustomers]);
 
     useEffect(() => {
-        const fetchInvoicesPage = async () => {
-            if (!selectedCustomerForInvoices?.customer_id) return;
-            try {
-                setCustomerInvoicesLoading(true);
-                const response = await api.get(`/ar/customer-invoices/${selectedCustomerForInvoices.customer_id}`, {
-                    params: { page: customerInvoicesPage, pageSize: customerInvoicesPageSize, paginated: 1 }
-                });
-                const invoiceRows = response.data?.data || response.data || [];
-                const payableInvoices = invoiceRows.filter(invoice => Number(invoice.balance_due) > 0) || [];
-                setCustomerInvoices(payableInvoices);
-                setCustomerInvoicesTotal(response.data?.total || payableInvoices.length);
-            } catch (error) {
-                console.error('Failed to fetch customer invoices:', error);
-                toast.error('Failed to load customer invoice details');
-            } finally {
-                setCustomerInvoicesLoading(false);
-            }
-        };
-        fetchInvoicesPage();
-    }, [selectedCustomerForInvoices, customerInvoicesPage, customerInvoicesPageSize]);
+        if (soaCustomerId) {
+            fetchCustomerLedger(soaCustomerId);
+        }
+    }, [soaCustomerId, fetchCustomerLedger]);
 
-    // Handle receive payment for individual invoices
+    const handleCustomerClick = useCallback((customer) => {
+        setSelectedCustomerForInvoices(customer);
+    }, []);
+
     const handleReceivePaymentClick = useCallback((invoice) => {
-        // Handle both customer objects and invoice objects
         if (invoice.invoice_id) {
-            // This is an invoice, find/create customer object
             const customer = {
                 customer_id: invoice.customer_id,
                 company_name: invoice.company_name,
@@ -283,7 +317,6 @@ const AccountsReceivablePage = () => {
             };
             setSelectedCustomer(customer);
         } else {
-            // This is already a customer object
             setSelectedCustomer(invoice);
         }
         setIsPaymentModalOpen(true);
@@ -291,55 +324,31 @@ const AccountsReceivablePage = () => {
 
     const handlePaymentSaved = useCallback(() => {
         setIsPaymentModalOpen(false);
-        fetchDashboardData(); // Refresh all data after a payment is made
+        fetchDashboardData();
+        if (activeTab === 'wallet') fetchWalletCustomers();
         toast.success('Payment processed successfully!');
-    }, [fetchDashboardData]);
+    }, [fetchDashboardData, fetchWalletCustomers, activeTab]);
 
-    // Export handlers
     const handleExportCustomerSummary = useCallback(() => {
         const exportData = customerSummary.map(customer => ({
             'Customer': customer.company_name || `${customer.first_name || ''} ${customer.last_name || ''}`.trim(),
             'Total Balance': customer.total_balance_due,
+            'Wallet Credit': customer.wallet_balance || 0,
             'Next Due Date': customer.earliest_due_date ? new Date(customer.earliest_due_date).toLocaleDateString() : 'N/A',
-            'Status': customer.status,
-            'Invoice Count': customer.invoice_count
+            'Credit Hold': customer.credit_hold ? 'YES' : 'NO',
+            'Status': customer.status
         }));
         exportToCSV(exportData, `customer-ar-summary-${new Date().toISOString().split('T')[0]}.csv`);
     }, [customerSummary]);
 
-
     const kpiData = useMemo(() => {
-        const receivablesTrend = trends.receivables_change_percent !== undefined 
-            ? { text: `${trends.receivables_change_percent > 0 ? '↑' : '↓'} ${Math.abs(trends.receivables_change_percent)}% from last month`, color: trends.receivables_change_percent > 0 ? 'text-red-500' : 'text-green-500' }
-            : { text: '↑ 12.5% from last month', color: 'text-red-500' };
-
-        const overdueTrend = trends.overdue_change_percent !== undefined
-            ? { text: `${trends.overdue_change_percent > 0 ? '↑' : '↓'} ${Math.abs(trends.overdue_change_percent)}% from last month`, color: trends.overdue_change_percent > 0 ? 'text-red-500' : 'text-green-500' }
-            : { text: '↓ 2.1% from last month', color: 'text-green-500' };
-
         return {
-            totalReceivables: { 
-                value: formatCurrency(dashboardStats.totalReceivables), 
-                trend: receivablesTrend.text,
-                color: receivablesTrend.color
-            },
-            invoicesSent: { 
-                value: dashboardStats.invoicesSent.toLocaleString(), 
-                trend: '↑ 5.2% from last month',
-                color: 'text-green-500'
-            },
-            overdueInvoices: { 
-                value: dashboardStats.overdueInvoices.toLocaleString(), 
-                trend: overdueTrend.text,
-                color: overdueTrend.color
-            },
-            avgCollectionPeriod: { 
-                value: `${dashboardStats.avgCollectionPeriod} Days`, 
-                trend: '↑ 1.8% from last month',
-                color: 'text-orange-500'
-            },
+            totalReceivables: { value: formatCurrency(dashboardStats.totalReceivables), trend: 'Authoritative Ledger Balance', color: 'text-blue-600' },
+            invoicesSent: { value: (dashboardStats.invoicesSent || 0).toLocaleString(), trend: 'Active Receivables Count', color: 'text-green-500' },
+            overdueInvoices: { value: (dashboardStats.overdueInvoices || 0).toLocaleString(), trend: 'Requires Attention', color: 'text-red-500' },
+            avgCollectionPeriod: { value: `${dashboardStats.avgCollectionPeriod || 30} Days`, trend: 'Standard Payment Terms', color: 'text-amber-500' },
         };
-    }, [dashboardStats, trends]);
+    }, [dashboardStats]);
 
     if (!hasPermission('ar:view')) {
         return (
@@ -352,148 +361,443 @@ const AccountsReceivablePage = () => {
 
     return (
         <div className="p-6 bg-gray-50 min-h-screen">
-            <header className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <h1 className="text-3xl font-bold text-gray-800">Accounts Receivable</h1>
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            {/* Page Header & Navigation Bar */}
+            <header className="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-800">Accounts Receivable</h1>
+                    <p className="text-sm text-gray-500 mt-1">Authoritative A/R Ledger, SOA Reports, PDC Desk & Customer Wallet</p>
+                </div>
+                <div className="flex items-center gap-3">
                     <button 
-                        onClick={() => setAutoRefresh(!autoRefresh)}
-                        className={`px-3 py-2 text-sm rounded-md border transition-colors ${
-                            autoRefresh 
-                                ? 'bg-green-100 text-green-800 border-green-300' 
-                                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                        }`}
-                    >
-                        Auto-refresh: {autoRefresh ? 'ON' : 'OFF'}
-                    </button>
-                    <button 
-                        onClick={() => fetchDashboardData()}
+                        onClick={() => {
+                            if (activeTab === 'overview') fetchDashboardData();
+                            if (activeTab === 'ledger_soa') fetchCustomerLedger(soaCustomerId);
+                            if (activeTab === 'pdc_desk') fetchPdcItems();
+                            if (activeTab === 'wallet') fetchWalletCustomers();
+                        }}
                         disabled={loading}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors"
+                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors font-medium flex items-center gap-1.5"
                     >
-                        {loading ? 'Refreshing...' : 'Refresh'}
+                        <Icon path={ICONS.refresh} className="w-4 h-4" /> Refresh
                     </button>
                 </div>
             </header>
 
-            {/* Date Range Picker */}
-            <div className="bg-white p-4 rounded-lg border border-gray-200 mb-6">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            {/* Navigation Tabs */}
+            <div className="bg-white rounded-xl border border-gray-200 p-1.5 mb-6 flex flex-wrap gap-1 shadow-sm">
+                <button
+                    onClick={() => setActiveTab('overview')}
+                    className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                        activeTab === 'overview'
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                    }`}
+                >
+                    Overview & Aging
+                </button>
+                <button
+                    onClick={() => setActiveTab('ledger_soa')}
+                    className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                        activeTab === 'ledger_soa'
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                    }`}
+                >
+                    Customer Ledger & SOA
+                </button>
+                <button
+                    onClick={() => setActiveTab('pdc_desk')}
+                    className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                        activeTab === 'pdc_desk'
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                    }`}
+                >
+                    PDC & Clearance Desk
+                </button>
+                <button
+                    onClick={() => setActiveTab('wallet')}
+                    className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                        activeTab === 'wallet'
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                    }`}
+                >
+                    Customer Wallet Management
+                </button>
+            </div>
+
+            {/* Date Range Picker (shared) */}
+            <div className="bg-white p-4 rounded-xl border border-gray-200 mb-6 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                    <Icon path={ICONS.calendar} className="h-5 w-5 text-gray-500" />
+                    <span className="text-sm font-medium text-gray-700">Statement / Date Range:</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
                     <div className="flex items-center gap-2">
-                        <Icon path={ICONS.calendar} className="h-5 w-5 text-gray-500" />
-                        <span className="text-sm font-medium text-gray-700">Date Range:</span>
+                        <label className="text-xs text-gray-600">From:</label>
+                        <input
+                            type="date"
+                            value={dateRange.startDate.toISOString().split('T')[0]}
+                            onChange={(e) => handleDateRangeChange({ ...dateRange, startDate: new Date(e.target.value) })}
+                            className="px-3 py-1.5 border border-gray-300 rounded-md text-sm"
+                        />
                     </div>
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
-                        <div className="flex items-center gap-2">
-                            <label htmlFor="startDate" className="text-sm text-gray-600">From:</label>
-                            <input
-                                id="startDate"
-                                type="date"
-                                value={dateRange.startDate.toISOString().split('T')[0]}
-                                onChange={(e) => handleDateRangeChange({
-                                    ...dateRange,
-                                    startDate: new Date(e.target.value)
-                                })}
-                                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            />
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <label htmlFor="endDate" className="text-sm text-gray-600">To:</label>
-                            <input
-                                id="endDate"
-                                type="date"
-                                value={dateRange.endDate.toISOString().split('T')[0]}
-                                onChange={(e) => handleDateRangeChange({
-                                    ...dateRange,
-                                    endDate: new Date(e.target.value)
-                                })}
-                                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            />
-                        </div>
-                        <button
-                            onClick={() => handleDateRangeChange({
-                                startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-                                endDate: new Date()
-                            })}
-                            className="px-3 py-2 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors"
-                        >
-                            Last 30 Days
-                        </button>
-                        <button
-                            onClick={() => handleDateRangeChange({
-                                startDate: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000),
-                                endDate: new Date()
-                            })}
-                            className="px-3 py-2 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors"
-                        >
-                            Last 90 Days
-                        </button>
+                    <div className="flex items-center gap-2">
+                        <label className="text-xs text-gray-600">To:</label>
+                        <input
+                            type="date"
+                            value={dateRange.endDate.toISOString().split('T')[0]}
+                            onChange={(e) => handleDateRangeChange({ ...dateRange, endDate: new Date(e.target.value) })}
+                            className="px-3 py-1.5 border border-gray-300 rounded-md text-sm"
+                        />
                     </div>
+                    <button
+                        onClick={() => handleDateRangeChange({ startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), endDate: new Date() })}
+                        className="px-3 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-md"
+                    >
+                        Last 30 Days
+                    </button>
+                    <button
+                        onClick={() => handleDateRangeChange({ startDate: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000), endDate: new Date() })}
+                        className="px-3 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-md"
+                    >
+                        Last 90 Days
+                    </button>
                 </div>
             </div>
 
-            {/* KPI Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-                <KPICard 
-                    iconName={ICONS.dollar} 
-                    title="Total Receivables" 
-                    value={kpiData.totalReceivables.value} 
-                    trend={kpiData.totalReceivables.trend}
-                    trendColorClass={kpiData.totalReceivables.color}
-                    loading={loading}
-                />
-                <KPICard 
-                    iconName={ICONS.documents} 
-                    title="Invoices Sent" 
-                    value={kpiData.invoicesSent.value} 
-                    trend={kpiData.invoicesSent.trend} 
-                    trendColorClass={kpiData.invoicesSent.color}
-                    loading={loading}
-                />
-                <KPICard 
-                    iconName={ICONS.warning} 
-                    title="Overdue Invoices" 
-                    value={kpiData.overdueInvoices.value} 
-                    trend={kpiData.overdueInvoices.trend} 
-                    trendColorClass={kpiData.overdueInvoices.color}
-                    loading={loading}
-                />
-                <KPICard 
-                    iconName={ICONS.calendar} 
-                    title="Avg. Collection Period" 
-                    value={kpiData.avgCollectionPeriod.value} 
-                    trend={kpiData.avgCollectionPeriod.trend} 
-                    trendColorClass={kpiData.avgCollectionPeriod.color}
-                    loading={loading}
-                />
-            </div>
+            {/* TAB 1: OVERVIEW & AGING */}
+            {activeTab === 'overview' && (
+                <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                        <KPICard iconName={ICONS.dollar} title="Total Receivables" value={kpiData.totalReceivables.value} trend={kpiData.totalReceivables.trend} trendColorClass={kpiData.totalReceivables.color} loading={loading} />
+                        <KPICard iconName={ICONS.documents} title="Invoices Sent" value={kpiData.invoicesSent.value} trend={kpiData.invoicesSent.trend} trendColorClass={kpiData.invoicesSent.color} loading={loading} />
+                        <KPICard iconName={ICONS.warning} title="Overdue Invoices" value={kpiData.overdueInvoices.value} trend={kpiData.overdueInvoices.trend} trendColorClass={kpiData.overdueInvoices.color} loading={loading} />
+                        <KPICard iconName={ICONS.calendar} title="Avg. Collection Period" value={kpiData.avgCollectionPeriod.value} trend={kpiData.avgCollectionPeriod.trend} trendColorClass={kpiData.avgCollectionPeriod.color} loading={loading} />
+                    </div>
 
-            {/* Invoice Aging Chart */}
-            <InvoiceAgingSummaryChart 
-                agingData={agingData} 
-                loading={loading} 
-                onBucketClick={handleAgingBucketClick}
-            />
+                    <InvoiceAgingSummaryChart agingData={agingData} loading={loading} onBucketClick={handleAgingBucketClick} />
 
-            {/* Customer Summary Table */}
-            <CustomerSummaryTable 
-                customers={customerSummary}
-                onCustomerClick={handleCustomerClick}
-                onReceivePayment={handleReceivePaymentClick}
-                hasPaymentPermission={hasPermission('ar:receive_payment')}
-                loading={loading}
-                onExport={handleExportCustomerSummary}
-            />
-            <PaginationControls
-                page={customerSummaryPage}
-                pageSize={customerSummaryPageSize}
-                total={customerSummaryTotal}
-                onPageChange={setCustomerSummaryPage}
-                onPageSizeChange={(value) => {
-                    setCustomerSummaryPageSize(value);
-                    setCustomerSummaryPage(1);
-                }}
-            />
+                    <CustomerSummaryTable 
+                        customers={customerSummary}
+                        onCustomerClick={handleCustomerClick}
+                        onReceivePayment={handleReceivePaymentClick}
+                        hasPaymentPermission={hasPermission('ar:receive_payment')}
+                        loading={loading}
+                        onExport={handleExportCustomerSummary}
+                    />
+                    <PaginationControls
+                        page={customerSummaryPage}
+                        pageSize={customerSummaryPageSize}
+                        total={customerSummaryTotal}
+                        onPageChange={setCustomerSummaryPage}
+                        onPageSizeChange={(value) => { setCustomerSummaryPageSize(value); setCustomerSummaryPage(1); }}
+                    />
+                </>
+            )}
 
+            {/* TAB 2: CUSTOMER LEDGER & SOA */}
+            {activeTab === 'ledger_soa' && (
+                <div className="space-y-6">
+                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                        <div className="w-full md:w-96">
+                            <label className="block text-xs font-semibold uppercase text-gray-600 mb-1">Select Customer</label>
+                            <select
+                                value={soaCustomerId}
+                                onChange={(e) => setSoaCustomerId(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500"
+                            >
+                                <option value="">-- Choose Customer --</option>
+                                {customers.map(c => (
+                                    <option key={c.customer_id} value={c.customer_id}>
+                                        {c.company_name || `${c.first_name || ''} ${c.last_name || ''}`} ({formatCurrency(c.total_balance_due || c.balance_due)})
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        {soaCustomerId && (
+                            <button
+                                onClick={handleExportSoaPdf}
+                                disabled={soaDownloading}
+                                className="px-5 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 text-sm font-semibold transition-colors flex items-center gap-2"
+                            >
+                                {soaDownloading ? 'Generating PDF...' : '📄 Export Statement of Account (PDF)'}
+                            </button>
+                        )}
+                    </div>
+
+                    {soaLoading ? (
+                        <div className="bg-white p-12 rounded-xl text-center text-gray-500 border">Loading customer ledger history...</div>
+                    ) : !soaLedger ? (
+                        <div className="bg-white p-12 rounded-xl text-center text-gray-500 border">Please select a customer to view their statement of account and ledger history.</div>
+                    ) : (
+                        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+                            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                                <div>
+                                    <h3 className="text-xl font-bold text-gray-800">{soaLedger.customer.name}</h3>
+                                    <p className="text-xs text-gray-500">{soaLedger.customer.email} | {soaLedger.customer.phone}</p>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-xs uppercase font-semibold text-gray-500">Closing Balance</div>
+                                    <div className="text-2xl font-bold font-mono text-blue-700">{formatCurrency(soaLedger.closing_balance)}</div>
+                                </div>
+                            </div>
+
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left text-gray-500">
+                                    <thead className="text-xs text-gray-700 uppercase bg-gray-100 border-b">
+                                        <tr>
+                                            <th className="px-6 py-3">Date</th>
+                                            <th className="px-6 py-3">Ref / Doc #</th>
+                                            <th className="px-6 py-3">Description</th>
+                                            <th className="px-6 py-3 text-right">Debit (+)</th>
+                                            <th className="px-6 py-3 text-right">Credit (-)</th>
+                                            <th className="px-6 py-3 text-right font-bold">Running Balance</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-200">
+                                        <tr className="bg-blue-50/50 font-semibold text-gray-700">
+                                            <td className="px-6 py-3" colSpan="5">Opening Balance as of {dateRange.startDate.toLocaleDateString()}</td>
+                                            <td className="px-6 py-3 text-right font-mono font-bold text-blue-900">{formatCurrency(soaLedger.opening_balance)}</td>
+                                        </tr>
+                                        {soaLedger.ledger_rows.map((row, idx) => (
+                                            <tr key={row.ledger_id || idx} className="hover:bg-gray-50">
+                                                <td className="px-6 py-3.5 whitespace-nowrap">{new Date(row.date).toLocaleDateString()}</td>
+                                                <td className="px-6 py-3.5 font-mono text-xs font-semibold text-gray-800">{row.reference}</td>
+                                                <td className="px-6 py-3.5">{row.description}</td>
+                                                <td className="px-6 py-3.5 text-right font-mono text-gray-900">{row.debit_amount ? formatCurrency(row.debit_amount) : '-'}</td>
+                                                <td className="px-6 py-3.5 text-right font-mono text-emerald-700">{row.credit_amount ? formatCurrency(row.credit_amount) : '-'}</td>
+                                                <td className="px-6 py-3.5 text-right font-mono font-bold text-gray-900">{formatCurrency(row.running_balance)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* TAB 3: PDC & COLLECTIONS CLEARANCE DESK */}
+            {activeTab === 'pdc_desk' && (
+                <div className="space-y-6">
+                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div>
+                            <h2 className="text-xl font-bold text-gray-800">PDC & Collections Clearance Desk</h2>
+                            <p className="text-xs text-gray-500 mt-0.5">Verify pending cheque clearances or process bounced cheque reversals</p>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                            {['ALL', 'RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED', 'CLEARED', 'BOUNCED'].map(st => (
+                                <button
+                                    key={st}
+                                    onClick={() => setPdcStatusFilter(st)}
+                                    className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${
+                                        pdcStatusFilter === st
+                                            ? 'bg-gray-900 text-white'
+                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                    }`}
+                                >
+                                    {st.replace(/_/g, ' ')}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left text-gray-500">
+                                <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b">
+                                    <tr>
+                                        <th className="px-6 py-3">Customer</th>
+                                        <th className="px-6 py-3">Payment Date</th>
+                                        <th className="px-6 py-3">Cheque / Ref #</th>
+                                        <th className="px-6 py-3 text-right">Amount</th>
+                                        <th className="px-6 py-3">Status</th>
+                                        <th className="px-6 py-3 text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200">
+                                    {pdcItems.map(item => (
+                                        <tr key={item.payment_id} className="hover:bg-gray-50">
+                                            <td className="px-6 py-4 font-semibold text-gray-900">{item.company_name || `${item.first_name || ''} ${item.last_name || ''}`}</td>
+                                            <td className="px-6 py-4">{new Date(item.payment_date).toLocaleDateString()}</td>
+                                            <td className="px-6 py-4 font-mono font-medium text-gray-800">{item.reference_number || `#${item.payment_id}`}</td>
+                                            <td className="px-6 py-4 font-mono text-right font-bold text-gray-900">{formatCurrency(item.amount)}</td>
+                                            <td className="px-6 py-4">
+                                                <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase ${
+                                                    item.pdc_status === 'CLEARED' ? 'bg-emerald-100 text-emerald-800' :
+                                                    item.pdc_status === 'BOUNCED' ? 'bg-red-100 text-red-800' :
+                                                    'bg-amber-100 text-amber-800'
+                                                }`}>
+                                                    {item.pdc_status}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 text-center">
+                                                {item.pdc_status !== 'CLEARED' && item.pdc_status !== 'BOUNCED' && (
+                                                    <div className="flex justify-center gap-2">
+                                                        <button
+                                                            onClick={() => setSelectedPdcPayment({ ...item, action: 'clear' })}
+                                                            className="px-2.5 py-1 bg-emerald-600 text-white rounded text-xs font-semibold hover:bg-emerald-700"
+                                                        >
+                                                            Verify Clearance
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setSelectedPdcPayment({ ...item, action: 'bounce' })}
+                                                            className="px-2.5 py-1 bg-red-600 text-white rounded text-xs font-semibold hover:bg-red-700"
+                                                        >
+                                                            Mark Bounced
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {pdcItems.length === 0 && (
+                                        <tr>
+                                            <td colSpan="6" className="px-6 py-8 text-center text-gray-500">No cheque / PDC items found for selected status filter.</td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {/* PDC Action Modal */}
+                    <Modal
+                        isOpen={selectedPdcPayment !== null}
+                        onClose={() => setSelectedPdcPayment(null)}
+                        title={selectedPdcPayment?.action === 'clear' ? 'Verify PDC Clearance' : 'Process Bounced Cheque Reversal'}
+                        maxWidth="max-w-md"
+                    >
+                        {selectedPdcPayment?.action === 'clear' ? (
+                            <div className="space-y-4">
+                                <p className="text-sm text-gray-600">Confirm cheque clearance for <strong>{selectedPdcPayment?.company_name}</strong> of amount <strong>{formatCurrency(selectedPdcPayment?.amount)}</strong>.</p>
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">Clearance Date</label>
+                                    <input
+                                        type="date"
+                                        value={clearanceDate}
+                                        onChange={(e) => setClearanceDate(e.target.value)}
+                                        className="w-full px-3 py-2 border rounded-lg text-sm"
+                                    />
+                                </div>
+                                <div className="flex justify-end gap-2 pt-2">
+                                    <button onClick={() => setSelectedPdcPayment(null)} className="px-3 py-1.5 border rounded-lg text-sm">Cancel</button>
+                                    <button onClick={() => handleVerifyClearance(selectedPdcPayment.payment_id)} className="px-4 py-1.5 bg-emerald-600 text-white rounded-lg text-sm font-semibold">Confirm Clearance</button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                <p className="text-sm text-red-600 font-semibold">Marking cheque #{selectedPdcPayment?.reference_number} as bounced will automatically reopen the invoice balance and apply a CREDIT HOLD to {selectedPdcPayment?.company_name}.</p>
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">Bounce Reason</label>
+                                    <input
+                                        type="text"
+                                        value={bounceReason}
+                                        onChange={(e) => setBounceReason(e.target.value)}
+                                        className="w-full px-3 py-2 border rounded-lg text-sm"
+                                        placeholder="e.g. Insufficient Funds / NSF"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">Bank Fee / Penalty (₱)</label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        value={bounceFee}
+                                        onChange={(e) => setBounceFee(e.target.value)}
+                                        className="w-full px-3 py-2 border rounded-lg text-sm"
+                                    />
+                                </div>
+                                <div className="flex justify-end gap-2 pt-2">
+                                    <button onClick={() => setSelectedPdcPayment(null)} className="px-3 py-1.5 border rounded-lg text-sm">Cancel</button>
+                                    <button onClick={() => handleMarkBounced(selectedPdcPayment.payment_id)} className="px-4 py-1.5 bg-red-600 text-white rounded-lg text-sm font-semibold">Execute Reversal & Credit Hold</button>
+                                </div>
+                            </div>
+                        )}
+                    </Modal>
+                </div>
+            )}
+
+            {/* TAB 4: CUSTOMER WALLET MANAGEMENT */}
+            {activeTab === 'wallet' && (
+                <div className="space-y-6">
+                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center">
+                        <div>
+                            <h2 className="text-xl font-bold text-gray-800">Customer Wallet & Store Credit Management</h2>
+                            <p className="text-xs text-gray-500 mt-0.5">Manage customer deposit balances, overpayment credits, and store wallet adjustments</p>
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left text-gray-500">
+                                <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b">
+                                    <tr>
+                                        <th className="px-6 py-3">Customer</th>
+                                        <th className="px-6 py-3 text-right">Store Wallet Balance</th>
+                                        <th className="px-6 py-3 text-right">Outstanding Receivables</th>
+                                        <th className="px-6 py-3 text-right">Net Exposure</th>
+                                        <th className="px-6 py-3 text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200">
+                                    {walletCustomers.map(w => {
+                                        const walletBal = Number(w.wallet_balance || 0);
+                                        const arBal = Number(w.receivable_balance || w.total_balance_due || 0);
+                                        const netExp = arBal - walletBal;
+                                        return (
+                                            <tr key={w.customer_id} className="hover:bg-gray-50">
+                                                <td className="px-6 py-4 font-semibold text-gray-900">{w.company_name || `${w.first_name || ''} ${w.last_name || ''}`}</td>
+                                                <td className="px-6 py-4 text-right font-mono font-bold text-emerald-700">{formatCurrency(walletBal)}</td>
+                                                <td className="px-6 py-4 text-right font-mono font-semibold text-gray-900">{formatCurrency(arBal)}</td>
+                                                <td className="px-6 py-4 text-right font-mono font-bold" style={{ color: netExp > 0 ? '#DC2626' : '#059669' }}>
+                                                    {formatCurrency(netExp)}
+                                                </td>
+                                                <td className="px-6 py-4 text-center">
+                                                    <button
+                                                        onClick={() => {
+                                                            setSelectedWalletCustomer(w);
+                                                            setIsWalletModalOpen(true);
+                                                        }}
+                                                        className="px-3 py-1 bg-blue-600 text-white rounded text-xs font-semibold hover:bg-blue-700"
+                                                    >
+                                                        View / Adjust Wallet
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                    {walletCustomers.length === 0 && (
+                                        <tr>
+                                            <td colSpan="5" className="px-6 py-8 text-center text-gray-500">No customer wallet records found.</td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {/* Customer Wallet Modal */}
+                    {selectedWalletCustomer && (
+                        <CustomerWalletModal
+                            isOpen={isWalletModalOpen}
+                            onClose={() => {
+                                setIsWalletModalOpen(false);
+                                setSelectedWalletCustomer(null);
+                            }}
+                            customer={selectedWalletCustomer}
+                            onUpdated={() => {
+                                fetchWalletCustomers();
+                                fetchDashboardData();
+                            }}
+                        />
+                    )}
+                </div>
+            )}
+
+            {/* Receive Payment Modal */}
             <Modal 
                 isOpen={isPaymentModalOpen} 
                 onClose={() => setIsPaymentModalOpen(false)} 
@@ -535,7 +839,6 @@ const AccountsReceivablePage = () => {
                                 <thead className="border-b border-gray-200">
                                     <tr>
                                         <th className="p-3 text-sm font-semibold text-gray-600">Invoice #</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-600">Physical Receipt #</th>
                                         <th className="p-3 text-sm font-semibold text-gray-600">Customer</th>
                                         <th className="p-3 text-sm font-semibold text-gray-600">Invoice Date</th>
                                         <th className="p-3 text-sm font-semibold text-gray-600">Due Date</th>
@@ -548,22 +851,11 @@ const AccountsReceivablePage = () => {
                                     {drillDownInvoices.map(invoice => (
                                         <tr key={invoice.invoice_id} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
                                             <td className="p-3 text-sm font-mono">{invoice.invoice_number}</td>
-                                            <td className="p-3 text-sm font-mono">{invoice.physical_receipt_no || 'N/A'}</td>
-                                            <td className="p-3 text-sm">
-                                                {invoice.company_name || `${invoice.first_name || ''} ${invoice.last_name || ''}`.trim()}
-                                            </td>
-                                            <td className="p-3 text-sm">
-                                                {new Date(invoice.invoice_date).toLocaleDateString()}
-                                            </td>
-                                            <td className="p-3 text-sm">
-                                                {new Date(invoice.due_date).toLocaleDateString()}
-                                            </td>
-                                            <td className="p-3 text-sm text-right font-mono">
-                                                {formatCurrency(invoice.total_amount)}
-                                            </td>
-                                            <td className="p-3 text-sm text-right font-mono font-medium">
-                                                {formatCurrency(invoice.balance_due)}
-                                            </td>
+                                            <td className="p-3 text-sm">{invoice.company_name || `${invoice.first_name || ''} ${invoice.last_name || ''}`.trim()}</td>
+                                            <td className="p-3 text-sm">{new Date(invoice.invoice_date).toLocaleDateString()}</td>
+                                            <td className="p-3 text-sm">{new Date(invoice.due_date).toLocaleDateString()}</td>
+                                            <td className="p-3 text-sm text-right font-mono">{formatCurrency(invoice.total_amount)}</td>
+                                            <td className="p-3 text-sm text-right font-mono font-medium">{formatCurrency(invoice.balance_due)}</td>
                                             <td className="p-3 text-sm text-center">
                                                 {hasPermission('ar:receive_payment') && Number(invoice.balance_due) > 0 && (
                                                     <button
@@ -583,22 +875,10 @@ const AccountsReceivablePage = () => {
                             </table>
                         </div>
                     )}
-                    {!drillDownLoading && (
-                        <PaginationControls
-                            page={drillDownPage}
-                            pageSize={drillDownPageSize}
-                            total={drillDownTotal}
-                            onPageChange={setDrillDownPage}
-                            onPageSizeChange={(value) => {
-                                setDrillDownPageSize(value);
-                                setDrillDownPage(1);
-                            }}
-                        />
-                    )}
                 </div>
             </Modal>
 
-            {/* Customer Invoice Details Modal (extracted) */}
+            {/* Customer Invoice Details Modal */}
             <CustomerInvoiceDetailsModal
                 isOpen={customerInvoices.length > 0}
                 onClose={() => setCustomerInvoices([])}
@@ -612,28 +892,6 @@ const AccountsReceivablePage = () => {
                 onPageSizeChange={(size) => {
                     setCustomerInvoicesPageSize(size);
                     setCustomerInvoicesPage(1);
-                }}
-                onAfterDueDateUpdate={async () => {
-                    // Refresh overall dashboard and summaries
-                    await fetchDashboardData();
-
-                    // Also refresh the currently opened customer's invoices if available
-                    if (selectedCustomerForInvoices?.customer_id) {
-                        try {
-                            setCustomerInvoicesLoading(true);
-                            const response = await api.get(`/ar/customer-invoices/${selectedCustomerForInvoices.customer_id}`, {
-                                params: { page: customerInvoicesPage, pageSize: customerInvoicesPageSize, paginated: 1 }
-                            });
-                            const invoiceRows = response.data?.data || response.data || [];
-                            const payableInvoices = invoiceRows.filter(invoice => Number(invoice.balance_due) > 0) || [];
-                            setCustomerInvoices(payableInvoices);
-                            setCustomerInvoicesTotal(response.data?.total || payableInvoices.length);
-                        } catch (e) {
-                            console.error('Failed to refresh customer invoices after due date update:', e);
-                        } finally {
-                            setCustomerInvoicesLoading(false);
-                        }
-                    }
                 }}
             />
         </div>
