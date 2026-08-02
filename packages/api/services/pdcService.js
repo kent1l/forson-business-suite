@@ -55,7 +55,7 @@ async function getCollectionsClearanceList(db, pdcStatusFilter = null, maturityF
     params.push(pdcStatusFilter);
     whereClause = `WHERE (ip.pdc_status = $1 OR (ip.payment_status = 'pending' AND $1 = 'RECEIVED'))`;
   } else {
-    whereClause = `WHERE ip.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED') OR ip.payment_status = 'pending'`;
+    whereClause = `WHERE ip.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED', 'CLEARED', 'BOUNCED') OR ip.payment_status = 'pending'`;
   }
 
   const query = `

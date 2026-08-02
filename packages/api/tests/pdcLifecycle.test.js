@@ -55,7 +55,7 @@ describe('PDC & Bounced Cheque Lifecycle Engine', () => {
             const result = await pdcService.getCollectionsClearanceList(db);
 
             expect(db.query).toHaveBeenCalledTimes(1);
-            expect(db.query.mock.calls[0][0]).toContain('WHERE ip.pdc_status IN (\'RECEIVED\', \'HELD_IN_SAFE\', \'DEPOSITED\')');
+            expect(db.query.mock.calls[0][0]).toContain('WHERE ip.pdc_status IN (\'RECEIVED\', \'HELD_IN_SAFE\', \'DEPOSITED\', \'CLEARED\', \'BOUNCED\')');
             expect(result).toEqual(expect.arrayContaining([
                 expect.objectContaining({ payment_id: 10, pdc_status: 'RECEIVED', maturity_status: 'DUE_TODAY' }),
                 expect.objectContaining({ payment_id: 11, pdc_status: 'DEPOSITED', maturity_status: 'DUE_TODAY' })

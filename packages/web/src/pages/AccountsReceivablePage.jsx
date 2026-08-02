@@ -15,6 +15,7 @@ import InvoiceAgingSummaryChart from '../components/accounts-receivable/InvoiceA
 import CustomerSummaryTable from '../components/accounts-receivable/CustomerSummaryTable';
 import CustomerInvoiceDetailsModal from '../components/accounts-receivable/CustomerInvoiceDetailsModal';
 import CustomerWalletModal from '../components/accounts-receivable/CustomerWalletModal';
+import PdcClearanceDeskTable from '../components/accounts-receivable/PdcClearanceDeskTable';
 import PaginationControls from '../components/ui/PaginationControls';
 
 const AccountsReceivablePage = () => {
@@ -73,6 +74,7 @@ const AccountsReceivablePage = () => {
     // State for Tab 3: PDC Desk
     const [pdcItems, setPdcItems] = useState([]);
     const [pdcStatusFilter, setPdcStatusFilter] = useState('ALL');
+    const [pdcMaturityFilter, setPdcMaturityFilter] = useState('ALL');
     const [pdcLoading, setPdcLoading] = useState(false);
     const [selectedPdcPayment, setSelectedPdcPayment] = useState(null);
     const [clearanceDate, setClearanceDate] = useState(new Date().toISOString().split('T')[0]);
@@ -229,7 +231,10 @@ const AccountsReceivablePage = () => {
         try {
             setPdcLoading(true);
             const res = await api.get('/ar/collections-clearance', {
-                params: { pdc_status: pdcStatusFilter !== 'ALL' ? pdcStatusFilter : undefined }
+                params: {
+                    pdc_status: pdcStatusFilter !== 'ALL' ? pdcStatusFilter : undefined,
+                    maturity_status: pdcMaturityFilter !== 'ALL' ? pdcMaturityFilter : undefined
+                }
             });
             setPdcItems(res.data?.data || res.data || []);
         } catch (err) {
@@ -238,7 +243,7 @@ const AccountsReceivablePage = () => {
         } finally {
             setPdcLoading(false);
         }
-    }, [pdcStatusFilter]);
+    }, [pdcStatusFilter, pdcMaturityFilter]);
 
     // Process PDC Clearance Verification
     const handleVerifyClearance = async (paymentId) => {
@@ -581,118 +586,16 @@ const AccountsReceivablePage = () => {
             {/* TAB 3: PDC & COLLECTIONS CLEARANCE DESK */}
             {activeTab === 'pdc_desk' && (
                 <div className="space-y-6">
-                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                        <div>
-                            <h2 className="text-xl font-bold text-gray-800">PDC & Collections Clearance Desk</h2>
-                            <p className="text-xs text-gray-500 mt-0.5">Verify pending cheque clearances or process bounced cheque reversals</p>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                            {['ALL', 'RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED', 'CLEARED', 'BOUNCED'].map(st => (
-                                <button
-                                    key={st}
-                                    onClick={() => setPdcStatusFilter(st)}
-                                    className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${
-                                        pdcStatusFilter === st
-                                            ? 'bg-gray-900 text-white'
-                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                    }`}
-                                >
-                                    {st.replace(/_/g, ' ')}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm text-left text-gray-500">
-                                <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b">
-                                    <tr>
-                                        <th className="px-6 py-3">Customer</th>
-                                        <th className="px-6 py-3">Received Date</th>
-                                        <th className="px-6 py-3">Date on Cheque (Maturity)</th>
-                                        <th className="px-6 py-3">Cheque / Ref #</th>
-                                        <th className="px-6 py-3 text-right">Amount</th>
-                                        <th className="px-6 py-3">Maturity Status</th>
-                                        <th className="px-6 py-3">PDC Status</th>
-                                        <th className="px-6 py-3 text-center">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-200">
-                                    {pdcItems.map(item => (
-                                        <tr key={item.payment_id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 font-semibold text-gray-900">{item.company_name || `${item.first_name || ''} ${item.last_name || ''}`}</td>
-                                            <td className="px-6 py-4 text-xs text-gray-600">{new Date(item.payment_date).toLocaleDateString()}</td>
-                                            <td className="px-6 py-4 font-semibold text-xs text-blue-900">{item.cheque_date ? new Date(item.cheque_date).toLocaleDateString() : new Date(item.payment_date).toLocaleDateString()}</td>
-                                            <td className="px-6 py-4 font-mono font-medium text-gray-800">{item.reference_number || `#${item.payment_id}`}</td>
-                                            <td className="px-6 py-4 font-mono text-right font-bold text-gray-900">{formatCurrency(item.amount)}</td>
-                                            <td className="px-6 py-4">
-                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                                                    item.maturity_status === 'FUTURE_PDC' ? 'bg-blue-100 text-blue-800 border border-blue-200' :
-                                                    item.maturity_status === 'STALE_CHEQUE' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
-                                                    'bg-amber-100 text-amber-800 border border-amber-200'
-                                                }`}>
-                                                    {item.maturity_label || 'Due for Clearance'}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase ${
-                                                    item.pdc_status === 'CLEARED' ? 'bg-emerald-100 text-emerald-800' :
-                                                    item.pdc_status === 'BOUNCED' ? 'bg-red-100 text-red-800' :
-                                                    'bg-amber-100 text-amber-800'
-                                                }`}>
-                                                    {item.pdc_status}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4 text-center">
-                                                {item.pdc_status !== 'CLEARED' && item.pdc_status !== 'BOUNCED' ? (
-                                                    <div className="flex justify-center items-center gap-2">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setSelectedPdcPayment({ ...item, action: 'clear' })}
-                                                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1"
-                                                        >
-                                                            <span>✓</span> Verify Clearance
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setSelectedPdcPayment({ ...item, action: 'bounce' })}
-                                                            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1"
-                                                        >
-                                                            <span>⚠️</span> Mark Bounced
-                                                        </button>
-                                                    </div>
-                                                ) : item.pdc_status === 'CLEARED' ? (
-                                                    <div className="flex justify-center items-center gap-2">
-                                                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                                            <span>✓</span> Cleared
-                                                        </span>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setSelectedPdcPayment({ ...item, action: 'bounce' })}
-                                                            className="text-[11px] font-semibold text-rose-600 hover:text-rose-800 hover:underline"
-                                                            title="Report retroactive cheque bounce"
-                                                        >
-                                                            Report Bounce
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold bg-red-50 text-red-700 border border-red-200">
-                                                        <span>⚠️</span> Bounced & Credit Hold
-                                                    </span>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                    {pdcItems.length === 0 && (
-                                        <tr>
-                                            <td colSpan="6" className="px-6 py-8 text-center text-gray-500">No cheque / PDC items found for selected status filter.</td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+                    <PdcClearanceDeskTable
+                        items={pdcItems}
+                        loading={pdcLoading}
+                        pdcStatusFilter={pdcStatusFilter}
+                        onStatusFilterChange={setPdcStatusFilter}
+                        maturityFilter={pdcMaturityFilter}
+                        onMaturityFilterChange={setPdcMaturityFilter}
+                        onVerifyClearance={(item) => setSelectedPdcPayment(item)}
+                        onMarkBounced={(item) => setSelectedPdcPayment(item)}
+                    />
 
                     {/* PDC Action Modal */}
                     <Modal
