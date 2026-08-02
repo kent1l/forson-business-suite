@@ -6,6 +6,7 @@ const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { validatePaymentTerms } = require('../helpers/paymentTermsHelper');
 const { calculateInvoiceTax, storeTaxBreakdown, validateTaxCalculation } = require('../services/taxCalculationService');
 const arLedger = require('../services/arLedgerService');
+const walletService = require('../services/customerWalletService');
 const router = express.Router();
 
 // GET /invoices - Get all invoices with date filtering and optional search
@@ -366,9 +367,25 @@ router.post('/invoices', async (req, res) => {
                     await client.query('ROLLBACK');
                     return res.status(400).json({ message: `Change is not allowed for ${method.rows[0].name}` });
                 }
-                const settlementType = methodConfig.settlement_type || (method.rows[0].type === 'cash' ? 'instant' : 'delayed');
+                if (method.rows[0].code === 'store_wallet') {
+                    const wallet = await walletService.getWallet(customer_id, client);
+                    if (!wallet || wallet.balance < pAmt) {
+                        await client.query('ROLLBACK');
+                        return res.status(400).json({ message: `Insufficient Store Wallet balance. Available: ₱${wallet ? wallet.balance.toFixed(2) : '0.00'}, Required: ₱${pAmt.toFixed(2)}` });
+                    }
+                    await walletService.appendWalletTransaction(client, {
+                        customerId: customer_id,
+                        type: 'INVOICE_PAYMENT_DRAWDOWN',
+                        amount: -pAmt,
+                        referenceType: 'INVOICE',
+                        referenceId: newInvoiceId,
+                        notes: `Store wallet payment for invoice #${invoice_number}`,
+                        createdBy: employee_id,
+                    });
+                }
+                const settlementType = method.rows[0].code === 'store_wallet' ? 'instant' : (methodConfig.settlement_type || (method.rows[0].type === 'cash' ? 'instant' : 'delayed'));
                 
-                if (settlementType === 'on_account' && customerName.includes('walk-in')) {
+                if (settlementType === 'on_account' && method.rows[0].code !== 'store_wallet' && customerName.includes('walk-in')) {
                     await client.query('ROLLBACK');
                     return res.status(400).json({ message: 'On Account payment is not available for Walk-In customers.' });
                 }

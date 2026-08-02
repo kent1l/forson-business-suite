@@ -47,6 +47,7 @@ import { getCustomerStatusBadge } from '../../utils/status';
 import { useMemo, useState } from 'react';
 import SortableHeader from '../ui/SortableHeader';
 import { sortData } from '../../utils/sortData';
+import CustomerWalletBadge from './CustomerWalletBadge';
 
 // Enhanced Loading Skeleton Components
 const _TableSkeleton = () => (
@@ -120,9 +121,12 @@ const CustomerSummaryTable = ({
                                     key={customer.customer_id || index}
                                     className="bg-white border-b hover:bg-gray-50 transition-colors"
                                 >
-                                    <td className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap cursor-pointer hover:text-blue-600"
+                                    <td className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap cursor-pointer hover:text-blue-600 flex items-center justify-between"
                                         onClick={() => onCustomerClick(customer)}>
-                                        {customer.company_name || `${customer.first_name || ''} ${customer.last_name || ''}`.trim()}
+                                        <span>{customer.company_name || `${customer.first_name || ''} ${customer.last_name || ''}`.trim()}</span>
+                                        {parseFloat(customer.wallet_balance) > 0 && (
+                                            <CustomerWalletBadge balance={customer.wallet_balance} onClick={(e) => { e.stopPropagation(); onCustomerClick(customer); }} />
+                                        )}
                                     </td>
                                     <td className="px-6 py-4 text-center cursor-pointer"
                                         onClick={() => onCustomerClick(customer)}>

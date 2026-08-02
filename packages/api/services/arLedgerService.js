@@ -1,5 +1,4 @@
 'use strict';
-const db = require('../db');
 
 /**
  * Append a single entry to ar_ledger within an existing pg PoolClient transaction.

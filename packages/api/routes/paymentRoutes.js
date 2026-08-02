@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const arLedger = require('../services/arLedgerService');
+const walletService = require('../services/customerWalletService');
 const router = express.Router();
 
 // --- MOVED to customerRoutes.js ---
@@ -20,9 +21,33 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
         return res.status(400).json({ message: 'Missing required fields.' });
     }
 
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+        return res.status(400).json({ message: 'Payment amount must be greater than zero.' });
+    }
+
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
+
+        // Check if paying via Store Wallet drawdown
+        if (payment_method === 'store_wallet') {
+            const wallet = await walletService.getWallet(customer_id, client);
+            if (!wallet || wallet.balance < numAmount) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ 
+                    message: `Insufficient store wallet balance. Available: ₱${wallet ? wallet.balance.toFixed(2) : '0.00'}, Requested: ₱${numAmount.toFixed(2)}` 
+                });
+            }
+            await walletService.appendWalletTransaction(client, {
+                customerId: customer_id,
+                type: 'INVOICE_PAYMENT_DRAWDOWN',
+                amount: -numAmount,
+                referenceType: 'PAYMENT',
+                notes: notes || 'Store wallet drawdown for payment',
+                createdBy: employee_id,
+            });
+        }
 
         // Step 1: Create the payment record in the ledger
         const paymentQuery = `
@@ -30,17 +55,20 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
             VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING payment_id;
         `;
-        const paymentResult = await client.query(paymentQuery, [customer_id, employee_id, amount, payment_method, referenceValue, notes]);
+        const paymentResult = await client.query(paymentQuery, [customer_id, employee_id, numAmount, payment_method, referenceValue, notes]);
         const newPaymentId = paymentResult.rows[0].payment_id;
 
         // Step 2: Create allocation records and update invoice statuses
+        let totalAllocated = 0;
         for (const alloc of allocations) {
-            if (alloc.amount_allocated > 0) {
+            const allocAmt = parseFloat(alloc.amount_allocated) || 0;
+            if (allocAmt > 0) {
+                totalAllocated += allocAmt;
                 const allocationQuery = `
                     INSERT INTO invoice_payment_allocation (invoice_id, payment_id, amount_allocated)
                     VALUES ($1, $2, $3);
                 `;
-                await client.query(allocationQuery, [alloc.invoice_id, newPaymentId, alloc.amount_allocated]);
+                await client.query(allocationQuery, [alloc.invoice_id, newPaymentId, allocAmt]);
 
                 // Step 3: Recalculate total paid for the invoice and update its status
                 const balanceQuery = `
@@ -66,8 +94,29 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
             }
         }
 
+        // Step 4: Handle overpayment - credit excess to customer_wallet
+        const excessAmount = numAmount - totalAllocated;
+        let overpaymentCredited = 0;
+        if (excessAmount > 0.005) {
+            await walletService.appendWalletTransaction(client, {
+                customerId: customer_id,
+                type: 'OVERPAYMENT_CREDIT',
+                amount: excessAmount,
+                referenceType: 'PAYMENT',
+                referenceId: newPaymentId,
+                notes: `Automated credit from overpayment on payment #${newPaymentId}`,
+                createdBy: employee_id,
+            });
+            overpaymentCredited = excessAmount;
+        }
+
         await client.query('COMMIT');
-        res.status(201).json({ message: 'Payment received successfully', payment_id: newPaymentId });
+        res.status(201).json({ 
+            message: 'Payment received successfully', 
+            payment_id: newPaymentId,
+            allocated_amount: totalAllocated,
+            overpayment_credited: overpaymentCredited,
+        });
 
     } catch (err) {
         await client.query('ROLLBACK');
