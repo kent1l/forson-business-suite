@@ -5,15 +5,28 @@ const arLedgerService = require('./arLedgerService');
 /**
  * Fetch pending payments across channels for Collections & Clearance Desk.
  * @param {import('pg').Pool | import('pg').PoolClient} db
+ * @param {string} [pdcStatusFilter]
  */
-async function getCollectionsClearanceList(db) {
+async function getCollectionsClearanceList(db, pdcStatusFilter = null) {
+  let whereClause = ``;
+  const params = [];
+
+  if (pdcStatusFilter && pdcStatusFilter !== 'ALL') {
+    params.push(pdcStatusFilter);
+    whereClause = `WHERE (ip.pdc_status = $1 OR (ip.payment_status = 'pending' AND $1 = 'RECEIVED'))`;
+  } else {
+    whereClause = `WHERE ip.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED') OR ip.payment_status = 'pending'`;
+  }
+
   const query = `
     SELECT 
       ip.payment_id,
       ip.invoice_id,
       i.invoice_number,
       i.customer_id,
-      c.name AS customer_name,
+      c.company_name,
+      c.first_name,
+      c.last_name,
       ip.amount,
       ip.payment_status,
       COALESCE(ip.pdc_status, 'CLEARED') AS pdc_status,
@@ -24,15 +37,14 @@ async function getCollectionsClearanceList(db) {
       p.payment_date,
       ip.created_at
     FROM invoice_payments ip
-    JOIN invoices i ON i.invoice_id = ip.invoice_id
+    JOIN invoice i ON i.invoice_id = ip.invoice_id
     JOIN customer c ON c.customer_id = i.customer_id
     LEFT JOIN payments p ON p.payment_id = ip.payment_id
     LEFT JOIN payment_methods pm ON pm.payment_method_id = p.payment_method_id
-    WHERE ip.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED')
-       OR ip.payment_status = 'pending'
+    ${whereClause}
     ORDER BY ip.created_at DESC;
   `;
-  const { rows } = await db.query(query);
+  const { rows } = await db.query(query, params);
   return rows;
 }
 
@@ -85,7 +97,7 @@ async function processBouncedCheque(client, { paymentId, bounceFee = 0, reason =
        i.customer_id,
        p.reference_number
      FROM invoice_payments ip
-     JOIN invoices i ON i.invoice_id = ip.invoice_id
+     JOIN invoice i ON i.invoice_id = ip.invoice_id
      LEFT JOIN payments p ON p.payment_id = ip.payment_id
      WHERE ip.payment_id = $1 FOR UPDATE`,
     [paymentId]
@@ -100,7 +112,6 @@ async function processBouncedCheque(client, { paymentId, bounceFee = 0, reason =
   const parsedFee = parseFloat(bounceFee) || 0;
 
   // 1. Update payment status to failed and pdc_status to BOUNCED
-  // Trigger update_invoice_balance_after_payment automatically re-opens invoice balance.
   await client.query(
     `UPDATE invoice_payments
      SET payment_status = 'failed',
@@ -141,8 +152,7 @@ async function processBouncedCheque(client, { paymentId, bounceFee = 0, reason =
   await client.query(
     `UPDATE customer
      SET credit_hold = true,
-         credit_hold_reason = $1,
-         updated_at = NOW()
+         credit_hold_reason = $1
      WHERE customer_id = $2`,
     [holdReason, payment.customer_id]
   );

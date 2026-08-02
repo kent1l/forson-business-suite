@@ -601,7 +601,8 @@ router.post('/ar/ledger/:customerId/adjustment', protect, hasPermission('ar:mana
 // GET /ar/collections-clearance - List pending payments awaiting clearance across channels
 router.get('/ar/collections-clearance', protect, hasPermission('ar:view'), async (req, res) => {
     try {
-        const list = await pdcService.getCollectionsClearanceList(db);
+        const { pdc_status } = req.query;
+        const list = await pdcService.getCollectionsClearanceList(db, pdc_status);
         res.json({ success: true, count: list.length, data: list });
     } catch (err) {
         console.error('AR Collections Clearance List Error:', err.message);
