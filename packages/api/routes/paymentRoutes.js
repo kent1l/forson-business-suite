@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
+const arLedger = require('../services/arLedgerService');
 const router = express.Router();
 
 // --- MOVED to customerRoutes.js ---
@@ -126,7 +127,10 @@ router.post('/payments/:id/settle', protect, hasPermission('ar:receive_payment')
 
     if (!paymentId) return res.status(400).json({ message: 'Invalid payment id' });
 
+    const client = await db.getClient();
     try {
+        await client.query('BEGIN');
+
         const updateQ = `
             UPDATE invoice_payments
             SET payment_status = 'settled',
@@ -136,12 +140,48 @@ router.post('/payments/:id/settle', protect, hasPermission('ar:receive_payment')
             WHERE payment_id = $1
             RETURNING *;
         `;
-        const { rows } = await db.query(updateQ, [paymentId, settlement_reference || null, attempt_metadata ? JSON.stringify(attempt_metadata) : null]);
-        if (!rows.length) return res.status(404).json({ message: 'Payment not found' });
-        return res.json({ message: 'Payment marked as settled', payment: rows[0] });
+        const { rows } = await client.query(updateQ, [
+            paymentId,
+            settlement_reference || null,
+            attempt_metadata ? JSON.stringify(attempt_metadata) : null,
+        ]);
+        if (!rows.length) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: 'Payment not found or already settled.' });
+        }
+
+        const p = rows[0];
+
+        // Resolve customer_id and payment method code for the ledger entry
+        const { rows: ctx } = await client.query(`
+            SELECT i.customer_id, pm.code AS method_code, pm.name AS method_name
+            FROM invoice i
+            JOIN payment_methods pm ON pm.method_id = $2
+            WHERE i.invoice_id = $1
+        `, [p.invoice_id, p.method_id]);
+
+        if (ctx.length) {
+            await arLedger.appendEntry(client, {
+                customerId: ctx[0].customer_id,
+                invoiceId: p.invoice_id,
+                paymentId: p.payment_id,
+                entryType: 'PAYMENT_SETTLED',
+                amount: -p.amount_paid,
+                paymentChannel: ctx[0].method_code,
+                referenceNo: p.reference || settlement_reference || null,
+                notes: `Settled via ${ctx[0].method_name}`,
+                createdBy: req.user.employee_id,
+            });
+        }
+
+        await client.query('COMMIT');
+        return res.json({ message: 'Payment settled successfully.', payment: p });
     } catch (err) {
+        await client.query('ROLLBACK');
         console.error('Error settling payment:', err.message);
         return res.status(500).json({ message: 'Server error while settling payment.' });
+    } finally {
+        client.release();
     }
 });
 

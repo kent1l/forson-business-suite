@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
+const arLedger = require('../services/arLedgerService');
 const router = express.Router();
 
 // GET /ar/dashboard-stats - Get AR dashboard statistics
@@ -14,11 +15,11 @@ router.get('/ar/dashboard-stats', protect, hasPermission('ar:view'), async (req,
         const end = endDate || new Date().toISOString();
 
         const [totalReceivablesRes, invoicesSentRes, overdueInvoicesRes, avgCollectionRes] = await Promise.all([
-            // Total receivables
+            // Total receivables — authoritative: sum of positive ledger balances
             db.query(`
-                SELECT COALESCE(SUM(i.total_amount - i.amount_paid), 0) as total_receivables
-                FROM invoice i 
-                WHERE i.status IN ('Unpaid', 'Partially Paid')
+                SELECT COALESCE(SUM(ledger_balance), 0) AS total_receivables
+                FROM vw_customer_ar_balance
+                WHERE ledger_balance > 0
             `),
             
             // Invoices sent in date range
@@ -136,9 +137,9 @@ router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req
                 c.company_name,
                 c.first_name,
                 c.last_name,
-                COALESCE(SUM(i.total_amount - i.amount_paid), 0) as total_balance_due,
-                MIN(i.due_date) as earliest_due_date,
-                COUNT(i.invoice_id) as invoice_count,
+                b.ledger_balance                                    AS total_balance_due,
+                MIN(i.due_date)                                     AS earliest_due_date,
+                COUNT(i.invoice_id)                                 AS invoice_count,
                 CASE 
                     WHEN MIN(COALESCE(i.due_date, i.invoice_date)) >= CURRENT_DATE THEN 'Current'
                     WHEN MIN(COALESCE(i.due_date, i.invoice_date)) >= CURRENT_DATE - INTERVAL '30 days' THEN '1-30 Days'
@@ -148,10 +149,11 @@ router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req
                 END as status
             FROM customer c
             JOIN invoice i ON c.customer_id = i.customer_id
+            JOIN vw_customer_ar_balance b ON b.customer_id = c.customer_id
             WHERE i.status IN ('Unpaid', 'Partially Paid')
-            AND (i.total_amount - i.amount_paid) > 0
-            GROUP BY c.customer_id, c.company_name, c.first_name, c.last_name
-            HAVING COALESCE(SUM(i.total_amount - i.amount_paid), 0) > 0
+            AND b.ledger_balance > 0
+            GROUP BY c.customer_id, c.company_name, c.first_name, c.last_name, b.ledger_balance
+            HAVING b.ledger_balance > 0
             ORDER BY earliest_due_date ASC, total_balance_due DESC
             LIMIT $1 OFFSET $2;
         `;
@@ -164,10 +166,11 @@ router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req
                 SELECT c.customer_id
                 FROM customer c
                 JOIN invoice i ON c.customer_id = i.customer_id
+                JOIN vw_customer_ar_balance b ON b.customer_id = c.customer_id
                 WHERE i.status IN ('Unpaid', 'Partially Paid')
-                AND (i.total_amount - i.amount_paid) > 0
-                GROUP BY c.customer_id, c.company_name, c.first_name, c.last_name
-                HAVING COALESCE(SUM(i.total_amount - i.amount_paid), 0) > 0
+                AND b.ledger_balance > 0
+                GROUP BY c.customer_id, b.ledger_balance
+                HAVING b.ledger_balance > 0
             ) summary
         `);
         const total = countRes.rows[0]?.total || 0;
@@ -512,3 +515,82 @@ router.get('/ar/verify-integrity', protect, hasPermission('ar:view'), async (req
 });
 
 module.exports = router;
+
+// GET /api/ar/ledger/:customerId - Chronological ledger history with running balance
+router.get('/ar/ledger/:customerId', protect, hasPermission('ar:view'), async (req, res) => {
+    const customerId = parseInt(req.params.customerId, 10);
+    if (!customerId) return res.status(400).json({ message: 'Invalid customer ID' });
+    const { limit = 100, offset = 0 } = req.query;
+    try {
+        const { rows } = await db.query(`
+            SELECT
+                l.ledger_id, l.entry_type, l.amount, l.balance_after,
+                l.payment_channel, l.reference_no, l.notes, l.created_at,
+                l.invoice_id, i.invoice_number,
+                l.payment_id,
+                l.cn_id, cn.cn_number,
+                e.first_name || ' ' || COALESCE(e.last_name, '') AS created_by_name
+            FROM ar_ledger l
+            LEFT JOIN invoice i      ON i.invoice_id  = l.invoice_id
+            LEFT JOIN credit_note cn ON cn.cn_id       = l.cn_id
+            LEFT JOIN employee e     ON e.employee_id  = l.created_by
+            WHERE l.customer_id = $1
+            ORDER BY l.ledger_id ASC
+            LIMIT $2 OFFSET $3
+        `, [customerId, parseInt(limit), parseInt(offset)]);
+        const { rows: [{ total }] } = await db.query(
+            'SELECT COUNT(*)::int AS total FROM ar_ledger WHERE customer_id = $1', [customerId]);
+        res.json({ rows, total });
+    } catch (err) {
+        console.error('AR Ledger fetch error:', err.message);
+        res.status(500).json({ message: 'Server error fetching AR ledger.' });
+    }
+});
+
+// POST /api/ar/ledger/:customerId/adjustment - Manual debit or credit adjustment (ar:manage only)
+router.post('/ar/ledger/:customerId/adjustment', protect, hasPermission('ar:manage'), async (req, res) => {
+    const customerId = parseInt(req.params.customerId, 10);
+    if (!customerId) return res.status(400).json({ message: 'Invalid customer ID' });
+
+    const { entry_type, amount, reference_no, notes } = req.body;
+    const { employee_id } = req.user;
+
+    if (!['DEBIT_ADJUSTMENT', 'CREDIT_ADJUSTMENT'].includes(entry_type)) {
+        return res.status(400).json({ message: 'entry_type must be DEBIT_ADJUSTMENT or CREDIT_ADJUSTMENT' });
+    }
+    const parsedAmount = parseFloat(String(amount || '').replace(/[^0-9.]+/g, ''));
+    if (!parsedAmount || parsedAmount <= 0) {
+        return res.status(400).json({ message: 'amount must be a positive number' });
+    }
+    if (!notes || notes.trim().length < 5) {
+        return res.status(400).json({ message: 'notes is required (min 5 chars) for audit trail' });
+    }
+
+    // DEBIT_ADJUSTMENT increases balance (+), CREDIT_ADJUSTMENT decreases (-)
+    const signedAmount = entry_type === 'DEBIT_ADJUSTMENT' ? parsedAmount : -parsedAmount;
+
+    const client = await db.getClient();
+    try {
+        const { rows: cust } = await client.query(
+            'SELECT customer_id FROM customer WHERE customer_id = $1', [customerId]);
+        if (!cust.length) return res.status(404).json({ message: 'Customer not found' });
+
+        await client.query('BEGIN');
+        const ledgerId = await arLedger.appendEntry(client, {
+            customerId,
+            entryType: entry_type,
+            amount: signedAmount,
+            referenceNo: reference_no || null,
+            notes: notes.trim(),
+            createdBy: employee_id,
+        });
+        await client.query('COMMIT');
+        res.status(201).json({ message: 'Adjustment recorded', ledger_id: ledgerId });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('AR Adjustment error:', err.message);
+        res.status(500).json({ message: 'Server error recording adjustment.' });
+    } finally {
+        client.release();
+    }
+});

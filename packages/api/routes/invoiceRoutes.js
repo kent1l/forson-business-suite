@@ -5,6 +5,7 @@ const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatt
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { validatePaymentTerms } = require('../helpers/paymentTermsHelper');
 const { calculateInvoiceTax, storeTaxBreakdown, validateTaxCalculation } = require('../services/taxCalculationService');
+const arLedger = require('../services/arLedgerService');
 const router = express.Router();
 
 // GET /invoices - Get all invoices with date filtering and optional search
@@ -291,6 +292,18 @@ router.post('/invoices', async (req, res) => {
     const invoiceResult = await client.query(invoiceQuery, [invoice_number, customer_id, employee_id, total_amount, subtotal_ex_tax, tax_total, paid, status, normalizedTerms, canonicalDays, dueDate, prn, taxCalculation.tax_calculation_version]);
         const newInvoiceId = invoiceResult.rows[0].invoice_id;
 
+        // Ledger: INVOICE_POSTED for credit-term invoices only.
+        // Cash invoices have no AR impact — the PAYMENT_SETTLED event covers the net effect.
+        if (normalizedTerms !== 'Cash') {
+            await arLedger.appendEntry(client, {
+                customerId: customer_id, invoiceId: newInvoiceId,
+                entryType: 'INVOICE_POSTED', amount: total_amount,
+                referenceNo: invoice_number,
+                notes: `Invoice ${invoice_number} posted on credit terms`,
+                createdBy: employee_id,
+            });
+        }
+
         // Store tax breakdown
         await storeTaxBreakdown(newInvoiceId, taxCalculation.tax_breakdown, client);
 
@@ -361,11 +374,23 @@ router.post('/invoices', async (req, res) => {
                 }
 
                 const paymentStatus = settlementType === 'instant' ? 'settled' : settlementType === 'on_account' ? 'on_account' : 'pending';
-                await client.query(`
+                const ipRes = await client.query(`
                     INSERT INTO invoice_payments 
                     (invoice_id, method_id, amount_paid, tendered_amount, change_amount, reference, metadata, created_by, payment_status, settled_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::varchar, CASE WHEN $9::varchar = 'settled' THEN CURRENT_TIMESTAMP ELSE NULL END)
+                    RETURNING payment_id
                 `, [newInvoiceId, method.rows[0].method_id, pAmt, tAmt, changeAmt, reference, JSON.stringify(metadata), employee_id, paymentStatus]);
+                if (paymentStatus === 'settled') {
+                    await arLedger.appendEntry(client, {
+                        customerId: customer_id, invoiceId: newInvoiceId,
+                        paymentId: ipRes.rows[0].payment_id,
+                        entryType: 'PAYMENT_SETTLED', amount: -pAmt,
+                        paymentChannel: method.rows[0].code,
+                        referenceNo: reference || invoice_number,
+                        notes: `Payment via ${method.rows[0].name}`,
+                        createdBy: employee_id,
+                    });
+                }
             }
         } else if (paid > 0) {
             const methodCode = payment_method ? payment_method.toLowerCase().replace(/\s+/g, '_') : 'cash';
@@ -379,11 +404,23 @@ router.post('/invoices', async (req, res) => {
                 const paymentStatus = settlementType === 'instant' ? 'settled' : settlementType === 'on_account' ? 'on_account' : 'pending';
                 const tenderVal = typeof tendered_amount !== 'undefined' && tendered_amount !== null ? tendered_amount : null;
                 const changeAmt = tenderVal && tenderVal > paid ? tenderVal - paid : 0;
-                await client.query(`
+                const ipRes = await client.query(`
                     INSERT INTO invoice_payments 
                     (invoice_id, method_id, amount_paid, tendered_amount, change_amount, reference, created_by, payment_status, settled_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::varchar, CASE WHEN $8::varchar = 'settled' THEN CURRENT_TIMESTAMP ELSE NULL END)
+                    RETURNING payment_id
                 `, [newInvoiceId, method.rows[0].method_id, paid, tenderVal, changeAmt, invoice_number, employee_id, paymentStatus]);
+                if (paymentStatus === 'settled') {
+                    await arLedger.appendEntry(client, {
+                        customerId: customer_id, invoiceId: newInvoiceId,
+                        paymentId: ipRes.rows[0].payment_id,
+                        entryType: 'PAYMENT_SETTLED', amount: -paid,
+                        paymentChannel: method.rows[0].code,
+                        referenceNo: invoice_number,
+                        notes: `Payment via ${method.rows[0].name}`,
+                        createdBy: employee_id,
+                    });
+                }
             }
         }
 
