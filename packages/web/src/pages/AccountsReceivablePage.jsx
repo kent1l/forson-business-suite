@@ -243,8 +243,7 @@ const AccountsReceivablePage = () => {
     // Process PDC Clearance Verification
     const handleVerifyClearance = async (paymentId) => {
         try {
-            await api.post('/ar/collections-clearance', {
-                payment_id: paymentId,
+            await api.post(`/ar/collections-clearance/${paymentId}/verify`, {
                 clearance_date: clearanceDate
             });
             toast.success('Payment clearance verified!');
@@ -610,10 +609,12 @@ const AccountsReceivablePage = () => {
                                 <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b">
                                     <tr>
                                         <th className="px-6 py-3">Customer</th>
-                                        <th className="px-6 py-3">Payment Date</th>
+                                        <th className="px-6 py-3">Received Date</th>
+                                        <th className="px-6 py-3">Date on Cheque (Maturity)</th>
                                         <th className="px-6 py-3">Cheque / Ref #</th>
                                         <th className="px-6 py-3 text-right">Amount</th>
-                                        <th className="px-6 py-3">Status</th>
+                                        <th className="px-6 py-3">Maturity Status</th>
+                                        <th className="px-6 py-3">PDC Status</th>
                                         <th className="px-6 py-3 text-center">Actions</th>
                                     </tr>
                                 </thead>
@@ -621,9 +622,19 @@ const AccountsReceivablePage = () => {
                                     {pdcItems.map(item => (
                                         <tr key={item.payment_id} className="hover:bg-gray-50">
                                             <td className="px-6 py-4 font-semibold text-gray-900">{item.company_name || `${item.first_name || ''} ${item.last_name || ''}`}</td>
-                                            <td className="px-6 py-4">{new Date(item.payment_date).toLocaleDateString()}</td>
+                                            <td className="px-6 py-4 text-xs text-gray-600">{new Date(item.payment_date).toLocaleDateString()}</td>
+                                            <td className="px-6 py-4 font-semibold text-xs text-blue-900">{item.cheque_date ? new Date(item.cheque_date).toLocaleDateString() : new Date(item.payment_date).toLocaleDateString()}</td>
                                             <td className="px-6 py-4 font-mono font-medium text-gray-800">{item.reference_number || `#${item.payment_id}`}</td>
                                             <td className="px-6 py-4 font-mono text-right font-bold text-gray-900">{formatCurrency(item.amount)}</td>
+                                            <td className="px-6 py-4">
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                                                    item.maturity_status === 'FUTURE_PDC' ? 'bg-blue-100 text-blue-800 border border-blue-200' :
+                                                    item.maturity_status === 'STALE_CHEQUE' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
+                                                    'bg-amber-100 text-amber-800 border border-amber-200'
+                                                }`}>
+                                                    {item.maturity_label || 'Due for Clearance'}
+                                                </span>
+                                            </td>
                                             <td className="px-6 py-4">
                                                 <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase ${
                                                     item.pdc_status === 'CLEARED' ? 'bg-emerald-100 text-emerald-800' :

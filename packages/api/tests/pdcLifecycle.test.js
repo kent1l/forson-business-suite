@@ -56,7 +56,10 @@ describe('PDC & Bounced Cheque Lifecycle Engine', () => {
 
             expect(db.query).toHaveBeenCalledTimes(1);
             expect(db.query.mock.calls[0][0]).toContain('WHERE ip.pdc_status IN (\'RECEIVED\', \'HELD_IN_SAFE\', \'DEPOSITED\')');
-            expect(result).toEqual(mockRows);
+            expect(result).toEqual(expect.arrayContaining([
+                expect.objectContaining({ payment_id: 10, pdc_status: 'RECEIVED', maturity_status: 'DUE_TODAY' }),
+                expect.objectContaining({ payment_id: 11, pdc_status: 'DEPOSITED', maturity_status: 'DUE_TODAY' })
+            ]));
         });
     });
 
@@ -154,7 +157,9 @@ describe('PDC & Bounced Cheque Lifecycle Engine', () => {
             const res = await request(app).get('/api/ar/collections-clearance');
             expect(res.status).toBe(200);
             expect(res.body.success).toBe(true);
-            expect(res.body.data).toEqual(mockList);
+            expect(res.body.data).toEqual(expect.arrayContaining([
+                expect.objectContaining({ payment_id: 10, pdc_status: 'RECEIVED', maturity_status: 'DUE_TODAY' })
+            ]));
         });
 
         test('POST /api/ar/collections-clearance/:paymentId/verify clears payment inside transaction', async () => {

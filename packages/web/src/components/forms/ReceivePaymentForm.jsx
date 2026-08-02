@@ -9,21 +9,22 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
     const [unpaidInvoices, setUnpaidInvoices] = useState([]);
     const [enabledMethods, setEnabledMethods] = useState([]);
     const [walletBalance, setWalletBalance] = useState(0);
-    const [splits, setSplits] = useState([ // dynamic payment lines
-        { id: 1, method_id: null, amount: '', reference: '' }
+    const [splits, setSplits] = useState([
+        { id: 1, method_id: null, amount: '', reference: '', cheque_date: '' }
     ]);
     const [physicalReceiptNo, setPhysicalReceiptNo] = useState('');
     const [notes, setNotes] = useState('');
-    const [allocations, setAllocations] = useState({}); // { invoice_id: amount }
+    const [allocations, setAllocations] = useState({});
 
     // Derived totals
     const totalSplitAmount = useMemo(() => splits.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0), [splits]);
     const totalAllocated = useMemo(() => Object.values(allocations).reduce((sum, val) => sum + (parseFloat(val) || 0), 0), [allocations]);
     const overpaymentAmount = useMemo(() => Math.max(0, totalSplitAmount - totalAllocated), [totalSplitAmount, totalAllocated]);
+    const unallocatedDeficit = useMemo(() => Math.max(0, totalAllocated - totalSplitAmount), [totalSplitAmount, totalAllocated]);
 
     // Initial state snapshot for dirty check
     const initialFormData = useMemo(() => ({
-        splits: [{ id: 1, method_id: null, amount: '', reference: '' }],
+        splits: [{ id: 1, method_id: null, amount: '', reference: '', cheque_date: '' }],
         physicalReceiptNo: '',
         notes: '',
         allocations: {}
@@ -36,7 +37,7 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
 
     const isFormElement = (element) => element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.tagName === 'SELECT');
 
-    // Load unpaid invoices for this customer & wallet info
+    // Load unpaid invoices & wallet info
     useEffect(() => {
         if (!customer?.customer_id) return;
         api.get(`/customers/${customer.customer_id}/unpaid-invoices`).then(res => setUnpaidInvoices(res.data || [])).catch(() => setUnpaidInvoices([]));
@@ -48,12 +49,11 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
         api.get('/payment-methods/enabled').then(res => {
             const methods = (res.data || []).filter(m => m.enabled);
             setEnabledMethods(methods);
-            // Set default method for first split if empty
             setSplits((prev) => prev.map((s) => ({ ...s, method_id: s.method_id ?? methods[0]?.method_id ?? null })));
         }).catch(() => setEnabledMethods([]));
     }, []);
 
-    // Auto allocate by totalSplitAmount
+    // Auto allocate
     const autoAllocate = useCallback((amount) => {
         let remaining = amount;
         const next = {};
@@ -67,7 +67,6 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
         setAllocations(next);
     }, [unpaidInvoices]);
 
-    // Keep allocations in sync with total split
     useEffect(() => {
         autoAllocate(totalSplitAmount);
     }, [totalSplitAmount, autoAllocate]);
@@ -80,24 +79,25 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
     const addSplit = () => {
         const nextId = (splits[splits.length - 1]?.id || 0) + 1;
         const defaultMethod = enabledMethods[0]?.method_id ?? null;
-        setSplits([...splits, { id: nextId, method_id: defaultMethod, amount: '', reference: '' }]);
+        setSplits([...splits, { id: nextId, method_id: defaultMethod, amount: '', reference: '', cheque_date: '' }]);
     };
     const removeSplit = (id) => setSplits(splits.filter(s => s.id !== id));
     const updateSplit = (id, patch) => setSplits(splits.map(s => s.id === id ? { ...s, ...patch } : s));
 
-    // Validation helpers
+    const methodById = (id) => enabledMethods.find(m => String(m.method_id) === String(id));
+
+    // Validation
     const validateBeforeSubmit = useCallback(() => {
         if (!customer?.customer_id) {
             toast.error('Missing customer.');
             return false;
         }
         if (splits.length === 0) {
-            toast.error('Add at least one payment.');
+            toast.error('Add at least one payment method.');
             return false;
         }
-        // Validate splits
         for (const s of splits) {
-            const method = enabledMethods.find(m => String(m.method_id) === String(s.method_id));
+            const method = methodById(s.method_id);
             if (!method) {
                 toast.error('Select a valid payment method.');
                 return false;
@@ -112,14 +112,14 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                 return false;
             }
             if (method.config?.requires_reference && !s.reference?.trim()) {
-                toast.error(`Reference is required for ${method.name}.`);
+                toast.error(`Reference / Cheque # is required for ${method.name}.`);
                 return false;
             }
         }
         return true;
     }, [customer?.customer_id, splits, enabledMethods, walletBalance]);
 
-    // Distribute payments across allocated invoices
+    // Submit per invoice
     const submitPayments = useCallback(async () => {
         const invoices = unpaidInvoices
             .map(inv => ({
@@ -131,10 +131,11 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
         const lines = splits.map(s => ({
             method_id: s.method_id,
             amount_remaining: parseFloat(s.amount) || 0,
-            reference: s.reference
+            reference: s.reference,
+            cheque_date: s.cheque_date || null
         }));
 
-        const perInvoicePayloads = new Map(); // invoice_id => payments[]
+        const perInvoicePayloads = new Map();
 
         for (const line of lines) {
             let toDistribute = line.amount_remaining;
@@ -148,7 +149,12 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                     method_id: line.method_id,
                     amount_paid: portion,
                     reference: line.reference || null,
-                    metadata: { ar_batch: true, customer_id: customer.customer_id }
+                    metadata: {
+                        ar_batch: true,
+                        customer_id: customer.customer_id,
+                        cheque_date: line.cheque_date || null,
+                        notes: notes || null
+                    }
                 });
                 perInvoicePayloads.set(inv.invoice_id, arr);
                 inv.remaining -= portion;
@@ -156,14 +162,13 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
             }
         }
 
-        // Submit per invoice
         for (const [invoice_id, payments] of perInvoicePayloads.entries()) {
             await api.post(`/invoices/${invoice_id}/payments`, {
                 payments,
                 physical_receipt_no: physicalReceiptNo || null
             });
         }
-    }, [unpaidInvoices, allocations, splits, physicalReceiptNo, customer?.customer_id]);
+    }, [unpaidInvoices, allocations, splits, physicalReceiptNo, notes, customer?.customer_id]);
 
     const handleSubmit = useCallback(async (e) => {
         if (e) e.preventDefault();
@@ -172,8 +177,8 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
             await toast.promise(
                 submitPayments(),
                 {
-                    loading: 'Processing payment...',
-                    success: 'Payment processed successfully!',
+                    loading: 'Processing payment receipt...',
+                    success: 'Payment receipt processed successfully!',
                     error: (e) => e?.response?.data?.message || 'Failed to process payment.'
                 }
             );
@@ -183,6 +188,7 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
         }
     }, [validateBeforeSubmit, submitPayments, onSave]);
 
+    // Keyboard shortcuts
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (e.target && isFormElement(e.target)) return;
@@ -199,190 +205,326 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
         return () => document.removeEventListener('keydown', handleKeyDown);
     }, [handleSubmit, onCancel, isFormDirty]);
 
-    const methodById = (id) => enabledMethods.find(m => String(m.method_id) === String(id));
+    const customerDisplayName = customer?.company_name || `${customer?.first_name || ''} ${customer?.last_name || ''}`;
 
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Header */}
-            <div className="flex items-start justify-between">
-                <div>
-                    <h3 className="text-lg font-semibold text-gray-900">Receive Payment</h3>
-                    <p className="text-sm text-gray-500">{customer?.company_name || `${customer?.first_name || ''} ${customer?.last_name || ''}`}</p>
-                    <div className="mt-1 flex items-center gap-2">
-                        <span className="text-xs text-gray-600">Available Store Wallet:</span>
-                        <span className="text-xs font-bold font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                            {currency(walletBalance)}
-                        </span>
+            {/* Header Banner */}
+            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 rounded-2xl shadow-lg border border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-indigo-600/30 border border-indigo-500/30 flex items-center justify-center text-indigo-300 font-bold text-xl shadow-inner">
+                        {customerDisplayName.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                        <div className="flex items-center gap-2">
+                            <h3 className="text-lg font-bold text-white tracking-tight">{customerDisplayName}</h3>
+                            <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                ID #{customer?.customer_id}
+                            </span>
+                        </div>
+                        <div className="mt-1 flex items-center gap-3 text-xs text-slate-300">
+                            <span>Store Wallet Credit:</span>
+                            <span className="font-mono font-bold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30">
+                                {currency(walletBalance)}
+                            </span>
+                        </div>
                     </div>
                 </div>
-                <div className="flex items-end gap-3">
+
+                <div className="flex items-center gap-3 w-full md:w-auto">
                     <div>
-                        <label className="block text-xs font-medium text-gray-600">Physical Receipt No</label>
+                        <label className="block text-[11px] font-medium text-slate-300 uppercase tracking-wider mb-1">Physical Receipt #</label>
                         <input
                             type="text"
                             value={physicalReceiptNo}
                             onChange={(e) => setPhysicalReceiptNo(e.target.value)}
-                            className="mt-1 w-48 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            placeholder="Optional"
+                            className="w-44 px-3 py-1.5 bg-slate-800/80 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+                            placeholder="e.g. OR-88491"
                         />
                     </div>
                 </div>
             </div>
 
-            {/* Overpayment Alert Prompt */}
-            {overpaymentAmount > 0 && (
-                <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg text-xs text-amber-800 flex items-center justify-between">
+            {/* Quick Financial Summary Bar */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
                     <div>
-                        <span className="font-bold">Overpayment Detected: </span>
-                        <span>Excess payment of <strong>{currency(overpaymentAmount)}</strong> will be automatically credited to <strong>{customer?.company_name || customer?.first_name}</strong>'s Store Wallet balance.</span>
+                        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Received</span>
+                        <div className="text-lg font-bold font-mono text-slate-900 mt-0.5">{currency(totalSplitAmount)}</div>
+                    </div>
+                    <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                        ₱
+                    </div>
+                </div>
+
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                    <div>
+                        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Allocated to Invoices</span>
+                        <div className="text-lg font-bold font-mono text-emerald-700 mt-0.5">{currency(totalAllocated)}</div>
+                    </div>
+                    <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                        ✓
+                    </div>
+                </div>
+
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                    <div>
+                        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Store Wallet Deposit</span>
+                        <div className={`text-lg font-bold font-mono mt-0.5 ${overpaymentAmount > 0 ? 'text-amber-600 font-extrabold' : 'text-slate-500'}`}>
+                            {currency(overpaymentAmount)}
+                        </div>
+                    </div>
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold ${overpaymentAmount > 0 ? 'bg-amber-50 text-amber-600' : 'bg-slate-50 text-slate-400'}`}>
+                        🏦
+                    </div>
+                </div>
+            </div>
+
+            {/* Overpayment Prompt Banner */}
+            {overpaymentAmount > 0 && (
+                <div className="p-4 bg-amber-50/90 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-3 shadow-sm animate-fade-in">
+                    <div className="text-lg leading-none mt-0.5">ℹ️</div>
+                    <div className="flex-1">
+                        <span className="font-bold text-amber-950">Overpayment Detected: </span>
+                        <span>
+                            Total received amount exceeds invoice allocations by <strong>{currency(overpaymentAmount)}</strong>. This excess balance will be automatically deposited into <strong>{customerDisplayName}</strong>'s Store Wallet credit balance upon saving.
+                        </span>
                     </div>
                 </div>
             )}
 
-            {/* Main grid: left (payments) | right (allocations) */}
+            {unallocatedDeficit > 0 && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800 flex items-center justify-between">
+                    <span>⚠️ Allocated invoice total exceeds payment received by <strong>{currency(unallocatedDeficit)}</strong>. Please adjust split payments or invoice allocations.</span>
+                </div>
+            )}
+
+            {/* Main grid: Left (Payment Methods) | Right (Allocations) */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                {/* Split payments card */}
-                <div className="lg:col-span-5">
-                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm">
-                        <div className="flex items-center justify-between px-4 py-3 border-b">
-                            <h4 className="text-sm font-semibold text-gray-800">Payment Methods</h4>
-                            <button type="button" onClick={addSplit} className="text-xs px-2 py-1 bg-green-600 text-white rounded-md hover:bg-green-700">Add payment</button>
+                {/* Left Column: Split Payment Methods */}
+                <div className="lg:col-span-5 space-y-4">
+                    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                        <div className="flex items-center justify-between px-5 py-3.5 bg-slate-50/80 border-b border-slate-200">
+                            <div>
+                                <h4 className="text-sm font-bold text-slate-800">Payment Breakdown</h4>
+                                <p className="text-[11px] text-slate-500">Multi-channel split payment lines</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={addSplit}
+                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-all flex items-center gap-1.5"
+                            >
+                                <span className="text-sm font-bold">+</span> Add Line
+                            </button>
                         </div>
+
                         <div className="p-4 space-y-3">
                             {splits.map((s) => {
                                 const m = methodById(s.method_id);
                                 const refLabel = m?.config?.reference_label || 'Reference';
                                 const showRef = m?.config?.requires_reference;
+                                const isCheque = m?.code === 'cheque' || m?.code === 'pdc' || m?.type === 'cheque' || m?.name?.toLowerCase()?.includes('cheque');
+
                                 return (
-                                    <div key={s.id} className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-                                        <div className="sm:col-span-6">
-                                            <label className="block text-xs font-medium text-gray-600">Method</label>
-                                            <select
-                                                className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                                value={s.method_id ?? ''}
-                                                onChange={(e) => updateSplit(s.id, { method_id: e.target.value })}
-                                            >
-                                                <option value="" disabled>Select method</option>
-                                                {enabledMethods.map(pm => (
-                                                    <option key={pm.method_id} value={pm.method_id}>{pm.name}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div className="sm:col-span-3">
-                                            <label className="block text-xs font-medium text-gray-600">Amount</label>
-                                            <input
-                                                type="number"
-                                                step="0.01"
-                                                className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                                value={s.amount}
-                                                onChange={(e) => updateSplit(s.id, { amount: e.target.value })}
-                                                placeholder="0.00"
-                                            />
-                                        </div>
-                                        <div className="sm:col-span-3">
-                                            <label className="block text-xs font-medium text-gray-600">{showRef ? refLabel : 'Reference'}{showRef ? ' *' : ''}</label>
-                                            <input
-                                                type="text"
-                                                className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                                value={s.reference}
-                                                onChange={(e) => updateSplit(s.id, { reference: e.target.value })}
-                                                placeholder={showRef ? 'Required' : 'Optional'}
-                                            />
-                                        </div>
-                                        <div className="sm:col-span-12 flex justify-end">
-                                            {splits.length > 1 && (
-                                                <button type="button" onClick={() => removeSplit(s.id)} className="text-xs px-2 py-1 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">Remove</button>
+                                    <div
+                                        key={s.id}
+                                        className="p-3.5 bg-slate-50/60 border border-slate-200 hover:border-slate-300 rounded-xl space-y-3 transition-all"
+                                    >
+                                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                                            <div className="sm:col-span-6">
+                                                <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-1">Payment Method</label>
+                                                <select
+                                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-xs transition-all"
+                                                    value={s.method_id ?? ''}
+                                                    onChange={(e) => updateSplit(s.id, { method_id: e.target.value })}
+                                                >
+                                                    <option value="" disabled>Select method</option>
+                                                    {enabledMethods.map(pm => (
+                                                        <option key={pm.method_id} value={pm.method_id}>{pm.name}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div className="sm:col-span-6">
+                                                <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-1">Amount</label>
+                                                <div className="relative">
+                                                    <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-xs font-bold text-slate-400">₱</span>
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        className="w-full pl-7 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-xs transition-all"
+                                                        value={s.amount}
+                                                        onChange={(e) => updateSplit(s.id, { amount: e.target.value })}
+                                                        placeholder="0.00"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div className={isCheque ? "sm:col-span-6" : "sm:col-span-12"}>
+                                                <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-1">
+                                                    {showRef ? refLabel : 'Reference / Ref #'}{showRef ? ' *' : ''}
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-xs transition-all"
+                                                    value={s.reference}
+                                                    onChange={(e) => updateSplit(s.id, { reference: e.target.value })}
+                                                    placeholder={showRef ? 'Required (e.g. Cheque #)' : 'Optional'}
+                                                />
+                                            </div>
+
+                                            {isCheque && (
+                                                <div className="sm:col-span-6">
+                                                    <label className="block text-[11px] font-bold text-indigo-900 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                                        <span>📅</span> Date on Cheque (Maturity)
+                                                    </label>
+                                                    <input
+                                                        type="date"
+                                                        className="w-full px-3 py-2 bg-indigo-50/60 border border-indigo-300 rounded-lg text-sm font-semibold text-indigo-950 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-xs transition-all"
+                                                        value={s.cheque_date || ''}
+                                                        onChange={(e) => updateSplit(s.id, { cheque_date: e.target.value })}
+                                                    />
+                                                </div>
                                             )}
                                         </div>
+
+                                        {splits.length > 1 && (
+                                            <div className="flex justify-end pt-1 border-t border-slate-200/60">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeSplit(s.id)}
+                                                    className="text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2.5 py-1 rounded-md transition-all"
+                                                >
+                                                    Remove Line
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })}
-
-                            <div className="flex items-center justify-between mt-2 text-sm">
-                                <span className="text-gray-600">Total Payment</span>
-                                <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 font-medium text-gray-900">{currency(totalSplitAmount)}</span>
-                            </div>
                         </div>
                     </div>
                 </div>
 
-                {/* Allocations card */}
-                <div className="lg:col-span-7">
-                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm">
-                        <div className="flex items-center justify-between px-4 py-3 border-b">
-                            <h4 className="text-sm font-semibold text-gray-800">Allocate to Invoices</h4>
+                {/* Right Column: Invoice Allocations */}
+                <div className="lg:col-span-7 space-y-4">
+                    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                        <div className="flex items-center justify-between px-5 py-3.5 bg-slate-50/80 border-b border-slate-200">
+                            <div>
+                                <h4 className="text-sm font-bold text-slate-800">Invoice Allocations</h4>
+                                <p className="text-[11px] text-slate-500">Apply payment across outstanding balance due</p>
+                            </div>
                             <div className="flex gap-2">
-                                <button type="button" className="text-xs px-2 py-1 border border-gray-300 rounded-md hover:bg-gray-50" onClick={() => autoAllocate(totalSplitAmount)}>Auto-fill</button>
-                                <button type="button" className="text-xs px-2 py-1 border border-gray-300 rounded-md hover:bg-gray-50" onClick={() => setAllocations({})}>Clear</button>
+                                <button
+                                    type="button"
+                                    className="text-xs font-semibold px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-300 transition-all"
+                                    onClick={() => autoAllocate(totalSplitAmount)}
+                                >
+                                    Auto-fill
+                                </button>
+                                <button
+                                    type="button"
+                                    className="text-xs font-semibold px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-300 transition-all"
+                                    onClick={() => setAllocations({})}
+                                >
+                                    Clear
+                                </button>
                             </div>
                         </div>
+
                         <div className="p-0">
-                            <div className="hidden md:grid grid-cols-12 gap-3 px-4 py-2 text-xs font-semibold text-gray-600">
-                                <div className="col-span-6">Invoice</div>
-                                <div className="col-span-3 text-right">Balance</div>
-                                <div className="col-span-3">Amount to apply</div>
+                            <div className="hidden md:grid grid-cols-12 gap-3 px-5 py-2.5 bg-slate-100/70 text-[11px] font-bold uppercase tracking-wider text-slate-600 border-b border-slate-200">
+                                <div className="col-span-6">Invoice #</div>
+                                <div className="col-span-3 text-right">Balance Due</div>
+                                <div className="col-span-3">Applied Amount</div>
                             </div>
-                            <div className="max-h-72 overflow-y-auto divide-y">
+
+                            <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
                                 {unpaidInvoices.map(inv => {
                                     const balance = parseFloat(inv.balance_due) || 0;
                                     const allocVal = parseFloat(allocations[inv.invoice_id]) || 0;
                                     const over = allocVal > balance + 0.01;
+
                                     return (
-                                        <div key={inv.invoice_id} className="grid grid-cols-12 gap-3 items-center px-4 py-3">
+                                        <div key={inv.invoice_id} className="grid grid-cols-12 gap-3 items-center px-5 py-3.5 hover:bg-slate-50/70 transition-all">
                                             <div className="col-span-12 md:col-span-6">
-                                                <div className="text-sm font-medium text-gray-900">{inv.invoice_number}</div>
-                                                <div className="text-xs text-gray-500">Balance: {currency(balance)}</div>
+                                                <div className="text-sm font-bold text-slate-900">{inv.invoice_number}</div>
+                                                <div className="text-xs text-slate-500">
+                                                    Date: {inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString() : 'N/A'}
+                                                </div>
                                             </div>
-                                            <div className="hidden md:block md:col-span-3 text-right text-sm text-gray-700">{currency(balance)}</div>
+
+                                            <div className="hidden md:block md:col-span-3 text-right text-sm font-mono font-bold text-slate-800">
+                                                {currency(balance)}
+                                            </div>
+
                                             <div className="col-span-12 md:col-span-3">
-                                                <input
-                                                    type="number"
-                                                    step="0.01"
-                                                    className={`mt-0.5 w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 ${over ? 'border-red-300 bg-red-50 focus:ring-red-400 focus:border-red-400' : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500'}`}
-                                                    value={allocations[inv.invoice_id] || ''}
-                                                    onChange={(e) => handleAllocationChange(inv.invoice_id, e.target.value)}
-                                                    placeholder="0.00"
-                                                />
+                                                <div className="relative">
+                                                    <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-xs font-bold text-slate-400">₱</span>
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        className={`w-full pl-6 pr-2.5 py-1.5 border rounded-lg text-sm font-mono font-bold transition-all ${
+                                                            over
+                                                                ? 'border-red-300 bg-red-50 text-red-900 focus:ring-red-400'
+                                                                : 'border-slate-300 bg-white text-slate-900 focus:ring-indigo-500 focus:border-indigo-500'
+                                                        }`}
+                                                        value={allocations[inv.invoice_id] || ''}
+                                                        onChange={(e) => handleAllocationChange(inv.invoice_id, e.target.value)}
+                                                        placeholder="0.00"
+                                                    />
+                                                </div>
                                             </div>
                                         </div>
                                     );
                                 })}
+
+                                {unpaidInvoices.length === 0 && (
+                                    <div className="p-8 text-center text-sm text-slate-500">
+                                        No outstanding unpaid invoices found for this customer.
+                                    </div>
+                                )}
                             </div>
                         </div>
-                        <div className="px-4 py-3 border-t">
-                            <div className="flex items-center justify-between font-medium">
-                                <span className="text-gray-700">Total Allocated</span>
-                                <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-gray-900">{currency(totalAllocated)}</span>
-                            </div>
-                            <div className="flex items-center justify-between font-medium mt-1">
-                                <span className="text-gray-700">Unallocated / Overpayment</span>
-                                <span className={`inline-flex items-center rounded-full px-2.5 py-1 ${ (totalSplitAmount - totalAllocated) > 0 ? 'bg-amber-100 text-amber-800 font-bold' : (totalSplitAmount - totalAllocated) < 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700' }`}>
-                                    {currency(totalSplitAmount - totalAllocated)}
-                                </span>
-                            </div>
-                        </div>
+                    </div>
+
+                    {/* Notes Box */}
+                    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4">
+                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Receipt Notes (optional)</label>
+                        <textarea
+                            value={notes}
+                            onChange={(e) => setNotes(e.target.value)}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all placeholder-slate-400"
+                            rows={2}
+                            placeholder="Add internal notes or memo regarding this payment..."
+                        />
                     </div>
                 </div>
             </div>
 
-            {/* Notes */}
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4">
-                <label className="block text-sm font-medium text-gray-700">Notes (optional)</label>
-                <textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    rows={2}
-                    placeholder="Add any notes for this receipt..."
-                />
-            </div>
+            {/* Actions Bar */}
+            <div className="flex items-center justify-between pt-4 border-t border-slate-200">
+                <div className="text-xs text-slate-500 flex items-center gap-3">
+                    <span>Press <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded text-[10px] font-mono">Ctrl + S</kbd> to submit</span>
+                    <span>•</span>
+                    <span>Press <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded text-[10px] font-mono">Esc</kbd> to cancel</span>
+                </div>
 
-            {/* Actions */}
-            <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={onCancel} className="px-4 py-2 border border-gray-300 rounded-lg text-gray-800 hover:bg-gray-50">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50" disabled={totalSplitAmount <= 0}>
-                    Receive Payment
-                </button>
+                <div className="flex items-center gap-3">
+                    <button
+                        type="button"
+                        onClick={onCancel}
+                        className="px-5 py-2.5 border border-slate-300 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-all"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="submit"
+                        className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition-all"
+                    >
+                        Process & Save Payment
+                    </button>
+                </div>
             </div>
         </form>
     );
