@@ -645,21 +645,41 @@ const AccountsReceivablePage = () => {
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4 text-center">
-                                                {item.pdc_status !== 'CLEARED' && item.pdc_status !== 'BOUNCED' && (
-                                                    <div className="flex justify-center gap-2">
+                                                {item.pdc_status !== 'CLEARED' && item.pdc_status !== 'BOUNCED' ? (
+                                                    <div className="flex justify-center items-center gap-2">
                                                         <button
+                                                            type="button"
                                                             onClick={() => setSelectedPdcPayment({ ...item, action: 'clear' })}
-                                                            className="px-2.5 py-1 bg-emerald-600 text-white rounded text-xs font-semibold hover:bg-emerald-700"
+                                                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1"
                                                         >
-                                                            Verify Clearance
+                                                            <span>✓</span> Verify Clearance
                                                         </button>
                                                         <button
+                                                            type="button"
                                                             onClick={() => setSelectedPdcPayment({ ...item, action: 'bounce' })}
-                                                            className="px-2.5 py-1 bg-red-600 text-white rounded text-xs font-semibold hover:bg-red-700"
+                                                            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1"
                                                         >
-                                                            Mark Bounced
+                                                            <span>⚠️</span> Mark Bounced
                                                         </button>
                                                     </div>
+                                                ) : item.pdc_status === 'CLEARED' ? (
+                                                    <div className="flex justify-center items-center gap-2">
+                                                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                            <span>✓</span> Cleared
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setSelectedPdcPayment({ ...item, action: 'bounce' })}
+                                                            className="text-[11px] font-semibold text-rose-600 hover:text-rose-800 hover:underline"
+                                                            title="Report retroactive cheque bounce"
+                                                        >
+                                                            Report Bounce
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold bg-red-50 text-red-700 border border-red-200">
+                                                        <span>⚠️</span> Bounced & Credit Hold
+                                                    </span>
                                                 )}
                                             </td>
                                         </tr>
