@@ -205,5 +205,29 @@ describe('PDC & Bounced Cheque Lifecycle Engine', () => {
             expect(mockClient.query).toHaveBeenCalledWith('BEGIN');
             expect(mockClient.query).toHaveBeenCalledWith('COMMIT');
         });
+
+        test('POST /api/ar/collections-clearance/:paymentId/redeposit re-deposits bounced cheque', async () => {
+            const mockClient = {
+                query: jest.fn()
+                    .mockResolvedValueOnce({ rows: [] }) // BEGIN
+                    .mockResolvedValueOnce({ rows: [{ payment_id: 10, invoice_id: 100, amount: '5000.00', customer_id: 5, reference_number: 'CHQ-100', pdc_status: 'BOUNCED' }] }) // SELECT
+                    .mockResolvedValueOnce({ rows: [] }) // UPDATE payment pdc_status = DEPOSITED, payment_status = pending
+                    .mockResolvedValueOnce({ rows: [] }) // UPDATE customer credit_hold = false
+                    .mockResolvedValueOnce({ rows: [] }), // COMMIT
+                release: jest.fn()
+            };
+            db.getClient.mockResolvedValueOnce(mockClient);
+
+            const res = await request(app)
+                .post('/api/ar/collections-clearance/10/redeposit')
+                .send({ lift_credit_hold: true });
+
+            expect(res.status).toBe(200);
+            expect(res.body.success).toBe(true);
+            expect(res.body.data.pdc_status).toBe('DEPOSITED');
+            expect(res.body.data.liftedCreditHold).toBe(true);
+            expect(mockClient.query).toHaveBeenCalledWith('BEGIN');
+            expect(mockClient.query).toHaveBeenCalledWith('COMMIT');
+        });
     });
 });

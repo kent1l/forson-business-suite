@@ -211,8 +211,72 @@ async function processBouncedCheque(client, { paymentId, bounceFee = 0, reason =
   };
 }
 
+/**
+ * Re-deposit a previously bounced cheque for clearance processing.
+ * @param {import('pg').PoolClient} client - Open transaction client
+ * @param {object} params
+ * @param {number} params.paymentId
+ * @param {boolean} [params.liftCreditHold=false]
+ * @param {string} [params.notes]
+ * @param {number} [params.userId]
+ */
+async function processRedepositCheque(client, { paymentId, liftCreditHold = false, notes = null, userId = null }) {
+  const selectRes = await client.query(
+    `SELECT 
+       ip.payment_id,
+       ip.invoice_id,
+       ip.amount_paid AS amount,
+       i.customer_id,
+       ip.reference AS reference_number,
+       ip.pdc_status
+     FROM invoice_payments ip
+     JOIN invoice i ON i.invoice_id = ip.invoice_id
+     WHERE ip.payment_id = $1 FOR UPDATE`,
+    [paymentId]
+  );
+
+  if (selectRes.rows.length === 0) {
+    throw new Error(`Payment #${paymentId} not found`);
+  }
+
+  const payment = selectRes.rows[0];
+  if (payment.pdc_status !== 'BOUNCED') {
+    throw new Error(`Only bounced payments can be re-deposited. Current status: ${payment.pdc_status}`);
+  }
+
+  // 1. Update payment status back to pending and pdc_status to DEPOSITED
+  await client.query(
+    `UPDATE invoice_payments
+     SET payment_status = 'pending',
+         pdc_status = 'DEPOSITED'
+     WHERE payment_id = $1`,
+    [paymentId]
+  );
+
+  // 2. Optional: Lift credit hold on customer if requested
+  if (liftCreditHold) {
+    await client.query(
+      `UPDATE customer
+       SET credit_hold = false,
+           credit_hold_reason = NULL
+       WHERE customer_id = $1`,
+      [payment.customer_id]
+    );
+  }
+
+  return {
+    paymentId: payment.payment_id,
+    invoiceId: payment.invoice_id,
+    customerId: payment.customer_id,
+    pdc_status: 'DEPOSITED',
+    payment_status: 'pending',
+    liftedCreditHold: liftCreditHold
+  };
+}
+
 module.exports = {
   getCollectionsClearanceList,
   verifyPayment,
   processBouncedCheque,
+  processRedepositCheque,
 };

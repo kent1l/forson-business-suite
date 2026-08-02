@@ -659,6 +659,32 @@ router.post('/ar/collections-clearance/:paymentId/fail', protect, hasPermission(
     }
 });
 
+// POST /ar/collections-clearance/:paymentId/redeposit - Re-deposit a bounced cheque
+router.post('/ar/collections-clearance/:paymentId/redeposit', protect, hasPermission('ar:manage'), async (req, res) => {
+    const paymentId = parseInt(req.params.paymentId, 10);
+    if (!paymentId) return res.status(400).json({ message: 'Invalid payment ID' });
+
+    const { lift_credit_hold, notes } = req.body;
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        const result = await pdcService.processRedepositCheque(client, {
+            paymentId,
+            liftCreditHold: Boolean(lift_credit_hold),
+            notes,
+            userId: req.user?.user_id || req.user?.employee_id
+        });
+        await client.query('COMMIT');
+        res.json({ success: true, message: 'Cheque re-deposited successfully for clearance', data: result });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('AR Redeposit Payment Error:', err.message);
+        res.status(400).json({ message: err.message || 'Failed to re-deposit cheque' });
+    } finally {
+        client.release();
+    }
+});
+
 // GET /ar/customers/:customerId/ledger - Interactive ledger history for SOA
 router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view'), async (req, res) => {
     try {

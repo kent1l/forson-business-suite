@@ -80,6 +80,7 @@ const AccountsReceivablePage = () => {
     const [clearanceDate, setClearanceDate] = useState(new Date().toISOString().split('T')[0]);
     const [bounceReason, setBounceReason] = useState('');
     const [bounceFee, setBounceFee] = useState('0.00');
+    const [liftCreditHoldOnRedeposit, setLiftCreditHoldOnRedeposit] = useState(false);
 
     // State for Tab 4: Wallet Management
     const [walletCustomers, setWalletCustomers] = useState([]);
@@ -275,6 +276,22 @@ const AccountsReceivablePage = () => {
         } catch (err) {
             console.error('Bounce cheque error:', err);
             toast.error(err?.response?.data?.message || 'Failed to process bounced cheque');
+        }
+    };
+
+    // Process Re-deposit Bounced Cheque
+    const handleRedepositCheque = async (paymentId) => {
+        try {
+            await api.post(`/ar/collections-clearance/${paymentId}/redeposit`, {
+                lift_credit_hold: liftCreditHoldOnRedeposit
+            });
+            toast.success('Bounced cheque re-deposited successfully for clearance!');
+            setSelectedPdcPayment(null);
+            fetchPdcItems();
+            fetchDashboardData();
+        } catch (err) {
+            console.error('Redeposit cheque error:', err);
+            toast.error(err?.response?.data?.message || 'Failed to re-deposit cheque');
         }
     };
 
@@ -595,13 +612,18 @@ const AccountsReceivablePage = () => {
                         onMaturityFilterChange={setPdcMaturityFilter}
                         onVerifyClearance={(item) => setSelectedPdcPayment(item)}
                         onMarkBounced={(item) => setSelectedPdcPayment(item)}
+                        onRedepositCheque={(item) => setSelectedPdcPayment(item)}
                     />
 
                     {/* PDC Action Modal */}
                     <Modal
                         isOpen={selectedPdcPayment !== null}
                         onClose={() => setSelectedPdcPayment(null)}
-                        title={selectedPdcPayment?.action === 'clear' ? 'Verify PDC Clearance' : 'Process Bounced Cheque Reversal'}
+                        title={
+                            selectedPdcPayment?.action === 'clear' ? 'Verify PDC Clearance' :
+                            selectedPdcPayment?.action === 'redeposit' ? 'Re-deposit Bounced Cheque' :
+                            'Process Bounced Cheque Reversal'
+                        }
                         maxWidth="max-w-md"
                     >
                         {selectedPdcPayment?.action === 'clear' ? (
@@ -619,6 +641,31 @@ const AccountsReceivablePage = () => {
                                 <div className="flex justify-end gap-2 pt-2">
                                     <button onClick={() => setSelectedPdcPayment(null)} className="px-3 py-1.5 border rounded-lg text-sm">Cancel</button>
                                     <button onClick={() => handleVerifyClearance(selectedPdcPayment.payment_id)} className="px-4 py-1.5 bg-emerald-600 text-white rounded-lg text-sm font-semibold">Confirm Clearance</button>
+                                </div>
+                            </div>
+                        ) : selectedPdcPayment?.action === 'redeposit' ? (
+                            <div className="space-y-4">
+                                <p className="text-sm text-gray-700">
+                                    Confirm re-depositing cheque <strong>#{selectedPdcPayment?.reference_number || selectedPdcPayment?.payment_id}</strong> for <strong>{selectedPdcPayment?.company_name || `${selectedPdcPayment?.first_name || ''} ${selectedPdcPayment?.last_name || ''}`}</strong> of amount <strong>{formatCurrency(selectedPdcPayment?.amount)}</strong>.
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                    This will update the PDC status to <strong>DEPOSITED</strong> and payment status to <strong>PENDING</strong> for bank re-clearance.
+                                </p>
+                                <div className="flex items-center gap-2 pt-1">
+                                    <input
+                                        type="checkbox"
+                                        id="liftCreditHold"
+                                        checked={liftCreditHoldOnRedeposit}
+                                        onChange={(e) => setLiftCreditHoldOnRedeposit(e.target.checked)}
+                                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
+                                    />
+                                    <label htmlFor="liftCreditHold" className="text-xs font-semibold text-gray-700 cursor-pointer">
+                                        Lift customer credit hold immediately upon re-depositing
+                                    </label>
+                                </div>
+                                <div className="flex justify-end gap-2 pt-3">
+                                    <button onClick={() => setSelectedPdcPayment(null)} className="px-3 py-1.5 border rounded-lg text-sm">Cancel</button>
+                                    <button onClick={() => handleRedepositCheque(selectedPdcPayment.payment_id)} className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold">Confirm Re-deposit</button>
                                 </div>
                             </div>
                         ) : (

@@ -305,9 +305,19 @@ const PdcClearanceDeskTable = ({
                                                 </button>
                                             </div>
                                         ) : (
-                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold bg-red-50 text-red-700 border border-red-200">
-                                                <span>⚠️</span> Bounced &amp; Credit Hold
-                                            </span>
+                                            <div className="flex justify-center items-center gap-2">
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold bg-red-50 text-red-700 border border-red-200">
+                                                    <span>⚠️</span> Bounced
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => (onRedepositCheque || onVerifyClearance) && (onRedepositCheque ? onRedepositCheque({ ...item, action: 'redeposit' }) : onVerifyClearance({ ...item, action: 'redeposit' }))}
+                                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                                                    title="Re-deposit bounced cheque for bank clearing process"
+                                                >
+                                                    <span>🔄</span> Re-deposit
+                                                </button>
+                                            </div>
                                         )}
                                     </td>
                                 </tr>
