@@ -201,17 +201,19 @@ export default function POSScreen() {
     debounceRef.current = setTimeout(() => doSearch(text), 300);
   }, [doSearch]);
 
-  const handleScanResult = useCallback(async (barcode: string) => {
+  const handleResolveBarcode = useCallback(async (barcode: string) => {
     const trimmed = barcode.trim();
-    if (!trimmed) return;
+    if (!trimmed) return { status: 'error' as const, message: 'Empty barcode' };
+
     try {
+      // 1. Direct barcode endpoint lookup
       const { data } = await apiClient.get(`/parts/barcode/${encodeURIComponent(trimmed)}`);
       if (data) {
         haptics.success();
         usePosStore.getState().addToCart(data);
         setQuery('');
         setResults([]);
-        return;
+        return { status: 'success' as const };
       }
     } catch (err: any) {
       const status = err?.status ?? err?.response?.status;
@@ -220,9 +222,33 @@ export default function POSScreen() {
       }
     }
 
-    setQuery(trimmed);
-    doSearch(trimmed);
-  }, [doSearch]);
+    // 2. Power search fallback lookup
+    try {
+      const { data: searchResults } = await apiClient.get('/power-search/parts', { params: { keyword: trimmed } });
+      if (searchResults && searchResults.length > 0) {
+        const exactMatch = searchResults.find(
+          (p: any) =>
+            p.barcodes?.includes(trimmed) ||
+            p.part_numbers?.toLowerCase() === trimmed.toLowerCase()
+        ) ?? searchResults[0];
+
+        haptics.success();
+        usePosStore.getState().addToCart(exactMatch);
+        setQuery('');
+        setResults([]);
+        return { status: 'success' as const };
+      }
+    } catch (err) {
+      console.error('Search barcode lookup error:', err);
+    }
+
+    // 3. Not found -> triggers SKU Not Found (404) screen in PremiumScanner
+    return { status: 'not_found' as const };
+  }, []);
+
+  const handleScanResult = useCallback(async (barcode: string) => {
+    handleResolveBarcode(barcode);
+  }, [handleResolveBarcode]);
 
   // ── Cart actions ───────────────────────────────────────────────────────────
   const handleAddToCart = useCallback((product: any) => {
@@ -322,6 +348,7 @@ export default function POSScreen() {
               value={query}
               onChangeText={handleQueryChange}
               onScanResult={handleScanResult}
+              onResolveBarcode={handleResolveBarcode}
               searchInputRef={searchInputRef as any}
             />
           </View>

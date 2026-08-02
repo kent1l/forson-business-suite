@@ -16,10 +16,19 @@ interface Props {
   value: string;
   onChangeText: (text: string) => void;
   onScanResult: (barcode: string) => void;
+  onResolveBarcode?: (
+    barcode: string
+  ) => Promise<{ status: 'success' | 'not_found' | 'error'; message?: string }>;
   searchInputRef?: React.RefObject<TextInput>;
 }
 
-export default function SearchBar({ value, onChangeText, onScanResult, searchInputRef }: Props) {
+export default function SearchBar({
+  value,
+  onChangeText,
+  onScanResult,
+  onResolveBarcode,
+  searchInputRef,
+}: Props) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -74,6 +83,7 @@ export default function SearchBar({ value, onChangeText, onScanResult, searchInp
         visible={scannerOpen}
         onClose={closeScanner}
         onBarcodeScanned={handleBarcodeScanned}
+        onResolveBarcode={onResolveBarcode}
         title="POS Scan"
         autoCloseOnSuccess={true}
       />
