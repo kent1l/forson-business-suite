@@ -73,7 +73,7 @@ describe('PDC & Bounced Cheque Lifecycle Engine', () => {
 
             const result = await pdcService.verifyPayment(mockClient, { paymentId: 10, userId: 1 });
 
-            expect(mockClient.query).toHaveBeenCalledTimes(2);
+            expect(mockClient.query).toHaveBeenCalledTimes(3);
             expect(mockClient.query.mock.calls[1][0]).toContain("pdc_status = 'CLEARED'");
             expect(result.pdc_status).toBe('CLEARED');
             expect(result.payment_status).toBe('settled');
@@ -96,8 +96,10 @@ describe('PDC & Bounced Cheque Lifecycle Engine', () => {
                     .mockResolvedValueOnce({
                         rows: [{ payment_id: 10, invoice_id: 100, amount: '5000.00', customer_id: 5, reference_number: 'CHQ-8899' }]
                     }) // SELECT payment
+                    .mockResolvedValueOnce({ rows: [{ count: 0 }] }) // COUNT attempts
                     .mockResolvedValueOnce({ rows: [] }) // UPDATE payment_status = failed, pdc_status = BOUNCED
                     .mockResolvedValueOnce({ rows: [] }) // UPDATE customer credit_hold = true
+                    .mockResolvedValueOnce({ rows: [] }) // INSERT cheque_clearance_log
             };
 
             const result = await pdcService.processBouncedCheque(mockClient, {
@@ -107,10 +109,10 @@ describe('PDC & Bounced Cheque Lifecycle Engine', () => {
                 userId: 1
             });
 
-            // 1. SELECT + UPDATE payment + UPDATE customer
-            expect(mockClient.query).toHaveBeenCalledTimes(3);
-            expect(mockClient.query.mock.calls[1][0]).toContain("pdc_status = 'BOUNCED'");
-            expect(mockClient.query.mock.calls[2][0]).toContain("credit_hold = true");
+            // 1. SELECT + COUNT + UPDATE payment + UPDATE customer + INSERT audit log
+            expect(mockClient.query).toHaveBeenCalledTimes(5);
+            expect(mockClient.query.mock.calls[2][0]).toContain("pdc_status = 'BOUNCED'");
+            expect(mockClient.query.mock.calls[3][0]).toContain("credit_hold = true");
 
             // 2. Check ledger logging: PDC_BOUNCED_REVERSAL and BOUNCE_FEE_PENALTY
             expect(arLedgerService.appendEntry).toHaveBeenCalledTimes(2);
@@ -141,8 +143,9 @@ describe('PDC & Bounced Cheque Lifecycle Engine', () => {
                 customerId: 5,
                 amountReversed: 5000,
                 bounceFee: 250,
+                bounceAttempt: 1,
                 creditHold: true,
-                creditHoldReason: 'Bounced Cheque CHQ-8899: Insufficient Funds',
+                creditHoldReason: 'Bounced Cheque CHQ-8899 (Attempt #1): Insufficient Funds',
             });
         });
     });

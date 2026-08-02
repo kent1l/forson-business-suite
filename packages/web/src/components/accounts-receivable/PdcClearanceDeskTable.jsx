@@ -262,63 +262,82 @@ const PdcClearanceDeskTable = ({
                                         </span>
                                     </td>
                                     <td className="px-6 py-4">
-                                        <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase ${
-                                            item.pdc_status === 'CLEARED' ? 'bg-emerald-100 text-emerald-800' :
-                                            item.pdc_status === 'BOUNCED' ? 'bg-red-100 text-red-800' :
-                                            item.pdc_status === 'DEPOSITED' ? 'bg-indigo-100 text-indigo-800' :
-                                            item.pdc_status === 'HELD_IN_SAFE' ? 'bg-purple-100 text-purple-800' :
-                                            'bg-amber-100 text-amber-800'
-                                        }`}>
-                                            {item.pdc_status}
-                                        </span>
+                                        <div className="flex flex-col items-start gap-1">
+                                            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase ${
+                                                item.pdc_status === 'CLEARED' ? 'bg-emerald-100 text-emerald-800' :
+                                                item.pdc_status === 'BOUNCED' ? 'bg-red-100 text-red-800' :
+                                                item.pdc_status === 'DEPOSITED' ? 'bg-indigo-100 text-indigo-800' :
+                                                item.pdc_status === 'HELD_IN_SAFE' ? 'bg-purple-100 text-purple-800' :
+                                                'bg-amber-100 text-amber-800'
+                                            }`}>
+                                                {item.pdc_status}
+                                            </span>
+                                            {item.bounce_count > 0 && (
+                                                <span className="text-[10px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md">
+                                                    ⚠️ {item.bounce_count} {item.bounce_count === 1 ? 'Bounce' : 'Bounces'}
+                                                </span>
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="px-6 py-4 text-center whitespace-nowrap">
-                                        {item.pdc_status !== 'CLEARED' && item.pdc_status !== 'BOUNCED' ? (
-                                            <div className="flex justify-center items-center gap-2">
+                                        <div className="flex justify-center items-center gap-2">
+                                            {item.pdc_status !== 'CLEARED' && item.pdc_status !== 'BOUNCED' ? (
+                                                <>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => onVerifyClearance && onVerifyClearance({ ...item, action: 'clear' })}
+                                                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                                                    >
+                                                        <span>✓</span> Verify Clearance
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => onMarkBounced && onMarkBounced({ ...item, action: 'bounce' })}
+                                                        className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                                                    >
+                                                        <span>⚠️</span> Mark Bounced
+                                                    </button>
+                                                </>
+                                            ) : item.pdc_status === 'CLEARED' ? (
+                                                <>
+                                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                        <span>✓</span> Cleared
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => onMarkBounced && onMarkBounced({ ...item, action: 'bounce' })}
+                                                        className="text-[11px] font-semibold text-rose-600 hover:text-rose-800 hover:underline cursor-pointer"
+                                                        title="Report retroactive cheque bounce"
+                                                    >
+                                                        Report Bounce
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold bg-red-50 text-red-700 border border-red-200">
+                                                        <span>⚠️</span> Bounced
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => (onRedepositCheque || onVerifyClearance) && (onRedepositCheque ? onRedepositCheque({ ...item, action: 'redeposit' }) : onVerifyClearance({ ...item, action: 'redeposit' }))}
+                                                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                                                        title="Re-deposit bounced cheque for bank clearing process"
+                                                    >
+                                                        <span>🔄</span> Re-deposit
+                                                    </button>
+                                                </>
+                                            )}
+                                            {onViewHistory && (
                                                 <button
                                                     type="button"
-                                                    onClick={() => onVerifyClearance && onVerifyClearance({ ...item, action: 'clear' })}
-                                                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                                                    onClick={() => onViewHistory(item)}
+                                                    className="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-semibold transition-all border border-gray-200 cursor-pointer"
+                                                    title="View complete clearance & bounce history timeline"
                                                 >
-                                                    <span>✓</span> Verify Clearance
+                                                    📜 History
                                                 </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => onMarkBounced && onMarkBounced({ ...item, action: 'bounce' })}
-                                                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer"
-                                                >
-                                                    <span>⚠️</span> Mark Bounced
-                                                </button>
-                                            </div>
-                                        ) : item.pdc_status === 'CLEARED' ? (
-                                            <div className="flex justify-center items-center gap-2">
-                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                                    <span>✓</span> Cleared
-                                                </span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => onMarkBounced && onMarkBounced({ ...item, action: 'bounce' })}
-                                                    className="text-[11px] font-semibold text-rose-600 hover:text-rose-800 hover:underline cursor-pointer"
-                                                    title="Report retroactive cheque bounce"
-                                                >
-                                                    Report Bounce
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <div className="flex justify-center items-center gap-2">
-                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold bg-red-50 text-red-700 border border-red-200">
-                                                    <span>⚠️</span> Bounced
-                                                </span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => (onRedepositCheque || onVerifyClearance) && (onRedepositCheque ? onRedepositCheque({ ...item, action: 'redeposit' }) : onVerifyClearance({ ...item, action: 'redeposit' }))}
-                                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer"
-                                                    title="Re-deposit bounced cheque for bank clearing process"
-                                                >
-                                                    <span>🔄</span> Re-deposit
-                                                </button>
-                                            </div>
-                                        )}
+                                            )}
+                                        </div>
                                     </td>
                                 </tr>
                             ))}

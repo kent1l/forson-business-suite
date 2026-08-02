@@ -685,6 +685,20 @@ router.post('/ar/collections-clearance/:paymentId/redeposit', protect, hasPermis
     }
 });
 
+// GET /ar/collections-clearance/:paymentId/history - Get audit history for a specific payment/cheque
+router.get('/ar/collections-clearance/:paymentId/history', protect, hasPermission('ar:view'), async (req, res) => {
+    try {
+        const paymentId = parseInt(req.params.paymentId, 10);
+        if (!paymentId) return res.status(400).json({ message: 'Invalid payment ID' });
+
+        const history = await pdcService.getChequeClearanceHistory(db, paymentId);
+        res.json({ success: true, data: history });
+    } catch (err) {
+        console.error('AR Clearance History Error:', err.message);
+        res.status(500).json({ message: 'Failed to fetch cheque clearance history' });
+    }
+});
+
 // GET /ar/customers/:customerId/ledger - Interactive ledger history for SOA
 router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view'), async (req, res) => {
     try {

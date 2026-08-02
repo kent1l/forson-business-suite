@@ -76,11 +76,18 @@ async function getCollectionsClearanceList(db, pdcStatusFilter = null, maturityF
       ip.reference AS reference_number,
       ip.metadata->>'cheque_date' AS cheque_date,
       ip.created_at AS payment_date,
-      ip.created_at
+      ip.created_at,
+      COALESCE(ccl.bounce_count, 0)::int AS bounce_count
     FROM invoice_payments ip
     JOIN invoice i ON i.invoice_id = ip.invoice_id
     JOIN customer c ON c.customer_id = i.customer_id
     LEFT JOIN payment_methods pm ON pm.method_id = ip.method_id
+    LEFT JOIN (
+      SELECT payment_id, COUNT(*)::int AS bounce_count
+      FROM cheque_clearance_log
+      WHERE action = 'BOUNCED'
+      GROUP BY payment_id
+    ) ccl ON ccl.payment_id = ip.payment_id
     ${whereClause}
     ORDER BY ip.created_at DESC;
   `;
@@ -95,6 +102,64 @@ async function getCollectionsClearanceList(db, pdcStatusFilter = null, maturityF
 }
 
 /**
+ * Record an audit log entry in cheque_clearance_log.
+ */
+async function logChequeClearanceEvent(client, {
+  chequeType = 'INBOUND_CUSTOMER',
+  paymentId = null,
+  chequeRecordId = null,
+  customerId = null,
+  supplierId = null,
+  action,
+  attemptNumber = 1,
+  bounceReason = null,
+  bounceFee = 0,
+  notes = null,
+  createdBy = null
+}) {
+  try {
+    await client.query(
+      `INSERT INTO cheque_clearance_log (
+        cheque_type, payment_id, cheque_record_id, customer_id, supplier_id,
+        action, attempt_number, bounce_reason, bounce_fee, notes, created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [
+        chequeType, paymentId, chequeRecordId, customerId, supplierId,
+        action, attemptNumber, bounceReason, bounceFee, notes, createdBy
+      ]
+    );
+  } catch (err) {
+    console.error('Failed to write cheque_clearance_log:', err.message);
+  }
+}
+
+/**
+ * Fetch full audit log history for a specific payment / cheque.
+ */
+async function getChequeClearanceHistory(db, paymentId) {
+  const query = `
+    SELECT 
+      l.log_id,
+      l.cheque_type,
+      l.payment_id,
+      l.action,
+      l.attempt_number,
+      l.bounce_reason,
+      l.bounce_fee,
+      l.notes,
+      l.created_at,
+      l.created_by,
+      u.username AS created_by_username
+    FROM cheque_clearance_log l
+    LEFT JOIN users u ON u.user_id = l.created_by
+    WHERE l.payment_id = $1
+    ORDER BY l.created_at ASC;
+  `;
+  const { rows } = await db.query(query, [paymentId]);
+  return rows;
+}
+
+/**
  * Verify and clear a pending payment/PDC.
  * @param {import('pg').PoolClient} client - Open transaction client
  * @param {object} params
@@ -103,14 +168,17 @@ async function getCollectionsClearanceList(db, pdcStatusFilter = null, maturityF
  */
 async function verifyPayment(client, { paymentId, userId = null }) {
   const selectRes = await client.query(
-    `SELECT ip.payment_id, ip.invoice_id, ip.amount_paid AS amount, ip.payment_status, ip.pdc_status
+    `SELECT ip.payment_id, ip.invoice_id, ip.amount_paid AS amount, ip.payment_status, ip.pdc_status, i.customer_id
      FROM invoice_payments ip
+     JOIN invoice i ON i.invoice_id = ip.invoice_id
      WHERE ip.payment_id = $1 FOR UPDATE`,
     [paymentId]
   );
   if (selectRes.rows.length === 0) {
     throw new Error(`Payment #${paymentId} not found`);
   }
+
+  const payment = selectRes.rows[0];
 
   const updateRes = await client.query(
     `UPDATE invoice_payments
@@ -120,6 +188,16 @@ async function verifyPayment(client, { paymentId, userId = null }) {
      RETURNING payment_id, invoice_id, amount_paid AS amount, payment_status, pdc_status`,
     [paymentId]
   );
+
+  // Log audit event
+  await logChequeClearanceEvent(client, {
+    chequeType: 'INBOUND_CUSTOMER',
+    paymentId: payment.payment_id,
+    customerId: payment.customer_id,
+    action: 'CLEARED',
+    notes: 'Payment verified and cleared',
+    createdBy: userId
+  });
 
   return updateRes.rows[0];
 }
@@ -155,6 +233,13 @@ async function processBouncedCheque(client, { paymentId, bounceFee = 0, reason =
   const refNo = payment.reference_number || `#${paymentId}`;
   const parsedFee = parseFloat(bounceFee) || 0;
 
+  // Calculate current bounce attempt count
+  const countRes = await client.query(
+    `SELECT COUNT(*)::int AS count FROM cheque_clearance_log WHERE payment_id = $1 AND action = 'BOUNCED'`,
+    [paymentId]
+  );
+  const attemptNumber = (countRes.rows[0]?.count || 0) + 1;
+
   // 1. Update payment status to failed and pdc_status to BOUNCED
   await client.query(
     `UPDATE invoice_payments
@@ -172,7 +257,7 @@ async function processBouncedCheque(client, { paymentId, bounceFee = 0, reason =
     entryType: 'PDC_BOUNCED_REVERSAL',
     amount: parseFloat(payment.amount),
     referenceNo: refNo,
-    notes: reason || `Bounced cheque reversal for ${refNo}`,
+    notes: reason || `Bounced cheque reversal for ${refNo} (Attempt #${attemptNumber})`,
     createdBy: userId,
   });
 
@@ -191,7 +276,7 @@ async function processBouncedCheque(client, { paymentId, bounceFee = 0, reason =
   }
 
   // 4. Update customer credit hold status
-  const holdReason = `Bounced Cheque ${refNo}${reason ? ': ' + reason : ''}`;
+  const holdReason = `Bounced Cheque ${refNo} (Attempt #${attemptNumber})${reason ? ': ' + reason : ''}`;
   await client.query(
     `UPDATE customer
      SET credit_hold = true,
@@ -200,12 +285,26 @@ async function processBouncedCheque(client, { paymentId, bounceFee = 0, reason =
     [holdReason, payment.customer_id]
   );
 
+  // 5. Log audit entry in cheque_clearance_log
+  await logChequeClearanceEvent(client, {
+    chequeType: 'INBOUND_CUSTOMER',
+    paymentId: payment.payment_id,
+    customerId: payment.customer_id,
+    action: 'BOUNCED',
+    attemptNumber,
+    bounceReason: reason || 'NSF / Insufficient Funds',
+    bounceFee: parsedFee,
+    notes: holdReason,
+    createdBy: userId
+  });
+
   return {
     paymentId: payment.payment_id,
     invoiceId: payment.invoice_id,
     customerId: payment.customer_id,
     amountReversed: parseFloat(payment.amount),
     bounceFee: parsedFee,
+    bounceAttempt: attemptNumber,
     creditHold: true,
     creditHoldReason: holdReason,
   };
@@ -244,6 +343,13 @@ async function processRedepositCheque(client, { paymentId, liftCreditHold = fals
     throw new Error(`Only bounced payments can be re-deposited. Current status: ${payment.pdc_status}`);
   }
 
+  // Calculate current attempt number
+  const countRes = await client.query(
+    `SELECT COUNT(*)::int AS count FROM cheque_clearance_log WHERE payment_id = $1 AND action IN ('BOUNCED', 'REDEPOSITED')`,
+    [paymentId]
+  );
+  const attemptNumber = (countRes.rows[0]?.count || 0) + 1;
+
   // 1. Update payment status back to pending and pdc_status to DEPOSITED
   await client.query(
     `UPDATE invoice_payments
@@ -264,18 +370,31 @@ async function processRedepositCheque(client, { paymentId, liftCreditHold = fals
     );
   }
 
+  // 3. Log audit entry in cheque_clearance_log
+  await logChequeClearanceEvent(client, {
+    chequeType: 'INBOUND_CUSTOMER',
+    paymentId: payment.payment_id,
+    customerId: payment.customer_id,
+    action: 'REDEPOSITED',
+    attemptNumber,
+    notes: notes || `Re-deposited for bank clearance (Attempt #${attemptNumber})`,
+    createdBy: userId
+  });
+
   return {
     paymentId: payment.payment_id,
     invoiceId: payment.invoice_id,
     customerId: payment.customer_id,
     pdc_status: 'DEPOSITED',
     payment_status: 'pending',
+    attemptNumber,
     liftedCreditHold: liftCreditHold
   };
 }
 
 module.exports = {
   getCollectionsClearanceList,
+  getChequeClearanceHistory,
   verifyPayment,
   processBouncedCheque,
   processRedepositCheque,

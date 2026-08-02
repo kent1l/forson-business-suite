@@ -81,6 +81,9 @@ const AccountsReceivablePage = () => {
     const [bounceReason, setBounceReason] = useState('');
     const [bounceFee, setBounceFee] = useState('0.00');
     const [liftCreditHoldOnRedeposit, setLiftCreditHoldOnRedeposit] = useState(false);
+    const [historyItem, setHistoryItem] = useState(null);
+    const [chequeHistory, setChequeHistory] = useState([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
 
     // State for Tab 4: Wallet Management
     const [walletCustomers, setWalletCustomers] = useState([]);
@@ -292,6 +295,21 @@ const AccountsReceivablePage = () => {
         } catch (err) {
             console.error('Redeposit cheque error:', err);
             toast.error(err?.response?.data?.message || 'Failed to re-deposit cheque');
+        }
+    };
+
+    // View Cheque Audit History
+    const handleViewHistory = async (item) => {
+        try {
+            setHistoryItem(item);
+            setHistoryLoading(true);
+            const res = await api.get(`/ar/collections-clearance/${item.payment_id}/history`);
+            setChequeHistory(res.data?.data || []);
+        } catch (err) {
+            console.error('Failed to fetch cheque history:', err);
+            toast.error('Failed to load cheque clearance audit history.');
+        } finally {
+            setHistoryLoading(false);
         }
     };
 
@@ -613,6 +631,7 @@ const AccountsReceivablePage = () => {
                         onVerifyClearance={(item) => setSelectedPdcPayment(item)}
                         onMarkBounced={(item) => setSelectedPdcPayment(item)}
                         onRedepositCheque={(item) => setSelectedPdcPayment(item)}
+                        onViewHistory={(item) => handleViewHistory(item)}
                     />
 
                     {/* PDC Action Modal */}
@@ -694,6 +713,66 @@ const AccountsReceivablePage = () => {
                                 <div className="flex justify-end gap-2 pt-2">
                                     <button onClick={() => setSelectedPdcPayment(null)} className="px-3 py-1.5 border rounded-lg text-sm">Cancel</button>
                                     <button onClick={() => handleMarkBounced(selectedPdcPayment.payment_id)} className="px-4 py-1.5 bg-red-600 text-white rounded-lg text-sm font-semibold">Execute Reversal & Credit Hold</button>
+                                </div>
+                            </div>
+                        )}
+                    </Modal>
+
+                    {/* Cheque Audit History Modal */}
+                    <Modal
+                        isOpen={historyItem !== null}
+                        onClose={() => setHistoryItem(null)}
+                        title={`Clearance & Bounce History - ${historyItem?.company_name || 'Payment'}`}
+                        maxWidth="max-w-xl"
+                    >
+                        {historyLoading ? (
+                            <div className="p-8 text-center text-gray-500">Loading audit history timeline...</div>
+                        ) : chequeHistory.length === 0 ? (
+                            <div className="p-8 text-center text-gray-500">No recorded audit history logs for this payment yet.</div>
+                        ) : (
+                            <div className="space-y-4 max-h-[400px] overflow-y-auto pr-1">
+                                <div className="text-xs text-gray-500 border-b border-gray-100 pb-2 flex justify-between items-center">
+                                    <span>Ref / Cheque #: <strong className="font-mono text-gray-800">{historyItem?.reference_number || `#${historyItem?.payment_id}`}</strong></span>
+                                    <span>Amount: <strong className="font-mono text-gray-800">{formatCurrency(historyItem?.amount)}</strong></span>
+                                </div>
+                                <div className="relative border-l-2 border-gray-200 ml-3 space-y-4 pl-4 py-1">
+                                    {chequeHistory.map((log) => (
+                                        <div key={log.log_id} className="relative">
+                                            <div className={`absolute -left-[23px] top-1.5 w-3.5 h-3.5 rounded-full border-2 border-white ${
+                                                log.action === 'CLEARED' ? 'bg-emerald-500' :
+                                                log.action === 'BOUNCED' ? 'bg-rose-500' :
+                                                log.action === 'REDEPOSITED' ? 'bg-blue-500' :
+                                                'bg-amber-500'
+                                            }`} />
+                                            <div className="bg-gray-50 p-3 rounded-lg border border-gray-100 space-y-1">
+                                                <div className="flex items-center justify-between">
+                                                    <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${
+                                                        log.action === 'CLEARED' ? 'bg-emerald-100 text-emerald-800' :
+                                                        log.action === 'BOUNCED' ? 'bg-rose-100 text-rose-800' :
+                                                        log.action === 'REDEPOSITED' ? 'bg-blue-100 text-blue-800' :
+                                                        'bg-amber-100 text-amber-800'
+                                                    }`}>
+                                                        {log.action} {log.attempt_number > 1 ? `(Attempt #${log.attempt_number})` : ''}
+                                                    </span>
+                                                    <span className="text-[11px] text-gray-400">
+                                                        {new Date(log.created_at).toLocaleString()}
+                                                    </span>
+                                                </div>
+                                                {log.bounce_reason && (
+                                                    <p className="text-xs text-rose-700 font-semibold">Reason: {log.bounce_reason}</p>
+                                                )}
+                                                {log.bounce_fee > 0 && (
+                                                    <p className="text-xs text-gray-600">Bank Penalty Fee: <strong>{formatCurrency(log.bounce_fee)}</strong></p>
+                                                )}
+                                                {log.notes && (
+                                                    <p className="text-xs text-gray-600">{log.notes}</p>
+                                                )}
+                                                {log.created_by_username && (
+                                                    <p className="text-[10px] text-gray-400">Processed by: {log.created_by_username}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
                         )}
