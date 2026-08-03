@@ -769,11 +769,7 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
 
         const custRes = await db.query(`
             SELECT c.*,
-                   COALESCE(w.balance, 0)            AS wallet_balance,
-                   c.credit_limit,
-                   c.credit_hold,
-                   c.credit_hold_reason,
-                   c.payment_terms
+                   COALESCE(w.balance, 0) AS wallet_balance
             FROM customer c
             LEFT JOIN customer_wallet w ON c.customer_id = w.customer_id
             WHERE c.customer_id = $1
@@ -926,9 +922,7 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
 
         const custRes = await db.query(`
             SELECT c.*,
-                   COALESCE(w.balance, 0) AS wallet_balance,
-                   c.credit_hold_reason,
-                   c.payment_terms
+                   COALESCE(w.balance, 0) AS wallet_balance
             FROM customer c
             LEFT JOIN customer_wallet w ON c.customer_id = w.customer_id
             WHERE c.customer_id = $1
