@@ -1,3 +1,5 @@
+'use strict';
+
 const express = require('express');
 const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
@@ -8,17 +10,28 @@ const router = express.Router();
 // --- MOVED to customerRoutes.js ---
 // The endpoint for getting unpaid invoices has been moved to keep all customer-related routes together.
 
-// POST /api/payments - Receive a new customer payment and allocate it
+// POST /api/payments - Receive a new customer payment and allocate it across invoices.
+// This is the primary AR payment entry point used by ReceivePaymentForm.
+// One POST call per payment split line (one per physical payment instrument).
+// A single cheque covering N invoices → one customer_payment row, N allocation rows.
 router.post('/payments', protect, hasPermission('ar:receive_payment'), async (req, res) => {
     const { employee_id } = req.user;
-    // Accept either `reference` (new clients) or legacy `reference_number`.
-    const { customer_id, amount, payment_method, reference, reference_number, notes, allocations } = req.body;
+    const {
+        customer_id,
+        amount,
+        method_id,       // integer FK to payment_methods (preferred)
+        payment_method,  // legacy string code (fallback)
+        reference,
+        reference_number, // legacy alias
+        cheque_date,     // ISO date string for PDC cheques
+        notes,
+        allocations      // [{invoice_id, amount_allocated}]
+    } = req.body;
 
-    // Prefer `reference` if provided, otherwise fall back to `reference_number`.
     const referenceValue = reference || reference_number || null;
 
     if (!customer_id || !amount || !allocations || !Array.isArray(allocations)) {
-        return res.status(400).json({ message: 'Missing required fields.' });
+        return res.status(400).json({ message: 'Missing required fields: customer_id, amount, allocations.' });
     }
 
     const numAmount = parseFloat(amount);
@@ -30,13 +43,44 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
     try {
         await client.query('BEGIN');
 
-        // Check if paying via Store Wallet drawdown
-        if (payment_method === 'store_wallet') {
+        // ── Resolve payment method ──────────────────────────────────────────────
+        let methodRow = null;
+        if (method_id) {
+            const r = await client.query(
+                `SELECT method_id, code, name, type, config FROM payment_methods WHERE method_id = $1 AND enabled = true`,
+                [method_id]
+            );
+            methodRow = r.rows[0] || null;
+        } else if (payment_method) {
+            const r = await client.query(
+                `SELECT method_id, code, name, type, config FROM payment_methods
+                 WHERE (code = $1 OR name ILIKE $1) AND enabled = true LIMIT 1`,
+                [payment_method]
+            );
+            methodRow = r.rows[0] || null;
+        }
+
+        if (!methodRow) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: 'Invalid or disabled payment method.' });
+        }
+
+        const methodCode = methodRow.code;
+        const resolvedMethodId = methodRow.method_id;
+
+        // A cheque/PDC payment is deferred — funds are NOT cleared until PDC desk verification.
+        // Detection: explicit 'cheque'/'pdc' codes OR settlement_type config field.
+        const isCheque = methodCode === 'cheque' || methodCode === 'pdc' ||
+            methodRow.type === 'cheque' ||
+            methodRow.config?.settlement_type === 'deferred';
+
+        // ── Store Wallet drawdown ───────────────────────────────────────────────
+        if (methodCode === 'store_wallet') {
             const wallet = await walletService.getWallet(customer_id, client);
             if (!wallet || wallet.balance < numAmount) {
                 await client.query('ROLLBACK');
-                return res.status(400).json({ 
-                    message: `Insufficient store wallet balance. Available: ₱${wallet ? wallet.balance.toFixed(2) : '0.00'}, Requested: ₱${numAmount.toFixed(2)}` 
+                return res.status(400).json({
+                    message: `Insufficient store wallet balance. Available: ₱${wallet ? wallet.balance.toFixed(2) : '0.00'}, Requested: ₱${numAmount.toFixed(2)}`
                 });
             }
             await walletService.appendWalletTransaction(client, {
@@ -49,52 +93,95 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
             });
         }
 
-        // Step 1: Create the payment record in the ledger
-        const paymentQuery = `
-            INSERT INTO customer_payment (customer_id, employee_id, amount, payment_method, reference_number, notes)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING payment_id;
-        `;
-        const paymentResult = await client.query(paymentQuery, [customer_id, employee_id, numAmount, payment_method, referenceValue, notes]);
-        const newPaymentId = paymentResult.rows[0].payment_id;
+        // ── Step 1: Create the customer_payment record ─────────────────────────
+        // PDC status: RECEIVED = cheque in hand, not yet deposited
+        //             CLEARED  = cash / bank transfer already settled
+        const pdcStatusValue = isCheque ? 'RECEIVED' : 'CLEARED';
+        const chequeDateValue = isCheque && cheque_date ? cheque_date : null;
 
-        // Step 2: Create allocation records and update invoice statuses
+        const { rows: [{ payment_id: newPaymentId }] } = await client.query(
+            `INSERT INTO customer_payment
+                (customer_id, employee_id, amount, payment_method, method_id,
+                 reference_number, notes, pdc_status, cheque_date)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             RETURNING payment_id`,
+            [customer_id, employee_id, numAmount, methodCode, resolvedMethodId,
+             referenceValue, notes || null, pdcStatusValue, chequeDateValue]
+        );
+
+        // ── Step 2: Allocate to invoices ────────────────────────────────────────
         let totalAllocated = 0;
+
         for (const alloc of allocations) {
             const allocAmt = parseFloat(alloc.amount_allocated) || 0;
-            if (allocAmt > 0) {
-                totalAllocated += allocAmt;
-                const allocationQuery = `
-                    INSERT INTO invoice_payment_allocation (invoice_id, payment_id, amount_allocated)
-                    VALUES ($1, $2, $3);
-                `;
-                await client.query(allocationQuery, [alloc.invoice_id, newPaymentId, allocAmt]);
+            if (allocAmt <= 0) continue;
 
-                // Step 3: Recalculate total paid for the invoice and update its status
-                const balanceQuery = `
-                    SELECT
-                        i.total_amount,
-                        COALESCE(SUM(ipa.amount_allocated), 0) as total_paid
-                    FROM invoice i
-                    LEFT JOIN invoice_payment_allocation ipa ON i.invoice_id = ipa.invoice_id
-                    WHERE i.invoice_id = $1
-                    GROUP BY i.invoice_id;
-                `;
-                const balanceResult = await client.query(balanceQuery, [alloc.invoice_id]);
-                const { total_amount, total_paid } = balanceResult.rows[0];
-
-                let newStatus = 'Unpaid';
-                if (parseFloat(total_paid) >= parseFloat(total_amount)) {
-                    newStatus = 'Paid';
-                } else if (parseFloat(total_paid) > 0) {
-                    newStatus = 'Partially Paid';
-                }
-
-                await client.query('UPDATE invoice SET status = $1 WHERE invoice_id = $2', [newStatus, alloc.invoice_id]);
+            // Validate: allocation must not exceed the invoice's outstanding balance
+            const { rows: [invRow] } = await client.query(
+                `SELECT i.total_amount,
+                        COALESCE(SUM(ipa.amount_allocated), 0) AS already_allocated
+                 FROM invoice i
+                 LEFT JOIN invoice_payment_allocation ipa ON ipa.invoice_id = i.invoice_id
+                 WHERE i.invoice_id = $1
+                 GROUP BY i.invoice_id, i.total_amount`,
+                [alloc.invoice_id]
+            );
+            if (!invRow) throw new Error(`Invoice #${alloc.invoice_id} not found.`);
+            const availableBalance = parseFloat(invRow.total_amount) - parseFloat(invRow.already_allocated);
+            if (allocAmt > availableBalance + 0.01) {
+                throw new Error(
+                    `Allocation ₱${allocAmt.toFixed(2)} exceeds outstanding balance ₱${availableBalance.toFixed(2)} on invoice #${alloc.invoice_id}.`
+                );
             }
+
+            await client.query(
+                `INSERT INTO invoice_payment_allocation (invoice_id, payment_id, amount_allocated)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (invoice_id, payment_id) DO UPDATE SET amount_allocated = EXCLUDED.amount_allocated`,
+                [alloc.invoice_id, newPaymentId, allocAmt]
+            );
+            totalAllocated += allocAmt;
+
+            // ── Step 3: Recompute invoice balance & status ──────────────────────
+            // Uses total allocations regardless of PDC status so the invoice reflects
+            // committed payments. The AR ledger (cash basis) is updated separately.
+            const { rows: [bal] } = await client.query(
+                `SELECT i.total_amount,
+                        COALESCE(SUM(ipa.amount_allocated), 0) AS total_allocated
+                 FROM invoice i
+                 LEFT JOIN invoice_payment_allocation ipa ON ipa.invoice_id = i.invoice_id
+                 WHERE i.invoice_id = $1
+                 GROUP BY i.invoice_id, i.total_amount`,
+                [alloc.invoice_id]
+            );
+            const allocatedForInvoice = parseFloat(bal.total_allocated);
+            const invoiceTotal = parseFloat(bal.total_amount);
+            const newStatus = allocatedForInvoice >= invoiceTotal ? 'Paid'
+                : allocatedForInvoice > 0 ? 'Partially Paid'
+                : 'Unpaid';
+            await client.query(
+                'UPDATE invoice SET status = $1, amount_paid = $2 WHERE invoice_id = $3',
+                [newStatus, allocatedForInvoice, alloc.invoice_id]
+            );
         }
 
-        // Step 4: Handle overpayment - credit excess to customer_wallet
+        // ── Step 4: AR ledger — only for instant / already-cleared payments ────
+        // Cheques are credited to the AR ledger when the PDC desk marks them CLEARED,
+        // ensuring the customer's balance reflects cleared cash, not just committed amounts.
+        if (!isCheque && totalAllocated > 0) {
+            await arLedger.appendEntry(client, {
+                customerId: customer_id,
+                paymentId: newPaymentId,
+                entryType: 'PAYMENT_SETTLED',
+                amount: -totalAllocated,
+                paymentChannel: methodCode,
+                referenceNo: referenceValue,
+                notes: notes || `Payment settled via ${methodCode}`,
+                createdBy: employee_id,
+            });
+        }
+
+        // ── Step 5: Overpayment → store wallet ─────────────────────────────────
         const excessAmount = numAmount - totalAllocated;
         let overpaymentCredited = 0;
         if (excessAmount > 0.005) {
@@ -111,17 +198,18 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
         }
 
         await client.query('COMMIT');
-        res.status(201).json({ 
-            message: 'Payment received successfully', 
+        res.status(201).json({
+            message: 'Payment received successfully',
             payment_id: newPaymentId,
             allocated_amount: totalAllocated,
             overpayment_credited: overpaymentCredited,
+            pdc_status: pdcStatusValue,
         });
 
     } catch (err) {
         await client.query('ROLLBACK');
-        console.error('Transaction Error:', err.message);
-        res.status(500).json({ message: 'Server error during transaction.', error: err.message });
+        console.error('POST /payments error:', err.message);
+        res.status(500).json({ message: err.message || 'Server error during payment transaction.' });
     } finally {
         client.release();
     }

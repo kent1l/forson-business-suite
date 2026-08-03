@@ -239,7 +239,12 @@ const PdcClearanceDeskTable = ({
                                     <td className="px-6 py-4 font-semibold text-gray-900">
                                         {item.company_name || `${item.first_name || ''} ${item.last_name || ''}`.trim() || 'Walk-in Customer'}
                                         {item.invoice_number && (
-                                            <div className="text-xs font-normal text-gray-400">Inv: #{item.invoice_number}</div>
+                                            <div className="text-xs font-normal text-gray-400">
+                                                {item.invoice_count > 1
+                                                    ? <span className="inline-flex items-center gap-1"><span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded font-bold">{item.invoice_count} invoices</span> {item.invoice_number}</span>
+                                                    : `Inv: #${item.invoice_number}`
+                                                }
+                                            </div>
                                         )}
                                     </td>
                                     <td className="px-6 py-4 text-xs text-gray-600">

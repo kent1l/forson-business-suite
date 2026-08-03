@@ -43,41 +43,99 @@ function computePdcMaturity(row) {
 
 /**
  * Fetch pending payments across channels for Collections & Clearance Desk.
+ *
+ * PRIMARY source: customer_payment (one row per physical cheque/payment instrument).
+ * LEGACY source:  invoice_payments with pdc_status NOT IN ('CLEARED') for backward compat
+ *                 with rows created before this refactor.
+ *
  * @param {import('pg').Pool | import('pg').PoolClient} db
  * @param {string} [pdcStatusFilter]
  * @param {string} [maturityFilter] - 'ALL', 'DUE_TODAY', 'FUTURE_PDC', 'STALE_CHEQUE'
  */
 async function getCollectionsClearanceList(db, pdcStatusFilter = null, maturityFilter = null) {
-  let whereClause = ``;
-  const params = [];
+  // Build WHERE clause for pdc_status filter
+  const statusConditions = pdcStatusFilter && pdcStatusFilter !== 'ALL'
+    ? `AND pdc_status = '${pdcStatusFilter.replace(/'/g, "''")}'`  // safe: validated below
+    : `AND pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED', 'CLEARED', 'BOUNCED')`;
 
-  if (pdcStatusFilter && pdcStatusFilter !== 'ALL') {
-    params.push(pdcStatusFilter);
-    whereClause = `WHERE (ip.pdc_status = $1 OR (ip.payment_status = 'pending' AND $1 = 'RECEIVED'))`;
-  } else {
-    whereClause = `WHERE ip.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED', 'CLEARED', 'BOUNCED') OR ip.payment_status = 'pending'`;
+  const validStatuses = new Set(['ALL', 'RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED', 'CLEARED', 'BOUNCED']);
+  if (pdcStatusFilter && !validStatuses.has(pdcStatusFilter)) {
+    throw new Error(`Invalid pdc_status filter: ${pdcStatusFilter}`);
   }
 
-  const query = `
-    SELECT 
+  // ── PRIMARY: customer_payment rows (new AR receipt flow) ─────────────────
+  // Each row represents ONE physical payment instrument (cheque, bank transfer, etc.)
+  // Multiple invoice allocations are aggregated here — one row per cheque.
+  const cpQuery = `
+    SELECT
+      cp.payment_id,
+      'customer_payment'                        AS source_table,
+      NULL::integer                             AS invoice_id,
+      -- Aggregate invoice numbers for multi-invoice allocations
+      STRING_AGG(i.invoice_number, ', ' ORDER BY i.invoice_number) AS invoice_number,
+      cp.customer_id,
+      c.company_name,
+      c.first_name,
+      c.last_name,
+      cp.amount                                 AS amount,
+      cp.pdc_status,
+      cp.method_id                              AS payment_method_id,
+      pm.name                                   AS payment_method_name,
+      pm.code                                   AS payment_method_code,
+      cp.reference_number                       AS reference_number,
+      cp.cheque_date                            AS cheque_date,
+      cp.payment_date                           AS payment_date,
+      cp.payment_date                           AS created_at,
+      COALESCE(bounce_agg.bounce_count, 0)::int AS bounce_count,
+      COUNT(DISTINCT ipa.invoice_id)::int       AS invoice_count
+    FROM customer_payment cp
+    JOIN customer c ON c.customer_id = cp.customer_id
+    LEFT JOIN payment_methods pm ON pm.method_id = cp.method_id
+    LEFT JOIN invoice_payment_allocation ipa ON ipa.payment_id = cp.payment_id
+    LEFT JOIN invoice i ON i.invoice_id = ipa.invoice_id
+    LEFT JOIN (
+      SELECT customer_payment_id, COUNT(*)::int AS bounce_count
+      FROM cheque_clearance_log
+      WHERE action = 'BOUNCED' AND customer_payment_id IS NOT NULL
+      GROUP BY customer_payment_id
+    ) bounce_agg ON bounce_agg.customer_payment_id = cp.payment_id
+    WHERE cp.pdc_status IS NOT NULL
+      ${statusConditions.replace('pdc_status', 'cp.pdc_status')}
+    GROUP BY
+      cp.payment_id, cp.customer_id, c.company_name, c.first_name, c.last_name,
+      cp.amount, cp.pdc_status, cp.method_id, pm.name, pm.code,
+      cp.reference_number, cp.cheque_date, cp.payment_date, bounce_agg.bounce_count
+    ORDER BY cp.payment_date DESC
+  `;
+
+  // ── LEGACY: invoice_payments rows (pre-refactor PDC cheques) ─────────────
+  // These rows were created by the old per-invoice payment flow.
+  // Kept for backward compat so existing pending cheques remain visible.
+  const ipStatusConditions = pdcStatusFilter && pdcStatusFilter !== 'ALL'
+    ? `AND (ip.pdc_status = '${pdcStatusFilter.replace(/'/g, "''")}' OR (ip.payment_status = 'pending' AND '${pdcStatusFilter}' = 'RECEIVED'))`
+    : `AND (ip.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED', 'BOUNCED') OR ip.payment_status = 'pending')`;
+
+  const ipQuery = `
+    SELECT
       ip.payment_id,
+      'invoice_payments'                        AS source_table,
       ip.invoice_id,
       i.invoice_number,
       i.customer_id,
       c.company_name,
       c.first_name,
       c.last_name,
-      ip.amount_paid AS amount,
-      ip.payment_status,
-      COALESCE(ip.pdc_status, 'CLEARED') AS pdc_status,
-      ip.method_id AS payment_method_id,
-      pm.name AS payment_method_name,
-      pm.code AS payment_method_code,
-      ip.reference AS reference_number,
-      ip.metadata->>'cheque_date' AS cheque_date,
-      ip.created_at AS payment_date,
-      ip.created_at,
-      COALESCE(ccl.bounce_count, 0)::int AS bounce_count
+      ip.amount_paid                            AS amount,
+      COALESCE(ip.pdc_status, 'RECEIVED')       AS pdc_status,
+      ip.method_id                              AS payment_method_id,
+      pm.name                                   AS payment_method_name,
+      pm.code                                   AS payment_method_code,
+      ip.reference                              AS reference_number,
+      ip.metadata->>'cheque_date'              AS cheque_date,
+      ip.created_at                             AS payment_date,
+      ip.created_at                             AS created_at,
+      COALESCE(bounce_agg.bounce_count, 0)::int AS bounce_count,
+      1::int                                    AS invoice_count
     FROM invoice_payments ip
     JOIN invoice i ON i.invoice_id = ip.invoice_id
     JOIN customer c ON c.customer_id = i.customer_id
@@ -85,20 +143,28 @@ async function getCollectionsClearanceList(db, pdcStatusFilter = null, maturityF
     LEFT JOIN (
       SELECT payment_id, COUNT(*)::int AS bounce_count
       FROM cheque_clearance_log
-      WHERE action = 'BOUNCED'
+      WHERE action = 'BOUNCED' AND customer_payment_id IS NULL
       GROUP BY payment_id
-    ) ccl ON ccl.payment_id = ip.payment_id
-    ${whereClause}
-    ORDER BY ip.created_at DESC;
+    ) bounce_agg ON bounce_agg.payment_id = ip.payment_id
+    WHERE TRUE ${ipStatusConditions}
+    ORDER BY ip.created_at DESC
   `;
-  const { rows } = await db.query(query, params);
-  const mapped = rows.map(computePdcMaturity);
+
+  const [cpResult, ipResult] = await Promise.all([
+    db.query(cpQuery),
+    db.query(ipQuery),
+  ]);
+
+  const combined = [...cpResult.rows, ...ipResult.rows].map(computePdcMaturity);
+
+  // Sort combined result by created_at DESC
+  combined.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   if (maturityFilter && maturityFilter !== 'ALL') {
-    return mapped.filter(r => r.maturity_status === maturityFilter);
+    return combined.filter(r => r.maturity_status === maturityFilter);
   }
 
-  return mapped;
+  return combined;
 }
 
 /**
@@ -106,7 +172,8 @@ async function getCollectionsClearanceList(db, pdcStatusFilter = null, maturityF
  */
 async function logChequeClearanceEvent(client, {
   chequeType = 'INBOUND_CUSTOMER',
-  paymentId = null,
+  paymentId = null,           // invoice_payments.payment_id (legacy)
+  customerPaymentId = null,   // customer_payment.payment_id (new)
   chequeRecordId = null,
   customerId = null,
   supplierId = null,
@@ -120,11 +187,11 @@ async function logChequeClearanceEvent(client, {
   try {
     await client.query(
       `INSERT INTO cheque_clearance_log (
-        cheque_type, payment_id, cheque_record_id, customer_id, supplier_id,
+        cheque_type, payment_id, customer_payment_id, cheque_record_id, customer_id, supplier_id,
         action, attempt_number, bounce_reason, bounce_fee, notes, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
       [
-        chequeType, paymentId, chequeRecordId, customerId, supplierId,
+        chequeType, paymentId, customerPaymentId, chequeRecordId, customerId, supplierId,
         action, attemptNumber, bounceReason, bounceFee, notes, createdBy
       ]
     );
@@ -135,261 +202,497 @@ async function logChequeClearanceEvent(client, {
 
 /**
  * Fetch full audit log history for a specific payment / cheque.
+ * Supports both customer_payment (new) and invoice_payments (legacy) IDs.
  */
-async function getChequeClearanceHistory(db, paymentId) {
-  const query = `
-    SELECT 
-      l.log_id,
-      l.cheque_type,
-      l.payment_id,
-      l.action,
-      l.attempt_number,
-      l.bounce_reason,
-      l.bounce_fee,
-      l.notes,
-      l.created_at,
-      l.created_by,
-      u.username AS created_by_username
-    FROM cheque_clearance_log l
-    LEFT JOIN users u ON u.user_id = l.created_by
-    WHERE l.payment_id = $1
-    ORDER BY l.created_at ASC;
-  `;
-  const { rows } = await db.query(query, [paymentId]);
+async function getChequeClearanceHistory(db, paymentId, sourceTable = 'auto') {
+  let query;
+  let params;
+
+  if (sourceTable === 'customer_payment') {
+    query = `
+      SELECT l.log_id, l.cheque_type, l.customer_payment_id AS payment_id, l.action,
+             l.attempt_number, l.bounce_reason, l.bounce_fee, l.notes, l.created_at, l.created_by,
+             u.username AS created_by_username
+      FROM cheque_clearance_log l
+      LEFT JOIN users u ON u.user_id = l.created_by
+      WHERE l.customer_payment_id = $1
+      ORDER BY l.created_at ASC;
+    `;
+    params = [paymentId];
+  } else {
+    // Legacy invoice_payments or auto-detect
+    query = `
+      SELECT l.log_id, l.cheque_type, COALESCE(l.customer_payment_id, l.payment_id) AS payment_id,
+             l.action, l.attempt_number, l.bounce_reason, l.bounce_fee, l.notes, l.created_at, l.created_by,
+             u.username AS created_by_username
+      FROM cheque_clearance_log l
+      LEFT JOIN users u ON u.user_id = l.created_by
+      WHERE l.payment_id = $1 OR l.customer_payment_id = $1
+      ORDER BY l.created_at ASC;
+    `;
+    params = [paymentId];
+  }
+
+  const { rows } = await db.query(query, params);
   return rows;
 }
 
 /**
  * Verify and clear a pending payment/PDC.
+ * Supports both customer_payment (new) and invoice_payments (legacy) records.
+ *
+ * For customer_payment: writes ONE ar_ledger PAYMENT_SETTLED entry for the full amount.
+ * For invoice_payments (legacy): writes per-invoice ledger entry.
+ *
  * @param {import('pg').PoolClient} client - Open transaction client
  * @param {object} params
  * @param {number} params.paymentId
+ * @param {string} [params.sourceTable] - 'customer_payment' | 'invoice_payments' | 'auto'
  * @param {number} [params.userId]
  */
-async function verifyPayment(client, { paymentId, userId = null }) {
-  const selectRes = await client.query(
-    `SELECT ip.payment_id, ip.invoice_id, ip.amount_paid AS amount, ip.payment_status, ip.pdc_status, i.customer_id
-     FROM invoice_payments ip
-     JOIN invoice i ON i.invoice_id = ip.invoice_id
-     WHERE ip.payment_id = $1 FOR UPDATE`,
-    [paymentId]
-  );
-  if (selectRes.rows.length === 0) {
-    throw new Error(`Payment #${paymentId} not found`);
+async function verifyPayment(client, { paymentId, sourceTable = 'auto', userId = null }) {
+  // ── Detect source table if auto ─────────────────────────────────────────
+  if (sourceTable === 'auto') {
+    const { rows: cpCheck } = await client.query(
+      'SELECT payment_id FROM customer_payment WHERE payment_id = $1',
+      [paymentId]
+    );
+    sourceTable = cpCheck.length > 0 ? 'customer_payment' : 'invoice_payments';
   }
 
-  const payment = selectRes.rows[0];
+  if (sourceTable === 'customer_payment') {
+    // ── New flow: customer_payment ──────────────────────────────────────────
+    const { rows: [cp] } = await client.query(
+      `SELECT cp.payment_id, cp.customer_id, cp.amount, cp.pdc_status,
+              cp.reference_number, cp.method_id, pm.code AS method_code, pm.name AS method_name
+       FROM customer_payment cp
+       LEFT JOIN payment_methods pm ON pm.method_id = cp.method_id
+       WHERE cp.payment_id = $1
+       FOR UPDATE`,
+      [paymentId]
+    );
+    if (!cp) throw new Error(`Payment #${paymentId} not found in customer_payment`);
 
-  const updateRes = await client.query(
-    `UPDATE invoice_payments
-     SET payment_status = 'settled',
-         pdc_status = 'CLEARED'
-     WHERE payment_id = $1
-     RETURNING payment_id, invoice_id, amount_paid AS amount, payment_status, pdc_status`,
-    [paymentId]
-  );
+    // Mark as cleared
+    await client.query(
+      `UPDATE customer_payment SET pdc_status = 'CLEARED' WHERE payment_id = $1`,
+      [paymentId]
+    );
 
-  // Log audit event
-  await logChequeClearanceEvent(client, {
-    chequeType: 'INBOUND_CUSTOMER',
-    paymentId: payment.payment_id,
-    customerId: payment.customer_id,
-    action: 'CLEARED',
-    notes: 'Payment verified and cleared',
-    createdBy: userId
-  });
+    // Write single AR ledger entry for the full cheque amount
+    await arLedgerService.appendEntry(client, {
+      customerId: cp.customer_id,
+      paymentId: cp.payment_id,
+      entryType: 'PAYMENT_SETTLED',
+      amount: -parseFloat(cp.amount),
+      paymentChannel: cp.method_code,
+      referenceNo: cp.reference_number,
+      notes: `Cheque cleared — ${cp.method_name || 'cheque'} #${cp.reference_number || cp.payment_id}`,
+      createdBy: userId,
+    });
 
-  return updateRes.rows[0];
+    // Also mark all associated invoices as settled (update amount_paid / status)
+    // using the invoice_payment_allocation totals
+    const { rows: allocations } = await client.query(
+      `SELECT ipa.invoice_id,
+              SUM(ipa.amount_allocated) AS allocated,
+              i.total_amount
+       FROM invoice_payment_allocation ipa
+       JOIN invoice i ON i.invoice_id = ipa.invoice_id
+       WHERE ipa.payment_id = $1
+       GROUP BY ipa.invoice_id, i.total_amount`,
+      [paymentId]
+    );
+    for (const alloc of allocations) {
+      const totalAllocated = parseFloat(alloc.allocated);
+      const invoiceTotal = parseFloat(alloc.total_amount);
+      const newStatus = totalAllocated >= invoiceTotal ? 'Paid' : 'Partially Paid';
+      await client.query(
+        'UPDATE invoice SET status = $1 WHERE invoice_id = $2',
+        [newStatus, alloc.invoice_id]
+      );
+    }
+
+    await logChequeClearanceEvent(client, {
+      chequeType: 'INBOUND_CUSTOMER',
+      customerPaymentId: cp.payment_id,
+      customerId: cp.customer_id,
+      action: 'CLEARED',
+      notes: 'Cheque verified and cleared via PDC desk',
+      createdBy: userId
+    });
+
+    return {
+      payment_id: cp.payment_id,
+      source_table: 'customer_payment',
+      customer_id: cp.customer_id,
+      amount: cp.amount,
+      pdc_status: 'CLEARED',
+      invoice_count: allocations.length,
+    };
+
+  } else {
+    // ── Legacy flow: invoice_payments ─────────────────────────────────────
+    const { rows: [payment] } = await client.query(
+      `SELECT ip.payment_id, ip.invoice_id, ip.amount_paid AS amount, ip.payment_status, ip.pdc_status, i.customer_id
+       FROM invoice_payments ip
+       JOIN invoice i ON i.invoice_id = ip.invoice_id
+       WHERE ip.payment_id = $1 FOR UPDATE`,
+      [paymentId]
+    );
+    if (!payment) throw new Error(`Payment #${paymentId} not found`);
+
+    const { rows: [updated] } = await client.query(
+      `UPDATE invoice_payments
+       SET payment_status = 'settled', pdc_status = 'CLEARED'
+       WHERE payment_id = $1
+       RETURNING payment_id, invoice_id, amount_paid AS amount, payment_status, pdc_status`,
+      [paymentId]
+    );
+
+    await logChequeClearanceEvent(client, {
+      chequeType: 'INBOUND_CUSTOMER',
+      paymentId: payment.payment_id,
+      customerId: payment.customer_id,
+      action: 'CLEARED',
+      notes: 'Payment verified and cleared',
+      createdBy: userId
+    });
+
+    return { ...updated, source_table: 'invoice_payments' };
+  }
 }
 
 /**
  * Automated processor for bounced cheques or failed payments.
+ * Supports both customer_payment (new) and invoice_payments (legacy).
+ *
  * @param {import('pg').PoolClient} client - Open transaction client
  * @param {object} params
  * @param {number} params.paymentId
+ * @param {string} [params.sourceTable] - 'customer_payment' | 'invoice_payments' | 'auto'
  * @param {number} [params.bounceFee]
  * @param {string} [params.reason]
  * @param {number} [params.userId]
  */
-async function processBouncedCheque(client, { paymentId, bounceFee = 0, reason = null, userId = null }) {
-  const selectRes = await client.query(
-    `SELECT 
-       ip.payment_id,
-       ip.invoice_id,
-       ip.amount_paid AS amount,
-       i.customer_id,
-       ip.reference AS reference_number
-     FROM invoice_payments ip
-     JOIN invoice i ON i.invoice_id = ip.invoice_id
-     WHERE ip.payment_id = $1 FOR UPDATE`,
-    [paymentId]
-  );
-
-  if (selectRes.rows.length === 0) {
-    throw new Error(`Payment #${paymentId} not found`);
+async function processBouncedCheque(client, { paymentId, sourceTable = 'auto', bounceFee = 0, reason = null, userId = null }) {
+  // ── Detect source table if auto ─────────────────────────────────────────
+  if (sourceTable === 'auto') {
+    const { rows: cpCheck } = await client.query(
+      'SELECT payment_id FROM customer_payment WHERE payment_id = $1', [paymentId]
+    );
+    sourceTable = cpCheck.length > 0 ? 'customer_payment' : 'invoice_payments';
   }
 
-  const payment = selectRes.rows[0];
-  const refNo = payment.reference_number || `#${paymentId}`;
   const parsedFee = parseFloat(bounceFee) || 0;
 
-  // Calculate current bounce attempt count
-  const countRes = await client.query(
-    `SELECT COUNT(*)::int AS count FROM cheque_clearance_log WHERE payment_id = $1 AND action = 'BOUNCED'`,
-    [paymentId]
-  );
-  const attemptNumber = (countRes.rows[0]?.count || 0) + 1;
+  if (sourceTable === 'customer_payment') {
+    const { rows: [cp] } = await client.query(
+      `SELECT cp.payment_id, cp.customer_id, cp.amount, cp.reference_number,
+              cp.pdc_status, pm.code AS method_code
+       FROM customer_payment cp
+       LEFT JOIN payment_methods pm ON pm.method_id = cp.method_id
+       WHERE cp.payment_id = $1 FOR UPDATE`,
+      [paymentId]
+    );
+    if (!cp) throw new Error(`Payment #${paymentId} not found in customer_payment`);
 
-  // 1. Update payment status to failed and pdc_status to BOUNCED
-  await client.query(
-    `UPDATE invoice_payments
-     SET payment_status = 'failed',
-         pdc_status = 'BOUNCED'
-     WHERE payment_id = $1`,
-    [paymentId]
-  );
+    const refNo = cp.reference_number || `CP#${paymentId}`;
 
-  // 2. Append PDC_BOUNCED_REVERSAL to ar_ledger (+amount)
-  await arLedgerService.appendEntry(client, {
-    customerId: payment.customer_id,
-    invoiceId: payment.invoice_id,
-    paymentId: payment.payment_id,
-    entryType: 'PDC_BOUNCED_REVERSAL',
-    amount: parseFloat(payment.amount),
-    referenceNo: refNo,
-    notes: reason || `Bounced cheque reversal for ${refNo} (Attempt #${attemptNumber})`,
-    createdBy: userId,
-  });
+    const { rows: [{ count: bounceCount }] } = await client.query(
+      `SELECT COUNT(*)::int AS count FROM cheque_clearance_log
+       WHERE customer_payment_id = $1 AND action = 'BOUNCED'`,
+      [paymentId]
+    );
+    const attemptNumber = (bounceCount || 0) + 1;
 
-  // 3. Append optional BOUNCE_FEE_PENALTY to ar_ledger (+fee)
-  if (parsedFee > 0) {
+    // 1. Mark payment as bounced
+    await client.query(
+      `UPDATE customer_payment SET pdc_status = 'BOUNCED' WHERE payment_id = $1`,
+      [paymentId]
+    );
+
+    // 2. Reverse invoice statuses — revert back to Unpaid / Partially Paid
+    const { rows: allocations } = await client.query(
+      `SELECT ipa.invoice_id, ipa.amount_allocated, i.total_amount,
+              COALESCE(other_alloc.total_other, 0) AS other_allocated
+       FROM invoice_payment_allocation ipa
+       JOIN invoice i ON i.invoice_id = ipa.invoice_id
+       LEFT JOIN (
+         SELECT ia2.invoice_id, SUM(ia2.amount_allocated) AS total_other
+         FROM invoice_payment_allocation ia2
+         WHERE ia2.payment_id != $1
+         GROUP BY ia2.invoice_id
+       ) other_alloc ON other_alloc.invoice_id = ipa.invoice_id
+       WHERE ipa.payment_id = $1`,
+      [paymentId]
+    );
+    for (const alloc of allocations) {
+      const otherPaid = parseFloat(alloc.other_allocated);
+      const invoiceTotal = parseFloat(alloc.total_amount);
+      const newStatus = otherPaid >= invoiceTotal ? 'Paid' : otherPaid > 0 ? 'Partially Paid' : 'Unpaid';
+      await client.query(
+        'UPDATE invoice SET status = $1, amount_paid = $2 WHERE invoice_id = $3',
+        [newStatus, otherPaid, alloc.invoice_id]
+      );
+    }
+
+    // 3. AR ledger reversal (+amount to reinstate the receivable)
+    await arLedgerService.appendEntry(client, {
+      customerId: cp.customer_id,
+      paymentId: cp.payment_id,
+      entryType: 'PDC_BOUNCED_REVERSAL',
+      amount: parseFloat(cp.amount),
+      referenceNo: refNo,
+      notes: reason || `Bounced cheque reversal for ${refNo} (Attempt #${attemptNumber})`,
+      createdBy: userId,
+    });
+
+    // 4. Optional bounce fee penalty
+    if (parsedFee > 0) {
+      await arLedgerService.appendEntry(client, {
+        customerId: cp.customer_id,
+        paymentId: cp.payment_id,
+        entryType: 'BOUNCE_FEE_PENALTY',
+        amount: parsedFee,
+        referenceNo: refNo,
+        notes: `NSF / Bounced cheque fee for ${refNo}`,
+        createdBy: userId,
+      });
+    }
+
+    // 5. Credit hold
+    const holdReason = `Bounced Cheque ${refNo} (Attempt #${attemptNumber})${reason ? ': ' + reason : ''}`;
+    await client.query(
+      `UPDATE customer SET credit_hold = true, credit_hold_reason = $1 WHERE customer_id = $2`,
+      [holdReason, cp.customer_id]
+    );
+
+    // 6. Audit log
+    await logChequeClearanceEvent(client, {
+      chequeType: 'INBOUND_CUSTOMER',
+      customerPaymentId: cp.payment_id,
+      customerId: cp.customer_id,
+      action: 'BOUNCED',
+      attemptNumber,
+      bounceReason: reason || 'NSF / Insufficient Funds',
+      bounceFee: parsedFee,
+      notes: holdReason,
+      createdBy: userId
+    });
+
+    return {
+      paymentId: cp.payment_id,
+      sourceTable: 'customer_payment',
+      customerId: cp.customer_id,
+      amountReversed: parseFloat(cp.amount),
+      bounceFee: parsedFee,
+      bounceAttempt: attemptNumber,
+      creditHold: true,
+      creditHoldReason: holdReason,
+    };
+
+  } else {
+    // ── Legacy: invoice_payments ──────────────────────────────────────────
+    const { rows: [payment] } = await client.query(
+      `SELECT ip.payment_id, ip.invoice_id, ip.amount_paid AS amount, i.customer_id,
+              ip.reference AS reference_number
+       FROM invoice_payments ip
+       JOIN invoice i ON i.invoice_id = ip.invoice_id
+       WHERE ip.payment_id = $1 FOR UPDATE`,
+      [paymentId]
+    );
+    if (!payment) throw new Error(`Payment #${paymentId} not found`);
+
+    const refNo = payment.reference_number || `#${paymentId}`;
+
+    const { rows: [{ count: bounceCount }] } = await client.query(
+      `SELECT COUNT(*)::int AS count FROM cheque_clearance_log WHERE payment_id = $1 AND action = 'BOUNCED'`,
+      [paymentId]
+    );
+    const attemptNumber = (bounceCount || 0) + 1;
+
+    await client.query(
+      `UPDATE invoice_payments SET payment_status = 'failed', pdc_status = 'BOUNCED' WHERE payment_id = $1`,
+      [paymentId]
+    );
+
     await arLedgerService.appendEntry(client, {
       customerId: payment.customer_id,
       invoiceId: payment.invoice_id,
       paymentId: payment.payment_id,
-      entryType: 'BOUNCE_FEE_PENALTY',
-      amount: parsedFee,
+      entryType: 'PDC_BOUNCED_REVERSAL',
+      amount: parseFloat(payment.amount),
       referenceNo: refNo,
-      notes: `NSF / Bounced cheque fee penalty for ${refNo}`,
+      notes: reason || `Bounced cheque reversal for ${refNo} (Attempt #${attemptNumber})`,
       createdBy: userId,
     });
+
+    if (parsedFee > 0) {
+      await arLedgerService.appendEntry(client, {
+        customerId: payment.customer_id,
+        invoiceId: payment.invoice_id,
+        paymentId: payment.payment_id,
+        entryType: 'BOUNCE_FEE_PENALTY',
+        amount: parsedFee,
+        referenceNo: refNo,
+        notes: `NSF / Bounced cheque fee penalty for ${refNo}`,
+        createdBy: userId,
+      });
+    }
+
+    const holdReason = `Bounced Cheque ${refNo} (Attempt #${attemptNumber})${reason ? ': ' + reason : ''}`;
+    await client.query(
+      `UPDATE customer SET credit_hold = true, credit_hold_reason = $1 WHERE customer_id = $2`,
+      [holdReason, payment.customer_id]
+    );
+
+    await logChequeClearanceEvent(client, {
+      chequeType: 'INBOUND_CUSTOMER',
+      paymentId: payment.payment_id,
+      customerId: payment.customer_id,
+      action: 'BOUNCED',
+      attemptNumber,
+      bounceReason: reason || 'NSF / Insufficient Funds',
+      bounceFee: parsedFee,
+      notes: holdReason,
+      createdBy: userId
+    });
+
+    return {
+      paymentId: payment.payment_id,
+      invoiceId: payment.invoice_id,
+      customerId: payment.customer_id,
+      amountReversed: parseFloat(payment.amount),
+      bounceFee: parsedFee,
+      bounceAttempt: attemptNumber,
+      creditHold: true,
+      creditHoldReason: holdReason,
+    };
   }
-
-  // 4. Update customer credit hold status
-  const holdReason = `Bounced Cheque ${refNo} (Attempt #${attemptNumber})${reason ? ': ' + reason : ''}`;
-  await client.query(
-    `UPDATE customer
-     SET credit_hold = true,
-         credit_hold_reason = $1
-     WHERE customer_id = $2`,
-    [holdReason, payment.customer_id]
-  );
-
-  // 5. Log audit entry in cheque_clearance_log
-  await logChequeClearanceEvent(client, {
-    chequeType: 'INBOUND_CUSTOMER',
-    paymentId: payment.payment_id,
-    customerId: payment.customer_id,
-    action: 'BOUNCED',
-    attemptNumber,
-    bounceReason: reason || 'NSF / Insufficient Funds',
-    bounceFee: parsedFee,
-    notes: holdReason,
-    createdBy: userId
-  });
-
-  return {
-    paymentId: payment.payment_id,
-    invoiceId: payment.invoice_id,
-    customerId: payment.customer_id,
-    amountReversed: parseFloat(payment.amount),
-    bounceFee: parsedFee,
-    bounceAttempt: attemptNumber,
-    creditHold: true,
-    creditHoldReason: holdReason,
-  };
 }
 
 /**
  * Re-deposit a previously bounced cheque for clearance processing.
- * @param {import('pg').PoolClient} client - Open transaction client
+ * Supports both customer_payment (new) and invoice_payments (legacy).
+ *
+ * @param {import('pg').PoolClient} client
  * @param {object} params
  * @param {number} params.paymentId
+ * @param {string} [params.sourceTable]
  * @param {boolean} [params.liftCreditHold=false]
  * @param {string} [params.notes]
  * @param {number} [params.userId]
  */
-async function processRedepositCheque(client, { paymentId, liftCreditHold = false, notes = null, userId = null }) {
-  const selectRes = await client.query(
-    `SELECT 
-       ip.payment_id,
-       ip.invoice_id,
-       ip.amount_paid AS amount,
-       i.customer_id,
-       ip.reference AS reference_number,
-       ip.pdc_status
-     FROM invoice_payments ip
-     JOIN invoice i ON i.invoice_id = ip.invoice_id
-     WHERE ip.payment_id = $1 FOR UPDATE`,
-    [paymentId]
-  );
-
-  if (selectRes.rows.length === 0) {
-    throw new Error(`Payment #${paymentId} not found`);
-  }
-
-  const payment = selectRes.rows[0];
-  if (payment.pdc_status !== 'BOUNCED') {
-    throw new Error(`Only bounced payments can be re-deposited. Current status: ${payment.pdc_status}`);
-  }
-
-  // Calculate current attempt number
-  const countRes = await client.query(
-    `SELECT COUNT(*)::int AS count FROM cheque_clearance_log WHERE payment_id = $1 AND action IN ('BOUNCED', 'REDEPOSITED')`,
-    [paymentId]
-  );
-  const attemptNumber = (countRes.rows[0]?.count || 0) + 1;
-
-  // 1. Update payment status back to pending and pdc_status to DEPOSITED
-  await client.query(
-    `UPDATE invoice_payments
-     SET payment_status = 'pending',
-         pdc_status = 'DEPOSITED'
-     WHERE payment_id = $1`,
-    [paymentId]
-  );
-
-  // 2. Optional: Lift credit hold on customer if requested
-  if (liftCreditHold) {
-    await client.query(
-      `UPDATE customer
-       SET credit_hold = false,
-           credit_hold_reason = NULL
-       WHERE customer_id = $1`,
-      [payment.customer_id]
+async function processRedepositCheque(client, { paymentId, sourceTable = 'auto', liftCreditHold = false, notes = null, userId = null }) {
+  if (sourceTable === 'auto') {
+    const { rows: cpCheck } = await client.query(
+      'SELECT payment_id FROM customer_payment WHERE payment_id = $1', [paymentId]
     );
+    sourceTable = cpCheck.length > 0 ? 'customer_payment' : 'invoice_payments';
   }
 
-  // 3. Log audit entry in cheque_clearance_log
-  await logChequeClearanceEvent(client, {
-    chequeType: 'INBOUND_CUSTOMER',
-    paymentId: payment.payment_id,
-    customerId: payment.customer_id,
-    action: 'REDEPOSITED',
-    attemptNumber,
-    notes: notes || `Re-deposited for bank clearance (Attempt #${attemptNumber})`,
-    createdBy: userId
-  });
+  if (sourceTable === 'customer_payment') {
+    const { rows: [cp] } = await client.query(
+      `SELECT payment_id, customer_id, pdc_status FROM customer_payment WHERE payment_id = $1 FOR UPDATE`,
+      [paymentId]
+    );
+    if (!cp) throw new Error(`Payment #${paymentId} not found`);
+    if (cp.pdc_status !== 'BOUNCED') {
+      throw new Error(`Only bounced payments can be re-deposited. Current status: ${cp.pdc_status}`);
+    }
 
-  return {
-    paymentId: payment.payment_id,
-    invoiceId: payment.invoice_id,
-    customerId: payment.customer_id,
-    pdc_status: 'DEPOSITED',
-    payment_status: 'pending',
-    attemptNumber,
-    liftedCreditHold: liftCreditHold
-  };
+    const { rows: [{ count: prevAttempts }] } = await client.query(
+      `SELECT COUNT(*)::int AS count FROM cheque_clearance_log
+       WHERE customer_payment_id = $1 AND action IN ('BOUNCED', 'REDEPOSITED')`,
+      [paymentId]
+    );
+    const attemptNumber = (prevAttempts || 0) + 1;
+
+    await client.query(
+      `UPDATE customer_payment SET pdc_status = 'DEPOSITED' WHERE payment_id = $1`,
+      [paymentId]
+    );
+
+    if (liftCreditHold) {
+      await client.query(
+        `UPDATE customer SET credit_hold = false, credit_hold_reason = NULL WHERE customer_id = $1`,
+        [cp.customer_id]
+      );
+    }
+
+    await logChequeClearanceEvent(client, {
+      chequeType: 'INBOUND_CUSTOMER',
+      customerPaymentId: cp.payment_id,
+      customerId: cp.customer_id,
+      action: 'REDEPOSITED',
+      attemptNumber,
+      notes: notes || `Re-deposited for bank clearance (Attempt #${attemptNumber})`,
+      createdBy: userId
+    });
+
+    return {
+      paymentId: cp.payment_id,
+      sourceTable: 'customer_payment',
+      customerId: cp.customer_id,
+      pdc_status: 'DEPOSITED',
+      attemptNumber,
+      liftedCreditHold: liftCreditHold
+    };
+
+  } else {
+    // Legacy invoice_payments path
+    const { rows: [payment] } = await client.query(
+      `SELECT ip.payment_id, ip.invoice_id, ip.amount_paid AS amount, i.customer_id, ip.pdc_status
+       FROM invoice_payments ip
+       JOIN invoice i ON i.invoice_id = ip.invoice_id
+       WHERE ip.payment_id = $1 FOR UPDATE`,
+      [paymentId]
+    );
+    if (!payment) throw new Error(`Payment #${paymentId} not found`);
+    if (payment.pdc_status !== 'BOUNCED') {
+      throw new Error(`Only bounced payments can be re-deposited. Current status: ${payment.pdc_status}`);
+    }
+
+    const { rows: [{ count: prevAttempts }] } = await client.query(
+      `SELECT COUNT(*)::int AS count FROM cheque_clearance_log
+       WHERE payment_id = $1 AND action IN ('BOUNCED', 'REDEPOSITED')`,
+      [paymentId]
+    );
+    const attemptNumber = (prevAttempts || 0) + 1;
+
+    await client.query(
+      `UPDATE invoice_payments SET payment_status = 'pending', pdc_status = 'DEPOSITED' WHERE payment_id = $1`,
+      [paymentId]
+    );
+
+    if (liftCreditHold) {
+      await client.query(
+        `UPDATE customer SET credit_hold = false, credit_hold_reason = NULL WHERE customer_id = $1`,
+        [payment.customer_id]
+      );
+    }
+
+    await logChequeClearanceEvent(client, {
+      chequeType: 'INBOUND_CUSTOMER',
+      paymentId: payment.payment_id,
+      customerId: payment.customer_id,
+      action: 'REDEPOSITED',
+      attemptNumber,
+      notes: notes || `Re-deposited for bank clearance (Attempt #${attemptNumber})`,
+      createdBy: userId
+    });
+
+    return {
+      paymentId: payment.payment_id,
+      invoiceId: payment.invoice_id,
+      customerId: payment.customer_id,
+      pdc_status: 'DEPOSITED',
+      payment_status: 'pending',
+      attemptNumber,
+      liftedCreditHold: liftCreditHold
+    };
+  }
 }
 
 module.exports = {

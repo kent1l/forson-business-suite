@@ -667,6 +667,7 @@ router.post('/ar/collections-clearance/:paymentId/verify', protect, hasPermissio
         await client.query('BEGIN');
         const result = await pdcService.verifyPayment(client, {
             paymentId,
+            sourceTable: req.body?.source_table || 'auto',
             userId: req.user?.employee_id
         });
         await client.query('COMMIT');
@@ -685,12 +686,13 @@ router.post('/ar/collections-clearance/:paymentId/fail', protect, hasPermission(
     const paymentId = parseInt(req.params.paymentId, 10);
     if (!paymentId) return res.status(400).json({ message: 'Invalid payment ID' });
 
-    const { bounce_fee, reason } = req.body;
+    const { bounce_fee, reason, source_table } = req.body;
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
         const result = await pdcService.processBouncedCheque(client, {
             paymentId,
+            sourceTable: source_table || 'auto',
             bounceFee: bounce_fee,
             reason,
             userId: req.user?.employee_id
@@ -711,12 +713,13 @@ router.post('/ar/collections-clearance/:paymentId/redeposit', protect, hasPermis
     const paymentId = parseInt(req.params.paymentId, 10);
     if (!paymentId) return res.status(400).json({ message: 'Invalid payment ID' });
 
-    const { lift_credit_hold, notes } = req.body;
+    const { lift_credit_hold, notes, source_table } = req.body;
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
         const result = await pdcService.processRedepositCheque(client, {
             paymentId,
+            sourceTable: source_table || 'auto',
             liftCreditHold: Boolean(lift_credit_hold),
             notes,
             userId: req.user?.user_id || req.user?.employee_id
@@ -738,7 +741,8 @@ router.get('/ar/collections-clearance/:paymentId/history', protect, hasPermissio
         const paymentId = parseInt(req.params.paymentId, 10);
         if (!paymentId) return res.status(400).json({ message: 'Invalid payment ID' });
 
-        const history = await pdcService.getChequeClearanceHistory(db, paymentId);
+        const sourceTable = req.query.source_table || 'auto';
+        const history = await pdcService.getChequeClearanceHistory(db, paymentId, sourceTable);
         res.json({ success: true, data: history });
     } catch (err) {
         console.error('AR Clearance History Error:', err.message);

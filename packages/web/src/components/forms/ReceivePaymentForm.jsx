@@ -119,53 +119,43 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
         return true;
     }, [customer?.customer_id, splits, enabledMethods, walletBalance]);
 
-    // Submit per invoice
+    // Submit: one POST /payments call per split line (payment instrument).
+    // A single cheque → one customer_payment row → one PDC desk entry (not one per invoice).
     const submitPayments = useCallback(async () => {
         const invoices = unpaidInvoices
             .map(inv => ({
                 invoice_id: inv.invoice_id,
-                allocated: parseFloat(allocations[inv.invoice_id]) || 0
+                allocated: parseFloat(allocations[inv.invoice_id]) || 0,
+                remaining: parseFloat(allocations[inv.invoice_id]) || 0,
             }))
             .filter(inv => inv.allocated > 0);
 
-        const lines = splits.map(s => ({
-            method_id: s.method_id,
-            amount_remaining: parseFloat(s.amount) || 0,
-            reference: s.reference,
-            cheque_date: s.cheque_date || null
-        }));
+        for (const s of splits) {
+            const lineAmount = parseFloat(s.amount) || 0;
+            if (lineAmount <= 0) continue;
 
-        const perInvoicePayloads = new Map();
+            // Distribute this split line's amount across invoices proportionally
+            let toDistribute = lineAmount;
+            const lineAllocations = [];
 
-        for (const line of lines) {
-            let toDistribute = line.amount_remaining;
             for (const inv of invoices) {
-                if (toDistribute <= 0) break;
-                if (inv.remaining === undefined) inv.remaining = inv.allocated;
+                if (toDistribute <= 0.005) break;
                 if (inv.remaining <= 0) continue;
-                const portion = Math.min(toDistribute, inv.remaining);
-                const arr = perInvoicePayloads.get(inv.invoice_id) || [];
-                arr.push({
-                    method_id: line.method_id,
-                    amount_paid: portion,
-                    reference: line.reference || null,
-                    metadata: {
-                        ar_batch: true,
-                        customer_id: customer.customer_id,
-                        cheque_date: line.cheque_date || null,
-                        notes: notes || null
-                    }
-                });
-                perInvoicePayloads.set(inv.invoice_id, arr);
+                const portion = parseFloat(Math.min(toDistribute, inv.remaining).toFixed(2));
+                lineAllocations.push({ invoice_id: inv.invoice_id, amount_allocated: portion });
                 inv.remaining -= portion;
                 toDistribute -= portion;
             }
-        }
 
-        for (const [invoice_id, payments] of perInvoicePayloads.entries()) {
-            await api.post(`/invoices/${invoice_id}/payments`, {
-                payments,
-                physical_receipt_no: physicalReceiptNo || null
+            await api.post('/payments', {
+                customer_id: customer.customer_id,
+                amount: lineAmount,
+                method_id: s.method_id,
+                reference: s.reference || null,
+                cheque_date: s.cheque_date || null,
+                notes: notes || null,
+                physical_receipt_no: physicalReceiptNo || null,
+                allocations: lineAllocations,
             });
         }
     }, [unpaidInvoices, allocations, splits, physicalReceiptNo, notes, customer?.customer_id]);
