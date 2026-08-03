@@ -273,7 +273,7 @@ async function verifyPayment(client, { paymentId, sourceTable = 'auto', userId =
        FROM customer_payment cp
        LEFT JOIN payment_methods pm ON pm.method_id = cp.method_id
        WHERE cp.payment_id = $1
-       FOR UPDATE`,
+       FOR UPDATE OF cp`,
       [paymentId]
     );
     if (!cp) throw new Error(`Payment #${paymentId} not found in customer_payment`);
@@ -342,7 +342,7 @@ async function verifyPayment(client, { paymentId, sourceTable = 'auto', userId =
       `SELECT ip.payment_id, ip.invoice_id, ip.amount_paid AS amount, ip.payment_status, ip.pdc_status, i.customer_id
        FROM invoice_payments ip
        JOIN invoice i ON i.invoice_id = ip.invoice_id
-       WHERE ip.payment_id = $1 FOR UPDATE`,
+       WHERE ip.payment_id = $1 FOR UPDATE OF ip`,
       [paymentId]
     );
     if (!payment) throw new Error(`Payment #${paymentId} not found`);
@@ -397,7 +397,7 @@ async function processBouncedCheque(client, { paymentId, sourceTable = 'auto', b
               cp.pdc_status, pm.code AS method_code
        FROM customer_payment cp
        LEFT JOIN payment_methods pm ON pm.method_id = cp.method_id
-       WHERE cp.payment_id = $1 FOR UPDATE`,
+       WHERE cp.payment_id = $1 FOR UPDATE OF cp`,
       [paymentId]
     );
     if (!cp) throw new Error(`Payment #${paymentId} not found in customer_payment`);
@@ -504,7 +504,7 @@ async function processBouncedCheque(client, { paymentId, sourceTable = 'auto', b
               ip.reference AS reference_number
        FROM invoice_payments ip
        JOIN invoice i ON i.invoice_id = ip.invoice_id
-       WHERE ip.payment_id = $1 FOR UPDATE`,
+       WHERE ip.payment_id = $1 FOR UPDATE OF ip`,
       [paymentId]
     );
     if (!payment) throw new Error(`Payment #${paymentId} not found`);
@@ -651,7 +651,7 @@ async function processRedepositCheque(client, { paymentId, sourceTable = 'auto',
       `SELECT ip.payment_id, ip.invoice_id, ip.amount_paid AS amount, i.customer_id, ip.pdc_status
        FROM invoice_payments ip
        JOIN invoice i ON i.invoice_id = ip.invoice_id
-       WHERE ip.payment_id = $1 FOR UPDATE`,
+       WHERE ip.payment_id = $1 FOR UPDATE OF ip`,
       [paymentId]
     );
     if (!payment) throw new Error(`Payment #${paymentId} not found`);
