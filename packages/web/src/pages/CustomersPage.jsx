@@ -113,11 +113,6 @@ const CustomersPage = () => {
         });
     };
 
-    const sortedCustomers = sortData(customers, sortConfig, {
-        full_name: (row) => `${row.first_name || ''} ${row.last_name || ''}`.trim(),
-        status: (row) => (row.is_active ? 1 : 0)
-    });
-
     return (
         <div>
             <div className="flex justify-between items-center mb-6">

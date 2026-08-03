@@ -113,10 +113,6 @@ const SuppliersPage = () => {
         });
     };
 
-    const sortedSuppliers = sortData(suppliers, sortConfig, {
-        status: (row) => (row.is_active ? 1 : 0)
-    });
-
     return (
         <div>
             <div className="flex justify-between items-center mb-6">

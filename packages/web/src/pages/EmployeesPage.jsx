@@ -237,11 +237,6 @@ const EmployeesPage = () => {
             error: (err) => err.response?.data?.message || 'Failed to save employee.',
         });
     };
-
-    const sortedEmployees = sortData(employees, sortConfig, {
-        full_name: (row) => `${row.first_name || ''} ${row.last_name || ''}`.trim(),
-        status: (row) => (row.is_active ? 1 : 0)
-    });
     
     if (!hasPermission('employees:view')) {
         return (

@@ -329,7 +329,7 @@ const PartsPage = ({ user, onNavigate }) => {
                                         </td>
                                     </tr>
                                 ))}
-                                {sortedParts.length === 0 && (
+                                {parts.length === 0 && (
                                     <tr>
                                         <td colSpan="6" className="p-4 text-center text-gray-500">No data to display.</td>
                                     </tr>

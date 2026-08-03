@@ -510,8 +510,6 @@ const ApplicationsPage = () => {
         });
     };
 
-    const sortedApplications = sortData(applications, sortConfig);
-
     return (
         <div>
             <div className="flex justify-between items-center mb-6">

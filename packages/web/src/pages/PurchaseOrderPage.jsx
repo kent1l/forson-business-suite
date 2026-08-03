@@ -133,9 +133,6 @@ const PurchaseOrderPage = () => {
         return hasPermission('purchase_orders:edit') && purchaseOrders.some(po => po.status === 'Pending');
     }, [purchaseOrders, hasPermission]);
 
-    const sortedPurchaseOrders = useMemo(() => sortData(purchaseOrders, sortConfig), [purchaseOrders, sortConfig]);
-
-
     const exitEditor = useCallback(() => {
         setIsEditing(false);
         setEditingPO(null);
