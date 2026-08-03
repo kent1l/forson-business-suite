@@ -6,7 +6,7 @@
  */
 import { formatCurrency } from '../../utils/currency';
 import { getCustomerStatusBadge } from '../../utils/status';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import SortableHeader from '../ui/SortableHeader';
 import { sortData } from '../../utils/sortData';
 import CustomerWalletBadge from './CustomerWalletBadge';
@@ -48,13 +48,33 @@ const CustomerSummaryTable = ({
     sortConfig = { key: 'invoice_count', direction: 'DESC' },
     onSortChange
 }) => {
+    const [localSearch, setLocalSearch] = useState(searchTerm);
+
+    useEffect(() => {
+        setLocalSearch(searchTerm);
+    }, [searchTerm]);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (localSearch !== searchTerm && onSearchChange) {
+                onSearchChange(localSearch);
+            }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [localSearch, searchTerm, onSearchChange]);
+
+    const handleClearSearch = () => {
+        setLocalSearch('');
+        if (onSearchChange) onSearchChange('');
+    };
+
     const handleSort = (key, direction) => {
         if (onSortChange) {
             onSortChange({ key, direction });
         }
     };
 
-    if (loading) return <_TableSkeleton />;
+    if (loading && customers.length === 0) return <_TableSkeleton />;
 
     return (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -64,14 +84,31 @@ const CustomerSummaryTable = ({
                     <p className="text-xs text-gray-500 mt-1">Overview of balances, wallet credits, and risk statuses</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
-                    {/* Search Input */}
-                    <input
-                        type="text"
-                        placeholder="Search name, company, phone..."
-                        value={searchTerm}
-                        onChange={(e) => onSearchChange && onSearchChange(e.target.value)}
-                        className="px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 w-48 sm:w-64"
-                    />
+                    {/* Search Input with X Clear Button */}
+                    <div className="relative w-48 sm:w-64">
+                        <input
+                            type="text"
+                            placeholder="Search name, company, phone..."
+                            value={localSearch}
+                            onChange={(e) => setLocalSearch(e.target.value)}
+                            className="w-full pl-8 pr-8 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <svg className="w-4 h-4 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        {localSearch && (
+                            <button
+                                type="button"
+                                onClick={handleClearSearch}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none p-1 rounded-full hover:bg-gray-100 transition-colors"
+                                title="Clear search"
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        )}
+                    </div>
 
                     {/* Risk Status Filter */}
                     <select

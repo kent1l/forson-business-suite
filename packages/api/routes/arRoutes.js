@@ -182,8 +182,9 @@ router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req
                 c.credit_hold,
                 c.phone,
                 b.ledger_balance                                    AS total_balance_due,
-                MIN(i.due_date)                                     AS earliest_due_date,
-                COUNT(i.invoice_id)                                 AS invoice_count,
+                COALESCE(w.balance, 0)                              AS wallet_balance,
+                MIN(COALESCE(i.due_date, i.invoice_date))          AS earliest_due_date,
+                COUNT(DISTINCT i.invoice_id)                        AS invoice_count,
                 CASE 
                     WHEN MIN(COALESCE(i.due_date, i.invoice_date)) >= CURRENT_DATE THEN 'Current'
                     WHEN MIN(COALESCE(i.due_date, i.invoice_date)) >= CURRENT_DATE - INTERVAL '30 days' THEN '1-30 Days'
@@ -192,12 +193,12 @@ router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req
                     ELSE '90+ Days'
                 END as status
             FROM customer c
-            JOIN invoice i ON c.customer_id = i.customer_id
             JOIN vw_customer_ar_balance b ON b.customer_id = c.customer_id
-            WHERE i.status IN ('Unpaid', 'Partially Paid')
-            AND b.ledger_balance > 0
+            LEFT JOIN customer_wallet w ON c.customer_id = w.customer_id
+            LEFT JOIN invoice i ON c.customer_id = i.customer_id AND i.status IN ('Unpaid', 'Partially Paid')
+            WHERE b.ledger_balance > 0
             ${searchWhere}
-            GROUP BY c.customer_id, c.company_name, c.first_name, c.last_name, c.credit_hold, c.phone, b.ledger_balance
+            GROUP BY c.customer_id, c.company_name, c.first_name, c.last_name, c.credit_hold, c.phone, b.ledger_balance, w.balance
             ${havingClause}
             ${orderBy}
             LIMIT $${paramIdx} OFFSET $${paramIdx + 1};
@@ -213,10 +214,9 @@ router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req
             FROM (
                 SELECT c.customer_id
                 FROM customer c
-                JOIN invoice i ON c.customer_id = i.customer_id
                 JOIN vw_customer_ar_balance b ON b.customer_id = c.customer_id
-                WHERE i.status IN ('Unpaid', 'Partially Paid')
-                AND b.ledger_balance > 0
+                LEFT JOIN invoice i ON c.customer_id = i.customer_id AND i.status IN ('Unpaid', 'Partially Paid')
+                WHERE b.ledger_balance > 0
                 ${searchWhere}
                 GROUP BY c.customer_id, b.ledger_balance
                 ${havingClause}

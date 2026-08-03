@@ -195,7 +195,28 @@ const AccountsReceivablePage = () => {
         }
     }, [dateRange, drillDownPage, drillDownPageSize]);
 
-    // Fetch Overview Dashboard Data
+    // Fetch Customer Summary Table (isolated from full dashboard page loading)
+    const fetchCustomerSummary = useCallback(async () => {
+        try {
+            const res = await api.get('/ar/customer-summary', {
+                params: {
+                    page: customerSummaryPage,
+                    pageSize: customerSummaryPageSize,
+                    paginated: 1,
+                    search: customerSummarySearchTerm,
+                    status: customerSummaryStatusFilter,
+                    sortBy: customerSummarySortConfig.key,
+                    sortDir: customerSummarySortConfig.direction
+                }
+            });
+            setCustomerSummary(res.data?.data || []);
+            setCustomerSummaryTotal(res.data?.total || 0);
+        } catch (err) {
+            console.error('Failed to fetch customer summary:', err);
+        }
+    }, [customerSummaryPage, customerSummaryPageSize, customerSummarySearchTerm, customerSummaryStatusFilter, customerSummarySortConfig]);
+
+    // Fetch Overview Dashboard Data (KPIs, Aging, Trends)
     const fetchDashboardData = useCallback(async () => {
         try {
             setLoading(true);
@@ -205,21 +226,10 @@ const AccountsReceivablePage = () => {
                 endDate: dateRange.endDate.toISOString()
             };
             
-            const [customersRes, dashboardRes, agingRes, customerSummaryRes, trendsRes] = await Promise.all([
+            const [customersRes, dashboardRes, agingRes, trendsRes] = await Promise.all([
                 api.get('/customers/with-balances', { params: { paginated: 1, page: 1, pageSize: 100 } }),
                 api.get('/ar/dashboard-stats', { params: dateParams }).catch(() => ({ data: {} })),
                 api.get('/ar/aging-summary').catch(() => ({ data: [] })),
-                api.get('/ar/customer-summary', {
-                    params: {
-                        page: customerSummaryPage,
-                        pageSize: customerSummaryPageSize,
-                        paginated: 1,
-                        search: customerSummarySearchTerm,
-                        status: customerSummaryStatusFilter,
-                        sortBy: customerSummarySortConfig.key,
-                        sortDir: customerSummarySortConfig.direction
-                    }
-                }).catch(() => ({ data: { data: [], total: 0 } })),
                 api.get('/ar/trends').catch(() => ({ data: {} }))
             ]);
 
@@ -235,8 +245,7 @@ const AccountsReceivablePage = () => {
                 setAgingData(agingRes.data);
             }
 
-            setCustomerSummary(customerSummaryRes.data?.data || []);
-            setCustomerSummaryTotal(customerSummaryRes.data?.total || 0);
+            await fetchCustomerSummary();
 
         } catch (err) {
             console.error('Failed to fetch dashboard data:', err);
@@ -244,7 +253,7 @@ const AccountsReceivablePage = () => {
         } finally {
             setLoading(false);
         }
-    }, [dateRange, customerSummaryPage, customerSummaryPageSize, customerSummarySearchTerm, customerSummaryStatusFilter, customerSummarySortConfig]);
+    }, [dateRange, fetchCustomerSummary]);
 
     // Fetch Customer Ledger for Tab 2
     const fetchCustomerLedger = useCallback(async (customerId) => {
@@ -334,6 +343,13 @@ const AccountsReceivablePage = () => {
             fetchCustomerLedger(soaCustomerId);
         }
     }, [soaCustomerId, fetchCustomerLedger]);
+
+    // Re-fetch customer summary when search/filter/sort/pagination changes
+    useEffect(() => {
+        if (hasPermission('ar:view') && activeTab === 'overview') {
+            fetchCustomerSummary();
+        }
+    }, [activeTab, hasPermission, fetchCustomerSummary]);
 
     // Fetch customer payable invoices for drill-down modal
     const fetchCustomerInvoices = useCallback(async (customerId, page = customerInvoicesPage, pageSize = customerInvoicesPageSize) => {
