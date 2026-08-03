@@ -21,7 +21,9 @@ const PdcClearanceDeskTable = ({
     maturityFilter = 'ALL',
     onMaturityFilterChange,
     onVerifyClearance,
-    onMarkBounced
+    onMarkBounced,
+    onRedepositCheque,
+    onViewHistory
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [page, setPage] = useState(1);
