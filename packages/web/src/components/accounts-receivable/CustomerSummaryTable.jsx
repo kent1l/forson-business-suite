@@ -35,39 +35,24 @@ const _TableSkeleton = () => (
 );
 
 const CustomerSummaryTable = ({
-    customers,
+    customers = [],
     onCustomerClick,
     onReceivePayment,
     hasPaymentPermission,
     loading = false,
-    onExport
+    onExport,
+    searchTerm = '',
+    onSearchChange,
+    statusFilter = 'ALL',
+    onStatusFilterChange,
+    sortConfig = { key: 'invoice_count', direction: 'DESC' },
+    onSortChange
 }) => {
-    const [sortConfig, setSortConfig] = useState({ key: 'invoice_count', direction: 'DESC' });
-    const [searchTerm, setSearchTerm] = useState('');
-    const [statusFilter, setStatusFilter] = useState('ALL');
-
-    // Filter customers by search term & risk status
-    const filteredCustomers = useMemo(() => {
-        return (customers || []).filter(c => {
-            const name = (c.company_name || `${c.first_name || ''} ${c.last_name || ''}`).toLowerCase();
-            const phone = (c.phone || '').toLowerCase();
-            const matchesSearch = !searchTerm || name.includes(searchTerm.toLowerCase()) || phone.includes(searchTerm.toLowerCase());
-
-            if (!matchesSearch) return false;
-
-            if (statusFilter === 'CREDIT_HOLD') return c.credit_hold === true;
-            if (statusFilter === 'CURRENT') return c.status === 'Current';
-            if (statusFilter === 'OVERDUE') return c.status !== 'Current' && Number(c.total_balance_due) > 0;
-            return true;
-        });
-    }, [customers, searchTerm, statusFilter]);
-
-    const sortedCustomers = useMemo(() => sortData(filteredCustomers, sortConfig, {
-        customer_name: (row) => row.company_name || `${row.first_name || ''} ${row.last_name || ''}`.trim(),
-        status: (row) => getCustomerStatusBadge(row)?.text || '',
-        wallet_balance: (row) => Number(row.wallet_balance || 0),
-        invoice_count: (row) => Number(row.invoice_count || 0)
-    }), [filteredCustomers, sortConfig]);
+    const handleSort = (key, direction) => {
+        if (onSortChange) {
+            onSortChange({ key, direction });
+        }
+    };
 
     if (loading) return <_TableSkeleton />;
 
@@ -84,14 +69,14 @@ const CustomerSummaryTable = ({
                         type="text"
                         placeholder="Search name, company, phone..."
                         value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
+                        onChange={(e) => onSearchChange && onSearchChange(e.target.value)}
                         className="px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 w-48 sm:w-64"
                     />
 
                     {/* Risk Status Filter */}
                     <select
                         value={statusFilter}
-                        onChange={(e) => setStatusFilter(e.target.value)}
+                        onChange={(e) => onStatusFilterChange && onStatusFilterChange(e.target.value)}
                         className="px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                     >
                         <option value="ALL">All Statuses</option>
@@ -113,17 +98,17 @@ const CustomerSummaryTable = ({
                 <table className="w-full text-sm text-left text-gray-500">
                     <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b">
                         <tr>
-                            <SortableHeader column="customer_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Customer</SortableHeader>
-                            <SortableHeader column="invoice_count" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Invoice Count</SortableHeader>
-                            <SortableHeader column="earliest_due_date" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Next Due Date</SortableHeader>
-                            <SortableHeader column="total_balance_due" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Receivable Due</SortableHeader>
-                            <SortableHeader column="wallet_balance" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Store Wallet</SortableHeader>
-                            <SortableHeader column="status" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Status</SortableHeader>
+                            <SortableHeader column="customer_name" sortConfig={sortConfig} onSort={handleSort}>Customer</SortableHeader>
+                            <SortableHeader column="invoice_count" sortConfig={sortConfig} onSort={handleSort}>Invoice Count</SortableHeader>
+                            <SortableHeader column="earliest_due_date" sortConfig={sortConfig} onSort={handleSort}>Next Due Date</SortableHeader>
+                            <SortableHeader column="total_balance_due" sortConfig={sortConfig} onSort={handleSort}>Receivable Due</SortableHeader>
+                            <SortableHeader column="wallet_balance" sortConfig={sortConfig} onSort={handleSort}>Store Wallet</SortableHeader>
+                            <SortableHeader column="status" sortConfig={sortConfig} onSort={handleSort}>Status</SortableHeader>
                             {hasPaymentPermission && <th scope="col" className="px-6 py-3">Actions</th>}
                         </tr>
                     </thead>
                     <tbody>
-                        {sortedCustomers.map((customer, index) => {
+                        {customers.map((customer, index) => {
                             const statusBadge = getCustomerStatusBadge(customer);
                             const walletBal = Number(customer.wallet_balance || 0);
 
@@ -184,7 +169,7 @@ const CustomerSummaryTable = ({
                                 </tr>
                             );
                         })}
-                        {sortedCustomers.length === 0 && (
+                        {customers.length === 0 && (
                             <tr>
                                 <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
                                     No matching customer accounts found

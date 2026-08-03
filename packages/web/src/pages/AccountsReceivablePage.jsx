@@ -61,6 +61,9 @@ const AccountsReceivablePage = () => {
     const [customerSummaryPage, setCustomerSummaryPage] = useState(1);
     const [customerSummaryPageSize, setCustomerSummaryPageSize] = useState(25);
     const [customerSummaryTotal, setCustomerSummaryTotal] = useState(0);
+    const [customerSummarySearchTerm, setCustomerSummarySearchTerm] = useState('');
+    const [customerSummaryStatusFilter, setCustomerSummaryStatusFilter] = useState('ALL');
+    const [customerSummarySortConfig, setCustomerSummarySortConfig] = useState({ key: 'invoice_count', direction: 'DESC' });
     const [drillDownPage, setDrillDownPage] = useState(1);
     const [drillDownPageSize, setDrillDownPageSize] = useState(25);
     const [drillDownTotal, setDrillDownTotal] = useState(0);
@@ -221,7 +224,17 @@ const AccountsReceivablePage = () => {
                 api.get('/customers/with-balances', { params: { paginated: 1, page: 1, pageSize: 100 } }),
                 api.get('/ar/dashboard-stats', { params: dateParams }).catch(() => ({ data: {} })),
                 api.get('/ar/aging-summary').catch(() => ({ data: [] })),
-                api.get('/ar/customer-summary', { params: { page: customerSummaryPage, pageSize: customerSummaryPageSize, paginated: 1 } }).catch(() => ({ data: { data: [], total: 0 } })),
+                api.get('/ar/customer-summary', {
+                    params: {
+                        page: customerSummaryPage,
+                        pageSize: customerSummaryPageSize,
+                        paginated: 1,
+                        search: customerSummarySearchTerm,
+                        status: customerSummaryStatusFilter,
+                        sortBy: customerSummarySortConfig.key,
+                        sortDir: customerSummarySortConfig.direction
+                    }
+                }).catch(() => ({ data: { data: [], total: 0 } })),
                 api.get('/ar/trends').catch(() => ({ data: {} }))
             ]);
 
@@ -246,7 +259,7 @@ const AccountsReceivablePage = () => {
         } finally {
             setLoading(false);
         }
-    }, [dateRange, customerSummaryPage, customerSummaryPageSize]);
+    }, [dateRange, customerSummaryPage, customerSummaryPageSize, customerSummarySearchTerm, customerSummaryStatusFilter, customerSummarySortConfig]);
 
     // Fetch Customer Ledger for Tab 2
     const fetchCustomerLedger = useCallback(async (customerId) => {
@@ -638,6 +651,12 @@ const AccountsReceivablePage = () => {
                         hasPaymentPermission={hasPermission('ar:receive_payment')}
                         loading={loading}
                         onExport={handleExportCustomerSummary}
+                        searchTerm={customerSummarySearchTerm}
+                        onSearchChange={(val) => { setCustomerSummarySearchTerm(val); setCustomerSummaryPage(1); }}
+                        statusFilter={customerSummaryStatusFilter}
+                        onStatusFilterChange={(val) => { setCustomerSummaryStatusFilter(val); setCustomerSummaryPage(1); }}
+                        sortConfig={customerSummarySortConfig}
+                        onSortChange={(cfg) => { setCustomerSummarySortConfig(cfg); setCustomerSummaryPage(1); }}
                     />
                     <PaginationControls
                         page={customerSummaryPage}

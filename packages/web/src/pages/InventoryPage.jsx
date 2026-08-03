@@ -104,11 +104,21 @@ const InventoryPage = () => {
         const numeric = Number(value);
         return Number.isFinite(numeric) ? numeric : 0;
     };
-    const sortedInventory = sortData(inventory, sortConfig, {
-        stock_on_hand: (row) => toSafeNumber(row.stock_on_hand),
-        wac_cost: (row) => toSafeNumber(row.wac_cost),
-        total_value: (row) => toSafeNumber(row.total_value)
-    });
+    const handleHeaderSort = (key, direction) => {
+        setSortConfig({ key, direction });
+        const keyMap = {
+            internal_sku: 'sku',
+            display_name: 'name',
+            stock_on_hand: 'stock_on_hand',
+            wac_cost: 'wac',
+            total_value: 'total_value'
+        };
+        if (keyMap[key]) {
+            setGlobalSortBy(keyMap[key]);
+            setGlobalSortDirection(direction);
+        }
+        setPage(1);
+    };
 
     return (
         <div>
@@ -162,16 +172,16 @@ const InventoryPage = () => {
                         <table className="w-full text-left">
                             <thead>
                                 <tr className="border-b">
-                                    <SortableHeader column="internal_sku" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>SKU</SortableHeader>
-                                    <SortableHeader column="display_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Item Name</SortableHeader>
-                                    <SortableHeader className="text-center" column="stock_on_hand" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Stock on Hand</SortableHeader>
-                                    <SortableHeader className="text-right" column="wac_cost" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>WAC</SortableHeader>
-                                    <SortableHeader className="text-right" column="total_value" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Total Value</SortableHeader>
+                                    <SortableHeader column="internal_sku" sortConfig={sortConfig} onSort={handleHeaderSort}>SKU</SortableHeader>
+                                    <SortableHeader column="display_name" sortConfig={sortConfig} onSort={handleHeaderSort}>Item Name</SortableHeader>
+                                    <SortableHeader className="text-center" column="stock_on_hand" sortConfig={sortConfig} onSort={handleHeaderSort}>Stock on Hand</SortableHeader>
+                                    <SortableHeader className="text-right" column="wac_cost" sortConfig={sortConfig} onSort={handleHeaderSort}>WAC</SortableHeader>
+                                    <SortableHeader className="text-right" column="total_value" sortConfig={sortConfig} onSort={handleHeaderSort}>Total Value</SortableHeader>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {sortedInventory.map(item => {
+                                {inventory.map(item => {
                                     const stockOnHand = toSafeNumber(item.stock_on_hand);
                                     const wacCost = toSafeNumber(item.wac_cost);
                                     const totalValue = Number.isFinite(Number(item.total_value))

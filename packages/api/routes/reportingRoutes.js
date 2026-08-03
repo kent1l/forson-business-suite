@@ -7,12 +7,22 @@ const router = express.Router();
 
 // GET /api/reports/sales-summary
 router.get('/reports/sales-summary', protect, hasPermission('reports:view'), async (req, res) => {
-    const { startDate, endDate, format = 'json' } = req.query;
+    const { startDate, endDate, format = 'json', sortBy, sortOrder = 'ASC' } = req.query;
     const { paginated, page, pageSize, limit, offset } = parsePaginationQuery(req.query);
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
     
     const client = await db.getClient();
     try {
+        const dir = sortOrder.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+        let orderByClause = 'i.invoice_date';
+        if (sortBy === 'invoice_number') {
+            orderByClause = 'i.invoice_number';
+        } else if (sortBy === 'display_name') {
+            orderByClause = 'p.detail';
+        } else if (sortBy === 'line_total') {
+            orderByClause = '(il.quantity * il.sale_price)';
+        }
+
         const detailsBaseQuery = `
             SELECT 
                 i.invoice_date, i.invoice_number, p.detail,
@@ -28,7 +38,7 @@ router.get('/reports/sales-summary', protect, hasPermission('reports:view'), asy
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
             WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
-            ORDER BY i.invoice_date
+            ORDER BY ${orderByClause} ${dir}
         `;
         
         const summaryQuery = `

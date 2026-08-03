@@ -133,13 +133,54 @@ router.get('/ar/aging-summary', protect, hasPermission('ar:view'), async (req, r
 router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req, res) => {
     try {
         const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
+        const { search, status, sortBy, sortDir } = req.query;
         
+        const params = [];
+        let paramIdx = 1;
+        let searchWhere = '';
+        if (search && search.trim()) {
+            searchWhere = `AND (
+                LOWER(COALESCE(c.company_name, '')) LIKE $${paramIdx} OR
+                LOWER(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')) LIKE $${paramIdx} OR
+                LOWER(COALESCE(c.phone, '')) LIKE $${paramIdx}
+            )`;
+            params.push(`%${search.trim().toLowerCase()}%`);
+            paramIdx++;
+        }
+
+        let havingClause = 'HAVING b.ledger_balance > 0';
+        if (status === 'CREDIT_HOLD') {
+            searchWhere += ' AND c.credit_hold = TRUE';
+        } else if (status === 'CURRENT') {
+            havingClause += " AND MIN(COALESCE(i.due_date, i.invoice_date)) >= CURRENT_DATE";
+        } else if (status === 'OVERDUE') {
+            havingClause += " AND MIN(COALESCE(i.due_date, i.invoice_date)) < CURRENT_DATE";
+        }
+
+        let orderBy = 'ORDER BY invoice_count DESC, earliest_due_date ASC, total_balance_due DESC';
+        if (sortBy) {
+            const dir = (sortDir || 'ASC').toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+            if (sortBy === 'customer_name') {
+                orderBy = `ORDER BY COALESCE(NULLIF(c.company_name, ''), c.first_name || ' ' || c.last_name) ${dir}`;
+            } else if (sortBy === 'invoice_count') {
+                orderBy = `ORDER BY invoice_count ${dir}`;
+            } else if (sortBy === 'earliest_due_date') {
+                orderBy = `ORDER BY earliest_due_date ${dir} NULLS LAST`;
+            } else if (sortBy === 'total_balance_due') {
+                orderBy = `ORDER BY total_balance_due ${dir}`;
+            } else if (sortBy === 'status') {
+                orderBy = `ORDER BY status ${dir}`;
+            }
+        }
+
         const query = `
             SELECT 
                 c.customer_id,
                 c.company_name,
                 c.first_name,
                 c.last_name,
+                c.credit_hold,
+                c.phone,
                 b.ledger_balance                                    AS total_balance_due,
                 MIN(i.due_date)                                     AS earliest_due_date,
                 COUNT(i.invoice_id)                                 AS invoice_count,
@@ -155,15 +196,19 @@ router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req
             JOIN vw_customer_ar_balance b ON b.customer_id = c.customer_id
             WHERE i.status IN ('Unpaid', 'Partially Paid')
             AND b.ledger_balance > 0
-            GROUP BY c.customer_id, c.company_name, c.first_name, c.last_name, b.ledger_balance
-            HAVING b.ledger_balance > 0
-            ORDER BY invoice_count DESC, earliest_due_date ASC, total_balance_due DESC
-            LIMIT $1 OFFSET $2;
+            ${searchWhere}
+            GROUP BY c.customer_id, c.company_name, c.first_name, c.last_name, c.credit_hold, c.phone, b.ledger_balance
+            ${havingClause}
+            ${orderBy}
+            LIMIT $${paramIdx} OFFSET $${paramIdx + 1};
         `;
         
-        const { rows } = await db.query(query, [limit, offset]);
+        const queryParams = [...params, limit, offset];
+        const { rows } = await db.query(query, queryParams);
+
         if (!paginated) return res.json(rows);
-        const countRes = await db.query(`
+
+        const countQuery = `
             SELECT COUNT(*)::int AS total
             FROM (
                 SELECT c.customer_id
@@ -172,10 +217,12 @@ router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req
                 JOIN vw_customer_ar_balance b ON b.customer_id = c.customer_id
                 WHERE i.status IN ('Unpaid', 'Partially Paid')
                 AND b.ledger_balance > 0
+                ${searchWhere}
                 GROUP BY c.customer_id, b.ledger_balance
-                HAVING b.ledger_balance > 0
+                ${havingClause}
             ) summary
-        `);
+        `;
+        const countRes = await db.query(countQuery, params);
         const total = countRes.rows[0]?.total || 0;
         res.json(paginatedResponse({ data: rows, page, pageSize, total }));
     } catch (err) {

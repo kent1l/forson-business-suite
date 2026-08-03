@@ -186,15 +186,21 @@ const PartsPage = ({ user, onNavigate }) => {
 
     const handleSelectAll = (e) => {
         if (e.target.checked) {
-            setSelectedParts(sortedParts.map(p => p.part_id));
+            setSelectedParts(parts.map(p => p.part_id));
         } else {
             setSelectedParts([]);
         }
     };
 
-    const sortedParts = sortData(parts, sortConfig, {
-        application_text: (row) => row.applications || ''
-    });
+    const handleHeaderSort = (key, direction) => {
+        setSortConfig({ key, direction });
+        const keyMap = { internal_sku: 'sku', display_name: 'name', application_text: 'application' };
+        if (keyMap[key]) {
+            setGlobalSortBy(keyMap[key]);
+            setGlobalSortDirection(direction);
+        }
+        setPage(1);
+    };
 
     const filterTabs = [
         { key: 'active', label: 'Active' },
@@ -281,16 +287,16 @@ const PartsPage = ({ user, onNavigate }) => {
                         <table className="w-full text-left">
                             <thead>
                                 <tr>
-                                    <th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={selectedParts.length === sortedParts.length && sortedParts.length > 0} /></th>
-                                    <SortableHeader column="internal_sku" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>SKU</SortableHeader>
-                                    <SortableHeader column="display_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Item</SortableHeader>
-                                    <SortableHeader column="application_text" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Application</SortableHeader>
+                                    <th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={selectedParts.length === parts.length && parts.length > 0} /></th>
+                                    <SortableHeader column="internal_sku" sortConfig={sortConfig} onSort={handleHeaderSort}>SKU</SortableHeader>
+                                    <SortableHeader column="display_name" sortConfig={sortConfig} onSort={handleHeaderSort}>Item</SortableHeader>
+                                    <SortableHeader column="application_text" sortConfig={sortConfig} onSort={handleHeaderSort}>Application</SortableHeader>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Barcodes</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {sortedParts.map(part => (
+                                {parts.map(part => (
                                     <tr key={part.part_id} className="border-b hover:bg-gray-50">
                                         <td className="p-3"><input type="checkbox" checked={selectedParts.includes(part.part_id)} onChange={() => handleSelectPart(part.part_id)} /></td>
                                         <td className="p-3 text-sm font-mono">{part.internal_sku}</td>

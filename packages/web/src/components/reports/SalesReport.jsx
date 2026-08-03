@@ -43,7 +43,15 @@ const SalesReport = () => {
 
         try {
             const response = await api.get('/reports/sales-summary', {
-                params: { ...dates, format, page, pageSize, paginated: 1 },
+                params: {
+                    ...dates,
+                    format,
+                    page,
+                    pageSize,
+                    paginated: 1,
+                    sortBy: sortConfig.key,
+                    sortOrder: sortConfig.direction
+                },
                 responseType: format === 'csv' ? 'blob' : 'json',
             });
 
@@ -67,7 +75,7 @@ const SalesReport = () => {
         } finally {
             if (format === 'json') setLoading(false);
         }
-    }, [dates, page, pageSize]);
+    }, [dates, page, pageSize, sortConfig]);
 
     useEffect(() => {
         fetchReport();
@@ -77,7 +85,10 @@ const SalesReport = () => {
         setPage(1);
     }, [dates.startDate, dates.endDate]);
 
-    const sortedReportData = sortData(reportData, sortConfig);
+    const handleSort = (key, direction) => {
+        setSortConfig({ key, direction });
+        setPage(1);
+    };
 
     return (
         <>
@@ -116,14 +127,14 @@ const SalesReport = () => {
                     <table className="w-full text-left">
                         <thead className="border-b">
                             <tr>
-                                <SortableHeader column="invoice_date" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Date</SortableHeader>
-                                <SortableHeader column="invoice_number" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Invoice #</SortableHeader>
-                                <SortableHeader column="display_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Item</SortableHeader>
-                                <SortableHeader className="text-right" column="line_total" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Total</SortableHeader>
+                                <SortableHeader column="invoice_date" sortConfig={sortConfig} onSort={handleSort}>Date</SortableHeader>
+                                <SortableHeader column="invoice_number" sortConfig={sortConfig} onSort={handleSort}>Invoice #</SortableHeader>
+                                <SortableHeader column="display_name" sortConfig={sortConfig} onSort={handleSort}>Item</SortableHeader>
+                                <SortableHeader className="text-right" column="line_total" sortConfig={sortConfig} onSort={handleSort}>Total</SortableHeader>
                             </tr>
                         </thead>
                         <tbody>
-                            {sortedReportData.map((row, index) => (
+                            {reportData.map((row, index) => (
                                 <tr key={index} className="border-b hover:bg-gray-50">
                                     <td className="p-3 text-sm">{format(toZonedTime(parseISO(row.invoice_date), 'Asia/Manila'), 'MM/dd/yyyy')}</td>
                                     <td className="p-3 text-sm font-mono">{row.invoice_number}</td>

@@ -23,34 +23,64 @@ const manageTags = async (client, tags, customerId) => {
 
 // GET all customers (allowed for customers:view or pos:use)
 router.get('/customers', protect, hasPermission(['customers:view', 'pos:use']), async (req, res) => {
-    // Adding a filter for active/inactive/all customers
-    const { status = 'active' } = req.query;
+    const { status = 'active', search, sortBy, sortOrder = 'ASC' } = req.query;
     const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
-    let whereClause = "WHERE is_active = TRUE";
-    if (status === 'inactive') {
-      whereClause = "WHERE is_active = FALSE";
-    } else if (status === 'all') {
-      whereClause = "";
+    
+    let whereConditions = [];
+    let queryParams = [];
+    let paramIdx = 1;
+
+    if (status === 'active') {
+        whereConditions.push('is_active = TRUE');
+    } else if (status === 'inactive') {
+        whereConditions.push('is_active = FALSE');
     }
+
+    if (search && search.trim()) {
+        whereConditions.push(`(
+            LOWER(COALESCE(first_name, '')) LIKE $${paramIdx} OR
+            LOWER(COALESCE(last_name, '')) LIKE $${paramIdx} OR
+            LOWER(COALESCE(company_name, '')) LIKE $${paramIdx} OR
+            LOWER(COALESCE(phone, '')) LIKE $${paramIdx}
+        )`);
+        queryParams.push(`%${search.trim().toLowerCase()}%`);
+        paramIdx++;
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+    
+    const dir = sortOrder.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+    let orderBy = `ORDER BY c.first_name ${dir}, c.last_name ${dir}`;
+    if (sortBy === 'full_name') {
+        orderBy = `ORDER BY COALESCE(NULLIF(c.company_name, ''), c.first_name || ' ' || c.last_name) ${dir}`;
+    } else if (sortBy === 'company_name') {
+        orderBy = `ORDER BY c.company_name ${dir} NULLS LAST`;
+    } else if (sortBy === 'phone') {
+        orderBy = `ORDER BY c.phone ${dir} NULLS LAST`;
+    } else if (sortBy === 'status') {
+        orderBy = `ORDER BY c.is_active ${dir}`;
+    }
+
     try {
         if (!paginated) {
             const { rows } = await db.query(`
                 SELECT c.*, 
                        COALESCE((SELECT SUM(i.total_amount - i.amount_paid) FROM invoice i WHERE i.customer_id = c.customer_id AND i.status IN ('Unpaid', 'Partially Paid')), 0) AS balance_due 
                 FROM customer c ${whereClause} 
-                ORDER BY c.first_name, c.last_name
-            `);
+                ${orderBy}
+            `, queryParams);
             return res.json(rows);
         }
 
-        const countRes = await db.query(`SELECT COUNT(*)::int AS total FROM customer ${whereClause}`);
+        const countRes = await db.query(`SELECT COUNT(*)::int AS total FROM customer c ${whereClause}`, queryParams);
         const total = countRes.rows[0]?.total || 0;
+        const mainParams = [...queryParams, limit, offset];
         const { rows } = await db.query(
             `SELECT c.*, 
                     COALESCE((SELECT SUM(i.total_amount - i.amount_paid) FROM invoice i WHERE i.customer_id = c.customer_id AND i.status IN ('Unpaid', 'Partially Paid')), 0) AS balance_due 
              FROM customer c ${whereClause} 
-             ORDER BY c.first_name, c.last_name LIMIT $1 OFFSET $2`,
-            [limit, offset]
+             ${orderBy} LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
+            mainParams
         );
         res.json(paginatedResponse({ data: rows, page, pageSize, total }));
     } catch (err) {

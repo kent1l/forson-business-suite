@@ -8,7 +8,7 @@ const router = express.Router();
 
 // GET /api/purchase-orders - Get all purchase orders with status filter
 router.get('/purchase-orders', protect, hasPermission('purchase_orders:view'), async (req, res) => {
-    const { status = 'Pending' } = req.query; // Default to Pending
+    const { status = 'Pending', sortBy, sortOrder = 'DESC' } = req.query;
     const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
     let whereClause = '';
     const queryParams = [];
@@ -16,6 +16,20 @@ router.get('/purchase-orders', protect, hasPermission('purchase_orders:view'), a
     if (status && status !== 'All') {
         whereClause = 'WHERE po.status = $1';
         queryParams.push(status);
+    }
+
+    const dir = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    let orderBy = `ORDER BY po.order_date ${dir}, po.po_id ${dir}`;
+    if (sortBy === 'po_number') {
+        orderBy = `ORDER BY po.po_number ${dir}`;
+    } else if (sortBy === 'supplier_name') {
+        orderBy = `ORDER BY s.supplier_name ${dir}`;
+    } else if (sortBy === 'order_date') {
+        orderBy = `ORDER BY po.order_date ${dir}`;
+    } else if (sortBy === 'total_amount') {
+        orderBy = `ORDER BY po.total_amount ${dir}`;
+    } else if (sortBy === 'status') {
+        orderBy = `ORDER BY po.status ${dir}`;
     }
 
     try {
@@ -30,7 +44,7 @@ router.get('/purchase-orders', protect, hasPermission('purchase_orders:view'), a
         if (!paginated) {
             const { rows } = await db.query(
                 `${baseQuery}
-                 ORDER BY po.order_date DESC, po.po_id DESC`,
+                 ${orderBy}`,
                 queryParams
             );
             return res.json(rows);
@@ -48,7 +62,7 @@ router.get('/purchase-orders', protect, hasPermission('purchase_orders:view'), a
         const paginationPlaceholderStart = queryParams.length + 1;
         const { rows } = await db.query(
             `${baseQuery}
-             ORDER BY po.order_date DESC, po.po_id DESC
+             ${orderBy}
              LIMIT $${paginationPlaceholderStart} OFFSET $${paginationPlaceholderStart + 1}`,
             paginatedParams
         );

@@ -5,27 +5,53 @@ const router = express.Router();
 
 // GET all suppliers with status filter
 router.get('/suppliers', async (req, res) => {
-  const { status = 'active' } = req.query; // Default to 'active'
+  const { status = 'active', search, sortBy, sortOrder = 'ASC' } = req.query;
   const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
 
-  let whereClause = "WHERE is_active = TRUE";
-  if (status === 'inactive') {
-    whereClause = "WHERE is_active = FALSE";
-  } else if (status === 'all') {
-    whereClause = ""; // No filter
+  let whereConditions = [];
+  let queryParams = [];
+  let paramIdx = 1;
+
+  if (status === 'active') {
+    whereConditions.push('is_active = TRUE');
+  } else if (status === 'inactive') {
+    whereConditions.push('is_active = FALSE');
+  }
+
+  if (search && search.trim()) {
+    whereConditions.push(`(
+      LOWER(COALESCE(supplier_name, '')) LIKE $${paramIdx} OR
+      LOWER(COALESCE(contact_person, '')) LIKE $${paramIdx} OR
+      LOWER(COALESCE(phone, '')) LIKE $${paramIdx}
+    )`);
+    queryParams.push(`%${search.trim().toLowerCase()}%`);
+    paramIdx++;
+  }
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+  const dir = sortOrder.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+  let orderBy = `ORDER BY supplier_name ${dir}`;
+  if (sortBy === 'contact_person') {
+    orderBy = `ORDER BY contact_person ${dir} NULLS LAST`;
+  } else if (sortBy === 'phone') {
+    orderBy = `ORDER BY phone ${dir} NULLS LAST`;
+  } else if (sortBy === 'status') {
+    orderBy = `ORDER BY is_active ${dir}`;
   }
 
   try {
     if (!paginated) {
-      const { rows } = await db.query(`SELECT * FROM supplier ${whereClause} ORDER BY supplier_name`);
+      const { rows } = await db.query(`SELECT * FROM supplier ${whereClause} ${orderBy}`, queryParams);
       return res.json(rows);
     }
 
-    const countRes = await db.query(`SELECT COUNT(*)::int AS total FROM supplier ${whereClause}`);
+    const countRes = await db.query(`SELECT COUNT(*)::int AS total FROM supplier ${whereClause}`, queryParams);
     const total = countRes.rows[0]?.total || 0;
+    const mainParams = [...queryParams, limit, offset];
     const { rows } = await db.query(
-      `SELECT * FROM supplier ${whereClause} ORDER BY supplier_name LIMIT $1 OFFSET $2`,
-      [limit, offset]
+      `SELECT * FROM supplier ${whereClause} ${orderBy} LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
+      mainParams
     );
     res.json(paginatedResponse({ data: rows, page, pageSize, total }));
   } catch (err) {

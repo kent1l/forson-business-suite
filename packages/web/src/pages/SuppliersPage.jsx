@@ -34,7 +34,16 @@ const SuppliersPage = () => {
         try {
             setError('');
             setLoading(true);
-            const response = await api.get('/suppliers', { params: { status: statusFilter, page, pageSize, paginated: 1 } });
+            const response = await api.get('/suppliers', {
+                params: {
+                    status: statusFilter,
+                    page,
+                    pageSize,
+                    paginated: 1,
+                    sortBy: sortConfig.key,
+                    sortOrder: sortConfig.direction
+                }
+            });
             setSuppliers(response.data?.data || []);
             setTotal(response.data?.total || 0);
         } catch (err) {
@@ -46,11 +55,16 @@ const SuppliersPage = () => {
 
     useEffect(() => {
         fetchSuppliers();
-    }, [statusFilter, page, pageSize]);
+    }, [statusFilter, page, pageSize, sortConfig]);
 
     useEffect(() => {
         setPage(1);
     }, [statusFilter]);
+
+    const handleSort = (key, direction) => {
+        setSortConfig({ key, direction });
+        setPage(1);
+    };
 
     const handleAdd = () => {
         setCurrentSupplier(null);
@@ -129,15 +143,15 @@ const SuppliersPage = () => {
                         <table className="w-full text-left">
                             <thead className="border-b">
                                 <tr>
-                                    <SortableHeader column="supplier_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Name</SortableHeader>
-                                    <SortableHeader className="hidden sm:table-cell" column="contact_person" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Contact Person</SortableHeader>
-                                    <SortableHeader className="hidden md:table-cell" column="phone" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Phone</SortableHeader>
-                                    <SortableHeader className="text-center" column="status" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Status</SortableHeader>
+                                    <SortableHeader column="supplier_name" sortConfig={sortConfig} onSort={handleSort}>Name</SortableHeader>
+                                    <SortableHeader className="hidden sm:table-cell" column="contact_person" sortConfig={sortConfig} onSort={handleSort}>Contact Person</SortableHeader>
+                                    <SortableHeader className="hidden md:table-cell" column="phone" sortConfig={sortConfig} onSort={handleSort}>Phone</SortableHeader>
+                                    <SortableHeader className="text-center" column="status" sortConfig={sortConfig} onSort={handleSort}>Status</SortableHeader>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {sortedSuppliers.map(supplier => (
+                                {suppliers.map(supplier => (
                                     <tr key={supplier.supplier_id} className="border-b hover:bg-gray-50">
                                         <td className="p-3 text-sm font-medium text-gray-800">{supplier.supplier_name}</td>
                                         <td className="p-3 text-sm hidden sm:table-cell">{supplier.contact_person}</td>
