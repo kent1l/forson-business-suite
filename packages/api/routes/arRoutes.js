@@ -157,7 +157,7 @@ router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req
             AND b.ledger_balance > 0
             GROUP BY c.customer_id, c.company_name, c.first_name, c.last_name, b.ledger_balance
             HAVING b.ledger_balance > 0
-            ORDER BY earliest_due_date ASC, total_balance_due DESC
+            ORDER BY invoice_count DESC, earliest_due_date ASC, total_balance_due DESC
             LIMIT $1 OFFSET $2;
         `;
         

@@ -42,7 +42,7 @@ const CustomerSummaryTable = ({
     loading = false,
     onExport
 }) => {
-    const [sortConfig, setSortConfig] = useState({ key: 'earliest_due_date', direction: 'ASC' });
+    const [sortConfig, setSortConfig] = useState({ key: 'invoice_count', direction: 'DESC' });
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('ALL');
 
@@ -65,7 +65,8 @@ const CustomerSummaryTable = ({
     const sortedCustomers = useMemo(() => sortData(filteredCustomers, sortConfig, {
         customer_name: (row) => row.company_name || `${row.first_name || ''} ${row.last_name || ''}`.trim(),
         status: (row) => getCustomerStatusBadge(row)?.text || '',
-        wallet_balance: (row) => Number(row.wallet_balance || 0)
+        wallet_balance: (row) => Number(row.wallet_balance || 0),
+        invoice_count: (row) => Number(row.invoice_count || 0)
     }), [filteredCustomers, sortConfig]);
 
     if (loading) return <_TableSkeleton />;
