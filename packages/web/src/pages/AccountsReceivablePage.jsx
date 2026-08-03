@@ -342,8 +342,43 @@ const AccountsReceivablePage = () => {
         }
     }, [soaCustomerId, fetchCustomerLedger]);
 
+    // Fetch customer payable invoices for drill-down modal
+    const fetchCustomerInvoices = useCallback(async (customerId, page = customerInvoicesPage, pageSize = customerInvoicesPageSize) => {
+        if (!customerId) return;
+        try {
+            setCustomerInvoicesLoading(true);
+            const res = await api.get(`/ar/customer-invoices/${customerId}`, {
+                params: {
+                    page,
+                    pageSize,
+                    paginated: 1
+                }
+            });
+            const data = res.data?.data || res.data || [];
+            const total = res.data?.total || data.length || 0;
+            setCustomerInvoices(data);
+            setCustomerInvoicesTotal(total);
+        } catch (err) {
+            console.error('Failed to fetch customer invoices:', err);
+            toast.error('Failed to load customer invoices');
+            setCustomerInvoices([]);
+        } finally {
+            setCustomerInvoicesLoading(false);
+        }
+    }, [customerInvoicesPage, customerInvoicesPageSize]);
+
+    useEffect(() => {
+        if (selectedCustomerForInvoices?.customer_id) {
+            fetchCustomerInvoices(selectedCustomerForInvoices.customer_id, customerInvoicesPage, customerInvoicesPageSize);
+        } else {
+            setCustomerInvoices([]);
+            setCustomerInvoicesTotal(0);
+        }
+    }, [selectedCustomerForInvoices, customerInvoicesPage, customerInvoicesPageSize, fetchCustomerInvoices]);
+
     const handleCustomerClick = useCallback((customer) => {
         setSelectedCustomerForInvoices(customer);
+        setCustomerInvoicesPage(1);
     }, []);
 
     const handleReceivePaymentClick = useCallback((invoice) => {
@@ -940,8 +975,11 @@ const AccountsReceivablePage = () => {
 
             {/* Customer Invoice Details Modal */}
             <CustomerInvoiceDetailsModal
-                isOpen={customerInvoices.length > 0}
-                onClose={() => setCustomerInvoices([])}
+                isOpen={selectedCustomerForInvoices !== null}
+                onClose={() => {
+                    setSelectedCustomerForInvoices(null);
+                    setCustomerInvoices([]);
+                }}
                 title={`Payable Invoices for ${selectedCustomerForInvoices?.company_name || `${selectedCustomerForInvoices?.first_name || ''} ${selectedCustomerForInvoices?.last_name || ''}`.trim()}`}
                 invoices={customerInvoices}
                 loading={customerInvoicesLoading}
@@ -952,6 +990,9 @@ const AccountsReceivablePage = () => {
                 onPageSizeChange={(size) => {
                     setCustomerInvoicesPageSize(size);
                     setCustomerInvoicesPage(1);
+                }}
+                onAfterDueDateUpdate={() => {
+                    fetchDashboardData();
                 }}
             />
         </div>
