@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
@@ -70,6 +70,31 @@ const AccountsReceivablePage = () => {
     const [soaLedger, setSoaLedger] = useState(null);
     const [soaLoading, setSoaLoading] = useState(false);
     const [soaDownloading, setSoaDownloading] = useState(false);
+    const [soaSearchQuery, setSoaSearchQuery] = useState('');
+    const [soaDropdownOpen, setSoaDropdownOpen] = useState(false);
+    const soaComboboxRef = useRef(null);
+
+    // Close SOA customer dropdown on click outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (soaComboboxRef.current && !soaComboboxRef.current.contains(event.target)) {
+                setSoaDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    // Filter customers for SOA search box
+    const filteredSoaCustomers = useMemo(() => {
+        if (!soaSearchQuery.trim()) return customers;
+        const q = soaSearchQuery.toLowerCase();
+        return customers.filter(c => {
+            const name = (c.company_name || `${c.first_name || ''} ${c.last_name || ''}`).toLowerCase();
+            const phone = (c.phone || '').toLowerCase();
+            return name.includes(q) || phone.includes(q);
+        });
+    }, [customers, soaSearchQuery]);
 
     // State for Tab 3: PDC Desk
     const [pdcItems, setPdcItems] = useState([]);
@@ -331,10 +356,15 @@ const AccountsReceivablePage = () => {
     useEffect(() => {
         if (hasPermission('ar:view')) {
             if (activeTab === 'overview') fetchDashboardData();
+            if (activeTab === 'ledger_soa' && customers.length === 0) {
+                api.get('/customers/with-balances', { params: { paginated: 1, page: 1, pageSize: 500 } })
+                    .then(res => setCustomers(res.data?.data || res.data || []))
+                    .catch(err => console.error('Failed to load customers for SOA:', err));
+            }
             if (activeTab === 'pdc_desk') fetchPdcItems();
             if (activeTab === 'wallet') fetchWalletCustomers();
         }
-    }, [activeTab, hasPermission, fetchDashboardData, fetchPdcItems, fetchWalletCustomers]);
+    }, [activeTab, hasPermission, fetchDashboardData, fetchPdcItems, fetchWalletCustomers, customers.length]);
 
     useEffect(() => {
         if (soaCustomerId) {
@@ -575,20 +605,75 @@ const AccountsReceivablePage = () => {
             {activeTab === 'ledger_soa' && (
                 <div className="space-y-6">
                     <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                        <div className="w-full md:w-96">
-                            <label className="block text-xs font-semibold uppercase text-gray-600 mb-1">Select Customer</label>
-                            <select
-                                value={soaCustomerId}
-                                onChange={(e) => setSoaCustomerId(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500"
-                            >
-                                <option value="">-- Choose Customer --</option>
-                                {customers.map(c => (
-                                    <option key={c.customer_id} value={c.customer_id}>
-                                        {c.company_name || `${c.first_name || ''} ${c.last_name || ''}`} ({formatCurrency(c.total_balance_due || c.balance_due)})
-                                    </option>
-                                ))}
-                            </select>
+                        <div className="w-full md:w-96 relative" ref={soaComboboxRef}>
+                            <label className="block text-xs font-semibold uppercase text-gray-600 mb-1">Search Customer</label>
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    value={soaSearchQuery}
+                                    onChange={(e) => {
+                                        setSoaSearchQuery(e.target.value);
+                                        setSoaDropdownOpen(true);
+                                        if (!e.target.value) {
+                                            setSoaCustomerId('');
+                                            setSoaLedger(null);
+                                        }
+                                    }}
+                                    onFocus={() => setSoaDropdownOpen(true)}
+                                    placeholder="Search customer name, company..."
+                                    className="w-full px-3 py-2 pr-8 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                                {soaSearchQuery && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setSoaSearchQuery('');
+                                            setSoaCustomerId('');
+                                            setSoaLedger(null);
+                                            setSoaDropdownOpen(false);
+                                        }}
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none p-1 rounded-full hover:bg-gray-100 transition-colors"
+                                        title="Clear search"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Search Dropdown Results */}
+                            {soaDropdownOpen && (
+                                <div className="absolute z-50 left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg">
+                                    {filteredSoaCustomers.length === 0 ? (
+                                        <div className="p-3 text-xs text-gray-500 text-center">No matching customer accounts found</div>
+                                    ) : (
+                                        filteredSoaCustomers.map(c => {
+                                            const displayName = c.company_name || `${c.first_name || ''} ${c.last_name || ''}`.trim();
+                                            const isSelected = String(c.customer_id) === String(soaCustomerId);
+                                            return (
+                                                <button
+                                                    key={c.customer_id}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSoaCustomerId(c.customer_id);
+                                                        setSoaSearchQuery(displayName);
+                                                        setSoaDropdownOpen(false);
+                                                    }}
+                                                    className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 flex justify-between items-center transition-colors border-b border-gray-100 last:border-0 ${
+                                                        isSelected ? 'bg-blue-50 font-semibold text-blue-700' : 'text-gray-700'
+                                                    }`}
+                                                >
+                                                    <span className="truncate">{displayName}</span>
+                                                    <span className="font-mono text-xs text-gray-500 ml-2 whitespace-nowrap">
+                                                        {formatCurrency(c.total_balance_due || c.balance_due || 0)}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })
+                                    )}
+                                </div>
+                            )}
                         </div>
                         {soaCustomerId && (
                             <button
