@@ -58,6 +58,7 @@ const CATEGORIES = [
         title: 'Finance & Expenses',
         icon: ICONS.receipt,
         items: [
+            { name: 'PDC & Treasury',    icon: ICONS.receipt, page: 'pdc',                permission: ['pdc:view', 'ar:view'] },
             { name: 'Expenses',           icon: ICONS.receipt, page: 'expenses',           permission: 'expenses:view' },
             { name: 'Expense Categories', icon: ICONS.tag,     page: 'expense_categories', permission: 'expenses:manage_categories' },
         ],

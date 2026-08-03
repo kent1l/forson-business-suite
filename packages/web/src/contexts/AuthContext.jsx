@@ -96,6 +96,9 @@ export const AuthProvider = ({ children }) => {
             console.error("Permissions is not an array:", permissions);
             return false;
         }
+        if (Array.isArray(requiredPermission)) {
+            return requiredPermission.some(p => permissions.includes(p));
+        }
         return permissions.includes(requiredPermission);
     }, [permissions]);
 

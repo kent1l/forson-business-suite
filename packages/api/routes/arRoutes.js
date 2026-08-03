@@ -645,8 +645,19 @@ router.post('/ar/ledger/:customerId/adjustment', protect, hasPermission('ar:mana
     }
 });
 
+// GET /ar/pdc/summary-stats - KPI summary metrics for PDC Vault Header Cards
+router.get('/ar/pdc/summary-stats', protect, hasPermission(['pdc:view', 'ar:view']), async (req, res) => {
+    try {
+        const stats = await pdcService.getPdcSummaryStats(db);
+        res.json({ success: true, data: stats });
+    } catch (err) {
+        console.error('PDC Summary Stats Error:', err.message);
+        res.status(500).json({ message: 'Failed to fetch PDC summary stats' });
+    }
+});
+
 // GET /ar/collections-clearance - List pending payments awaiting clearance across channels
-router.get('/ar/collections-clearance', protect, hasPermission('ar:view'), async (req, res) => {
+router.get('/ar/collections-clearance', protect, hasPermission(['pdc:view', 'ar:view']), async (req, res) => {
     try {
         const { pdc_status, maturity_status } = req.query;
         const list = await pdcService.getCollectionsClearanceList(db, pdc_status, maturity_status);
@@ -658,7 +669,7 @@ router.get('/ar/collections-clearance', protect, hasPermission('ar:view'), async
 });
 
 // POST /ar/collections-clearance/:paymentId/verify - Clear / settle a pending payment or PDC
-router.post('/ar/collections-clearance/:paymentId/verify', protect, hasPermission('ar:manage'), async (req, res) => {
+router.post('/ar/collections-clearance/:paymentId/verify', protect, hasPermission(['pdc:manage', 'ar:manage']), async (req, res) => {
     const paymentId = parseInt(req.params.paymentId, 10);
     if (!paymentId) return res.status(400).json({ message: 'Invalid payment ID' });
 
@@ -682,7 +693,7 @@ router.post('/ar/collections-clearance/:paymentId/verify', protect, hasPermissio
 });
 
 // POST /ar/collections-clearance/:paymentId/fail - Fail / bounce a payment or PDC and trigger automated reversal
-router.post('/ar/collections-clearance/:paymentId/fail', protect, hasPermission('ar:manage'), async (req, res) => {
+router.post('/ar/collections-clearance/:paymentId/fail', protect, hasPermission(['pdc:manage', 'ar:manage']), async (req, res) => {
     const paymentId = parseInt(req.params.paymentId, 10);
     if (!paymentId) return res.status(400).json({ message: 'Invalid payment ID' });
 
@@ -709,7 +720,7 @@ router.post('/ar/collections-clearance/:paymentId/fail', protect, hasPermission(
 });
 
 // POST /ar/collections-clearance/:paymentId/redeposit - Re-deposit a bounced cheque
-router.post('/ar/collections-clearance/:paymentId/redeposit', protect, hasPermission('ar:manage'), async (req, res) => {
+router.post('/ar/collections-clearance/:paymentId/redeposit', protect, hasPermission(['pdc:manage', 'ar:manage']), async (req, res) => {
     const paymentId = parseInt(req.params.paymentId, 10);
     if (!paymentId) return res.status(400).json({ message: 'Invalid payment ID' });
 
@@ -736,7 +747,7 @@ router.post('/ar/collections-clearance/:paymentId/redeposit', protect, hasPermis
 });
 
 // GET /ar/collections-clearance/:paymentId/history - Get audit history for a specific payment/cheque
-router.get('/ar/collections-clearance/:paymentId/history', protect, hasPermission('ar:view'), async (req, res) => {
+router.get('/ar/collections-clearance/:paymentId/history', protect, hasPermission(['pdc:view', 'ar:view']), async (req, res) => {
     try {
         const paymentId = parseInt(req.params.paymentId, 10);
         if (!paymentId) return res.status(400).json({ message: 'Invalid payment ID' });

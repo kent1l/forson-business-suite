@@ -15,7 +15,6 @@ import InvoiceAgingSummaryChart from '../components/accounts-receivable/InvoiceA
 import CustomerSummaryTable from '../components/accounts-receivable/CustomerSummaryTable';
 import CustomerInvoiceDetailsModal from '../components/accounts-receivable/CustomerInvoiceDetailsModal';
 import CustomerWalletModal from '../components/accounts-receivable/CustomerWalletModal';
-import PdcClearanceDeskTable from '../components/accounts-receivable/PdcClearanceDeskTable';
 import PaginationControls from '../components/ui/PaginationControls';
 
 const AccountsReceivablePage = () => {
@@ -147,21 +146,7 @@ const AccountsReceivablePage = () => {
         }
     };
 
-    // State for Tab 3: PDC Desk
-    const [pdcItems, setPdcItems] = useState([]);
-    const [pdcStatusFilter, setPdcStatusFilter] = useState('ALL');
-    const [pdcMaturityFilter, setPdcMaturityFilter] = useState('ALL');
-    const [pdcLoading, setPdcLoading] = useState(false);
-    const [selectedPdcPayment, setSelectedPdcPayment] = useState(null);
-    const [clearanceDate, setClearanceDate] = useState(new Date().toISOString().split('T')[0]);
-    const [bounceReason, setBounceReason] = useState('');
-    const [bounceFee, setBounceFee] = useState('0.00');
-    const [liftCreditHoldOnRedeposit, setLiftCreditHoldOnRedeposit] = useState(false);
-    const [historyItem, setHistoryItem] = useState(null);
-    const [chequeHistory, setChequeHistory] = useState([]);
-    const [historyLoading, setHistoryLoading] = useState(false);
-
-    // State for Tab 4: Wallet Management
+    // State for Tab 3: Wallet Management
     const [walletCustomers, setWalletCustomers] = useState([]);
     const [walletLoading, setWalletLoading] = useState(false);
     const [selectedWalletCustomer, setSelectedWalletCustomer] = useState(null);
@@ -317,89 +302,7 @@ const AccountsReceivablePage = () => {
     }, [soaCustomerId, dateRange, soaLedger]);
 
     // Fetch PDC Clearance Desk Items for Tab 3
-    const fetchPdcItems = useCallback(async () => {
-        try {
-            setPdcLoading(true);
-            const res = await api.get('/ar/collections-clearance', {
-                params: {
-                    pdc_status: pdcStatusFilter !== 'ALL' ? pdcStatusFilter : undefined,
-                    maturity_status: pdcMaturityFilter !== 'ALL' ? pdcMaturityFilter : undefined
-                }
-            });
-            setPdcItems(res.data?.data || res.data || []);
-        } catch (err) {
-            console.error('Failed to fetch PDC items:', err);
-            toast.error('Failed to load PDC clearance desk.');
-        } finally {
-            setPdcLoading(false);
-        }
-    }, [pdcStatusFilter, pdcMaturityFilter]);
-
-    // Process PDC Clearance Verification
-    const handleVerifyClearance = async (paymentId) => {
-        try {
-            await api.post(`/ar/collections-clearance/${paymentId}/verify`, {
-                clearance_date: clearanceDate
-            });
-            toast.success('Payment clearance verified!');
-            setSelectedPdcPayment(null);
-            fetchPdcItems();
-            fetchDashboardData();
-        } catch (err) {
-            console.error('Verify clearance error:', err);
-            toast.error(err?.response?.data?.message || 'Failed to verify clearance');
-        }
-    };
-
-    // Process Bounced Cheque
-    const handleMarkBounced = async (paymentId) => {
-        try {
-            await api.post(`/ar/collections-clearance/${paymentId}/fail`, {
-                reason: bounceReason || 'Bounced Cheque / Insufficient Funds',
-                bounce_fee: parseFloat(bounceFee) || 0
-            });
-            toast.success('Bounced cheque reversal processed and credit hold applied!');
-            setSelectedPdcPayment(null);
-            fetchPdcItems();
-            fetchDashboardData();
-        } catch (err) {
-            console.error('Bounce cheque error:', err);
-            toast.error(err?.response?.data?.message || 'Failed to process bounced cheque');
-        }
-    };
-
-    // Process Re-deposit Bounced Cheque
-    const handleRedepositCheque = async (paymentId) => {
-        try {
-            await api.post(`/ar/collections-clearance/${paymentId}/redeposit`, {
-                lift_credit_hold: liftCreditHoldOnRedeposit
-            });
-            toast.success('Bounced cheque re-deposited successfully for clearance!');
-            setSelectedPdcPayment(null);
-            fetchPdcItems();
-            fetchDashboardData();
-        } catch (err) {
-            console.error('Redeposit cheque error:', err);
-            toast.error(err?.response?.data?.message || 'Failed to re-deposit cheque');
-        }
-    };
-
-    // View Cheque Audit History
-    const handleViewHistory = async (item) => {
-        try {
-            setHistoryItem(item);
-            setHistoryLoading(true);
-            const res = await api.get(`/ar/collections-clearance/${item.payment_id}/history`);
-            setChequeHistory(res.data?.data || []);
-        } catch (err) {
-            console.error('Failed to fetch cheque history:', err);
-            toast.error('Failed to load cheque clearance audit history.');
-        } finally {
-            setHistoryLoading(false);
-        }
-    };
-
-    // Fetch Wallet Overview for Tab 4
+    // Fetch Wallet Overview for Tab 3
     const fetchWalletCustomers = useCallback(async () => {
         try {
             setWalletLoading(true);
@@ -422,10 +325,9 @@ const AccountsReceivablePage = () => {
                     .then(res => setCustomers(res.data?.data || res.data || []))
                     .catch(err => console.error('Failed to load customers for SOA:', err));
             }
-            if (activeTab === 'pdc_desk') fetchPdcItems();
             if (activeTab === 'wallet') fetchWalletCustomers();
         }
-    }, [activeTab, hasPermission, fetchDashboardData, fetchPdcItems, fetchWalletCustomers, customers.length]);
+    }, [activeTab, hasPermission, fetchDashboardData, fetchWalletCustomers, customers.length]);
 
     useEffect(() => {
         if (soaCustomerId) {
@@ -569,16 +471,6 @@ const AccountsReceivablePage = () => {
                     }`}
                 >
                     Customer Ledger & SOA
-                </button>
-                <button
-                    onClick={() => setActiveTab('pdc_desk')}
-                    className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
-                        activeTab === 'pdc_desk'
-                            ? 'bg-blue-600 text-white shadow-sm'
-                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                    }`}
-                >
-                    PDC & Clearance Desk
                 </button>
                 <button
                     onClick={() => setActiveTab('wallet')}
@@ -814,169 +706,7 @@ const AccountsReceivablePage = () => {
                 </div>
             )}
 
-            {/* TAB 3: PDC & COLLECTIONS CLEARANCE DESK */}
-            {activeTab === 'pdc_desk' && (
-                <div className="space-y-6">
-                    <PdcClearanceDeskTable
-                        items={pdcItems}
-                        loading={pdcLoading}
-                        pdcStatusFilter={pdcStatusFilter}
-                        onStatusFilterChange={setPdcStatusFilter}
-                        maturityFilter={pdcMaturityFilter}
-                        onMaturityFilterChange={setPdcMaturityFilter}
-                        onVerifyClearance={(item) => setSelectedPdcPayment(item)}
-                        onMarkBounced={(item) => setSelectedPdcPayment(item)}
-                        onRedepositCheque={(item) => setSelectedPdcPayment(item)}
-                        onViewHistory={(item) => handleViewHistory(item)}
-                    />
-
-                    {/* PDC Action Modal */}
-                    <Modal
-                        isOpen={selectedPdcPayment !== null}
-                        onClose={() => setSelectedPdcPayment(null)}
-                        title={
-                            selectedPdcPayment?.action === 'clear' ? 'Verify PDC Clearance' :
-                            selectedPdcPayment?.action === 'redeposit' ? 'Re-deposit Bounced Cheque' :
-                            'Process Bounced Cheque Reversal'
-                        }
-                        maxWidth="max-w-md"
-                    >
-                        {selectedPdcPayment?.action === 'clear' ? (
-                            <div className="space-y-4">
-                                <p className="text-sm text-gray-600">Confirm cheque clearance for <strong>{selectedPdcPayment?.company_name}</strong> of amount <strong>{formatCurrency(selectedPdcPayment?.amount)}</strong>.</p>
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1">Clearance Date</label>
-                                    <input
-                                        type="date"
-                                        value={clearanceDate}
-                                        onChange={(e) => setClearanceDate(e.target.value)}
-                                        className="w-full px-3 py-2 border rounded-lg text-sm"
-                                    />
-                                </div>
-                                <div className="flex justify-end gap-2 pt-2">
-                                    <button onClick={() => setSelectedPdcPayment(null)} className="px-3 py-1.5 border rounded-lg text-sm">Cancel</button>
-                                    <button onClick={() => handleVerifyClearance(selectedPdcPayment.payment_id)} className="px-4 py-1.5 bg-emerald-600 text-white rounded-lg text-sm font-semibold">Confirm Clearance</button>
-                                </div>
-                            </div>
-                        ) : selectedPdcPayment?.action === 'redeposit' ? (
-                            <div className="space-y-4">
-                                <p className="text-sm text-gray-700">
-                                    Confirm re-depositing cheque <strong>#{selectedPdcPayment?.reference_number || selectedPdcPayment?.payment_id}</strong> for <strong>{selectedPdcPayment?.company_name || `${selectedPdcPayment?.first_name || ''} ${selectedPdcPayment?.last_name || ''}`}</strong> of amount <strong>{formatCurrency(selectedPdcPayment?.amount)}</strong>.
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                    This will update the PDC status to <strong>DEPOSITED</strong> and payment status to <strong>PENDING</strong> for bank re-clearance.
-                                </p>
-                                <div className="flex items-center gap-2 pt-1">
-                                    <input
-                                        type="checkbox"
-                                        id="liftCreditHold"
-                                        checked={liftCreditHoldOnRedeposit}
-                                        onChange={(e) => setLiftCreditHoldOnRedeposit(e.target.checked)}
-                                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
-                                    />
-                                    <label htmlFor="liftCreditHold" className="text-xs font-semibold text-gray-700 cursor-pointer">
-                                        Lift customer credit hold immediately upon re-depositing
-                                    </label>
-                                </div>
-                                <div className="flex justify-end gap-2 pt-3">
-                                    <button onClick={() => setSelectedPdcPayment(null)} className="px-3 py-1.5 border rounded-lg text-sm">Cancel</button>
-                                    <button onClick={() => handleRedepositCheque(selectedPdcPayment.payment_id)} className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold">Confirm Re-deposit</button>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="space-y-4">
-                                <p className="text-sm text-red-600 font-semibold">Marking cheque #{selectedPdcPayment?.reference_number} as bounced will automatically reopen the invoice balance and apply a CREDIT HOLD to {selectedPdcPayment?.company_name}.</p>
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1">Bounce Reason</label>
-                                    <input
-                                        type="text"
-                                        value={bounceReason}
-                                        onChange={(e) => setBounceReason(e.target.value)}
-                                        className="w-full px-3 py-2 border rounded-lg text-sm"
-                                        placeholder="e.g. Insufficient Funds / NSF"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1">Bank Fee / Penalty (₱)</label>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        value={bounceFee}
-                                        onChange={(e) => setBounceFee(e.target.value)}
-                                        className="w-full px-3 py-2 border rounded-lg text-sm"
-                                    />
-                                </div>
-                                <div className="flex justify-end gap-2 pt-2">
-                                    <button onClick={() => setSelectedPdcPayment(null)} className="px-3 py-1.5 border rounded-lg text-sm">Cancel</button>
-                                    <button onClick={() => handleMarkBounced(selectedPdcPayment.payment_id)} className="px-4 py-1.5 bg-red-600 text-white rounded-lg text-sm font-semibold">Execute Reversal & Credit Hold</button>
-                                </div>
-                            </div>
-                        )}
-                    </Modal>
-
-                    {/* Cheque Audit History Modal */}
-                    <Modal
-                        isOpen={historyItem !== null}
-                        onClose={() => setHistoryItem(null)}
-                        title={`Clearance & Bounce History - ${historyItem?.company_name || 'Payment'}`}
-                        maxWidth="max-w-xl"
-                    >
-                        {historyLoading ? (
-                            <div className="p-8 text-center text-gray-500">Loading audit history timeline...</div>
-                        ) : chequeHistory.length === 0 ? (
-                            <div className="p-8 text-center text-gray-500">No recorded audit history logs for this payment yet.</div>
-                        ) : (
-                            <div className="space-y-4 max-h-[400px] overflow-y-auto pr-1">
-                                <div className="text-xs text-gray-500 border-b border-gray-100 pb-2 flex justify-between items-center">
-                                    <span>Ref / Cheque #: <strong className="font-mono text-gray-800">{historyItem?.reference_number || `#${historyItem?.payment_id}`}</strong></span>
-                                    <span>Amount: <strong className="font-mono text-gray-800">{formatCurrency(historyItem?.amount)}</strong></span>
-                                </div>
-                                <div className="relative border-l-2 border-gray-200 ml-3 space-y-4 pl-4 py-1">
-                                    {chequeHistory.map((log) => (
-                                        <div key={log.log_id} className="relative">
-                                            <div className={`absolute -left-[23px] top-1.5 w-3.5 h-3.5 rounded-full border-2 border-white ${
-                                                log.action === 'CLEARED' ? 'bg-emerald-500' :
-                                                log.action === 'BOUNCED' ? 'bg-rose-500' :
-                                                log.action === 'REDEPOSITED' ? 'bg-blue-500' :
-                                                'bg-amber-500'
-                                            }`} />
-                                            <div className="bg-gray-50 p-3 rounded-lg border border-gray-100 space-y-1">
-                                                <div className="flex items-center justify-between">
-                                                    <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${
-                                                        log.action === 'CLEARED' ? 'bg-emerald-100 text-emerald-800' :
-                                                        log.action === 'BOUNCED' ? 'bg-rose-100 text-rose-800' :
-                                                        log.action === 'REDEPOSITED' ? 'bg-blue-100 text-blue-800' :
-                                                        'bg-amber-100 text-amber-800'
-                                                    }`}>
-                                                        {log.action} {log.attempt_number > 1 ? `(Attempt #${log.attempt_number})` : ''}
-                                                    </span>
-                                                    <span className="text-[11px] text-gray-400">
-                                                        {new Date(log.created_at).toLocaleString()}
-                                                    </span>
-                                                </div>
-                                                {log.bounce_reason && (
-                                                    <p className="text-xs text-rose-700 font-semibold">Reason: {log.bounce_reason}</p>
-                                                )}
-                                                {log.bounce_fee > 0 && (
-                                                    <p className="text-xs text-gray-600">Bank Penalty Fee: <strong>{formatCurrency(log.bounce_fee)}</strong></p>
-                                                )}
-                                                {log.notes && (
-                                                    <p className="text-xs text-gray-600">{log.notes}</p>
-                                                )}
-                                                {log.created_by_username && (
-                                                    <p className="text-[10px] text-gray-400">Processed by: {log.created_by_username}</p>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </Modal>
-                </div>
-            )}
-
-            {/* TAB 4: CUSTOMER WALLET MANAGEMENT */}
+            {/* TAB 3: CUSTOMER WALLET MANAGEMENT */}
             {activeTab === 'wallet' && (
                 <div className="space-y-6">
                     <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center">

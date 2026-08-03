@@ -700,10 +700,37 @@ async function processRedepositCheque(client, { paymentId, sourceTable = 'auto',
   }
 }
 
+/**
+ * Summary KPI stats for PDC & Treasury Desk header cards.
+ */
+async function getPdcSummaryStats(db) {
+  const query = `
+    SELECT
+      COUNT(CASE WHEN cp.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE') THEN 1 END)::int AS held_in_safe_count,
+      COALESCE(SUM(CASE WHEN cp.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE') THEN cp.amount ELSE 0 END), 0) AS held_in_safe_total,
+      COUNT(CASE WHEN cp.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED') AND COALESCE(cp.cheque_date, cp.payment_date::date) <= CURRENT_DATE THEN 1 END)::int AS due_today_count,
+      COALESCE(SUM(CASE WHEN cp.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED') AND COALESCE(cp.cheque_date, cp.payment_date::date) <= CURRENT_DATE THEN cp.amount ELSE 0 END), 0) AS due_today_total,
+      COALESCE(SUM(CASE WHEN cp.pdc_status = 'CLEARED' AND DATE_TRUNC('month', cp.payment_date) = DATE_TRUNC('month', CURRENT_DATE) THEN cp.amount ELSE 0 END), 0) AS cleared_month_total,
+      COUNT(CASE WHEN cp.pdc_status = 'BOUNCED' THEN 1 END)::int AS bounced_count,
+      COALESCE(SUM(CASE WHEN cp.pdc_status = 'BOUNCED' THEN cp.amount ELSE 0 END), 0) AS bounced_total
+    FROM customer_payment cp
+    LEFT JOIN payment_methods pm ON pm.method_id = cp.method_id
+    WHERE (pm.type = 'cheque' OR pm.code IN ('cheque', 'pdc') OR cp.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED', 'BOUNCED'))
+  `;
+  const { rows } = await db.query(query);
+  return rows[0] || {
+    held_in_safe_count: 0, held_in_safe_total: 0,
+    due_today_count: 0, due_today_total: 0,
+    cleared_month_total: 0, bounced_count: 0, bounced_total: 0
+  };
+}
+
 module.exports = {
   getCollectionsClearanceList,
   getChequeClearanceHistory,
   verifyPayment,
   processBouncedCheque,
   processRedepositCheque,
+  getPdcSummaryStats,
 };
+
