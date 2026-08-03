@@ -160,7 +160,7 @@ async function getCollectionsClearanceList(db, pdcStatusFilter = null, maturityF
     db.query(ipQuery),
   ]);
 
-  const combined = [...cpResult.rows, ...ipResult.rows].map(computePdcMaturity);
+  const combined = [...(cpResult?.rows || []), ...(ipResult?.rows || [])].map(computePdcMaturity);
 
   // Sort combined result by created_at DESC
   combined.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
@@ -258,11 +258,11 @@ async function getChequeClearanceHistory(db, paymentId, sourceTable = 'auto') {
 async function verifyPayment(client, { paymentId, sourceTable = 'auto', userId = null }) {
   // ── Detect source table if auto ─────────────────────────────────────────
   if (sourceTable === 'auto') {
-    const { rows: cpCheck } = await client.query(
+    const cpCheck = await client.query(
       'SELECT payment_id FROM customer_payment WHERE payment_id = $1',
       [paymentId]
     );
-    sourceTable = cpCheck.length > 0 ? 'customer_payment' : 'invoice_payments';
+    sourceTable = (cpCheck?.rows && cpCheck.rows.length > 0) ? 'customer_payment' : 'invoice_payments';
   }
 
   if (sourceTable === 'customer_payment') {
@@ -298,7 +298,7 @@ async function verifyPayment(client, { paymentId, sourceTable = 'auto', userId =
 
     // Also mark all associated invoices as settled (update amount_paid / status)
     // using the invoice_payment_allocation totals
-    const { rows: allocations } = await client.query(
+    const allocRes = await client.query(
       `SELECT ipa.invoice_id,
               SUM(ipa.amount_allocated) AS allocated,
               i.total_amount
@@ -308,6 +308,7 @@ async function verifyPayment(client, { paymentId, sourceTable = 'auto', userId =
        GROUP BY ipa.invoice_id, i.total_amount`,
       [paymentId]
     );
+    const allocations = allocRes?.rows || [];
     for (const alloc of allocations) {
       const totalAllocated = parseFloat(alloc.allocated);
       const invoiceTotal = parseFloat(alloc.total_amount);
@@ -383,10 +384,10 @@ async function verifyPayment(client, { paymentId, sourceTable = 'auto', userId =
 async function processBouncedCheque(client, { paymentId, sourceTable = 'auto', bounceFee = 0, reason = null, userId = null }) {
   // ── Detect source table if auto ─────────────────────────────────────────
   if (sourceTable === 'auto') {
-    const { rows: cpCheck } = await client.query(
+    const cpCheck = await client.query(
       'SELECT payment_id FROM customer_payment WHERE payment_id = $1', [paymentId]
     );
-    sourceTable = cpCheck.length > 0 ? 'customer_payment' : 'invoice_payments';
+    sourceTable = (cpCheck?.rows && cpCheck.rows.length > 0) ? 'customer_payment' : 'invoice_payments';
   }
 
   const parsedFee = parseFloat(bounceFee) || 0;
@@ -404,12 +405,13 @@ async function processBouncedCheque(client, { paymentId, sourceTable = 'auto', b
 
     const refNo = cp.reference_number || `CP#${paymentId}`;
 
-    const { rows: [{ count: bounceCount }] } = await client.query(
+    const bounceRes = await client.query(
       `SELECT COUNT(*)::int AS count FROM cheque_clearance_log
        WHERE customer_payment_id = $1 AND action = 'BOUNCED'`,
       [paymentId]
     );
-    const attemptNumber = (bounceCount || 0) + 1;
+    const bounceCount = bounceRes?.rows?.[0]?.count || 0;
+    const attemptNumber = bounceCount + 1;
 
     // 1. Mark payment as bounced
     await client.query(
@@ -418,7 +420,7 @@ async function processBouncedCheque(client, { paymentId, sourceTable = 'auto', b
     );
 
     // 2. Reverse invoice statuses — revert back to Unpaid / Partially Paid
-    const { rows: allocations } = await client.query(
+    const allocRes = await client.query(
       `SELECT ipa.invoice_id, ipa.amount_allocated, i.total_amount,
               COALESCE(other_alloc.total_other, 0) AS other_allocated
        FROM invoice_payment_allocation ipa
@@ -432,6 +434,7 @@ async function processBouncedCheque(client, { paymentId, sourceTable = 'auto', b
        WHERE ipa.payment_id = $1`,
       [paymentId]
     );
+    const allocations = allocRes?.rows || [];
     for (const alloc of allocations) {
       const otherPaid = parseFloat(alloc.other_allocated);
       const invoiceTotal = parseFloat(alloc.total_amount);
@@ -511,11 +514,12 @@ async function processBouncedCheque(client, { paymentId, sourceTable = 'auto', b
 
     const refNo = payment.reference_number || `#${paymentId}`;
 
-    const { rows: [{ count: bounceCount }] } = await client.query(
+    const bounceRes = await client.query(
       `SELECT COUNT(*)::int AS count FROM cheque_clearance_log WHERE payment_id = $1 AND action = 'BOUNCED'`,
       [paymentId]
     );
-    const attemptNumber = (bounceCount || 0) + 1;
+    const bounceCount = bounceRes?.rows?.[0]?.count || 0;
+    const attemptNumber = bounceCount + 1;
 
     await client.query(
       `UPDATE invoice_payments SET payment_status = 'failed', pdc_status = 'BOUNCED' WHERE payment_id = $1`,
@@ -607,12 +611,13 @@ async function processRedepositCheque(client, { paymentId, sourceTable = 'auto',
       throw new Error(`Only bounced payments can be re-deposited. Current status: ${cp.pdc_status}`);
     }
 
-    const { rows: [{ count: prevAttempts }] } = await client.query(
+    const prevRes = await client.query(
       `SELECT COUNT(*)::int AS count FROM cheque_clearance_log
        WHERE customer_payment_id = $1 AND action IN ('BOUNCED', 'REDEPOSITED')`,
       [paymentId]
     );
-    const attemptNumber = (prevAttempts || 0) + 1;
+    const prevAttempts = prevRes?.rows?.[0]?.count || 0;
+    const attemptNumber = prevAttempts + 1;
 
     await client.query(
       `UPDATE customer_payment SET pdc_status = 'DEPOSITED' WHERE payment_id = $1`,
@@ -659,12 +664,13 @@ async function processRedepositCheque(client, { paymentId, sourceTable = 'auto',
       throw new Error(`Only bounced payments can be re-deposited. Current status: ${payment.pdc_status}`);
     }
 
-    const { rows: [{ count: prevAttempts }] } = await client.query(
+    const prevRes = await client.query(
       `SELECT COUNT(*)::int AS count FROM cheque_clearance_log
        WHERE payment_id = $1 AND action IN ('BOUNCED', 'REDEPOSITED')`,
       [paymentId]
     );
-    const attemptNumber = (prevAttempts || 0) + 1;
+    const prevAttempts = prevRes?.rows?.[0]?.count || 0;
+    const attemptNumber = prevAttempts + 1;
 
     await client.query(
       `UPDATE invoice_payments SET payment_status = 'pending', pdc_status = 'DEPOSITED' WHERE payment_id = $1`,
