@@ -132,7 +132,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
     const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
     const sortBy = String(req.query.sortBy || 'name').toLowerCase();
     const sortDirection = String(req.query.sortDirection || 'ASC').toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
-    const isGlobalSort = ['name', 'display_name', 'sku', 'application'].includes(sortBy);
+    const isGlobalSort = ['name', 'display_name', 'sku', 'internal_sku', 'application', 'application_text'].includes(sortBy);
     try {
         const index = meiliClient.index('parts');
         const searchOptions = {
@@ -190,12 +190,20 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
         }
         let orderByClause = 'ORDER BY array_position($1::int[], pv.part_id)';
         if (isGlobalSort) {
-            if (sortBy === 'sku') {
+            if (sortBy === 'sku' || sortBy === 'internal_sku') {
                 orderByClause = `ORDER BY LOWER(COALESCE(pv.internal_sku, '')) ${sortDirection}, pv.part_id ${sortDirection}`;
-            } else if (sortBy === 'application') {
-                orderByClause = `ORDER BY LOWER(COALESCE(applications, '')) ${sortDirection}, pv.part_id ${sortDirection}`;
+            } else if (sortBy === 'application' || sortBy === 'application_text') {
+                orderByClause = `ORDER BY LOWER(COALESCE((
+                    SELECT STRING_AGG(CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), '')), '; ')
+                    FROM part_application pa
+                    JOIN application a ON pa.application_id = a.application_id
+                    LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
+                    LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
+                    LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
+                    WHERE pa.part_id = pv.part_id
+                ), '')) ${sortDirection}, pv.part_id ${sortDirection}`;
             } else {
-                orderByClause = `ORDER BY LOWER(COALESCE(pv.group_name, '') || ' ' || COALESCE(pv.brand_name, '') || ' ' || COALESCE(pv.detail, '')) ${sortDirection}, pv.part_id ${sortDirection}`;
+                orderByClause = `ORDER BY LOWER(COALESCE(pv.display_name, '')) ${sortDirection}, pv.part_id ${sortDirection}`;
             }
         }
 

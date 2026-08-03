@@ -36,9 +36,13 @@ const PartsPage = ({ user, onNavigate }) => {
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
     const [total, setTotal] = useState(0);
-    const [sortConfig, setSortConfig] = useState({ key: 'internal_sku', direction: 'ASC' });
     const [globalSortBy, setGlobalSortBy] = useState('name');
     const [globalSortDirection, setGlobalSortDirection] = useState('ASC');
+
+    const sortConfig = useMemo(() => ({
+        key: globalSortBy === 'sku' ? 'internal_sku' : (globalSortBy === 'application' ? 'application_text' : 'display_name'),
+        direction: globalSortDirection
+    }), [globalSortBy, globalSortDirection]);
 
     const fetchInitialData = useCallback(async () => {
         try {
@@ -193,7 +197,6 @@ const PartsPage = ({ user, onNavigate }) => {
     };
 
     const handleHeaderSort = (key, direction) => {
-        setSortConfig({ key, direction });
         const keyMap = { internal_sku: 'sku', display_name: 'name', application_text: 'application' };
         if (keyMap[key]) {
             setGlobalSortBy(keyMap[key]);
@@ -284,15 +287,15 @@ const PartsPage = ({ user, onNavigate }) => {
                         </div>
                     )}
                     <div className="overflow-x-auto">
-                        <table className="w-full text-left">
+                        <table className="w-full text-left table-fixed">
                             <thead>
-                                <tr>
+                                <tr className="border-b">
                                     <th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={selectedParts.length === parts.length && parts.length > 0} /></th>
-                                    <SortableHeader column="internal_sku" sortConfig={sortConfig} onSort={handleHeaderSort}>SKU</SortableHeader>
-                                    <SortableHeader column="display_name" sortConfig={sortConfig} onSort={handleHeaderSort}>Item</SortableHeader>
-                                    <SortableHeader column="application_text" sortConfig={sortConfig} onSort={handleHeaderSort}>Application</SortableHeader>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Barcodes</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
+                                    <SortableHeader className="w-36" column="internal_sku" sortConfig={sortConfig} onSort={handleHeaderSort}>SKU</SortableHeader>
+                                    <SortableHeader className="w-1/3" column="display_name" sortConfig={sortConfig} onSort={handleHeaderSort}>Item</SortableHeader>
+                                    <SortableHeader className="w-1/3" column="application_text" sortConfig={sortConfig} onSort={handleHeaderSort}>Application</SortableHeader>
+                                    <th className="p-3 w-40 text-sm font-semibold text-gray-600">Barcodes</th>
+                                    <th className="p-3 w-32 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
