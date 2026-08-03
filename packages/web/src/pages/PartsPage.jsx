@@ -31,6 +31,7 @@ const PartsPage = ({ user, onNavigate }) => {
     const [currentPart, setCurrentPart] = useState(null);
     const [statusFilter, setStatusFilter] = useState('active');
     const [searchTerm, setSearchTerm] = useState('');
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
     const [selectedParts, setSelectedParts] = useState([]);
     const [isBulkEditModalOpen, setIsBulkEditModalOpen] = useState(false);
     const [page, setPage] = useState(1);
@@ -44,12 +45,19 @@ const PartsPage = ({ user, onNavigate }) => {
         direction: globalSortDirection
     }), [globalSortBy, globalSortDirection]);
 
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearchTerm(searchTerm);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
+
     const fetchInitialData = useCallback(async () => {
         try {
             setLoading(true);
             setListError('');
             const [partsRes, brandsRes, groupsRes] = await Promise.all([
-                api.get('/parts', { params: { status: statusFilter, search: searchTerm, page, pageSize, paginated: 1, sortBy: globalSortBy, sortDirection: globalSortDirection } }),
+                api.get('/parts', { params: { status: statusFilter, search: debouncedSearchTerm, page, pageSize, paginated: 1, sortBy: globalSortBy, sortDirection: globalSortDirection } }),
                 api.get('/brands'),
                 api.get('/groups')
             ]);
@@ -65,18 +73,15 @@ const PartsPage = ({ user, onNavigate }) => {
         } finally {
             setLoading(false);
         }
-    }, [statusFilter, searchTerm, page, pageSize, globalSortBy, globalSortDirection]);
+    }, [statusFilter, debouncedSearchTerm, page, pageSize, globalSortBy, globalSortDirection]);
 
     useEffect(() => {
-        const debounceTimer = setTimeout(() => {
-            fetchInitialData();
-        }, 300);
-        return () => clearTimeout(debounceTimer);
+        fetchInitialData();
     }, [fetchInitialData]);
 
     useEffect(() => {
         setPage(1);
-    }, [statusFilter, searchTerm, globalSortBy, globalSortDirection]);
+    }, [statusFilter, debouncedSearchTerm, globalSortBy, globalSortDirection]);
 
     const handleSave = (partData) => {
         const promise = currentPart
@@ -278,81 +283,88 @@ const PartsPage = ({ user, onNavigate }) => {
             </div>
 
 
-            <div className="bg-white p-6 rounded-xl border border-gray-200">
-                {loading ? <p>Loading...</p> : (
-                    <>
-                    {listError && (
-                        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                            {listError}
-                        </div>
-                    )}
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left table-fixed">
-                            <thead>
-                                <tr className="border-b">
-                                    <th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={selectedParts.length === parts.length && parts.length > 0} /></th>
-                                    <SortableHeader className="w-36" column="internal_sku" sortConfig={sortConfig} onSort={handleHeaderSort}>SKU</SortableHeader>
-                                    <SortableHeader className="w-1/3" column="display_name" sortConfig={sortConfig} onSort={handleHeaderSort}>Item</SortableHeader>
-                                    <SortableHeader className="w-1/3" column="application_text" sortConfig={sortConfig} onSort={handleHeaderSort}>Application</SortableHeader>
-                                    <th className="p-3 w-40 text-sm font-semibold text-gray-600">Barcodes</th>
-                                    <th className="p-3 w-32 text-sm font-semibold text-gray-600 text-right">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {parts.map(part => (
-                                    <tr key={part.part_id} className="border-b hover:bg-gray-50">
-                                        <td className="p-3"><input type="checkbox" checked={selectedParts.includes(part.part_id)} onChange={() => handleSelectPart(part.part_id)} /></td>
-                                        <td className="p-3 text-sm font-mono">{part.internal_sku}</td>
-                                        <td className="p-3 text-sm font-medium">{part.display_name}</td>
-                                        <td className="p-3 text-sm">{formatApplicationText(part.applications, { style: 'tableCell' })}</td>
-                                        <td className="p-3 text-sm">
-                                            {part.barcodes && part.barcodes.length > 0 ? (
-                                                <div className="flex items-center space-x-1">
-                                                    <span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded border border-gray-200">{part.barcodes[0]}</span>
-                                                    {part.barcodes.length > 1 && (
-                                                        <span className="text-xs text-gray-500 cursor-help" title={part.barcodes.slice(1).join(', ')}>+{part.barcodes.length - 1} more</span>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <span className="text-gray-400 text-xs">-</span>
-                                            )}
-                                        </td>
-                                        <td className="p-3 text-sm text-right">
-                                            <div className="flex justify-end items-center space-x-4">
-                                                {part.tags && <TagPopover tags={part.tags} />}
-                                                {hasPermission('parts:edit') && (
-                                                    <>
-                                                        <button onClick={() => handleManageApps(part)} title="Manage Applications" className="text-green-600 hover:text-green-800"><Icon path={ICONS.link} className="h-5 w-5"/></button>
-                                                        <button onClick={() => handleManageNumbers(part)} title="Manage Part Numbers" className="text-gray-600 hover:text-gray-800"><Icon path={ICONS.numbers} className="h-5 w-5"/></button>
-                                                        <button onClick={() => handleEdit(part)} title="Edit Part" className="text-blue-600 hover:text-blue-800"><Icon path={ICONS.edit} className="h-5 w-5" /></button>
-                                                    </>
-                                                )}
-                                                {hasPermission('parts:delete') && <button onClick={() => handleDelete(part.part_id)} title="Delete Part" className="text-red-600 hover:text-red-800"><Icon path={ICONS.trash} className="h-5 w-5" /></button>}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                                {parts.length === 0 && (
-                                    <tr>
-                                        <td colSpan="6" className="p-4 text-center text-gray-500">No data to display.</td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                    <PaginationControls
-                        page={page}
-                        pageSize={pageSize}
-                        total={total}
-                        onPageChange={setPage}
-                        onPageSizeChange={(value) => {
-                            setPageSize(value);
-                            setPage(1);
-                            setSelectedParts([]);
-                        }}
-                    />
-                    </>
+            <div className="bg-white p-6 rounded-xl border border-gray-200 relative overflow-hidden">
+                {loading && (
+                    <div className="absolute inset-x-0 top-0 h-1 bg-blue-600 animate-pulse z-10" />
                 )}
+                {listError && (
+                    <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                        {listError}
+                    </div>
+                )}
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left table-fixed">
+                        <colgroup>
+                            <col className="w-10" />
+                            <col className="w-36" />
+                            <col className="w-5/12" />
+                            <col className="w-5/12" />
+                            <col className="w-44" />
+                            <col className="w-36" />
+                        </colgroup>
+                        <thead>
+                            <tr className="border-b">
+                                <th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={selectedParts.length === parts.length && parts.length > 0} /></th>
+                                <SortableHeader className="w-36" column="internal_sku" sortConfig={sortConfig} onSort={handleHeaderSort}>SKU</SortableHeader>
+                                <SortableHeader className="w-5/12" column="display_name" sortConfig={sortConfig} onSort={handleHeaderSort}>Item</SortableHeader>
+                                <SortableHeader className="w-5/12" column="application_text" sortConfig={sortConfig} onSort={handleHeaderSort}>Application</SortableHeader>
+                                <th className="p-3 w-44 text-sm font-semibold text-gray-600">Barcodes</th>
+                                <th className="p-3 w-36 text-sm font-semibold text-gray-600 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className={`transition-opacity duration-150 ${loading ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+                            {parts.map(part => (
+                                <tr key={part.part_id} className="border-b hover:bg-gray-50">
+                                    <td className="p-3"><input type="checkbox" checked={selectedParts.includes(part.part_id)} onChange={() => handleSelectPart(part.part_id)} /></td>
+                                    <td className="p-3 text-sm font-mono truncate">{part.internal_sku}</td>
+                                    <td className="p-3 text-sm font-medium truncate" title={part.display_name}>{part.display_name}</td>
+                                    <td className="p-3 text-sm truncate" title={formatApplicationText(part.applications, { style: 'tableCell' })}>{formatApplicationText(part.applications, { style: 'tableCell' })}</td>
+                                    <td className="p-3 text-sm">
+                                        {part.barcodes && part.barcodes.length > 0 ? (
+                                            <div className="flex items-center space-x-1">
+                                                <span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded border border-gray-200">{part.barcodes[0]}</span>
+                                                {part.barcodes.length > 1 && (
+                                                    <span className="text-xs text-gray-500 cursor-help" title={part.barcodes.slice(1).join(', ')}>+{part.barcodes.length - 1} more</span>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <span className="text-gray-400 text-xs">-</span>
+                                        )}
+                                    </td>
+                                    <td className="p-3 text-sm text-right">
+                                        <div className="flex justify-end items-center space-x-4">
+                                            {part.tags && <TagPopover tags={part.tags} />}
+                                            {hasPermission('parts:edit') && (
+                                                <>
+                                                    <button onClick={() => handleManageApps(part)} title="Manage Applications" className="text-green-600 hover:text-green-800"><Icon path={ICONS.link} className="h-5 w-5"/></button>
+                                                    <button onClick={() => handleManageNumbers(part)} title="Manage Part Numbers" className="text-gray-600 hover:text-gray-800"><Icon path={ICONS.numbers} className="h-5 w-5"/></button>
+                                                    <button onClick={() => handleEdit(part)} title="Edit Part" className="text-blue-600 hover:text-blue-800"><Icon path={ICONS.edit} className="h-5 w-5" /></button>
+                                                </>
+                                            )}
+                                            {hasPermission('parts:delete') && <button onClick={() => handleDelete(part.part_id)} title="Delete Part" className="text-red-600 hover:text-red-800"><Icon path={ICONS.trash} className="h-5 w-5" /></button>}
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                            {parts.length === 0 && !loading && (
+                                <tr>
+                                    <td colSpan="6" className="p-4 text-center text-gray-500">No data to display.</td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+                <PaginationControls
+                    page={page}
+                    pageSize={pageSize}
+                    total={total}
+                    onPageChange={setPage}
+                    onPageSizeChange={(value) => {
+                        setPageSize(value);
+                        setPage(1);
+                        setSelectedParts([]);
+                    }}
+                />
             </div>
             <Modal isOpen={isFormModalOpen} onClose={() => setIsFormModalOpen(false)} title={currentPart ? 'Edit Part' : 'New Part'}>
                 <PartForm part={currentPart} brands={brands} groups={groups} onSave={handleSave} onCancel={() => setIsFormModalOpen(false)} onBrandGroupAdded={fetchInitialData} />
