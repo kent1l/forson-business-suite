@@ -756,46 +756,79 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
         const { customerId } = req.params;
         const { startDate, endDate } = req.query;
 
-        // Customer details
         const custRes = await db.query(`
-            SELECT c.*, COALESCE(w.balance, 0) as wallet_balance
+            SELECT c.*,
+                   COALESCE(w.balance, 0)            AS wallet_balance,
+                   c.credit_limit,
+                   c.credit_hold,
+                   c.credit_hold_reason,
+                   c.payment_terms
             FROM customer c
             LEFT JOIN customer_wallet w ON c.customer_id = w.customer_id
             WHERE c.customer_id = $1
         `, [customerId]);
-
-        if (custRes.rows.length === 0) {
-            return res.status(404).json({ message: 'Customer not found' });
-        }
+        if (custRes.rows.length === 0) return res.status(404).json({ message: 'Customer not found' });
         const customer = custRes.rows[0];
 
-        let startFilter = startDate ? new Date(startDate) : null;
-        let endFilter = endDate ? new Date(endDate) : null;
+        const startFilter = startDate ? new Date(startDate) : null;
+        const endFilter   = endDate   ? new Date(endDate)   : null;
 
-        // Fetch all ledger entries for this customer
+        // Ledger with full context: invoice dates, due dates, payment channel, credit note numbers
         const ledgerRes = await db.query(`
-            SELECT 
+            SELECT
                 l.ledger_id,
                 l.entry_type,
                 l.amount,
+                l.balance_after,
                 l.invoice_id,
                 l.payment_id,
                 l.cn_id,
                 l.reference_no,
-                l.created_at,
+                l.payment_channel,
                 l.notes,
+                l.created_at,
+                l.created_by,
                 i.invoice_number,
-                p.payment_id as payment_ref_id
+                i.invoice_date,
+                i.due_date,
+                i.terms                     AS invoice_terms,
+                i.total_amount              AS invoice_total,
+                cn.cn_number,
+                cn.refund_date              AS cn_date
             FROM ar_ledger l
-            LEFT JOIN invoice i ON l.invoice_id = i.invoice_id
-            LEFT JOIN invoice_payments p ON l.payment_id = p.payment_id
+            LEFT JOIN invoice i  ON l.invoice_id = i.invoice_id
+            LEFT JOIN credit_note cn ON l.cn_id  = cn.cn_id
             WHERE l.customer_id = $1
             ORDER BY l.created_at ASC, l.ledger_id ASC
         `, [customerId]);
 
+        // Pending cheques: customer_payment rows that are RECEIVED/DEPOSITED (not yet cleared)
+        // These affect committed invoice balances but NOT the ar_ledger cash balance.
+        const pendingChequeRes = await db.query(`
+            SELECT COALESCE(SUM(cp.amount), 0) AS pending_cheque_total,
+                   COUNT(*)::int               AS pending_cheque_count
+            FROM customer_payment cp
+            LEFT JOIN payment_methods pm ON pm.method_id = cp.method_id
+            WHERE cp.customer_id = $1
+              AND cp.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED')
+              AND (pm.type = 'cheque' OR pm.code IN ('cheque', 'pdc') OR
+                   cp.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED'))
+        `, [customerId]);
+        const pendingCheques = pendingChequeRes.rows[0];
+
+        const TYPE_LABELS = {
+            INVOICE_POSTED:        'Invoice Charged',
+            PAYMENT_SETTLED:       'Payment Received',
+            CREDIT_MEMO_APPLIED:   'Credit Note Applied',
+            DEBIT_ADJUSTMENT:      'Debit Adjustment',
+            CREDIT_ADJUSTMENT:     'Credit Adjustment',
+            PDC_BOUNCED_REVERSAL:  'Cheque Bounced (Reversal)',
+            BOUNCE_FEE_PENALTY:    'Bounced Cheque Penalty',
+        };
+
         let openingBalance = 0;
-        let totalInvoiced = 0;
-        let totalSettled = 0;
+        let totalCharged = 0;   // sum of debits (positive amounts)
+        let totalCredited = 0;  // sum of credits (negative amounts, shown as positive)
         let currentRunning = 0;
         const ledgerRows = [];
 
@@ -806,53 +839,67 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
             if (startFilter && entryDate < startFilter) {
                 openingBalance += amt;
                 currentRunning += amt;
-            } else if (!endFilter || entryDate <= endFilter) {
-                currentRunning += amt;
-                if (amt > 0) totalInvoiced += amt;
-                else totalSettled += Math.abs(amt);
-
-                ledgerRows.push({
-                    ledger_id: entry.ledger_id,
-                    date: entry.created_at,
-                    event_type: entry.entry_type,
-                    reference: entry.reference_no || entry.invoice_number || (entry.payment_id ? `#${entry.payment_id}` : '-'),
-                    description: entry.notes || entry.entry_type.replace(/_/g, ' '),
-                    debit_amount: amt > 0 ? amt : null,
-                    credit_amount: amt < 0 ? Math.abs(amt) : null,
-                    amount: amt,
-                    running_balance: currentRunning
-                });
+                continue;
             }
-        }
+            if (endFilter && entryDate > endFilter) continue;
 
-        if (!startFilter) {
-            // Set initial running balance
-            let bal = 0;
-            for (const r of ledgerRows) {
-                bal += r.amount;
-                r.running_balance = bal;
-            }
+            currentRunning += amt;
+            if (amt > 0) totalCharged  += amt;
+            else         totalCredited += Math.abs(amt);
+
+            // Build reference: prefer explicit ref_no, then invoice number, then CN number, then payment id
+            const docRef = entry.reference_no
+                || entry.invoice_number
+                || entry.cn_number
+                || (entry.payment_id ? `PMT-${entry.payment_id}` : null)
+                || '-';
+
+            ledgerRows.push({
+                ledger_id:       entry.ledger_id,
+                date:            entry.created_at,
+                invoice_date:    entry.invoice_date   || null,
+                due_date:        entry.due_date        || null,
+                invoice_terms:   entry.invoice_terms  || null,
+                invoice_total:   entry.invoice_total  || null,
+                cn_number:       entry.cn_number       || null,
+                event_type:      entry.entry_type,
+                type_label:      TYPE_LABELS[entry.entry_type] || entry.entry_type.replace(/_/g, ' '),
+                reference:       docRef,
+                payment_channel: entry.payment_channel || null,
+                description:     entry.notes || TYPE_LABELS[entry.entry_type] || entry.entry_type.replace(/_/g, ' '),
+                debit_amount:    amt > 0 ? amt : null,
+                credit_amount:   amt < 0 ? Math.abs(amt) : null,
+                amount:          amt,
+                running_balance: currentRunning,
+                invoice_id:      entry.invoice_id  || null,
+                payment_id:      entry.payment_id  || null,
+                cn_id:           entry.cn_id        || null,
+            });
         }
 
         res.json({
             customer: {
-                customer_id: customer.customer_id,
-                name: customer.company_name || `${customer.first_name || ''} ${customer.last_name || ''}`.trim(),
-                company_name: customer.company_name,
-                first_name: customer.first_name,
-                last_name: customer.last_name,
-                email: customer.email,
-                phone: customer.phone,
-                address: customer.address,
-                credit_limit: customer.credit_limit,
-                credit_hold: customer.credit_hold,
-                wallet_balance: customer.wallet_balance
+                customer_id:        customer.customer_id,
+                name:               customer.company_name || `${customer.first_name || ''} ${customer.last_name || ''}`.trim(),
+                company_name:       customer.company_name,
+                first_name:         customer.first_name,
+                last_name:          customer.last_name,
+                email:              customer.email,
+                phone:              customer.phone,
+                address:            customer.address,
+                credit_limit:       customer.credit_limit,
+                credit_hold:        customer.credit_hold,
+                credit_hold_reason: customer.credit_hold_reason,
+                payment_terms:      customer.payment_terms,
+                wallet_balance:     customer.wallet_balance,
             },
-            opening_balance: openingBalance,
-            total_invoiced: totalInvoiced,
-            total_settled: totalSettled,
-            closing_balance: currentRunning,
-            ledger_rows: ledgerRows
+            opening_balance:        openingBalance,
+            total_invoiced:         totalCharged,
+            total_settled:          totalCredited,
+            closing_balance:        currentRunning,
+            pending_cheque_total:   parseFloat(pendingCheques.pending_cheque_total),
+            pending_cheque_count:   pendingCheques.pending_cheque_count,
+            ledger_rows:            ledgerRows,
         });
     } catch (err) {
         console.error('AR Customer Ledger Error:', err);
@@ -866,38 +913,53 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
         const { customerId } = req.params;
         const { startDate, endDate } = req.query;
 
-        // Fetch customer details
         const custRes = await db.query(`
-            SELECT c.*, COALESCE(w.balance, 0) as wallet_balance
+            SELECT c.*,
+                   COALESCE(w.balance, 0) AS wallet_balance,
+                   c.credit_hold_reason,
+                   c.payment_terms
             FROM customer c
             LEFT JOIN customer_wallet w ON c.customer_id = w.customer_id
             WHERE c.customer_id = $1
         `, [customerId]);
-
-        if (custRes.rows.length === 0) {
-            return res.status(404).json({ message: 'Customer not found' });
-        }
+        if (custRes.rows.length === 0) return res.status(404).json({ message: 'Customer not found' });
         const customer = custRes.rows[0];
 
-        // Fetch aging summary for customer
+        // Aging — key names match what soaPdf.js expects (days_1_30, days_31_60, etc.)
         const agingRes = await db.query(`
             SELECT
-                COALESCE(SUM(CASE WHEN (CURRENT_DATE - COALESCE(i.due_date::date, i.invoice_date::date)) <= 0 THEN (i.total_amount - i.amount_paid) ELSE 0 END), 0) as current,
-                COALESCE(SUM(CASE WHEN (CURRENT_DATE - COALESCE(i.due_date::date, i.invoice_date::date)) BETWEEN 1 AND 30 THEN (i.total_amount - i.amount_paid) ELSE 0 END), 0) as days_1_30,
-                COALESCE(SUM(CASE WHEN (CURRENT_DATE - COALESCE(i.due_date::date, i.invoice_date::date)) BETWEEN 31 AND 60 THEN (i.total_amount - i.amount_paid) ELSE 0 END), 0) as days_31_60,
-                COALESCE(SUM(CASE WHEN (CURRENT_DATE - COALESCE(i.due_date::date, i.invoice_date::date)) BETWEEN 61 AND 90 THEN (i.total_amount - i.amount_paid) ELSE 0 END), 0) as days_61_90,
-                COALESCE(SUM(CASE WHEN (CURRENT_DATE - COALESCE(i.due_date::date, i.invoice_date::date)) > 90 THEN (i.total_amount - i.amount_paid) ELSE 0 END), 0) as days_90_plus
+                COALESCE(SUM(CASE WHEN (CURRENT_DATE - COALESCE(i.due_date::date, i.invoice_date::date)) <= 0
+                    THEN (i.total_amount - i.amount_paid) ELSE 0 END), 0)          AS current,
+                COALESCE(SUM(CASE WHEN (CURRENT_DATE - COALESCE(i.due_date::date, i.invoice_date::date)) BETWEEN 1 AND 30
+                    THEN (i.total_amount - i.amount_paid) ELSE 0 END), 0)          AS days_1_30,
+                COALESCE(SUM(CASE WHEN (CURRENT_DATE - COALESCE(i.due_date::date, i.invoice_date::date)) BETWEEN 31 AND 60
+                    THEN (i.total_amount - i.amount_paid) ELSE 0 END), 0)          AS days_31_60,
+                COALESCE(SUM(CASE WHEN (CURRENT_DATE - COALESCE(i.due_date::date, i.invoice_date::date)) BETWEEN 61 AND 90
+                    THEN (i.total_amount - i.amount_paid) ELSE 0 END), 0)          AS days_61_90,
+                COALESCE(SUM(CASE WHEN (CURRENT_DATE - COALESCE(i.due_date::date, i.invoice_date::date)) > 90
+                    THEN (i.total_amount - i.amount_paid) ELSE 0 END), 0)          AS days_90_plus
             FROM invoice i
-            WHERE i.customer_id = $1 AND (i.total_amount - i.amount_paid) > 0 AND i.status != 'Voided'
+            WHERE i.customer_id = $1
+              AND (i.total_amount - i.amount_paid) > 0
+              AND i.status NOT IN ('Paid', 'Voided')
         `, [customerId]);
         const aging = agingRes.rows[0] || {};
 
-        // Fetch ledger entries
         const startFilter = startDate ? new Date(startDate) : null;
-        const endFilter = endDate ? new Date(endDate) : null;
+        const endFilter   = endDate   ? new Date(endDate)   : null;
+
+        const TYPE_LABELS = {
+            INVOICE_POSTED:        'Invoice Charged',
+            PAYMENT_SETTLED:       'Payment Received',
+            CREDIT_MEMO_APPLIED:   'Credit Note Applied',
+            DEBIT_ADJUSTMENT:      'Debit Adjustment',
+            CREDIT_ADJUSTMENT:     'Credit Adjustment',
+            PDC_BOUNCED_REVERSAL:  'Cheque Bounced — Reversal',
+            BOUNCE_FEE_PENALTY:    'Bounced Cheque Penalty',
+        };
 
         const ledgerRes = await db.query(`
-            SELECT 
+            SELECT
                 l.ledger_id,
                 l.entry_type,
                 l.amount,
@@ -905,14 +967,33 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
                 l.payment_id,
                 l.cn_id,
                 l.reference_no,
+                l.payment_channel,
                 l.created_at,
                 l.notes,
-                i.invoice_number
+                i.invoice_number,
+                i.invoice_date,
+                i.due_date,
+                i.terms             AS invoice_terms,
+                cn.cn_number,
+                cn.refund_date      AS cn_date
             FROM ar_ledger l
-            LEFT JOIN invoice i ON l.invoice_id = i.invoice_id
+            LEFT JOIN invoice i   ON l.invoice_id = i.invoice_id
+            LEFT JOIN credit_note cn ON l.cn_id   = cn.cn_id
             WHERE l.customer_id = $1
             ORDER BY l.created_at ASC, l.ledger_id ASC
         `, [customerId]);
+
+        // Pending cheques (committed but not yet cleared — shown as a footnote)
+        const pendingRes = await db.query(`
+            SELECT COALESCE(SUM(cp.amount), 0) AS pending_total, COUNT(*)::int AS pending_count
+            FROM customer_payment cp
+            LEFT JOIN payment_methods pm ON pm.method_id = cp.method_id
+            WHERE cp.customer_id = $1
+              AND cp.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED')
+              AND (pm.type = 'cheque' OR pm.code IN ('cheque', 'pdc') OR
+                   cp.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED'))
+        `, [customerId]);
+        const pending = pendingRes.rows[0];
 
         let openingBalance = 0;
         let totalInvoiced = 0;
@@ -927,40 +1008,54 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
             if (startFilter && entryDate < startFilter) {
                 openingBalance += amt;
                 currentRunning += amt;
-            } else if (!endFilter || entryDate <= endFilter) {
-                currentRunning += amt;
-                if (amt > 0) totalInvoiced += amt;
-                else totalSettled += Math.abs(amt);
-
-                ledgerRows.push({
-                    date: entry.created_at,
-                    reference: entry.reference_no || entry.invoice_number || (entry.payment_id ? `#${entry.payment_id}` : '-'),
-                    description: entry.notes || entry.entry_type.replace(/_/g, ' '),
-                    debit_amount: amt > 0 ? amt : null,
-                    credit_amount: amt < 0 ? Math.abs(amt) : null,
-                    running_balance: currentRunning
-                });
+                continue;
             }
+            if (endFilter && entryDate > endFilter) continue;
+
+            currentRunning += amt;
+            if (amt > 0) totalInvoiced += amt;
+            else         totalSettled  += Math.abs(amt);
+
+            const docRef = entry.reference_no
+                || entry.invoice_number
+                || entry.cn_number
+                || (entry.payment_id ? `PMT-${entry.payment_id}` : null)
+                || '-';
+
+            ledgerRows.push({
+                date:            entry.created_at,
+                invoice_date:    entry.invoice_date   || null,
+                due_date:        entry.due_date        || null,
+                invoice_terms:   entry.invoice_terms  || null,
+                cn_number:       entry.cn_number       || null,
+                event_type:      entry.entry_type,
+                type_label:      TYPE_LABELS[entry.entry_type] || entry.entry_type.replace(/_/g, ' '),
+                reference:       docRef,
+                document_number: docRef,
+                payment_channel: entry.payment_channel || null,
+                description:     entry.notes || TYPE_LABELS[entry.entry_type] || entry.entry_type.replace(/_/g, ' '),
+                debit_amount:    amt > 0 ? amt  : null,
+                credit_amount:   amt < 0 ? Math.abs(amt) : null,
+                running_balance: currentRunning,
+            });
         }
 
         const pdfPath = await generateStatementOfAccountPDF(customer, ledgerRows, aging, {
-            startDate: startFilter,
-            endDate: endFilter || new Date(),
+            startDate:           startFilter,
+            endDate:             endFilter || new Date(),
             openingBalance,
             totalInvoiced,
             totalSettled,
-            closingBalance: currentRunning
+            closingBalance:      currentRunning,
+            pendingChequeTotal:  parseFloat(pending.pending_total),
+            pendingChequeCount:  pending.pending_count,
         });
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename=SOA_${(customer.company_name || 'Customer').replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`);
         return res.sendFile(pdfPath, (err) => {
-            if (err && !res.headersSent) {
-                console.error('Error sending SOA PDF file:', err);
-            }
-            if (pdfPath && fs.existsSync(pdfPath)) {
-                fs.unlink(pdfPath, () => {});
-            }
+            if (err && !res.headersSent) console.error('Error sending SOA PDF:', err);
+            if (pdfPath && fs.existsSync(pdfPath)) fs.unlink(pdfPath, () => {});
         });
     } catch (err) {
         console.error('AR SOA PDF Error:', err);

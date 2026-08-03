@@ -216,6 +216,7 @@
             <div class="info-box">
                 <h3>Account Status Summary</h3>
                 <p>Credit Limit: <span class="font-mono font-bold">{{customer.credit_limit}}</span></p>
+                <p>Payment Terms: <span class="font-bold">{{customer.payment_terms}}</span></p>
                 <p>Credit Hold Status: <span class="font-bold" style="color: {{customer.credit_hold_color}};">{{customer.credit_hold_status}}</span></p>
                 <p>Available Store Wallet: <span class="font-mono font-bold" style="color: #059669;">{{customer.wallet_balance}}</span></p>
             </div>
@@ -250,30 +251,31 @@
         <table>
             <thead>
                 <tr>
-                    <th style="width: 12%;">Date</th>
-                    <th style="width: 18%;">Document / Ref #</th>
-                    <th style="width: 25%;">Transaction Description</th>
-                    <th style="width: 15%; text-align: right;">Amount</th>
-                    <th style="width: 15%; text-align: right;">Paid / Refunded</th>
-                    <th style="width: 15%; text-align: right;">Running Balance</th>
+                    <th style="width: 10%;">Date</th>
+                    <th style="width: 16%;">Document / Ref #</th>
+                    <th style="width: 28%;">Transaction Description</th>
+                    <th style="width: 15%; text-align: right;">Amount (Dr)</th>
+                    <th style="width: 15%; text-align: right;">Payment (Cr)</th>
+                    <th style="width: 16%; text-align: right;">Running Balance</th>
                 </tr>
             </thead>
             <tbody>
                 {{ledger_rows}}
             </tbody>
         </table>
+        {{pending_cheque_note}}
 
         <!-- Aging Breakdown Table -->
         <h3 style="font-size: 12px; color: var(--primary-color); text-transform: uppercase; margin-bottom: 8px;">Aging Breakdown</h3>
         <table class="aging-table">
             <thead>
                 <tr>
-                    <th>Current (0-30d)</th>
-                    <th>1 - 30 Days</th>
-                    <th>31 - 60 Days</th>
-                    <th>61 - 90 Days</th>
-                    <th>90+ Days Overdue</th>
-                    <th>Total Outstanding</th>
+                    <th>Current<br/>(Not Yet Due)</th>
+                    <th>1 – 30 Days<br/>Past Due</th>
+                    <th>31 – 60 Days<br/>Past Due</th>
+                    <th>61 – 90 Days<br/>Past Due</th>
+                    <th style="color:#DC2626;">90+ Days<br/>Past Due</th>
+                    <th>Total<br/>Outstanding</th>
                 </tr>
             </thead>
             <tbody>

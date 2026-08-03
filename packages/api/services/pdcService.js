@@ -65,13 +65,15 @@ async function getCollectionsClearanceList(db, pdcStatusFilter = null, maturityF
 
   // ── PRIMARY: customer_payment rows (new AR receipt flow) ─────────────────
   // Each row represents ONE physical payment instrument (cheque, bank transfer, etc.)
-  // Multiple invoice allocations are aggregated here — one row per cheque.
+  // CRITICAL: filter to cheque-type methods only. Cash/instant payments are
+  // settled at time of receipt — they must never appear in the PDC/Clearance Desk.
+  // A payment is a "PDC/cheque" if: method type = 'cheque', OR the pdc_status
+  // was explicitly set to RECEIVED/HELD/DEPOSITED/BOUNCED (deferred handling).
   const cpQuery = `
     SELECT
       cp.payment_id,
       'customer_payment'                        AS source_table,
       NULL::integer                             AS invoice_id,
-      -- Aggregate invoice numbers for multi-invoice allocations
       STRING_AGG(i.invoice_number, ', ' ORDER BY i.invoice_number) AS invoice_number,
       cp.customer_id,
       c.company_name,
@@ -99,8 +101,11 @@ async function getCollectionsClearanceList(db, pdcStatusFilter = null, maturityF
       WHERE action = 'BOUNCED' AND customer_payment_id IS NOT NULL
       GROUP BY customer_payment_id
     ) bounce_agg ON bounce_agg.customer_payment_id = cp.payment_id
-    WHERE cp.pdc_status IS NOT NULL
-      ${statusConditions.replace('pdc_status', 'cp.pdc_status')}
+    WHERE
+      -- Only show deferred/cheque-type instruments, not instant cash/bank payments
+      (pm.type = 'cheque' OR pm.code IN ('cheque', 'pdc') OR
+       cp.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED', 'BOUNCED'))
+      ${statusConditions.replace(/pdc_status/g, 'cp.pdc_status')}
     GROUP BY
       cp.payment_id, cp.customer_id, c.company_name, c.first_name, c.last_name,
       cp.amount, cp.pdc_status, cp.method_id, pm.name, pm.code,
