@@ -72,6 +72,7 @@ const AccountsReceivablePage = () => {
     const [soaDownloading, setSoaDownloading] = useState(false);
     const [soaSearchQuery, setSoaSearchQuery] = useState('');
     const [soaDropdownOpen, setSoaDropdownOpen] = useState(false);
+    const [soaHighlightedIndex, setSoaHighlightedIndex] = useState(-1);
     const soaComboboxRef = useRef(null);
 
     // Close SOA customer dropdown on click outside
@@ -95,6 +96,53 @@ const AccountsReceivablePage = () => {
             return name.includes(q) || phone.includes(q);
         });
     }, [customers, soaSearchQuery]);
+
+    // Reset highlighted index when search query or filtered list changes
+    useEffect(() => {
+        setSoaHighlightedIndex(filteredSoaCustomers.length > 0 ? 0 : -1);
+    }, [soaSearchQuery, filteredSoaCustomers]);
+
+    // Select customer helper for click / key press
+    const selectSoaCustomer = useCallback((customer) => {
+        if (!customer) return;
+        const displayName = customer.company_name || `${customer.first_name || ''} ${customer.last_name || ''}`.trim();
+        setSoaCustomerId(customer.customer_id);
+        setSoaSearchQuery(displayName);
+        setSoaDropdownOpen(false);
+        setSoaHighlightedIndex(-1);
+    }, []);
+
+    // Keyboard navigation handler for search box (Arrows, Tab, Enter, Escape)
+    const handleSoaKeyDown = (e) => {
+        if (!soaDropdownOpen && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+            setSoaDropdownOpen(true);
+            return;
+        }
+
+        if (!soaDropdownOpen || filteredSoaCustomers.length === 0) {
+            if (e.key === 'Escape') setSoaDropdownOpen(false);
+            return;
+        }
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setSoaHighlightedIndex(prev => (prev < filteredSoaCustomers.length - 1 ? prev + 1 : 0));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setSoaHighlightedIndex(prev => (prev > 0 ? prev - 1 : filteredSoaCustomers.length - 1));
+        } else if (e.key === 'Enter') {
+            if (soaHighlightedIndex >= 0 && soaHighlightedIndex < filteredSoaCustomers.length) {
+                e.preventDefault();
+                selectSoaCustomer(filteredSoaCustomers[soaHighlightedIndex]);
+            }
+        } else if (e.key === 'Tab') {
+            if (soaHighlightedIndex >= 0 && soaHighlightedIndex < filteredSoaCustomers.length) {
+                selectSoaCustomer(filteredSoaCustomers[soaHighlightedIndex]);
+            }
+        } else if (e.key === 'Escape') {
+            setSoaDropdownOpen(false);
+        }
+    };
 
     // State for Tab 3: PDC Desk
     const [pdcItems, setPdcItems] = useState([]);
@@ -620,6 +668,7 @@ const AccountsReceivablePage = () => {
                                         }
                                     }}
                                     onFocus={() => setSoaDropdownOpen(true)}
+                                    onKeyDown={handleSoaKeyDown}
                                     placeholder="Search customer name, company..."
                                     className="w-full px-3 py-2 pr-8 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
@@ -631,6 +680,7 @@ const AccountsReceivablePage = () => {
                                             setSoaCustomerId('');
                                             setSoaLedger(null);
                                             setSoaDropdownOpen(false);
+                                            setSoaHighlightedIndex(-1);
                                         }}
                                         className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none p-1 rounded-full hover:bg-gray-100 transition-colors"
                                         title="Clear search"
@@ -648,20 +698,27 @@ const AccountsReceivablePage = () => {
                                     {filteredSoaCustomers.length === 0 ? (
                                         <div className="p-3 text-xs text-gray-500 text-center">No matching customer accounts found</div>
                                     ) : (
-                                        filteredSoaCustomers.map(c => {
+                                        filteredSoaCustomers.map((c, idx) => {
                                             const displayName = c.company_name || `${c.first_name || ''} ${c.last_name || ''}`.trim();
                                             const isSelected = String(c.customer_id) === String(soaCustomerId);
+                                            const isHighlighted = idx === soaHighlightedIndex;
                                             return (
                                                 <button
                                                     key={c.customer_id}
                                                     type="button"
-                                                    onClick={() => {
-                                                        setSoaCustomerId(c.customer_id);
-                                                        setSoaSearchQuery(displayName);
-                                                        setSoaDropdownOpen(false);
+                                                    ref={(el) => {
+                                                        if (isHighlighted && el) {
+                                                            el.scrollIntoView({ block: 'nearest' });
+                                                        }
                                                     }}
-                                                    className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 flex justify-between items-center transition-colors border-b border-gray-100 last:border-0 ${
-                                                        isSelected ? 'bg-blue-50 font-semibold text-blue-700' : 'text-gray-700'
+                                                    onClick={() => selectSoaCustomer(c)}
+                                                    onMouseEnter={() => setSoaHighlightedIndex(idx)}
+                                                    className={`w-full text-left px-3 py-2 text-sm flex justify-between items-center transition-colors border-b border-gray-100 last:border-0 ${
+                                                        isHighlighted
+                                                            ? 'bg-blue-100 font-semibold text-blue-900 ring-1 ring-blue-300'
+                                                            : isSelected
+                                                            ? 'bg-blue-50 font-semibold text-blue-700'
+                                                            : 'text-gray-700 hover:bg-blue-50'
                                                     }`}
                                                 >
                                                     <span className="truncate">{displayName}</span>
