@@ -5,6 +5,7 @@ const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatter');
 const { validatePaymentTerms } = require('../helpers/paymentTermsHelper');
 const { calculateInvoiceTax, storeTaxBreakdown, validateTaxCalculation } = require('../services/taxCalculationService');
+const arLedger = require('../services/arLedgerService');
 
 const router = express.Router();
 
@@ -256,9 +257,42 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
         if (!validateTaxCalculation(taxCalculation)) {
             throw new Error('Tax calculation validation failed');
         }
-
         const { subtotal_ex_tax, tax_total, total_amount } = taxCalculation;
-        const amountPaid = parseFloat(total_amount) || 0;
+
+        const finalCustomerId = customer_id !== undefined ? customer_id : staged.customer_id;
+
+        // Fetch customer details and payment method for validation
+        const custRes = await client.query('SELECT first_name, last_name, credit_hold, credit_hold_reason FROM customer WHERE customer_id = $1', [finalCustomerId]);
+        const custRow = custRes.rows[0] || {};
+        const custName = `${custRow.first_name || ''} ${custRow.last_name || ''}`.trim().toLowerCase();
+        const isWalkIn = custName.includes('walk-in') || custName.includes('walk in');
+
+        const methodQuery = await client.query('SELECT * FROM payment_methods WHERE method_id = $1', [staged.payment_method_id]);
+        const method = methodQuery.rows[0];
+        const methodConfig = method ? (typeof method.config === 'string' ? JSON.parse(method.config) : method.config) : {};
+        const settlementType = methodConfig?.settlement_type || (method?.type === 'cash' ? 'instant' : 'delayed');
+        const isCreditSale = settlementType === 'on_account' || method?.code === 'on_account';
+
+        if (isCreditSale && isWalkIn) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: 'On Account payment is not available for Walk-In customers.' });
+        }
+
+        if (isCreditSale && custRow.credit_hold) {
+            const hasOverrideParam = req.body.override_credit_limit === true || req.body.manager_override === true;
+            const hasManagerPermission = req.user?.permissions?.includes('ar:override_credit_limit');
+            if (!hasOverrideParam && !hasManagerPermission) {
+                await client.query('ROLLBACK');
+                return res.status(403).json({
+                    message: `Credit sale blocked: Customer is on credit hold (${custRow.credit_hold_reason || 'Credit Hold'}). Manager override required.`,
+                    credit_hold: true,
+                    reason: custRow.credit_hold_reason
+                });
+            }
+        }
+
+        const amountPaid = isCreditSale ? 0 : (parseFloat(total_amount) || 0);
+        const invoiceStatus = isCreditSale ? 'Unpaid' : 'Paid';
 
         // Verify and process physical receipt number (prefer user input from approval modal)
         const prnSource = physical_receipt_no !== undefined ? physical_receipt_no : staged.physical_receipt_no;
@@ -276,8 +310,6 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
         // Setup COD terms default
         const termsValidation = validatePaymentTerms({ terms: 'COD', invoice_date: new Date() });
 
-        const finalCustomerId = customer_id !== undefined ? customer_id : staged.customer_id;
-
         // Create actual invoice: Set both invoice_date, approved_at to CURRENT_TIMESTAMP, and submitted_at to original staging time
         const invoiceQuery = `
             INSERT INTO invoice (invoice_number, customer_id, employee_id, total_amount, subtotal_ex_tax, tax_total, amount_paid, status, terms, payment_terms_days, due_date, physical_receipt_no, tax_calculation_version, invoice_date, submitted_at, approved_at, approved_by)
@@ -291,8 +323,8 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
             total_amount,
             subtotal_ex_tax,
             tax_total,
-            amountPaid, // fully paid
-            'Paid',
+            amountPaid,
+            invoiceStatus,
             termsValidation.normalizedTerms,
             termsValidation.canonicalDays,
             termsValidation.dueDate,
@@ -303,6 +335,19 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
         ]);
 
         const invoiceId = invoiceRes.rows[0].invoice_id;
+
+        // Ledger: INVOICE_POSTED for credit / on account sales
+        if (isCreditSale) {
+            await arLedger.appendEntry(client, {
+                customerId: finalCustomerId,
+                invoiceId: invoiceId,
+                entryType: 'INVOICE_POSTED',
+                amount: total_amount,
+                referenceNo: invoice_number,
+                notes: `Staged sale approved on account (STG-${id})`,
+                createdBy: staged.employee_id,
+            });
+        }
 
         // Store tax breakdown
         await storeTaxBreakdown(invoiceId, taxCalculation.tax_breakdown, client);
@@ -329,12 +374,8 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
         }
 
         // Add payment method and insert payment transaction
-        const methodQuery = await client.query('SELECT * FROM payment_methods WHERE method_id = $1', [staged.payment_method_id]);
         if (methodQuery.rows.length > 0 && total_amount > 0) {
-            const method = methodQuery.rows[0];
-            const methodConfig = typeof method.config === 'string' ? JSON.parse(method.config) : method.config;
-            const settlementType = methodConfig.settlement_type || (method.type === 'cash' ? 'instant' : 'delayed');
-            const paymentStatus = settlementType === 'instant' ? 'settled' : 'pending';
+            const paymentStatus = settlementType === 'instant' ? 'settled' : settlementType === 'on_account' ? 'on_account' : 'pending';
 
             const finalTenderedAmt = tendered_amount !== undefined ? (tendered_amount !== null ? parseFloat(tendered_amount) : null) : (staged.tendered_amount ? parseFloat(staged.tendered_amount) : null);
             const changeAmt = finalTenderedAmt && finalTenderedAmt > parseFloat(total_amount)
@@ -348,7 +389,7 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
             `, [
                 invoiceId,
                 staged.payment_method_id,
-                total_amount,
+                isCreditSale ? 0 : total_amount,
                 finalTenderedAmt,
                 changeAmt,
                 invoice_number,

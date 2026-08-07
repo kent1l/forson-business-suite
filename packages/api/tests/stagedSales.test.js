@@ -139,7 +139,6 @@ describe('staged sales routes', () => {
           discount_amount: '0.00'
         }]
       })
-      .mockResolvedValueOnce({ rows: [] }) // check existing receipt no
       .mockResolvedValueOnce({   // get part details
         rows: [{
           part_id: 1,
@@ -147,11 +146,21 @@ describe('staged sales routes', () => {
           is_tax_inclusive_price: true
         }]
       })
+      .mockResolvedValueOnce({   // get customer details
+        rows: [{
+          first_name: 'John',
+          last_name: 'Doe',
+          credit_hold: false
+        }]
+      })
+      .mockResolvedValueOnce({   // get payment method
+        rows: [{ method_id: 2, name: 'Cash', type: 'cash', config: {} }]
+      })
+      .mockResolvedValueOnce({ rows: [] }) // check existing receipt no
       .mockResolvedValueOnce({ rows: [{ invoice_id: 50 }] }) // insert invoice
       .mockResolvedValueOnce({ rows: [{ wac_cost: '50.00' }] }) // get WAC cost
       .mockResolvedValueOnce({}) // insert invoice_line
       .mockResolvedValueOnce({}) // insert inventory_transaction
-      .mockResolvedValueOnce({ rows: [{ method_id: 2, name: 'Cash', type: 'cash', config: {} }] }) // check payment method
       .mockResolvedValueOnce({}) // insert payment
       .mockResolvedValueOnce({}) // update staged_sale status
       .mockResolvedValueOnce({}); // COMMIT

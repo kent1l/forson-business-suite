@@ -151,15 +151,21 @@ describe('Customer Wallet System & Endpoints', () => {
             const client = await db.getClient();
             // BEGIN
             client.query.mockResolvedValueOnce({});
+            // payment_method lookup
+            client.query.mockResolvedValueOnce({ rows: [{ method_id: 1, code: 'cash', type: 'cash', config: {} }] });
             // customer_payment INSERT
             client.query.mockResolvedValueOnce({ rows: [{ payment_id: 50 }] });
+            // invoice balance calculation query
+            client.query.mockResolvedValueOnce({ rows: [{ total_amount: '500.00', already_allocated: '0.00' }] });
             // invoice_payment_allocation INSERT
             client.query.mockResolvedValueOnce({});
-            // invoice balance calculation query
-            client.query.mockResolvedValueOnce({ rows: [{ total_amount: '500.00', total_paid: '500.00' }] });
+            // postInv check
+            client.query.mockResolvedValueOnce({ rows: [{ total_amount: '500.00', already_allocated: '500.00' }] });
             // invoice status UPDATE
             client.query.mockResolvedValueOnce({});
-            // walletService.appendWalletTransaction for overpayment
+            // arLedger.appendEntry (calls PostgreSQL function append_ar_ledger_entry)
+            client.query.mockResolvedValueOnce({ rows: [{ ledger_id: 1 }] });
+            // walletService.appendWalletTransaction (calls PostgreSQL function append_wallet_transaction)
             client.query.mockResolvedValueOnce({ rows: [{ tx_id: 200 }] });
             // COMMIT
             client.query.mockResolvedValueOnce({});
@@ -183,6 +189,8 @@ describe('Customer Wallet System & Endpoints', () => {
             const client = await db.getClient();
             // BEGIN
             client.query.mockResolvedValueOnce({});
+            // payment_method lookup
+            client.query.mockResolvedValueOnce({ rows: [{ method_id: 5, code: 'store_wallet', type: 'credit', config: { settlement_type: 'on_account' } }] });
             // getWallet query (returns balance 50.00, requested 200.00)
             client.query.mockResolvedValueOnce({
                 rows: [{ wallet_id: 1, customer_id: 10, balance: '50.00', updated_at: '2026-08-06T10:00:00Z' }]

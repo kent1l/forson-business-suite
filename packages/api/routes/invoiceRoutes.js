@@ -241,21 +241,73 @@ router.post('/invoices', async (req, res) => {
         const dueDate = termsValidation.dueDate;
         const normalizedTerms = termsValidation.normalizedTerms;
 
-        // Credit Hold Enforcement for credit sales
-        if (normalizedTerms !== 'Cash') {
-            const { rows: custHold } = await client.query(
-                'SELECT credit_hold, credit_hold_reason FROM customer WHERE customer_id = $1',
-                [customer_id]
+        // Fetch customer details
+        const customerResult = await client.query('SELECT first_name, last_name, credit_hold, credit_hold_reason FROM customer WHERE customer_id = $1', [customer_id]);
+        if (customerResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: 'Invalid customer_id.' });
+        }
+        const customerRow = customerResult.rows[0];
+        const customerName = `${customerRow.first_name || ''} ${customerRow.last_name || ''}`.trim().toLowerCase();
+        const isWalkIn = customerName.includes('walk-in') || customerName.includes('walk in');
+
+        // Check if any payment method in payments array or legacy payment_method is on_account
+        let hasOnAccountPayment = false;
+        if (payments && Array.isArray(payments) && payments.length > 0) {
+            const pmIds = payments.map(p => {
+                let lookupParam = p.method_id;
+                if (typeof p.method_id === 'string' && /^\d+$/.test(p.method_id)) {
+                    lookupParam = parseInt(p.method_id, 10);
+                }
+                return lookupParam;
+            });
+            const { rows: pmRows } = await client.query(
+                'SELECT method_id, code, type, config FROM payment_methods WHERE method_id = ANY($1) AND enabled = true',
+                [pmIds]
             );
-            if (custHold.length > 0 && custHold[0].credit_hold) {
+            for (const pm of pmRows) {
+                const pmConfig = typeof pm.config === 'string' ? JSON.parse(pm.config) : pm.config;
+                const settlementType = pm.code === 'store_wallet' ? 'instant' : (pmConfig?.settlement_type || (pm.type === 'cash' ? 'instant' : 'delayed'));
+                if (settlementType === 'on_account' || pm.code === 'on_account') {
+                    hasOnAccountPayment = true;
+                    break;
+                }
+            }
+        } else if (payment_method) {
+            const methodCode = payment_method.toLowerCase().replace(/\s+/g, '_');
+            const { rows: pmRows } = await client.query(
+                'SELECT method_id, code, type, config FROM payment_methods WHERE (code = $1 OR name ILIKE $1) AND enabled = true LIMIT 1',
+                [methodCode]
+            );
+            if (pmRows.length > 0) {
+                const pm = pmRows[0];
+                const pmConfig = typeof pm.config === 'string' ? JSON.parse(pm.config) : pm.config;
+                const settlementType = pmConfig?.settlement_type || (pm.type === 'cash' ? 'instant' : 'delayed');
+                if (settlementType === 'on_account' || pm.code === 'on_account') {
+                    hasOnAccountPayment = true;
+                }
+            }
+        }
+
+        const isCreditSale = canonicalDays > 0 || hasOnAccountPayment;
+
+        // Walk-In Customer Credit Terms Enforcement
+        if (isWalkIn && isCreditSale) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: 'Payment terms or On Account payment are not allowed for Walk-In customers.' });
+        }
+
+        // Credit Hold Enforcement for credit sales
+        if (isCreditSale) {
+            if (customerRow.credit_hold) {
                 const hasOverrideParam = req.body.override_credit_limit === true || req.body.manager_override === true;
                 const hasManagerPermission = req.user?.permissions?.includes('ar:override_credit_limit');
                 if (!hasOverrideParam && !hasManagerPermission) {
                     await client.query('ROLLBACK');
                     return res.status(403).json({
-                        message: `Credit sale blocked: Customer is on credit hold (${custHold[0].credit_hold_reason || 'Credit Hold'}). Manager override required.`,
+                        message: `Credit sale blocked: Customer is on credit hold (${customerRow.credit_hold_reason || 'Credit Hold'}). Manager override required.`,
                         credit_hold: true,
-                        reason: custHold[0].credit_hold_reason
+                        reason: customerRow.credit_hold_reason
                     });
                 }
             }
@@ -313,9 +365,8 @@ router.post('/invoices', async (req, res) => {
     const invoiceResult = await client.query(invoiceQuery, [invoice_number, customer_id, employee_id, total_amount, subtotal_ex_tax, tax_total, paid, status, normalizedTerms, canonicalDays, dueDate, prn, taxCalculation.tax_calculation_version]);
         const newInvoiceId = invoiceResult.rows[0].invoice_id;
 
-        // Ledger: INVOICE_POSTED for credit-term invoices only.
-        // Cash invoices have no AR impact — the PAYMENT_SETTLED event covers the net effect.
-        if (normalizedTerms !== 'Cash') {
+        // Ledger: INVOICE_POSTED for credit-term invoices and on-account sales
+        if (isCreditSale || (paid < total_amount && normalizedTerms !== 'Cash')) {
             await arLedger.appendEntry(client, {
                 customerId: customer_id, invoiceId: newInvoiceId,
                 entryType: 'INVOICE_POSTED', amount: total_amount,
@@ -346,10 +397,6 @@ router.post('/invoices', async (req, res) => {
             `;
             await client.query(transactionQuery, [part_id, -quantity, cost_at_sale, invoice_number, employee_id]);
         }
-
-        // Fetch customer details for validation
-        const customerResult = await client.query('SELECT first_name, last_name FROM customer WHERE customer_id = $1', [customer_id]);
-        const customerName = customerResult.rows.length > 0 ? `${customerResult.rows[0].first_name} ${customerResult.rows[0].last_name || ''}`.trim().toLowerCase() : '';
 
         if (payments && Array.isArray(payments) && payments.length > 0) {
             const totalPayments = payments.reduce((sum, p) => sum + parseFloat(p.amount_paid), 0);
