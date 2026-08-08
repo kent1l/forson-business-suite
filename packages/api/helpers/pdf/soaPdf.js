@@ -237,7 +237,15 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
             path: outputPath,
             printBackground: true,
             format: 'A4',
-            margin: { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' }
+            displayHeaderFooter: true,
+            headerTemplate: '<div></div>',
+            footerTemplate: `
+                <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 8.5px; color: #64748B; width: 100%; box-sizing: border-box; padding: 4px 10mm 0 10mm; border-top: 1px solid #E2E8F0; display: flex; justify-content: space-between; align-items: center;">
+                    <span>${companyName ? companyName + ' &nbsp;•&nbsp; ' : ''}Statement of Account (${statementNumber})</span>
+                    <span style="font-weight: 600; color: #334155;">Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
+                </div>
+            `,
+            margin: { top: '10mm', right: '10mm', bottom: '16mm', left: '10mm' }
         });
         await page.close();
         return outputPath;
