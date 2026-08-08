@@ -4,38 +4,101 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
 
 const paperlessService = require('../services/paperlessService');
-const { generateReceiptConsolidationPDF } = require('../helpers/pdf/receiptConsolidationPdf');
+const { generateStatementOfAccountPDF } = require('../helpers/pdf/soaPdf');
 const fs = require('fs');
 
 async function main() {
-    console.log('=== Testing 2x2 PDF Generation with Paperless /thumb/ Artifacts ===');
-    const docs = await paperlessService.listDocuments({ pageSize: 4 });
-    if (!docs?.results?.length) {
-        console.log('No documents found.');
-        return;
-    }
-
-    const receiptItems = [];
-    for (const doc of docs.results) {
-        console.log(`Fetching /thumb/ artifact for Document #${doc.id} ("${doc.title}")...`);
-        const imgBuf = await paperlessService.downloadDocumentArtifact(doc.id, 'thumb');
-        console.log(`  Buffer size: ${imgBuf.length} bytes, Content-Type: ${imgBuf.contentType}`);
-        
-        receiptItems.push({
-            imageBuffer: imgBuf,
-            physical_receipt_no: doc.title,
-            system_code: `INV-202608-${String(doc.id).padStart(4, '0')}`,
-            paperless_id: doc.id,
-            title: doc.title,
-        });
-    }
-
-    const pdfBuffer = await generateReceiptConsolidationPDF(receiptItems, { returnBuffer: true });
-    console.log(`\nSuccessfully generated 2x2 PDF! Size: ${pdfBuffer.length} bytes.`);
+    console.log('=== Testing End-to-End SOA PDF Generation with 2x2 Receipt Attachment ===');
     
-    const outPath = path.join(__dirname, 'sample_2x2_output.pdf');
-    fs.writeFileSync(outPath, pdfBuffer);
-    console.log(`Saved sample PDF to: ${outPath}`);
+    // Fetch 4 real documents from Paperless
+    const docs = await paperlessService.listDocuments({ pageSize: 4 });
+    const receiptItems = [];
+    if (docs?.results?.length) {
+        for (const doc of docs.results) {
+            const imgBuf = await paperlessService.downloadDocumentArtifact(doc.id, 'thumb');
+            receiptItems.push({
+                imageBuffer: imgBuf,
+                physical_receipt_no: doc.title,
+                system_code: `INV-202608-${String(doc.id).padStart(4, '0')}`,
+                paperless_id: doc.id,
+                title: doc.title,
+            });
+        }
+    }
+
+    const mockCustomer = {
+        customer_id: 101,
+        name: 'ACME Supermarket Trading Inc.',
+        code: 'ACME-01',
+        tin: '123-456-789-000',
+        address: '123 Main Commercial Ave, Metro Manila',
+        contact_person: 'John Doe',
+        contact_number: '0917-123-4567',
+        email: 'billing@acme.com',
+        credit_limit: 500000,
+        payment_terms: '30 Days Net',
+        wallet_balance: 15000,
+        credit_hold: false,
+    };
+
+    const mockLedgerRows = [
+        {
+            date: new Date(),
+            invoice_date: new Date(),
+            due_date: new Date(Date.now() + 30 * 24 * 3600 * 1000),
+            primary_ref: 'CI_1616',
+            sub_ref: 'INV-202608-0563',
+            type_label: 'Sales Invoice',
+            description: 'Order #1001 Delivery - 50 cases parts',
+            debit_amount: 125000,
+            credit_amount: null,
+            running_balance: 125000,
+        },
+        {
+            date: new Date(),
+            invoice_date: new Date(),
+            due_date: new Date(Date.now() + 30 * 24 * 3600 * 1000),
+            primary_ref: 'CI_1649',
+            sub_ref: 'INV-202608-0581',
+            type_label: 'Sales Invoice',
+            description: 'Order #1002 Delivery - 30 cases parts',
+            debit_amount: 85000,
+            credit_amount: null,
+            running_balance: 210000,
+        }
+    ];
+
+    const mockAging = {
+        current: 210000,
+        days_1_30: 0,
+        days_31_60: 0,
+        days_61_90: 0,
+        days_90_plus: 0,
+    };
+
+    const options = {
+        company: {
+            name: 'Forson Business Suite Inc.',
+            address: '789 Enterprise Tower, Makati City',
+            tin: '987-654-321-000',
+        },
+        statementNumber: 'SOA-202608-0001',
+        statementDate: new Date(),
+        startDate: new Date(Date.now() - 30 * 24 * 3600 * 1000),
+        endDate: new Date(),
+        openingBalance: 0,
+        totalInvoiced: 210000,
+        totalSettled: 0,
+        closingBalance: 210000,
+        includePaperlessReceipts: true,
+        receiptItems,
+    };
+
+    console.log('Generating SOA PDF with receipt items...');
+    const pdfPath = await generateStatementOfAccountPDF(mockCustomer, mockLedgerRows, mockAging, options);
+    const pdfStats = fs.statSync(pdfPath);
+    console.log(`Successfully generated SOA PDF at: ${pdfPath}`);
+    console.log(`PDF File Size: ${pdfStats.size} bytes`);
 }
 
 main().catch(err => {
