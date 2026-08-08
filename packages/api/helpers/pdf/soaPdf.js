@@ -98,8 +98,8 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
         const debitBold = row.debit_amount ? ' font-bold' : '';
         const creditColor = row.credit_amount ? ' color:#059669;' : '';
 
-        const primaryDoc = row.physical_receipt_no || row.primary_ref || row.reference || row.document_number || '-';
-        const subDoc = row.sub_ref || (row.physical_receipt_no && row.invoice_number && row.physical_receipt_no !== row.invoice_number ? row.invoice_number : null);
+        const primaryDoc = row.primary_ref || row.physical_receipt_no || '-';
+        const subDoc = row.sub_ref || null;
 
         const docCellHtml = subDoc
             ? `<div class="font-mono font-bold" style="font-size:10px;color:#0F172A;">${primaryDoc}</div><div class="font-mono" style="font-size:8.5px;color:#64748B;font-weight:normal;margin-top:1px;">${subDoc}</div>`

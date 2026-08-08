@@ -730,11 +730,11 @@ const AccountsReceivablePage = () => {
                                                     <td className="px-5 py-3.5 whitespace-nowrap text-gray-600">{row.due_date ? new Date(row.due_date).toLocaleDateString() : '—'}</td>
                                                     <td className="px-5 py-3.5 font-mono text-xs">
                                                         <div className="font-bold text-gray-900">
-                                                            {row.physical_receipt_no || row.primary_ref || row.reference || '-'}
+                                                            {row.primary_ref || row.physical_receipt_no || '-'}
                                                         </div>
-                                                        {(row.sub_ref || (row.physical_receipt_no && row.invoice_number && row.physical_receipt_no !== row.invoice_number ? row.invoice_number : null)) && (
+                                                        {row.sub_ref && (
                                                             <div className="text-[11px] font-normal text-gray-400 mt-0.5">
-                                                                {row.sub_ref || row.invoice_number}
+                                                                {row.sub_ref}
                                                             </div>
                                                         )}
                                                     </td>

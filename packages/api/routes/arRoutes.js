@@ -903,10 +903,20 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
             const physReceipt = entry.physical_receipt_no ? entry.physical_receipt_no.trim() : null;
             const invNum = entry.invoice_number ? entry.invoice_number.trim() : null;
 
-            // DOC/REF #: Prefer physical receipt number as primary display.
-            // If physical receipt number exists, sub-ref is the generated invoice number.
-            const primaryRef = physReceipt || entry.reference_no || invNum || entry.cn_number || (entry.payment_id ? `PMT-${entry.payment_id}` : null) || '-';
-            const subRef = (physReceipt && invNum && physReceipt !== invNum) ? invNum : null;
+            // DOC/REF #: Primary reference is strictly physical receipt provided by user (or '-' if none).
+            // Sub-reference below primary is generated invoice number, CN number, or repayment tracking number (PMT-xxxx).
+            const primaryRef = physReceipt || '-';
+            let subRef = null;
+            if (invNum && invNum !== physReceipt) {
+                subRef = invNum;
+            } else if (entry.cn_number && entry.cn_number !== physReceipt) {
+                subRef = entry.cn_number;
+            } else if (entry.payment_id) {
+                const trackingNo = `PMT-${entry.payment_id}`;
+                subRef = (physReceipt && physReceipt === trackingNo) ? null : trackingNo;
+            } else if (entry.reference_no && entry.reference_no !== physReceipt) {
+                subRef = entry.reference_no;
+            }
 
             ledgerRows.push({
                 ledger_id:           entry.ledger_id,
@@ -1096,8 +1106,18 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
             const physReceipt = entry.physical_receipt_no ? entry.physical_receipt_no.trim() : null;
             const invNum = entry.invoice_number ? entry.invoice_number.trim() : null;
 
-            const primaryRef = physReceipt || entry.reference_no || invNum || entry.cn_number || (entry.payment_id ? `PMT-${entry.payment_id}` : null) || '-';
-            const subRef = (physReceipt && invNum && physReceipt !== invNum) ? invNum : null;
+            const primaryRef = physReceipt || '-';
+            let subRef = null;
+            if (invNum && invNum !== physReceipt) {
+                subRef = invNum;
+            } else if (entry.cn_number && entry.cn_number !== physReceipt) {
+                subRef = entry.cn_number;
+            } else if (entry.payment_id) {
+                const trackingNo = `PMT-${entry.payment_id}`;
+                subRef = (physReceipt && physReceipt === trackingNo) ? null : trackingNo;
+            } else if (entry.reference_no && entry.reference_no !== physReceipt) {
+                subRef = entry.reference_no;
+            }
 
             ledgerRows.push({
                 date:                entry.created_at,
