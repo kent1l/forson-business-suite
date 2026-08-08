@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
-const { generateReceiptConsolidationPDF } = require('./receiptConsolidationPdf');
+const { renderReceiptGridPagesHtml } = require('./receiptConsolidationPdf');
 
 const fmt = (v) => `₱${(Number(v) || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -264,6 +264,9 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
         '{{aging.days_90_plus}}':        fmt(aging90plus),
         '{{aging.total}}':               fmt(agingTotal),
         '{{remittance_advice_html}}':    remittanceAdviceHtml,
+        '{{receipt_consolidation_section}}': (options.includePaperlessReceipts && Array.isArray(options.receiptItems) && options.receiptItems.length > 0)
+            ? renderReceiptGridPagesHtml(options.receiptItems, options)
+            : '',
     };
 
     Object.entries(replacements).forEach(([key, value]) => {
@@ -296,18 +299,6 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
         const mainPdfBytes = fs.readFileSync(outputPath);
         const mainPdfDoc = await PDFDocument.load(mainPdfBytes);
 
-        if (options.includePaperlessReceipts && Array.isArray(options.receiptItems) && options.receiptItems.length > 0) {
-            try {
-                const receiptsPdfBuffer = await generateReceiptConsolidationPDF(options.receiptItems, { returnBuffer: true });
-                const receiptsPdfDoc = await PDFDocument.load(receiptsPdfBuffer);
-
-                const copiedPages = await mainPdfDoc.copyPages(receiptsPdfDoc, receiptsPdfDoc.getPageIndices());
-                copiedPages.forEach(p => mainPdfDoc.addPage(p));
-            } catch (mergeErr) {
-                console.error(`${debugPrefix} Warning: Failed to append Paperless receipt pages:`, mergeErr.message);
-            }
-        }
-
         // Stamp global footer on ALL pages (SOA text + receipt attachments) with total page count
         await stampGlobalFooter(mainPdfDoc, companyName, statementNumber);
 
@@ -315,6 +306,7 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
         fs.writeFileSync(outputPath, finalPdfBytes);
 
         return outputPath;
+
 
 
 
