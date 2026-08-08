@@ -44,12 +44,12 @@ describe('PaperlessService Unit Tests', () => {
     });
 
     describe('Full-Prefix Title Matching', () => {
-        it('should match physical receipt numbers keeping prefixes (CI-, DR-, SI-, VAT-) intact', async () => {
+        it('should match physical receipt numbers keeping prefixes (CI-, DR-, SI-, VAT-) intact and supporting CI_xxxx format', async () => {
             const mockDocs = [
-                { id: 101, title: 'CI-1011', created: '2026-08-01' },
-                { id: 102, title: 'DR-1011', created: '2026-08-02' },
-                { id: 103, title: 'SI-2002', created: '2026-08-03' },
-                { id: 104, title: 'VAT-421', created: '2026-08-04' },
+                { id: 101, title: 'CI_1011', created: '2026-08-01' },
+                { id: 102, title: 'DR_1011', created: '2026-08-02' },
+                { id: 103, title: 'SI_2002', created: '2026-08-03' },
+                { id: 104, title: 'VAT_421', created: '2026-08-04' },
             ];
 
             global.fetch = jest.fn().mockImplementation(async (url) => {
@@ -57,7 +57,8 @@ describe('PaperlessService Unit Tests', () => {
                 let matched = mockDocs;
                 if (urlStr.includes('title__icontains=')) {
                     const paramVal = decodeURIComponent(urlStr.split('title__icontains=')[1].split('&')[0]).toLowerCase();
-                    matched = mockDocs.filter(d => d.title.toLowerCase().includes(paramVal));
+                    const cleanParam = paramVal.replace(/[-_ ]/g, '');
+                    matched = mockDocs.filter(d => d.title.toLowerCase().replace(/[-_ ]/g, '').includes(cleanParam));
                 }
                 return {
                     ok: true,
@@ -66,23 +67,28 @@ describe('PaperlessService Unit Tests', () => {
                 };
             });
 
-            // 1. CI-1011 exact match
-            const docCI = await paperlessService.findDocumentByReceiptNo('CI-1011');
-            expect(docCI).toBeDefined();
-            expect(docCI.id).toBe(101);
-            expect(docCI.title).toBe('CI-1011');
+            // 1. Searching for CI-1011 matches Paperless title CI_1011
+            const docCIHyphen = await paperlessService.findDocumentByReceiptNo('CI-1011');
+            expect(docCIHyphen).toBeDefined();
+            expect(docCIHyphen.id).toBe(101);
+            expect(docCIHyphen.title).toBe('CI_1011');
 
-            // 2. DR-1011 match (should NOT clash with CI-1011)
+            // 2. Searching for CI_1011 matches Paperless title CI_1011
+            const docCIUnderscore = await paperlessService.findDocumentByReceiptNo('CI_1011');
+            expect(docCIUnderscore).toBeDefined();
+            expect(docCIUnderscore.id).toBe(101);
+
+            // 3. DR-1011 match (should NOT clash with CI-1011)
             const docDR = await paperlessService.findDocumentByReceiptNo('DR-1011');
             expect(docDR).toBeDefined();
             expect(docDR.id).toBe(102);
-            expect(docDR.title).toBe('DR-1011');
+            expect(docDR.title).toBe('DR_1011');
 
-            // 3. VAT-421 match
+            // 4. VAT-421 match
             const docVAT = await paperlessService.findDocumentByReceiptNo('VAT-421');
             expect(docVAT).toBeDefined();
             expect(docVAT.id).toBe(104);
-            expect(docVAT.title).toBe('VAT-421');
+            expect(docVAT.title).toBe('VAT_421');
         });
     });
 });
