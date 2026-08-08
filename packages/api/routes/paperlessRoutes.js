@@ -79,7 +79,7 @@ router.post('/paperless/consolidate', protect, hasPermission('documents:view'), 
             for (const item of customItems) {
                 if (item.paperless_id && !item.imageBuffer && !item.imageDataUri) {
                     try {
-                        const imgBuf = await paperlessService.downloadDocumentArtifact(item.paperless_id, 'preview');
+                        const imgBuf = await paperlessService.downloadDocumentArtifact(item.paperless_id, 'thumb');
                         receiptItems.push({
                             ...item,
                             imageBuffer: imgBuf,
@@ -94,7 +94,7 @@ router.post('/paperless/consolidate', protect, hasPermission('documents:view'), 
         } else if (Array.isArray(document_ids) && document_ids.length > 0) {
             for (const docId of document_ids) {
                 try {
-                    const imgBuf = await paperlessService.downloadDocumentArtifact(docId, 'preview');
+                    const imgBuf = await paperlessService.downloadDocumentArtifact(docId, 'thumb');
                     receiptItems.push({
                         paperless_id: docId,
                         imageBuffer: imgBuf,

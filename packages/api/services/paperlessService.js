@@ -184,7 +184,12 @@ async function findDocumentsByReceiptNumbers(receiptNoList = []) {
     for (const receiptNo of uniqueReceipts) {
         const matchedDoc = await findDocumentByReceiptNo(receiptNo);
         if (matchedDoc) {
-            matchMap[receiptNo.trim()] = matchedDoc;
+            const cleanKey = receiptNo.trim();
+            const underscoreKey = cleanKey.replace(/[- ]/g, '_');
+            const hyphenKey = cleanKey.replace(/[_ ]/g, '-');
+            matchMap[cleanKey] = matchedDoc;
+            matchMap[underscoreKey] = matchedDoc;
+            matchMap[hyphenKey] = matchedDoc;
         }
     }
 
@@ -192,12 +197,13 @@ async function findDocumentsByReceiptNumbers(receiptNoList = []) {
 }
 
 /**
- * Fetch preview or thumbnail binary for a document
+ * Fetch thumbnail or preview image binary for a document
  */
-async function downloadDocumentArtifact(documentId, artifactType = 'preview') {
+async function downloadDocumentArtifact(documentId, artifactType = 'thumb') {
     const path = `/documents/${documentId}/${artifactType}/`;
     return await paperlessFetch(path);
 }
+
 
 /**
  * Update document tags (add/remove tags by tag IDs)

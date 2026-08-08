@@ -27,14 +27,19 @@ async function generateReceiptConsolidationPDF(items = [], options = {}) {
     const formattedItems = (items || []).map(item => {
         let src = item.imageDataUri || '';
         if (!src && item.imageBuffer && Buffer.isBuffer(item.imageBuffer)) {
-            // Detect mime type simple check
             const buf = item.imageBuffer;
-            let mime = 'image/png';
-            if (buf[0] === 0xff && buf[1] === 0xd8) mime = 'image/jpeg';
-            else if (buf[0] === 0x47 && buf[1] === 0x49) mime = 'image/gif';
-            else if (buf[0] === 0x25 && buf[1] === 0x50) mime = 'application/pdf'; // fallback
+            let mime = buf.contentType || '';
+
+            if (!mime || mime === 'application/octet-stream') {
+                if (buf[0] === 0xff && buf[1] === 0xd8) mime = 'image/jpeg';
+                else if (buf[0] === 0x89 && buf[1] === 0x50) mime = 'image/png';
+                else if (buf[0] === 0x52 && buf[1] === 0x49) mime = 'image/webp'; // RIFF (WebP)
+                else if (buf[0] === 0x47 && buf[1] === 0x49) mime = 'image/gif';
+                else mime = 'image/webp'; // Paperless default thumbnail mime
+            }
             src = `data:${mime};base64,${buf.toString('base64')}`;
         }
+
 
         const physReceiptNo = item.physical_receipt_no || item.title || (item.paperless_id ? `Paperless #${item.paperless_id}` : 'Physical Receipt');
         const systemCode = item.system_code || item.reference_id || item.primary_ref || (item.paperless_id ? `Doc ID: ${item.paperless_id}` : 'ERP System Code');

@@ -1165,7 +1165,7 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
                             processedDocIds.add(pDoc.id);
 
                             try {
-                                const imgBuf = await paperlessService.downloadDocumentArtifact(pDoc.id, 'preview');
+                                const imgBuf = await paperlessService.downloadDocumentArtifact(pDoc.id, 'thumb');
                                 receiptItems.push({
                                     imageBuffer: imgBuf,
                                     physical_receipt_no: row.physical_receipt_no || pDoc.title || rNo,
