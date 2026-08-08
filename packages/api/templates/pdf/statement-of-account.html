@@ -223,7 +223,7 @@
             <div class="company-details">
                 <h1>{{company.name}}</h1>
                 <p>{{company.address}} | {{company.tin}}</p>
-                <p>Phone: {{company.phone}} | Billing Email: {{company.email}}</p>
+                <p>Phone: {{company.phone}} | Email: {{company.email}} | Web: {{company.website}}</p>
             </div>
             <div class="statement-title">
                 <h2>Statement of Account</h2>
@@ -239,9 +239,9 @@
                 <h3>Customer Account Details</h3>
                 <p class="font-bold" style="font-size: 12.5px; color: var(--primary-color);">{{customer.name}}</p>
                 <p>Account Code: <strong style="font-family:monospace;">{{customer.id}}</strong> | TIN: <strong>{{customer.tin}}</strong></p>
-                <p>{{customer.company_name}}</p>
-                <p>{{customer.address}}</p>
+                <p>Billing Address: {{customer.address}}</p>
                 <p>Phone: {{customer.phone}} | Email: {{customer.email}}</p>
+                <p style="font-size: 9px; color: #64748B; margin-top: 2px;">Member Since: {{customer.since}}</p>
             </div>
             <div class="info-box">
                 <h3>Credit & Account Facility</h3>
@@ -331,7 +331,8 @@
         <div class="footer-note">
             <div>
                 <strong>Remittance Advice & Payment Instructions:</strong><br/>
-                Please make checks payable to <strong>{{company.name}}</strong> or wire directly to Bank Account.<br/>
+                Please make checks payable to <strong>{{company.name}}</strong> or transfer directly to:<br/>
+                Bank: <strong>{{company.bank_name}}</strong> | Account #: <strong>{{company.bank_account}}</strong><br/>
                 For billing inquiries & official proof of transfers, email: <strong>{{company.email}}</strong>.
             </div>
             <div class="signature-box">

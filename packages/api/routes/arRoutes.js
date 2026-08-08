@@ -761,11 +761,53 @@ router.get('/ar/collections-clearance/:paymentId/history', protect, hasPermissio
     }
 });
 
+async function fetchGlobalCompanySettings(dbClient) {
+    try {
+        const { rows } = await dbClient.query(`
+            SELECT setting_key, setting_value FROM settings
+            WHERE setting_key IN (
+                'COMPANY_NAME', 'COMPANY_ADDRESS', 'COMPANY_PHONE', 'COMPANY_EMAIL',
+                'COMPANY_WEBSITE', 'COMPANY_TIN', 'COMPANY_TAX_ID', 'COMPANY_BANK_NAME',
+                'COMPANY_BANK_ACCOUNT', 'DEFAULT_PAYMENT_TERMS'
+            )
+        `);
+        const s = rows.reduce((acc, { setting_key, setting_value }) => {
+            if (setting_key && setting_value) acc[setting_key] = setting_value;
+            return acc;
+        }, {});
+        return {
+            name:          s.COMPANY_NAME         || 'Forson Auto Parts & Business Suite',
+            address:       s.COMPANY_ADDRESS      || 'Manila, Philippines',
+            phone:         s.COMPANY_PHONE        || '+63 2 8123 4567',
+            email:         s.COMPANY_EMAIL        || 'billing@forson.ph',
+            website:       s.COMPANY_WEBSITE      || 'https://forson.ph',
+            tin:           s.COMPANY_TIN          || s.COMPANY_TAX_ID || '123-456-789-000',
+            bank_name:     s.COMPANY_BANK_NAME    || 'BDO Unibank, Inc.',
+            bank_account:  s.COMPANY_BANK_ACCOUNT || '00-1234-5678-90',
+            default_terms: s.DEFAULT_PAYMENT_TERMS || '30 Days Net',
+        };
+    } catch {
+        return {
+            name:          'Forson Auto Parts & Business Suite',
+            address:       'Manila, Philippines',
+            phone:         '+63 2 8123 4567',
+            email:         'billing@forson.ph',
+            website:       'https://forson.ph',
+            tin:           '123-456-789-000',
+            bank_name:     'BDO Unibank, Inc.',
+            bank_account:  '00-1234-5678-90',
+            default_terms: '30 Days Net',
+        };
+    }
+}
+
 // GET /ar/customers/:customerId/ledger - Interactive ledger history for SOA
 router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view'), async (req, res) => {
     try {
         const { customerId } = req.params;
         const { startDate, endDate } = req.query;
+
+        const companyInfo = await fetchGlobalCompanySettings(db);
 
         const custRes = await db.query(`
             SELECT c.*,
@@ -898,6 +940,7 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
 
         res.json({
             statement_number:       statementNumber,
+            company:                companyInfo,
             customer: {
                 customer_id:        customer.customer_id,
                 name:               customer.company_name || `${customer.first_name || ''} ${customer.last_name || ''}`.trim(),
@@ -911,8 +954,9 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
                 credit_limit:       customer.credit_limit,
                 credit_hold:        customer.credit_hold,
                 credit_hold_reason: customer.credit_hold_reason,
-                payment_terms:      customer.payment_terms,
+                payment_terms:      customer.payment_terms || companyInfo.default_terms,
                 wallet_balance:     customer.wallet_balance,
+                date_created:       customer.date_created,
             },
             opening_balance:        openingBalance,
             total_invoiced:         totalCharged,
@@ -934,6 +978,8 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
     try {
         const { customerId } = req.params;
         const { startDate, endDate } = req.query;
+
+        const companyInfo = await fetchGlobalCompanySettings(db);
 
         const custRes = await db.query(`
             SELECT c.*,
@@ -1073,6 +1119,7 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
         const statementNumber = `SOA-${customerId}-${dateSuffix}`;
 
         const pdfPath = await generateStatementOfAccountPDF(customer, ledgerRows, aging, {
+            company:             companyInfo,
             statementNumber,
             startDate:           startFilter,
             endDate:             endFilter || new Date(),

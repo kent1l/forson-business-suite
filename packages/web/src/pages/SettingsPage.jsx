@@ -103,9 +103,25 @@ const CompanyInfoSettings = ({ settings, handleChange }) => (
                 <input type="email" name="COMPANY_EMAIL" value={settings.COMPANY_EMAIL} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
             </div>
         </div>
-         <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Company Website</label>
-            <input type="text" name="COMPANY_WEBSITE" value={settings.COMPANY_WEBSITE} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Company Website</label>
+                <input type="text" name="COMPANY_WEBSITE" value={settings.COMPANY_WEBSITE || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="https://forson.ph" />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tax Identification No. (TIN)</label>
+                <input type="text" name="COMPANY_TIN" value={settings.COMPANY_TIN || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="123-456-789-000" />
+            </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Remittance Bank Name</label>
+                <input type="text" name="COMPANY_BANK_NAME" value={settings.COMPANY_BANK_NAME || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="BDO Unibank, Inc." />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Remittance Bank Account #</label>
+                <input type="text" name="COMPANY_BANK_ACCOUNT" value={settings.COMPANY_BANK_ACCOUNT || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="00-1234-5678-90" />
+            </div>
         </div>
         <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Application Timezone</label>
