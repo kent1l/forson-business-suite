@@ -728,7 +728,16 @@ const AccountsReceivablePage = () => {
                                                 <tr key={row.ledger_id || idx} className="hover:bg-gray-50">
                                                     <td className="px-5 py-3.5 whitespace-nowrap">{new Date(row.date).toLocaleDateString()}</td>
                                                     <td className="px-5 py-3.5 whitespace-nowrap text-gray-600">{row.due_date ? new Date(row.due_date).toLocaleDateString() : '—'}</td>
-                                                    <td className="px-5 py-3.5 font-mono text-xs font-semibold text-gray-800">{row.reference}</td>
+                                                    <td className="px-5 py-3.5 font-mono text-xs">
+                                                        <div className="font-bold text-gray-900">
+                                                            {row.physical_receipt_no || row.primary_ref || row.reference || '-'}
+                                                        </div>
+                                                        {(row.sub_ref || (row.physical_receipt_no && row.invoice_number && row.physical_receipt_no !== row.invoice_number ? row.invoice_number : null)) && (
+                                                            <div className="text-[11px] font-normal text-gray-400 mt-0.5">
+                                                                {row.sub_ref || row.invoice_number}
+                                                            </div>
+                                                        )}
+                                                    </td>
                                                     <td className="px-5 py-3.5">
                                                         <div className="font-semibold text-gray-800">{row.type_label || row.event_type}</div>
                                                         {row.description && <div className="text-xs text-gray-500">{row.description}</div>}

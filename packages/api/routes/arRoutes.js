@@ -832,6 +832,7 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
                 l.created_at,
                 l.created_by,
                 i.invoice_number,
+                i.physical_receipt_no,
                 i.invoice_date,
                 i.due_date,
                 i.terms                     AS invoice_terms,
@@ -899,33 +900,39 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
             if (amt > 0) totalCharged  += amt;
             else         totalCredited += Math.abs(amt);
 
-            // Build reference: prefer explicit ref_no, then invoice number, then CN number, then payment id
-            const docRef = entry.reference_no
-                || entry.invoice_number
-                || entry.cn_number
-                || (entry.payment_id ? `PMT-${entry.payment_id}` : null)
-                || '-';
+            const physReceipt = entry.physical_receipt_no ? entry.physical_receipt_no.trim() : null;
+            const invNum = entry.invoice_number ? entry.invoice_number.trim() : null;
+
+            // DOC/REF #: Prefer physical receipt number as primary display.
+            // If physical receipt number exists, sub-ref is the generated invoice number.
+            const primaryRef = physReceipt || entry.reference_no || invNum || entry.cn_number || (entry.payment_id ? `PMT-${entry.payment_id}` : null) || '-';
+            const subRef = (physReceipt && invNum && physReceipt !== invNum) ? invNum : null;
 
             ledgerRows.push({
-                ledger_id:       entry.ledger_id,
-                date:            entry.created_at,
-                invoice_date:    entry.invoice_date   || null,
-                due_date:        entry.due_date        || null,
-                invoice_terms:   entry.invoice_terms  || null,
-                invoice_total:   entry.invoice_total  || null,
-                cn_number:       entry.cn_number       || null,
-                event_type:      entry.entry_type,
-                type_label:      TYPE_LABELS[entry.entry_type] || entry.entry_type.replace(/_/g, ' '),
-                reference:       docRef,
-                payment_channel: entry.payment_channel || null,
-                description:     entry.notes || TYPE_LABELS[entry.entry_type] || entry.entry_type.replace(/_/g, ' '),
-                debit_amount:    amt > 0 ? amt : null,
-                credit_amount:   amt < 0 ? Math.abs(amt) : null,
-                amount:          amt,
-                running_balance: currentRunning,
-                invoice_id:      entry.invoice_id  || null,
-                payment_id:      entry.payment_id  || null,
-                cn_id:           entry.cn_id        || null,
+                ledger_id:           entry.ledger_id,
+                date:                entry.created_at,
+                invoice_date:        entry.invoice_date   || null,
+                due_date:            entry.due_date        || null,
+                invoice_terms:       entry.invoice_terms  || null,
+                invoice_total:       entry.invoice_total  || null,
+                physical_receipt_no: physReceipt,
+                invoice_number:      invNum,
+                primary_ref:         primaryRef,
+                sub_ref:             subRef,
+                cn_number:           entry.cn_number       || null,
+                event_type:          entry.entry_type,
+                type_label:          TYPE_LABELS[entry.entry_type] || entry.entry_type.replace(/_/g, ' '),
+                reference:           primaryRef,
+                document_number:     primaryRef,
+                payment_channel:     entry.payment_channel || null,
+                description:         entry.notes || TYPE_LABELS[entry.entry_type] || entry.entry_type.replace(/_/g, ' '),
+                debit_amount:        amt > 0 ? amt : null,
+                credit_amount:       amt < 0 ? Math.abs(amt) : null,
+                amount:              amt,
+                running_balance:     currentRunning,
+                invoice_id:          entry.invoice_id  || null,
+                payment_id:          entry.payment_id  || null,
+                cn_id:               entry.cn_id        || null,
             });
         }
 
@@ -1031,6 +1038,7 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
                 l.created_at,
                 l.notes,
                 i.invoice_number,
+                i.physical_receipt_no,
                 i.invoice_date,
                 i.due_date,
                 i.terms             AS invoice_terms,
@@ -1085,27 +1093,31 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
             if (amt > 0) totalInvoiced += amt;
             else         totalSettled  += Math.abs(amt);
 
-            const docRef = entry.reference_no
-                || entry.invoice_number
-                || entry.cn_number
-                || (entry.payment_id ? `PMT-${entry.payment_id}` : null)
-                || '-';
+            const physReceipt = entry.physical_receipt_no ? entry.physical_receipt_no.trim() : null;
+            const invNum = entry.invoice_number ? entry.invoice_number.trim() : null;
+
+            const primaryRef = physReceipt || entry.reference_no || invNum || entry.cn_number || (entry.payment_id ? `PMT-${entry.payment_id}` : null) || '-';
+            const subRef = (physReceipt && invNum && physReceipt !== invNum) ? invNum : null;
 
             ledgerRows.push({
-                date:            entry.created_at,
-                invoice_date:    entry.invoice_date   || null,
-                due_date:        entry.due_date        || null,
-                invoice_terms:   entry.invoice_terms  || null,
-                cn_number:       entry.cn_number       || null,
-                event_type:      entry.entry_type,
-                type_label:      TYPE_LABELS[entry.entry_type] || entry.entry_type.replace(/_/g, ' '),
-                reference:       docRef,
-                document_number: docRef,
-                payment_channel: entry.payment_channel || null,
-                description:     entry.notes || TYPE_LABELS[entry.entry_type] || entry.entry_type.replace(/_/g, ' '),
-                debit_amount:    amt > 0 ? amt  : null,
-                credit_amount:   amt < 0 ? Math.abs(amt) : null,
-                running_balance: currentRunning,
+                date:                entry.created_at,
+                invoice_date:        entry.invoice_date   || null,
+                due_date:            entry.due_date        || null,
+                invoice_terms:       entry.invoice_terms  || null,
+                physical_receipt_no: physReceipt,
+                invoice_number:      invNum,
+                primary_ref:         primaryRef,
+                sub_ref:             subRef,
+                cn_number:           entry.cn_number       || null,
+                event_type:          entry.entry_type,
+                type_label:          TYPE_LABELS[entry.entry_type] || entry.entry_type.replace(/_/g, ' '),
+                reference:           primaryRef,
+                document_number:     primaryRef,
+                payment_channel:     entry.payment_channel || null,
+                description:         entry.notes || TYPE_LABELS[entry.entry_type] || entry.entry_type.replace(/_/g, ' '),
+                debit_amount:        amt > 0 ? amt  : null,
+                credit_amount:       amt < 0 ? Math.abs(amt) : null,
+                running_balance:     currentRunning,
             });
         }
 
