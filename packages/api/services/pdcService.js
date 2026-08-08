@@ -294,6 +294,7 @@ async function verifyPayment(client, { paymentId, sourceTable = 'auto', userId =
       referenceNo: cp.reference_number,
       notes: `Cheque cleared — ${cp.method_name || 'cheque'} #${cp.reference_number || cp.payment_id}`,
       createdBy: userId,
+      paymentSource: 'customer_payment',
     });
 
     // Also mark all associated invoices as settled (update amount_paid / status)
@@ -454,6 +455,7 @@ async function processBouncedCheque(client, { paymentId, sourceTable = 'auto', b
       referenceNo: refNo,
       notes: reason || `Bounced cheque reversal for ${refNo} (Attempt #${attemptNumber})`,
       createdBy: userId,
+      paymentSource: 'customer_payment',
     });
 
     // 4. Optional bounce fee penalty
@@ -466,6 +468,7 @@ async function processBouncedCheque(client, { paymentId, sourceTable = 'auto', b
         referenceNo: refNo,
         notes: `NSF / Bounced cheque fee for ${refNo}`,
         createdBy: userId,
+        paymentSource: 'customer_payment',
       });
     }
 
@@ -535,6 +538,7 @@ async function processBouncedCheque(client, { paymentId, sourceTable = 'auto', b
       referenceNo: refNo,
       notes: reason || `Bounced cheque reversal for ${refNo} (Attempt #${attemptNumber})`,
       createdBy: userId,
+      paymentSource: 'invoice_payments',
     });
 
     if (parsedFee > 0) {
@@ -547,6 +551,7 @@ async function processBouncedCheque(client, { paymentId, sourceTable = 'auto', b
         referenceNo: refNo,
         notes: `NSF / Bounced cheque fee penalty for ${refNo}`,
         createdBy: userId,
+        paymentSource: 'invoice_payments',
       });
     }
 

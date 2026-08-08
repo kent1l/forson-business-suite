@@ -473,6 +473,7 @@ router.post('/invoices', async (req, res) => {
                         referenceNo: reference || invoice_number,
                         notes: `Payment via ${method.rows[0].name}`,
                         createdBy: employee_id,
+                        paymentSource: 'invoice_payments',
                     });
                 }
             }
@@ -503,6 +504,7 @@ router.post('/invoices', async (req, res) => {
                         referenceNo: invoice_number,
                         notes: `Payment via ${method.rows[0].name}`,
                         createdBy: employee_id,
+                        paymentSource: 'invoice_payments',
                     });
                 }
             }

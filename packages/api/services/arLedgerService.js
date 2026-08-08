@@ -23,6 +23,7 @@
  * @param {string}  [opts.referenceNo]
  * @param {string}  [opts.notes]
  * @param {number}  [opts.createdBy]        — employee_id
+ * @param {string}  [opts.paymentSource]    — 'invoice_payments' | 'customer_payment'
  * @returns {Promise<number>} ledger_id of the newly inserted row
  */
 async function appendEntry(client, {
@@ -36,15 +37,16 @@ async function appendEntry(client, {
   referenceNo    = null,
   notes          = null,
   createdBy      = null,
+  paymentSource  = null,
 }) {
   const { rows } = await client.query(
     `SELECT append_ar_ledger_entry(
        $1, $2, $3, $4,
        $5::ar_ledger_entry_type,
-       $6, $7, $8, $9, $10
+       $6, $7, $8, $9, $10, $11
      ) AS ledger_id`,
     [customerId, invoiceId, paymentId, cnId,
-     entryType, amount, paymentChannel, referenceNo, notes, createdBy],
+     entryType, amount, paymentChannel, referenceNo, notes, createdBy, paymentSource],
   );
   return rows[0].ledger_id;
 }

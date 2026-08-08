@@ -178,6 +178,7 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
                 referenceNo: referenceValue,
                 notes: notes || `Payment settled via ${methodCode}`,
                 createdBy: employee_id,
+                paymentSource: 'customer_payment',
             });
         }
 
@@ -308,6 +309,7 @@ router.post('/payments/:id/settle', protect, hasPermission('ar:receive_payment')
                 referenceNo: p.reference || settlement_reference || null,
                 notes: `Settled via ${ctx[0].method_name}`,
                 createdBy: req.user.employee_id,
+                paymentSource: 'invoice_payments',
             });
         }
 
