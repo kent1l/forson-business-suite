@@ -181,20 +181,7 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
         <td class="text-right font-mono font-bold">${fmt(options.openingBalance || 0)}</td>
     </tr>`;
 
-    let formattedItemRows = [];
-    itemRows.forEach((rowStr, idx) => {
-        formattedItemRows.push(rowStr);
-        if (idx < itemRows.length - 1 && (idx + 1) % 15 === 0) {
-            formattedItemRows.push(`
-            <tr style="page-break-after: always; break-after: always;">
-                <td colspan="7" style="text-align: center; font-size: 8.5px; font-style: italic; color: #64748B; padding: 6px 0; border: none; background: transparent;">
-                    — (Continued on next page...) —
-                </td>
-            </tr>`);
-        }
-    });
-
-    const rowsHtml = openingBalanceRow + formattedItemRows.join('');
+    const rowsHtml = openingBalanceRow + itemRows.join('');
 
     // Pending cheques breakdown table — shown below the main ledger table
     const pendingTotal = parseFloat(options.pendingChequeTotal || 0);
@@ -301,6 +288,34 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
         });
         const page = await browser.newPage();
         await page.setContent(html, { waitUntil: 'networkidle0' });
+
+        // Detect if the ledger table spans multiple print pages.
+        // If single-page, hide the tfoot continuation notice.
+        await page.evaluate(() => {
+            const MM_TO_PX = 96 / 25.4;
+            const PAGE_H   = 297 * MM_TO_PX;                        // A4 total height in px
+            const MARGIN_T = 10  * MM_TO_PX;
+            const MARGIN_B = 18  * MM_TO_PX;
+            const USABLE   = PAGE_H - MARGIN_T - MARGIN_B;          // printable height per page
+
+            const table = document.querySelector('.ledger-table');
+            if (!table) return;
+            const tfoot = table.querySelector('tfoot');
+            if (!tfoot) return;
+
+            // offsetTop gives position relative to document origin
+            const tableTop    = table.offsetTop;
+            const tableBottom = tableTop + table.scrollHeight;
+
+            const startPage = Math.floor(tableTop    / USABLE);
+            const endPage   = Math.floor(tableBottom / USABLE);
+
+            if (startPage >= endPage) {
+                // Table fits entirely within one page — no continuation needed
+                tfoot.style.display = 'none';
+            }
+        });
+
         await page.pdf({
             path: outputPath,
             printBackground: true,
