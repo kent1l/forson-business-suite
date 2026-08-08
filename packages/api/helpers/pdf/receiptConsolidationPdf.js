@@ -117,8 +117,9 @@ async function generateReceiptConsolidationPDF(items = [], options = {}) {
         const pdfBuffer = await page.pdf({
             printBackground: true,
             format: 'A4',
-            margin: { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' }
+            margin: { top: '10mm', right: '10mm', bottom: '16mm', left: '10mm' }
         });
+
 
         await page.close();
 

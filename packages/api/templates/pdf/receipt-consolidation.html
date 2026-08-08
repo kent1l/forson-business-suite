@@ -6,7 +6,7 @@
     <style>
         @page {
             size: A4 portrait;
-            margin: 10mm;
+            margin: 10mm 10mm 16mm 10mm;
         }
 
         * {
@@ -25,14 +25,15 @@
 
         .a4-page {
             width: 190mm;
-            height: 275mm;
+            height: 262mm;
             page-break-after: always;
             display: grid;
             grid-template-columns: 1fr 1fr;
             grid-template-rows: 1fr 1fr;
             gap: 6mm;
-            padding: 2mm;
+            padding: 0;
         }
+
 
         .a4-page:last-child {
             page-break-after: avoid;

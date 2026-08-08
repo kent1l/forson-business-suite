@@ -4,13 +4,57 @@ const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { PDFDocument } = require('pdf-lib');
+const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const { generateReceiptConsolidationPDF } = require('./receiptConsolidationPdf');
 
 const fmt = (v) => `₱${(Number(v) || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 
 const formatDate = (d) => (d ? new Date(d).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: '2-digit' }) : '—');
+
+
+async function stampGlobalFooter(pdfDoc, companyName, statementNumber) {
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const totalPages = pdfDoc.getPageCount();
+
+    const leftText = `${companyName ? companyName + '   •   ' : ''}Statement of Account (${statementNumber || 'SOA'})`;
+
+    for (let i = 0; i < totalPages; i++) {
+        const page = pdfDoc.getPage(i);
+        const { width } = page.getSize();
+
+        const leftMargin = 28.35; // 10mm
+        const rightMargin = width - 28.35;
+        const lineY = 36;
+        const textY = 22;
+
+        page.drawLine({
+            start: { x: leftMargin, y: lineY },
+            end: { x: rightMargin, y: lineY },
+            thickness: 0.75,
+            color: rgb(0.88, 0.91, 0.94),
+        });
+
+        page.drawText(leftText, {
+            x: leftMargin,
+            y: textY,
+            size: 8.5,
+            font: font,
+            color: rgb(0.39, 0.45, 0.54),
+        });
+
+        const pageStr = `Page ${i + 1} of ${totalPages}`;
+        const pageStrWidth = fontBold.widthOfTextAtSize(pageStr, 8.5);
+        page.drawText(pageStr, {
+            x: rightMargin - pageStrWidth,
+            y: textY,
+            size: 8.5,
+            font: fontBold,
+            color: rgb(0.20, 0.25, 0.33),
+        });
+    }
+}
 
 
 const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSummary, options = {}) => {
@@ -244,36 +288,33 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
             path: outputPath,
             printBackground: true,
             format: 'A4',
-            displayHeaderFooter: true,
-            headerTemplate: '<div></div>',
-            footerTemplate: `
-                <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 8.5px; color: #64748B; width: 100%; box-sizing: border-box; padding: 4px 10mm 0 10mm; border-top: 1px solid #E2E8F0; display: flex; justify-content: space-between; align-items: center;">
-                    <span>${companyName ? companyName + ' &nbsp;•&nbsp; ' : ''}Statement of Account (${statementNumber})</span>
-                    <span style="font-weight: 600; color: #334155;">Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
-                </div>
-            `,
             margin: { top: '10mm', right: '10mm', bottom: '16mm', left: '10mm' }
         });
         await page.close();
 
+        const mainPdfBytes = fs.readFileSync(outputPath);
+        const mainPdfDoc = await PDFDocument.load(mainPdfBytes);
+
         if (options.includePaperlessReceipts && Array.isArray(options.receiptItems) && options.receiptItems.length > 0) {
             try {
                 const receiptsPdfBuffer = await generateReceiptConsolidationPDF(options.receiptItems, { returnBuffer: true });
-                const mainPdfBytes = fs.readFileSync(outputPath);
-                const mainPdfDoc = await PDFDocument.load(mainPdfBytes);
                 const receiptsPdfDoc = await PDFDocument.load(receiptsPdfBuffer);
 
                 const copiedPages = await mainPdfDoc.copyPages(receiptsPdfDoc, receiptsPdfDoc.getPageIndices());
                 copiedPages.forEach(p => mainPdfDoc.addPage(p));
-
-                const mergedPdfBytes = await mainPdfDoc.save();
-                fs.writeFileSync(outputPath, mergedPdfBytes);
             } catch (mergeErr) {
                 console.error(`${debugPrefix} Warning: Failed to append Paperless receipt pages:`, mergeErr.message);
             }
         }
 
+        // Stamp global footer on ALL pages (SOA text + receipt attachments) with total page count
+        await stampGlobalFooter(mainPdfDoc, companyName, statementNumber);
+
+        const finalPdfBytes = await mainPdfDoc.save();
+        fs.writeFileSync(outputPath, finalPdfBytes);
+
         return outputPath;
+
 
 
 
