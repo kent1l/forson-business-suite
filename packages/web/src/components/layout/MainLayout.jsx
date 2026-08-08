@@ -27,6 +27,7 @@ import ManagerReviewDesk from '../cycleCount/ManagerReviewDesk';
 import CashierApprovalDesk from '../../pages/CashierApprovalDesk';
 import ExpensesPage from '../../pages/ExpensesPage';
 import ExpenseCategoriesPage from '../../pages/ExpenseCategoriesPage';
+import PaperlessReceiptsPage from '../../pages/PaperlessReceiptsPage';
 
 const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLines, setPosLines }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -57,11 +58,13 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'manager_audit': return <ManagerReviewDesk />;
             case 'expenses': return <ExpensesPage />;
             case 'expense_categories': return <ExpenseCategoriesPage />;
+            case 'paperless_receipts': return <PaperlessReceiptsPage />;
             case 'employees': return <EmployeesPage user={user} />;
             case 'settings': return <SettingsPage user={user} />;
             default: return <Dashboard />;
         }
     };
+
 
     return (
         <div className="flex h-screen bg-slate-50 font-sans text-gray-800">

@@ -7,7 +7,9 @@ const arLedger = require('../services/arLedgerService');
 const pdcService = require('../services/pdcService');
 const { generateStatementOfAccountPDF } = require('../helpers/pdf/soaPdf');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
+const paperlessService = require('../services/paperlessService');
 const router = express.Router();
+
 
 // GET /ar/dashboard-stats - Get AR dashboard statistics
 router.get('/ar/dashboard-stats', protect, hasPermission('ar:view'), async (req, res) => {
@@ -1143,6 +1145,41 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
 
         const statementNumber = await getNextDocumentNumber(db, 'SOA');
 
+        // Fetch matching Paperless-ngx receipts if configured
+        let paperlessMatchMap = {};
+        const receiptItems = [];
+        const includeReceipts = req.query.include_receipts === 'true' || req.query.include_paperless === 'true';
+
+        try {
+            const physReceiptNos = ledgerRows.map(r => r.physical_receipt_no).filter(Boolean);
+            if (physReceiptNos.length > 0) {
+                paperlessMatchMap = await paperlessService.findDocumentsByReceiptNumbers(physReceiptNos);
+
+                if (includeReceipts) {
+                    for (const row of ledgerRows) {
+                        const rNo = row.physical_receipt_no ? String(row.physical_receipt_no).trim() : null;
+                        if (rNo && paperlessMatchMap[rNo]) {
+                            const pDoc = paperlessMatchMap[rNo];
+                            try {
+                                const imgBuf = await paperlessService.downloadDocumentArtifact(pDoc.id, 'preview');
+                                receiptItems.push({
+                                    imageBuffer: imgBuf,
+                                    physical_receipt_no: rNo,
+                                    system_code: row.primary_ref || row.reference_id || 'ERP-INV',
+                                    paperless_id: pDoc.id,
+                                    title: pDoc.title,
+                                });
+                            } catch (artifactErr) {
+                                console.error(`[arRoutes] Error downloading Paperless artifact for doc ${pDoc.id}:`, artifactErr.message);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (pErr) {
+            console.error('[arRoutes] Non-fatal error matching Paperless receipts:', pErr.message);
+        }
+
         const pdfPath = await generateStatementOfAccountPDF(customer, ledgerRows, aging, {
             company:             companyInfo,
             statementNumber,
@@ -1155,7 +1192,11 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
             pendingChequeTotal:  parseFloat(pending.pending_total),
             pendingChequeCount:  pending.pending_count,
             pendingCheques:      pendingItemsRes.rows,
+            paperlessMatchMap,
+            includePaperlessReceipts: includeReceipts,
+            receiptItems,
         });
+
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename=SOA_${(customer.company_name || 'Customer').replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`);

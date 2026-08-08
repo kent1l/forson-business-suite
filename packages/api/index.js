@@ -62,6 +62,8 @@ registerRoute('/api', './routes/walletRoutes');
 
 // Documents module (Document Management Interface)
 registerRoute('/api', './routes/documentsRoutes');
+registerRoute('/api', './routes/paperlessRoutes');
+
 
 // Entity & Data Management Modules
 registerRoute('/api', './routes/supplierRoutes');
