@@ -157,11 +157,11 @@ const AccountsReceivablePage = () => {
         setDateRange(newDateRange);
     }, []);
 
-    // Handle drill-down into aging buckets
-    const handleAgingBucketClick = useCallback(async (bucketName) => {
+    // Fetch drill-down invoices for an aging bucket
+    const fetchDrillDownInvoices = useCallback(async (bucketName, page = drillDownPage, pageSize = drillDownPageSize) => {
+        if (!bucketName) return;
         try {
             setDrillDownLoading(true);
-            setSelectedAgingBucket(bucketName);
             
             const bucketMap = {
                 'Current': 'current',
@@ -174,26 +174,38 @@ const AccountsReceivablePage = () => {
             const bucketParam = bucketMap[bucketName];
             if (!bucketParam) return;
             
-            const dateParams = {
-                startDate: dateRange.startDate.toISOString(),
-                endDate: dateRange.endDate.toISOString(),
+            const params = {
                 bucket: bucketParam,
-                page: drillDownPage,
-                pageSize: drillDownPageSize,
+                page,
+                pageSize,
                 paginated: 1
             };
             
-            const response = await api.get('/ar/drill-down-invoices', { params: dateParams });
-            setDrillDownInvoices(response.data?.data || []);
+            const response = await api.get('/ar/drill-down-invoices', { params });
+            setDrillDownInvoices(response.data?.data || response.data || []);
             setDrillDownTotal(response.data?.total || 0);
             
         } catch (error) {
             console.error('Failed to fetch drill-down invoices:', error);
             toast.error('Failed to load invoice details');
+            setDrillDownInvoices([]);
+            setDrillDownTotal(0);
         } finally {
             setDrillDownLoading(false);
         }
-    }, [dateRange, drillDownPage, drillDownPageSize]);
+    }, [drillDownPage, drillDownPageSize]);
+
+    useEffect(() => {
+        if (selectedAgingBucket) {
+            fetchDrillDownInvoices(selectedAgingBucket, drillDownPage, drillDownPageSize);
+        }
+    }, [selectedAgingBucket, drillDownPage, drillDownPageSize, fetchDrillDownInvoices]);
+
+    // Handle drill-down into aging buckets
+    const handleAgingBucketClick = useCallback((bucketName) => {
+        setSelectedAgingBucket(bucketName);
+        setDrillDownPage(1);
+    }, []);
 
     // Fetch Customer Summary Table (isolated from full dashboard page loading)
     const fetchCustomerSummary = useCallback(async () => {
@@ -903,6 +915,8 @@ const AccountsReceivablePage = () => {
                 onClose={() => {
                     setSelectedAgingBucket(null);
                     setDrillDownInvoices([]);
+                    setDrillDownTotal(0);
+                    setDrillDownPage(1);
                 }}
                 title={`Invoices - ${selectedAgingBucket}`}
                 maxWidth="max-w-6xl"
@@ -918,46 +932,58 @@ const AccountsReceivablePage = () => {
                             No invoices found for this aging bucket.
                         </div>
                     ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left">
-                                <thead className="border-b border-gray-200">
-                                    <tr>
-                                        <th className="p-3 text-sm font-semibold text-gray-600">Invoice #</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-600">Customer</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-600">Invoice Date</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-600">Due Date</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-600 text-right">Amount</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-600 text-right">Balance</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-600 text-center">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {drillDownInvoices.map(invoice => (
-                                        <tr key={invoice.invoice_id} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
-                                            <td className="p-3 text-sm font-mono">{invoice.invoice_number}</td>
-                                            <td className="p-3 text-sm">{invoice.company_name || `${invoice.first_name || ''} ${invoice.last_name || ''}`.trim()}</td>
-                                            <td className="p-3 text-sm">{new Date(invoice.invoice_date).toLocaleDateString()}</td>
-                                            <td className="p-3 text-sm">{new Date(invoice.due_date).toLocaleDateString()}</td>
-                                            <td className="p-3 text-sm text-right font-mono">{formatCurrency(invoice.total_amount)}</td>
-                                            <td className="p-3 text-sm text-right font-mono font-medium">{formatCurrency(invoice.balance_due)}</td>
-                                            <td className="p-3 text-sm text-center">
-                                                {hasPermission('ar:receive_payment') && Number(invoice.balance_due) > 0 && (
-                                                    <button
-                                                        onClick={() => {
-                                                            setSelectedAgingBucket(null);
-                                                            handleReceivePaymentClick(invoice);
-                                                        }}
-                                                        className="bg-green-600 text-white px-3 py-1 rounded-lg text-xs font-semibold hover:bg-green-700 transition-colors"
-                                                    >
-                                                        Receive Payment
-                                                    </button>
-                                                )}
-                                            </td>
+                        <>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left">
+                                    <thead className="border-b border-gray-200">
+                                        <tr>
+                                            <th className="p-3 text-sm font-semibold text-gray-600">Invoice #</th>
+                                            <th className="p-3 text-sm font-semibold text-gray-600">Customer</th>
+                                            <th className="p-3 text-sm font-semibold text-gray-600">Invoice Date</th>
+                                            <th className="p-3 text-sm font-semibold text-gray-600">Due Date</th>
+                                            <th className="p-3 text-sm font-semibold text-gray-600 text-right">Amount</th>
+                                            <th className="p-3 text-sm font-semibold text-gray-600 text-right">Balance</th>
+                                            <th className="p-3 text-sm font-semibold text-gray-600 text-center">Actions</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                                    </thead>
+                                    <tbody>
+                                        {drillDownInvoices.map(invoice => (
+                                            <tr key={invoice.invoice_id} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
+                                                <td className="p-3 text-sm font-mono">{invoice.invoice_number}</td>
+                                                <td className="p-3 text-sm">{invoice.company_name || `${invoice.first_name || ''} ${invoice.last_name || ''}`.trim()}</td>
+                                                <td className="p-3 text-sm">{new Date(invoice.invoice_date).toLocaleDateString()}</td>
+                                                <td className="p-3 text-sm">{new Date(invoice.due_date).toLocaleDateString()}</td>
+                                                <td className="p-3 text-sm text-right font-mono">{formatCurrency(invoice.total_amount)}</td>
+                                                <td className="p-3 text-sm text-right font-mono font-medium">{formatCurrency(invoice.balance_due)}</td>
+                                                <td className="p-3 text-sm text-center">
+                                                    {hasPermission('ar:receive_payment') && Number(invoice.balance_due) > 0 && (
+                                                        <button
+                                                            onClick={() => {
+                                                                setSelectedAgingBucket(null);
+                                                                handleReceivePaymentClick(invoice);
+                                                            }}
+                                                            className="bg-green-600 text-white px-3 py-1 rounded-lg text-xs font-semibold hover:bg-green-700 transition-colors"
+                                                        >
+                                                            Receive Payment
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <PaginationControls
+                                page={drillDownPage}
+                                pageSize={drillDownPageSize}
+                                total={drillDownTotal}
+                                onPageChange={setDrillDownPage}
+                                onPageSizeChange={(value) => {
+                                    setDrillDownPageSize(value);
+                                    setDrillDownPage(1);
+                                }}
+                            />
+                        </>
                     )}
                 </div>
             </Modal>

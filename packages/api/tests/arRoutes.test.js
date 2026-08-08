@@ -106,4 +106,37 @@ describe('Accounts Receivable (A/R) Routes', () => {
             expect(res.body[0].invoice_number).toBe('INV-202607-0001');
         });
     });
+
+    describe('GET /api/ar/drill-down-invoices', () => {
+        test('should require bucket parameter', async () => {
+            const res = await request(app).get('/api/ar/drill-down-invoices');
+            expect(res.status).toBe(400);
+            expect(res.body.message).toMatch(/bucket parameter is required/i);
+        });
+
+        test('should return invoices for 90-plus bucket without date range restrictions', async () => {
+            const mockInvoices = [
+                {
+                    invoice_id: 99,
+                    invoice_number: 'INV-202501-0001',
+                    invoice_date: '2025-01-15',
+                    due_date: '2025-02-15',
+                    total_amount: '15000.00',
+                    balance_due: '15000.00',
+                    days_overdue: 539
+                }
+            ];
+
+            // When paginated=1, route queries count then rows
+            db.query.mockResolvedValueOnce({ rows: [{ total: 1 }] });
+            db.query.mockResolvedValueOnce({ rows: mockInvoices });
+
+            const res = await request(app).get('/api/ar/drill-down-invoices?bucket=90-plus&paginated=1&page=1&pageSize=25');
+
+            expect(res.status).toBe(200);
+            expect(res.body.data).toHaveLength(1);
+            expect(res.body.data[0].invoice_number).toBe('INV-202501-0001');
+            expect(res.body.total).toBe(1);
+        });
+    });
 });

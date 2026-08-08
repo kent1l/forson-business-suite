@@ -353,16 +353,9 @@ router.get('/ar/drill-down-invoices', protect, hasPermission('ar:view'), async (
             return res.status(400).json({ message: 'Invalid bucket parameter' });
         }
 
-        // Build the query with date range filter if provided
         let dateRangeCondition = '';
         let queryParams = [];
         let paramIndex = 1;
-
-        if (startDate && endDate) {
-            dateRangeCondition = ` AND i.invoice_date >= $${paramIndex} AND i.invoice_date <= $${paramIndex + 1}`;
-            queryParams.push(startDate, endDate);
-            paramIndex += 2;
-        }
 
         let query = `
             SELECT
