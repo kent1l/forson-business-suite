@@ -537,6 +537,12 @@ const AccountsReceivablePage = () => {
                     >
                         Last 90 Days
                     </button>
+                    <button
+                        onClick={() => handleDateRangeChange({ startDate: new Date('1970-01-01'), endDate: new Date() })}
+                        className="px-3 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-md"
+                    >
+                        All Time
+                    </button>
                 </div>
             </div>
 
