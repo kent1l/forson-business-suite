@@ -33,7 +33,6 @@
             print-color-adjust: exact;
         }
 
-
         .container {
             padding: 12px;
             max-width: 800px;
@@ -166,7 +165,7 @@
             color: var(--primary-color);
             font-weight: 700;
             text-align: left;
-            padding: 6px 8px;
+            padding: 7px 8px;
             font-size: 9.5px;
             text-transform: uppercase;
             border-top: 1px solid var(--border-color);
@@ -174,7 +173,7 @@
         }
 
         td {
-            padding: 5px 8px;
+            padding: 7px 8px;
             border-bottom: 1px solid var(--border-color);
             font-size: 10px;
         }
@@ -204,9 +203,8 @@
         }
 
         .audit-clause {
-            margin-top: 12px;
-            margin-bottom: 6px;
-            padding: 8px 12px;
+            margin-top: 16px;
+            padding: 10px 12px;
             background: #F8FAFC;
             border: 1px dashed #CBD5E1;
             border-radius: 6px;
@@ -216,8 +214,9 @@
         }
 
         .footer-note {
-            margin-top: 6px;
-            padding-top: 4px;
+            margin-top: 20px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 12px;
             font-size: 9.5px;
             color: var(--secondary-color);
             display: flex;
@@ -332,14 +331,14 @@
         <!-- Header -->
         <div class="header">
             <div class="company-details">
-                <h2>{{company.name}}</h2>
-                <p>{{company.address}}</p>
-                <p>TIN: {{company.tin}}</p>
+                <h1>{{company.name}}</h1>
+                {{company.header_line1_html}}
+                {{company.header_line2_html}}
             </div>
             <div class="statement-title">
-                <h1>STATEMENT OF ACCOUNT</h1>
-                <p class="statement-no">No: <strong>{{statement.number}}</strong></p>
-                <p>Date: <strong>{{statement.date}}</strong></p>
+                <h2>Statement of Account</h2>
+                <p>Statement #: <strong style="font-family:monospace; color:#1E40AF;">{{statement.number}}</strong></p>
+                <p>Statement Date: <strong>{{statement.date}}</strong></p>
                 <p>Billing Period: <strong>{{statement.period}}</strong></p>
             </div>
         </div>
@@ -355,7 +354,7 @@
                 {{customer.since_html}}
             </div>
             <div class="info-box">
-                <h3>Credit & Account Facility</h3>
+                <h3>Credit &amp; Account Facility</h3>
                 <p>Credit Limit: <span class="font-mono font-bold">{{customer.credit_limit}}</span></p>
                 <p>Payment Terms: <span class="font-bold">{{customer.payment_terms}}</span></p>
                 <p>Credit Status: <span class="font-bold"
@@ -392,7 +391,7 @@
         <!-- Itemized Transactions Table -->
         <h3 style="font-size: 11px; color: var(--primary-color); text-transform: uppercase; margin-bottom: 6px;">
             Statement Details (Chronological Ledger)</h3>
-        <table class="ledger-table">
+        <table>
             <thead>
                 <tr>
                     <th style="width: 10%;">Txn Date</th>
@@ -411,43 +410,42 @@
 
         {{pending_cheque_note}}
 
-        <!-- Aging Summary Table -->
-        <h3 style="font-size: 11px; color: var(--primary-color); text-transform: uppercase; margin-bottom: 6px; margin-top: 12px;">
-            Accounts Receivable Aging Summary</h3>
+        <!-- Aging Breakdown Table -->
+        <h3
+            style="font-size: 11px; color: var(--primary-color); text-transform: uppercase; margin-top: 14px; margin-bottom: 6px;">
+            Aging Breakdown Analysis</h3>
         <table class="aging-table">
             <thead>
                 <tr>
-                    <th>Current</th>
-                    <th>1–30 Days</th>
-                    <th>31–60 Days</th>
-                    <th>61–90 Days</th>
-                    <th>90+ Days</th>
-                    <th>Total Overdue</th>
+                    <th>Current<br />(Not Yet Due)</th>
+                    <th>1 – 30 Days<br />Past Due</th>
+                    <th>31 – 60 Days<br />Past Due</th>
+                    <th>61 – 90 Days<br />Past Due</th>
+                    <th style="color:#DC2626;">90+ Days<br />Past Due</th>
+                    <th>Total<br />Outstanding</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
-                    <td>{{aging.current}}</td>
-                    <td>{{aging.days_1_30}}</td>
-                    <td>{{aging.days_31_60}}</td>
-                    <td>{{aging.days_61_90}}</td>
-                    <td>{{aging.days_90_plus}}</td>
-                    <td class="font-bold">{{aging.total}}</td>
+                    <td class="font-mono">{{aging.current}}</td>
+                    <td class="font-mono">{{aging.days_1_30}}</td>
+                    <td class="font-mono">{{aging.days_31_60}}</td>
+                    <td class="font-mono">{{aging.days_61_90}}</td>
+                    <td class="font-mono" style="color: #DC2626; font-weight: 700;">{{aging.days_90_plus}}</td>
+                    <td class="font-mono font-bold" style="color: var(--primary-color);">{{aging.total}}</td>
                 </tr>
             </tbody>
         </table>
 
-        <!-- Notice & Discrepancy Audit Clause -->
+        <!-- Discrepancy Notice Clause -->
         <div class="audit-clause">
-            <strong>NOTICE &amp; DISCREPANCY AUDIT CLAUSE:</strong> This Statement of Account reflects all transactions
-            within the stated billing period. If you believe there are any discrepancies, please notify our Accounts
-            Receivable Department in writing within <strong>7 calendar days</strong> from receipt of this statement.
-            Failure to do so within the prescribed period shall constitute your unconditional acceptance of all items
-            herein as correct and binding. Forson reserves the right to apply payments to the oldest outstanding
-            balances first unless otherwise agreed in writing.
+            <strong>NOTICE &amp; DISCREPANCY AUDIT CLAUSE:</strong> Please inspect this Statement of Account immediately
+            upon receipt. If no error or discrepancy is reported to our Accounts Receivable &amp; Credit Department within
+            fifteen (15) calendar days from the statement date, this statement shall be deemed correct, final, and
+            accepted as billed.
         </div>
 
-        <!-- Remittance Advice & Payment Instructions — LAST section before attached images -->
+        <!-- Remittance & Footer -->
         <div class="footer-note">
             {{remittance_advice_html}}
             <div class="signature-box">
@@ -458,11 +456,9 @@
             </div>
         </div>
 
-        <!-- Separation bar before attached receipt images -->
-        <!-- Attached Receipt Images Section (Flows into remaining space if space permits) -->
+        <!-- Attached Receipt Images (flows into remaining page space if it fits) -->
         {{receipt_consolidation_section}}
     </div>
 </body>
-
 
 </html>

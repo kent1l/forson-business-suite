@@ -287,56 +287,7 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
             args: ['--no-sandbox', '--disable-setuid-sandbox', '--font-render-hinting=medium']
         });
         const page = await browser.newPage();
-
-        // Use print media + A4-width viewport so offsetTop measurements
-        // match print layout page boundaries accurately.
-        await page.emulateMediaType('print');
-        await page.setViewport({ width: 794, height: 1123 }); // A4 at 96 dpi
         await page.setContent(html, { waitUntil: 'networkidle0' });
-
-        // Detect actual print-page boundaries and inject "Continued on next page"
-        // only after rows that straddle a page break — never after the last row.
-        await page.evaluate(() => {
-            const MM_TO_PX = 96 / 25.4;
-            const USABLE   = (297 - 10 - 18) * MM_TO_PX; // printable height per page ≈ 1016 px
-
-            const table = document.querySelector('.ledger-table');
-            if (!table) return;
-            const tbody = table.querySelector('tbody');
-            if (!tbody) return;
-            const rows = Array.from(tbody.querySelectorAll('tr'));
-            if (rows.length < 2) return;
-
-            // Compute absolute document top for any element by walking offsetParent chain
-            function docTop(el) {
-                let top = 0;
-                while (el) { top += el.offsetTop; el = el.offsetParent; }
-                return top;
-            }
-
-            // Find rows (excluding last) whose bottom crosses a page boundary
-            const breakAfter = [];
-            for (let i = 0; i < rows.length - 1; i++) {
-                const top    = docTop(rows[i]);
-                const bottom = top + rows[i].offsetHeight;
-                if (Math.floor(top / USABLE) < Math.floor(bottom / USABLE)) {
-                    breakAfter.push(i);
-                }
-            }
-
-            // Insert continuation rows in reverse so indices stay valid
-            breakAfter.reverse().forEach(i => {
-                const noticeRow = document.createElement('tr');
-                noticeRow.style.cssText = 'page-break-after:always;break-after:always;';
-                const td = document.createElement('td');
-                td.colSpan = 7;
-                td.style.cssText = 'text-align:center;font-size:8.5px;font-style:italic;color:#64748B;padding:6px 0;border:none;background:transparent;';
-                td.textContent = '\u2014 (Continued on next page...) \u2014';
-                noticeRow.appendChild(td);
-                tbody.insertBefore(noticeRow, rows[i + 1]);
-            });
-        });
-
         await page.pdf({
             path: outputPath,
             printBackground: true,
