@@ -224,8 +224,12 @@ function renderReceiptGridPagesHtml(items = [], options = {}) {
         return `<div class="receipt-tile-row">${slotsHtml.join('')}</div>`;
     }).join('\n');
 
-    return `<div class="receipt-section">${rowsHtml}</div>`;
+    return `
+        <div style="border-top: 1.5px solid #CBD5E1; margin-top: 20px; margin-bottom: 16px; page-break-inside: avoid; break-inside: avoid;"></div>
+        <div class="receipt-section">${rowsHtml}</div>
+    `;
 }
+
 
 
 module.exports = { generateReceiptConsolidationPDF, renderReceiptGridPagesHtml };
