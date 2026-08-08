@@ -912,7 +912,10 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
             } else if (entry.cn_number && entry.cn_number !== physReceipt) {
                 subRef = entry.cn_number;
             } else if (entry.payment_id) {
-                const trackingNo = `PMT-${entry.payment_id}`;
+                const d = entry.created_at ? new Date(entry.created_at) : new Date();
+                const yyyymm = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
+                const seq = String(entry.payment_id).padStart(4, '0');
+                const trackingNo = `PMT-${yyyymm}-${seq}`;
                 subRef = (physReceipt && physReceipt === trackingNo) ? null : trackingNo;
             } else if (entry.reference_no && entry.reference_no !== physReceipt) {
                 subRef = entry.reference_no;
@@ -1113,7 +1116,10 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
             } else if (entry.cn_number && entry.cn_number !== physReceipt) {
                 subRef = entry.cn_number;
             } else if (entry.payment_id) {
-                const trackingNo = `PMT-${entry.payment_id}`;
+                const d = entry.created_at ? new Date(entry.created_at) : new Date();
+                const yyyymm = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
+                const seq = String(entry.payment_id).padStart(4, '0');
+                const trackingNo = `PMT-${yyyymm}-${seq}`;
                 subRef = (physReceipt && physReceipt === trackingNo) ? null : trackingNo;
             } else if (entry.reference_no && entry.reference_no !== physReceipt) {
                 subRef = entry.reference_no;
