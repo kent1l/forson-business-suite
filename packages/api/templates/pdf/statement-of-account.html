@@ -200,8 +200,9 @@
         }
 
         .audit-clause {
-            margin-top: 16px;
-            padding: 10px 12px;
+            margin-top: 12px;
+            margin-bottom: 6px;
+            padding: 8px 12px;
             background: #F8FAFC;
             border: 1px dashed #CBD5E1;
             border-radius: 6px;
@@ -211,8 +212,8 @@
         }
 
         .footer-note {
-            margin-top: 20px;
-            padding-top: 12px;
+            margin-top: 6px;
+            padding-top: 4px;
             font-size: 9.5px;
             color: var(--secondary-color);
             display: flex;
@@ -243,14 +244,15 @@
             display: table-header-group;
         }
 
+        tfoot.table-continuation {
+            display: table-footer-group;
+        }
+
         .info-section, .summary-grid, .audit-clause, .footer-note, .signature-box, .aging-table {
             page-break-inside: avoid;
             break-inside: avoid;
         }
     </style>
-
-
-
 </head>
 
 <body>
@@ -258,14 +260,14 @@
         <!-- Header -->
         <div class="header">
             <div class="company-details">
-                <h1>{{company.name}}</h1>
-                {{company.header_line1_html}}
-                {{company.header_line2_html}}
+                <h2>{{company.name}}</h2>
+                <p>{{company.address}}</p>
+                <p>TIN: {{company.tin}}</p>
             </div>
             <div class="statement-title">
-                <h2>Statement of Account</h2>
-                <p>Statement #: <strong style="font-family:monospace; color:#1E40AF;">{{statement.number}}</strong></p>
-                <p>Statement Date: <strong>{{statement.date}}</strong></p>
+                <h1>STATEMENT OF ACCOUNT</h1>
+                <p class="statement-no">No: <strong>{{statement.number}}</strong></p>
+                <p>Date: <strong>{{statement.date}}</strong></p>
                 <p>Billing Period: <strong>{{statement.period}}</strong></p>
             </div>
         </div>
@@ -333,6 +335,13 @@
             <tbody>
                 {{ledger_rows}}
             </tbody>
+            <tfoot class="table-continuation">
+                <tr>
+                    <td colspan="7" style="text-align: right; font-size: 8.5px; font-style: italic; color: #64748B; padding: 4px 0 0 0; border: none; background: transparent;">
+                        — (Continued on next page...) —
+                    </td>
+                </tr>
+            </tfoot>
         </table>
 
         {{pending_cheque_note}}
@@ -382,11 +391,7 @@
                 </div>
             </div>
         </div>
-
-        <!-- Attached Receipt Images Section (Flows into blank area if space allows) -->
-        {{receipt_consolidation_section}}
     </div>
 </body>
-
 
 </html>
