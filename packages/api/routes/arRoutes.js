@@ -772,31 +772,25 @@ async function fetchGlobalCompanySettings(dbClient) {
             )
         `);
         const s = rows.reduce((acc, { setting_key, setting_value }) => {
-            if (setting_key && setting_value) acc[setting_key] = setting_value;
+            if (setting_key && setting_value && setting_value.trim()) {
+                acc[setting_key] = setting_value.trim();
+            }
             return acc;
         }, {});
         return {
-            name:          s.COMPANY_NAME         || 'Forson Auto Parts & Business Suite',
-            address:       s.COMPANY_ADDRESS      || 'Manila, Philippines',
-            phone:         s.COMPANY_PHONE        || '+63 2 8123 4567',
-            email:         s.COMPANY_EMAIL        || 'billing@forson.ph',
-            website:       s.COMPANY_WEBSITE      || 'https://forson.ph',
-            tin:           s.COMPANY_TIN          || s.COMPANY_TAX_ID || '123-456-789-000',
-            bank_name:     s.COMPANY_BANK_NAME    || 'BDO Unibank, Inc.',
-            bank_account:  s.COMPANY_BANK_ACCOUNT || '00-1234-5678-90',
-            default_terms: s.DEFAULT_PAYMENT_TERMS || '30 Days Net',
+            name:          s.COMPANY_NAME         || '',
+            address:       s.COMPANY_ADDRESS      || '',
+            phone:         s.COMPANY_PHONE        || '',
+            email:         s.COMPANY_EMAIL        || '',
+            website:       s.COMPANY_WEBSITE      || '',
+            tin:           s.COMPANY_TIN          || s.COMPANY_TAX_ID || '',
+            bank_name:     s.COMPANY_BANK_NAME    || '',
+            bank_account:  s.COMPANY_BANK_ACCOUNT || '',
+            default_terms: s.DEFAULT_PAYMENT_TERMS || '',
         };
     } catch {
         return {
-            name:          'Forson Auto Parts & Business Suite',
-            address:       'Manila, Philippines',
-            phone:         '+63 2 8123 4567',
-            email:         'billing@forson.ph',
-            website:       'https://forson.ph',
-            tin:           '123-456-789-000',
-            bank_name:     'BDO Unibank, Inc.',
-            bank_account:  '00-1234-5678-90',
-            default_terms: '30 Days Net',
+            name: '', address: '', phone: '', email: '', website: '', tin: '', bank_name: '', bank_account: '', default_terms: ''
         };
     }
 }

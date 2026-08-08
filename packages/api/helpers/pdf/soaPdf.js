@@ -13,13 +13,68 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
     const templatePath = path.join(__dirname, '../../templates/pdf/statement-of-account.html');
     let html = fs.readFileSync(templatePath, 'utf8');
 
-    const company = options.company || {
-        name: 'Forson Auto Parts & Business Suite',
-        tin: 'TIN: 123-456-789-000',
-        address: 'Manila, Philippines',
-        phone: '+63 2 8123 4567',
-        email: 'billing@forson.ph'
-    };
+    const company = options.company || {};
+    const companyName = company.name || 'Statement of Account';
+
+    // 1. Company Header Line 1 (Address & TIN)
+    const headerLine1Parts = [];
+    if (company.address) headerLine1Parts.push(company.address);
+    if (company.tin) {
+        const rawTin = String(company.tin).replace(/^TIN:\s*/i, '');
+        if (rawTin) headerLine1Parts.push(`TIN: ${rawTin}`);
+    }
+    const companyHeaderLine1Html = headerLine1Parts.length > 0
+        ? `<p>${headerLine1Parts.join(' &nbsp;|&nbsp; ')}</p>`
+        : '';
+
+    // 2. Company Header Line 2 (Phone, Email, Website)
+    const headerLine2Parts = [];
+    if (company.phone) headerLine2Parts.push(`Phone: ${company.phone}`);
+    if (company.email) headerLine2Parts.push(`Email: ${company.email}`);
+    if (company.website) headerLine2Parts.push(`Web: ${company.website}`);
+    const companyHeaderLine2Html = headerLine2Parts.length > 0
+        ? `<p>${headerLine2Parts.join(' &nbsp;|&nbsp; ')}</p>`
+        : '';
+
+    // 3. Customer Info Block Details
+    const custCodeTinParts = [`Account Code: <strong style="font-family:monospace;">CUST-${customerData.customer_id || '0'}</strong>`];
+    if (customerData.tin || customerData.tax_id) {
+        custCodeTinParts.push(`TIN: <strong>${customerData.tin || customerData.tax_id}</strong>`);
+    }
+    const custCodeTinHtml = `<p>${custCodeTinParts.join(' &nbsp;|&nbsp; ')}</p>`;
+
+    const custAddressHtml = customerData.address ? `<p>Billing Address: ${customerData.address}</p>` : '';
+
+    const custContactParts = [];
+    if (customerData.phone) custContactParts.push(`Phone: ${customerData.phone}`);
+    if (customerData.email) custContactParts.push(`Email: ${customerData.email}`);
+    const custContactHtml = custContactParts.length > 0 ? `<p>${custContactParts.join(' &nbsp;|&nbsp; ')}</p>` : '';
+
+    const custSinceHtml = (customerData.date_created || customerData.created_at)
+        ? `<p style="font-size: 9px; color: #64748B; margin-top: 2px;">Member Since: ${formatDate(customerData.date_created || customerData.created_at)}</p>`
+        : '';
+
+    // 4. Remittance & Payment Instructions Block
+    const bankParts = [];
+    if (company.bank_name && company.bank_account) {
+        bankParts.push(`Bank: <strong>${company.bank_name}</strong> | Account #: <strong>${company.bank_account}</strong>`);
+    } else if (company.bank_name) {
+        bankParts.push(`Bank: <strong>${company.bank_name}</strong>`);
+    } else if (company.bank_account) {
+        bankParts.push(`Account #: <strong>${company.bank_account}</strong>`);
+    }
+
+    const payableLine = companyName
+        ? `Please make checks payable to <strong>${companyName}</strong>${bankParts.length > 0 ? ' or transfer directly to:' : '.'}`
+        : (bankParts.length > 0 ? 'Please transfer directly to:' : '');
+
+    const bankLine = bankParts.length > 0 ? `<br/>${bankParts.join('<br/>')}` : '';
+    const emailLine = company.email ? `<br/>For billing inquiries & official proof of transfers, email: <strong>${company.email}</strong>.` : '';
+
+    const remittanceAdviceHtml = `<div>
+        <strong>Remittance Advice & Payment Instructions:</strong><br/>
+        ${payableLine}${bankLine}${emailLine}
+    </div>`;
 
     const customerName = customerData.company_name
         || `${customerData.first_name || ''} ${customerData.last_name || ''}`.trim()
@@ -121,25 +176,18 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
     const agingTotal     = parseFloat(agingCurrent) + parseFloat(aging1to30) + parseFloat(aging31to60) + parseFloat(aging61to90) + parseFloat(aging90plus);
 
     const replacements = {
-        '{{company.name}}':              company.name,
-        '{{company.tin}}':               company.tin ? (company.tin.startsWith('TIN:') ? company.tin : 'TIN: ' + company.tin) : 'TIN: 123-456-789-000',
-        '{{company.address}}':           company.address,
-        '{{company.phone}}':             company.phone,
-        '{{company.email}}':             company.email,
-        '{{company.website}}':           company.website || 'https://forson.ph',
-        '{{company.bank_name}}':         company.bank_name || 'BDO Unibank, Inc.',
-        '{{company.bank_account}}':      company.bank_account || '00-1234-5678-90',
+        '{{company.name}}':              companyName,
+        '{{company.header_line1_html}}': companyHeaderLine1Html,
+        '{{company.header_line2_html}}': companyHeaderLine2Html,
         '{{statement.number}}':          statementNumber,
         '{{statement.date}}':            formatDate(options.statementDate || new Date()),
         '{{statement.period}}':          `${formatDate(options.startDate)} – ${formatDate(options.endDate)}`,
         '{{customer.id}}':               `CUST-${customerData.customer_id || '0'}`,
         '{{customer.name}}':             customerName,
-        '{{customer.company_name}}':     customerData.company_name || '',
-        '{{customer.address}}':          customerData.address || 'N/A',
-        '{{customer.phone}}':            customerData.phone || 'N/A',
-        '{{customer.email}}':            customerData.email || 'N/A',
-        '{{customer.tin}}':              customerData.tin || customerData.tax_id || 'N/A',
-        '{{customer.since}}':            formatDate(customerData.date_created || customerData.created_at),
+        '{{customer.code_tin_html}}':    custCodeTinHtml,
+        '{{customer.address_html}}':     custAddressHtml,
+        '{{customer.contact_html}}':     custContactHtml,
+        '{{customer.since_html}}':       custSinceHtml,
         '{{customer.credit_limit}}':     fmt(customerData.credit_limit || 0),
         '{{customer.credit_hold_status}}': customerData.credit_hold ? `ON HOLD${customerData.credit_hold_reason ? ' — ' + customerData.credit_hold_reason : ''}` : 'CLEAR / ACTIVE',
         '{{customer.credit_hold_color}}': customerData.credit_hold ? '#DC2626' : '#059669',
@@ -157,6 +205,7 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
         '{{aging.days_61_90}}':          fmt(aging61to90),
         '{{aging.days_90_plus}}':        fmt(aging90plus),
         '{{aging.total}}':               fmt(agingTotal),
+        '{{remittance_advice_html}}':    remittanceAdviceHtml,
     };
 
     Object.entries(replacements).forEach(([key, value]) => {
