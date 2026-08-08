@@ -18,8 +18,8 @@
         }
 
         @page {
-            size: A4;
-            margin: 0.5cm;
+            size: A4 portrait;
+            margin: 10mm 10mm 18mm 10mm;
         }
 
         body {
@@ -29,7 +29,10 @@
             background-color: #fff;
             margin: 0;
             padding: 0;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
         }
+
 
         .container {
             padding: 12px;
@@ -223,15 +226,21 @@
             width: 180px;
         }
 
-        .signature-line {
-            border-top: 1px solid #475569;
-            margin-top: 30px;
-            padding-top: 4px;
-            font-weight: 600;
-            font-size: 9px;
-            color: var(--primary-color);
+        tr {
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        thead {
+            display: table-header-group;
+        }
+
+        .info-section, .summary-grid, .audit-clause, .footer-note, .signature-box, .aging-table {
+            page-break-inside: avoid;
+            break-inside: avoid;
         }
     </style>
+
 </head>
 
 <body>

@@ -288,8 +288,9 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
             path: outputPath,
             printBackground: true,
             format: 'A4',
-            margin: { top: '10mm', right: '10mm', bottom: '16mm', left: '10mm' }
+            margin: { top: '10mm', right: '10mm', bottom: '18mm', left: '10mm' }
         });
+
         await page.close();
 
         const mainPdfBytes = fs.readFileSync(outputPath);

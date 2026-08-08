@@ -24,7 +24,14 @@ async function generateReceiptConsolidationPDF(items = [], options = {}) {
     const templatePath = path.join(__dirname, '../../templates/pdf/receipt-consolidation.html');
     let templateHtml = fs.readFileSync(templatePath, 'utf8');
 
-    const formattedItems = (items || []).map(item => {
+    // Sort items A-Z by physical receipt number / title
+    const sortedRawItems = [...(items || [])].sort((a, b) => {
+        const titleA = String(a.physical_receipt_no || a.title || '').trim();
+        const titleB = String(b.physical_receipt_no || b.title || '').trim();
+        return titleA.localeCompare(titleB, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+    const formattedItems = sortedRawItems.map(item => {
         let src = item.imageDataUri || '';
         if (!src && item.imageBuffer && Buffer.isBuffer(item.imageBuffer)) {
             const buf = item.imageBuffer;
@@ -39,7 +46,6 @@ async function generateReceiptConsolidationPDF(items = [], options = {}) {
             }
             src = `data:${mime};base64,${buf.toString('base64')}`;
         }
-
 
         const physReceiptNo = item.physical_receipt_no || item.title || (item.paperless_id ? `Paperless #${item.paperless_id}` : 'Physical Receipt');
         const systemCode = item.system_code || item.reference_id || item.primary_ref || (item.paperless_id ? `Doc ID: ${item.paperless_id}` : 'ERP System Code');
@@ -91,15 +97,14 @@ async function generateReceiptConsolidationPDF(items = [], options = {}) {
                 `);
             } else {
                 slotsHtml.push(`
-                    <div class="empty-card">
-                        <span>— EMPTY SLOT —</span>
-                    </div>
+                    <div class="empty-tile"></div>
                 `);
             }
         }
 
         return `<div class="a4-page">${slotsHtml.join('')}</div>`;
     }).join('\n');
+
 
     const finalHtml = templateHtml.replace('{{PAGE_SLOTS}}', pagesHtml);
 
