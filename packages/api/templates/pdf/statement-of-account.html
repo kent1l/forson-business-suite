@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -46,7 +47,7 @@
         }
 
         .company-details h1 {
-            font-size: 18px;
+            font-size: 20px;
             font-weight: 700;
             color: var(--primary-color);
             margin: 0 0 2px 0;
@@ -171,13 +172,29 @@
             font-size: 10px;
         }
 
-        .text-right { text-align: right; }
-        .text-center { text-align: center; }
-        .font-mono { font-family: monospace; }
-        .font-bold { font-weight: 700; }
+        .text-right {
+            text-align: right;
+        }
 
-        .aging-table th { text-align: center; }
-        .aging-table td { text-align: center; }
+        .text-center {
+            text-align: center;
+        }
+
+        .font-mono {
+            font-family: monospace;
+        }
+
+        .font-bold {
+            font-weight: 700;
+        }
+
+        .aging-table th {
+            text-align: center;
+        }
+
+        .aging-table td {
+            text-align: center;
+        }
 
         .audit-clause {
             margin-top: 16px;
@@ -216,6 +233,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <!-- Header -->
@@ -238,7 +256,8 @@
             <div class="info-box">
                 <h3>Customer Account Details</h3>
                 <p class="font-bold" style="font-size: 12.5px; color: var(--primary-color);">{{customer.name}}</p>
-                <p>Account Code: <strong style="font-family:monospace;">{{customer.id}}</strong> | TIN: <strong>{{customer.tin}}</strong></p>
+                <p>Account Code: <strong style="font-family:monospace;">{{customer.id}}</strong> | TIN:
+                    <strong>{{customer.tin}}</strong></p>
                 <p>Billing Address: {{customer.address}}</p>
                 <p>Phone: {{customer.phone}} | Email: {{customer.email}}</p>
                 <p style="font-size: 9px; color: #64748B; margin-top: 2px;">Member Since: {{customer.since}}</p>
@@ -247,8 +266,10 @@
                 <h3>Credit & Account Facility</h3>
                 <p>Credit Limit: <span class="font-mono font-bold">{{customer.credit_limit}}</span></p>
                 <p>Payment Terms: <span class="font-bold">{{customer.payment_terms}}</span></p>
-                <p>Credit Status: <span class="font-bold" style="color: {{customer.credit_hold_color}};">{{customer.credit_hold_status}}</span></p>
-                <p>Available Store Wallet: <span class="font-mono font-bold" style="color: #059669;">{{customer.wallet_balance}}</span></p>
+                <p>Credit Status: <span class="font-bold"
+                        style="color: {{customer.credit_hold_color}};">{{customer.credit_hold_status}}</span></p>
+                <p>Available Store Wallet: <span class="font-mono font-bold"
+                        style="color: #059669;">{{customer.wallet_balance}}</span></p>
             </div>
         </div>
 
@@ -277,7 +298,8 @@
         </div>
 
         <!-- Itemized Transactions Table -->
-        <h3 style="font-size: 11px; color: var(--primary-color); text-transform: uppercase; margin-bottom: 6px;">Statement Details (Chronological Ledger)</h3>
+        <h3 style="font-size: 11px; color: var(--primary-color); text-transform: uppercase; margin-bottom: 6px;">
+            Statement Details (Chronological Ledger)</h3>
         <table>
             <thead>
                 <tr>
@@ -298,16 +320,18 @@
         {{pending_cheque_note}}
 
         <!-- Aging Breakdown Table -->
-        <h3 style="font-size: 11px; color: var(--primary-color); text-transform: uppercase; margin-top: 14px; margin-bottom: 6px;">Aging Breakdown Analysis</h3>
+        <h3
+            style="font-size: 11px; color: var(--primary-color); text-transform: uppercase; margin-top: 14px; margin-bottom: 6px;">
+            Aging Breakdown Analysis</h3>
         <table class="aging-table">
             <thead>
                 <tr>
-                    <th>Current<br/>(Not Yet Due)</th>
-                    <th>1 – 30 Days<br/>Past Due</th>
-                    <th>31 – 60 Days<br/>Past Due</th>
-                    <th>61 – 90 Days<br/>Past Due</th>
-                    <th style="color:#DC2626;">90+ Days<br/>Past Due</th>
-                    <th>Total<br/>Outstanding</th>
+                    <th>Current<br />(Not Yet Due)</th>
+                    <th>1 – 30 Days<br />Past Due</th>
+                    <th>31 – 60 Days<br />Past Due</th>
+                    <th>61 – 90 Days<br />Past Due</th>
+                    <th style="color:#DC2626;">90+ Days<br />Past Due</th>
+                    <th>Total<br />Outstanding</th>
                 </tr>
             </thead>
             <tbody>
@@ -324,25 +348,29 @@
 
         <!-- Discrepancy Notice Clause -->
         <div class="audit-clause">
-            <strong>NOTICE & DISCREPANCY AUDIT CLAUSE:</strong> Please inspect this Statement of Account immediately upon receipt. If no error or discrepancy is reported to our Accounts Receivable & Credit Department within fifteen (15) calendar days from the statement date, this statement shall be deemed correct, final, and accepted as billed.
+            <strong>NOTICE & DISCREPANCY AUDIT CLAUSE:</strong> Please inspect this Statement of Account immediately
+            upon receipt. If no error or discrepancy is reported to our Accounts Receivable & Credit Department within
+            fifteen (15) calendar days from the statement date, this statement shall be deemed correct, final, and
+            accepted as billed.
         </div>
 
         <!-- Remittance & Footer -->
         <div class="footer-note">
             <div>
-                <strong>Remittance Advice & Payment Instructions:</strong><br/>
-                Please make checks payable to <strong>{{company.name}}</strong> or transfer directly to:<br/>
-                Bank: <strong>{{company.bank_name}}</strong> | Account #: <strong>{{company.bank_account}}</strong><br/>
+                <strong>Remittance Advice & Payment Instructions:</strong><br />
+                Please make checks payable to <strong>{{company.name}}</strong> or transfer directly to:<br />
+                Bank: <strong>{{company.bank_name}}</strong> | Account #:
+                <strong>{{company.bank_account}}</strong><br />
                 For billing inquiries & official proof of transfers, email: <strong>{{company.email}}</strong>.
             </div>
             <div class="signature-box">
                 <div class="signature-line">
-                    Authorized Representative<br/>
+                    Authorized Representative<br />
                     Accounts Receivable Department
                 </div>
             </div>
         </div>
     </div>
 </body>
-</html>
 
+</html>
