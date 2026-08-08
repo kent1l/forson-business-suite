@@ -681,48 +681,115 @@ const AccountsReceivablePage = () => {
                     ) : !soaLedger ? (
                         <div className="bg-white p-12 rounded-xl text-center text-gray-500 border">Please select a customer to view their statement of account and ledger history.</div>
                     ) : (
-                        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-                            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-                                <div>
-                                    <h3 className="text-xl font-bold text-gray-800">{soaLedger.customer.name}</h3>
-                                    <p className="text-xs text-gray-500">{soaLedger.customer.email} | {soaLedger.customer.phone}</p>
+                        <div className="space-y-6">
+                            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+                                <div className="p-6 border-b border-gray-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gray-50">
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <h3 className="text-xl font-bold text-gray-800">{soaLedger.customer.name}</h3>
+                                            <span className="px-2.5 py-0.5 rounded bg-blue-100 text-blue-800 text-xs font-mono font-semibold">
+                                                {soaLedger.statement_number || 'SOA-STATEMENT'}
+                                            </span>
+                                        </div>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Account ID: <span className="font-mono font-semibold">CUST-{soaLedger.customer.customer_id}</span> | {soaLedger.customer.email || 'No email'} | {soaLedger.customer.phone || 'No phone'}
+                                        </p>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-xs uppercase font-semibold text-gray-500">Net Account Balance</div>
+                                        <div className="text-2xl font-bold font-mono text-blue-700">{formatCurrency(soaLedger.closing_balance)}</div>
+                                    </div>
                                 </div>
-                                <div className="text-right">
-                                    <div className="text-xs uppercase font-semibold text-gray-500">Closing Balance</div>
-                                    <div className="text-2xl font-bold font-mono text-blue-700">{formatCurrency(soaLedger.closing_balance)}</div>
+
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm text-left text-gray-500">
+                                        <thead className="text-xs text-gray-700 uppercase bg-gray-100 border-b">
+                                            <tr>
+                                                <th className="px-5 py-3">Txn Date</th>
+                                                <th className="px-5 py-3">Due Date</th>
+                                                <th className="px-5 py-3">Ref / Doc #</th>
+                                                <th className="px-5 py-3">Description</th>
+                                                <th className="px-5 py-3 text-right">Charges (Dr)</th>
+                                                <th className="px-5 py-3 text-right">Credits (Cr)</th>
+                                                <th className="px-5 py-3 text-right font-bold">Running Balance</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-200">
+                                            <tr className="bg-blue-50/60 font-semibold text-gray-800">
+                                                <td className="px-5 py-3 whitespace-nowrap">{dateRange.startDate.toLocaleDateString()}</td>
+                                                <td className="px-5 py-3">—</td>
+                                                <td className="px-5 py-3 font-mono text-xs text-gray-400">—</td>
+                                                <td className="px-5 py-3 font-semibold text-blue-900">OPENING BALANCE BROUGHT FORWARD</td>
+                                                <td className="px-5 py-3 text-right font-mono">—</td>
+                                                <td className="px-5 py-3 text-right font-mono">—</td>
+                                                <td className="px-5 py-3 text-right font-mono font-bold text-blue-900">{formatCurrency(soaLedger.opening_balance)}</td>
+                                            </tr>
+                                            {soaLedger.ledger_rows.map((row, idx) => (
+                                                <tr key={row.ledger_id || idx} className="hover:bg-gray-50">
+                                                    <td className="px-5 py-3.5 whitespace-nowrap">{new Date(row.date).toLocaleDateString()}</td>
+                                                    <td className="px-5 py-3.5 whitespace-nowrap text-gray-600">{row.due_date ? new Date(row.due_date).toLocaleDateString() : '—'}</td>
+                                                    <td className="px-5 py-3.5 font-mono text-xs font-semibold text-gray-800">{row.reference}</td>
+                                                    <td className="px-5 py-3.5">
+                                                        <div className="font-semibold text-gray-800">{row.type_label || row.event_type}</div>
+                                                        {row.description && <div className="text-xs text-gray-500">{row.description}</div>}
+                                                    </td>
+                                                    <td className="px-5 py-3.5 text-right font-mono text-gray-900 font-medium">{row.debit_amount ? formatCurrency(row.debit_amount) : '—'}</td>
+                                                    <td className="px-5 py-3.5 text-right font-mono text-emerald-700 font-medium">{row.credit_amount ? formatCurrency(row.credit_amount) : '—'}</td>
+                                                    <td className="px-5 py-3.5 text-right font-mono font-bold text-gray-900">{formatCurrency(row.running_balance)}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
 
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm text-left text-gray-500">
-                                    <thead className="text-xs text-gray-700 uppercase bg-gray-100 border-b">
-                                        <tr>
-                                            <th className="px-6 py-3">Date</th>
-                                            <th className="px-6 py-3">Ref / Doc #</th>
-                                            <th className="px-6 py-3">Description</th>
-                                            <th className="px-6 py-3 text-right">Debit (+)</th>
-                                            <th className="px-6 py-3 text-right">Credit (-)</th>
-                                            <th className="px-6 py-3 text-right font-bold">Running Balance</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-200">
-                                        <tr className="bg-blue-50/50 font-semibold text-gray-700">
-                                            <td className="px-6 py-3" colSpan="5">Opening Balance as of {dateRange.startDate.toLocaleDateString()}</td>
-                                            <td className="px-6 py-3 text-right font-mono font-bold text-blue-900">{formatCurrency(soaLedger.opening_balance)}</td>
-                                        </tr>
-                                        {soaLedger.ledger_rows.map((row, idx) => (
-                                            <tr key={row.ledger_id || idx} className="hover:bg-gray-50">
-                                                <td className="px-6 py-3.5 whitespace-nowrap">{new Date(row.date).toLocaleDateString()}</td>
-                                                <td className="px-6 py-3.5 font-mono text-xs font-semibold text-gray-800">{row.reference}</td>
-                                                <td className="px-6 py-3.5">{row.description}</td>
-                                                <td className="px-6 py-3.5 text-right font-mono text-gray-900">{row.debit_amount ? formatCurrency(row.debit_amount) : '-'}</td>
-                                                <td className="px-6 py-3.5 text-right font-mono text-emerald-700">{row.credit_amount ? formatCurrency(row.credit_amount) : '-'}</td>
-                                                <td className="px-6 py-3.5 text-right font-mono font-bold text-gray-900">{formatCurrency(row.running_balance)}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                            {/* Floating Collections / Pending Cheques Breakdown Table */}
+                            {soaLedger.pending_cheques && soaLedger.pending_cheques.length > 0 && (
+                                <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-5 shadow-sm">
+                                    <div className="flex justify-between items-center mb-3">
+                                        <h4 className="text-sm font-bold text-amber-900 flex items-center gap-2">
+                                            <span>⏳ Floating Collections / Uncleared Cheques</span>
+                                            <span className="px-2 py-0.5 bg-amber-200 text-amber-900 rounded-full text-xs font-semibold">
+                                                {soaLedger.pending_cheque_count} Items
+                                            </span>
+                                        </h4>
+                                        <div className="text-sm font-bold font-mono text-amber-950">
+                                            Total: {formatCurrency(soaLedger.pending_cheque_total)}
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-amber-800 mb-3">
+                                        The following cheques have been received and committed against invoices, but remain pending bank clearance.
+                                    </p>
+                                    <div className="overflow-x-auto bg-white rounded-lg border border-amber-200">
+                                        <table className="w-full text-xs text-left text-gray-600">
+                                            <thead className="bg-amber-100/60 text-amber-950 uppercase font-semibold border-b border-amber-200">
+                                                <tr>
+                                                    <th className="px-4 py-2.5">Cheque Date</th>
+                                                    <th className="px-4 py-2.5">Cheque / Ref #</th>
+                                                    <th className="px-4 py-2.5">Drawee Bank</th>
+                                                    <th className="px-4 py-2.5 text-center">Clearance Status</th>
+                                                    <th className="px-4 py-2.5 text-right">Amount</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-amber-100">
+                                                {soaLedger.pending_cheques.map((item) => (
+                                                    <tr key={item.payment_id} className="hover:bg-amber-50/30">
+                                                        <td className="px-4 py-2 whitespace-nowrap">{new Date(item.cheque_date).toLocaleDateString()}</td>
+                                                        <td className="px-4 py-2 font-mono font-semibold text-gray-800">{item.reference_number || '-'}</td>
+                                                        <td className="px-4 py-2">{item.payment_method_name || 'Bank Instrument'}</td>
+                                                        <td className="px-4 py-2 text-center">
+                                                            <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 text-xs font-medium">
+                                                                {item.pdc_status}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-2 text-right font-mono font-bold text-gray-900">{formatCurrency(item.amount)}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

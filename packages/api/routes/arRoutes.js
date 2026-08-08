@@ -823,6 +823,15 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
         `, [customerId]);
         const pendingCheques = pendingChequeRes.rows[0];
 
+        const pendingItemsRes = await db.query(`
+            SELECT cp.payment_id, cp.reference_number, cp.cheque_date, cp.amount, cp.pdc_status, pm.name AS payment_method_name
+            FROM customer_payment cp
+            LEFT JOIN payment_methods pm ON pm.method_id = cp.method_id
+            WHERE cp.customer_id = $1
+              AND cp.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED')
+            ORDER BY cp.cheque_date ASC, cp.payment_id ASC
+        `, [customerId]);
+
         const TYPE_LABELS = {
             INVOICE_POSTED:        'Invoice Charged',
             PAYMENT_SETTLED:       'Payment Received',
@@ -884,7 +893,11 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
             });
         }
 
+        const dateSuffix = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        const statementNumber = `SOA-${customerId}-${dateSuffix}`;
+
         res.json({
+            statement_number:       statementNumber,
             customer: {
                 customer_id:        customer.customer_id,
                 name:               customer.company_name || `${customer.first_name || ''} ${customer.last_name || ''}`.trim(),
@@ -894,6 +907,7 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
                 email:              customer.email,
                 phone:              customer.phone,
                 address:            customer.address,
+                tin:                customer.tin || customer.tax_id || null,
                 credit_limit:       customer.credit_limit,
                 credit_hold:        customer.credit_hold,
                 credit_hold_reason: customer.credit_hold_reason,
@@ -906,6 +920,7 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
             closing_balance:        currentRunning,
             pending_cheque_total:   parseFloat(pendingCheques.pending_cheque_total),
             pending_cheque_count:   pendingCheques.pending_cheque_count,
+            pending_cheques:        pendingItemsRes.rows,
             ledger_rows:            ledgerRows,
         });
     } catch (err) {
@@ -988,7 +1003,7 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
             ORDER BY l.created_at ASC, l.ledger_id ASC
         `, [customerId]);
 
-        // Pending cheques (committed but not yet cleared — shown as a footnote)
+        // Pending cheques (committed but not yet cleared — shown as a breakdown)
         const pendingRes = await db.query(`
             SELECT COALESCE(SUM(cp.amount), 0) AS pending_total, COUNT(*)::int AS pending_count
             FROM customer_payment cp
@@ -999,6 +1014,15 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
                    cp.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED'))
         `, [customerId]);
         const pending = pendingRes.rows[0];
+
+        const pendingItemsRes = await db.query(`
+            SELECT cp.payment_id, cp.reference_number, cp.cheque_date, cp.amount, cp.pdc_status, pm.name AS payment_method_name
+            FROM customer_payment cp
+            LEFT JOIN payment_methods pm ON pm.method_id = cp.method_id
+            WHERE cp.customer_id = $1
+              AND cp.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED')
+            ORDER BY cp.cheque_date ASC, cp.payment_id ASC
+        `, [customerId]);
 
         let openingBalance = 0;
         let totalInvoiced = 0;
@@ -1045,7 +1069,11 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
             });
         }
 
+        const dateSuffix = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        const statementNumber = `SOA-${customerId}-${dateSuffix}`;
+
         const pdfPath = await generateStatementOfAccountPDF(customer, ledgerRows, aging, {
+            statementNumber,
             startDate:           startFilter,
             endDate:             endFilter || new Date(),
             openingBalance,
@@ -1054,6 +1082,7 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
             closingBalance:      currentRunning,
             pendingChequeTotal:  parseFloat(pending.pending_total),
             pendingChequeCount:  pending.pending_count,
+            pendingCheques:      pendingItemsRes.rows,
         });
 
         res.setHeader('Content-Type', 'application/pdf');

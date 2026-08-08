@@ -15,6 +15,7 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
 
     const company = options.company || {
         name: 'Forson Auto Parts & Business Suite',
+        tin: 'TIN: 123-456-789-000',
         address: 'Manila, Philippines',
         phone: '+63 2 8123 4567',
         email: 'billing@forson.ph'
@@ -24,11 +25,12 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
         || `${customerData.first_name || ''} ${customerData.last_name || ''}`.trim()
         || 'Valued Customer';
 
-    // Build ledger rows HTML — now includes type label, due date, and payment channel sub-row detail
-    const rowsHtml = (ledgerRows || []).map(row => {
+    const statementNumber = options.statementNumber || `SOA-${customerData.customer_id || '0'}-${Date.now().toString().slice(-6)}`;
+
+    // Build ledger rows HTML — bank SOA includes Opening Balance row at the start of the table
+    const itemRows = (ledgerRows || []).map(row => {
         const typeLabel = row.type_label || row.event_type || '-';
         const descParts = [row.description || typeLabel];
-        if (row.due_date) descParts.push(`Due: ${formatDate(row.due_date)}`);
         if (row.payment_channel) descParts.push(`Via: ${row.payment_channel.toUpperCase()}`);
         if (row.invoice_terms) descParts.push(`Terms: ${row.invoice_terms}`);
         if (row.cn_number) descParts.push(`CN: ${row.cn_number}`);
@@ -44,25 +46,73 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
         return `
         <tr>
             <td>${formatDate(row.date)}</td>
+            <td>${formatDate(row.due_date)}</td>
             <td class="font-mono">${row.reference || row.document_number || '-'}</td>
             <td>${descHtml}</td>
             <td class="text-right font-mono${debitBold}">${row.debit_amount ? fmt(row.debit_amount) : '—'}</td>
             <td class="text-right font-mono" style="${creditColor}">${row.credit_amount ? fmt(row.credit_amount) : '—'}</td>
             <td class="text-right font-mono font-bold">${fmt(row.running_balance)}</td>
         </tr>`;
-    }).join('');
+    });
 
-    // Pending cheques footnote — shown below the ledger table
+    // Opening Balance row as first line item in the details table
+    const openingBalanceRow = `
+    <tr style="background-color: #F8FAFC; font-weight: 600;">
+        <td>${formatDate(options.startDate)}</td>
+        <td>—</td>
+        <td class="font-mono">—</td>
+        <td><span style="font-size:10px;font-weight:700;color:#1E293B;">OPENING BALANCE BROUGHT FORWARD</span></td>
+        <td class="text-right font-mono">—</td>
+        <td class="text-right font-mono">—</td>
+        <td class="text-right font-mono font-bold">${fmt(options.openingBalance || 0)}</td>
+    </tr>`;
+
+    const rowsHtml = openingBalanceRow + itemRows.join('');
+
+    // Pending cheques breakdown table — shown below the main ledger table
     const pendingTotal = parseFloat(options.pendingChequeTotal || 0);
     const pendingCount = options.pendingChequeCount || 0;
-    const pendingChequeNote = pendingTotal > 0
-        ? `<div style="margin-top:8px;padding:8px 12px;background:#FFF7ED;border:1px solid #FED7AA;border-radius:4px;font-size:10px;color:#92400E;">
-             <strong>⏳ Pending Cheques:</strong> ${pendingCount} cheque(s) totalling <strong>${fmt(pendingTotal)}</strong> have been received but not yet cleared.
-             These are committed against invoice balances but are <em>not yet reflected in the cash AR balance above</em> until bank clearance.
-           </div>`
-        : '';
+    const pendingItems = options.pendingCheques || [];
 
-    // Aging \u2014 agingSummary uses snake_case column names from the SQL query
+    let pendingChequeSection = '';
+    if (pendingTotal > 0) {
+        const itemRowsHtml = pendingItems.map(item => `
+            <tr>
+                <td>${formatDate(item.cheque_date)}</td>
+                <td class="font-mono">${item.reference_number || '-'}</td>
+                <td>${item.payment_method_name || 'Bank Instrument'}</td>
+                <td class="text-center"><span style="display:inline-block;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:600;background:#FEF3C7;color:#92400E;">${item.pdc_status}</span></td>
+                <td class="text-right font-mono font-bold">${fmt(item.amount)}</td>
+            </tr>
+        `).join('');
+
+        pendingChequeSection = `
+        <div style="margin-top:16px;padding:12px;background:#FFF7ED;border:1px solid #FED7AA;border-radius:6px;">
+            <div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:6px;display:flex;justify-content:space-between;">
+                <span>⏳ FLOATING COLLECTIONS / UNCLEARED DEPOSITS (${pendingCount} Items)</span>
+                <span>Total: ${fmt(pendingTotal)}</span>
+            </div>
+            <p style="font-size:9.5px;color:#78350F;margin:0 0 8px 0;">
+                The following cheques have been received and committed against invoices, but remain pending bank clearance. They will be added to cash balances upon clearance.
+            </p>
+            <table style="margin-bottom:0;background:#FFF;">
+                <thead>
+                    <tr style="background:#FFEDD5;">
+                        <th style="font-size:9px;color:#92400E;">Maturity Date</th>
+                        <th style="font-size:9px;color:#92400E;">Cheque / Ref #</th>
+                        <th style="font-size:9px;color:#92400E;">Drawee Bank</th>
+                        <th style="font-size:9px;color:#92400E;text-align:center;">Status</th>
+                        <th style="font-size:9px;color:#92400E;text-align:right;">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${itemRowsHtml}
+                </tbody>
+            </table>
+        </div>`;
+    }
+
+    // Aging — agingSummary uses snake_case column names from the SQL query
     const agingCurrent   = agingSummary?.current        || agingSummary?.['current']       || 0;
     const aging1to30     = agingSummary?.days_1_30      || agingSummary?.['days1to30']      || 0;
     const aging31to60    = agingSummary?.days_31_60     || agingSummary?.['days31to60']     || 0;
@@ -72,16 +122,20 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
 
     const replacements = {
         '{{company.name}}':              company.name,
+        '{{company.tin}}':               company.tin || 'TIN: 123-456-789-000',
         '{{company.address}}':           company.address,
         '{{company.phone}}':             company.phone,
         '{{company.email}}':             company.email,
+        '{{statement.number}}':          statementNumber,
         '{{statement.date}}':            formatDate(options.statementDate || new Date()),
         '{{statement.period}}':          `${formatDate(options.startDate)} – ${formatDate(options.endDate)}`,
+        '{{customer.id}}':               `CUST-${customerData.customer_id || '0'}`,
         '{{customer.name}}':             customerName,
         '{{customer.company_name}}':     customerData.company_name || '',
         '{{customer.address}}':          customerData.address || 'N/A',
         '{{customer.phone}}':            customerData.phone || 'N/A',
         '{{customer.email}}':            customerData.email || 'N/A',
+        '{{customer.tin}}':              customerData.tin || customerData.tax_id || 'N/A',
         '{{customer.credit_limit}}':     fmt(customerData.credit_limit || 0),
         '{{customer.credit_hold_status}}': customerData.credit_hold ? `ON HOLD${customerData.credit_hold_reason ? ' — ' + customerData.credit_hold_reason : ''}` : 'CLEAR / ACTIVE',
         '{{customer.credit_hold_color}}': customerData.credit_hold ? '#DC2626' : '#059669',
@@ -91,8 +145,8 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
         '{{summary.total_invoiced}}':    fmt(options.totalInvoiced || 0),
         '{{summary.total_settled}}':     fmt(options.totalSettled || 0),
         '{{summary.net_balance}}':       fmt(options.closingBalance || 0),
-        '{{ledger_rows}}':               rowsHtml || `<tr><td colSpan="6" style="text-align:center;color:#94A3B8;">No transaction activity in the selected period.</td></tr>`,
-        '{{pending_cheque_note}}':       pendingChequeNote,
+        '{{ledger_rows}}':               rowsHtml,
+        '{{pending_cheque_note}}':       pendingChequeSection,
         '{{aging.current}}':             fmt(agingCurrent),
         '{{aging.days_1_30}}':           fmt(aging1to30),
         '{{aging.days_31_60}}':          fmt(aging31to60),
