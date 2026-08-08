@@ -1148,24 +1148,28 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
         // Fetch matching Paperless-ngx receipts if configured
         let paperlessMatchMap = {};
         const receiptItems = [];
-        const includeReceipts = req.query.include_receipts === 'true' || req.query.include_paperless === 'true';
+        const includeReceipts = req.query.include_receipts !== 'false' && req.query.include_paperless !== 'false';
 
         try {
-            const physReceiptNos = ledgerRows.map(r => r.physical_receipt_no).filter(Boolean);
+            const physReceiptNos = ledgerRows.map(r => r.physical_receipt_no || r.invoice_number || r.primary_ref).filter(Boolean);
             if (physReceiptNos.length > 0) {
                 paperlessMatchMap = await paperlessService.findDocumentsByReceiptNumbers(physReceiptNos);
 
                 if (includeReceipts) {
+                    const processedDocIds = new Set();
                     for (const row of ledgerRows) {
-                        const rNo = row.physical_receipt_no ? String(row.physical_receipt_no).trim() : null;
+                        const rNo = (row.physical_receipt_no || row.invoice_number || row.primary_ref || '').trim();
                         if (rNo && paperlessMatchMap[rNo]) {
                             const pDoc = paperlessMatchMap[rNo];
+                            if (processedDocIds.has(pDoc.id)) continue; // Avoid duplicate pages for same doc
+                            processedDocIds.add(pDoc.id);
+
                             try {
                                 const imgBuf = await paperlessService.downloadDocumentArtifact(pDoc.id, 'preview');
                                 receiptItems.push({
                                     imageBuffer: imgBuf,
-                                    physical_receipt_no: rNo,
-                                    system_code: row.primary_ref || row.reference_id || 'ERP-INV',
+                                    physical_receipt_no: row.physical_receipt_no || pDoc.title || rNo,
+                                    system_code: row.invoice_number || row.sub_ref || row.primary_ref || `INV-${pDoc.id}`,
                                     paperless_id: pDoc.id,
                                     title: pDoc.title,
                                 });
@@ -1179,6 +1183,7 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
         } catch (pErr) {
             console.error('[arRoutes] Non-fatal error matching Paperless receipts:', pErr.message);
         }
+
 
         const pdfPath = await generateStatementOfAccountPDF(customer, ledgerRows, aging, {
             company:             companyInfo,

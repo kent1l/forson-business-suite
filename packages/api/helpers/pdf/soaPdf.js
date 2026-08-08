@@ -103,13 +103,11 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
 
         const primaryDoc = row.primary_ref || row.physical_receipt_no || '-';
         const subDoc = row.sub_ref || null;
-        const physReceiptKey = row.physical_receipt_no ? String(row.physical_receipt_no).trim() : null;
-        const matchedPaperlessDoc = options.paperlessMatchMap && physReceiptKey ? options.paperlessMatchMap[physReceiptKey] : null;
-        const paperlessBadge = matchedPaperlessDoc ? `<span style="display:inline-block;padding:1px 4px;margin-left:4px;border-radius:3px;font-size:8px;font-weight:600;background:#E0F2FE;color:#0369A1;">Paperless #${matchedPaperlessDoc.id}</span>` : '';
 
         const docCellHtml = subDoc
-            ? `<div class="font-mono font-bold" style="font-size:10px;color:#0F172A;">${primaryDoc}${paperlessBadge}</div><div class="font-mono" style="font-size:8.5px;color:#64748B;font-weight:normal;margin-top:1px;">${subDoc}</div>`
-            : `<div class="font-mono font-bold" style="font-size:10px;color:#0F172A;">${primaryDoc}${paperlessBadge}</div>`;
+            ? `<div class="font-mono font-bold" style="font-size:10px;color:#0F172A;">${primaryDoc}</div><div class="font-mono" style="font-size:8.5px;color:#64748B;font-weight:normal;margin-top:1px;">${subDoc}</div>`
+            : `<div class="font-mono font-bold" style="font-size:10px;color:#0F172A;">${primaryDoc}</div>`;
+
 
 
         return `
