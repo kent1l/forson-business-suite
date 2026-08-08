@@ -161,10 +161,6 @@
             display: table-header-group;
         }
 
-        tfoot {
-            display: table-footer-group;
-        }
-
         th {
             background-color: var(--table-header-bg);
             color: var(--primary-color);
@@ -408,13 +404,6 @@
                     <th style="width: 12%; text-align: right;">Account Balance</th>
                 </tr>
             </thead>
-            <tfoot>
-                <tr>
-                    <td colspan="7" style="text-align: center; font-size: 8.5px; font-style: italic; color: #64748B; padding: 6px 0; border-top: none; border-bottom: none; background: transparent;">
-                        — (Continued on next page...) —
-                    </td>
-                </tr>
-            </tfoot>
             <tbody>
                 {{ledger_rows}}
             </tbody>
