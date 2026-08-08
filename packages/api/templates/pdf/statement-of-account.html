@@ -157,12 +157,16 @@
             margin-bottom: 16px;
         }
 
+        thead {
+            display: table-header-group;
+        }
+
         th {
             background-color: var(--table-header-bg);
             color: var(--primary-color);
             font-weight: 700;
             text-align: left;
-            padding: 7px 8px;
+            padding: 6px 8px;
             font-size: 9.5px;
             text-transform: uppercase;
             border-top: 1px solid var(--border-color);
@@ -170,7 +174,7 @@
         }
 
         td {
-            padding: 7px 8px;
+            padding: 5px 8px;
             border-bottom: 1px solid var(--border-color);
             font-size: 10px;
         }
@@ -233,11 +237,6 @@
             font-weight: 600;
             font-size: 9px;
             color: var(--primary-color);
-        }
-
-        tr {
-            page-break-inside: avoid;
-            break-inside: avoid;
         }
 
         .info-section, .summary-grid, .audit-clause, .footer-note, .signature-box, .aging-table {
@@ -408,7 +407,47 @@
             <tbody>
                 {{ledger_rows}}
             </tbody>
-        <!-- Remittance & Footer -->
+        </table>
+
+        {{pending_cheque_note}}
+
+        <!-- Aging Summary Table -->
+        <h3 style="font-size: 11px; color: var(--primary-color); text-transform: uppercase; margin-bottom: 6px; margin-top: 12px;">
+            Accounts Receivable Aging Summary</h3>
+        <table class="aging-table">
+            <thead>
+                <tr>
+                    <th>Current</th>
+                    <th>1–30 Days</th>
+                    <th>31–60 Days</th>
+                    <th>61–90 Days</th>
+                    <th>90+ Days</th>
+                    <th>Total Overdue</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>{{aging.current}}</td>
+                    <td>{{aging.days_1_30}}</td>
+                    <td>{{aging.days_31_60}}</td>
+                    <td>{{aging.days_61_90}}</td>
+                    <td>{{aging.days_90_plus}}</td>
+                    <td class="font-bold">{{aging.total}}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- Notice & Discrepancy Audit Clause -->
+        <div class="audit-clause">
+            <strong>NOTICE &amp; DISCREPANCY AUDIT CLAUSE:</strong> This Statement of Account reflects all transactions
+            within the stated billing period. If you believe there are any discrepancies, please notify our Accounts
+            Receivable Department in writing within <strong>7 calendar days</strong> from receipt of this statement.
+            Failure to do so within the prescribed period shall constitute your unconditional acceptance of all items
+            herein as correct and binding. Forson reserves the right to apply payments to the oldest outstanding
+            balances first unless otherwise agreed in writing.
+        </div>
+
+        <!-- Remittance Advice & Payment Instructions — LAST section before attached images -->
         <div class="footer-note">
             {{remittance_advice_html}}
             <div class="signature-box">
@@ -419,6 +458,7 @@
             </div>
         </div>
 
+        <!-- Separation bar before attached receipt images -->
         <!-- Attached Receipt Images Section (Flows into remaining space if space permits) -->
         {{receipt_consolidation_section}}
     </div>
