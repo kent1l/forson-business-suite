@@ -6,6 +6,7 @@ const { parsePaginationQuery, paginatedResponse } = require('../helpers/paginati
 const arLedger = require('../services/arLedgerService');
 const pdcService = require('../services/pdcService');
 const { generateStatementOfAccountPDF } = require('../helpers/pdf/soaPdf');
+const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const router = express.Router();
 
 // GET /ar/dashboard-stats - Get AR dashboard statistics
@@ -1147,8 +1148,7 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
             });
         }
 
-        const dateSuffix = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-        const statementNumber = `SOA-${customerId}-${dateSuffix}`;
+        const statementNumber = await getNextDocumentNumber(db, 'SOA');
 
         const pdfPath = await generateStatementOfAccountPDF(customer, ledgerRows, aging, {
             company:             companyInfo,

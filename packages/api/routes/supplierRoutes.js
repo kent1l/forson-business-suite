@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
+const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const router = express.Router();
 
 // GET all suppliers with status filter
@@ -67,9 +68,10 @@ router.post('/suppliers', async (req, res) => {
         return res.status(400).json({ message: 'Supplier name is required.' });
     }
     try {
+        const supplier_code = await getNextDocumentNumber(db, 'SUPP');
         const newSupplier = await db.query(
-            'INSERT INTO supplier (supplier_name, contact_person, phone, email, address, is_active) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-            [supplier_name, contact_person, phone, email, address, is_active]
+            'INSERT INTO supplier (supplier_code, supplier_name, contact_person, phone, email, address, is_active) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+            [supplier_code, supplier_name, contact_person, phone, email, address, is_active]
         );
         res.status(201).json(newSupplier.rows[0]);
     } catch (err) {

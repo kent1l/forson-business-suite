@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const db = require('../db');
 const { protect, isAdmin } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
+const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const router = express.Router();
 
 // Helper to generate a token
@@ -184,9 +185,10 @@ router.post('/employees', protect, isAdmin, async (req, res) => {
     try {
         const salt = await bcrypt.genSalt(10);
         const password_hash = await bcrypt.hash(password, salt);
+        const employee_code = await getNextDocumentNumber(db, 'EMP');
         const newEmployee = await db.query(
-            'INSERT INTO employee (first_name, last_name, username, password_hash, password_salt, permission_level_id, position_title) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING employee_id, username, first_name, last_name',
-            [first_name, last_name, username, password_hash, salt, permission_level_id, position_title]
+            'INSERT INTO employee (employee_code, first_name, last_name, username, password_hash, password_salt, permission_level_id, position_title) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING employee_id, employee_code, username, first_name, last_name',
+            [employee_code, first_name, last_name, username, password_hash, salt, permission_level_id, position_title]
         );
         res.status(201).json(newEmployee.rows[0]);
     } catch (err) {

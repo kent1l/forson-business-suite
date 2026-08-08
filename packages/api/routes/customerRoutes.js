@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
+const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const router = express.Router();
 
 // Helper function to handle tag logic
@@ -192,9 +193,10 @@ router.post('/customers', protect, hasPermission('customers:edit'), async (req, 
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
+        const customer_code = await getNextDocumentNumber(client, 'CUST');
         const { rows } = await client.query(
-            'INSERT INTO customer (first_name, last_name, company_name, phone, email, address, is_active, credit_limit) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
-            [customerData.first_name, customerData.last_name, customerData.company_name, customerData.phone, emailOrNull, customerData.address, customerData.is_active, customerData.credit_limit !== undefined ? customerData.credit_limit : 5000.00]
+            'INSERT INTO customer (customer_code, first_name, last_name, company_name, phone, email, address, is_active, credit_limit) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
+            [customer_code, customerData.first_name, customerData.last_name, customerData.company_name, customerData.phone, emailOrNull, customerData.address, customerData.is_active, customerData.credit_limit !== undefined ? customerData.credit_limit : 5000.00]
         );
         const newCustomer = rows[0];
         await manageTags(client, tags, newCustomer.customer_id);
