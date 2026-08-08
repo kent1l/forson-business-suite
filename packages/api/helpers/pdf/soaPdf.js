@@ -4,10 +4,10 @@ const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { PDFDocument } = require('pdf-lib');
-const { generateReceiptConsolidationPDF } = require('./receiptConsolidationPdf');
+const { renderReceiptGridPagesHtml } = require('./receiptConsolidationPdf');
 
 const fmt = (v) => `₱${(Number(v) || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 const formatDate = (d) => (d ? new Date(d).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: '2-digit' }) : '—');
 
 
@@ -218,6 +218,9 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
         '{{aging.days_90_plus}}':        fmt(aging90plus),
         '{{aging.total}}':               fmt(agingTotal),
         '{{remittance_advice_html}}':    remittanceAdviceHtml,
+        '{{receipt_consolidation_section}}': (options.includePaperlessReceipts && Array.isArray(options.receiptItems) && options.receiptItems.length > 0)
+            ? renderReceiptGridPagesHtml(options.receiptItems, options)
+            : '',
     };
 
     Object.entries(replacements).forEach(([key, value]) => {
@@ -254,26 +257,8 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
         });
         await page.close();
 
-
-
-        if (options.includePaperlessReceipts && Array.isArray(options.receiptItems) && options.receiptItems.length > 0) {
-            try {
-                const receiptsPdfBuffer = await generateReceiptConsolidationPDF(options.receiptItems, { returnBuffer: true });
-                const mainPdfBytes = fs.readFileSync(outputPath);
-                const mainPdfDoc = await PDFDocument.load(mainPdfBytes);
-                const receiptsPdfDoc = await PDFDocument.load(receiptsPdfBuffer);
-
-                const copiedPages = await mainPdfDoc.copyPages(receiptsPdfDoc, receiptsPdfDoc.getPageIndices());
-                copiedPages.forEach(p => mainPdfDoc.addPage(p));
-
-                const mergedPdfBytes = await mainPdfDoc.save();
-                fs.writeFileSync(outputPath, mergedPdfBytes);
-            } catch (mergeErr) {
-                console.error(`${debugPrefix} Warning: Failed to append Paperless receipt pages:`, mergeErr.message);
-            }
-        }
-
         return outputPath;
+
 
     } catch (error) {
         console.error(`${debugPrefix} Error generating SOA PDF:`, error);

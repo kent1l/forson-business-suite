@@ -72,10 +72,12 @@ const AccountsReceivablePage = () => {
     const [soaLedger, setSoaLedger] = useState(null);
     const [soaLoading, setSoaLoading] = useState(false);
     const [soaDownloading, setSoaDownloading] = useState(false);
+    const [attachReceiptImages, setAttachReceiptImages] = useState(true);
     const [soaSearchQuery, setSoaSearchQuery] = useState('');
     const [soaDropdownOpen, setSoaDropdownOpen] = useState(false);
     const [soaHighlightedIndex, setSoaHighlightedIndex] = useState(-1);
     const soaComboboxRef = useRef(null);
+
 
     // Close SOA customer dropdown on click outside
     useEffect(() => {
@@ -298,10 +300,12 @@ const AccountsReceivablePage = () => {
             const response = await api.get(`/ar/customers/${soaCustomerId}/soa/pdf`, {
                 params: {
                     startDate: dateRange.startDate.toISOString(),
-                    endDate: dateRange.endDate.toISOString()
+                    endDate: dateRange.endDate.toISOString(),
+                    include_receipts: attachReceiptImages ? 'true' : 'false',
                 },
                 responseType: 'blob'
             });
+
 
             const blob = new Blob([response.data], { type: 'application/pdf' });
             const url = window.URL.createObjectURL(blob);
@@ -320,7 +324,8 @@ const AccountsReceivablePage = () => {
         } finally {
             setSoaDownloading(false);
         }
-    }, [soaCustomerId, dateRange, soaLedger]);
+    }, [soaCustomerId, dateRange, soaLedger, attachReceiptImages]);
+
 
     // Fetch PDC Clearance Desk Items for Tab 3
     // Fetch Wallet Overview for Tab 3
@@ -678,14 +683,26 @@ const AccountsReceivablePage = () => {
                             )}
                         </div>
                         {soaCustomerId && (
-                            <button
-                                onClick={handleExportSoaPdf}
-                                disabled={soaDownloading}
-                                className="px-5 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 text-sm font-semibold transition-colors flex items-center gap-2"
-                            >
-                                {soaDownloading ? 'Generating PDF...' : '📄 Export Statement of Account (PDF)'}
-                            </button>
+                            <div className="flex items-center gap-3">
+                                <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-700 bg-white border border-gray-300 px-3.5 py-2.5 rounded-lg cursor-pointer hover:bg-gray-50 transition shadow-sm select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={attachReceiptImages}
+                                        onChange={(e) => setAttachReceiptImages(e.target.checked)}
+                                        className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                                    />
+                                    <span>Attach Paperless Receipts (2x2)</span>
+                                </label>
+                                <button
+                                    onClick={handleExportSoaPdf}
+                                    disabled={soaDownloading}
+                                    className="px-5 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 text-sm font-semibold transition-colors flex items-center gap-2 shadow-sm"
+                                >
+                                    {soaDownloading ? 'Generating PDF...' : '📄 Export Statement of Account (PDF)'}
+                                </button>
+                            </div>
                         )}
+
                     </div>
 
                     {soaLoading ? (
