@@ -131,6 +131,18 @@ async function listTags() {
 }
 
 /**
+ * Normalizes prefix format (e.g. CI_xxxx, DR xxxx) to hyphenated form (e.g. CI-xxxx).
+ * Preserves uppercase and supports CI, DR, SI, VAT prefixes.
+ */
+function normalizeToHyphen(str) {
+    if (!str || typeof str !== 'string') return '';
+    return str.trim()
+        .replace(/^([Cc][Ii]|[Dd][Rr]|[Ss][Ii]|[Vv][Aa][Tt])[-_ ]*(.*)$/, (match, prefix, num) => {
+            return `${prefix.toUpperCase()}-${num}`;
+        });
+}
+
+/**
  * Match a physical receipt number against Paperless document titles.
  * Supports format variations like CI_xxxx, CI-xxxx, CI xxxx while preserving full prefixes.
  */
@@ -139,13 +151,9 @@ async function findDocumentByReceiptNo(receiptNo) {
     const cleanReceiptNo = receiptNo.trim();
     if (!cleanReceiptNo) return null;
 
-    // Generate prefix/delimiter variants (e.g. CI_1011, CI-1011, CI 1011)
-    const underscoreVariant = cleanReceiptNo.replace(/[- ]/g, '_');
-    const hyphenVariant = cleanReceiptNo.replace(/[_ ]/g, '-');
-    const searchVariants = Array.from(new Set([cleanReceiptNo, underscoreVariant, hyphenVariant]));
-
-    const normalize = (str) => (str || '').toLowerCase().replace(/[-_ ]/g, '');
-    const cleanNormalized = normalize(cleanReceiptNo);
+    const normalizedReceiptNo = normalizeToHyphen(cleanReceiptNo);
+    const underscoreVariant = normalizedReceiptNo.replace(/-/g, '_');
+    const searchVariants = Array.from(new Set([normalizedReceiptNo, underscoreVariant]));
 
     try {
         // Query Paperless REST API trying the primary variants
@@ -160,13 +168,25 @@ async function findDocumentByReceiptNo(receiptNo) {
         // Deduplicate results by ID
         const uniqueDocs = Array.from(new Map(results.map(d => [d.id, d])).values());
 
-        // 1. Exact normalized match preserving full prefix (e.g. CI_1011 matches CI-1011)
-        const exactMatch = uniqueDocs.find(doc => doc.title && normalize(doc.title) === cleanNormalized);
-        if (exactMatch) return exactMatch;
+        // Exact match of normalized hyphenated form
+        const exactMatch = uniqueDocs.find(doc => doc.title && normalizeToHyphen(doc.title) === normalizedReceiptNo);
+        if (exactMatch) {
+            return {
+                ...exactMatch,
+                title: normalizeToHyphen(exactMatch.title),
+            };
+        }
 
-        // 2. Partial normalized match
-        const partialMatch = uniqueDocs.find(doc => doc.title && normalize(doc.title).includes(cleanNormalized));
-        return partialMatch || null;
+        // Partial match of normalized hyphenated form
+        const partialMatch = uniqueDocs.find(doc => doc.title && normalizeToHyphen(doc.title).includes(normalizedReceiptNo));
+        if (partialMatch) {
+            return {
+                ...partialMatch,
+                title: normalizeToHyphen(partialMatch.title),
+            };
+        }
+
+        return null;
     } catch (err) {
         console.error(`[PaperlessService] Error searching document for receiptNo "${cleanReceiptNo}":`, err.message);
         return null;
@@ -184,12 +204,8 @@ async function findDocumentsByReceiptNumbers(receiptNoList = []) {
     for (const receiptNo of uniqueReceipts) {
         const matchedDoc = await findDocumentByReceiptNo(receiptNo);
         if (matchedDoc) {
-            const cleanKey = receiptNo.trim();
-            const underscoreKey = cleanKey.replace(/[- ]/g, '_');
-            const hyphenKey = cleanKey.replace(/[_ ]/g, '-');
-            matchMap[cleanKey] = matchedDoc;
-            matchMap[underscoreKey] = matchedDoc;
-            matchMap[hyphenKey] = matchedDoc;
+            const normalizedKey = normalizeToHyphen(receiptNo);
+            matchMap[normalizedKey] = matchedDoc;
         }
     }
 
@@ -232,4 +248,5 @@ module.exports = {
     downloadDocumentArtifact,
     updateDocumentTags,
     paperlessFetch,
+    normalizeToHyphen,
 };

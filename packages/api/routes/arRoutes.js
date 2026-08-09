@@ -1159,8 +1159,9 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
                     const processedDocIds = new Set();
                     for (const row of ledgerRows) {
                         const rNo = (row.physical_receipt_no || row.invoice_number || row.primary_ref || '').trim();
-                        if (rNo && paperlessMatchMap[rNo]) {
-                            const pDoc = paperlessMatchMap[rNo];
+                        const normalizedRNo = paperlessService.normalizeToHyphen(rNo);
+                        if (normalizedRNo && paperlessMatchMap[normalizedRNo]) {
+                            const pDoc = paperlessMatchMap[normalizedRNo];
                             if (processedDocIds.has(pDoc.id)) continue; // Avoid duplicate pages for same doc
                             processedDocIds.add(pDoc.id);
 
@@ -1168,7 +1169,7 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
                                 const imgBuf = await paperlessService.downloadDocumentArtifact(pDoc.id, 'thumb');
                                 receiptItems.push({
                                     imageBuffer: imgBuf,
-                                    physical_receipt_no: row.physical_receipt_no || pDoc.title || rNo,
+                                    physical_receipt_no: paperlessService.normalizeToHyphen(row.physical_receipt_no || pDoc.title || rNo),
                                     system_code: row.invoice_number || row.sub_ref || row.primary_ref || `INV-${pDoc.id}`,
                                     paperless_id: pDoc.id,
                                     title: pDoc.title,
