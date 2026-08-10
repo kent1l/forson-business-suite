@@ -74,7 +74,7 @@ function App() {
     }
 
     // Intercept standalone SOA generator dashboard route
-    const isSoaGen = window.location.pathname === '/soa-gen';
+    const isSoaGen = window.location.pathname.toLowerCase() === '/soa-gen';
     if (isSoaGen) {
         return (
             <>
