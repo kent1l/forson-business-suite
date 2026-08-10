@@ -21,10 +21,27 @@ app.use('/api', paymentRoutes);
 describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () => {
     let testCustomerId;
     let testInvoiceId;
+    let testEmployeeId;
 
     beforeAll(async () => {
         const uniqueSuffix = Date.now();
         const uniqueEmail = `soareceipt_${uniqueSuffix}@test.com`;
+
+        // Ensure a permission level exists for the test employee
+        const plRes = await db.query(`
+            INSERT INTO permission_level (level_name) VALUES ('TestAdminSOA_${uniqueSuffix}')
+            RETURNING permission_level_id
+        `);
+        const permLevelId = plRes.rows[0].permission_level_id;
+
+        // Create a test employee to satisfy the invoice FK
+        const empRes = await db.query(`
+            INSERT INTO employee (first_name, last_name, permission_level_id, username, password_hash, password_salt)
+            VALUES ('Test', 'SOA', $1, 'testsoa_${uniqueSuffix}', 'hash', 'salt')
+            RETURNING employee_id
+        `, [permLevelId]);
+        testEmployeeId = empRes.rows[0].employee_id;
+
         const custRes = await db.query(`
             INSERT INTO customer (company_name, first_name, last_name, email, phone, credit_limit)
             VALUES ('Physical Receipt Test Corp', 'Jane', 'Doe', $1, '09170001111', 50000.00)
@@ -34,9 +51,9 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
 
         const invRes = await db.query(`
             INSERT INTO invoice (invoice_number, customer_id, employee_id, total_amount, subtotal_ex_tax, tax_total, amount_paid, status, physical_receipt_no)
-            VALUES ($1, $2, 1, 5000.00, 5000.00, 0, 0, 'Unpaid', $3)
+            VALUES ($1, $2, $3, 5000.00, 5000.00, 0, 0, 'Unpaid', $4)
             RETURNING invoice_id
-        `, [`INV-TEST-${uniqueSuffix}`, testCustomerId, `OR-TEST-${uniqueSuffix}`]);
+        `, [`INV-TEST-${uniqueSuffix}`, testCustomerId, testEmployeeId, `OR-TEST-${uniqueSuffix}`]);
         testInvoiceId = invRes.rows[0].invoice_id;
 
         const client = await db.getClient();
@@ -58,6 +75,7 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
         }
     });
 
+
     afterAll(async () => {
         if (testCustomerId) {
             try {
@@ -71,7 +89,11 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
             await db.query(`DELETE FROM customer_wallet WHERE customer_id = $1`, [testCustomerId]).catch(() => {});
             await db.query(`DELETE FROM customer WHERE customer_id = $1`, [testCustomerId]).catch(() => {});
         }
+        if (testEmployeeId) {
+            await db.query(`DELETE FROM employee WHERE employee_id = $1`, [testEmployeeId]).catch(() => {});
+        }
     });
+
 
     test('POST /api/payments saves physical_receipt_no and internal reference to customer_payment', async () => {
         const res = await request(app)

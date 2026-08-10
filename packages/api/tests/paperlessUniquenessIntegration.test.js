@@ -24,9 +24,26 @@ describe('Paperless Matching & Cross-Table Physical Receipt Uniqueness Suite', (
     let testInvoiceId;
     let uniqueReceiptNo;
 
+    let testEmployeeId;
+
     beforeAll(async () => {
         const uniqueSuffix = Date.now();
         uniqueReceiptNo = `OR-UNIQ-${uniqueSuffix}`;
+
+        // Ensure a permission level exists for the test employee
+        const plRes = await db.query(`
+            INSERT INTO permission_level (level_name) VALUES ('TestAdminUniq_${uniqueSuffix}')
+            RETURNING permission_level_id
+        `);
+        const permLevelId = plRes.rows[0].permission_level_id;
+
+        // Create a test employee to satisfy the invoice FK
+        const empRes = await db.query(`
+            INSERT INTO employee (first_name, last_name, permission_level_id, username, password_hash, password_salt)
+            VALUES ('Test', 'Uniq', $1, 'testuniq_${uniqueSuffix}', 'hash', 'salt')
+            RETURNING employee_id
+        `, [permLevelId]);
+        testEmployeeId = empRes.rows[0].employee_id;
 
         const custRes = await db.query(`
             INSERT INTO customer (company_name, first_name, last_name, email, phone, credit_limit)
@@ -37,11 +54,12 @@ describe('Paperless Matching & Cross-Table Physical Receipt Uniqueness Suite', (
 
         const invRes = await db.query(`
             INSERT INTO invoice (invoice_number, customer_id, employee_id, total_amount, subtotal_ex_tax, tax_total, amount_paid, status, physical_receipt_no)
-            VALUES ($1, $2, 1, 3000.00, 3000.00, 0, 0, 'Unpaid', $3)
+            VALUES ($1, $2, $3, 3000.00, 3000.00, 0, 0, 'Unpaid', $4)
             RETURNING invoice_id
-        `, [`INV-UNIQ-${uniqueSuffix}`, testCustomerId, uniqueReceiptNo]);
+        `, [`INV-UNIQ-${uniqueSuffix}`, testCustomerId, testEmployeeId, uniqueReceiptNo]);
         testInvoiceId = invRes.rows[0].invoice_id;
     });
+
 
     afterAll(async () => {
         if (testCustomerId) {
@@ -51,7 +69,11 @@ describe('Paperless Matching & Cross-Table Physical Receipt Uniqueness Suite', (
             await db.query(`DELETE FROM invoice WHERE customer_id = $1`, [testCustomerId]).catch(() => {});
             await db.query(`DELETE FROM customer WHERE customer_id = $1`, [testCustomerId]).catch(() => {});
         }
+        if (testEmployeeId) {
+            await db.query(`DELETE FROM employee WHERE employee_id = $1`, [testEmployeeId]).catch(() => {});
+        }
     });
+
 
     test('paperlessService.isValidReceiptQuery rejects placeholder search strings', () => {
         expect(paperlessService.isValidReceiptQuery('-')).toBe(false);

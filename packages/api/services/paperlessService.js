@@ -143,15 +143,21 @@ function isValidReceiptQuery(str) {
     return /[a-zA-Z0-9]/.test(clean);
 }
 
+// Known receipt prefixes that use separator normalization (underscore/space → hyphen)
+const KNOWN_RECEIPT_PREFIXES = new Set(['CI', 'DR', 'SI', 'VAT', 'OR', 'DM', 'INV']);
+
 /**
  * Normalizes prefix format (e.g. CI_xxxx, DR xxxx) to hyphenated form (e.g. CI-xxxx).
- * Preserves uppercase and supports all letter prefixes.
+ * Only converts known prefixes; unknown prefixes are returned unchanged.
  */
 function normalizeToHyphen(str) {
     if (!isValidReceiptQuery(str)) return '';
     const trimmed = str.trim();
-    return trimmed.replace(/^([A-Za-z]+)[-_ ]*(.+)$/, (match, prefix, num) => {
-        return `${prefix.toUpperCase()}-${num.trim()}`;
+    return trimmed.replace(/^([A-Za-z]+)[-_ ]+(.+)$/, (match, prefix, num) => {
+        if (KNOWN_RECEIPT_PREFIXES.has(prefix.toUpperCase())) {
+            return `${prefix.toUpperCase()}-${num.trim()}`;
+        }
+        return match; // Unknown prefix: return unchanged
     });
 }
 
