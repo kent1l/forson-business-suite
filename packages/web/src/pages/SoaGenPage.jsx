@@ -1,7 +1,53 @@
 import React, { useState, useCallback } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
-import Papa from 'papaparse';
+
+function parseCSV(text) {
+    const lines = [];
+    let row = [""];
+    let inQuotes = false;
+
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        const next = text[i+1];
+
+        if (c === '"') {
+            if (inQuotes && next === '"') {
+                row[row.length - 1] += '"';
+                i++;
+            } else {
+                inQuotes = !inQuotes;
+            }
+        } else if (c === ',' && !inQuotes) {
+            row.push("");
+        } else if ((c === '\r' || c === '\n') && !inQuotes) {
+            if (c === '\r' && next === '\n') {
+                i++;
+            }
+            lines.push(row);
+            row = [""];
+        } else {
+            row[row.length - 1] += c;
+        }
+    }
+    if (row.length > 1 || row[0] !== "") {
+        lines.push(row);
+    }
+
+    if (lines.length === 0) return [];
+    const headers = lines[0].map(h => h.trim());
+    const data = [];
+    for (let i = 1; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.length === 1 && line[0] === "") continue; // skip empty rows
+        const obj = {};
+        for (let j = 0; j < headers.length; j++) {
+            obj[headers[j]] = line[j] !== undefined ? line[j].trim() : "";
+        }
+        data.push(obj);
+    }
+    return data;
+}
 
 export default function SoaGenPage() {
     const [customersFile, setCustomersFile] = useState(null);
@@ -41,21 +87,31 @@ export default function SoaGenPage() {
         setProcessingStatus('Reading and analyzing CSV files...');
 
         const p1 = new Promise((resolve, reject) => {
-            Papa.parse(customersFile, {
-                header: true,
-                skipEmptyLines: true,
-                complete: (results) => resolve(results.data),
-                error: (err) => reject(err)
-            });
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = parseCSV(e.target.result);
+                    resolve(data);
+                } catch (err) {
+                    reject(err);
+                }
+            };
+            reader.onerror = (err) => reject(err);
+            reader.readAsText(customersFile);
         });
 
         const p2 = new Promise((resolve, reject) => {
-            Papa.parse(transactionsFile, {
-                header: true,
-                skipEmptyLines: true,
-                complete: (results) => resolve(results.data),
-                error: (err) => reject(err)
-            });
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = parseCSV(e.target.result);
+                    resolve(data);
+                } catch (err) {
+                    reject(err);
+                }
+            };
+            reader.onerror = (err) => reject(err);
+            reader.readAsText(transactionsFile);
         });
 
         Promise.all([p1, p2]).then(([custRows, txRows]) => {
