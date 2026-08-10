@@ -144,7 +144,7 @@ function isValidReceiptQuery(str) {
 }
 
 // Known receipt prefixes that use separator normalization (underscore/space → hyphen)
-const KNOWN_RECEIPT_PREFIXES = new Set(['CI', 'DR', 'SI', 'VAT', 'OR', 'DM', 'INV']);
+const KNOWN_RECEIPT_PREFIXES = new Set(['CI', 'DR', 'SI', 'VAT', 'OR', 'DM', 'INV', 'PMT']);
 
 /**
  * Normalizes prefix format (e.g. CI_xxxx, DR xxxx) to hyphenated form (e.g. CI-xxxx).

@@ -60,9 +60,9 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
                 SELECT append_ar_ledger_entry(
                     $1, $2, NULL, NULL,
                     'INVOICE_POSTED'::ar_ledger_entry_type,
-                    5000.00, NULL, $3, 'Invoice Charge', 1
+                    5000.00, NULL, $3, 'Invoice Charge', $4
                 )
-            `, [testCustomerId, testInvoiceId, `OR-TEST-${uniqueSuffix}`]);
+            `, [testCustomerId, testInvoiceId, `OR-TEST-${uniqueSuffix}`, testEmployeeId]);
             await client.query('COMMIT');
         } catch (e) {
             await client.query('ROLLBACK');
