@@ -65,6 +65,35 @@ export default function SoaGenPage() {
     const [loading, setLoading] = useState(false);
     const [processingStatus, setProcessingStatus] = useState('');
 
+    const downloadSampleCustomers = () => {
+        const csvContent = "CUSTOMER_ID,COMPANY_NAME,TIN,ADDRESS,PHONE,EMAIL,CREDIT_LIMIT,PAYMENT_TERMS,CREDIT_STATUS,WALLET_BALANCE\n" +
+                           "CUST-101,Acme Corp,123-45-678,123 Main Street,0917-111-2222,acme@test.com,50000,30 Days Net,ACTIVE,0\n" +
+                           "CUST-102,Beta Labs,987-65-432,456 Lab Lane,0918-333-4444,beta@test.com,75000,15 Days Net,ACTIVE,1200\n";
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", "sample_customers.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const downloadSampleTransactions = () => {
+        const csvContent = "CUSTOMER_ID,DATE,DUE_DATE,INVOICE#,DESCRIPTION,DEBIT,CREDIT,Note\n" +
+                           "CUST-101,2026-08-01,2026-08-31,INV-1001,Invoice Charged,12000.00,0,PO-991\n" +
+                           "CUST-101,2026-08-05,2026-08-05,PAY-2001,Payment Received,0,4000.00,Check #882\n" +
+                           "CUST-102,2026-08-02,2026-08-17,INV-1002,Invoice Charged,8500.00,0,PO-992\n";
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", "sample_transactions.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     const handleFileChange = (e, type) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -258,6 +287,13 @@ export default function SoaGenPage() {
                                         {customersFile ? `📄 ${customersFile.name}` : 'Click or Drag File Here'}
                                     </span>
                                 </div>
+                                <button 
+                                    type="button"
+                                    onClick={downloadSampleCustomers}
+                                    className="mt-2 text-left text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors font-medium self-start cursor-pointer"
+                                >
+                                    📥 Download Sample customers.csv
+                                </button>
                             </div>
 
                             {/* Transactions File */}
@@ -274,6 +310,13 @@ export default function SoaGenPage() {
                                         {transactionsFile ? `📄 ${transactionsFile.name}` : 'Click or Drag File Here'}
                                     </span>
                                 </div>
+                                <button 
+                                    type="button"
+                                    onClick={downloadSampleTransactions}
+                                    className="mt-2 text-left text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors font-medium self-start cursor-pointer"
+                                >
+                                    📥 Download Sample transactions.csv
+                                </button>
                             </div>
                         </div>
 
