@@ -1173,14 +1173,17 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
         const includeReceipts = req.query.include_receipts !== 'false' && req.query.include_paperless !== 'false';
 
         try {
-            const physReceiptNos = ledgerRows.map(r => r.physical_receipt_no || r.invoice_number || r.primary_ref).filter(Boolean);
+            const physReceiptNos = ledgerRows
+                .map(r => r.physical_receipt_no || r.invoice_number)
+                .filter(paperlessService.isValidReceiptQuery);
             if (physReceiptNos.length > 0) {
                 paperlessMatchMap = await paperlessService.findDocumentsByReceiptNumbers(physReceiptNos);
 
                 if (includeReceipts) {
                     const processedDocIds = new Set();
                     for (const row of ledgerRows) {
-                        const rNo = (row.physical_receipt_no || row.invoice_number || row.primary_ref || '').trim();
+                        const rNo = (row.physical_receipt_no || row.invoice_number || '').trim();
+                        if (!paperlessService.isValidReceiptQuery(rNo)) continue;
                         const normalizedRNo = paperlessService.normalizeToHyphen(rNo);
                         const pDoc = paperlessMatchMap[rNo] || (normalizedRNo ? paperlessMatchMap[normalizedRNo] : null);
                         if (pDoc) {

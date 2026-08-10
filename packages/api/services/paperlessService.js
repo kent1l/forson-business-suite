@@ -131,13 +131,25 @@ async function listTags() {
 }
 
 /**
+ * Validates that a receipt search string is a legitimate alphanumeric identifier
+ * and not a placeholder character like '-', '—', 'N/A', or 'NONE'.
+ */
+function isValidReceiptQuery(str) {
+    if (!str || typeof str !== 'string') return false;
+    const clean = str.trim();
+    if (!clean || clean === '-' || clean === '—' || /^n\/?a$/i.test(clean) || /^none$/i.test(clean)) {
+        return false;
+    }
+    return /[a-zA-Z0-9]/.test(clean);
+}
+
+/**
  * Normalizes prefix format (e.g. CI_xxxx, DR xxxx) to hyphenated form (e.g. CI-xxxx).
- * Preserves uppercase and supports CI, DR, SI, VAT prefixes.
+ * Preserves uppercase and supports all letter prefixes.
  */
 function normalizeToHyphen(str) {
-    if (!str || typeof str !== 'string') return '';
+    if (!isValidReceiptQuery(str)) return '';
     const trimmed = str.trim();
-    if (!trimmed) return '';
     return trimmed.replace(/^([A-Za-z]+)[-_ ]*(.+)$/, (match, prefix, num) => {
         return `${prefix.toUpperCase()}-${num.trim()}`;
     });
@@ -148,14 +160,13 @@ function normalizeToHyphen(str) {
  * Supports format variations like CI_xxxx, CI-xxxx, CI xxxx while preserving full prefixes.
  */
 async function findDocumentByReceiptNo(receiptNo) {
-    if (!receiptNo || typeof receiptNo !== 'string') return null;
+    if (!isValidReceiptQuery(receiptNo)) return null;
     const cleanReceiptNo = receiptNo.trim();
-    if (!cleanReceiptNo) return null;
 
     const normalizedReceiptNo = normalizeToHyphen(cleanReceiptNo);
-    const underscoreVariant = normalizedReceiptNo.replace(/-/g, '_');
-    const spaceVariant = normalizedReceiptNo.replace(/-/g, ' ');
-    const searchVariants = Array.from(new Set([cleanReceiptNo, normalizedReceiptNo, underscoreVariant, spaceVariant]));
+    const underscoreVariant = normalizedReceiptNo ? normalizedReceiptNo.replace(/-/g, '_') : '';
+    const spaceVariant = normalizedReceiptNo ? normalizedReceiptNo.replace(/-/g, ' ') : '';
+    const searchVariants = Array.from(new Set([cleanReceiptNo, normalizedReceiptNo, underscoreVariant, spaceVariant].filter(Boolean)));
 
     try {
         // Query Paperless REST API trying the primary variants
@@ -173,7 +184,7 @@ async function findDocumentByReceiptNo(receiptNo) {
         // Exact match of clean or normalized hyphenated form
         const exactMatch = uniqueDocs.find(doc => doc.title && (
             doc.title.trim() === cleanReceiptNo ||
-            normalizeToHyphen(doc.title) === normalizedReceiptNo
+            (normalizedReceiptNo && normalizeToHyphen(doc.title) === normalizedReceiptNo)
         ));
         if (exactMatch) {
             return {
@@ -185,7 +196,7 @@ async function findDocumentByReceiptNo(receiptNo) {
         // Partial match of normalized hyphenated form
         const partialMatch = uniqueDocs.find(doc => doc.title && (
             doc.title.trim().includes(cleanReceiptNo) ||
-            normalizeToHyphen(doc.title).includes(normalizedReceiptNo)
+            (normalizedReceiptNo && normalizeToHyphen(doc.title).includes(normalizedReceiptNo))
         ));
         if (partialMatch) {
             return {
@@ -207,7 +218,7 @@ async function findDocumentByReceiptNo(receiptNo) {
  */
 async function findDocumentsByReceiptNumbers(receiptNoList = []) {
     const matchMap = {};
-    const uniqueReceipts = Array.from(new Set(receiptNoList.filter(r => r && typeof r === 'string' && r.trim())));
+    const uniqueReceipts = Array.from(new Set(receiptNoList.filter(isValidReceiptQuery)));
 
     for (const receiptNo of uniqueReceipts) {
         const matchedDoc = await findDocumentByReceiptNo(receiptNo);
@@ -261,4 +272,5 @@ module.exports = {
     updateDocumentTags,
     paperlessFetch,
     normalizeToHyphen,
+    isValidReceiptQuery,
 };

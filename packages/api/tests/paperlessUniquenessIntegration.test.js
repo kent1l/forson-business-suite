@@ -53,6 +53,22 @@ describe('Paperless Matching & Cross-Table Physical Receipt Uniqueness Suite', (
         }
     });
 
+    test('paperlessService.isValidReceiptQuery rejects placeholder search strings', () => {
+        expect(paperlessService.isValidReceiptQuery('-')).toBe(false);
+        expect(paperlessService.isValidReceiptQuery('—')).toBe(false);
+        expect(paperlessService.isValidReceiptQuery('N/A')).toBe(false);
+        expect(paperlessService.isValidReceiptQuery('none')).toBe(false);
+        expect(paperlessService.isValidReceiptQuery('')).toBe(false);
+        expect(paperlessService.isValidReceiptQuery(null)).toBe(false);
+        expect(paperlessService.isValidReceiptQuery('CI-2451')).toBe(true);
+        expect(paperlessService.isValidReceiptQuery('OR-88491')).toBe(true);
+    });
+
+    test('paperlessService.findDocumentByReceiptNo returns null for placeholder hyphen', async () => {
+        const doc = await paperlessService.findDocumentByReceiptNo('-');
+        expect(doc).toBeNull();
+    });
+
     test('paperlessService.normalizeToHyphen normalizes arbitrary prefixes', () => {
         expect(paperlessService.normalizeToHyphen('CI_2451')).toBe('CI-2451');
         expect(paperlessService.normalizeToHyphen('OR 88491')).toBe('OR-88491');
