@@ -146,17 +146,37 @@ router.post('/soa-gen/generate', upload.fields([
 
         // Map customers (trim headers/keys to ensure safety)
         const customersMap = {};
+        const customerNameMap = {}; // name -> ID lookup to handle name-only ledger rows
         for (const row of customersParse.data) {
             const cleanRow = {};
             for (const [k, v] of Object.entries(row)) {
                 cleanRow[k.trim()] = v;
             }
-            // Mappings fallback to accommodate COMPANY_NAME or Correspondent
-            const id = (cleanRow.CUSTOMER_ID || cleanRow.customer_id || cleanRow.COMPANY_NAME || cleanRow.company_name || cleanRow.Correspondent || cleanRow.correspondent || '').trim();
+            const id = (cleanRow.CUSTOMER_ID || cleanRow.customer_id || '').trim();
+            const name = (cleanRow.COMPANY_NAME || cleanRow.company_name || cleanRow.Correspondent || cleanRow.correspondent || '').trim();
+            
             if (id) {
-                customersMap[id] = {
-                    customer_id: id,
-                    company_name: (cleanRow.COMPANY_NAME || cleanRow.company_name || cleanRow.Correspondent || cleanRow.correspondent || id).trim(),
+                const cleanId = id.replace(/^CUST-/i, ''); // Strip CUST- prefix for soaPdf template to avoid duplication
+                customersMap[cleanId] = {
+                    customer_id: cleanId,
+                    company_name: name || id,
+                    tin: (cleanRow.TIN || cleanRow.tin || '').trim(),
+                    address: (cleanRow.ADDRESS || cleanRow.address || '').trim(),
+                    phone: (cleanRow.PHONE || cleanRow.phone || '').trim(),
+                    email: (cleanRow.EMAIL || cleanRow.email || '').trim(),
+                    credit_limit: parseFloat(cleanRow.CREDIT_LIMIT || cleanRow.credit_limit) || 0,
+                    payment_terms: (cleanRow.PAYMENT_TERMS || cleanRow.payment_terms || '30 Days Net').trim(),
+                    credit_hold: (cleanRow.CREDIT_STATUS || cleanRow.credit_status || '').trim().toUpperCase() === 'ON_HOLD',
+                    credit_hold_reason: (cleanRow.CREDIT_STATUS || cleanRow.credit_status || '').trim().toUpperCase() === 'ON_HOLD' ? 'Account Overdue' : '',
+                    wallet_balance: parseFloat(cleanRow.WALLET_BALANCE || cleanRow.wallet_balance) || 0
+                };
+                if (name) {
+                    customerNameMap[name.toLowerCase()] = cleanId;
+                }
+            } else if (name) {
+                customersMap[name] = {
+                    customer_id: name,
+                    company_name: name,
                     tin: (cleanRow.TIN || cleanRow.tin || '').trim(),
                     address: (cleanRow.ADDRESS || cleanRow.address || '').trim(),
                     phone: (cleanRow.PHONE || cleanRow.phone || '').trim(),
@@ -177,8 +197,16 @@ router.post('/soa-gen/generate', upload.fields([
             for (const [k, v] of Object.entries(row)) {
                 cleanRow[k.trim()] = v;
             }
-            const customerId = (cleanRow.CUSTOMER_ID || cleanRow.customer_id || cleanRow.Correspondent || cleanRow.correspondent || cleanRow.COMPANY_NAME || cleanRow.company_name || '').trim();
-            if (!customerId) continue;
+            let customerId = (cleanRow.CUSTOMER_ID || cleanRow.customer_id || '').trim();
+            const correspondent = (cleanRow.Correspondent || cleanRow.correspondent || cleanRow.COMPANY_NAME || cleanRow.company_name || '').trim();
+
+            if (customerId) {
+                customerId = customerId.replace(/^CUST-/i, ''); // Normalize ID
+            } else if (correspondent) {
+                customerId = customerNameMap[correspondent.toLowerCase()] || correspondent;
+            } else {
+                continue;
+            }
 
             if (!groupedTransactions[customerId]) {
                 groupedTransactions[customerId] = [];
@@ -208,9 +236,13 @@ router.post('/soa-gen/generate', upload.fields([
         let sequenceCounter = 1;
 
         // Process each customer (filtering by selected ones if provided)
-        for (const [customerId, txs] of Object.entries(groupedTransactions)) {
-            if (selectedCustomers.length > 0 && !selectedCustomers.includes(customerId)) {
-                continue;
+        for (let [customerId, txs] of Object.entries(groupedTransactions)) {
+            // Reconcile selected customer filtering (handle both raw IDs and cleaned IDs)
+            if (selectedCustomers.length > 0) {
+                const normalizedSelection = selectedCustomers.map(id => id.replace(/^CUST-/i, ''));
+                if (!normalizedSelection.includes(customerId)) {
+                    continue;
+                }
             }
 
             const customerData = customersMap[customerId] || {

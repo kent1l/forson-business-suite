@@ -164,15 +164,23 @@ export default function SoaGenPage() {
 
         Promise.all([p1, p2]).then(([custRows, txRows]) => {
             const customerLookup = {};
+            const customerNameMap = {}; // name -> ID lookup to handle name-only ledger rows
             custRows.forEach(c => {
-                // Trim keys to be safe
                 const cleanC = {};
                 for (const [k, v] of Object.entries(c)) {
                     cleanC[k.trim()] = v;
                 }
-                const cid = (cleanC.CUSTOMER_ID || cleanC.customer_id || cleanC.COMPANY_NAME || cleanC.company_name || cleanC.Correspondent || cleanC.correspondent || '').trim();
-                if (cid) {
-                    customerLookup[cid] = cleanC.COMPANY_NAME || cleanC.company_name || cleanC.Correspondent || cleanC.correspondent || `ID: ${cid}`;
+                const id = (cleanC.CUSTOMER_ID || cleanC.customer_id || '').trim();
+                const name = (cleanC.COMPANY_NAME || cleanC.company_name || cleanC.Correspondent || cleanC.correspondent || '').trim();
+                
+                if (id) {
+                    const cleanId = id.replace(/^CUST-/i, ''); // Strip CUST- prefix for soaPdf template to avoid duplication
+                    customerLookup[cleanId] = name || id;
+                    if (name) {
+                        customerNameMap[name.toLowerCase()] = cleanId;
+                    }
+                } else if (name) {
+                    customerLookup[name] = name;
                 }
             });
 
@@ -183,8 +191,16 @@ export default function SoaGenPage() {
                 for (const [k, v] of Object.entries(tx)) {
                     cleanTx[k.trim()] = v;
                 }
-                const cid = (cleanTx.CUSTOMER_ID || cleanTx.customer_id || cleanTx.Correspondent || cleanTx.correspondent || cleanTx.COMPANY_NAME || cleanTx.company_name || '').trim();
-                if (!cid) return;
+                let cid = (cleanTx.CUSTOMER_ID || cleanTx.customer_id || '').trim();
+                const correspondent = (cleanTx.Correspondent || cleanTx.correspondent || cleanTx.COMPANY_NAME || cleanTx.company_name || '').trim();
+
+                if (cid) {
+                    cid = cid.replace(/^CUST-/i, ''); // Normalize ID
+                } else if (correspondent) {
+                    cid = customerNameMap[correspondent.toLowerCase()] || correspondent;
+                } else {
+                    return;
+                }
 
                 if (!stats[cid]) {
                     stats[cid] = {
