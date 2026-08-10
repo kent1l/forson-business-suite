@@ -7,6 +7,8 @@ const arLedger = require('../services/arLedgerService');
 const walletService = require('../services/customerWalletService');
 const router = express.Router();
 
+const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatter');
+
 // --- MOVED to customerRoutes.js ---
 // The endpoint for getting unpaid invoices has been moved to keep all customer-related routes together.
 
@@ -22,13 +24,15 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
         method_id,       // integer FK to payment_methods (preferred)
         payment_method,  // legacy string code (fallback)
         reference,
-        reference_number, // legacy alias
+        reference_number, // legacy alias (internal reference / cheque # / GCash ref)
+        physical_receipt_no, // physical receipt number for the payment
         cheque_date,     // ISO date string for PDC cheques
         notes,
         allocations      // [{invoice_id, amount_allocated}]
     } = req.body;
 
     const referenceValue = reference || reference_number || null;
+    const physicalReceiptNoValue = physical_receipt_no ? formatPhysicalReceiptNumber(physical_receipt_no) : null;
 
     if (!customer_id || !amount || !allocations || !Array.isArray(allocations)) {
         return res.status(400).json({ message: 'Missing required fields: customer_id, amount, allocations.' });
@@ -102,11 +106,11 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
         const { rows: [{ payment_id: newPaymentId }] } = await client.query(
             `INSERT INTO customer_payment
                 (customer_id, employee_id, amount, payment_method, method_id,
-                 reference_number, notes, pdc_status, cheque_date)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                 reference_number, physical_receipt_no, notes, pdc_status, cheque_date)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
              RETURNING payment_id`,
             [customer_id, employee_id, numAmount, methodCode, resolvedMethodId,
-             referenceValue, notes || null, pdcStatusValue, chequeDateValue]
+             referenceValue, physicalReceiptNoValue, notes || null, pdcStatusValue, chequeDateValue]
         );
 
         // ── Step 2: Allocate to invoices ────────────────────────────────────────

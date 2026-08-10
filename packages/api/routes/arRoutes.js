@@ -828,7 +828,9 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
                 l.created_at,
                 l.created_by,
                 i.invoice_number,
-                i.physical_receipt_no,
+                i.physical_receipt_no        AS invoice_physical_receipt_no,
+                cp.physical_receipt_no       AS payment_physical_receipt_no,
+                cp.reference_number          AS payment_ref_no,
                 i.invoice_date,
                 i.due_date,
                 i.terms                     AS invoice_terms,
@@ -837,6 +839,7 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
                 cn.refund_date              AS cn_date
             FROM ar_ledger l
             LEFT JOIN invoice i  ON l.invoice_id = i.invoice_id
+            LEFT JOIN customer_payment cp ON l.payment_id = cp.payment_id
             LEFT JOIN credit_note cn ON l.cn_id  = cn.cn_id
             WHERE l.customer_id = $1
             ORDER BY l.created_at ASC, l.ledger_id ASC
@@ -896,11 +899,12 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
             if (amt > 0) totalCharged  += amt;
             else         totalCredited += Math.abs(amt);
 
-            const physReceipt = entry.physical_receipt_no ? entry.physical_receipt_no.trim() : null;
+            const rawPhysReceipt = entry.payment_physical_receipt_no || entry.invoice_physical_receipt_no;
+            const physReceipt = rawPhysReceipt ? rawPhysReceipt.trim() : null;
             const invNum = entry.invoice_number ? entry.invoice_number.trim() : null;
 
             // DOC/REF #: Primary reference is strictly physical receipt provided by user (or '-' if none).
-            // Sub-reference below primary is generated invoice number, CN number, or repayment tracking number (PMT-xxxx).
+            // Sub-reference below primary is generated invoice number, CN number, internal payment ref (cheque#/GCash), or repayment tracking number (PMT-xxxx).
             const primaryRef = physReceipt || '-';
             let subRef = null;
             if (invNum && invNum !== physReceipt) {
@@ -912,7 +916,10 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
                 const yyyymm = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
                 const seq = String(entry.payment_id).padStart(4, '0');
                 const trackingNo = `PMT-${yyyymm}-${seq}`;
-                subRef = (physReceipt && physReceipt === trackingNo) ? null : trackingNo;
+                const internalRef = (entry.payment_ref_no && entry.payment_ref_no.trim() !== physReceipt)
+                    ? entry.payment_ref_no.trim()
+                    : ((entry.reference_no && entry.reference_no.trim() !== physReceipt) ? entry.reference_no.trim() : trackingNo);
+                subRef = (physReceipt && physReceipt === internalRef) ? null : internalRef;
             } else if (entry.reference_no && entry.reference_no !== physReceipt) {
                 subRef = entry.reference_no;
             }
@@ -1047,7 +1054,9 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
                 l.created_at,
                 l.notes,
                 i.invoice_number,
-                i.physical_receipt_no,
+                i.physical_receipt_no        AS invoice_physical_receipt_no,
+                cp.physical_receipt_no       AS payment_physical_receipt_no,
+                cp.reference_number          AS payment_ref_no,
                 i.invoice_date,
                 i.due_date,
                 i.terms             AS invoice_terms,
@@ -1055,6 +1064,7 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
                 cn.refund_date      AS cn_date
             FROM ar_ledger l
             LEFT JOIN invoice i   ON l.invoice_id = i.invoice_id
+            LEFT JOIN customer_payment cp ON l.payment_id = cp.payment_id
             LEFT JOIN credit_note cn ON l.cn_id   = cn.cn_id
             WHERE l.customer_id = $1
             ORDER BY l.created_at ASC, l.ledger_id ASC
@@ -1102,7 +1112,8 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
             if (amt > 0) totalInvoiced += amt;
             else         totalSettled  += Math.abs(amt);
 
-            const physReceipt = entry.physical_receipt_no ? entry.physical_receipt_no.trim() : null;
+            const rawPhysReceipt = entry.payment_physical_receipt_no || entry.invoice_physical_receipt_no;
+            const physReceipt = rawPhysReceipt ? rawPhysReceipt.trim() : null;
             const invNum = entry.invoice_number ? entry.invoice_number.trim() : null;
 
             const primaryRef = physReceipt || '-';
@@ -1116,7 +1127,10 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
                 const yyyymm = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
                 const seq = String(entry.payment_id).padStart(4, '0');
                 const trackingNo = `PMT-${yyyymm}-${seq}`;
-                subRef = (physReceipt && physReceipt === trackingNo) ? null : trackingNo;
+                const internalRef = (entry.payment_ref_no && entry.payment_ref_no.trim() !== physReceipt)
+                    ? entry.payment_ref_no.trim()
+                    : ((entry.reference_no && entry.reference_no.trim() !== physReceipt) ? entry.reference_no.trim() : trackingNo);
+                subRef = (physReceipt && physReceipt === internalRef) ? null : internalRef;
             } else if (entry.reference_no && entry.reference_no !== physReceipt) {
                 subRef = entry.reference_no;
             }
