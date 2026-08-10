@@ -114,6 +114,7 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
         expect(paymentRow.physical_receipt_no).toBe('OR-PMT-9988');
         expect(paymentRow.primary_ref).toBe('OR-PMT-9988');
         expect(paymentRow.reference).toBe('OR-PMT-9988');
-        expect(paymentRow.sub_ref).toBe('GCASH-987654321');
+        expect(paymentRow.sub_ref).toMatch(/^PMT-\d{6}-\d{4}$/);
+        expect(paymentRow.payment_ref_no).toBe('GCASH-987654321');
     });
 });

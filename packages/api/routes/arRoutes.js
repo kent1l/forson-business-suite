@@ -904,24 +904,27 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
             const invNum = entry.invoice_number ? entry.invoice_number.trim() : null;
 
             // DOC/REF #: Primary reference is strictly physical receipt provided by user (or '-' if none).
-            // Sub-reference below primary is generated invoice number, CN number, internal payment ref (cheque#/GCash), or repayment tracking number (PMT-xxxx).
+            // Sub-reference below primary is system generated code: invoice number (INV-xxxx), CN number (CN-xxxx), or payment tracking number (PMT-YYYYMM-XXXX).
             const primaryRef = physReceipt || '-';
             let subRef = null;
-            if (invNum && invNum !== physReceipt) {
-                subRef = invNum;
-            } else if (entry.cn_number && entry.cn_number !== physReceipt) {
-                subRef = entry.cn_number;
-            } else if (entry.payment_id) {
+            if (entry.payment_id) {
                 const d = entry.created_at ? new Date(entry.created_at) : new Date();
                 const yyyymm = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
                 const seq = String(entry.payment_id).padStart(4, '0');
                 const trackingNo = `PMT-${yyyymm}-${seq}`;
-                const internalRef = (entry.payment_ref_no && entry.payment_ref_no.trim() !== physReceipt)
-                    ? entry.payment_ref_no.trim()
-                    : ((entry.reference_no && entry.reference_no.trim() !== physReceipt) ? entry.reference_no.trim() : trackingNo);
-                subRef = (physReceipt && physReceipt === internalRef) ? null : internalRef;
+                subRef = (physReceipt && physReceipt === trackingNo) ? null : trackingNo;
+            } else if (invNum && invNum !== physReceipt) {
+                subRef = invNum;
+            } else if (entry.cn_number && entry.cn_number !== physReceipt) {
+                subRef = entry.cn_number;
             } else if (entry.reference_no && entry.reference_no !== physReceipt) {
                 subRef = entry.reference_no;
+            }
+
+            const intRef = (entry.payment_ref_no || entry.reference_no || '').trim();
+            let descText = entry.notes || TYPE_LABELS[entry.entry_type] || entry.entry_type.replace(/_/g, ' ');
+            if (intRef && intRef !== physReceipt && intRef !== subRef && !descText.includes(intRef)) {
+                descText += ` (Ref: ${intRef})`;
             }
 
             ledgerRows.push({
@@ -935,13 +938,14 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
                 invoice_number:      invNum,
                 primary_ref:         primaryRef,
                 sub_ref:             subRef,
+                payment_ref_no:      intRef || null,
                 cn_number:           entry.cn_number       || null,
                 event_type:          entry.entry_type,
                 type_label:          TYPE_LABELS[entry.entry_type] || entry.entry_type.replace(/_/g, ' '),
                 reference:           primaryRef,
                 document_number:     primaryRef,
                 payment_channel:     entry.payment_channel || null,
-                description:         entry.notes || TYPE_LABELS[entry.entry_type] || entry.entry_type.replace(/_/g, ' '),
+                description:         descText,
                 debit_amount:        amt > 0 ? amt : null,
                 credit_amount:       amt < 0 ? Math.abs(amt) : null,
                 amount:              amt,
@@ -1118,21 +1122,24 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
 
             const primaryRef = physReceipt || '-';
             let subRef = null;
-            if (invNum && invNum !== physReceipt) {
-                subRef = invNum;
-            } else if (entry.cn_number && entry.cn_number !== physReceipt) {
-                subRef = entry.cn_number;
-            } else if (entry.payment_id) {
+            if (entry.payment_id) {
                 const d = entry.created_at ? new Date(entry.created_at) : new Date();
                 const yyyymm = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
                 const seq = String(entry.payment_id).padStart(4, '0');
                 const trackingNo = `PMT-${yyyymm}-${seq}`;
-                const internalRef = (entry.payment_ref_no && entry.payment_ref_no.trim() !== physReceipt)
-                    ? entry.payment_ref_no.trim()
-                    : ((entry.reference_no && entry.reference_no.trim() !== physReceipt) ? entry.reference_no.trim() : trackingNo);
-                subRef = (physReceipt && physReceipt === internalRef) ? null : internalRef;
+                subRef = (physReceipt && physReceipt === trackingNo) ? null : trackingNo;
+            } else if (invNum && invNum !== physReceipt) {
+                subRef = invNum;
+            } else if (entry.cn_number && entry.cn_number !== physReceipt) {
+                subRef = entry.cn_number;
             } else if (entry.reference_no && entry.reference_no !== physReceipt) {
                 subRef = entry.reference_no;
+            }
+
+            const intRef = (entry.payment_ref_no || entry.reference_no || '').trim();
+            let descText = entry.notes || TYPE_LABELS[entry.entry_type] || entry.entry_type.replace(/_/g, ' ');
+            if (intRef && intRef !== physReceipt && intRef !== subRef && !descText.includes(intRef)) {
+                descText += ` (Ref: ${intRef})`;
             }
 
             ledgerRows.push({
@@ -1144,13 +1151,14 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
                 invoice_number:      invNum,
                 primary_ref:         primaryRef,
                 sub_ref:             subRef,
+                payment_ref_no:      intRef || null,
                 cn_number:           entry.cn_number       || null,
                 event_type:          entry.entry_type,
                 type_label:          TYPE_LABELS[entry.entry_type] || entry.entry_type.replace(/_/g, ' '),
                 reference:           primaryRef,
                 document_number:     primaryRef,
                 payment_channel:     entry.payment_channel || null,
-                description:         entry.notes || TYPE_LABELS[entry.entry_type] || entry.entry_type.replace(/_/g, ' '),
+                description:         descText,
                 debit_amount:        amt > 0 ? amt  : null,
                 credit_amount:       amt < 0 ? Math.abs(amt) : null,
                 running_balance:     currentRunning,
