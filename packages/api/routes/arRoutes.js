@@ -1182,8 +1182,8 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
                     for (const row of ledgerRows) {
                         const rNo = (row.physical_receipt_no || row.invoice_number || row.primary_ref || '').trim();
                         const normalizedRNo = paperlessService.normalizeToHyphen(rNo);
-                        if (normalizedRNo && paperlessMatchMap[normalizedRNo]) {
-                            const pDoc = paperlessMatchMap[normalizedRNo];
+                        const pDoc = paperlessMatchMap[rNo] || (normalizedRNo ? paperlessMatchMap[normalizedRNo] : null);
+                        if (pDoc) {
                             if (processedDocIds.has(pDoc.id)) continue; // Avoid duplicate pages for same doc
                             processedDocIds.add(pDoc.id);
 

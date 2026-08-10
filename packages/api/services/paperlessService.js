@@ -136,10 +136,11 @@ async function listTags() {
  */
 function normalizeToHyphen(str) {
     if (!str || typeof str !== 'string') return '';
-    return str.trim()
-        .replace(/^([Cc][Ii]|[Dd][Rr]|[Ss][Ii]|[Vv][Aa][Tt])[-_ ]*(.*)$/, (match, prefix, num) => {
-            return `${prefix.toUpperCase()}-${num}`;
-        });
+    const trimmed = str.trim();
+    if (!trimmed) return '';
+    return trimmed.replace(/^([A-Za-z]+)[-_ ]*(.+)$/, (match, prefix, num) => {
+        return `${prefix.toUpperCase()}-${num.trim()}`;
+    });
 }
 
 /**
@@ -153,7 +154,8 @@ async function findDocumentByReceiptNo(receiptNo) {
 
     const normalizedReceiptNo = normalizeToHyphen(cleanReceiptNo);
     const underscoreVariant = normalizedReceiptNo.replace(/-/g, '_');
-    const searchVariants = Array.from(new Set([normalizedReceiptNo, underscoreVariant]));
+    const spaceVariant = normalizedReceiptNo.replace(/-/g, ' ');
+    const searchVariants = Array.from(new Set([cleanReceiptNo, normalizedReceiptNo, underscoreVariant, spaceVariant]));
 
     try {
         // Query Paperless REST API trying the primary variants
@@ -168,21 +170,27 @@ async function findDocumentByReceiptNo(receiptNo) {
         // Deduplicate results by ID
         const uniqueDocs = Array.from(new Map(results.map(d => [d.id, d])).values());
 
-        // Exact match of normalized hyphenated form
-        const exactMatch = uniqueDocs.find(doc => doc.title && normalizeToHyphen(doc.title) === normalizedReceiptNo);
+        // Exact match of clean or normalized hyphenated form
+        const exactMatch = uniqueDocs.find(doc => doc.title && (
+            doc.title.trim() === cleanReceiptNo ||
+            normalizeToHyphen(doc.title) === normalizedReceiptNo
+        ));
         if (exactMatch) {
             return {
                 ...exactMatch,
-                title: normalizeToHyphen(exactMatch.title),
+                title: normalizeToHyphen(exactMatch.title) || exactMatch.title,
             };
         }
 
         // Partial match of normalized hyphenated form
-        const partialMatch = uniqueDocs.find(doc => doc.title && normalizeToHyphen(doc.title).includes(normalizedReceiptNo));
+        const partialMatch = uniqueDocs.find(doc => doc.title && (
+            doc.title.trim().includes(cleanReceiptNo) ||
+            normalizeToHyphen(doc.title).includes(normalizedReceiptNo)
+        ));
         if (partialMatch) {
             return {
                 ...partialMatch,
-                title: normalizeToHyphen(partialMatch.title),
+                title: normalizeToHyphen(partialMatch.title) || partialMatch.title,
             };
         }
 
@@ -204,8 +212,12 @@ async function findDocumentsByReceiptNumbers(receiptNoList = []) {
     for (const receiptNo of uniqueReceipts) {
         const matchedDoc = await findDocumentByReceiptNo(receiptNo);
         if (matchedDoc) {
+            const rawKey = receiptNo.trim();
             const normalizedKey = normalizeToHyphen(receiptNo);
-            matchMap[normalizedKey] = matchedDoc;
+            matchMap[rawKey] = matchedDoc;
+            if (normalizedKey) {
+                matchMap[normalizedKey] = matchedDoc;
+            }
         }
     }
 
