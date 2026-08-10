@@ -4,10 +4,12 @@ const db = require('../db');
 const arRoutes = require('../routes/arRoutes');
 const paymentRoutes = require('../routes/paymentRoutes');
 
+let mockUser = { user_id: 1, employee_id: 1, username: 'admin', permissions: ['ar:view', 'ar:manage', 'ar:receive_payment'] };
+
 // Mock authMiddleware to bypass auth during test runs
 jest.mock('../middleware/authMiddleware', () => ({
     protect: (req, res, next) => {
-        req.user = { user_id: 1, employee_id: 1, username: 'admin', permissions: ['ar:view', 'ar:manage', 'ar:receive_payment'] };
+        req.user = mockUser;
         next();
     },
     hasPermission: () => (req, res, next) => next()
@@ -38,6 +40,8 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
             RETURNING employee_id
         `, [permLevelId]);
         testEmployeeId = empRes.rows[0].employee_id;
+        mockUser.employee_id = testEmployeeId;
+        mockUser.user_id = testEmployeeId;
 
         const custRes = await db.query(`
             INSERT INTO customer (company_name, first_name, last_name, email, phone, credit_limit)

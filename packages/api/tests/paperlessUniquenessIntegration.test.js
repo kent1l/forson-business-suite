@@ -5,10 +5,12 @@ const invoiceRoutes = require('../routes/invoiceRoutes');
 const paymentRoutes = require('../routes/paymentRoutes');
 const paperlessService = require('../services/paperlessService');
 
+let mockUser = { user_id: 1, employee_id: 1, username: 'admin', permissions: ['ar:view', 'ar:manage', 'ar:receive_payment', 'invoices:create', 'invoices:update'] };
+
 // Mock authMiddleware
 jest.mock('../middleware/authMiddleware', () => ({
     protect: (req, res, next) => {
-        req.user = { user_id: 1, employee_id: 1, username: 'admin', permissions: ['ar:view', 'ar:manage', 'ar:receive_payment', 'invoices:create', 'invoices:update'] };
+        req.user = mockUser;
         next();
     },
     hasPermission: () => (req, res, next) => next()
@@ -41,6 +43,8 @@ describe('Paperless Matching & Cross-Table Physical Receipt Uniqueness Suite', (
             RETURNING employee_id
         `, [permLevelId]);
         testEmployeeId = empRes.rows[0].employee_id;
+        mockUser.employee_id = testEmployeeId;
+        mockUser.user_id = testEmployeeId;
 
         const custRes = await db.query(`
             INSERT INTO customer (company_name, first_name, last_name, email, phone, credit_limit)
