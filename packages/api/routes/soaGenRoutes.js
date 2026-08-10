@@ -10,16 +10,9 @@ const path = require('path');
 const os = require('os');
 const { exec } = require('child_process');
 const { generateStatementOfAccountPDF } = require('../helpers/pdf/soaPdf');
-const db = require('../db');
 
-// Gracefully read company info from DB if possible, fallback to defaults
-async function getCompanySettings() {
-    try {
-        const res = await db.query('SELECT name, address, tin, phone, email, website, bank_name, bank_account, default_terms FROM settings LIMIT 1');
-        if (res.rows.length > 0) return res.rows[0];
-    } catch (e) {
-        console.warn('[SOA-GEN] Failed to fetch company settings, using defaults:', e.message);
-    }
+// Completely offline company settings defaults (does not access DB)
+function getOfflineCompanySettings() {
     return {
         name: 'Forson Business Suite',
         address: '123 Business St, Manila',
@@ -127,6 +120,16 @@ router.post('/soa-gen/generate', upload.fields([
         const startDateStr = req.body.startDate || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
         const endDateStr = req.body.endDate || new Date().toISOString().split('T')[0];
 
+        // Parse list of selected customers if provided
+        let selectedCustomers = [];
+        if (req.body.selectedCustomers) {
+            try {
+                selectedCustomers = JSON.parse(req.body.selectedCustomers);
+            } catch (e) {
+                selectedCustomers = String(req.body.selectedCustomers).split(',').map(s => s.trim()).filter(Boolean);
+            }
+        }
+
         const customersContent = req.files.customersCsv[0].buffer.toString('utf8');
         const transactionsContent = req.files.transactionsCsv[0].buffer.toString('utf8');
 
@@ -141,19 +144,19 @@ router.post('/soa-gen/generate', upload.fields([
             return res.status(400).json({ message: 'Error parsing transactions CSV', errors: transactionsParse.errors });
         }
 
-        // Map customers by CUSTOMER_ID (case-insensitive lookup, trim headers/keys)
+        // Map customers (trim headers/keys to ensure safety)
         const customersMap = {};
         for (const row of customersParse.data) {
-            // Trim all keys of the row to handle leading/trailing spaces in headers
             const cleanRow = {};
             for (const [k, v] of Object.entries(row)) {
                 cleanRow[k.trim()] = v;
             }
-            const id = (cleanRow.CUSTOMER_ID || cleanRow.customer_id || '').trim();
+            // Mappings fallback to accommodate COMPANY_NAME or Correspondent
+            const id = (cleanRow.CUSTOMER_ID || cleanRow.customer_id || cleanRow.COMPANY_NAME || cleanRow.company_name || cleanRow.Correspondent || cleanRow.correspondent || '').trim();
             if (id) {
                 customersMap[id] = {
                     customer_id: id,
-                    company_name: (cleanRow.COMPANY_NAME || cleanRow.company_name || cleanRow.Correspondent || cleanRow.correspondent || '').trim(),
+                    company_name: (cleanRow.COMPANY_NAME || cleanRow.company_name || cleanRow.Correspondent || cleanRow.correspondent || id).trim(),
                     tin: (cleanRow.TIN || cleanRow.tin || '').trim(),
                     address: (cleanRow.ADDRESS || cleanRow.address || '').trim(),
                     phone: (cleanRow.PHONE || cleanRow.phone || '').trim(),
@@ -167,15 +170,14 @@ router.post('/soa-gen/generate', upload.fields([
             }
         }
 
-        // Group transactions by CUSTOMER_ID
+        // Group transactions by customer
         const groupedTransactions = {};
         for (const row of transactionsParse.data) {
-            // Trim all keys
             const cleanRow = {};
             for (const [k, v] of Object.entries(row)) {
                 cleanRow[k.trim()] = v;
             }
-            const customerId = (cleanRow.CUSTOMER_ID || cleanRow.customer_id || cleanRow.Correspondent || cleanRow.correspondent || '').trim();
+            const customerId = (cleanRow.CUSTOMER_ID || cleanRow.customer_id || cleanRow.Correspondent || cleanRow.correspondent || cleanRow.COMPANY_NAME || cleanRow.company_name || '').trim();
             if (!customerId) continue;
 
             if (!groupedTransactions[customerId]) {
@@ -193,7 +195,7 @@ router.post('/soa-gen/generate', upload.fields([
             });
         }
 
-        const company = await getCompanySettings();
+        const company = getOfflineCompanySettings();
         const outputPaths = [];
         const baseDir = os.tmpdir();
         const timestamp = Date.now();
@@ -205,11 +207,15 @@ router.post('/soa-gen/generate', upload.fields([
         const period = `${year}${month}`;
         let sequenceCounter = 1;
 
-        // Process each customer
+        // Process each customer (filtering by selected ones if provided)
         for (const [customerId, txs] of Object.entries(groupedTransactions)) {
+            if (selectedCustomers.length > 0 && !selectedCustomers.includes(customerId)) {
+                continue;
+            }
+
             const customerData = customersMap[customerId] || {
                 customer_id: customerId,
-                company_name: `Customer ${customerId}`,
+                company_name: customerId,
                 tin: '',
                 address: '',
                 phone: '',
@@ -279,7 +285,7 @@ router.post('/soa-gen/generate', upload.fields([
         }
 
         if (outputPaths.length === 0) {
-            return res.status(400).json({ message: 'No valid customer transactions found to generate statements.' });
+            return res.status(400).json({ message: 'No statements were generated for the specified selection.' });
         }
 
         if (outputPaths.length === 1) {

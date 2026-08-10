@@ -62,6 +62,7 @@ export default function SoaGenPage() {
 
     // Parsing preview state
     const [previewData, setPreviewData] = useState(null);
+    const [selectedCustomerIds, setSelectedCustomerIds] = useState([]);
     const [loading, setLoading] = useState(false);
     const [processingStatus, setProcessingStatus] = useState('');
 
@@ -104,6 +105,24 @@ export default function SoaGenPage() {
             setTransactionsFile(file);
         }
         setPreviewData(null); // Reset preview on new upload
+        setSelectedCustomerIds([]);
+    };
+
+    const handleToggleSelect = (customerId) => {
+        setSelectedCustomerIds(prev => 
+            prev.includes(customerId) 
+                ? prev.filter(id => id !== customerId) 
+                : [...prev, customerId]
+        );
+    };
+
+    const handleToggleAll = () => {
+        if (!previewData) return;
+        if (selectedCustomerIds.length === previewData.length) {
+            setSelectedCustomerIds([]);
+        } else {
+            setSelectedCustomerIds(previewData.map(s => s.customerId));
+        }
     };
 
     const handleParsePreview = useCallback(() => {
@@ -151,7 +170,7 @@ export default function SoaGenPage() {
                 for (const [k, v] of Object.entries(c)) {
                     cleanC[k.trim()] = v;
                 }
-                const cid = (cleanC.CUSTOMER_ID || cleanC.customer_id || '').trim();
+                const cid = (cleanC.CUSTOMER_ID || cleanC.customer_id || cleanC.COMPANY_NAME || cleanC.company_name || cleanC.Correspondent || cleanC.correspondent || '').trim();
                 if (cid) {
                     customerLookup[cid] = cleanC.COMPANY_NAME || cleanC.company_name || cleanC.Correspondent || cleanC.correspondent || `ID: ${cid}`;
                 }
@@ -164,7 +183,7 @@ export default function SoaGenPage() {
                 for (const [k, v] of Object.entries(tx)) {
                     cleanTx[k.trim()] = v;
                 }
-                const cid = (cleanTx.CUSTOMER_ID || cleanTx.customer_id || cleanTx.Correspondent || cleanTx.correspondent || '').trim();
+                const cid = (cleanTx.CUSTOMER_ID || cleanTx.customer_id || cleanTx.Correspondent || cleanTx.correspondent || cleanTx.COMPANY_NAME || cleanTx.company_name || '').trim();
                 if (!cid) return;
 
                 if (!stats[cid]) {
@@ -182,7 +201,9 @@ export default function SoaGenPage() {
                 stats[cid].creditSum += parseFloat(cleanTx.CREDIT || cleanTx.credit) || 0;
             });
 
-            setPreviewData(Object.values(stats));
+            const parsedStats = Object.values(stats);
+            setPreviewData(parsedStats);
+            setSelectedCustomerIds(parsedStats.map(s => s.customerId));
             setLoading(false);
             toast.success('CSVs parsed successfully! Check the preview below.');
         }).catch(err => {
@@ -192,9 +213,15 @@ export default function SoaGenPage() {
         });
     }, [customersFile, transactionsFile]);
 
-    const handleGenerate = async () => {
+    const handleGenerate = async (targetCustomerIds = null) => {
         if (!customersFile || !transactionsFile) {
             toast.error('Please upload both files.');
+            return;
+        }
+
+        const idsToGenerate = targetCustomerIds || selectedCustomerIds;
+        if (idsToGenerate.length === 0) {
+            toast.error('Please select at least one customer.');
             return;
         }
 
@@ -208,6 +235,7 @@ export default function SoaGenPage() {
             formData.append('statementDate', statementDate);
             formData.append('startDate', startDate);
             formData.append('endDate', endDate);
+            formData.append('selectedCustomers', JSON.stringify(idsToGenerate));
 
             const response = await api.post('/soa-gen/generate', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' },
@@ -231,7 +259,7 @@ export default function SoaGenPage() {
             link.remove();
             window.URL.revokeObjectURL(url);
 
-            toast.success('SOA Statements generated successfully!');
+            toast.success('Statements generated successfully!');
         } catch (error) {
             console.error('Generation failed:', error);
             toast.error('Failed to generate statements. Check CSV layouts.');
@@ -389,36 +417,64 @@ export default function SoaGenPage() {
                                 <p className="text-xs text-slate-500 mt-1">Ready for generation ({previewData.length} customers detected)</p>
                             </div>
                             <button
-                                onClick={handleGenerate}
-                                disabled={loading}
-                                className="px-5 py-2.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-slate-100 rounded-lg shadow-lg shadow-indigo-600/10 transition-colors"
+                                onClick={() => handleGenerate(selectedCustomerIds)}
+                                disabled={loading || selectedCustomerIds.length === 0}
+                                className="px-5 py-2.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-100 rounded-lg shadow-lg shadow-indigo-600/10 transition-all cursor-pointer"
                             >
-                                Generate Statement Documents
+                                Generate Selected Statements ({selectedCustomerIds.length})
                             </button>
                         </div>
                         <div className="overflow-x-auto">
                             <table className="w-full text-left border-collapse">
                                 <thead>
                                     <tr className="bg-slate-900/50 border-b border-slate-800 text-slate-400 text-xs font-semibold">
-                                        <th className="px-6 py-3">Customer ID</th>
+                                        <th className="px-6 py-3 text-center w-12">
+                                            <input 
+                                                type="checkbox"
+                                                checked={previewData.length > 0 && selectedCustomerIds.length === previewData.length}
+                                                onChange={handleToggleAll}
+                                                className="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500 cursor-pointer w-4 h-4"
+                                            />
+                                        </th>
+                                        <th className="px-6 py-3">Customer ID / Name</th>
                                         <th className="px-6 py-3">Company Name</th>
                                         <th className="px-6 py-3 text-center">Tx Count</th>
                                         <th className="px-6 py-3 text-right">Total Charged</th>
                                         <th className="px-6 py-3 text-right">Total Paid</th>
                                         <th className="px-6 py-3 text-right">Closing Balance</th>
+                                        <th className="px-6 py-3 text-right">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-800 text-xs text-slate-300">
                                     {previewData.map((row) => {
                                         const balance = row.debitSum - row.creditSum;
+                                        const isSelected = selectedCustomerIds.includes(row.customerId);
                                         return (
-                                            <tr key={row.customerId} className="hover:bg-slate-900/30">
+                                            <tr key={row.customerId} className={`transition-colors hover:bg-slate-900/30 ${isSelected ? 'bg-indigo-950/10' : ''}`}>
+                                                <td className="px-6 py-3 text-center">
+                                                    <input 
+                                                        type="checkbox"
+                                                        checked={isSelected}
+                                                        onChange={() => handleToggleSelect(row.customerId)}
+                                                        className="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500 cursor-pointer w-4 h-4"
+                                                    />
+                                                </td>
                                                 <td className="px-6 py-3 font-mono font-bold text-indigo-400">{row.customerId}</td>
                                                 <td className="px-6 py-3 font-medium">{row.name}</td>
                                                 <td className="px-6 py-3 text-center font-mono">{row.txCount}</td>
                                                 <td className="px-6 py-3 text-right font-mono">₱{row.debitSum.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
                                                 <td className="px-6 py-3 text-right font-mono text-emerald-400">₱{row.creditSum.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
                                                 <td className="px-6 py-3 text-right font-mono font-bold text-amber-400">₱{balance.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
+                                                <td className="px-6 py-3 text-right">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleGenerate([row.customerId])}
+                                                        disabled={loading}
+                                                        className="px-3 py-1 bg-slate-800 hover:bg-indigo-600 active:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-100 font-semibold rounded text-[11px] cursor-pointer transition-colors border border-slate-700 hover:border-indigo-500"
+                                                    >
+                                                        Download PDF
+                                                    </button>
+                                                </td>
                                             </tr>
                                         );
                                     })}
