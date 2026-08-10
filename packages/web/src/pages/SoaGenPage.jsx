@@ -81,10 +81,10 @@ export default function SoaGenPage() {
     };
 
     const downloadSampleTransactions = () => {
-        const csvContent = "CUSTOMER_ID,DATE,DUE_DATE,INVOICE#,DESCRIPTION,DEBIT,CREDIT,Note\n" +
-                           "CUST-101,2026-08-01,2026-08-31,INV-1001,Invoice Charged,12000.00,0,PO-991\n" +
-                           "CUST-101,2026-08-05,2026-08-05,PAY-2001,Payment Received,0,4000.00,Check #882\n" +
-                           "CUST-102,2026-08-02,2026-08-17,INV-1002,Invoice Charged,8500.00,0,PO-992\n";
+        const csvContent = "CUSTOMER_ID,DATE,DUE_DATE,INVOICE#,PHYSICAL_RECEIPT#,DESCRIPTION,DEBIT,CREDIT,Note\n" +
+                           "CUST-101,2026-08-01,2026-08-31,INV-1001,OR-1001,Invoice Charged,12000.00,0,PO-991\n" +
+                           "CUST-101,2026-08-05,2026-08-05,,OR-8849,Payment Received,0,4000.00,Check #882\n" +
+                           "CUST-102,2026-08-02,2026-08-17,INV-1002,OR-1002,Invoice Charged,8500.00,0,PO-992\n";
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");

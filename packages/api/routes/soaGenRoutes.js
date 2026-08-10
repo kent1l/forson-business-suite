@@ -216,6 +216,7 @@ router.post('/soa-gen/generate', upload.fields([
                 date: (cleanRow.DATE || cleanRow.date || '').trim(),
                 due_date: (cleanRow.DUE_DATE || cleanRow.due_date || '').trim(),
                 invoiceNo: (cleanRow['INVOICE#'] || cleanRow.invoice_number || cleanRow.reference || cleanRow.reference_no || '').trim(),
+                physicalReceiptNo: (cleanRow['PHYSICAL_RECEIPT#'] || cleanRow['PHYSICAL_RECEIPT_NO'] || cleanRow.physical_receipt_no || '').trim(),
                 description: (cleanRow.DESCRIPTION || cleanRow.description || '').trim(),
                 debit: parseFloat(cleanRow.DEBIT || cleanRow.debit) || 0,
                 credit: parseFloat(cleanRow.CREDIT || cleanRow.credit) || 0,
@@ -274,13 +275,17 @@ router.post('/soa-gen/generate', upload.fields([
                 if (debit > 0) totalInvoiced += debit;
                 if (credit > 0) totalSettled += credit;
 
+                const physReceipt = tx.physicalReceiptNo || null;
+                const primaryRef = physReceipt || tx.invoiceNo || '-';
+                const subRef = (physReceipt && tx.invoiceNo && physReceipt !== tx.invoiceNo) ? tx.invoiceNo : null;
+
                 return {
                     date: tx.date,
                     due_date: tx.due_date || tx.date,
                     invoice_date: tx.date,
-                    primary_ref: tx.invoiceNo || '-',
-                    physical_receipt_no: tx.invoiceNo || '-',
-                    sub_ref: null,
+                    primary_ref: primaryRef,
+                    physical_receipt_no: physReceipt || tx.invoiceNo || '-',
+                    sub_ref: subRef,
                     event_type: debit > 0 ? 'INVOICE_POSTED' : 'PAYMENT_SETTLED',
                     type_label: tx.description || (debit > 0 ? 'Invoice Charged' : 'Payment Received'),
                     payment_channel: tx.note || null,
