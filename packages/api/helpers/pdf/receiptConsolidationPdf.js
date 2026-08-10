@@ -119,11 +119,12 @@ async function generateReceiptConsolidationPDF(items = [], options = {}) {
         const page = await browser.newPage();
         await page.setContent(finalHtml, { waitUntil: 'networkidle0' });
 
-        const pdfBuffer = await page.pdf({
+        const pdfTypedArray = await page.pdf({
             printBackground: true,
             format: 'A4',
             margin: { top: '10mm', right: '10mm', bottom: '16mm', left: '10mm' }
         });
+        const pdfBuffer = Buffer.from(pdfTypedArray);
 
 
         await page.close();

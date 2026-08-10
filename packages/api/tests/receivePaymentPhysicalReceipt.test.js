@@ -27,11 +27,8 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
         const uniqueSuffix = Date.now();
         const uniqueEmail = `soareceipt_${uniqueSuffix}@test.com`;
 
-        // Ensure a permission level exists for the test employee
-        const plRes = await db.query(`
-            INSERT INTO permission_level (level_name) VALUES ('TestAdminSOA_${uniqueSuffix}')
-            RETURNING permission_level_id
-        `);
+        // Reuse an existing permission_level to avoid sequence/PK conflicts with seeded data
+        const plRes = await db.query(`SELECT permission_level_id FROM permission_level LIMIT 1`);
         const permLevelId = plRes.rows[0].permission_level_id;
 
         // Create a test employee to satisfy the invoice FK
