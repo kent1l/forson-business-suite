@@ -472,7 +472,6 @@ const AccountsReceivablePage = () => {
                         onClick={() => {
                             if (activeTab === 'overview') fetchDashboardData();
                             if (activeTab === 'ledger_soa') fetchCustomerLedger(soaCustomerId);
-                            if (activeTab === 'pdc_desk') fetchPdcItems();
                             if (activeTab === 'wallet') fetchWalletCustomers();
                         }}
                         disabled={loading}
