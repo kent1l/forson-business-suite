@@ -47,6 +47,19 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
     try {
         await client.query('BEGIN');
 
+        if (physicalReceiptNoValue) {
+            const checkRes = await client.query(
+                `SELECT public.is_physical_receipt_no_taken($1) AS is_taken`,
+                [physicalReceiptNoValue]
+            );
+            if (checkRes.rows[0]?.is_taken) {
+                await client.query('ROLLBACK');
+                return res.status(409).json({
+                    message: `Physical Receipt No '${physicalReceiptNoValue}' is already registered in the system.`
+                });
+            }
+        }
+
         // ── Resolve payment method ──────────────────────────────────────────────
         let methodRow = null;
         if (method_id) {

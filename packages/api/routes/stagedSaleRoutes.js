@@ -392,7 +392,7 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
                 isCreditSale ? 0 : total_amount,
                 finalTenderedAmt,
                 changeAmt,
-                invoice_number,
+                null,
                 JSON.stringify({ source: 'pos_mobile_staged', staged_sale_id: id }),
                 staged.employee_id,
                 paymentStatus

@@ -323,15 +323,12 @@ router.post('/invoices', async (req, res) => {
             let isUnique = false;
             
             while (!isUnique && attempts < 10) {
-                const existingQuery = `
-                    SELECT invoice_id FROM invoice 
-                    WHERE LOWER(physical_receipt_no) = LOWER($1) 
-                    AND physical_receipt_no IS NOT NULL 
-                    AND LENGTH(TRIM(physical_receipt_no)) > 0
-                `;
-                const { rows: existingRows } = await client.query(existingQuery, [prn]);
+                const { rows: checkRows } = await client.query(
+                    `SELECT public.is_physical_receipt_no_taken($1) AS is_taken`,
+                    [prn]
+                );
                 
-                if (existingRows.length === 0) {
+                if (!checkRows[0]?.is_taken) {
                     isUnique = true;
                 } else {
                     attempts++;
@@ -494,7 +491,7 @@ router.post('/invoices', async (req, res) => {
                     (invoice_id, method_id, amount_paid, tendered_amount, change_amount, reference, created_by, payment_status, settled_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::varchar, CASE WHEN $8::varchar = 'settled' THEN CURRENT_TIMESTAMP ELSE NULL END)
                     RETURNING payment_id
-                `, [newInvoiceId, method.rows[0].method_id, paid, tenderVal, changeAmt, invoice_number, employee_id, paymentStatus]);
+                `, [newInvoiceId, method.rows[0].method_id, paid, tenderVal, changeAmt, null, employee_id, paymentStatus]);
                 if (paymentStatus === 'settled') {
                     await arLedger.appendEntry(client, {
                         customerId: customer_id, invoiceId: newInvoiceId,
@@ -656,17 +653,13 @@ router.put('/invoices/:id/physical-receipt-no', protect, hasPermission('invoice:
         // Normalize physical receipt number: trim and treat empty as null
         const prn = formatPhysicalReceiptNumber(physical_receipt_no);
 
-        // Check if another invoice already has this physical receipt number (case-insensitive)
+        // Check if another invoice or payment already has this physical receipt number
         if (prn) {
-            const existingQuery = `
-                SELECT invoice_id FROM invoice 
-                WHERE LOWER(physical_receipt_no) = LOWER($1) 
-                AND invoice_id != $2
-                AND physical_receipt_no IS NOT NULL 
-                AND LENGTH(TRIM(physical_receipt_no)) > 0
-            `;
-            const { rows: existingRows } = await db.query(existingQuery, [prn, id]);
-            if (existingRows.length > 0) {
+            const { rows: checkRows } = await db.query(
+                `SELECT public.is_physical_receipt_no_taken($1, $2) AS is_taken`,
+                [prn, parseInt(id)]
+            );
+            if (checkRows[0]?.is_taken) {
                 return res.status(409).json({ message: 'Physical Receipt No already exists. Please use a unique number.' });
             }
         }
