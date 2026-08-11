@@ -357,7 +357,7 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
                                 disabled={!!selectedPO}
                             />
                             {searchResults.length > 0 && (
-                                <ul id={resultsId} role="listbox" className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 #f8fafc' }}>
+                                <ul id={resultsId} role="listbox" className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto scrollbar-thin">
                                     {searchResults.map((part, idx) => {
                                         const itemProps = getItemProps(idx);
                                         return (

@@ -75,7 +75,7 @@ const ARWalletTab = ({
                                                 <td className="px-6 py-4 font-semibold text-gray-900">{w.company_name || `${w.first_name || ''} ${w.last_name || ''}`}</td>
                                                 <td className="px-6 py-4 text-right font-mono font-bold text-emerald-700">{formatCurrency(walletBal)}</td>
                                                 <td className="px-6 py-4 text-right font-mono font-semibold text-gray-900">{formatCurrency(arBal)}</td>
-                                                <td className="px-6 py-4 text-right font-mono font-bold" style={{ color: netExp > 0 ? '#DC2626' : '#059669' }}>
+                                                <td className={`px-6 py-4 text-right font-mono font-bold ${netExp > 0 ? 'text-danger-600' : 'text-success-600'}`}>
                                                     {formatCurrency(netExp)}
                                                 </td>
                                                 <td className="px-6 py-4 text-center">

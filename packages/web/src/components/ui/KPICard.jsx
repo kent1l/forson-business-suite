@@ -27,6 +27,9 @@ const COLOR_VARIANTS = {
     purple: { iconBg: 'bg-purple-100', iconColor: 'text-purple-600', accent: 'border-purple-200' },
     orange: { iconBg: 'bg-orange-100', iconColor: 'text-orange-600', accent: 'border-orange-200' },
     red: { iconBg: 'bg-red-100', iconColor: 'text-red-600', accent: 'border-red-200' },
+    amber: { iconBg: 'bg-amber-100', iconColor: 'text-amber-600', accent: 'border-amber-200' },
+    emerald: { iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600', accent: 'border-emerald-200' },
+    rose: { iconBg: 'bg-rose-100', iconColor: 'text-rose-600', accent: 'border-rose-200' },
 };
 
 const compactFormatter = new Intl.NumberFormat('en-US', { notation: 'compact', compactDisplay: 'short', maximumFractionDigits: 1 });

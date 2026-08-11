@@ -10,12 +10,18 @@ import CustomerInvoiceDetailsModal from '../CustomerInvoiceDetailsModal';
 import PaginationControls from '../../ui/PaginationControls';
 import LoadingState from '../../ui/LoadingState';
 import EmptyState from '../../ui/EmptyState';
+import ErrorState from '../../ui/ErrorState';
 
 // Overview & Aging tab: KPI summary, aging chart with drill-down, and the
 // paginated customer AR summary table. Owns the receive-payment and
 // customer-invoice-drilldown modals since both are only ever triggered from here.
+// The modals render regardless of `isActive` so switching tabs mid-payment
+// doesn't unmount them and silently discard in-progress input.
 const AROverviewTab = ({
+    isActive,
     loading,
+    error,
+    onRetry,
     kpiData,
     agingData,
     onBucketClick,
@@ -69,36 +75,52 @@ const AROverviewTab = ({
 }) => {
     return (
         <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-                <KPICard iconName={ICONS.dollar} title="Total Receivables" value={kpiData.totalReceivables.value} trend={kpiData.totalReceivables.trend} trendColorClass={kpiData.totalReceivables.color} loading={loading} />
-                <KPICard iconName={ICONS.documents} title="Invoices Sent" value={kpiData.invoicesSent.value} trend={kpiData.invoicesSent.trend} trendColorClass={kpiData.invoicesSent.color} loading={loading} />
-                <KPICard iconName={ICONS.warning} title="Overdue Invoices" value={kpiData.overdueInvoices.value} trend={kpiData.overdueInvoices.trend} trendColorClass={kpiData.overdueInvoices.color} loading={loading} />
-                <KPICard iconName={ICONS.calendar} title="Avg. Collection Period" value={kpiData.avgCollectionPeriod.value} trend={kpiData.avgCollectionPeriod.trend} trendColorClass={kpiData.avgCollectionPeriod.color} loading={loading} />
-            </div>
+            {isActive && error && !loading && (
+                <div className="bg-white rounded-xl border mb-6">
+                    <ErrorState
+                        title="Couldn't load Accounts Receivable data"
+                        description="Something went wrong fetching the AR overview. Check your connection and try again."
+                        onRetry={onRetry}
+                    />
+                </div>
+            )}
 
-            <InvoiceAgingSummaryChart agingData={agingData} loading={loading} onBucketClick={onBucketClick} />
+            {isActive && !error && (
+                <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                        <KPICard iconName={ICONS.dollar} title="Total Receivables" value={kpiData.totalReceivables.value} trend={kpiData.totalReceivables.trend} trendColorClass={kpiData.totalReceivables.color} loading={loading} />
+                        <KPICard iconName={ICONS.documents} title="Invoices Sent" value={kpiData.invoicesSent.value} trend={kpiData.invoicesSent.trend} trendColorClass={kpiData.invoicesSent.color} loading={loading} />
+                        <KPICard iconName={ICONS.warning} title="Overdue Invoices" value={kpiData.overdueInvoices.value} trend={kpiData.overdueInvoices.trend} trendColorClass={kpiData.overdueInvoices.color} loading={loading} />
+                        <KPICard iconName={ICONS.calendar} title="Avg. Collection Period" value={kpiData.avgCollectionPeriod.value} trend={kpiData.avgCollectionPeriod.trend} trendColorClass={kpiData.avgCollectionPeriod.color} loading={loading} />
+                    </div>
 
-            <CustomerSummaryTable
-                customers={customerSummary}
-                onCustomerClick={onCustomerClick}
-                onReceivePayment={onReceivePayment}
-                hasPaymentPermission={hasPaymentPermission}
-                loading={loading}
-                onExport={onExport}
-                searchTerm={searchTerm}
-                onSearchChange={onSearchChange}
-                statusFilter={statusFilter}
-                onStatusFilterChange={onStatusFilterChange}
-                sortConfig={sortConfig}
-                onSortChange={onSortChange}
-            />
-            <PaginationControls
-                page={customerSummaryPage}
-                pageSize={customerSummaryPageSize}
-                total={customerSummaryTotal}
-                onPageChange={onCustomerSummaryPageChange}
-                onPageSizeChange={onCustomerSummaryPageSizeChange}
-            />
+                    <InvoiceAgingSummaryChart agingData={agingData} loading={loading} onBucketClick={onBucketClick} />
+
+                    <CustomerSummaryTable
+                        customers={customerSummary}
+                        onCustomerClick={onCustomerClick}
+                        onReceivePayment={onReceivePayment}
+                        hasPaymentPermission={hasPaymentPermission}
+                        loading={loading}
+                        onExport={onExport}
+                        searchTerm={searchTerm}
+                        onSearchChange={onSearchChange}
+                        statusFilter={statusFilter}
+                        onStatusFilterChange={onStatusFilterChange}
+                        sortConfig={sortConfig}
+                        onSortChange={onSortChange}
+                    />
+                    <PaginationControls
+                        page={customerSummaryPage}
+                        pageSize={customerSummaryPageSize}
+                        total={customerSummaryTotal}
+                        onPageChange={onCustomerSummaryPageChange}
+                        onPageSizeChange={onCustomerSummaryPageSizeChange}
+                    />
+                </>
+            )}
+
+            {/* Modals below render regardless of isActive so they survive a tab switch */}
 
             {/* Receive Payment Modal */}
             <Modal

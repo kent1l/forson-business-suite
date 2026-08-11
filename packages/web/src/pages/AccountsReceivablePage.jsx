@@ -35,6 +35,7 @@ const AccountsReceivablePage = () => {
         { name: '90+ Days', value: 0 },
     ]);
     const [loading, setLoading] = useState(true);
+    const [overviewError, setOverviewError] = useState(null);
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
     const [dateRange, setDateRange] = useState({
@@ -241,6 +242,7 @@ const AccountsReceivablePage = () => {
     const fetchDashboardData = useCallback(async () => {
         try {
             setLoading(true);
+            setOverviewError(null);
 
             const dateParams = {
                 startDate: dateRange.startDate.toISOString(),
@@ -269,6 +271,7 @@ const AccountsReceivablePage = () => {
         } catch (err) {
             console.error('Failed to fetch dashboard data:', err);
             toast.error('Failed to fetch accounts receivable data.');
+            setOverviewError(err);
         } finally {
             setLoading(false);
         }
@@ -437,8 +440,9 @@ const AccountsReceivablePage = () => {
     const handlePaymentSaved = useCallback(() => {
         setIsPaymentModalOpen(false);
         fetchDashboardData();
+        if (activeTab === 'wallet') fetchWalletCustomers();
         toast.success('Payment processed successfully!');
-    }, [fetchDashboardData]);
+    }, [fetchDashboardData, fetchWalletCustomers, activeTab]);
 
     const handleExportCustomerSummary = useCallback(() => {
         const exportData = customerSummary.map(customer => ({
@@ -616,55 +620,56 @@ const AccountsReceivablePage = () => {
                 </div>
             </div>
 
-            {activeTab === 'overview' && (
-                <AROverviewTab
-                    loading={loading}
-                    kpiData={kpiData}
-                    agingData={agingData}
-                    onBucketClick={handleAgingBucketClick}
-                    customerSummary={customerSummary}
-                    onCustomerClick={handleCustomerClick}
-                    onReceivePayment={handleReceivePaymentClick}
-                    hasPaymentPermission={hasPermission('ar:receive_payment')}
-                    onExport={handleExportCustomerSummary}
-                    searchTerm={customerSummarySearchTerm}
-                    onSearchChange={(val) => { setCustomerSummarySearchTerm(val); setCustomerSummaryPage(1); }}
-                    statusFilter={customerSummaryStatusFilter}
-                    onStatusFilterChange={(val) => { setCustomerSummaryStatusFilter(val); setCustomerSummaryPage(1); }}
-                    sortConfig={customerSummarySortConfig}
-                    onSortChange={(cfg) => { setCustomerSummarySortConfig(cfg); setCustomerSummaryPage(1); }}
-                    customerSummaryPage={customerSummaryPage}
-                    customerSummaryPageSize={customerSummaryPageSize}
-                    customerSummaryTotal={customerSummaryTotal}
-                    onCustomerSummaryPageChange={setCustomerSummaryPage}
-                    onCustomerSummaryPageSizeChange={(value) => { setCustomerSummaryPageSize(value); setCustomerSummaryPage(1); }}
-                    selectedAgingBucket={selectedAgingBucket}
-                    onCloseDrillDown={handleCloseDrillDown}
-                    drillDownLoading={drillDownLoading}
-                    drillDownInvoices={drillDownInvoices}
-                    drillDownPage={drillDownPage}
-                    drillDownPageSize={drillDownPageSize}
-                    drillDownTotal={drillDownTotal}
-                    onDrillDownPageChange={setDrillDownPage}
-                    onDrillDownPageSizeChange={(value) => { setDrillDownPageSize(value); setDrillDownPage(1); }}
-                    onReceivePaymentFromDrillDown={handleReceivePaymentFromDrillDown}
-                    hasPermission={hasPermission}
-                    isPaymentModalOpen={isPaymentModalOpen}
-                    selectedCustomer={selectedCustomer}
-                    onClosePaymentModal={() => setIsPaymentModalOpen(false)}
-                    onPaymentSaved={handlePaymentSaved}
-                    selectedCustomerForInvoices={selectedCustomerForInvoices}
-                    onCloseCustomerInvoices={handleCloseCustomerInvoices}
-                    customerInvoices={customerInvoices}
-                    customerInvoicesLoading={customerInvoicesLoading}
-                    customerInvoicesPage={customerInvoicesPage}
-                    customerInvoicesPageSize={customerInvoicesPageSize}
-                    customerInvoicesTotal={customerInvoicesTotal}
-                    onCustomerInvoicesPageChange={setCustomerInvoicesPage}
-                    onCustomerInvoicesPageSizeChange={(size) => { setCustomerInvoicesPageSize(size); setCustomerInvoicesPage(1); }}
-                    onAfterDueDateUpdate={fetchDashboardData}
-                />
-            )}
+            <AROverviewTab
+                isActive={activeTab === 'overview'}
+                loading={loading}
+                error={overviewError}
+                onRetry={fetchDashboardData}
+                kpiData={kpiData}
+                agingData={agingData}
+                onBucketClick={handleAgingBucketClick}
+                customerSummary={customerSummary}
+                onCustomerClick={handleCustomerClick}
+                onReceivePayment={handleReceivePaymentClick}
+                hasPaymentPermission={hasPermission('ar:receive_payment')}
+                onExport={handleExportCustomerSummary}
+                searchTerm={customerSummarySearchTerm}
+                onSearchChange={(val) => { setCustomerSummarySearchTerm(val); setCustomerSummaryPage(1); }}
+                statusFilter={customerSummaryStatusFilter}
+                onStatusFilterChange={(val) => { setCustomerSummaryStatusFilter(val); setCustomerSummaryPage(1); }}
+                sortConfig={customerSummarySortConfig}
+                onSortChange={(cfg) => { setCustomerSummarySortConfig(cfg); setCustomerSummaryPage(1); }}
+                customerSummaryPage={customerSummaryPage}
+                customerSummaryPageSize={customerSummaryPageSize}
+                customerSummaryTotal={customerSummaryTotal}
+                onCustomerSummaryPageChange={setCustomerSummaryPage}
+                onCustomerSummaryPageSizeChange={(value) => { setCustomerSummaryPageSize(value); setCustomerSummaryPage(1); }}
+                selectedAgingBucket={selectedAgingBucket}
+                onCloseDrillDown={handleCloseDrillDown}
+                drillDownLoading={drillDownLoading}
+                drillDownInvoices={drillDownInvoices}
+                drillDownPage={drillDownPage}
+                drillDownPageSize={drillDownPageSize}
+                drillDownTotal={drillDownTotal}
+                onDrillDownPageChange={setDrillDownPage}
+                onDrillDownPageSizeChange={(value) => { setDrillDownPageSize(value); setDrillDownPage(1); }}
+                onReceivePaymentFromDrillDown={handleReceivePaymentFromDrillDown}
+                hasPermission={hasPermission}
+                isPaymentModalOpen={isPaymentModalOpen}
+                selectedCustomer={selectedCustomer}
+                onClosePaymentModal={() => setIsPaymentModalOpen(false)}
+                onPaymentSaved={handlePaymentSaved}
+                selectedCustomerForInvoices={selectedCustomerForInvoices}
+                onCloseCustomerInvoices={handleCloseCustomerInvoices}
+                customerInvoices={customerInvoices}
+                customerInvoicesLoading={customerInvoicesLoading}
+                customerInvoicesPage={customerInvoicesPage}
+                customerInvoicesPageSize={customerInvoicesPageSize}
+                customerInvoicesTotal={customerInvoicesTotal}
+                onCustomerInvoicesPageChange={setCustomerInvoicesPage}
+                onCustomerInvoicesPageSizeChange={(size) => { setCustomerInvoicesPageSize(size); setCustomerInvoicesPage(1); }}
+                onAfterDueDateUpdate={fetchDashboardData}
+            />
 
             {activeTab === 'ledger_soa' && (
                 <ARLedgerSoaTab

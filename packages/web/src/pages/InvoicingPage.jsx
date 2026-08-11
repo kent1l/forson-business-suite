@@ -568,7 +568,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                             </button>
                         </div>
                         {searchResults.length > 0 && (
-                            <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 #f8fafc' }}>
+                            <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto scrollbar-thin">
                                 {searchResults.map(part => (
                                     <li key={part.part_id} onClick={() => addPartToLines(part)} className="px-4 py-3 hover:bg-indigo-50 cursor-pointer border-b last:border-b-0">
                                         <div className="flex items-baseline justify-between">

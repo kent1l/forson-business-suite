@@ -1,6 +1,8 @@
 import React, { useState, useCallback } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
+import Icon from '../components/ui/Icon';
+import { ICONS } from '../constants';
 
 function parseCSV(text) {
     const lines = [];
@@ -327,16 +329,18 @@ export default function SoaGenPage() {
                                         onChange={(e) => handleFileChange(e, 'customers')}
                                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                                     />
-                                    <span className="text-slate-300 text-xs font-medium truncate max-w-full text-center">
-                                        {customersFile ? `📄 ${customersFile.name}` : 'Click or Drag File Here'}
+                                    <span className="text-slate-300 text-xs font-medium truncate max-w-full text-center flex items-center gap-1.5 justify-center">
+                                        {customersFile && <Icon path={ICONS.documents} className="w-3.5 h-3.5 shrink-0 text-slate-400" />}
+                                        {customersFile ? customersFile.name : 'Click or Drag File Here'}
                                     </span>
                                 </div>
-                                <button 
+                                <button
                                     type="button"
                                     onClick={downloadSampleCustomers}
-                                    className="mt-2 text-left text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors font-medium self-start cursor-pointer"
+                                    className="mt-2 text-left text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors font-medium self-start cursor-pointer flex items-center gap-1"
                                 >
-                                    📥 Download Sample customers.csv
+                                    <Icon path={ICONS.download} className="w-3 h-3" />
+                                    Download Sample customers.csv
                                 </button>
                             </div>
 
@@ -350,16 +354,18 @@ export default function SoaGenPage() {
                                         onChange={(e) => handleFileChange(e, 'transactions')}
                                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                                     />
-                                    <span className="text-slate-300 text-xs font-medium truncate max-w-full text-center">
-                                        {transactionsFile ? `📄 ${transactionsFile.name}` : 'Click or Drag File Here'}
+                                    <span className="text-slate-300 text-xs font-medium truncate max-w-full text-center flex items-center gap-1.5 justify-center">
+                                        {transactionsFile && <Icon path={ICONS.documents} className="w-3.5 h-3.5 shrink-0 text-slate-400" />}
+                                        {transactionsFile ? transactionsFile.name : 'Click or Drag File Here'}
                                     </span>
                                 </div>
-                                <button 
+                                <button
                                     type="button"
                                     onClick={downloadSampleTransactions}
-                                    className="mt-2 text-left text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors font-medium self-start cursor-pointer"
+                                    className="mt-2 text-left text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors font-medium self-start cursor-pointer flex items-center gap-1"
                                 >
-                                    📥 Download Sample transactions.csv
+                                    <Icon path={ICONS.download} className="w-3 h-3" />
+                                    Download Sample transactions.csv
                                 </button>
                             </div>
                         </div>
