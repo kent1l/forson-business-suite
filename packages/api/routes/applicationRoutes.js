@@ -1,10 +1,11 @@
 const express = require('express');
 const db = require('../db');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
+const { protect, hasPermission } = require('../middleware/authMiddleware');
 const router = express.Router();
 
 // GET all vehicle applications using the view
-router.get('/applications', async (req, res) => {
+router.get('/applications', protect, hasPermission('applications:view'), async (req, res) => {
     console.log('[DEBUG] Handling GET /applications request');
     const { status, search, sortBy, sortOrder = 'ASC' } = req.query;
     const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
@@ -100,7 +101,7 @@ router.get('/applications', async (req, res) => {
 
 // POST a new vehicle application
 // GET all makes
-router.get('/makes', async (req, res) => {
+router.get('/makes', protect, hasPermission('applications:view'), async (req, res) => {
     try {
         const { rows } = await db.query('SELECT * FROM vehicle_make ORDER BY make_name');
         res.json(rows);
@@ -111,7 +112,7 @@ router.get('/makes', async (req, res) => {
 });
 
 // GET models for a specific make
-router.get('/makes/:makeId/models', async (req, res) => {
+router.get('/makes/:makeId/models', protect, hasPermission('applications:view'), async (req, res) => {
     try {
         const { rows } = await db.query('SELECT * FROM vehicle_model WHERE make_id = $1 ORDER BY model_name', [req.params.makeId]);
         res.json(rows);
@@ -122,7 +123,7 @@ router.get('/makes/:makeId/models', async (req, res) => {
 });
 
 // GET engines for a specific model
-router.get('/models/:modelId/engines', async (req, res) => {
+router.get('/models/:modelId/engines', protect, hasPermission('applications:view'), async (req, res) => {
     try {
         const { rows } = await db.query('SELECT * FROM vehicle_engine WHERE model_id = $1 ORDER BY engine_name', [req.params.modelId]);
         res.json(rows);
@@ -132,7 +133,7 @@ router.get('/models/:modelId/engines', async (req, res) => {
     }
 });
 
-router.post('/applications', async (req, res) => {
+router.post('/applications', protect, hasPermission('applications:edit'), async (req, res) => {
     const { make_id, model_id, engine_id, make, model, engine } = req.body;
     const client = await db.getClient();
 
@@ -257,7 +258,7 @@ router.post('/applications', async (req, res) => {
 });
 
 // PUT - Update an existing application
-router.put('/applications/:id', async (req, res) => {
+router.put('/applications/:id', protect, hasPermission('applications:edit'), async (req, res) => {
     const { id } = req.params;
     const { make_id, model_id, engine_id, make, model, engine } = req.body;
 
@@ -375,7 +376,7 @@ router.put('/applications/:id', async (req, res) => {
 });
 
 // DELETE - Delete an application
-router.delete('/applications/:id', async (req, res) => {
+router.delete('/applications/:id', protect, hasPermission('applications:edit'), async (req, res) => {
     const { id } = req.params;
     try {
         const deleteOp = await db.query('DELETE FROM application WHERE application_id = $1 RETURNING *', [id]);

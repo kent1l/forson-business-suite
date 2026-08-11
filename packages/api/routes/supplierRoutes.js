@@ -2,10 +2,11 @@ const express = require('express');
 const db = require('../db');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
+const { protect, hasPermission } = require('../middleware/authMiddleware');
 const router = express.Router();
 
 // GET all suppliers with status filter
-router.get('/suppliers', async (req, res) => {
+router.get('/suppliers', protect, hasPermission('suppliers:view'), async (req, res) => {
   const { status = 'active', search, sortBy, sortOrder = 'ASC' } = req.query;
   const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
 
@@ -62,7 +63,7 @@ router.get('/suppliers', async (req, res) => {
 });
 
 // POST a new supplier
-router.post('/suppliers', async (req, res) => {
+router.post('/suppliers', protect, hasPermission('suppliers:edit'), async (req, res) => {
     const { supplier_name, contact_person, phone, email, address, is_active } = req.body;
     if (!supplier_name) {
         return res.status(400).json({ message: 'Supplier name is required.' });
@@ -84,7 +85,7 @@ router.post('/suppliers', async (req, res) => {
 });
 
 // PUT - Update an existing supplier
-router.put('/suppliers/:id', async (req, res) => {
+router.put('/suppliers/:id', protect, hasPermission('suppliers:edit'), async (req, res) => {
     const { id } = req.params;
     const { supplier_name, contact_person, phone, email, address, is_active } = req.body;
 
@@ -113,7 +114,7 @@ router.put('/suppliers/:id', async (req, res) => {
 });
 
 // DELETE - Delete a supplier
-router.delete('/suppliers/:id', async (req, res) => { // FIX: Was /customers/:id
+router.delete('/suppliers/:id', protect, hasPermission('suppliers:edit'), async (req, res) => { // FIX: Was /customers/:id
     const { id } = req.params;
     try {
         const deleteOp = await db.query('DELETE FROM supplier WHERE supplier_id = $1 RETURNING *', [id]);

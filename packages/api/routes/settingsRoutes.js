@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { protect, isAdmin } = require('../middleware/authMiddleware');
+const { protect, hasPermission } = require('../middleware/authMiddleware');
 const router = express.Router();
 
 // GET /api/settings - Get all settings
@@ -21,8 +21,8 @@ router.get('/settings', protect, async (req, res) => {
 });
 
 // PUT /api/settings - Update multiple settings
-// Protected for Admins only
-router.put('/settings', protect, isAdmin, async (req, res) => {
+// Protected for holders of the settings:edit permission (admins bypass via hasPermission)
+router.put('/settings', protect, hasPermission('settings:edit'), async (req, res) => {
     const settings = req.body; // Expects an object like { SETTING_KEY: 'new_value', ... }
     const client = await db.getClient();
 
