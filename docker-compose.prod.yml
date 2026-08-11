@@ -74,7 +74,7 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./mobile-builds:/usr/share/nginx/html/downloads
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--spider", "http://localhost/health"]
+      test: ["CMD", "wget", "--no-verbose", "--spider", "http://127.0.0.1/health"]
       interval: 30s
       timeout: 10s
       retries: 3
