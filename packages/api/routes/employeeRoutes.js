@@ -2,7 +2,19 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const db = require('../db');
-const { protect, isAdmin } = require('../middleware/authMiddleware');
+const { protect, hasPermission } = require('../middleware/authMiddleware');
+
+// Only an existing Admin (permission_level_id 10) may grant the Admin role to
+// anyone. Without this, any role holding employees:edit could create or edit
+// an account and set permission_level_id = 10 to self-escalate.
+const blockNonAdminGrantingAdmin = (req, res, next) => {
+    const targetLevel = Number(req.body.permission_level_id);
+    const requesterLevel = Number(req.user?.permission_level_id);
+    if (targetLevel === 10 && requesterLevel !== 10) {
+        return res.status(403).json({ message: 'Only an admin can assign the Admin role.' });
+    }
+    next();
+};
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const router = express.Router();
@@ -97,7 +109,7 @@ router.put('/profile', protect, async (req, res) => {
 // --- SECURED ADMIN ROUTES ---
 
 // GET /employees - list employees with status filter
-router.get('/employees', protect, isAdmin, async (req, res) => {
+router.get('/employees', protect, hasPermission('employees:view'), async (req, res) => {
     const { status = 'active', search, sortBy, sortOrder = 'ASC' } = req.query;
     const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
 
@@ -162,7 +174,7 @@ router.get('/employees', protect, isAdmin, async (req, res) => {
 });
 
 // GET /employees/:id - get one employee
-router.get('/employees/:id', protect, isAdmin, async (req, res) => {
+router.get('/employees/:id', protect, hasPermission('employees:view'), async (req, res) => {
     const { id } = req.params;
     try {
         const { rows } = await db.query('SELECT employee_id, employee_code, first_name, last_name, position_title, permission_level_id, username, is_active FROM employee WHERE employee_id = $1', [id]);
@@ -177,7 +189,7 @@ router.get('/employees/:id', protect, isAdmin, async (req, res) => {
 });
 
 // POST /employees - create employee
-router.post('/employees', protect, isAdmin, async (req, res) => {
+router.post('/employees', protect, hasPermission('employees:edit'), blockNonAdminGrantingAdmin, async (req, res) => {
     const { first_name, last_name, username, password, permission_level_id, position_title } = req.body;
     if (!username || !password || !first_name || !last_name || !permission_level_id) {
         return res.status(400).json({ message: 'All required fields must be filled' });
@@ -201,7 +213,7 @@ router.post('/employees', protect, isAdmin, async (req, res) => {
 });
 
 // PUT /employees/:id - update employee (optional password change)
-router.put('/employees/:id', protect, isAdmin, async (req, res) => {
+router.put('/employees/:id', protect, hasPermission('employees:edit'), blockNonAdminGrantingAdmin, async (req, res) => {
     const { id } = req.params;
     const { first_name, last_name, username, permission_level_id, position_title, is_active, password } = req.body;
 
@@ -210,6 +222,15 @@ router.put('/employees/:id', protect, isAdmin, async (req, res) => {
     }
 
     try {
+        // A non-admin editing an existing Admin's account (password reset, demotion, etc.)
+        // is just as much an escalation risk as granting Admin outright — block it too.
+        if (Number(req.user?.permission_level_id) !== 10) {
+            const target = await db.query('SELECT permission_level_id FROM employee WHERE employee_id = $1', [id]);
+            if (target.rows[0] && Number(target.rows[0].permission_level_id) === 10) {
+                return res.status(403).json({ message: 'Only an admin can modify another admin\'s account.' });
+            }
+        }
+
         let updatedEmployee;
         if (password) {
             const salt = await bcrypt.genSalt(10);

@@ -59,6 +59,7 @@ const CATEGORIES = [
         icon: ICONS.receipt,
         items: [
             { name: 'PDC & Treasury',    icon: ICONS.receipt, page: 'pdc',                permission: ['pdc:view', 'ar:view'] },
+            { name: 'Bulk SOA Generator', icon: ICONS.documents, page: 'soa_gen',          permission: 'ar:view' },
             { name: 'Expenses',           icon: ICONS.receipt, page: 'expenses',           permission: 'expenses:view' },
             { name: 'Expense Categories', icon: ICONS.tag,     page: 'expense_categories', permission: 'expenses:manage_categories' },
             { name: 'Paperless Receipts', icon: ICONS.documents, page: 'paperless_receipts', permission: 'documents:view' },

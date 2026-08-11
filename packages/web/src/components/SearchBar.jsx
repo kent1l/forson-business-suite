@@ -1,5 +1,4 @@
 import { forwardRef } from 'react';
-import './SearchBar.css';
 
 // Controlled search bar with an in-input clear (X) button.
 // Props:

@@ -161,7 +161,8 @@ describe('staged sales routes', () => {
       .mockResolvedValueOnce({ rows: [{ wac_cost: '50.00' }] }) // get WAC cost
       .mockResolvedValueOnce({}) // insert invoice_line
       .mockResolvedValueOnce({}) // insert inventory_transaction
-      .mockResolvedValueOnce({}) // insert payment
+      .mockResolvedValueOnce({ rows: [{ payment_id: 900 }] }) // insert payment
+      .mockResolvedValueOnce({ rows: [{ ledger_id: 1234 }] }) // arLedger.appendEntry (PAYMENT_SETTLED)
       .mockResolvedValueOnce({}) // update staged_sale status
       .mockResolvedValueOnce({}); // COMMIT
 
@@ -172,6 +173,17 @@ describe('staged sales routes', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('message', 'Staged sale approved and recorded successfully.');
     expect(res.body).toHaveProperty('invoice_id', 50);
+
+    // Regression check: settled staged-sale payments must write a PAYMENT_SETTLED
+    // ar_ledger entry (previously this endpoint inserted invoice_payments without
+    // ever calling append_ar_ledger_entry, silently drifting the ledger).
+    const ledgerCall = client.query.mock.calls.find(
+      ([sql]) => typeof sql === 'string' && sql.includes('append_ar_ledger_entry')
+    );
+    expect(ledgerCall).toBeDefined();
+    expect(ledgerCall[1]).toEqual(
+      expect.arrayContaining([1, 50, 900, null, 'PAYMENT_SETTLED', -112])
+    );
   });
 
   it('POST /api/sales/staging/:id/reject rejects staged sale', async () => {

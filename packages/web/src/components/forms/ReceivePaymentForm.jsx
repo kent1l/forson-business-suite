@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
-
-// Utilities
-const currency = (v) => `₱${(Number(v) || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+import { formatCurrency as currency } from '../../utils/currency';
+import Icon from '../ui/Icon';
+import { ICONS } from '../../constants';
 
 const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
     const [unpaidInvoices, setUnpaidInvoices] = useState([]);
@@ -252,8 +252,8 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                         <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Allocated to Invoices</span>
                         <div className="text-lg font-bold font-mono text-emerald-700 mt-0.5">{currency(totalAllocated)}</div>
                     </div>
-                    <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-                        ✓
+                    <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                        <Icon path={ICONS.check} className="w-5 h-5" />
                     </div>
                 </div>
 
@@ -264,8 +264,8 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                             {currency(overpaymentAmount)}
                         </div>
                     </div>
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold ${overpaymentAmount > 0 ? 'bg-amber-50 text-amber-600' : 'bg-slate-50 text-slate-400'}`}>
-                        🏦
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${overpaymentAmount > 0 ? 'bg-amber-50 text-amber-600' : 'bg-slate-50 text-slate-400'}`}>
+                        <Icon path={ICONS.bank} className="w-5 h-5" />
                     </div>
                 </div>
             </div>
@@ -273,7 +273,7 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
             {/* Overpayment Prompt Banner */}
             {overpaymentAmount > 0 && (
                 <div className="p-4 bg-amber-50/90 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-3 shadow-sm animate-fade-in">
-                    <div className="text-lg leading-none mt-0.5">ℹ️</div>
+                    <Icon path={ICONS.info} className="w-5 h-5 shrink-0 text-amber-600" />
                     <div className="flex-1">
                         <span className="font-bold text-amber-950">Overpayment Detected: </span>
                         <span>
@@ -284,8 +284,9 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
             )}
 
             {unallocatedDeficit > 0 && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800 flex items-center justify-between">
-                    <span>⚠️ Allocated invoice total exceeds payment received by <strong>{currency(unallocatedDeficit)}</strong>. Please adjust split payments or invoice allocations.</span>
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800 flex items-center gap-2">
+                    <Icon path={ICONS.warning} className="w-4 h-4 shrink-0 text-red-600" />
+                    <span>Allocated invoice total exceeds payment received by <strong>{currency(unallocatedDeficit)}</strong>. Please adjust split payments or invoice allocations.</span>
                 </div>
             )}
 
@@ -366,7 +367,7 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                                             {isCheque && (
                                                 <div className="sm:col-span-6">
                                                     <label className="block text-[11px] font-bold text-indigo-900 uppercase tracking-wider mb-1 flex items-center gap-1">
-                                                        <span>📅</span> Date on Cheque (Maturity)
+                                                        <Icon path={ICONS.calendar} className="w-3 h-3" /> Date on Cheque (Maturity)
                                                     </label>
                                                     <input
                                                         type="date"

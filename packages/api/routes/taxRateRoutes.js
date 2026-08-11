@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { protect, isAdmin } = require('../middleware/authMiddleware');
+const { protect, hasPermission } = require('../middleware/authMiddleware');
 const router = express.Router();
 
 // GET /api/tax-rates - Get all tax rates
@@ -15,7 +15,7 @@ router.get('/tax-rates', protect, async (req, res) => {
 });
 
 // POST /api/tax-rates - Create a new tax rate
-router.post('/tax-rates', protect, isAdmin, async (req, res) => {
+router.post('/tax-rates', protect, hasPermission('settings:edit'), async (req, res) => {
     const { rate_name, rate_percentage } = req.body;
     
     // Validate required fields
@@ -49,7 +49,7 @@ router.post('/tax-rates', protect, isAdmin, async (req, res) => {
 });
 
 // PUT /api/tax-rates/:id - Update a tax rate
-router.put('/tax-rates/:id', protect, isAdmin, async (req, res) => {
+router.put('/tax-rates/:id', protect, hasPermission('settings:edit'), async (req, res) => {
     const { id } = req.params;
     const { rate_name, rate_percentage } = req.body;
     
@@ -87,7 +87,7 @@ router.put('/tax-rates/:id', protect, isAdmin, async (req, res) => {
 });
 
 // DELETE /api/tax-rates/:id - Delete a tax rate
-router.delete('/tax-rates/:id', protect, isAdmin, async (req, res) => {
+router.delete('/tax-rates/:id', protect, hasPermission('settings:edit'), async (req, res) => {
     const { id } = req.params;
     try {
         const deleteOp = await db.query('DELETE FROM tax_rate WHERE tax_rate_id = $1', [id]);
@@ -105,7 +105,7 @@ router.delete('/tax-rates/:id', protect, isAdmin, async (req, res) => {
 });
 
 // NEW ROUTE: Set a tax rate as the default
-router.put('/tax-rates/:id/set-default', protect, isAdmin, async (req, res) => {
+router.put('/tax-rates/:id/set-default', protect, hasPermission('settings:edit'), async (req, res) => {
     const { id } = req.params;
     const client = await db.getClient();
 

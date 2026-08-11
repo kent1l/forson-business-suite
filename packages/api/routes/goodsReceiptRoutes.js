@@ -138,7 +138,7 @@ router.get('/goods-receipts/:id/lines', protect, async (req, res) => {
 });
 
 // POST /goods-receipts - Create a new Goods Receipt
-router.post('/goods-receipts', async (req, res) => {
+router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), async (req, res) => {
   // NEW: Added po_id to destructuring
   const { supplier_id, received_by, lines, po_id } = req.body;
 

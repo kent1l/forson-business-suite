@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../api';
 import { RefreshCw, Activity } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import EnhancedKPICard from '../components/dashboard/EnhancedKPICard';
+import KPICard from '../components/ui/KPICard';
 import { SalesTrendChart, TopProductsChart } from '../components/dashboard/AnalyticsCharts';
 import { QuickActionsPanel } from '../components/dashboard/QuickActionsPanel';
 import { RecentActivityFeed } from '../components/dashboard/RecentActivityFeed';
@@ -153,11 +153,11 @@ const Dashboard = ({ onNavigate }) => {
                 {/* KPI Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                     {hasPermission('invoicing:create') && (
-                        <EnhancedKPICard
+                        <KPICard
                             title="Today's Revenue"
                             value={enhancedStats.kpis.todayRevenue.value}
                             change={enhancedStats.kpis.todayRevenue.change}
-                            trend={enhancedStats.kpis.todayRevenue.trend}
+                            trendDirection={enhancedStats.kpis.todayRevenue.trend}
                             icon="currency"
                             color="green"
                             loading={loading}
@@ -166,7 +166,7 @@ const Dashboard = ({ onNavigate }) => {
                         />
                     )}
                     {hasPermission('ar:view') && (
-                        <EnhancedKPICard
+                        <KPICard
                             title="Outstanding A/R"
                             value={enhancedStats.kpis.outstandingAR.value}
                             icon="invoice"
@@ -178,7 +178,7 @@ const Dashboard = ({ onNavigate }) => {
                         />
                     )}
                     {hasPermission('inventory:view') && (
-                        <EnhancedKPICard
+                        <KPICard
                             title="Inventory Value"
                             value={enhancedStats.kpis.inventoryValue.value}
                             icon="package"
@@ -190,7 +190,7 @@ const Dashboard = ({ onNavigate }) => {
                         />
                     )}
                     {hasPermission('inventory:view') && (
-                        <EnhancedKPICard
+                        <KPICard
                             title="Low Stock Alert"
                             value={`${enhancedStats.kpis.lowStockCount?.value || 0} items`}
                             icon="warning"
@@ -201,7 +201,7 @@ const Dashboard = ({ onNavigate }) => {
                         />
                     )}
                     {hasPermission('expenses:view') && (
-                        <EnhancedKPICard
+                        <KPICard
                             title="Monthly Expenses"
                             value={enhancedStats.kpis.totalExpensesMonth?.value || 0}
                             icon="receipt"

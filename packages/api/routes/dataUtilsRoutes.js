@@ -3,7 +3,7 @@ const multer = require('multer');
 const Papa = require('papaparse');
 const { Parser } = require('json2csv');
 const db = require('../db');
-const { protect, isAdmin } = require('../middleware/authMiddleware');
+const { protect, isAdmin, hasPermission } = require('../middleware/authMiddleware');
 const { generateUniqueCode } = require('../helpers/codeGenerator');
 const { syncPartWithMeili } = require('../meilisearch');
 const router = express.Router();
@@ -32,7 +32,7 @@ const ENTITY_CONFIG = {
 };
 
 // GET /api/data/export/:entity - Export data as CSV
-router.get('/export/:entity', protect, isAdmin, async (req, res) => {
+router.get('/export/:entity', protect, hasPermission('data-utils:export'), async (req, res) => {
     const { entity } = req.params;
     const config = ENTITY_CONFIG[entity];
 
@@ -82,7 +82,7 @@ router.get('/export/:entity', protect, isAdmin, async (req, res) => {
 });
 
 // POST /api/data/import/:entity - Import data from CSV
-router.post('/import/:entity', protect, isAdmin, upload.single('file'), async (req, res) => {
+router.post('/import/:entity', protect, hasPermission('data-utils:import'), upload.single('file'), async (req, res) => {
     const { entity } = req.params;
     const config = ENTITY_CONFIG[entity];
 

@@ -63,11 +63,15 @@ router.get('/customers', protect, hasPermission(['customers:view', 'pos:use']), 
     }
 
     try {
+        // balance_due is sourced from ar_ledger (vw_customer_ar_balance), the authoritative
+        // cash-basis AR balance, not from invoice.amount_paid -- see AR balance consolidation.
         if (!paginated) {
             const { rows } = await db.query(`
-                SELECT c.*, 
-                       COALESCE((SELECT SUM(i.total_amount - i.amount_paid) FROM invoice i WHERE i.customer_id = c.customer_id AND i.status IN ('Unpaid', 'Partially Paid')), 0) AS balance_due 
-                FROM customer c ${whereClause} 
+                SELECT c.*,
+                       COALESCE(GREATEST(b.ledger_balance, 0), 0) AS balance_due
+                FROM customer c
+                LEFT JOIN vw_customer_ar_balance b ON b.customer_id = c.customer_id
+                ${whereClause}
                 ${orderBy}
             `, queryParams);
             return res.json(rows);
@@ -77,9 +81,11 @@ router.get('/customers', protect, hasPermission(['customers:view', 'pos:use']), 
         const total = countRes.rows[0]?.total || 0;
         const mainParams = [...queryParams, limit, offset];
         const { rows } = await db.query(
-            `SELECT c.*, 
-                    COALESCE((SELECT SUM(i.total_amount - i.amount_paid) FROM invoice i WHERE i.customer_id = c.customer_id AND i.status IN ('Unpaid', 'Partially Paid')), 0) AS balance_due 
-             FROM customer c ${whereClause} 
+            `SELECT c.*,
+                    COALESCE(GREATEST(b.ledger_balance, 0), 0) AS balance_due
+             FROM customer c
+             LEFT JOIN vw_customer_ar_balance b ON b.customer_id = c.customer_id
+             ${whereClause}
              ${orderBy} LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
             mainParams
         );
@@ -114,6 +120,8 @@ router.get('/customers/:id/tags', protect, hasPermission('customers:view'), asyn
 router.get('/customers/with-balances', protect, hasPermission('ar:view'), async (req, res) => {
     try {
         const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
+        // balance_due is sourced from ar_ledger (vw_customer_ar_balance), the authoritative
+        // cash-basis AR balance, not from invoice.amount_paid -- see AR balance consolidation.
         const query = `
             SELECT
                 c.customer_id,
@@ -121,11 +129,10 @@ router.get('/customers/with-balances', protect, hasPermission('ar:view'), async 
                 c.last_name,
                 c.company_name,
                 (SELECT COALESCE(SUM(i.total_amount),0) FROM invoice i WHERE i.customer_id = c.customer_id) AS total_invoiced,
-                COALESCE(SUM(CASE WHEN i.status IN ('Unpaid', 'Partially Paid') THEN i.total_amount - i.amount_paid ELSE 0 END), 0) AS balance_due
+                b.ledger_balance AS balance_due
             FROM customer c
-            LEFT JOIN invoice i ON i.customer_id = c.customer_id
-            GROUP BY c.customer_id, c.first_name, c.last_name, c.company_name
-            HAVING COALESCE(SUM(CASE WHEN i.status IN ('Unpaid', 'Partially Paid') THEN i.total_amount - i.amount_paid ELSE 0 END), 0) > 0
+            JOIN vw_customer_ar_balance b ON b.customer_id = c.customer_id
+            WHERE b.ledger_balance > 0
             ORDER BY c.first_name, c.last_name;
         `;
         if (!paginated) {
@@ -137,9 +144,8 @@ router.get('/customers/with-balances', protect, hasPermission('ar:view'), async 
             SELECT COUNT(*)::int AS total FROM (
                 SELECT c.customer_id
                 FROM customer c
-                LEFT JOIN invoice i ON i.customer_id = c.customer_id
-                GROUP BY c.customer_id
-                HAVING COALESCE(SUM(CASE WHEN i.status IN ('Unpaid', 'Partially Paid') THEN i.total_amount - i.amount_paid ELSE 0 END), 0) > 0
+                JOIN vw_customer_ar_balance b ON b.customer_id = c.customer_id
+                WHERE b.ledger_balance > 0
             ) grouped_customers;
         `;
         const countRes = await db.query(countQuery);

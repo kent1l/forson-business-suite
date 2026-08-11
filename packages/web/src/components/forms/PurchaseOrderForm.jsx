@@ -291,8 +291,8 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                     </div>
                 </div>
                 {searchResults.length > 0 && (
-                    <ul 
-                        className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto search-results"
+                    <ul
+                        className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto scrollbar-thin"
                         onTouchStart={(e) => {
                             isScrollingRef.current = true;
                             e.stopPropagation();

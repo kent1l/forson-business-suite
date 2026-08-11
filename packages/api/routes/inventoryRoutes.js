@@ -2,10 +2,11 @@ const express = require('express');
 const db = require('../db');
 const { meiliClient } = require('../meilisearch'); // <-- 1. Import Meili client
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
+const { protect, hasPermission } = require('../middleware/authMiddleware');
 const router = express.Router();
 
 // GET /api/inventory - Get current stock levels with search
-router.get('/inventory', async (req, res) => {
+router.get('/inventory', protect, hasPermission('inventory:view'), async (req, res) => {
     const { search = '' } = req.query;
     const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
     const sortBy = String(req.query.sortBy || 'name').toLowerCase();
@@ -115,7 +116,7 @@ router.get('/inventory', async (req, res) => {
 });
 
 // GET /api/inventory/:partId/history (This route remains unchanged)
-router.get('/inventory/:partId/history', async (req, res) => {
+router.get('/inventory/:partId/history', protect, hasPermission('inventory:view'), async (req, res) => {
     const { partId } = req.params;
     try {
         const query = `
@@ -134,7 +135,7 @@ router.get('/inventory/:partId/history', async (req, res) => {
 });
 
 // POST /api/inventory/adjust (This route remains unchanged)
-router.post('/inventory/adjust', async (req, res) => {
+router.post('/inventory/adjust', protect, hasPermission('inventory:adjust'), async (req, res) => {
     const { part_id, quantity, notes, employee_id } = req.body;
 
     if (!part_id || !quantity || !employee_id) {

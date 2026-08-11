@@ -182,7 +182,7 @@ router.get('/invoices/:id/lines-with-refunds', protect, hasPermission('invoicing
 });
 
 // POST /invoices - Create a new invoice
-router.post('/invoices', async (req, res) => {
+router.post('/invoices', protect, hasPermission('invoicing:create'), async (req, res) => {
     const { customer_id, employee_id, lines, amount_paid, tendered_amount, payment_method, terms, payment_terms_days, physical_receipt_no, tax_rate_id, payments, staged_sale_id } = req.body;
 
     if (!customer_id || !employee_id || !lines || !Array.isArray(lines) || lines.length === 0) {
@@ -563,10 +563,10 @@ router.put('/invoices/payments/:payment_id/settle', protect, hasPermission('invo
 
         // Update payment status to settled
         const { rows: paymentRows } = await client.query(`
-            UPDATE invoice_payments 
+            UPDATE invoice_payments
             SET payment_status = 'settled', settled_at = CURRENT_TIMESTAMP
             WHERE payment_id = $1 AND payment_status = 'pending'
-            RETURNING invoice_id, amount_paid
+            RETURNING invoice_id, amount_paid, method_id, reference
         `, [payment_id]);
 
         if (paymentRows.length === 0) {
@@ -574,8 +574,32 @@ router.put('/invoices/payments/:payment_id/settle', protect, hasPermission('invo
             return res.status(404).json({ message: 'Payment not found or already settled.' });
         }
 
-        // Update invoice balance and status is handled automatically by the update_invoice_balance_after_payment trigger on invoice_payments table
-        
+        const p = paymentRows[0];
+
+        // invoice.amount_paid/status is updated automatically by the update_invoice_balance_after_payment
+        // trigger on invoice_payments, but ar_ledger is append-only and must be written explicitly.
+        const { rows: ctx } = await client.query(`
+            SELECT i.customer_id, pm.code AS method_code, pm.name AS method_name
+            FROM invoice i
+            JOIN payment_methods pm ON pm.method_id = $2
+            WHERE i.invoice_id = $1
+        `, [p.invoice_id, p.method_id]);
+
+        if (ctx.length) {
+            await arLedger.appendEntry(client, {
+                customerId: ctx[0].customer_id,
+                invoiceId: p.invoice_id,
+                paymentId: parseInt(payment_id, 10),
+                entryType: 'PAYMENT_SETTLED',
+                amount: -p.amount_paid,
+                paymentChannel: ctx[0].method_code,
+                referenceNo: p.reference || null,
+                notes: `Settled via ${ctx[0].method_name}`,
+                createdBy: req.user.employee_id,
+                paymentSource: 'invoice_payments',
+            });
+        }
+
         await client.query('COMMIT');
         res.json({ message: 'Payment settled successfully.' });
     } catch (err) {
