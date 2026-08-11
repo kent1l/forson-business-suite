@@ -182,7 +182,7 @@ router.get('/invoices/:id/lines-with-refunds', protect, hasPermission('invoicing
 });
 
 // POST /invoices - Create a new invoice
-router.post('/invoices', async (req, res) => {
+router.post('/invoices', protect, hasPermission('invoicing:create'), async (req, res) => {
     const { customer_id, employee_id, lines, amount_paid, tendered_amount, payment_method, terms, payment_terms_days, physical_receipt_no, tax_rate_id, payments, staged_sale_id } = req.body;
 
     if (!customer_id || !employee_id || !lines || !Array.isArray(lines) || lines.length === 0) {

@@ -89,7 +89,7 @@ router.get('/ar/aging-summary', protect, hasPermission('ar:view'), async (req, r
                         WHEN COALESCE(i.due_date, i.invoice_date) >= CURRENT_DATE - INTERVAL '90 days' THEN '61-90 Days'
                         ELSE '90+ Days'
                     END as bucket_name,
-                    COALESCE(SUM(i.total_amount - i.amount_paid), 0) as bucket_value
+                    COALESCE(SUM(GREATEST(i.total_amount - i.amount_paid, 0)), 0) as bucket_value
                 FROM invoice i
                 WHERE i.status IN ('Unpaid', 'Partially Paid')
                 GROUP BY 
@@ -249,13 +249,13 @@ router.get('/ar/customer-invoices/:customerId', protect, hasPermission('ar:view'
                 i.due_date,
                 i.total_amount,
                 i.amount_paid,
-                (i.total_amount - i.amount_paid) as balance_due,
+                GREATEST(i.total_amount - i.amount_paid, 0) as balance_due,
                 c.customer_id,
                 c.company_name,
                 c.first_name,
                 c.last_name,
                 GREATEST(EXTRACT(days FROM (CURRENT_DATE - COALESCE(i.due_date, i.invoice_date))), 0) as days_overdue,
-                CASE 
+                CASE
                     WHEN COALESCE(i.due_date, i.invoice_date) >= CURRENT_DATE THEN 'Current'
                     WHEN COALESCE(i.due_date, i.invoice_date) >= CURRENT_DATE - INTERVAL '30 days' THEN '1-30 Days'
                     WHEN COALESCE(i.due_date, i.invoice_date) >= CURRENT_DATE - INTERVAL '60 days' THEN '31-60 Days'
@@ -266,11 +266,11 @@ router.get('/ar/customer-invoices/:customerId', protect, hasPermission('ar:view'
             JOIN customer c ON i.customer_id = c.customer_id
             WHERE i.customer_id = $1
             AND i.status IN ('Unpaid', 'Partially Paid')
-            AND (i.total_amount - i.amount_paid) > 0
+            AND GREATEST(i.total_amount - i.amount_paid, 0) > 0
             ORDER BY i.due_date ASC, (i.total_amount - i.amount_paid) DESC
             LIMIT $2 OFFSET $3;
         `;
-        
+
         const { rows } = await db.query(query, [customerId, limit, offset]);
         if (!paginated) return res.json(rows);
         const countRes = await db.query(`
@@ -278,7 +278,7 @@ router.get('/ar/customer-invoices/:customerId', protect, hasPermission('ar:view'
             FROM invoice i
             WHERE i.customer_id = $1
             AND i.status IN ('Unpaid', 'Partially Paid')
-            AND (i.total_amount - i.amount_paid) > 0
+            AND GREATEST(i.total_amount - i.amount_paid, 0) > 0
         `, [customerId]);
         const total = countRes.rows[0]?.total || 0;
         res.json(paginatedResponse({ data: rows, page, pageSize, total }));
@@ -291,16 +291,16 @@ router.get('/ar/trends', protect, hasPermission('ar:view'), async (req, res) => 
     try {
         const query = `
             WITH current_period AS (
-                SELECT 
-                    COALESCE(SUM(i.total_amount - i.amount_paid), 0) as current_receivables,
-                    COUNT(CASE WHEN i.due_date < CURRENT_DATE THEN 1 END) as current_overdue
+                SELECT
+                    COALESCE(SUM(GREATEST(i.total_amount - i.amount_paid, 0)), 0) as current_receivables,
+                    COUNT(CASE WHEN COALESCE(i.due_date, i.invoice_date) < CURRENT_DATE THEN 1 END) as current_overdue
                 FROM invoice i
                 WHERE i.status IN ('Unpaid', 'Partially Paid')
             ),
             previous_period AS (
-                SELECT 
-                    COALESCE(SUM(i.total_amount - i.amount_paid), 0) as previous_receivables,
-                    COUNT(CASE WHEN i.due_date < (CURRENT_DATE - INTERVAL '30 days') THEN 1 END) as previous_overdue
+                SELECT
+                    COALESCE(SUM(GREATEST(i.total_amount - i.amount_paid, 0)), 0) as previous_receivables,
+                    COUNT(CASE WHEN COALESCE(i.due_date, i.invoice_date) < (CURRENT_DATE - INTERVAL '30 days') THEN 1 END) as previous_overdue
                 FROM invoice i
                 WHERE i.status IN ('Unpaid', 'Partially Paid')
                 AND i.invoice_date <= CURRENT_DATE - INTERVAL '30 days'
@@ -368,7 +368,7 @@ router.get('/ar/drill-down-invoices', protect, hasPermission('ar:view'), async (
                 i.due_date,
                 i.total_amount,
                 i.amount_paid,
-                (i.total_amount - i.amount_paid) as balance_due,
+                GREATEST(i.total_amount - i.amount_paid, 0) as balance_due,
                 c.customer_id,
                 c.company_name,
                 c.first_name,
@@ -377,7 +377,7 @@ router.get('/ar/drill-down-invoices', protect, hasPermission('ar:view'), async (
             FROM invoice i
             LEFT JOIN customer c ON i.customer_id = c.customer_id
             WHERE i.status IN ('Unpaid', 'Partially Paid')
-            AND (i.total_amount - i.amount_paid) > 0
+            AND GREATEST(i.total_amount - i.amount_paid, 0) > 0
             AND ${dateCondition}
             ${dateRangeCondition}
             ORDER BY i.due_date ASC, (i.total_amount - i.amount_paid) DESC
