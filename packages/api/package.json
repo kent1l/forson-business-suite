@@ -10,7 +10,8 @@
     "dev": "nodemon --legacy-watch index.js",
     "migrate": "node scripts/migrate.js",
     "migrate:status": "node scripts/migrate.js status",
-    "migrate:verify": "node scripts/migrate.js verify"
+    "migrate:verify": "node scripts/migrate.js verify",
+    "reconcile:ar": "node scripts/reconcileArBalances.js"
   },
   "keywords": [],
   "author": "",
