@@ -5,6 +5,7 @@ import PaginationControls from '../../ui/PaginationControls';
 import LoadingState from '../../ui/LoadingState';
 import EmptyState from '../../ui/EmptyState';
 import CustomerWalletModal from '../CustomerWalletModal';
+import ErrorBoundary from '../../ui/ErrorBoundary';
 
 // Customer Wallet Management tab: searchable/paginated store-credit ledger
 // per customer, with a modal to view/adjust individual wallet balances.
@@ -26,6 +27,7 @@ const ARWalletTab = ({
 }) => {
     return (
         <div className="space-y-6">
+        <ErrorBoundary title="Wallet management failed to load" description="The Customer Wallet tab hit an unexpected error. Try again, or switch tabs and come back.">
             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h2 className="text-xl font-bold text-gray-800">Customer Wallet & Store Credit Management</h2>
@@ -104,15 +106,18 @@ const ARWalletTab = ({
                     </>
                 )}
             </div>
+        </ErrorBoundary>
 
             {/* Customer Wallet Modal */}
             {selectedWalletCustomer && (
-                <CustomerWalletModal
-                    isOpen={isWalletModalOpen}
-                    onClose={onCloseWalletModal}
-                    customer={selectedWalletCustomer}
-                    onUpdated={onWalletUpdated}
-                />
+                <ErrorBoundary title="Wallet dialog failed to load" description="Close this dialog and try again.">
+                    <CustomerWalletModal
+                        isOpen={isWalletModalOpen}
+                        onClose={onCloseWalletModal}
+                        customer={selectedWalletCustomer}
+                        onUpdated={onWalletUpdated}
+                    />
+                </ErrorBoundary>
             )}
         </div>
     );

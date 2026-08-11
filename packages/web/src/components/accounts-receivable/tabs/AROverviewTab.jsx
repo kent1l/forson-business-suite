@@ -11,6 +11,7 @@ import PaginationControls from '../../ui/PaginationControls';
 import LoadingState from '../../ui/LoadingState';
 import EmptyState from '../../ui/EmptyState';
 import ErrorState from '../../ui/ErrorState';
+import ErrorBoundary from '../../ui/ErrorBoundary';
 
 // Overview & Aging tab: KPI summary, aging chart with drill-down, and the
 // paginated customer AR summary table. Owns the receive-payment and
@@ -86,7 +87,7 @@ const AROverviewTab = ({
             )}
 
             {isActive && !error && (
-                <>
+                <ErrorBoundary title="This section failed to load" description="The Overview & Aging tab hit an unexpected error. Try again, or switch tabs and come back.">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
                         <KPICard iconName={ICONS.dollar} title="Total Receivables" value={kpiData.totalReceivables.value} trend={kpiData.totalReceivables.trend} trendColorClass={kpiData.totalReceivables.color} loading={loading} />
                         <KPICard iconName={ICONS.documents} title="Invoices Sent" value={kpiData.invoicesSent.value} trend={kpiData.invoicesSent.trend} trendColorClass={kpiData.invoicesSent.color} loading={loading} />
@@ -117,7 +118,7 @@ const AROverviewTab = ({
                         onPageChange={onCustomerSummaryPageChange}
                         onPageSizeChange={onCustomerSummaryPageSizeChange}
                     />
-                </>
+                </ErrorBoundary>
             )}
 
             {/* Modals below render regardless of isActive so they survive a tab switch */}
@@ -130,11 +131,13 @@ const AROverviewTab = ({
                 maxWidth="max-w-6xl"
             >
                 {selectedCustomer && (
-                    <ReceivePaymentForm
-                        customer={selectedCustomer}
-                        onSave={onPaymentSaved}
-                        onCancel={onClosePaymentModal}
-                    />
+                    <ErrorBoundary title="Payment form failed to load" description="Close this dialog and try again.">
+                        <ReceivePaymentForm
+                            customer={selectedCustomer}
+                            onSave={onPaymentSaved}
+                            onCancel={onClosePaymentModal}
+                        />
+                    </ErrorBoundary>
                 )}
             </Modal>
 
@@ -145,6 +148,7 @@ const AROverviewTab = ({
                 title={`Invoices - ${selectedAgingBucket}`}
                 maxWidth="max-w-6xl"
             >
+                <ErrorBoundary title="Couldn't display these invoices" description="Close this dialog and try again.">
                 <div className="space-y-4">
                     {drillDownLoading ? (
                         <LoadingState label="Loading invoices..." />
@@ -203,22 +207,25 @@ const AROverviewTab = ({
                         </>
                     )}
                 </div>
+                </ErrorBoundary>
             </Modal>
 
             {/* Customer Invoice Details Modal */}
-            <CustomerInvoiceDetailsModal
-                isOpen={selectedCustomerForInvoices !== null}
-                onClose={onCloseCustomerInvoices}
-                title={`Payable Invoices for ${selectedCustomerForInvoices?.company_name || `${selectedCustomerForInvoices?.first_name || ''} ${selectedCustomerForInvoices?.last_name || ''}`.trim()}`}
-                invoices={customerInvoices}
-                loading={customerInvoicesLoading}
-                page={customerInvoicesPage}
-                pageSize={customerInvoicesPageSize}
-                total={customerInvoicesTotal}
-                onPageChange={onCustomerInvoicesPageChange}
-                onPageSizeChange={onCustomerInvoicesPageSizeChange}
-                onAfterDueDateUpdate={onAfterDueDateUpdate}
-            />
+            <ErrorBoundary title="Couldn't display these invoices" description="Close this dialog and try again.">
+                <CustomerInvoiceDetailsModal
+                    isOpen={selectedCustomerForInvoices !== null}
+                    onClose={onCloseCustomerInvoices}
+                    title={`Payable Invoices for ${selectedCustomerForInvoices?.company_name || `${selectedCustomerForInvoices?.first_name || ''} ${selectedCustomerForInvoices?.last_name || ''}`.trim()}`}
+                    invoices={customerInvoices}
+                    loading={customerInvoicesLoading}
+                    page={customerInvoicesPage}
+                    pageSize={customerInvoicesPageSize}
+                    total={customerInvoicesTotal}
+                    onPageChange={onCustomerInvoicesPageChange}
+                    onPageSizeChange={onCustomerInvoicesPageSizeChange}
+                    onAfterDueDateUpdate={onAfterDueDateUpdate}
+                />
+            </ErrorBoundary>
         </>
     );
 };
