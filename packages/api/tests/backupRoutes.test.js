@@ -2,10 +2,11 @@ const express = require('express');
 const request = require('supertest');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const zlib = require('zlib');
 
 // Set test BACKUP_DIR before requiring backupRoutes
-const TEST_BACKUP_DIR = path.join(__dirname, 'tmp_backups');
+const TEST_BACKUP_DIR = path.join(os.tmpdir(), 'tmp_backups');
 process.env.BACKUP_DIR = TEST_BACKUP_DIR;
 
 // Mock 'pg' and '../db' to avoid holding open DB handles in tests
