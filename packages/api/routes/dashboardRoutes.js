@@ -221,11 +221,11 @@ router.get('/dashboard/enhanced-stats', async (req, res) => {
                 WHERE status IN ('Paid', 'Partially Paid')
             `),
             
-            // Outstanding A/R
+            // Outstanding A/R (authoritative: ar_ledger cash-basis balance, not invoice.amount_paid)
             db.query(`
-                SELECT COALESCE(SUM(total_amount - amount_paid), 0) as outstanding_ar
-                FROM invoice 
-                WHERE status IN ('Unpaid', 'Partially Paid')
+                SELECT COALESCE(SUM(ledger_balance), 0) as outstanding_ar
+                FROM vw_customer_ar_balance
+                WHERE ledger_balance > 0
             `),
             
             // Inventory value

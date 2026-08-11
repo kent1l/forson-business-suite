@@ -382,14 +382,16 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
                 ? finalTenderedAmt - parseFloat(total_amount)
                 : 0;
 
-            await client.query(`
-                INSERT INTO invoice_payments 
+            const payAmount = isCreditSale ? 0 : total_amount;
+            const stagedPaymentRes = await client.query(`
+                INSERT INTO invoice_payments
                 (invoice_id, method_id, amount_paid, tendered_amount, change_amount, reference, metadata, created_by, payment_status, settled_at, created_at)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::varchar, CASE WHEN $9::varchar = 'settled' THEN CURRENT_TIMESTAMP ELSE NULL END, CURRENT_TIMESTAMP)
+                RETURNING payment_id
             `, [
                 invoiceId,
                 staged.payment_method_id,
-                isCreditSale ? 0 : total_amount,
+                payAmount,
                 finalTenderedAmt,
                 changeAmt,
                 null,
@@ -397,6 +399,21 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
                 staged.employee_id,
                 paymentStatus
             ]);
+
+            if (paymentStatus === 'settled' && payAmount > 0) {
+                await arLedger.appendEntry(client, {
+                    customerId: finalCustomerId,
+                    invoiceId: invoiceId,
+                    paymentId: stagedPaymentRes.rows[0].payment_id,
+                    entryType: 'PAYMENT_SETTLED',
+                    amount: -payAmount,
+                    paymentChannel: method.code,
+                    referenceNo: invoice_number,
+                    notes: `Payment via ${method.name} (staged sale STG-${id})`,
+                    createdBy: staged.employee_id,
+                    paymentSource: 'invoice_payments',
+                });
+            }
         }
 
         // Update staged sale status to APPROVED

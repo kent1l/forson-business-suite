@@ -526,39 +526,11 @@ router.get('/ar/invoice-due-date-history/:invoiceId', protect, hasPermission('ar
     }
 });
 
-// GET /api/ar/verify-integrity - Check for drift between trigger-maintained amount_paid and raw payment sums
-router.get('/ar/verify-integrity', protect, hasPermission('ar:view'), async (req, res) => {
-    try {
-        const { rows } = await db.query(`
-            SELECT
-                i.invoice_id,
-                i.invoice_number,
-                i.amount_paid                                                            AS stored_amount_paid,
-                COALESCE(SUM(CASE WHEN ip.payment_status = 'settled'
-                             THEN ip.amount_paid ELSE 0 END), 0)                         AS computed_amount_paid,
-                i.amount_paid - COALESCE(SUM(CASE WHEN ip.payment_status = 'settled'
-                                THEN ip.amount_paid ELSE 0 END), 0)                      AS drift
-            FROM invoice i
-            LEFT JOIN invoice_payments ip ON ip.invoice_id = i.invoice_id
-            GROUP BY i.invoice_id, i.invoice_number, i.amount_paid
-            HAVING ABS(
-                i.amount_paid - COALESCE(SUM(CASE WHEN ip.payment_status = 'settled'
-                                THEN ip.amount_paid ELSE 0 END), 0)
-            ) > 0.01
-            ORDER BY ABS(i.amount_paid - COALESCE(SUM(CASE WHEN ip.payment_status = 'settled'
-                                THEN ip.amount_paid ELSE 0 END), 0)) DESC
-            LIMIT 100;
-        `);
-        res.json({
-            valid: rows.length === 0,
-            drift_count: rows.length,
-            issues: rows
-        });
-    } catch (err) {
-        console.error('AR Integrity Check Error:', err.message);
-        res.status(500).json({ message: 'Failed to run integrity check' });
-    }
-});
+// AR balance integrity checking has moved to `npm run reconcile:ar`
+// (packages/api/scripts/reconcileArBalances.js), which compares all three balance
+// computations (invoice trigger, invoice_with_balance view, ar_ledger) instead of just
+// invoice.amount_paid vs invoice_payments. This endpoint was unused by the frontend and
+// had no test coverage; removed as part of the AR balance source-of-truth consolidation.
 
 
 
