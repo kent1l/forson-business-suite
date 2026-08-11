@@ -35,3 +35,9 @@ Rules:
 - If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+
+## other skills to use proactively on this repo
+
+- **dataviz**: load this skill before writing or editing any chart/dashboard code in `packages/web` (this app uses `recharts`, e.g. the dashboard work in `DASHBOARD_ENHANCEMENT_SUMMARY.md`). Load it before choosing chart colors or layout, not after.
+- **security-review**: run this before merging or finalizing any change touching auth (`jsonwebtoken`, `bcrypt`), file uploads (`multer`), or PDF/document generation (`puppeteer`, `pdf-lib`) in `packages/api` — this is a financial/business-data app, so auth and file-handling changes get a security pass by default.
+- **run**: use this to actually launch and verify changes in the browser/dev stack (`docker-compose.dev.yml`, `packages/web` via Vite, `packages/api` via nodemon) instead of assuming a change works — especially for anything UI-facing in `packages/web`.
