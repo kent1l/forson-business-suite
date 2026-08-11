@@ -6,6 +6,7 @@ const router = express.Router();
 // GET all vehicle applications using the view
 router.get('/applications', async (req, res) => {
     console.log('[DEBUG] Handling GET /applications request');
+    const { status, search, sortBy, sortOrder = 'ASC' } = req.query;
     const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
     try {
         // Ensure the view has the expected columns (including *_id). If not, drop and recreate.
@@ -35,6 +36,30 @@ router.get('/applications', async (req, res) => {
             `);
         }
 
+        let whereClause = '';
+        let queryParams = [];
+        let paramIdx = 1;
+
+        if (search && search.trim()) {
+            whereClause = `WHERE (
+                LOWER(COALESCE(make, '')) LIKE $${paramIdx} OR
+                LOWER(COALESCE(model, '')) LIKE $${paramIdx} OR
+                LOWER(COALESCE(engine, '')) LIKE $${paramIdx}
+            )`;
+            queryParams.push(`%${search.trim().toLowerCase()}%`);
+            paramIdx++;
+        }
+
+        const dir = sortOrder.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+        let orderBy = `ORDER BY make ${dir} NULLS LAST, model ${dir} NULLS LAST, engine ${dir} NULLS LAST`;
+        if (sortBy === 'make') {
+            orderBy = `ORDER BY make ${dir} NULLS LAST`;
+        } else if (sortBy === 'model') {
+            orderBy = `ORDER BY model ${dir} NULLS LAST`;
+        } else if (sortBy === 'engine') {
+            orderBy = `ORDER BY engine ${dir} NULLS LAST`;
+        }
+
         console.log('[DEBUG] Executing applications query');
         const baseQuery = `
             SELECT 
@@ -46,17 +71,19 @@ router.get('/applications', async (req, res) => {
                 model,
                 engine
             FROM application_view
-            ORDER BY make NULLS LAST, model NULLS LAST, engine NULLS LAST
+            ${whereClause}
+            ${orderBy}
         `;
         if (!paginated) {
-            const { rows } = await db.query(baseQuery);
+            const { rows } = await db.query(baseQuery, queryParams);
             console.log('[DEBUG] Query successful, returning', rows.length, 'rows');
             return res.json(rows);
         }
-        const countRes = await db.query('SELECT COUNT(*)::int AS total FROM application_view');
+        const countRes = await db.query(`SELECT COUNT(*)::int AS total FROM application_view ${whereClause}`, queryParams);
         const total = countRes.rows[0]?.total || 0;
-        const query = `${baseQuery} LIMIT $1 OFFSET $2`;
-        const { rows } = await db.query(query, [limit, offset]);
+        const mainParams = [...queryParams, limit, offset];
+        const query = `${baseQuery} LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
+        const { rows } = await db.query(query, mainParams);
         console.log('[DEBUG] Query successful, returning', rows.length, 'rows');
         res.json(paginatedResponse({ data: rows, page, pageSize, total }));
     } catch (err) {

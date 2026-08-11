@@ -418,7 +418,15 @@ const ApplicationsPage = () => {
         try {
             setError('');
             setLoading(true);
-            const response = await api.get('/applications', { params: { page, pageSize, paginated: 1 } });
+            const response = await api.get('/applications', {
+                params: {
+                    page,
+                    pageSize,
+                    paginated: 1,
+                    sortBy: sortConfig.key,
+                    sortOrder: sortConfig.direction
+                }
+            });
             setApplications(response.data?.data || []);
             setTotal(response.data?.total || 0);
         } catch (error) {
@@ -431,7 +439,12 @@ const ApplicationsPage = () => {
 
     useEffect(() => {
         fetchApplications();
-    }, [page, pageSize]);
+    }, [page, pageSize, sortConfig]);
+
+    const handleSort = (key, direction) => {
+        setSortConfig({ key, direction });
+        setPage(1);
+    };
 
     const handleAdd = () => {
         setCurrentApp(null);
@@ -497,8 +510,6 @@ const ApplicationsPage = () => {
         });
     };
 
-    const sortedApplications = sortData(applications, sortConfig);
-
     return (
         <div>
             <div className="flex justify-between items-center mb-6">
@@ -518,14 +529,14 @@ const ApplicationsPage = () => {
                         <table className="w-full text-left">
                             <thead className="border-b">
                                 <tr>
-                                    <SortableHeader column="make" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Make</SortableHeader>
-                                    <SortableHeader column="model" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Model</SortableHeader>
-                                    <SortableHeader column="engine" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Engine</SortableHeader>
+                                    <SortableHeader column="make" sortConfig={sortConfig} onSort={handleSort}>Make</SortableHeader>
+                                    <SortableHeader column="model" sortConfig={sortConfig} onSort={handleSort}>Model</SortableHeader>
+                                    <SortableHeader column="engine" sortConfig={sortConfig} onSort={handleSort}>Engine</SortableHeader>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {sortedApplications.map(app => (
+                                {applications.map(app => (
                                     <tr key={app.application_id} className="border-b hover:bg-gray-50">
                                         <td className="p-3 text-sm font-medium text-gray-800">{app.make}</td>
                                         <td className="p-3 text-sm">{app.model}</td>

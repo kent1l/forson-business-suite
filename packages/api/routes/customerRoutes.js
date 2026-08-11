@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
+const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const router = express.Router();
 
 // Helper function to handle tag logic
@@ -23,34 +24,64 @@ const manageTags = async (client, tags, customerId) => {
 
 // GET all customers (allowed for customers:view or pos:use)
 router.get('/customers', protect, hasPermission(['customers:view', 'pos:use']), async (req, res) => {
-    // Adding a filter for active/inactive/all customers
-    const { status = 'active' } = req.query;
+    const { status = 'active', search, sortBy, sortOrder = 'ASC' } = req.query;
     const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
-    let whereClause = "WHERE is_active = TRUE";
-    if (status === 'inactive') {
-      whereClause = "WHERE is_active = FALSE";
-    } else if (status === 'all') {
-      whereClause = "";
+    
+    let whereConditions = [];
+    let queryParams = [];
+    let paramIdx = 1;
+
+    if (status === 'active') {
+        whereConditions.push('is_active = TRUE');
+    } else if (status === 'inactive') {
+        whereConditions.push('is_active = FALSE');
     }
+
+    if (search && search.trim()) {
+        whereConditions.push(`(
+            LOWER(COALESCE(first_name, '')) LIKE $${paramIdx} OR
+            LOWER(COALESCE(last_name, '')) LIKE $${paramIdx} OR
+            LOWER(COALESCE(company_name, '')) LIKE $${paramIdx} OR
+            LOWER(COALESCE(phone, '')) LIKE $${paramIdx}
+        )`);
+        queryParams.push(`%${search.trim().toLowerCase()}%`);
+        paramIdx++;
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+    
+    const dir = sortOrder.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+    let orderBy = `ORDER BY c.first_name ${dir}, c.last_name ${dir}`;
+    if (sortBy === 'full_name') {
+        orderBy = `ORDER BY COALESCE(NULLIF(c.company_name, ''), c.first_name || ' ' || c.last_name) ${dir}`;
+    } else if (sortBy === 'company_name') {
+        orderBy = `ORDER BY c.company_name ${dir} NULLS LAST`;
+    } else if (sortBy === 'phone') {
+        orderBy = `ORDER BY c.phone ${dir} NULLS LAST`;
+    } else if (sortBy === 'status') {
+        orderBy = `ORDER BY c.is_active ${dir}`;
+    }
+
     try {
         if (!paginated) {
             const { rows } = await db.query(`
                 SELECT c.*, 
                        COALESCE((SELECT SUM(i.total_amount - i.amount_paid) FROM invoice i WHERE i.customer_id = c.customer_id AND i.status IN ('Unpaid', 'Partially Paid')), 0) AS balance_due 
                 FROM customer c ${whereClause} 
-                ORDER BY c.first_name, c.last_name
-            `);
+                ${orderBy}
+            `, queryParams);
             return res.json(rows);
         }
 
-        const countRes = await db.query(`SELECT COUNT(*)::int AS total FROM customer ${whereClause}`);
+        const countRes = await db.query(`SELECT COUNT(*)::int AS total FROM customer c ${whereClause}`, queryParams);
         const total = countRes.rows[0]?.total || 0;
+        const mainParams = [...queryParams, limit, offset];
         const { rows } = await db.query(
             `SELECT c.*, 
                     COALESCE((SELECT SUM(i.total_amount - i.amount_paid) FROM invoice i WHERE i.customer_id = c.customer_id AND i.status IN ('Unpaid', 'Partially Paid')), 0) AS balance_due 
              FROM customer c ${whereClause} 
-             ORDER BY c.first_name, c.last_name LIMIT $1 OFFSET $2`,
-            [limit, offset]
+             ${orderBy} LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
+            mainParams
         );
         res.json(paginatedResponse({ data: rows, page, pageSize, total }));
     } catch (err) {
@@ -131,15 +162,20 @@ router.get('/customers/:id/unpaid-invoices', protect, hasPermission('ar:view'), 
                 i.invoice_id,
                 i.invoice_number,
                 i.invoice_date,
+                i.due_date,
                 i.total_amount,
-                COALESCE(SUM(ipa.amount_allocated), 0) as amount_paid,
-                (i.total_amount - COALESCE(SUM(ipa.amount_allocated), 0)) as balance_due
+                i.amount_paid,
+                COALESCE(cn.total_refunded, 0)                                                AS total_refunded,
+                GREATEST(i.total_amount - COALESCE(cn.total_refunded, 0) - i.amount_paid, 0) AS balance_due
             FROM invoice i
-            LEFT JOIN invoice_payment_allocation ipa ON i.invoice_id = ipa.invoice_id
-            WHERE i.customer_id = $1 AND i.status IN ('Unpaid', 'Partially Paid')
-            GROUP BY i.invoice_id
-            HAVING (i.total_amount - COALESCE(SUM(ipa.amount_allocated), 0)) > 0
-            ORDER BY i.invoice_date ASC;
+            LEFT JOIN LATERAL (
+                SELECT COALESCE(SUM(cn2.total_amount), 0) AS total_refunded
+                FROM credit_note cn2 WHERE cn2.invoice_id = i.invoice_id
+            ) cn ON TRUE
+            WHERE i.customer_id = $1
+              AND i.status IN ('Unpaid', 'Partially Paid')
+              AND GREATEST(i.total_amount - COALESCE(cn.total_refunded, 0) - i.amount_paid, 0) > 0
+            ORDER BY i.due_date ASC NULLS LAST, i.invoice_date ASC;
         `;
         const { rows } = await db.query(query, [id]);
         res.json(rows);
@@ -157,9 +193,10 @@ router.post('/customers', protect, hasPermission('customers:edit'), async (req, 
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
+        const customer_code = await getNextDocumentNumber(client, 'CUST');
         const { rows } = await client.query(
-            'INSERT INTO customer (first_name, last_name, company_name, phone, email, address, is_active, credit_limit) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
-            [customerData.first_name, customerData.last_name, customerData.company_name, customerData.phone, emailOrNull, customerData.address, customerData.is_active, customerData.credit_limit !== undefined ? customerData.credit_limit : 5000.00]
+            'INSERT INTO customer (customer_code, first_name, last_name, company_name, phone, email, address, is_active, credit_limit) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
+            [customer_code, customerData.first_name, customerData.last_name, customerData.company_name, customerData.phone, emailOrNull, customerData.address, customerData.is_active, customerData.credit_limit !== undefined ? customerData.credit_limit : 5000.00]
         );
         const newCustomer = rows[0];
         await manageTags(client, tags, newCustomer.customer_id);

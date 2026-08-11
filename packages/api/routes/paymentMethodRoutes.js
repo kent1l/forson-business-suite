@@ -472,10 +472,22 @@ router.post('/invoices/:id/payments', ...invoicePaymentsMiddlewares, async (req,
             // Use the actual method_id from database (important for legacy methods)
             const actualMethodId = method.rows[0].method_id;
 
-            // Determine settlement behavior
-            const settlementType = methodConfig.settlement_type || (method.rows[0].type === 'cash' ? 'instant' : 'delayed');
+            // Determine settlement behavior and PDC status
+            const isChequeOrPDC = method.rows[0].code === 'cheque' || 
+                                  method.rows[0].code === 'pdc' || 
+                                  method.rows[0].type === 'cheque' || 
+                                  (method.rows[0].name && method.rows[0].name.toLowerCase().includes('cheque')) ||
+                                  !!metadata?.cheque_date;
+
+            let settlementType = methodConfig.settlement_type || (method.rows[0].type === 'cash' ? 'instant' : 'delayed');
+            if (isChequeOrPDC) {
+                settlementType = 'delayed';
+            }
+
             const paymentStatus = settlementType === 'instant' ? 'settled' : 
                                   settlementType === 'on_account' ? 'on_account' : 'pending';
+
+            const pdcStatus = isChequeOrPDC ? 'RECEIVED' : 'CLEARED';
 
             // Insert payment; fall back gracefully if settlement columns are not yet present
             const hasSettlement = await settlementColumnsSupported();
@@ -483,10 +495,10 @@ router.post('/invoices/:id/payments', ...invoicePaymentsMiddlewares, async (req,
             if (hasSettlement) {
                 paymentResult = await client.query(`
                     INSERT INTO invoice_payments 
-                    (invoice_id, method_id, amount_paid, tendered_amount, change_amount, reference, metadata, created_by, payment_status, settled_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::varchar, CASE WHEN $9::varchar = 'settled' THEN CURRENT_TIMESTAMP ELSE NULL END)
+                    (invoice_id, method_id, amount_paid, tendered_amount, change_amount, reference, metadata, created_by, payment_status, pdc_status, settled_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::varchar, $10::varchar, CASE WHEN $9::varchar = 'settled' THEN CURRENT_TIMESTAMP ELSE NULL END)
                     RETURNING *
-                `, [invoice_id, actualMethodId, paidAmt, tenderedAmt, changeAmt, reference, JSON.stringify(metadata), employee_id, paymentStatus]);
+                `, [invoice_id, actualMethodId, paidAmt, tenderedAmt, changeAmt, reference, JSON.stringify(metadata), employee_id, paymentStatus, pdcStatus]);
             } else {
                 paymentResult = await client.query(`
                     INSERT INTO invoice_payments 

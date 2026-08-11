@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
+const arLedger = require('../services/arLedgerService');
 const router = express.Router();
 
 // POST /api/refunds - Process a new refund
@@ -133,6 +134,12 @@ router.post('/refunds', protect, hasPermission('invoicing:create'), async (req, 
         // All validations passed; create credit note and lines
         const creditNoteNumber = await getNextDocumentNumber(client, 'CN');
 
+        // Resolve customer_id from invoice for ledger entry
+        const { rows: [invRow] } = await client.query(
+            'SELECT customer_id FROM invoice WHERE invoice_id = $1', [invoice_id]);
+        if (!invRow) throw new Error(`Invoice ${invoice_id} not found during refund`);
+        const { customer_id } = invRow;
+
         // Create the main credit note record
         const cnQuery = `
             INSERT INTO credit_note (cn_number, invoice_id, employee_id, total_amount, subtotal_ex_tax, tax_total, tax_calculation_version, refund_payment_method, notes)
@@ -140,6 +147,15 @@ router.post('/refunds', protect, hasPermission('invoicing:create'), async (req, 
         `;
         const cnResult = await client.query(cnQuery, [creditNoteNumber, invoice_id, employee_id, cnTotalAmount, cnSubtotalExTax, cnTaxTotal, 'v1.0', refund_payment_method, `Refund for Invoice #${invoice_number}`]);
         const newCnId = cnResult.rows[0].cn_id;
+
+        // Ledger: CREDIT_MEMO_APPLIED
+        await arLedger.appendEntry(client, {
+            customerId: customer_id, invoiceId: invoice_id, cnId: newCnId,
+            entryType: 'CREDIT_MEMO_APPLIED', amount: -cnTotalAmount,
+            referenceNo: creditNoteNumber,
+            notes: `Credit note ${creditNoteNumber} for Invoice #${invoice_number}`,
+            createdBy: employee_id,
+        });
 
         // Insert tax breakdown
         for (const breakdown of cnTaxBreakdown.values()) {

@@ -172,7 +172,16 @@ const EmployeesPage = () => {
                     setLoading(true);
                     // Fetch both employees and roles
                     const [employeesRes, rolesRes] = await Promise.all([
-                        api.get('/employees', { params: { status: statusFilter, page, pageSize, paginated: 1 } }),
+                        api.get('/employees', {
+                            params: {
+                                status: statusFilter,
+                                page,
+                                pageSize,
+                                paginated: 1,
+                                sortBy: sortConfig.key,
+                                sortOrder: sortConfig.direction
+                            }
+                        }),
                         api.get('/roles') // <-- NEW: Fetch roles
                     ]);
                     setEmployees(employeesRes.data?.data || []);
@@ -187,11 +196,16 @@ const EmployeesPage = () => {
             }
         };
         fetchData();
-    }, [statusFilter, page, pageSize, hasPermission]);
+    }, [statusFilter, page, pageSize, sortConfig, hasPermission]);
 
     useEffect(() => {
         setPage(1);
     }, [statusFilter]);
+
+    const handleSort = (key, direction) => {
+        setSortConfig({ key, direction });
+        setPage(1);
+    };
 
 
     const handleAdd = () => {
@@ -223,11 +237,6 @@ const EmployeesPage = () => {
             error: (err) => err.response?.data?.message || 'Failed to save employee.',
         });
     };
-
-    const sortedEmployees = sortData(employees, sortConfig, {
-        full_name: (row) => `${row.first_name || ''} ${row.last_name || ''}`.trim(),
-        status: (row) => (row.is_active ? 1 : 0)
-    });
     
     if (!hasPermission('employees:view')) {
         return (
@@ -264,15 +273,15 @@ const EmployeesPage = () => {
                         <table className="w-full text-left">
                             <thead className="border-b">
                                 <tr>
-                                    <SortableHeader column="full_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Name</SortableHeader>
-                                    <SortableHeader column="username" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Username</SortableHeader>
-                                    <SortableHeader column="position_title" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Position</SortableHeader>
-                                    <SortableHeader className="text-center" column="status" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Status</SortableHeader>
+                                    <SortableHeader column="full_name" sortConfig={sortConfig} onSort={handleSort}>Name</SortableHeader>
+                                    <SortableHeader column="username" sortConfig={sortConfig} onSort={handleSort}>Username</SortableHeader>
+                                    <SortableHeader column="position_title" sortConfig={sortConfig} onSort={handleSort}>Position</SortableHeader>
+                                    <SortableHeader className="text-center" column="status" sortConfig={sortConfig} onSort={handleSort}>Status</SortableHeader>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {sortedEmployees.map(emp => (
+                                {employees.map(emp => (
                                     <tr key={emp.employee_id} className="border-b hover:bg-gray-50">
                                         <td className="p-3 text-sm font-medium text-gray-800">{emp.first_name} {emp.last_name}</td>
                                         <td className="p-3 text-sm">{emp.username}</td>

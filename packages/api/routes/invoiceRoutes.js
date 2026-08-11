@@ -5,6 +5,8 @@ const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatt
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { validatePaymentTerms } = require('../helpers/paymentTermsHelper');
 const { calculateInvoiceTax, storeTaxBreakdown, validateTaxCalculation } = require('../services/taxCalculationService');
+const arLedger = require('../services/arLedgerService');
+const walletService = require('../services/customerWalletService');
 const router = express.Router();
 
 // GET /invoices - Get all invoices with date filtering and optional search
@@ -239,6 +241,78 @@ router.post('/invoices', async (req, res) => {
         const dueDate = termsValidation.dueDate;
         const normalizedTerms = termsValidation.normalizedTerms;
 
+        // Fetch customer details
+        const customerResult = await client.query('SELECT first_name, last_name, credit_hold, credit_hold_reason FROM customer WHERE customer_id = $1', [customer_id]);
+        if (customerResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: 'Invalid customer_id.' });
+        }
+        const customerRow = customerResult.rows[0];
+        const customerName = `${customerRow.first_name || ''} ${customerRow.last_name || ''}`.trim().toLowerCase();
+        const isWalkIn = customerName.includes('walk-in') || customerName.includes('walk in');
+
+        // Check if any payment method in payments array or legacy payment_method is on_account
+        let hasOnAccountPayment = false;
+        if (payments && Array.isArray(payments) && payments.length > 0) {
+            const pmIds = payments.map(p => {
+                let lookupParam = p.method_id;
+                if (typeof p.method_id === 'string' && /^\d+$/.test(p.method_id)) {
+                    lookupParam = parseInt(p.method_id, 10);
+                }
+                return lookupParam;
+            });
+            const { rows: pmRows } = await client.query(
+                'SELECT method_id, code, type, config FROM payment_methods WHERE method_id = ANY($1) AND enabled = true',
+                [pmIds]
+            );
+            for (const pm of pmRows) {
+                const pmConfig = typeof pm.config === 'string' ? JSON.parse(pm.config) : pm.config;
+                const settlementType = pm.code === 'store_wallet' ? 'instant' : (pmConfig?.settlement_type || (pm.type === 'cash' ? 'instant' : 'delayed'));
+                if (settlementType === 'on_account' || pm.code === 'on_account') {
+                    hasOnAccountPayment = true;
+                    break;
+                }
+            }
+        } else if (payment_method) {
+            const methodCode = payment_method.toLowerCase().replace(/\s+/g, '_');
+            const { rows: pmRows } = await client.query(
+                'SELECT method_id, code, type, config FROM payment_methods WHERE (code = $1 OR name ILIKE $1) AND enabled = true LIMIT 1',
+                [methodCode]
+            );
+            if (pmRows.length > 0) {
+                const pm = pmRows[0];
+                const pmConfig = typeof pm.config === 'string' ? JSON.parse(pm.config) : pm.config;
+                const settlementType = pmConfig?.settlement_type || (pm.type === 'cash' ? 'instant' : 'delayed');
+                if (settlementType === 'on_account' || pm.code === 'on_account') {
+                    hasOnAccountPayment = true;
+                }
+            }
+        }
+
+        const isCreditSale = canonicalDays > 0 || hasOnAccountPayment;
+
+        // Walk-In Customer Credit Terms Enforcement
+        if (isWalkIn && isCreditSale) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: 'Payment terms or On Account payment are not allowed for Walk-In customers.' });
+        }
+
+        // Credit Hold Enforcement for credit sales
+        if (isCreditSale) {
+            if (customerRow.credit_hold) {
+                const hasOverrideParam = req.body.override_credit_limit === true || req.body.manager_override === true;
+                const hasManagerPermission = req.user?.permissions?.includes('ar:override_credit_limit');
+                if (!hasOverrideParam && !hasManagerPermission) {
+                    await client.query('ROLLBACK');
+                    return res.status(403).json({
+                        message: `Credit sale blocked: Customer is on credit hold (${customerRow.credit_hold_reason || 'Credit Hold'}). Manager override required.`,
+                        credit_hold: true,
+                        reason: customerRow.credit_hold_reason
+                    });
+                }
+            }
+        }
+
         // Normalize physical receipt number: trim and treat empty as null
         let prn = formatPhysicalReceiptNumber(physical_receipt_no);
         
@@ -249,15 +323,12 @@ router.post('/invoices', async (req, res) => {
             let isUnique = false;
             
             while (!isUnique && attempts < 10) {
-                const existingQuery = `
-                    SELECT invoice_id FROM invoice 
-                    WHERE LOWER(physical_receipt_no) = LOWER($1) 
-                    AND physical_receipt_no IS NOT NULL 
-                    AND LENGTH(TRIM(physical_receipt_no)) > 0
-                `;
-                const { rows: existingRows } = await client.query(existingQuery, [prn]);
+                const { rows: checkRows } = await client.query(
+                    `SELECT public.is_physical_receipt_no_taken($1) AS is_taken`,
+                    [prn]
+                );
                 
-                if (existingRows.length === 0) {
+                if (!checkRows[0]?.is_taken) {
                     isUnique = true;
                 } else {
                     attempts++;
@@ -291,6 +362,17 @@ router.post('/invoices', async (req, res) => {
     const invoiceResult = await client.query(invoiceQuery, [invoice_number, customer_id, employee_id, total_amount, subtotal_ex_tax, tax_total, paid, status, normalizedTerms, canonicalDays, dueDate, prn, taxCalculation.tax_calculation_version]);
         const newInvoiceId = invoiceResult.rows[0].invoice_id;
 
+        // Ledger: INVOICE_POSTED for credit-term invoices and on-account sales
+        if (isCreditSale || (paid < total_amount && normalizedTerms !== 'Cash')) {
+            await arLedger.appendEntry(client, {
+                customerId: customer_id, invoiceId: newInvoiceId,
+                entryType: 'INVOICE_POSTED', amount: total_amount,
+                referenceNo: invoice_number,
+                notes: `Invoice ${invoice_number} posted on credit terms`,
+                createdBy: employee_id,
+            });
+        }
+
         // Store tax breakdown
         await storeTaxBreakdown(newInvoiceId, taxCalculation.tax_breakdown, client);
 
@@ -312,10 +394,6 @@ router.post('/invoices', async (req, res) => {
             `;
             await client.query(transactionQuery, [part_id, -quantity, cost_at_sale, invoice_number, employee_id]);
         }
-
-        // Fetch customer details for validation
-        const customerResult = await client.query('SELECT first_name, last_name FROM customer WHERE customer_id = $1', [customer_id]);
-        const customerName = customerResult.rows.length > 0 ? `${customerResult.rows[0].first_name} ${customerResult.rows[0].last_name || ''}`.trim().toLowerCase() : '';
 
         if (payments && Array.isArray(payments) && payments.length > 0) {
             const totalPayments = payments.reduce((sum, p) => sum + parseFloat(p.amount_paid), 0);
@@ -353,19 +431,48 @@ router.post('/invoices', async (req, res) => {
                     await client.query('ROLLBACK');
                     return res.status(400).json({ message: `Change is not allowed for ${method.rows[0].name}` });
                 }
-                const settlementType = methodConfig.settlement_type || (method.rows[0].type === 'cash' ? 'instant' : 'delayed');
+                if (method.rows[0].code === 'store_wallet') {
+                    const wallet = await walletService.getWallet(customer_id, client);
+                    if (!wallet || wallet.balance < pAmt) {
+                        await client.query('ROLLBACK');
+                        return res.status(400).json({ message: `Insufficient Store Wallet balance. Available: ₱${wallet ? wallet.balance.toFixed(2) : '0.00'}, Required: ₱${pAmt.toFixed(2)}` });
+                    }
+                    await walletService.appendWalletTransaction(client, {
+                        customerId: customer_id,
+                        type: 'INVOICE_PAYMENT_DRAWDOWN',
+                        amount: -pAmt,
+                        referenceType: 'INVOICE',
+                        referenceId: newInvoiceId,
+                        notes: `Store wallet payment for invoice #${invoice_number}`,
+                        createdBy: employee_id,
+                    });
+                }
+                const settlementType = method.rows[0].code === 'store_wallet' ? 'instant' : (methodConfig.settlement_type || (method.rows[0].type === 'cash' ? 'instant' : 'delayed'));
                 
-                if (settlementType === 'on_account' && customerName.includes('walk-in')) {
+                if (settlementType === 'on_account' && method.rows[0].code !== 'store_wallet' && customerName.includes('walk-in')) {
                     await client.query('ROLLBACK');
                     return res.status(400).json({ message: 'On Account payment is not available for Walk-In customers.' });
                 }
 
                 const paymentStatus = settlementType === 'instant' ? 'settled' : settlementType === 'on_account' ? 'on_account' : 'pending';
-                await client.query(`
+                const ipRes = await client.query(`
                     INSERT INTO invoice_payments 
                     (invoice_id, method_id, amount_paid, tendered_amount, change_amount, reference, metadata, created_by, payment_status, settled_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::varchar, CASE WHEN $9::varchar = 'settled' THEN CURRENT_TIMESTAMP ELSE NULL END)
+                    RETURNING payment_id
                 `, [newInvoiceId, method.rows[0].method_id, pAmt, tAmt, changeAmt, reference, JSON.stringify(metadata), employee_id, paymentStatus]);
+                if (paymentStatus === 'settled') {
+                    await arLedger.appendEntry(client, {
+                        customerId: customer_id, invoiceId: newInvoiceId,
+                        paymentId: ipRes.rows[0].payment_id,
+                        entryType: 'PAYMENT_SETTLED', amount: -pAmt,
+                        paymentChannel: method.rows[0].code,
+                        referenceNo: reference || invoice_number,
+                        notes: `Payment via ${method.rows[0].name}`,
+                        createdBy: employee_id,
+                        paymentSource: 'invoice_payments',
+                    });
+                }
             }
         } else if (paid > 0) {
             const methodCode = payment_method ? payment_method.toLowerCase().replace(/\s+/g, '_') : 'cash';
@@ -379,11 +486,24 @@ router.post('/invoices', async (req, res) => {
                 const paymentStatus = settlementType === 'instant' ? 'settled' : settlementType === 'on_account' ? 'on_account' : 'pending';
                 const tenderVal = typeof tendered_amount !== 'undefined' && tendered_amount !== null ? tendered_amount : null;
                 const changeAmt = tenderVal && tenderVal > paid ? tenderVal - paid : 0;
-                await client.query(`
+                const ipRes = await client.query(`
                     INSERT INTO invoice_payments 
                     (invoice_id, method_id, amount_paid, tendered_amount, change_amount, reference, created_by, payment_status, settled_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::varchar, CASE WHEN $8::varchar = 'settled' THEN CURRENT_TIMESTAMP ELSE NULL END)
-                `, [newInvoiceId, method.rows[0].method_id, paid, tenderVal, changeAmt, invoice_number, employee_id, paymentStatus]);
+                    RETURNING payment_id
+                `, [newInvoiceId, method.rows[0].method_id, paid, tenderVal, changeAmt, null, employee_id, paymentStatus]);
+                if (paymentStatus === 'settled') {
+                    await arLedger.appendEntry(client, {
+                        customerId: customer_id, invoiceId: newInvoiceId,
+                        paymentId: ipRes.rows[0].payment_id,
+                        entryType: 'PAYMENT_SETTLED', amount: -paid,
+                        paymentChannel: method.rows[0].code,
+                        referenceNo: invoice_number,
+                        notes: `Payment via ${method.rows[0].name}`,
+                        createdBy: employee_id,
+                        paymentSource: 'invoice_payments',
+                    });
+                }
             }
         }
 
@@ -533,17 +653,13 @@ router.put('/invoices/:id/physical-receipt-no', protect, hasPermission('invoice:
         // Normalize physical receipt number: trim and treat empty as null
         const prn = formatPhysicalReceiptNumber(physical_receipt_no);
 
-        // Check if another invoice already has this physical receipt number (case-insensitive)
+        // Check if another invoice or payment already has this physical receipt number
         if (prn) {
-            const existingQuery = `
-                SELECT invoice_id FROM invoice 
-                WHERE LOWER(physical_receipt_no) = LOWER($1) 
-                AND invoice_id != $2
-                AND physical_receipt_no IS NOT NULL 
-                AND LENGTH(TRIM(physical_receipt_no)) > 0
-            `;
-            const { rows: existingRows } = await db.query(existingQuery, [prn, id]);
-            if (existingRows.length > 0) {
+            const { rows: checkRows } = await db.query(
+                `SELECT public.is_physical_receipt_no_taken($1, $2) AS is_taken`,
+                [prn, parseInt(id)]
+            );
+            if (checkRows[0]?.is_taken) {
                 return res.status(409).json({ message: 'Physical Receipt No already exists. Please use a unique number.' });
             }
         }

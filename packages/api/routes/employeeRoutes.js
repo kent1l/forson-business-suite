@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const db = require('../db');
 const { protect, isAdmin } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
+const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const router = express.Router();
 
 // Helper to generate a token
@@ -97,14 +98,42 @@ router.put('/profile', protect, async (req, res) => {
 
 // GET /employees - list employees with status filter
 router.get('/employees', protect, isAdmin, async (req, res) => {
-    const { status = 'active' } = req.query;
+    const { status = 'active', search, sortBy, sortOrder = 'ASC' } = req.query;
     const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
 
-    let whereClause = "WHERE is_active = TRUE";
-    if (status === 'inactive') {
-        whereClause = "WHERE is_active = FALSE";
-    } else if (status === 'all') {
-        whereClause = ""; // No filter
+    let whereConditions = [];
+    let queryParams = [];
+    let paramIdx = 1;
+
+    if (status === 'active') {
+        whereConditions.push('is_active = TRUE');
+    } else if (status === 'inactive') {
+        whereConditions.push('is_active = FALSE');
+    }
+
+    if (search && search.trim()) {
+        whereConditions.push(`(
+            LOWER(COALESCE(first_name, '')) LIKE $${paramIdx} OR
+            LOWER(COALESCE(last_name, '')) LIKE $${paramIdx} OR
+            LOWER(COALESCE(username, '')) LIKE $${paramIdx} OR
+            LOWER(COALESCE(position_title, '')) LIKE $${paramIdx}
+        )`);
+        queryParams.push(`%${search.trim().toLowerCase()}%`);
+        paramIdx++;
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    const dir = sortOrder.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+    let orderBy = `ORDER BY last_name ${dir}, first_name ${dir}`;
+    if (sortBy === 'full_name') {
+        orderBy = `ORDER BY first_name ${dir}, last_name ${dir}`;
+    } else if (sortBy === 'username') {
+        orderBy = `ORDER BY username ${dir}`;
+    } else if (sortBy === 'position_title') {
+        orderBy = `ORDER BY position_title ${dir} NULLS LAST`;
+    } else if (sortBy === 'status') {
+        orderBy = `ORDER BY is_active ${dir}`;
     }
 
     try {
@@ -112,18 +141,19 @@ router.get('/employees', protect, isAdmin, async (req, res) => {
             SELECT employee_id, employee_code, first_name, last_name, position_title, permission_level_id, username, is_active 
             FROM employee 
             ${whereClause} 
-            ORDER BY last_name, first_name
+            ${orderBy}
         `;
         if (!paginated) {
-            const { rows } = await db.query(baseQuery);
+            const { rows } = await db.query(baseQuery, queryParams);
             return res.json(rows);
         }
 
         const countQuery = `SELECT COUNT(*)::int AS total FROM employee ${whereClause}`;
-        const countRes = await db.query(countQuery);
+        const countRes = await db.query(countQuery, queryParams);
         const total = countRes.rows[0]?.total || 0;
-        const query = `${baseQuery} LIMIT $1 OFFSET $2`;
-        const { rows } = await db.query(query, [limit, offset]);
+        const mainParams = [...queryParams, limit, offset];
+        const query = `${baseQuery} LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
+        const { rows } = await db.query(query, mainParams);
         res.json(paginatedResponse({ data: rows, page, pageSize, total }));
     } catch (err) {
         console.error(err.message);
@@ -155,9 +185,10 @@ router.post('/employees', protect, isAdmin, async (req, res) => {
     try {
         const salt = await bcrypt.genSalt(10);
         const password_hash = await bcrypt.hash(password, salt);
+        const employee_code = await getNextDocumentNumber(db, 'EMP');
         const newEmployee = await db.query(
-            'INSERT INTO employee (first_name, last_name, username, password_hash, password_salt, permission_level_id, position_title) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING employee_id, username, first_name, last_name',
-            [first_name, last_name, username, password_hash, salt, permission_level_id, position_title]
+            'INSERT INTO employee (employee_code, first_name, last_name, username, password_hash, password_salt, permission_level_id, position_title) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING employee_id, employee_code, username, first_name, last_name',
+            [employee_code, first_name, last_name, username, password_hash, salt, permission_level_id, position_title]
         );
         res.status(201).json(newEmployee.rows[0]);
     } catch (err) {

@@ -94,7 +94,16 @@ const PurchaseOrderPage = () => {
         if (hasPermission('purchase_orders:view')) {
             try {
                 setLoading(true);
-                const response = await api.get('/purchase-orders', { params: { status: statusFilter, page, pageSize, paginated: 1 } });
+                const response = await api.get('/purchase-orders', {
+                    params: {
+                        status: statusFilter,
+                        page,
+                        pageSize,
+                        paginated: 1,
+                        sortBy: sortConfig.key,
+                        sortOrder: sortConfig.direction
+                    }
+                });
                 const payload = getPaginatedPayload(response.data, 0);
                 setPurchaseOrders(payload.data);
                 setTotal(payload.total);
@@ -104,7 +113,7 @@ const PurchaseOrderPage = () => {
                 setLoading(false);
             }
         }
-    }, [hasPermission, statusFilter, page, pageSize]);
+    }, [hasPermission, statusFilter, page, pageSize, sortConfig]);
 
     useEffect(() => {
         fetchPOs();
@@ -115,12 +124,14 @@ const PurchaseOrderPage = () => {
         setExpandedRows(new Set());
     }, [statusFilter]);
     
+    const handleSort = (key, direction) => {
+        setSortConfig({ key, direction });
+        setPage(1);
+    };
+
     const showActionsColumn = useMemo(() => {
         return hasPermission('purchase_orders:edit') && purchaseOrders.some(po => po.status === 'Pending');
     }, [purchaseOrders, hasPermission]);
-
-    const sortedPurchaseOrders = useMemo(() => sortData(purchaseOrders, sortConfig), [purchaseOrders, sortConfig]);
-
 
     const exitEditor = useCallback(() => {
         setIsEditing(false);
@@ -234,11 +245,11 @@ const PurchaseOrderPage = () => {
                         <table className="w-full text-left">
                             <thead className="border-b">
                                 <tr>
-                                    <SortableHeader column="po_number" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>PO Number</SortableHeader>
-                                    <SortableHeader column="supplier_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Supplier</SortableHeader>
-                                    <SortableHeader column="status" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Status</SortableHeader>
-                                    <SortableHeader column="order_date" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Order Date</SortableHeader>
-                                    <SortableHeader column="total_amount" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })} className="text-right">Total</SortableHeader>
+                                    <SortableHeader column="po_number" sortConfig={sortConfig} onSort={handleSort}>PO Number</SortableHeader>
+                                    <SortableHeader column="supplier_name" sortConfig={sortConfig} onSort={handleSort}>Supplier</SortableHeader>
+                                    <SortableHeader column="status" sortConfig={sortConfig} onSort={handleSort}>Status</SortableHeader>
+                                    <SortableHeader column="order_date" sortConfig={sortConfig} onSort={handleSort}>Order Date</SortableHeader>
+                                    <SortableHeader column="total_amount" sortConfig={sortConfig} onSort={handleSort} className="text-right">Total</SortableHeader>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-center">Details</th>
                                     {/* --- NEW: Download Column Header --- */}
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-center">Download</th>
@@ -246,7 +257,7 @@ const PurchaseOrderPage = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {sortedPurchaseOrders.map(po => (
+                                {purchaseOrders.map(po => (
                                         <React.Fragment key={po.po_id}>
                                         <tr className="border-b hover:bg-gray-50">
                                             <td className="p-3 text-sm font-mono">{po.po_number}</td>

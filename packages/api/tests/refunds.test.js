@@ -80,7 +80,9 @@ describe('refund routes', () => {
         }]
       })
       .mockResolvedValueOnce({ rows: [{ tax_rate_id: 1, rate_name: 'VAT 12%' }] }) // tax rates names query
+      .mockResolvedValueOnce({ rows: [{ customer_id: 10 }] }) // customer_id lookup
       .mockResolvedValueOnce({ rows: [{ cn_id: 42 }] }) // insert credit note
+      .mockResolvedValueOnce({ rows: [{ ledger_id: 1 }] }) // append_ar_ledger_entry
       .mockResolvedValueOnce({}) // insert breakdown
       .mockResolvedValueOnce({}) // insert credit_note_line
       .mockResolvedValueOnce({}) // insert inventory_transaction

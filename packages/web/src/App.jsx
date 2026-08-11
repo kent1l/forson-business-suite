@@ -8,6 +8,7 @@ import SetupPage from './pages/SetupPage';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import MobileSetupPage from './pages/MobileSetupPage';
+import SoaGenPage from './pages/SoaGenPage';
 
 // AppContent remains the same, but it will now always have access to auth and settings
 function AppContent() {
@@ -70,6 +71,17 @@ function App() {
     // Intercept mobile setup route immediately to bypass auth and setup checks
     if (isMobileSetup) {
         return <MobileSetupPage />;
+    }
+
+    // Intercept standalone SOA generator dashboard route
+    const isSoaGen = window.location.pathname.toLowerCase() === '/soa-gen';
+    if (isSoaGen) {
+        return (
+            <>
+                <Toaster position="top-center" />
+                <SoaGenPage />
+            </>
+        );
     }
 
     // Display a loading indicator while checking the setup status

@@ -10,5 +10,6 @@ module.exports = {
 	],
 	setupFilesAfterEnv: ["<rootDir>/jest.setup.js"],
 	verbose: false,
-	collectCoverage: false
+	collectCoverage: false,
+	forceExit: true
 };

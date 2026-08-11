@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Statement of Account - {{customer.name}}</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        :root {
+            --font-family: 'Inter', sans-serif;
+            --primary-color: #0F172A;
+            --secondary-color: #475569;
+            --accent-color: #1E40AF;
+            --border-color: #CBD5E1;
+            --table-header-bg: #F1F5F9;
+        }
+
+        @page {
+            size: A4 portrait;
+            margin: 10mm 10mm 18mm 10mm;
+        }
+
+        body {
+            font-family: var(--font-family);
+            font-size: 10.5px;
+            color: var(--secondary-color);
+            background-color: #fff;
+            margin: 0;
+            padding: 0;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        .container {
+            padding: 12px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 2.5px solid var(--accent-color);
+            padding-bottom: 12px;
+            margin-bottom: 16px;
+        }
+
+        .company-details h1 {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--primary-color);
+            margin: 0 0 2px 0;
+            letter-spacing: -0.2px;
+        }
+
+        .company-details p {
+            margin: 2px 0;
+            font-size: 10px;
+            color: #475569;
+        }
+
+        .statement-title {
+            text-align: right;
+        }
+
+        .statement-title h2 {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--accent-color);
+            margin: 0 0 4px 0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .statement-title p {
+            margin: 2px 0;
+            font-size: 10px;
+            color: var(--secondary-color);
+        }
+
+        .info-section {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            gap: 16px;
+        }
+
+        .info-box {
+            flex: 1;
+            background: #F8FAFC;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 10px 14px;
+        }
+
+        .info-box h3 {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--primary-color);
+            margin: 0 0 6px 0;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid #E2E8F0;
+            padding-bottom: 4px;
+        }
+
+        .info-box p {
+            margin: 3px 0;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .summary-card {
+            background: #F1F5F9;
+            border: 1px solid #E2E8F0;
+            border-radius: 6px;
+            padding: 8px;
+            text-align: center;
+        }
+
+        .summary-card .label {
+            font-size: 8.5px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--secondary-color);
+            margin-bottom: 3px;
+        }
+
+        .summary-card .value {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--primary-color);
+            font-family: monospace;
+        }
+
+        .summary-card.highlight {
+            background: #EFF6FF;
+            border: 1px solid #BFDBFE;
+        }
+
+        .summary-card.highlight .value {
+            color: #1E40AF;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 16px;
+        }
+
+        thead {
+            display: table-header-group;
+        }
+
+        th {
+            background-color: var(--table-header-bg);
+            color: var(--primary-color);
+            font-weight: 700;
+            text-align: left;
+            padding: 7px 8px;
+            font-size: 9.5px;
+            text-transform: uppercase;
+            border-top: 1px solid var(--border-color);
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        td {
+            padding: 7px 8px;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 10px;
+        }
+
+        .text-right {
+            text-align: right;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        .font-mono {
+            font-family: monospace;
+        }
+
+        .font-bold {
+            font-weight: 700;
+        }
+
+        .aging-table th {
+            text-align: center;
+        }
+
+        .aging-table td {
+            text-align: center;
+        }
+
+        .audit-clause {
+            margin-top: 16px;
+            padding: 10px 12px;
+            background: #F8FAFC;
+            border: 1px dashed #CBD5E1;
+            border-radius: 6px;
+            font-size: 9px;
+            color: #475569;
+            line-height: 1.4;
+        }
+
+        .footer-note {
+            margin-top: 20px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 12px;
+            font-size: 9.5px;
+            color: var(--secondary-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+
+        .signature-box {
+            text-align: center;
+            width: 180px;
+        }
+
+        .signature-line {
+            border-top: 1px solid #475569;
+            margin-top: 30px;
+            padding-top: 4px;
+            font-weight: 600;
+            font-size: 9px;
+            color: var(--primary-color);
+        }
+
+        .info-section, .summary-grid, .audit-clause, .footer-note, .signature-box, .aging-table {
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        /* Attached Receipt Image Tile Row Styles */
+        .receipt-section {
+            margin-top: 10px;
+        }
+
+        .receipt-tile-row {
+            display: flex;
+            gap: 6mm;
+            margin-top: 10px;
+            height: 122mm;
+            page-break-inside: avoid;
+            break-inside: avoid;
+            box-sizing: border-box;
+            width: 100%;
+        }
+
+        .receipt-tile-card {
+            flex: 1;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 8px;
+            background: #ffffff;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            overflow: hidden;
+            height: 100%;
+            box-sizing: border-box;
+        }
+
+        .receipt-tile-card .image-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f8fafc;
+            border-radius: 4px;
+            border: 1px dashed #e2e8f0;
+            overflow: hidden;
+            padding: 4px;
+            max-height: calc(100% - 36px);
+        }
+
+        .receipt-tile-card .receipt-image {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        .receipt-tile-card .tile-footer {
+            margin-top: 4px;
+            padding-top: 4px;
+            border-top: 1px solid #e2e8f0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .receipt-tile-card .phys-receipt-no {
+            font-size: 11px;
+            font-weight: 700;
+            color: #0f172a;
+            letter-spacing: 0.2px;
+            line-height: 1.2;
+        }
+
+        .receipt-tile-card .system-code {
+            font-size: 9.5px;
+            font-family: monospace;
+            color: #475569;
+            margin-top: 2px;
+            line-height: 1.2;
+        }
+
+        .empty-tile {
+            flex: 1;
+            visibility: hidden;
+        }
+    </style>
+
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="company-details">
+                <h1>{{company.name}}</h1>
+                {{company.header_line1_html}}
+                {{company.header_line2_html}}
+            </div>
+            <div class="statement-title">
+                <h2>Statement of Account</h2>
+                <p>Statement #: <strong style="font-family:monospace; color:#1E40AF;">{{statement.number}}</strong></p>
+                <p>Statement Date: <strong>{{statement.date}}</strong></p>
+                <p>Billing Period: <strong>{{statement.period}}</strong></p>
+            </div>
+        </div>
+
+        <!-- Info Section -->
+        <div class="info-section">
+            <div class="info-box">
+                <h3>Customer Account Details</h3>
+                <p class="font-bold" style="font-size: 12.5px; color: var(--primary-color);">{{customer.name}}</p>
+                {{customer.code_tin_html}}
+                {{customer.address_html}}
+                {{customer.contact_html}}
+                {{customer.since_html}}
+            </div>
+            <div class="info-box">
+                <h3>Credit &amp; Account Facility</h3>
+                <p>Credit Limit: <span class="font-mono font-bold">{{customer.credit_limit}}</span></p>
+                <p>Payment Terms: <span class="font-bold">{{customer.payment_terms}}</span></p>
+                <p>Credit Status: <span class="font-bold"
+                        style="color: {{customer.credit_hold_color}};">{{customer.credit_hold_status}}</span></p>
+                <p>Available Store Wallet: <span class="font-mono font-bold"
+                        style="color: #059669;">{{customer.wallet_balance}}</span></p>
+            </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="summary-grid">
+            <div class="summary-card">
+                <div class="label">Beginning Balance</div>
+                <div class="value">{{summary.opening_balance}}</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">Total Invoiced (+)</div>
+                <div class="value">{{summary.total_invoiced}}</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">Total Paid / Credited (-)</div>
+                <div class="value">{{summary.total_settled}}</div>
+            </div>
+            <div class="summary-card highlight">
+                <div class="label">Net Balance Due</div>
+                <div class="value">{{summary.net_balance}}</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">Store Wallet</div>
+                <div class="value">{{customer.wallet_balance}}</div>
+            </div>
+        </div>
+
+        <!-- Itemized Transactions Table -->
+        <h3 style="font-size: 11px; color: var(--primary-color); text-transform: uppercase; margin-bottom: 6px;">
+            Statement Details (Chronological Ledger)</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 10%;">Txn Date</th>
+                    <th style="width: 10%;">Due Date</th>
+                    <th style="width: 15%;">Doc / Ref #</th>
+                    <th style="width: 29%;">Transaction Particulars</th>
+                    <th style="width: 12%; text-align: right;">Charges (Dr)</th>
+                    <th style="width: 12%; text-align: right;">Credits (Cr)</th>
+                    <th style="width: 12%; text-align: right;">Account Balance</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{ledger_rows}}
+            </tbody>
+        </table>
+
+        {{pending_cheque_note}}
+
+        <!-- Aging Breakdown Table -->
+        <h3
+            style="font-size: 11px; color: var(--primary-color); text-transform: uppercase; margin-top: 14px; margin-bottom: 6px;">
+            Aging Breakdown Analysis</h3>
+        <table class="aging-table">
+            <thead>
+                <tr>
+                    <th>Current<br />(Not Yet Due)</th>
+                    <th>1 – 30 Days<br />Past Due</th>
+                    <th>31 – 60 Days<br />Past Due</th>
+                    <th>61 – 90 Days<br />Past Due</th>
+                    <th style="color:#DC2626;">90+ Days<br />Past Due</th>
+                    <th>Total<br />Outstanding</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="font-mono">{{aging.current}}</td>
+                    <td class="font-mono">{{aging.days_1_30}}</td>
+                    <td class="font-mono">{{aging.days_31_60}}</td>
+                    <td class="font-mono">{{aging.days_61_90}}</td>
+                    <td class="font-mono" style="color: #DC2626; font-weight: 700;">{{aging.days_90_plus}}</td>
+                    <td class="font-mono font-bold" style="color: var(--primary-color);">{{aging.total}}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- Discrepancy Notice Clause -->
+        <div class="audit-clause">
+            <strong>NOTICE &amp; DISCREPANCY AUDIT CLAUSE:</strong> Please inspect this Statement of Account immediately
+            upon receipt. If no error or discrepancy is reported to our Accounts Receivable &amp; Credit Department within
+            fifteen (15) calendar days from the statement date, this statement shall be deemed correct, final, and
+            accepted as billed.
+        </div>
+
+        <!-- Remittance & Footer -->
+        <div class="footer-note">
+            {{remittance_advice_html}}
+            <div class="signature-box">
+                <div class="signature-line">
+                    Authorized Representative<br />
+                    Accounts Receivable Department
+                </div>
+            </div>
+        </div>
+
+        <!-- Attached Receipt Images (flows into remaining page space if it fits) -->
+        {{receipt_consolidation_section}}
+    </div>
+</body>
+
+</html>

@@ -58,9 +58,13 @@ registerRoute('/api', './routes/draftRoutes');
 registerRoute('/api', './routes/refundRoutes');
 registerRoute('/api', './routes/paymentTermRoutes');
 registerRoute('/api', './routes/arRoutes');
+registerRoute('/api', './routes/soaGenRoutes');
+registerRoute('/api', './routes/walletRoutes');
 
 // Documents module (Document Management Interface)
 registerRoute('/api', './routes/documentsRoutes');
+registerRoute('/api', './routes/paperlessRoutes');
+
 
 // Entity & Data Management Modules
 registerRoute('/api', './routes/supplierRoutes');
