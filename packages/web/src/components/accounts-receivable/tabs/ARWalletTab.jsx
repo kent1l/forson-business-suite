@@ -1,0 +1,121 @@
+import Icon from '../../ui/Icon';
+import { ICONS } from '../../../constants';
+import { formatCurrency } from '../../../utils/currency';
+import PaginationControls from '../../ui/PaginationControls';
+import LoadingState from '../../ui/LoadingState';
+import EmptyState from '../../ui/EmptyState';
+import CustomerWalletModal from '../CustomerWalletModal';
+
+// Customer Wallet Management tab: searchable/paginated store-credit ledger
+// per customer, with a modal to view/adjust individual wallet balances.
+const ARWalletTab = ({
+    walletLoading,
+    walletSearch,
+    onWalletSearchChange,
+    filteredWalletCustomers,
+    paginatedWalletCustomers,
+    walletPage,
+    walletPageSize,
+    onWalletPageChange,
+    onWalletPageSizeChange,
+    selectedWalletCustomer,
+    onSelectWalletCustomer,
+    isWalletModalOpen,
+    onCloseWalletModal,
+    onWalletUpdated,
+}) => {
+    return (
+        <div className="space-y-6">
+            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <h2 className="text-xl font-bold text-gray-800">Customer Wallet & Store Credit Management</h2>
+                    <p className="text-xs text-gray-500 mt-0.5">Manage customer deposit balances, overpayment credits, and store wallet adjustments</p>
+                </div>
+                <div className="relative w-48 sm:w-64">
+                    <input
+                        type="text"
+                        placeholder="Search customer..."
+                        value={walletSearch}
+                        onChange={(e) => onWalletSearchChange(e.target.value)}
+                        className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <Icon path={ICONS.search} className="w-4 h-4 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+                {walletLoading ? (
+                    <LoadingState label="Loading wallet accounts..." />
+                ) : filteredWalletCustomers.length === 0 ? (
+                    <EmptyState
+                        icon={ICONS.ar}
+                        title="No customer wallet records found"
+                        description={walletSearch ? 'No customers match your search.' : 'Wallet balances will appear here once customers have store credit.'}
+                    />
+                ) : (
+                    <>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left text-gray-500">
+                                <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b">
+                                    <tr>
+                                        <th className="px-6 py-3">Customer</th>
+                                        <th className="px-6 py-3 text-right">Store Wallet Balance</th>
+                                        <th className="px-6 py-3 text-right">Outstanding Receivables</th>
+                                        <th className="px-6 py-3 text-right">Net Exposure</th>
+                                        <th className="px-6 py-3 text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200">
+                                    {paginatedWalletCustomers.map(w => {
+                                        const walletBal = Number(w.wallet_balance || 0);
+                                        const arBal = Number(w.receivable_balance || w.total_balance_due || 0);
+                                        const netExp = arBal - walletBal;
+                                        return (
+                                            <tr key={w.customer_id} className="hover:bg-gray-50">
+                                                <td className="px-6 py-4 font-semibold text-gray-900">{w.company_name || `${w.first_name || ''} ${w.last_name || ''}`}</td>
+                                                <td className="px-6 py-4 text-right font-mono font-bold text-emerald-700">{formatCurrency(walletBal)}</td>
+                                                <td className="px-6 py-4 text-right font-mono font-semibold text-gray-900">{formatCurrency(arBal)}</td>
+                                                <td className="px-6 py-4 text-right font-mono font-bold" style={{ color: netExp > 0 ? '#DC2626' : '#059669' }}>
+                                                    {formatCurrency(netExp)}
+                                                </td>
+                                                <td className="px-6 py-4 text-center">
+                                                    <button
+                                                        onClick={() => onSelectWalletCustomer(w)}
+                                                        className="px-3 py-1 bg-blue-600 text-white rounded text-xs font-semibold hover:bg-blue-700"
+                                                    >
+                                                        View / Adjust Wallet
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div className="px-6 pb-4">
+                            <PaginationControls
+                                page={walletPage}
+                                pageSize={walletPageSize}
+                                total={filteredWalletCustomers.length}
+                                onPageChange={onWalletPageChange}
+                                onPageSizeChange={onWalletPageSizeChange}
+                            />
+                        </div>
+                    </>
+                )}
+            </div>
+
+            {/* Customer Wallet Modal */}
+            {selectedWalletCustomer && (
+                <CustomerWalletModal
+                    isOpen={isWalletModalOpen}
+                    onClose={onCloseWalletModal}
+                    customer={selectedWalletCustomer}
+                    onUpdated={onWalletUpdated}
+                />
+            )}
+        </div>
+    );
+};
+
+export default ARWalletTab;

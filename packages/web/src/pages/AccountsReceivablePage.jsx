@@ -4,24 +4,19 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
-import Modal from '../components/ui/Modal';
-import ReceivePaymentForm from '../components/forms/ReceivePaymentForm';
 
 // Import extracted utilities and components
 import { formatCurrency } from '../utils/currency';
 import { exportToCSV } from '../utils/csv';
-import KPICard from '../components/ui/KPICard';
-import InvoiceAgingSummaryChart from '../components/accounts-receivable/InvoiceAgingSummaryChart';
-import CustomerSummaryTable from '../components/accounts-receivable/CustomerSummaryTable';
-import CustomerInvoiceDetailsModal from '../components/accounts-receivable/CustomerInvoiceDetailsModal';
-import CustomerWalletModal from '../components/accounts-receivable/CustomerWalletModal';
-import PaginationControls from '../components/ui/PaginationControls';
+import AROverviewTab from '../components/accounts-receivable/tabs/AROverviewTab';
+import ARLedgerSoaTab from '../components/accounts-receivable/tabs/ARLedgerSoaTab';
+import ARWalletTab from '../components/accounts-receivable/tabs/ARWalletTab';
 
 const AccountsReceivablePage = () => {
     const { hasPermission } = useAuth();
-    
+
     // Active Navigation Tab
-    const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'ledger_soa' | 'pdc_desk' | 'wallet'
+    const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'ledger_soa' | 'wallet'
 
     // State management for Overview & Aging Tab
     const [customers, setCustomers] = useState([]);
@@ -39,11 +34,9 @@ const AccountsReceivablePage = () => {
         { name: '61-90 Days', value: 0 },
         { name: '90+ Days', value: 0 },
     ]);
-    const [trends, setTrends] = useState({});
     const [loading, setLoading] = useState(true);
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-    const [autoRefresh, setAutoRefresh] = useState(false);
     const [dateRange, setDateRange] = useState({
         startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 days ago
         endDate: new Date()
@@ -77,7 +70,6 @@ const AccountsReceivablePage = () => {
     const [soaDropdownOpen, setSoaDropdownOpen] = useState(false);
     const [soaHighlightedIndex, setSoaHighlightedIndex] = useState(-1);
     const soaComboboxRef = useRef(null);
-
 
     // Close SOA customer dropdown on click outside
     useEffect(() => {
@@ -114,6 +106,11 @@ const AccountsReceivablePage = () => {
         setSoaSearchQuery(displayName);
         setSoaDropdownOpen(false);
         setSoaHighlightedIndex(-1);
+    }, []);
+
+    const handleClearSoaCustomer = useCallback(() => {
+        setSoaCustomerId('');
+        setSoaLedger(null);
     }, []);
 
     // Keyboard navigation handler for search box (Arrows, Tab, Enter, Escape)
@@ -153,6 +150,9 @@ const AccountsReceivablePage = () => {
     const [walletLoading, setWalletLoading] = useState(false);
     const [selectedWalletCustomer, setSelectedWalletCustomer] = useState(null);
     const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
+    const [walletSearch, setWalletSearch] = useState('');
+    const [walletPage, setWalletPage] = useState(1);
+    const [walletPageSize, setWalletPageSize] = useState(25);
 
     // Handle date range changes
     const handleDateRangeChange = useCallback((newDateRange) => {
@@ -164,7 +164,7 @@ const AccountsReceivablePage = () => {
         if (!bucketName) return;
         try {
             setDrillDownLoading(true);
-            
+
             const bucketMap = {
                 'Current': 'current',
                 '1-30 Days': '1-30',
@@ -172,21 +172,21 @@ const AccountsReceivablePage = () => {
                 '61-90 Days': '61-90',
                 '90+ Days': '90-plus'
             };
-            
+
             const bucketParam = bucketMap[bucketName];
             if (!bucketParam) return;
-            
+
             const params = {
                 bucket: bucketParam,
                 page,
                 pageSize,
                 paginated: 1
             };
-            
+
             const response = await api.get('/ar/drill-down-invoices', { params });
             setDrillDownInvoices(response.data?.data || response.data || []);
             setDrillDownTotal(response.data?.total || 0);
-            
+
         } catch (error) {
             console.error('Failed to fetch drill-down invoices:', error);
             toast.error('Failed to load invoice details');
@@ -206,6 +206,13 @@ const AccountsReceivablePage = () => {
     // Handle drill-down into aging buckets
     const handleAgingBucketClick = useCallback((bucketName) => {
         setSelectedAgingBucket(bucketName);
+        setDrillDownPage(1);
+    }, []);
+
+    const handleCloseDrillDown = useCallback(() => {
+        setSelectedAgingBucket(null);
+        setDrillDownInvoices([]);
+        setDrillDownTotal(0);
         setDrillDownPage(1);
     }, []);
 
@@ -230,26 +237,24 @@ const AccountsReceivablePage = () => {
         }
     }, [customerSummaryPage, customerSummaryPageSize, customerSummarySearchTerm, customerSummaryStatusFilter, customerSummarySortConfig]);
 
-    // Fetch Overview Dashboard Data (KPIs, Aging, Trends)
+    // Fetch Overview Dashboard Data (KPIs, Aging)
     const fetchDashboardData = useCallback(async () => {
         try {
             setLoading(true);
-            
+
             const dateParams = {
                 startDate: dateRange.startDate.toISOString(),
                 endDate: dateRange.endDate.toISOString()
             };
-            
-            const [customersRes, dashboardRes, agingRes, trendsRes] = await Promise.all([
+
+            const [customersRes, dashboardRes, agingRes] = await Promise.all([
                 api.get('/customers/with-balances', { params: { paginated: 1, page: 1, pageSize: 100 } }),
                 api.get('/ar/dashboard-stats', { params: dateParams }).catch(() => ({ data: {} })),
                 api.get('/ar/aging-summary').catch(() => ({ data: [] })),
-                api.get('/ar/trends').catch(() => ({ data: {} }))
             ]);
 
             const customersWithBalances = customersRes.data?.data || customersRes.data || [];
             setCustomers(customersWithBalances);
-            setTrends(trendsRes.data || {});
 
             if (dashboardRes.data && Object.keys(dashboardRes.data).length > 0) {
                 setDashboardStats(dashboardRes.data);
@@ -306,7 +311,6 @@ const AccountsReceivablePage = () => {
                 responseType: 'blob'
             });
 
-
             const blob = new Blob([response.data], { type: 'application/pdf' });
             const url = window.URL.createObjectURL(blob);
             const link = document.createElement('a');
@@ -326,8 +330,6 @@ const AccountsReceivablePage = () => {
         }
     }, [soaCustomerId, dateRange, soaLedger, attachReceiptImages]);
 
-
-    // Fetch PDC Clearance Desk Items for Tab 3
     // Fetch Wallet Overview for Tab 3
     const fetchWalletCustomers = useCallback(async () => {
         try {
@@ -407,6 +409,11 @@ const AccountsReceivablePage = () => {
         setCustomerInvoicesPage(1);
     }, []);
 
+    const handleCloseCustomerInvoices = useCallback(() => {
+        setSelectedCustomerForInvoices(null);
+        setCustomerInvoices([]);
+    }, []);
+
     const handleReceivePaymentClick = useCallback((invoice) => {
         if (invoice.invoice_id) {
             const customer = {
@@ -422,12 +429,16 @@ const AccountsReceivablePage = () => {
         setIsPaymentModalOpen(true);
     }, []);
 
+    const handleReceivePaymentFromDrillDown = useCallback((invoice) => {
+        setSelectedAgingBucket(null);
+        handleReceivePaymentClick(invoice);
+    }, [handleReceivePaymentClick]);
+
     const handlePaymentSaved = useCallback(() => {
         setIsPaymentModalOpen(false);
         fetchDashboardData();
-        if (activeTab === 'wallet') fetchWalletCustomers();
         toast.success('Payment processed successfully!');
-    }, [fetchDashboardData, fetchWalletCustomers, activeTab]);
+    }, [fetchDashboardData]);
 
     const handleExportCustomerSummary = useCallback(() => {
         const exportData = customerSummary.map(customer => ({
@@ -440,6 +451,40 @@ const AccountsReceivablePage = () => {
         }));
         exportToCSV(exportData, `customer-ar-summary-${new Date().toISOString().split('T')[0]}.csv`);
     }, [customerSummary]);
+
+    // Reset to page 1 whenever the wallet search term changes
+    useEffect(() => {
+        setWalletPage(1);
+    }, [walletSearch]);
+
+    const filteredWalletCustomers = useMemo(() => {
+        if (!walletSearch.trim()) return walletCustomers;
+        const q = walletSearch.toLowerCase();
+        return walletCustomers.filter(w => {
+            const name = (w.company_name || `${w.first_name || ''} ${w.last_name || ''}`).toLowerCase();
+            return name.includes(q);
+        });
+    }, [walletCustomers, walletSearch]);
+
+    const paginatedWalletCustomers = useMemo(() => {
+        const start = (walletPage - 1) * walletPageSize;
+        return filteredWalletCustomers.slice(start, start + walletPageSize);
+    }, [filteredWalletCustomers, walletPage, walletPageSize]);
+
+    const handleSelectWalletCustomer = useCallback((customer) => {
+        setSelectedWalletCustomer(customer);
+        setIsWalletModalOpen(true);
+    }, []);
+
+    const handleCloseWalletModal = useCallback(() => {
+        setIsWalletModalOpen(false);
+        setSelectedWalletCustomer(null);
+    }, []);
+
+    const handleWalletUpdated = useCallback(() => {
+        fetchWalletCustomers();
+        fetchDashboardData();
+    }, [fetchWalletCustomers, fetchDashboardData]);
 
     const kpiData = useMemo(() => {
         return {
@@ -468,7 +513,7 @@ const AccountsReceivablePage = () => {
                     <p className="text-sm text-gray-500 mt-1">Authoritative A/R Ledger, SOA Reports, PDC Desk & Customer Wallet</p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <button 
+                    <button
                         onClick={() => {
                             if (activeTab === 'overview') fetchDashboardData();
                             if (activeTab === 'ledger_soa') fetchCustomerLedger(soaCustomerId);
@@ -486,33 +531,42 @@ const AccountsReceivablePage = () => {
             <div className="bg-white rounded-xl border border-gray-200 p-1.5 mb-6 flex flex-wrap gap-1 shadow-sm">
                 <button
                     onClick={() => setActiveTab('overview')}
-                    className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                    className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 ${
                         activeTab === 'overview'
                             ? 'bg-blue-600 text-white shadow-sm'
                             : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                     }`}
                 >
                     Overview & Aging
+                    {activeTab === 'overview' && loading && (
+                        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                    )}
                 </button>
                 <button
                     onClick={() => setActiveTab('ledger_soa')}
-                    className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                    className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 ${
                         activeTab === 'ledger_soa'
                             ? 'bg-blue-600 text-white shadow-sm'
                             : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                     }`}
                 >
                     Customer Ledger & SOA
+                    {activeTab === 'ledger_soa' && soaLoading && (
+                        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                    )}
                 </button>
                 <button
                     onClick={() => setActiveTab('wallet')}
-                    className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                    className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 ${
                         activeTab === 'wallet'
                             ? 'bg-blue-600 text-white shadow-sm'
                             : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                     }`}
                 >
                     Customer Wallet Management
+                    {activeTab === 'wallet' && walletLoading && (
+                        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                    )}
                 </button>
             </div>
 
@@ -562,474 +616,98 @@ const AccountsReceivablePage = () => {
                 </div>
             </div>
 
-            {/* TAB 1: OVERVIEW & AGING */}
             {activeTab === 'overview' && (
-                <>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-                        <KPICard iconName={ICONS.dollar} title="Total Receivables" value={kpiData.totalReceivables.value} trend={kpiData.totalReceivables.trend} trendColorClass={kpiData.totalReceivables.color} loading={loading} />
-                        <KPICard iconName={ICONS.documents} title="Invoices Sent" value={kpiData.invoicesSent.value} trend={kpiData.invoicesSent.trend} trendColorClass={kpiData.invoicesSent.color} loading={loading} />
-                        <KPICard iconName={ICONS.warning} title="Overdue Invoices" value={kpiData.overdueInvoices.value} trend={kpiData.overdueInvoices.trend} trendColorClass={kpiData.overdueInvoices.color} loading={loading} />
-                        <KPICard iconName={ICONS.calendar} title="Avg. Collection Period" value={kpiData.avgCollectionPeriod.value} trend={kpiData.avgCollectionPeriod.trend} trendColorClass={kpiData.avgCollectionPeriod.color} loading={loading} />
-                    </div>
-
-                    <InvoiceAgingSummaryChart agingData={agingData} loading={loading} onBucketClick={handleAgingBucketClick} />
-
-                    <CustomerSummaryTable 
-                        customers={customerSummary}
-                        onCustomerClick={handleCustomerClick}
-                        onReceivePayment={handleReceivePaymentClick}
-                        hasPaymentPermission={hasPermission('ar:receive_payment')}
-                        loading={loading}
-                        onExport={handleExportCustomerSummary}
-                        searchTerm={customerSummarySearchTerm}
-                        onSearchChange={(val) => { setCustomerSummarySearchTerm(val); setCustomerSummaryPage(1); }}
-                        statusFilter={customerSummaryStatusFilter}
-                        onStatusFilterChange={(val) => { setCustomerSummaryStatusFilter(val); setCustomerSummaryPage(1); }}
-                        sortConfig={customerSummarySortConfig}
-                        onSortChange={(cfg) => { setCustomerSummarySortConfig(cfg); setCustomerSummaryPage(1); }}
-                    />
-                    <PaginationControls
-                        page={customerSummaryPage}
-                        pageSize={customerSummaryPageSize}
-                        total={customerSummaryTotal}
-                        onPageChange={setCustomerSummaryPage}
-                        onPageSizeChange={(value) => { setCustomerSummaryPageSize(value); setCustomerSummaryPage(1); }}
-                    />
-                </>
+                <AROverviewTab
+                    loading={loading}
+                    kpiData={kpiData}
+                    agingData={agingData}
+                    onBucketClick={handleAgingBucketClick}
+                    customerSummary={customerSummary}
+                    onCustomerClick={handleCustomerClick}
+                    onReceivePayment={handleReceivePaymentClick}
+                    hasPaymentPermission={hasPermission('ar:receive_payment')}
+                    onExport={handleExportCustomerSummary}
+                    searchTerm={customerSummarySearchTerm}
+                    onSearchChange={(val) => { setCustomerSummarySearchTerm(val); setCustomerSummaryPage(1); }}
+                    statusFilter={customerSummaryStatusFilter}
+                    onStatusFilterChange={(val) => { setCustomerSummaryStatusFilter(val); setCustomerSummaryPage(1); }}
+                    sortConfig={customerSummarySortConfig}
+                    onSortChange={(cfg) => { setCustomerSummarySortConfig(cfg); setCustomerSummaryPage(1); }}
+                    customerSummaryPage={customerSummaryPage}
+                    customerSummaryPageSize={customerSummaryPageSize}
+                    customerSummaryTotal={customerSummaryTotal}
+                    onCustomerSummaryPageChange={setCustomerSummaryPage}
+                    onCustomerSummaryPageSizeChange={(value) => { setCustomerSummaryPageSize(value); setCustomerSummaryPage(1); }}
+                    selectedAgingBucket={selectedAgingBucket}
+                    onCloseDrillDown={handleCloseDrillDown}
+                    drillDownLoading={drillDownLoading}
+                    drillDownInvoices={drillDownInvoices}
+                    drillDownPage={drillDownPage}
+                    drillDownPageSize={drillDownPageSize}
+                    drillDownTotal={drillDownTotal}
+                    onDrillDownPageChange={setDrillDownPage}
+                    onDrillDownPageSizeChange={(value) => { setDrillDownPageSize(value); setDrillDownPage(1); }}
+                    onReceivePaymentFromDrillDown={handleReceivePaymentFromDrillDown}
+                    hasPermission={hasPermission}
+                    isPaymentModalOpen={isPaymentModalOpen}
+                    selectedCustomer={selectedCustomer}
+                    onClosePaymentModal={() => setIsPaymentModalOpen(false)}
+                    onPaymentSaved={handlePaymentSaved}
+                    selectedCustomerForInvoices={selectedCustomerForInvoices}
+                    onCloseCustomerInvoices={handleCloseCustomerInvoices}
+                    customerInvoices={customerInvoices}
+                    customerInvoicesLoading={customerInvoicesLoading}
+                    customerInvoicesPage={customerInvoicesPage}
+                    customerInvoicesPageSize={customerInvoicesPageSize}
+                    customerInvoicesTotal={customerInvoicesTotal}
+                    onCustomerInvoicesPageChange={setCustomerInvoicesPage}
+                    onCustomerInvoicesPageSizeChange={(size) => { setCustomerInvoicesPageSize(size); setCustomerInvoicesPage(1); }}
+                    onAfterDueDateUpdate={fetchDashboardData}
+                />
             )}
 
-            {/* TAB 2: CUSTOMER LEDGER & SOA */}
             {activeTab === 'ledger_soa' && (
-                <div className="space-y-6">
-                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                        <div className="w-full md:w-96 relative" ref={soaComboboxRef}>
-                            <label className="block text-xs font-semibold uppercase text-gray-600 mb-1">Search Customer</label>
-                            <div className="relative">
-                                <input
-                                    type="text"
-                                    value={soaSearchQuery}
-                                    onChange={(e) => {
-                                        setSoaSearchQuery(e.target.value);
-                                        setSoaDropdownOpen(true);
-                                        if (!e.target.value) {
-                                            setSoaCustomerId('');
-                                            setSoaLedger(null);
-                                        }
-                                    }}
-                                    onFocus={() => setSoaDropdownOpen(true)}
-                                    onKeyDown={handleSoaKeyDown}
-                                    placeholder="Search customer name, company..."
-                                    className="w-full px-3 py-2 pr-8 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                />
-                                {soaSearchQuery && (
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setSoaSearchQuery('');
-                                            setSoaCustomerId('');
-                                            setSoaLedger(null);
-                                            setSoaDropdownOpen(false);
-                                            setSoaHighlightedIndex(-1);
-                                        }}
-                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none p-1 rounded-full hover:bg-gray-100 transition-colors"
-                                        title="Clear search"
-                                    >
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                        </svg>
-                                    </button>
-                                )}
-                            </div>
-
-                            {/* Search Dropdown Results */}
-                            {soaDropdownOpen && (
-                                <div className="absolute z-50 left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg">
-                                    {filteredSoaCustomers.length === 0 ? (
-                                        <div className="p-3 text-xs text-gray-500 text-center">No matching customer accounts found</div>
-                                    ) : (
-                                        filteredSoaCustomers.map((c, idx) => {
-                                            const displayName = c.company_name || `${c.first_name || ''} ${c.last_name || ''}`.trim();
-                                            const isSelected = String(c.customer_id) === String(soaCustomerId);
-                                            const isHighlighted = idx === soaHighlightedIndex;
-                                            return (
-                                                <button
-                                                    key={c.customer_id}
-                                                    type="button"
-                                                    ref={(el) => {
-                                                        if (isHighlighted && el) {
-                                                            el.scrollIntoView({ block: 'nearest' });
-                                                        }
-                                                    }}
-                                                    onClick={() => selectSoaCustomer(c)}
-                                                    onMouseEnter={() => setSoaHighlightedIndex(idx)}
-                                                    className={`w-full text-left px-3 py-2 text-sm flex justify-between items-center transition-colors border-b border-gray-100 last:border-0 ${
-                                                        isHighlighted
-                                                            ? 'bg-blue-100 font-semibold text-blue-900 ring-1 ring-blue-300'
-                                                            : isSelected
-                                                            ? 'bg-blue-50 font-semibold text-blue-700'
-                                                            : 'text-gray-700 hover:bg-blue-50'
-                                                    }`}
-                                                >
-                                                    <span className="truncate">{displayName}</span>
-                                                    <span className="font-mono text-xs text-gray-500 ml-2 whitespace-nowrap">
-                                                        {formatCurrency(c.total_balance_due || c.balance_due || 0)}
-                                                    </span>
-                                                </button>
-                                            );
-                                        })
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                        {soaCustomerId && (
-                            <div className="flex items-center gap-4">
-                                <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-                                    <div className="relative">
-                                        <input
-                                            type="checkbox"
-                                            checked={attachReceiptImages}
-                                            onChange={(e) => setAttachReceiptImages(e.target.checked)}
-                                            className="sr-only peer"
-                                        />
-                                        <div className="w-9 h-5 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
-                                    </div>
-                                    <span className="text-xs font-semibold text-gray-700">Attach images</span>
-                                </label>
-                                <button
-                                    onClick={handleExportSoaPdf}
-                                    disabled={soaDownloading}
-                                    className="px-5 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 text-sm font-semibold transition-colors flex items-center gap-2 shadow-sm"
-                                >
-                                    {soaDownloading ? 'Generating PDF...' : '📄 Export Statement of Account (PDF)'}
-                                </button>
-                            </div>
-                        )}
-
-
-                    </div>
-
-                    {soaLoading ? (
-                        <div className="bg-white p-12 rounded-xl text-center text-gray-500 border">Loading customer ledger history...</div>
-                    ) : !soaLedger ? (
-                        <div className="bg-white p-12 rounded-xl text-center text-gray-500 border">Please select a customer to view their statement of account and ledger history.</div>
-                    ) : (
-                        <div className="space-y-6">
-                            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-                                <div className="p-6 border-b border-gray-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gray-50">
-                                    <div>
-                                        <div className="flex items-center gap-2">
-                                            <h3 className="text-xl font-bold text-gray-800">{soaLedger.customer.name}</h3>
-                                            <span className="px-2.5 py-0.5 rounded bg-blue-100 text-blue-800 text-xs font-mono font-semibold">
-                                                {soaLedger.statement_number || 'SOA-STATEMENT'}
-                                            </span>
-                                        </div>
-                                        <p className="text-xs text-gray-500 mt-1">
-                                            Account ID: <span className="font-mono font-semibold">CUST-{soaLedger.customer.customer_id}</span> | {soaLedger.customer.email || 'No email'} | {soaLedger.customer.phone || 'No phone'}
-                                        </p>
-                                    </div>
-                                    <div className="text-right">
-                                        <div className="text-xs uppercase font-semibold text-gray-500">Net Account Balance</div>
-                                        <div className="text-2xl font-bold font-mono text-blue-700">{formatCurrency(soaLedger.closing_balance)}</div>
-                                    </div>
-                                </div>
-
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-sm text-left text-gray-500">
-                                        <thead className="text-xs text-gray-700 uppercase bg-gray-100 border-b">
-                                            <tr>
-                                                <th className="px-5 py-3">Txn Date</th>
-                                                <th className="px-5 py-3">Due Date</th>
-                                                <th className="px-5 py-3">Ref / Doc #</th>
-                                                <th className="px-5 py-3">Description</th>
-                                                <th className="px-5 py-3 text-right">Charges (Dr)</th>
-                                                <th className="px-5 py-3 text-right">Credits (Cr)</th>
-                                                <th className="px-5 py-3 text-right font-bold">Running Balance</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-200">
-                                            <tr className="bg-blue-50/60 font-semibold text-gray-800">
-                                                <td className="px-5 py-3 whitespace-nowrap">{dateRange.startDate.toLocaleDateString()}</td>
-                                                <td className="px-5 py-3">—</td>
-                                                <td className="px-5 py-3 font-mono text-xs text-gray-400">—</td>
-                                                <td className="px-5 py-3 font-semibold text-blue-900">OPENING BALANCE BROUGHT FORWARD</td>
-                                                <td className="px-5 py-3 text-right font-mono">—</td>
-                                                <td className="px-5 py-3 text-right font-mono">—</td>
-                                                <td className="px-5 py-3 text-right font-mono font-bold text-blue-900">{formatCurrency(soaLedger.opening_balance)}</td>
-                                            </tr>
-                                            {soaLedger.ledger_rows.map((row, idx) => (
-                                                <tr key={row.ledger_id || idx} className="hover:bg-gray-50">
-                                                    <td className="px-5 py-3.5 whitespace-nowrap">{new Date(row.date).toLocaleDateString()}</td>
-                                                    <td className="px-5 py-3.5 whitespace-nowrap text-gray-600">{row.due_date ? new Date(row.due_date).toLocaleDateString() : '—'}</td>
-                                                    <td className="px-5 py-3.5 font-mono text-xs">
-                                                        <div className="font-bold text-gray-900">
-                                                            {row.primary_ref || row.physical_receipt_no || '-'}
-                                                        </div>
-                                                        {row.sub_ref && (
-                                                            <div className="text-[11px] font-normal text-gray-400 mt-0.5">
-                                                                {row.sub_ref}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-5 py-3.5">
-                                                        <div className="font-semibold text-gray-800">{row.type_label || row.event_type}</div>
-                                                        {row.description && <div className="text-xs text-gray-500">{row.description}</div>}
-                                                    </td>
-                                                    <td className="px-5 py-3.5 text-right font-mono text-gray-900 font-medium">{row.debit_amount ? formatCurrency(row.debit_amount) : '—'}</td>
-                                                    <td className="px-5 py-3.5 text-right font-mono text-emerald-700 font-medium">{row.credit_amount ? formatCurrency(row.credit_amount) : '—'}</td>
-                                                    <td className="px-5 py-3.5 text-right font-mono font-bold text-gray-900">{formatCurrency(row.running_balance)}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-
-                            {/* Floating Collections / Pending Cheques Breakdown Table */}
-                            {soaLedger.pending_cheques && soaLedger.pending_cheques.length > 0 && (
-                                <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-5 shadow-sm">
-                                    <div className="flex justify-between items-center mb-3">
-                                        <h4 className="text-sm font-bold text-amber-900 flex items-center gap-2">
-                                            <span>⏳ Floating Collections / Uncleared Cheques</span>
-                                            <span className="px-2 py-0.5 bg-amber-200 text-amber-900 rounded-full text-xs font-semibold">
-                                                {soaLedger.pending_cheque_count} Items
-                                            </span>
-                                        </h4>
-                                        <div className="text-sm font-bold font-mono text-amber-950">
-                                            Total: {formatCurrency(soaLedger.pending_cheque_total)}
-                                        </div>
-                                    </div>
-                                    <p className="text-xs text-amber-800 mb-3">
-                                        The following cheques have been received and committed against invoices, but remain pending bank clearance.
-                                    </p>
-                                    <div className="overflow-x-auto bg-white rounded-lg border border-amber-200">
-                                        <table className="w-full text-xs text-left text-gray-600">
-                                            <thead className="bg-amber-100/60 text-amber-950 uppercase font-semibold border-b border-amber-200">
-                                                <tr>
-                                                    <th className="px-4 py-2.5">Cheque Date</th>
-                                                    <th className="px-4 py-2.5">Cheque / Ref #</th>
-                                                    <th className="px-4 py-2.5">Drawee Bank</th>
-                                                    <th className="px-4 py-2.5 text-center">Clearance Status</th>
-                                                    <th className="px-4 py-2.5 text-right">Amount</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-amber-100">
-                                                {soaLedger.pending_cheques.map((item) => (
-                                                    <tr key={item.payment_id} className="hover:bg-amber-50/30">
-                                                        <td className="px-4 py-2 whitespace-nowrap">{new Date(item.cheque_date).toLocaleDateString()}</td>
-                                                        <td className="px-4 py-2 font-mono font-semibold text-gray-800">{item.reference_number || '-'}</td>
-                                                        <td className="px-4 py-2">{item.payment_method_name || 'Bank Instrument'}</td>
-                                                        <td className="px-4 py-2 text-center">
-                                                            <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 text-xs font-medium">
-                                                                {item.pdc_status}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-4 py-2 text-right font-mono font-bold text-gray-900">{formatCurrency(item.amount)}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
+                <ARLedgerSoaTab
+                    soaComboboxRef={soaComboboxRef}
+                    soaSearchQuery={soaSearchQuery}
+                    onSoaSearchQueryChange={setSoaSearchQuery}
+                    soaDropdownOpen={soaDropdownOpen}
+                    setSoaDropdownOpen={setSoaDropdownOpen}
+                    soaHighlightedIndex={soaHighlightedIndex}
+                    setSoaHighlightedIndex={setSoaHighlightedIndex}
+                    filteredSoaCustomers={filteredSoaCustomers}
+                    soaCustomerId={soaCustomerId}
+                    selectSoaCustomer={selectSoaCustomer}
+                    onClearSoaCustomer={handleClearSoaCustomer}
+                    handleSoaKeyDown={handleSoaKeyDown}
+                    attachReceiptImages={attachReceiptImages}
+                    setAttachReceiptImages={setAttachReceiptImages}
+                    handleExportSoaPdf={handleExportSoaPdf}
+                    soaDownloading={soaDownloading}
+                    soaLoading={soaLoading}
+                    soaLedger={soaLedger}
+                    dateRange={dateRange}
+                />
             )}
 
-            {/* TAB 3: CUSTOMER WALLET MANAGEMENT */}
             {activeTab === 'wallet' && (
-                <div className="space-y-6">
-                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center">
-                        <div>
-                            <h2 className="text-xl font-bold text-gray-800">Customer Wallet & Store Credit Management</h2>
-                            <p className="text-xs text-gray-500 mt-0.5">Manage customer deposit balances, overpayment credits, and store wallet adjustments</p>
-                        </div>
-                    </div>
-
-                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm text-left text-gray-500">
-                                <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b">
-                                    <tr>
-                                        <th className="px-6 py-3">Customer</th>
-                                        <th className="px-6 py-3 text-right">Store Wallet Balance</th>
-                                        <th className="px-6 py-3 text-right">Outstanding Receivables</th>
-                                        <th className="px-6 py-3 text-right">Net Exposure</th>
-                                        <th className="px-6 py-3 text-center">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-200">
-                                    {walletCustomers.map(w => {
-                                        const walletBal = Number(w.wallet_balance || 0);
-                                        const arBal = Number(w.receivable_balance || w.total_balance_due || 0);
-                                        const netExp = arBal - walletBal;
-                                        return (
-                                            <tr key={w.customer_id} className="hover:bg-gray-50">
-                                                <td className="px-6 py-4 font-semibold text-gray-900">{w.company_name || `${w.first_name || ''} ${w.last_name || ''}`}</td>
-                                                <td className="px-6 py-4 text-right font-mono font-bold text-emerald-700">{formatCurrency(walletBal)}</td>
-                                                <td className="px-6 py-4 text-right font-mono font-semibold text-gray-900">{formatCurrency(arBal)}</td>
-                                                <td className="px-6 py-4 text-right font-mono font-bold" style={{ color: netExp > 0 ? '#DC2626' : '#059669' }}>
-                                                    {formatCurrency(netExp)}
-                                                </td>
-                                                <td className="px-6 py-4 text-center">
-                                                    <button
-                                                        onClick={() => {
-                                                            setSelectedWalletCustomer(w);
-                                                            setIsWalletModalOpen(true);
-                                                        }}
-                                                        className="px-3 py-1 bg-blue-600 text-white rounded text-xs font-semibold hover:bg-blue-700"
-                                                    >
-                                                        View / Adjust Wallet
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                    {walletCustomers.length === 0 && (
-                                        <tr>
-                                            <td colSpan="5" className="px-6 py-8 text-center text-gray-500">No customer wallet records found.</td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    {/* Customer Wallet Modal */}
-                    {selectedWalletCustomer && (
-                        <CustomerWalletModal
-                            isOpen={isWalletModalOpen}
-                            onClose={() => {
-                                setIsWalletModalOpen(false);
-                                setSelectedWalletCustomer(null);
-                            }}
-                            customer={selectedWalletCustomer}
-                            onUpdated={() => {
-                                fetchWalletCustomers();
-                                fetchDashboardData();
-                            }}
-                        />
-                    )}
-                </div>
+                <ARWalletTab
+                    walletLoading={walletLoading}
+                    walletSearch={walletSearch}
+                    onWalletSearchChange={setWalletSearch}
+                    filteredWalletCustomers={filteredWalletCustomers}
+                    paginatedWalletCustomers={paginatedWalletCustomers}
+                    walletPage={walletPage}
+                    walletPageSize={walletPageSize}
+                    onWalletPageChange={setWalletPage}
+                    onWalletPageSizeChange={(value) => { setWalletPageSize(value); setWalletPage(1); }}
+                    selectedWalletCustomer={selectedWalletCustomer}
+                    onSelectWalletCustomer={handleSelectWalletCustomer}
+                    isWalletModalOpen={isWalletModalOpen}
+                    onCloseWalletModal={handleCloseWalletModal}
+                    onWalletUpdated={handleWalletUpdated}
+                />
             )}
-
-            {/* Receive Payment Modal */}
-            <Modal 
-                isOpen={isPaymentModalOpen} 
-                onClose={() => setIsPaymentModalOpen(false)} 
-                title={`Receive Payment from ${selectedCustomer?.company_name || `${selectedCustomer?.first_name || ''} ${selectedCustomer?.last_name || ''}`.trim()}`} 
-                maxWidth="max-w-6xl"
-            >
-                {selectedCustomer && (
-                    <ReceivePaymentForm 
-                        customer={selectedCustomer} 
-                        onSave={handlePaymentSaved} 
-                        onCancel={() => setIsPaymentModalOpen(false)} 
-                    />
-                )}
-            </Modal>
-
-            {/* Drill-down Modal for Aging Bucket Details */}
-            <Modal
-                isOpen={selectedAgingBucket !== null}
-                onClose={() => {
-                    setSelectedAgingBucket(null);
-                    setDrillDownInvoices([]);
-                    setDrillDownTotal(0);
-                    setDrillDownPage(1);
-                }}
-                title={`Invoices - ${selectedAgingBucket}`}
-                maxWidth="max-w-6xl"
-            >
-                <div className="space-y-4">
-                    {drillDownLoading ? (
-                        <div className="flex items-center justify-center py-8">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                            <span className="ml-2 text-gray-600">Loading invoices...</span>
-                        </div>
-                    ) : drillDownInvoices.length === 0 ? (
-                        <div className="text-center py-8 text-gray-500">
-                            No invoices found for this aging bucket.
-                        </div>
-                    ) : (
-                        <>
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left">
-                                    <thead className="border-b border-gray-200">
-                                        <tr>
-                                            <th className="p-3 text-sm font-semibold text-gray-600">Invoice #</th>
-                                            <th className="p-3 text-sm font-semibold text-gray-600">Customer</th>
-                                            <th className="p-3 text-sm font-semibold text-gray-600">Invoice Date</th>
-                                            <th className="p-3 text-sm font-semibold text-gray-600">Due Date</th>
-                                            <th className="p-3 text-sm font-semibold text-gray-600 text-right">Amount</th>
-                                            <th className="p-3 text-sm font-semibold text-gray-600 text-right">Balance</th>
-                                            <th className="p-3 text-sm font-semibold text-gray-600 text-center">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {drillDownInvoices.map(invoice => (
-                                            <tr key={invoice.invoice_id} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
-                                                <td className="p-3 text-sm font-mono">{invoice.invoice_number}</td>
-                                                <td className="p-3 text-sm">{invoice.company_name || `${invoice.first_name || ''} ${invoice.last_name || ''}`.trim()}</td>
-                                                <td className="p-3 text-sm">{new Date(invoice.invoice_date).toLocaleDateString()}</td>
-                                                <td className="p-3 text-sm">{new Date(invoice.due_date).toLocaleDateString()}</td>
-                                                <td className="p-3 text-sm text-right font-mono">{formatCurrency(invoice.total_amount)}</td>
-                                                <td className="p-3 text-sm text-right font-mono font-medium">{formatCurrency(invoice.balance_due)}</td>
-                                                <td className="p-3 text-sm text-center">
-                                                    {hasPermission('ar:receive_payment') && Number(invoice.balance_due) > 0 && (
-                                                        <button
-                                                            onClick={() => {
-                                                                setSelectedAgingBucket(null);
-                                                                handleReceivePaymentClick(invoice);
-                                                            }}
-                                                            className="bg-green-600 text-white px-3 py-1 rounded-lg text-xs font-semibold hover:bg-green-700 transition-colors"
-                                                        >
-                                                            Receive Payment
-                                                        </button>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                            <PaginationControls
-                                page={drillDownPage}
-                                pageSize={drillDownPageSize}
-                                total={drillDownTotal}
-                                onPageChange={setDrillDownPage}
-                                onPageSizeChange={(value) => {
-                                    setDrillDownPageSize(value);
-                                    setDrillDownPage(1);
-                                }}
-                            />
-                        </>
-                    )}
-                </div>
-            </Modal>
-
-            {/* Customer Invoice Details Modal */}
-            <CustomerInvoiceDetailsModal
-                isOpen={selectedCustomerForInvoices !== null}
-                onClose={() => {
-                    setSelectedCustomerForInvoices(null);
-                    setCustomerInvoices([]);
-                }}
-                title={`Payable Invoices for ${selectedCustomerForInvoices?.company_name || `${selectedCustomerForInvoices?.first_name || ''} ${selectedCustomerForInvoices?.last_name || ''}`.trim()}`}
-                invoices={customerInvoices}
-                loading={customerInvoicesLoading}
-                page={customerInvoicesPage}
-                pageSize={customerInvoicesPageSize}
-                total={customerInvoicesTotal}
-                onPageChange={setCustomerInvoicesPage}
-                onPageSizeChange={(size) => {
-                    setCustomerInvoicesPageSize(size);
-                    setCustomerInvoicesPage(1);
-                }}
-                onAfterDueDateUpdate={() => {
-                    fetchDashboardData();
-                }}
-            />
         </div>
     );
 };

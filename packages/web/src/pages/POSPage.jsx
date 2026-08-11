@@ -989,7 +989,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                                 ref={searchInputRef}
                             />
                             {searchResults.length > 0 && (
-                                <ul id="pos-search-results" className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg search-results" role="listbox">
+                                <ul id="pos-search-results" className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 #f8fafc' }} role="listbox">
                                     {searchResults.map((part, index) => {
                                         const itemProps = getItemProps(index);
                                         return (

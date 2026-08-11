@@ -28,6 +28,7 @@ import CashierApprovalDesk from '../../pages/CashierApprovalDesk';
 import ExpensesPage from '../../pages/ExpensesPage';
 import ExpenseCategoriesPage from '../../pages/ExpenseCategoriesPage';
 import PaperlessReceiptsPage from '../../pages/PaperlessReceiptsPage';
+import SoaGenPage from '../../pages/SoaGenPage';
 
 const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLines, setPosLines }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -52,6 +53,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'purchase_orders': return <PurchaseOrderPage />;
             case 'ar': return <AccountsReceivablePage />;
             case 'pdc': return <PdcTreasuryPage />;
+            case 'soa_gen': return <SoaGenPage />;
             case 'staged_sales': return <CashierApprovalDesk onNavigate={onNavigate} />;
             case 'inventory': return <InventoryPage user={user} />;
             case 'cycle_count': return <CycleCountExecutionPage />;
