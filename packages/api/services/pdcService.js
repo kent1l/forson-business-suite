@@ -6,7 +6,7 @@ const arLedgerService = require('./arLedgerService');
  * Calculate dynamic maturity details for PDC cheques based on cheque_date vs current date.
  * @param {object} row
  */
-function computePdcMaturity(row) {
+function computePdcMaturity(row, staleDays = 180) {
   const todayStr = new Date().toISOString().split('T')[0];
   const chequeDateStr = row.cheque_date || (row.created_at ? new Date(row.created_at).toISOString().split('T')[0] : todayStr);
 
@@ -18,9 +18,9 @@ function computePdcMaturity(row) {
   let maturity_status = 'DUE_TODAY';
   let maturity_label = 'Due for Clearance';
 
-  if (daysDiff < -180) {
+  if (daysDiff < -staleDays) {
     maturity_status = 'STALE_CHEQUE';
-    maturity_label = 'Stale Cheque (> 180 Days Old)';
+    maturity_label = `Stale Cheque (> ${staleDays} Days Old)`;
   } else if (daysDiff > 0) {
     maturity_status = 'FUTURE_PDC';
     maturity_label = `Future PDC (Matures in ${daysDiff} day${daysDiff === 1 ? '' : 's'})`;
@@ -219,7 +219,7 @@ async function getChequeClearanceHistory(db, paymentId, sourceTable = 'auto') {
              l.attempt_number, l.bounce_reason, l.bounce_fee, l.notes, l.created_at, l.created_by,
              u.username AS created_by_username
       FROM cheque_clearance_log l
-      LEFT JOIN users u ON u.user_id = l.created_by
+      LEFT JOIN employee u ON u.employee_id = l.created_by
       WHERE l.customer_payment_id = $1
       ORDER BY l.created_at ASC;
     `;
@@ -231,7 +231,7 @@ async function getChequeClearanceHistory(db, paymentId, sourceTable = 'auto') {
              l.action, l.attempt_number, l.bounce_reason, l.bounce_fee, l.notes, l.created_at, l.created_by,
              u.username AS created_by_username
       FROM cheque_clearance_log l
-      LEFT JOIN users u ON u.user_id = l.created_by
+      LEFT JOIN employee u ON u.employee_id = l.created_by
       WHERE l.payment_id = $1 OR l.customer_payment_id = $1
       ORDER BY l.created_at ASC;
     `;
@@ -737,6 +737,7 @@ async function getPdcSummaryStats(db) {
 }
 
 module.exports = {
+  computePdcMaturity,
   getCollectionsClearanceList,
   getChequeClearanceHistory,
   verifyPayment,

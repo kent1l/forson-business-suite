@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Icon from '../ui/Icon';
+import BrandLogo from '../ui/BrandLogo';
 import { ICONS } from '../../constants';
 import { APP_VERSION_LABEL } from '../../constants/version';
 import { useAuth } from '../../contexts/AuthContext';
@@ -58,7 +59,8 @@ const CATEGORIES = [
         title: 'Finance & Expenses',
         icon: ICONS.receipt,
         items: [
-            { name: 'PDC & Treasury',    icon: ICONS.receipt, page: 'pdc',                permission: ['pdc:view', 'ar:view'] },
+            { name: 'PDC & Treasury',    icon: ICONS.receipt, page: 'pdc',                permission: ['pdc:view', 'ar:view', 'ap-pdc:view'] },
+            { name: 'Bank Accounts',    icon: ICONS.receipt, page: 'bank_accounts',      permission: 'ap-pdc:view' },
             { name: 'Bulk SOA Generator', icon: ICONS.documents, page: 'soa_gen',          permission: 'ar:view' },
             { name: 'Expenses',           icon: ICONS.receipt, page: 'expenses',           permission: 'expenses:view' },
             { name: 'Expense Categories', icon: ICONS.tag,     page: 'expense_categories', permission: 'expenses:manage_categories' },
@@ -126,8 +128,8 @@ function NavItem({ item, currentPage, onNavigate, setIsOpen, isCollapsed, pendin
                         ? 'h-10 w-10 rounded-xl justify-center'
                         : 'px-3 py-2.5 rounded-xl gap-3 w-full',
                     isActive
-                        ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
-                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+                        ? 'bg-primary-600 text-white shadow-md shadow-primary-600/30 dark:shadow-none'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white',
                 ].join(' ')}
             >
                 <Icon
@@ -162,9 +164,9 @@ function NavItem({ item, currentPage, onNavigate, setIsOpen, isCollapsed, pendin
                     className={[
                         'pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 z-50',
                         'hidden md:group-hover/item:flex items-center gap-2',
-                        'px-3 py-2 rounded-lg bg-slate-900 text-white text-xs shadow-xl whitespace-nowrap',
+                        'px-3 py-2 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-xs shadow-xl whitespace-nowrap',
                         'before:absolute before:top-1/2 before:-translate-y-1/2 before:-left-1.5',
-                        'before:border-4 before:border-transparent before:border-r-slate-900',
+                        'before:border-4 before:border-transparent before:border-r-slate-900 dark:before:border-r-slate-700',
                     ].join(' ')}
                 >
                     {categoryTitle && (
@@ -222,8 +224,8 @@ function CategoryGroup({ cat, currentPage, onNavigate, setIsOpen, isCollapsed, i
                     'px-3 py-2.5 min-h-[36px] rounded-lg text-left',
                     'transition-colors duration-200 ease-[cubic-bezier(0.2,0,0,1)] cursor-pointer',
                     hasActive && !isOpen
-                        ? 'text-blue-600 bg-blue-50'
-                        : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50',
+                        ? 'text-primary-600 dark:text-primary-500 bg-primary-50 dark:bg-primary-900/40'
+                        : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800',
                 ].join(' ')}
             >
                 <span className="text-[10px] font-bold uppercase tracking-widest leading-none">
@@ -309,7 +311,7 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
             <aside
                 className={[
                     'fixed top-0 left-0 h-full z-30 flex flex-col',
-                    'bg-white border-r border-slate-200/80',
+                    'bg-white dark:bg-slate-900 border-r border-slate-200/80 dark:border-slate-800',
                     'transform transition-[width,transform] duration-300 ease-[cubic-bezier(0.2,0,0,1)]',
                     'md:relative md:translate-x-0',
                     isOpen ? 'translate-x-0' : '-translate-x-full',
@@ -319,7 +321,7 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
                 {/* ── Header ─────────────────────────────────────────── */}
                 <div
                     className={[
-                        'h-16 flex items-center border-b border-slate-100 shrink-0 transition-all duration-300',
+                        'h-16 flex items-center border-b border-slate-100 dark:border-slate-800 shrink-0 transition-all duration-300',
                         isCollapsed ? 'justify-center px-0' : 'justify-between px-4',
                     ].join(' ')}
                 >
@@ -327,13 +329,25 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
                         <>
                             <div className="flex items-center gap-3 overflow-hidden">
                                 {/* Brand mark */}
-                                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center font-black text-lg shadow-md shadow-blue-200 shrink-0">
-                                    F
-                                </div>
-                                {/* Brand name */}
-                                <span className="font-bold text-slate-800 text-[15px] tracking-tight whitespace-nowrap transition-opacity duration-300">
-                                    Forson <span className="text-blue-600">Suite</span>
-                                </span>
+                                <BrandLogo
+                                    variant="icon"
+                                    className="h-10 w-10 rounded-xl object-contain shrink-0"
+                                    fallback={
+                                        <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary-600 to-accent-600 text-white flex items-center justify-center font-black text-lg shadow-md shadow-primary-600/30 shrink-0">
+                                            F
+                                        </div>
+                                    }
+                                />
+                                {/* Brand name / full logo */}
+                                <BrandLogo
+                                    variant="full"
+                                    className="h-6 max-w-[130px] object-contain"
+                                    fallback={
+                                        <span className="font-bold text-slate-800 dark:text-slate-100 text-[15px] tracking-tight whitespace-nowrap transition-opacity duration-300">
+                                            Forson <span className="text-primary-600 dark:text-primary-500">Suite</span>
+                                        </span>
+                                    }
+                                />
                             </div>
 
                             {/* Collapse toggle button */}
@@ -341,7 +355,7 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
                                 type="button"
                                 onClick={() => setIsCollapsed(true)}
                                 title="Collapse sidebar"
-                                className="hidden md:flex items-center justify-center h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors duration-150 shrink-0 cursor-pointer"
+                                className="hidden md:flex items-center justify-center h-8 w-8 rounded-lg text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors duration-150 shrink-0 cursor-pointer"
                             >
                                 <Icon path={ICONS.chevronLeft} className="h-4 w-4" />
                             </button>
@@ -353,9 +367,9 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
                                 type="button"
                                 onClick={() => setIsCollapsed(false)}
                                 title="Expand sidebar"
-                                className="relative h-10 w-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center font-black text-lg shadow-md shadow-blue-200 transition-all duration-200 hover:scale-105 cursor-pointer shrink-0"
+                                className="relative h-10 w-10 rounded-xl overflow-hidden bg-gradient-to-br from-primary-600 to-accent-600 text-white flex items-center justify-center font-black text-lg shadow-md shadow-primary-600/30 transition-all duration-200 hover:scale-105 cursor-pointer shrink-0"
                             >
-                                <span>F</span>
+                                <BrandLogo variant="icon" className="h-full w-full object-contain" fallback={<span>F</span>} />
                                 <div className="absolute inset-0 rounded-xl bg-slate-900/20 opacity-0 group-hover/logo:opacity-100 transition-opacity flex items-center justify-center">
                                     <Icon path={ICONS.chevronRight} className="h-4 w-4 text-white" />
                                 </div>
@@ -394,7 +408,7 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
                         </div>
 
                         {/* Separator */}
-                        <div className={isCollapsed ? 'w-8 h-px bg-slate-200/80 my-2' : 'h-px bg-slate-100 mb-4'} />
+                        <div className={isCollapsed ? 'w-8 h-px bg-slate-200/80 dark:bg-slate-700 my-2' : 'h-px bg-slate-100 dark:bg-slate-800 mb-4'} />
 
                         {/* Category groups */}
                         <div className={isCollapsed ? 'space-y-1 w-full flex flex-col items-center' : 'space-y-2'}>
@@ -417,11 +431,11 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
                 </nav>
 
                 {/* ── Footer ─────────────────────────────────────────── */}
-                <div className="shrink-0 border-t border-slate-100 px-4 py-3 flex items-center justify-between gap-2">
+                <div className="shrink-0 border-t border-slate-100 dark:border-slate-800 px-4 py-3 flex items-center justify-between gap-2">
                     {!isCollapsed ? (
-                        <span className="text-[10px] text-slate-400 font-mono truncate">{APP_VERSION_LABEL}</span>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono truncate">{APP_VERSION_LABEL}</span>
                     ) : (
-                        <span className="text-[10px] text-slate-400 font-mono text-center w-full">v2.5</span>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono text-center w-full">v2.5</span>
                     )}
                 </div>
             </aside>

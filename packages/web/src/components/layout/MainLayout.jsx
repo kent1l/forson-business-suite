@@ -19,6 +19,7 @@ import POSPage from '../../pages/POSPage';
 import PurchaseOrderPage from '../../pages/PurchaseOrderPage';
 import AccountsReceivablePage from '../../pages/AccountsReceivablePage';
 import PdcTreasuryPage from '../../pages/PdcTreasuryPage';
+import BankAccountsPage from '../../pages/BankAccountsPage';
 import SalesHistoryPage from '../../pages/SalesHistoryPage'; // <-- Import new page
 import DocumentsPage from '../../pages/DocumentsPage';
 import ChequePrintingPage from '../../pages/ChequePrintingPage';
@@ -53,6 +54,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'purchase_orders': return <PurchaseOrderPage />;
             case 'ar': return <AccountsReceivablePage />;
             case 'pdc': return <PdcTreasuryPage />;
+            case 'bank_accounts': return <BankAccountsPage />;
             case 'soa_gen': return <SoaGenPage />;
             case 'staged_sales': return <CashierApprovalDesk onNavigate={onNavigate} />;
             case 'inventory': return <InventoryPage user={user} />;
@@ -69,11 +71,11 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
 
 
     return (
-        <div className="flex h-screen bg-slate-50 font-sans text-gray-800">
+        <div className="flex h-screen bg-slate-50 dark:bg-slate-950 font-sans text-gray-800 dark:text-slate-100">
             <Sidebar user={user} onNavigate={onNavigate} currentPage={currentPage} isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
             <div className="flex-1 flex flex-col overflow-hidden">
                 <Header user={user} onLogout={onLogout} onMenuClick={() => setSidebarOpen(true)} />
-                <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-50 p-4 sm:p-6 md:p-8">
+                <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-50 dark:bg-slate-950 p-4 sm:p-6 md:p-8">
                     {renderPage()}
                 </main>
             </div>

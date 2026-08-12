@@ -37,13 +37,13 @@ function describeCron(expr) {
 
 const SectionHeader = ({ title, subtitle }) => (
     <div className="mb-4">
-        <h3 className="text-lg font-medium text-gray-900">{title}</h3>
-        {subtitle && <p className="mt-1 text-sm text-gray-500">{subtitle}</p>}
+        <h3 className="text-lg font-medium text-gray-900 dark:text-slate-100">{title}</h3>
+        {subtitle && <p className="mt-1 text-sm text-gray-500 dark:text-slate-500">{subtitle}</p>}
     </div>
 );
 
 const InfoBox = ({ children }) => (
-    <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 space-y-1">
+    <div className="mt-3 p-3 bg-primary-50 dark:bg-primary-900/20 border border-primary-100 dark:border-primary-900 rounded-lg text-sm text-primary-700 dark:text-primary-500 space-y-1">
         {children}
     </div>
 );
@@ -58,10 +58,10 @@ const Toggle = ({ name, label, checked, onChange }) => (
                 checked={checked}
                 onChange={onChange}
             />
-            <div className={`w-10 h-6 rounded-full transition-colors ${checked ? 'bg-blue-600' : 'bg-gray-300'}`} />
+            <div className={`w-10 h-6 rounded-full transition-colors ${checked ? 'bg-primary-600' : 'bg-gray-300 dark:bg-slate-600'}`} />
             <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
         </div>
-        <span className="text-sm font-medium text-gray-700">{label}</span>
+        <span className="text-sm font-medium text-gray-700 dark:text-slate-300">{label}</span>
     </label>
 );
 
@@ -206,14 +206,14 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
         <div className="space-y-8">
 
             {/* ── Local Backup Configuration ── */}
-            <div className="pb-6 border-b border-gray-200">
+            <div className="pb-6 border-b border-gray-200 dark:border-slate-700">
                 <SectionHeader
                     title="Local Backup Configuration"
                     subtitle="Backups are stored in the /backups volume and managed by the dedicated backup container."
                 />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">
                             Retention Period (Days)
                         </label>
                         <input
@@ -223,12 +223,12 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
                             max="365"
                             value={settings.BACKUP_RETENTION_DAYS || '7'}
                             onChange={handleChange}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                         />
-                        <p className="mt-1 text-xs text-gray-500">Local backup files older than this are deleted automatically.</p>
+                        <p className="mt-1 text-xs text-gray-500 dark:text-slate-500">Local backup files older than this are deleted automatically.</p>
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">
                             Backup Schedule (Cron)
                         </label>
                         <input
@@ -237,12 +237,12 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
                             value={cronExpr}
                             onChange={handleChange}
                             placeholder="0 2 * * *"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
                         />
-                        <p className="mt-1 text-xs text-gray-500">
+                        <p className="mt-1 text-xs text-gray-500 dark:text-slate-500">
                             {cronDesc
-                                ? <><span className="text-blue-600 font-medium">↻ {cronDesc}</span> · <a href="https://crontab.guru/" target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-600">crontab.guru</a></>
-                                : <a href="https://crontab.guru/" target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-600">crontab.guru</a>
+                                ? <><span className="text-primary-600 dark:text-primary-500 font-medium">↻ {cronDesc}</span> · <a href="https://crontab.guru/" target="_blank" rel="noopener noreferrer" className="underline hover:text-primary-600 dark:hover:text-primary-500">crontab.guru</a></>
+                                : <a href="https://crontab.guru/" target="_blank" rel="noopener noreferrer" className="underline hover:text-primary-600 dark:hover:text-primary-500">crontab.guru</a>
                             }
                         </p>
                     </div>
@@ -250,18 +250,18 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
             </div>
 
             {/* ── Remote Backup (Redundancy) ── */}
-            <div className="pb-6 border-b border-gray-200">
+            <div className="pb-6 border-b border-gray-200 dark:border-slate-700">
                 <SectionHeader
                     title="Remote Backup (Redundancy)"
                     subtitle="Enable one or both remote targets. Each backup is pushed to remote after the local copy is saved."
                 />
 
                 {/* Google Drive */}
-                <div className="mb-6 p-4 border border-gray-200 rounded-lg">
+                <div className="mb-6 p-4 border border-gray-200 dark:border-slate-700 rounded-lg">
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
                             <span className="text-lg">📁</span>
-                            <span className="font-medium text-gray-800">Google Drive</span>
+                            <span className="font-medium text-gray-800 dark:text-slate-200">Google Drive</span>
                         </div>
                         <Toggle
                             name="BACKUP_GDRIVE_ENABLED"
@@ -275,7 +275,7 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
                     {gdriveEnabled && (
                         <div className="space-y-3">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">
                                     rclone Remote Path
                                 </label>
                                 <input
@@ -284,19 +284,19 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
                                     value={settings.BACKUP_GDRIVE_REMOTE || 'gdrive:forson-backups'}
                                     onChange={handleChange}
                                     placeholder="gdrive:forson-backups"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
                                 />
-                                <p className="mt-1 text-xs text-gray-500">
-                                    Format: <code className="bg-gray-100 px-1 rounded">remote-name:folder-path</code>
+                                <p className="mt-1 text-xs text-gray-500 dark:text-slate-500">
+                                    Format: <code className="bg-gray-100 dark:bg-slate-800 px-1 rounded">remote-name:folder-path</code>
                                 </p>
                             </div>
                             <InfoBox>
                                 <p className="font-semibold">One-time server setup required:</p>
                                 <ol className="list-decimal list-inside space-y-1 text-xs mt-1">
-                                    <li>SSH into the server and run: <code className="bg-blue-100 px-1 rounded font-mono">rclone config</code></li>
+                                    <li>SSH into the server and run: <code className="bg-primary-100 dark:bg-primary-900/40 px-1 rounded font-mono">rclone config</code></li>
                                     <li>Create a remote named <strong>gdrive</strong> (type: drive, OAuth)</li>
-                                    <li>Copy the generated config to: <code className="bg-blue-100 px-1 rounded font-mono">./backup/rclone.conf</code></li>
-                                    <li>Restart the backup container: <code className="bg-blue-100 px-1 rounded font-mono">docker compose restart forson_backup</code></li>
+                                    <li>Copy the generated config to: <code className="bg-primary-100 dark:bg-primary-900/40 px-1 rounded font-mono">./backup/rclone.conf</code></li>
+                                    <li>Restart the backup container: <code className="bg-primary-100 dark:bg-primary-900/40 px-1 rounded font-mono">docker compose restart forson_backup</code></li>
                                 </ol>
                             </InfoBox>
                         </div>
@@ -304,11 +304,11 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
                 </div>
 
                 {/* Tailscale */}
-                <div className="mb-6 p-4 border border-gray-200 rounded-lg">
+                <div className="mb-6 p-4 border border-gray-200 dark:border-slate-700 rounded-lg">
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
                             <span className="text-lg">🔒</span>
-                            <span className="font-medium text-gray-800">Tailscale rsync</span>
+                            <span className="font-medium text-gray-800 dark:text-slate-200">Tailscale rsync</span>
                         </div>
                         <Toggle
                             name="BACKUP_TAILSCALE_ENABLED"
@@ -323,7 +323,7 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
                         <div className="space-y-3">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">
                                         Peer Host (Tailscale IP or hostname)
                                     </label>
                                     <input
@@ -332,11 +332,11 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
                                         value={settings.BACKUP_TAILSCALE_HOST || ''}
                                         onChange={handleChange}
                                         placeholder="100.x.x.x or hostname.tail.net"
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">
                                         Destination Path on Peer
                                     </label>
                                     <input
@@ -345,16 +345,16 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
                                         value={settings.BACKUP_TAILSCALE_PATH || '~/forson-backups'}
                                         onChange={handleChange}
                                         placeholder="~/forson-backups"
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
                                     />
                                 </div>
                             </div>
                             <InfoBox>
                                 <p className="font-semibold">One-time server setup required:</p>
                                 <ol className="list-decimal list-inside space-y-1 text-xs mt-1">
-                                    <li>Generate an SSH key: <code className="bg-blue-100 px-1 rounded font-mono">ssh-keygen -t ed25519 -f ./backup/id_rsa -N ""</code></li>
-                                    <li>Add the public key to the peer: <code className="bg-blue-100 px-1 rounded font-mono">cat ./backup/id_rsa.pub</code> → paste into peer's <code className="font-mono">~/.ssh/authorized_keys</code></li>
-                                    <li>Restart the backup container: <code className="bg-blue-100 px-1 rounded font-mono">docker compose restart forson_backup</code></li>
+                                    <li>Generate an SSH key: <code className="bg-primary-100 dark:bg-primary-900/40 px-1 rounded font-mono">ssh-keygen -t ed25519 -f ./backup/id_rsa -N ""</code></li>
+                                    <li>Add the public key to the peer: <code className="bg-primary-100 dark:bg-primary-900/40 px-1 rounded font-mono">cat ./backup/id_rsa.pub</code> → paste into peer's <code className="font-mono">~/.ssh/authorized_keys</code></li>
+                                    <li>Restart the backup container: <code className="bg-primary-100 dark:bg-primary-900/40 px-1 rounded font-mono">docker compose restart forson_backup</code></li>
                                 </ol>
                             </InfoBox>
                         </div>
@@ -364,7 +364,7 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
                 {/* Remote retention (shown when either remote is enabled) */}
                 {(gdriveEnabled || tailscaleEnabled) && (
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">
                             Remote Retention Period (Days)
                         </label>
                         <input
@@ -374,9 +374,9 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
                             max="365"
                             value={settings.BACKUP_REMOTE_RETENTION_DAYS || '30'}
                             onChange={handleChange}
-                            className="w-40 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-40 px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                         />
-                        <p className="mt-1 text-xs text-gray-500">Remote backup files older than this are pruned automatically.</p>
+                        <p className="mt-1 text-xs text-gray-500 dark:text-slate-500">Remote backup files older than this are pruned automatically.</p>
                     </div>
                 )}
             </div>
@@ -395,67 +395,67 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
                         />
                         <button
                             onClick={() => fileInputRef.current?.click()}
-                            className="flex items-center gap-2 bg-gray-100 text-gray-700 border border-gray-300 px-4 py-2 rounded-lg font-semibold hover:bg-gray-200 transition text-sm"
+                            className="flex items-center gap-2 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 border border-gray-300 dark:border-slate-600 px-4 py-2 rounded-lg font-semibold hover:bg-gray-200 dark:hover:bg-slate-600 transition text-sm"
                         >
                             <span className="text-base">📤</span>
                             Upload Backup
                         </button>
                         <button
                             onClick={handleBackupNow}
-                            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition text-sm"
+                            className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition text-sm"
                         >
                             <Icon path={ICONS.plus} className="h-4 w-4" />
                             Backup Now
                         </button>
                     </div>
                 </div>
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                    <table className="min-w-full divide-y divide-gray-200 text-sm">
-                        <thead className="bg-gray-50">
+                <div className="border border-gray-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                    <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700 text-sm">
+                        <thead className="bg-gray-50 dark:bg-slate-900">
                             <tr>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Filename</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Size</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
-                                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-slate-500 uppercase tracking-wider">Filename</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-slate-500 uppercase tracking-wider">Size</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-slate-500 uppercase tracking-wider">Created</th>
+                                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-slate-500 uppercase tracking-wider">Actions</th>
                             </tr>
                         </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
+                        <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700">
                             {loading ? (
-                                <tr><td colSpan="4" className="text-center p-6 text-gray-400">Loading backups...</td></tr>
+                                <tr><td colSpan="4" className="text-center p-6 text-gray-400 dark:text-slate-500">Loading backups...</td></tr>
                             ) : backups.length > 0 ? (
                                 backups.map((backup) => (
-                                    <tr key={backup.filename} className="hover:bg-gray-50 transition-colors">
-                                        <td className="px-4 py-3 font-mono text-xs text-gray-800 truncate max-w-xs">
+                                    <tr key={backup.filename} className="hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors">
+                                        <td className="px-4 py-3 font-mono text-xs text-gray-800 dark:text-slate-200 truncate max-w-xs">
                                             <div className="flex items-center gap-2">
                                                 <span className="truncate">{backup.filename}</span>
                                                 {backup.type === 'upload' && (
-                                                    <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-purple-100 text-purple-700 rounded whitespace-nowrap">Uploaded</span>
+                                                    <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-400 rounded whitespace-nowrap">Uploaded</span>
                                                 )}
                                                 {backup.type === 'manual' && (
-                                                    <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 text-blue-700 rounded whitespace-nowrap">Manual</span>
+                                                    <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-500 rounded whitespace-nowrap">Manual</span>
                                                 )}
                                             </div>
                                         </td>
-                                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatSize(backup.size)}</td>
-                                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
+                                        <td className="px-4 py-3 text-gray-500 dark:text-slate-500 whitespace-nowrap">{formatSize(backup.size)}</td>
+                                        <td className="px-4 py-3 text-gray-500 dark:text-slate-500 whitespace-nowrap">
                                             {format(toZonedTime(parseISO(backup.createdAt), settings.APP_TIMEZONE || 'Asia/Manila'), 'MM/dd/yyyy hh:mm a')}
                                         </td>
                                         <td className="px-4 py-3 text-right whitespace-nowrap space-x-3">
                                             <a
                                                 href={`/api/backups/${backup.filename}`}
                                                 download
-                                                className="text-blue-600 hover:text-blue-800 font-medium"
+                                                className="text-primary-600 dark:text-primary-500 hover:text-primary-700 dark:hover:text-primary-600 font-medium"
                                             >
                                                 Download
                                             </a>
-                                            <button onClick={() => handleRestore(backup.filename)} className="text-green-600 hover:text-green-800 font-medium">Restore</button>
-                                            <button onClick={() => handleDelete(backup.filename)} className="text-red-500 hover:text-red-700 font-medium">Delete</button>
+                                            <button onClick={() => handleRestore(backup.filename)} className="text-success-600 hover:text-success-700 font-medium">Restore</button>
+                                            <button onClick={() => handleDelete(backup.filename)} className="text-danger-500 hover:text-danger-700 font-medium">Delete</button>
                                         </td>
                                     </tr>
                                 ))
                             ) : (
                                 <tr>
-                                    <td colSpan="4" className="text-center p-8 text-gray-400">
+                                    <td colSpan="4" className="text-center p-8 text-gray-400 dark:text-slate-500">
                                         <p className="text-sm">No backups found.</p>
                                         <p className="text-xs mt-1">Click <strong>Backup Now</strong> or <strong>Upload Backup</strong> to add one.</p>
                                     </td>
@@ -464,8 +464,8 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
                         </tbody>
                     </table>
                 </div>
-                <p className="mt-2 text-xs text-gray-400">
-                    Backup storage: <code className="bg-gray-100 px-1 rounded">/backups</code> (Docker volume <code className="bg-gray-100 px-1 rounded">forson_backup_data</code>)
+                <p className="mt-2 text-xs text-gray-400 dark:text-slate-500">
+                    Backup storage: <code className="bg-gray-100 dark:bg-slate-800 px-1 rounded">/backups</code> (Docker volume <code className="bg-gray-100 dark:bg-slate-800 px-1 rounded">forson_backup_data</code>)
                 </p>
             </div>
 

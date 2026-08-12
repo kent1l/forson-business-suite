@@ -1,5 +1,68 @@
 @import "tailwindcss";
 
+/* Class-based dark mode: toggled via a `dark` class on <html> (see ThemeContext),
+   rather than Tailwind v4's CSS-only default which only follows OS preference. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Semantic color tokens. primary/accent are admin-configurable brand colors
+   (see ThemeContext + BrandIdentitySettings) - the values below are the
+   "Forson Slate" defaults and are overwritten at runtime via
+   document.documentElement.style.setProperty(). success/warning/danger/neutral
+   are fixed (not customizable) so status-color meaning stays consistent app-wide. */
+@theme {
+  --color-primary-50: #eff6ff;
+  --color-primary-100: #dbeafe;
+  --color-primary-500: #3b82f6;
+  --color-primary-600: #2563eb;
+  --color-primary-700: #1d4ed8;
+  --color-primary-900: #1e3a8a;
+
+  --color-accent-50: #f5f3ff;
+  --color-accent-100: #ede9fe;
+  --color-accent-500: #8f56f0;
+  --color-accent-600: #7c3aed;
+  --color-accent-700: #6315e9;
+  --color-accent-900: #370c82;
+
+  --color-success-50: #ecfdf5;
+  --color-success-100: #d1fae5;
+  --color-success-500: #10b981;
+  --color-success-600: #059669;
+  --color-success-700: #047857;
+  --color-success-900: #064e3b;
+
+  --color-warning-50: #fffbeb;
+  --color-warning-100: #fef3c7;
+  --color-warning-500: #f59e0b;
+  --color-warning-600: #d97706;
+  --color-warning-700: #b45309;
+  --color-warning-900: #78350f;
+
+  --color-danger-50: #fef2f2;
+  --color-danger-100: #fee2e2;
+  --color-danger-500: #ef4444;
+  --color-danger-600: #dc2626;
+  --color-danger-700: #b91c1c;
+  --color-danger-900: #7f1d1d;
+
+  --color-neutral-50: #f8fafc;
+  --color-neutral-100: #f1f5f9;
+  --color-neutral-200: #e2e8f0;
+  --color-neutral-500: #64748b;
+  --color-neutral-600: #475569;
+  --color-neutral-700: #334155;
+  --color-neutral-900: #0f172a;
+}
+
+/* Dark-mode variants of the fixed semantic tokens (primary/accent are
+   overwritten at runtime by ThemeContext, not declared here). Status colors
+   get a slightly lighter shade for legibility on dark surfaces. */
+.dark {
+  --color-success-500: #34d399;
+  --color-warning-500: #fbbf24;
+  --color-danger-500: #f87171;
+}
+
 /* Shared thin-scrollbar styling for search/autocomplete dropdown lists
    (PurchaseOrderForm, GoodsReceiptPage, InvoicingPage, POSPage). */
 .scrollbar-thin {
