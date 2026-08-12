@@ -1,70 +1,45 @@
 import { Plus, Package, Search, BarChart3, FileText, Truck, Users, Settings } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
-const QuickActionButton = ({ 
-    icon: Icon, 
-    title, 
-    description, 
-    onClick, 
-    color = 'blue',
-    disabled = false 
-}) => {
-    const colorVariants = {
-        blue: {
-            bg: 'bg-blue-50 hover:bg-blue-100',
-            icon: 'text-blue-600',
-            border: 'border-blue-200',
-            shadow: 'hover:shadow-blue-100',
-        },
-        green: {
-            bg: 'bg-green-50 hover:bg-green-100',
-            icon: 'text-green-600',
-            border: 'border-green-200',
-            shadow: 'hover:shadow-green-100',
-        },
-        purple: {
-            bg: 'bg-purple-50 hover:bg-purple-100',
-            icon: 'text-purple-600',
-            border: 'border-purple-200',
-            shadow: 'hover:shadow-purple-100',
-        },
-        orange: {
-            bg: 'bg-orange-50 hover:bg-orange-100',
-            icon: 'text-orange-600',
-            border: 'border-orange-200',
-            shadow: 'hover:shadow-orange-100',
-        },
-        gray: {
-            bg: 'bg-gray-50 hover:bg-gray-100',
-            icon: 'text-gray-600',
-            border: 'border-gray-200',
-            shadow: 'hover:shadow-gray-100',
-        },
-    };
+const COLOR_VARIANTS = {
+    primary: { chip: 'bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400' },
+    success: { chip: 'bg-success-50 text-success-600 dark:bg-success-900/30 dark:text-success-400' },
+    accent: { chip: 'bg-accent-50 text-accent-600 dark:bg-accent-900/30 dark:text-accent-400' },
+    warning: { chip: 'bg-warning-50 text-warning-600 dark:bg-warning-900/30 dark:text-warning-400' },
+    neutral: { chip: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300' },
+};
 
-    const colors = colorVariants[color];
+const QuickActionButton = ({
+    icon: Icon,
+    title,
+    description,
+    onClick,
+    color = 'primary',
+    disabled = false
+}) => {
+    const colors = COLOR_VARIANTS[color] || COLOR_VARIANTS.neutral;
 
     return (
         <button
             onClick={onClick}
             disabled={disabled}
-            className={`
-                ${colors.bg} ${colors.border} ${colors.shadow}
-                border rounded-xl p-4 text-left transition-all duration-200 
-                transform hover:-translate-y-1 hover:shadow-lg
+            title={description}
+            className="
+                bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700
+                rounded-xl p-3 transition-all duration-150
+                hover:border-slate-300 dark:hover:border-slate-600 hover:shadow-card-hover hover:-translate-y-0.5
                 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none
-                focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50
+                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950
                 w-full group
-            `}
+            "
         >
-            <div className="flex flex-col items-center space-y-3 min-h-[100px]">
-                <div className={`w-12 h-12 rounded-lg ${colors.bg} flex items-center justify-center`}>
-                    <Icon className={`h-6 w-6 ${colors.icon}`} />
+            <div className="flex flex-col items-center gap-2.5">
+                {/* The tint lives on the icon only. Tinting whole tiles made the
+                    row compete with the KPI figures above it for attention. */}
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-transform duration-150 group-hover:scale-105 ${colors.chip}`}>
+                    <Icon className="h-[18px] w-[18px]" />
                 </div>
-                <div className="text-center">
-                    <h4 className="font-semibold text-gray-800 text-sm">{title}</h4>
-                    <p className="text-xs text-gray-600 mt-1">{description}</p>
-                </div>
+                <h4 className="font-semibold text-slate-700 dark:text-slate-200 text-xs text-center leading-tight">{title}</h4>
             </div>
         </button>
     );
@@ -72,29 +47,29 @@ const QuickActionButton = ({
 
 export const QuickActionsPanel = ({ onNavigate }) => {
     const { hasPermission } = useAuth();
-    
+
     const actions = [
         {
             icon: Plus,
-            title: 'New Invoice',
+            title: 'New invoice',
             description: 'Create new invoice',
-            color: 'blue',
+            color: 'primary',
             path: 'invoicing',
             permission: 'invoicing:create',
         },
         {
             icon: Package,
-            title: 'Add Stock',
+            title: 'Add stock',
             description: 'Goods receipt',
-            color: 'green',
+            color: 'success',
             path: 'goods_receipt',
             permission: 'goods_receipt:create',
         },
         {
             icon: Search,
-            title: 'Find Parts',
+            title: 'Find parts',
             description: 'Power search',
-            color: 'purple',
+            color: 'accent',
             path: 'power_search',
             permission: 'parts:view',
         },
@@ -102,7 +77,7 @@ export const QuickActionsPanel = ({ onNavigate }) => {
             icon: BarChart3,
             title: 'Reports',
             description: 'View analytics',
-            color: 'orange',
+            color: 'warning',
             path: 'reporting',
             permission: 'reports:view',
         },
@@ -110,7 +85,7 @@ export const QuickActionsPanel = ({ onNavigate }) => {
             icon: FileText,
             title: 'Documents',
             description: 'Manage files',
-            color: 'gray',
+            color: 'neutral',
             path: 'documents',
             permission: 'documents:view',
         },
@@ -118,7 +93,7 @@ export const QuickActionsPanel = ({ onNavigate }) => {
             icon: Truck,
             title: 'Orders',
             description: 'Track orders',
-            color: 'blue',
+            color: 'primary',
             path: 'purchase_orders',
             permission: 'purchase_orders:view',
         },
@@ -126,7 +101,7 @@ export const QuickActionsPanel = ({ onNavigate }) => {
             icon: Users,
             title: 'Customers',
             description: 'Manage customers',
-            color: 'green',
+            color: 'success',
             path: 'customers',
             permission: 'customers:view',
         },
@@ -134,7 +109,7 @@ export const QuickActionsPanel = ({ onNavigate }) => {
             icon: Settings,
             title: 'Settings',
             description: 'Configuration',
-            color: 'gray',
+            color: 'neutral',
             path: 'settings',
             permission: 'settings:view',
         },
@@ -144,20 +119,21 @@ export const QuickActionsPanel = ({ onNavigate }) => {
     const allowedActions = actions.filter(action => hasPermission(action.permission));
 
     return (
-        <div className="bg-white p-6 rounded-xl border border-gray-200">
-            <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold text-gray-800">Quick Actions</h3>
-                <span className="text-sm text-gray-500">Common tasks</span>
-            </div>
-            
+        // The action row sits directly on the page canvas rather than inside its
+        // own panel - nesting cards inside a card added a frame that earned nothing.
+        <section>
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">
+                Quick actions
+            </h3>
+
             {allowedActions.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                    <Settings className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-                    <p>No quick actions available</p>
-                    <p className="text-sm text-gray-400 mt-1">Contact your administrator for access</p>
+                <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-700 shadow-card text-center py-8">
+                    <Settings className="h-9 w-9 mx-auto mb-3 text-slate-300 dark:text-slate-600" />
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">No actions available to you</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Ask an administrator to grant access.</p>
                 </div>
             ) : (
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
+                <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-3">
                     {allowedActions.map((action, index) => (
                         <QuickActionButton
                             key={index}
@@ -170,7 +146,7 @@ export const QuickActionsPanel = ({ onNavigate }) => {
                     ))}
                 </div>
             )}
-        </div>
+        </section>
     );
 };
 
