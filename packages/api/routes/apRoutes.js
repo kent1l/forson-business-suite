@@ -348,4 +348,40 @@ router.get('/ap/supplier-bills/:billId/due-date-history', protect, hasPermission
     }
 });
 
+// GET /ap/supplier-bills/:billId/items - Items attached to a manually-created bill via
+// one or more linked goods receipts (goods_receipt.bill_id), plus a variance check
+// against the bill's recorded total_amount.
+router.get('/ap/supplier-bills/:billId/items', protect, hasPermission('ap:view'), async (req, res) => {
+    const billId = parseInt(req.params.billId, 10);
+    if (!billId) return res.status(400).json({ message: 'Invalid bill ID' });
+    try {
+        const { rows: [bill] } = await db.query('SELECT bill_id, total_amount FROM supplier_bill WHERE bill_id = $1', [billId]);
+        if (!bill) return res.status(404).json({ message: 'Bill not found' });
+
+        const { rows } = await db.query(`
+            SELECT
+                grl.grn_line_id, grl.grn_id, gr.grn_number, gr.receipt_date,
+                grl.part_id, grl.quantity, grl.cost_price,
+                p.internal_sku, p.detail
+            FROM goods_receipt gr
+            JOIN goods_receipt_line grl ON grl.grn_id = gr.grn_id
+            JOIN part p ON p.part_id = grl.part_id
+            WHERE gr.bill_id = $1
+            ORDER BY gr.receipt_date ASC, grl.grn_line_id ASC
+        `, [billId]);
+
+        const itemsTotal = rows.reduce((sum, r) => sum + (parseFloat(r.quantity) * parseFloat(r.cost_price)), 0);
+        res.json({
+            success: true,
+            data: rows,
+            itemsTotal,
+            billTotal: parseFloat(bill.total_amount),
+            variance: parseFloat(bill.total_amount) - itemsTotal,
+        });
+    } catch (err) {
+        console.error('AP Bill Items Error:', err.message);
+        res.status(500).json({ message: 'Failed to fetch bill items' });
+    }
+});
+
 module.exports = router;

@@ -9,6 +9,7 @@ import ErrorBoundary from '../components/ui/ErrorBoundary';
 import BillAgingSummaryChart from '../components/accounts-payable/BillAgingSummaryChart';
 import SupplierSummaryTable from '../components/accounts-payable/SupplierSummaryTable';
 import SupplierDetailDrawer from '../components/suppliers/SupplierDetailDrawer';
+import AddPayableModal from '../components/accounts-payable/AddPayableModal';
 import useAPOverviewData from '../hooks/useAPOverviewData';
 
 const OverviewTab = ({ overview, onOpenSupplier }) => {
@@ -50,6 +51,7 @@ const AccountsPayablePage = ({ onNavigate }) => {
     const { hasPermission } = useAuth();
     const [activeTab, setActiveTab] = useState('overview');
     const [selectedSupplier, setSelectedSupplier] = useState(null);
+    const [isAddPayableOpen, setIsAddPayableOpen] = useState(false);
 
     const overview = useAPOverviewData({ hasPermission });
 
@@ -94,6 +96,14 @@ const AccountsPayablePage = ({ onNavigate }) => {
                     >
                         Outbound Cheques &amp; Treasury <Icon path={ICONS.chevronDown} className="w-3.5 h-3.5 -rotate-90" />
                     </button>
+                    {hasPermission('ap:manage') && (
+                        <button
+                            onClick={() => setIsAddPayableOpen(true)}
+                            className="px-4 py-2 bg-success-600 text-white rounded-md hover:bg-success-700 text-sm transition-colors font-medium flex items-center gap-1.5"
+                        >
+                            <Icon path={ICONS.plus} className="w-4 h-4" /> New Payable
+                        </button>
+                    )}
                     <button
                         onClick={handleRefresh}
                         disabled={overview.loading}
@@ -120,6 +130,12 @@ const AccountsPayablePage = ({ onNavigate }) => {
                 onClose={handleCloseSupplier}
                 onSupplierUpdated={handleSupplierUpdated}
                 initialTab="bills"
+            />
+
+            <AddPayableModal
+                isOpen={isAddPayableOpen}
+                onClose={() => setIsAddPayableOpen(false)}
+                onCreated={handleRefresh}
             />
         </div>
     );

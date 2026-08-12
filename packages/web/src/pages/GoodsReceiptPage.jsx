@@ -10,6 +10,7 @@ import useDraft from '../hooks/useDraft';
 import { formatApplicationText } from '../helpers/applicationTextHelper';
 import { enrichPartsArray } from '../helpers/applicationCache';
 import GoodsReceiptModals from '../components/ui/GoodsReceiptModals';
+import { formatCurrency } from '../utils/currency';
 
 const GoodsReceiptPage = ({ user, onNavigate }) => {
     const [suppliers, setSuppliers] = useState([]);
@@ -41,13 +42,13 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
         }
     }, [searchTerm]);
 
-    const { getInputProps, getItemProps, reset } = useTypeahead({ 
-        items: searchResults, 
-        onSelect: (item) => { addPartToLines(item); setSearchResults([]); }, 
+    const { getInputProps, getItemProps, reset } = useTypeahead({
+        items: searchResults,
+        onSelect: (item) => { addPartToLines(item); setSearchResults([]); },
         onEnterUnselected: handleRapidScan,
         inputRef: searchInputRef,
-        inputId, 
-        listboxId: resultsId 
+        inputId,
+        listboxId: resultsId
     });
     const [loading, setLoading] = useState(true);
     const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
@@ -58,11 +59,19 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
     const [currentEditPart, setCurrentEditPart] = useState(null);
     const [openPOs, setOpenPOs] = useState([]);
     const [selectedPO, setSelectedPO] = useState('');
+    const [posting, setPosting] = useState(false);
 
     // Reusable draft hook
     const draftData = useMemo(() => ({ selectedSupplier, lines, selectedPO }), [selectedSupplier, lines, selectedPO]);
     const isEmpty = useMemo(() => (d) => (!d?.selectedSupplier && (!d?.lines || d.lines.length === 0) && !d?.selectedPO), []);
     const { status: draftStatus, lastSavedAt, draft, loaded: draftLoaded, clearDraft } = useDraft('goods-receipt', { data: draftData, isEmpty, debounceMs: 750 });
+
+    const totals = useMemo(() => {
+        const totalQuantity = lines.reduce((sum, l) => sum + (parseFloat(l.quantity) || 0), 0);
+        const totalCost = lines.reduce((sum, l) => sum + (parseFloat(l.quantity) || 0) * (parseFloat(l.cost_price) || 0), 0);
+        const totalSaleValue = lines.reduce((sum, l) => sum + (parseFloat(l.quantity) || 0) * (parseFloat(l.sale_price) || 0), 0);
+        return { totalQuantity, totalCost, totalSaleValue, lineCount: lines.length };
+    }, [lines]);
 
     useEffect(() => {
         if (searchTerm.trim() === '') {
@@ -108,7 +117,7 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
             setLoading(false);
         }
     };
-    
+
     const fetchSuppliers = async () => {
         const response = await api.get('/suppliers');
         setSuppliers(response.data);
@@ -140,7 +149,7 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
         const po = openPOs.find(p => p.po_id === parseInt(poId));
         setSelectedPO(po);
         setSelectedSupplier(po.supplier_id);
-        
+
         try {
             toast.loading('Loading PO items...');
             const response = await api.get(`/purchase-orders/${poId}/lines`);
@@ -225,12 +234,12 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
                 line.part_id === part.part_id ? { ...line, quantity: line.quantity + 1 } : line
             ));
         } else {
-            setLines([...lines, { 
-                ...part, 
-                part_id: part.part_id, 
-                quantity: 1, 
+            setLines([...lines, {
+                ...part,
+                part_id: part.part_id,
+                quantity: 1,
                 cost_price: typeof part.last_cost !== 'undefined' ? part.last_cost : 0,
-                sale_price: typeof part.last_sale_price !== 'undefined' ? part.last_sale_price : 0 
+                sale_price: typeof part.last_sale_price !== 'undefined' ? part.last_sale_price : 0
             }]);
         }
         setSearchTerm('');
@@ -265,54 +274,67 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
             po_id: selectedPO ? selectedPO.po_id : null,
         };
 
+        setPosting(true);
         const promise = api.post('/goods-receipts', payload);
 
-    toast.promise(promise, {
+        toast.promise(promise, {
             loading: 'Posting transaction...',
             success: () => {
                 setLines([]);
                 setSelectedSupplier('');
                 setSelectedPO('');
                 fetchInitialData(); // Refresh PO list
-        clearDraft();
+                clearDraft();
+                setPosting(false);
                 return 'Goods receipt created successfully!';
             },
-            error: 'Failed to create goods receipt.',
+            error: () => {
+                setPosting(false);
+                return 'Failed to create goods receipt.';
+            },
         });
     };
 
-    if (loading) return <p>Loading data...</p>;
+    if (loading) return <p className="text-gray-600 dark:text-slate-400">Loading data...</p>;
+
+    const inputClass = "w-full h-9 px-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-md text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary-500";
+    const labelClass = "block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1";
+    const selectClass = "w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-60 disabled:cursor-not-allowed";
 
     return (
-        <div>
-            <div className="flex items-center justify-between mb-6">
-                <h1 className="text-2xl font-semibold text-gray-800">New Goods Receipt</h1>
+        <div className="space-y-6">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-slate-100">New Goods Receipt</h1>
+                    <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">Receive stock from a supplier, against a purchase order or directly.</p>
+                </div>
                 <button
                     onClick={() => onNavigate('goods_receipt_history')}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium"
+                    className="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition text-sm font-medium flex items-center gap-1.5"
                 >
-                    View History
+                    <Icon path={ICONS.history} className="h-4 w-4" /> View History
                 </button>
             </div>
-            <div className="bg-white p-6 rounded-xl border border-gray-200 space-y-6">
+
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 space-y-6 shadow-xs">
                 {/* Draft saved indicator */}
-                <div className="flex items-center justify-end text-xs text-gray-500">
+                <div className="flex items-center justify-end text-xs text-gray-500 dark:text-slate-400">
                     {draftStatus === 'saving' && <span>Saving draft…</span>}
                     {draftStatus === 'saved' && (
                         <span>Draft saved{lastSavedAt ? ` at ${lastSavedAt.toLocaleTimeString()}` : ''}</span>
                     )}
-                    {draftStatus === 'error' && <span className="text-red-600">Draft save failed</span>}
+                    {draftStatus === 'error' && <span className="text-danger-600 dark:text-danger-400">Draft save failed</span>}
                         {(draftStatus === 'saved' || draftStatus === 'saving' || draft) && (
                             <button
                                 type="button"
-                                onClick={async () => { 
-                                    await clearDraft(); 
-                                    setSelectedSupplier(''); 
-                                    setLines([]); 
-                                    setSelectedPO(''); 
-                                    toast.success('Draft cleared'); 
+                                onClick={async () => {
+                                    await clearDraft();
+                                    setSelectedSupplier('');
+                                    setLines([]);
+                                    setSelectedPO('');
+                                    toast.success('Draft cleared');
                                 }}
-                                className="text-sm text-gray-600 hover:text-gray-800 ml-3"
+                                className="text-sm text-gray-600 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 ml-3"
                             >
                                 Clear Draft
                             </button>
@@ -320,14 +342,14 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Receive Against Purchase Order (Optional)</label>
-                        <select value={selectedPO ? selectedPO.po_id : ''} onChange={e => handleSelectPO(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                        <label className={labelClass}>Receive Against Purchase Order (Optional)</label>
+                        <select value={selectedPO ? selectedPO.po_id : ''} onChange={e => handleSelectPO(e.target.value)} className={selectClass}>
                             <option value="">-- Select a PO --</option>
                             {openPOs.map(po => <option key={po.po_id} value={po.po_id}>{po.po_number} - {po.supplier_name}</option>)}
                         </select>
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
+                        <label className={labelClass}>Supplier</label>
                         <div className="flex items-center space-x-2">
                             <div className="flex-grow">
                                 <Combobox
@@ -338,13 +360,13 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
                                     disabled={!!selectedPO}
                                 />
                             </div>
-                            <button onClick={() => setIsSupplierModalOpen(true)} className="px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm" disabled={!!selectedPO}>New</button>
+                            <button onClick={() => setIsSupplierModalOpen(true)} className="px-3 py-2 bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-100 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-600 text-sm disabled:opacity-60 disabled:cursor-not-allowed" disabled={!!selectedPO}>New</button>
                         </div>
                     </div>
                 </div>
-                
+
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Add Part Manually</label>
+                    <label className={labelClass}>Add Part Manually</label>
                     <div className="flex items-center space-x-2">
                         <div className="relative flex-grow">
                             <SearchBar
@@ -357,18 +379,18 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
                                 disabled={!!selectedPO}
                             />
                             {searchResults.length > 0 && (
-                                <ul id={resultsId} role="listbox" className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto scrollbar-thin">
+                                <ul id={resultsId} role="listbox" className="absolute z-10 w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto scrollbar-thin">
                                     {searchResults.map((part, idx) => {
                                         const itemProps = getItemProps(idx);
                                         return (
                                                 <li
                                                     key={part.part_id}
                                                     {...itemProps}
-                                                    className={`px-4 py-2 cursor-pointer ${itemProps['aria-selected'] ? 'bg-blue-100' : 'hover:bg-blue-50'}`}
+                                                    className={`px-4 py-2 cursor-pointer ${itemProps['aria-selected'] ? 'bg-primary-100 dark:bg-primary-900/30' : 'hover:bg-primary-50 dark:hover:bg-slate-700/60'}`}
                                                 >
                                                     <div className="flex items-baseline space-x-2">
-                                                        <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
-                                                        {part.applications && <div className="text-xs text-gray-500 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
+                                                        <div className="text-sm font-medium text-gray-800 dark:text-slate-100 truncate">{part.display_name}</div>
+                                                        {part.applications && <div className="text-xs text-gray-500 dark:text-slate-400 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
                                                     </div>
                                                 </li>
                                             );
@@ -376,40 +398,41 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
                                 </ul>
                             )}
                         </div>
-                        <button onClick={() => setIsNewPartModalOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition whitespace-nowrap" disabled={!!selectedPO}>
+                        <button onClick={() => setIsNewPartModalOpen(true)} className="bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed" disabled={!!selectedPO}>
                            New Part
                         </button>
                     </div>
                 </div>
 
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-slate-700">
                     <table className="w-full text-left">
-                        <thead className="border-b">
+                        <thead className="bg-gray-50 dark:bg-slate-900/60 border-b border-gray-200 dark:border-slate-700">
                             <tr>
-                                <th className="p-3 text-sm font-semibold text-gray-600">Part Detail</th>
-                                <th className="p-3 text-sm font-semibold text-gray-600 w-28">Quantity</th>
-                                <th className="p-3 text-sm font-semibold text-gray-600 w-32">Cost Price</th>
-                                <th className="p-3 text-sm font-semibold text-gray-600 w-32">Sale Price</th>
-                                <th className="p-3 text-sm font-semibold text-gray-600 w-16 text-center"></th>
+                                <th className="p-3 text-xs font-semibold text-gray-600 dark:text-slate-300 uppercase tracking-wide">Part Detail</th>
+                                <th className="p-3 text-xs font-semibold text-gray-600 dark:text-slate-300 uppercase tracking-wide w-28 text-center">Quantity</th>
+                                <th className="p-3 text-xs font-semibold text-gray-600 dark:text-slate-300 uppercase tracking-wide w-32 text-center">Cost Price</th>
+                                <th className="p-3 text-xs font-semibold text-gray-600 dark:text-slate-300 uppercase tracking-wide w-32 text-center">Sale Price</th>
+                                <th className="p-3 text-xs font-semibold text-gray-600 dark:text-slate-300 uppercase tracking-wide w-32 text-right">Line Total</th>
+                                <th className="p-3 text-xs font-semibold text-gray-600 dark:text-slate-300 uppercase tracking-wide w-16 text-center"></th>
                             </tr>
                         </thead>
                         <tbody>
                             {lines.map(line => (
-                                <tr key={line.part_id} className="border-b">
+                                <tr key={line.part_id} className="border-b border-gray-100 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors">
                                     <td className="p-2 align-middle">
                                         <div className="flex items-center justify-between gap-2">
-                                            <div className="min-w-0 flex-1 truncate text-sm font-medium text-gray-800">{line.display_name}</div>
+                                            <div className="min-w-0 flex-1 truncate text-sm font-medium text-gray-800 dark:text-slate-100">{line.display_name}</div>
                                             <div className="flex items-center gap-1">
                                                 <button
                                                     onClick={() => { setCurrentEditPart(line); setIsEditPartModalOpen(true); }}
-                                                    className="inline-flex items-center justify-center h-8 w-8 text-blue-600 hover:text-blue-800 rounded hover:bg-blue-50"
+                                                    className="inline-flex items-center justify-center h-8 w-8 text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 rounded hover:bg-primary-50 dark:hover:bg-primary-900/30"
                                                     title="Edit Part"
                                                 >
                                                     <Icon path={ICONS.edit} className="h-5 w-5"/>
                                                 </button>
                                                 <button
                                                     onClick={() => { setCurrentPart(line); setIsAppModalOpen(true); }}
-                                                    className="inline-flex items-center justify-center h-8 w-8 text-green-600 hover:text-green-800 rounded hover:bg-green-50"
+                                                    className="inline-flex items-center justify-center h-8 w-8 text-success-600 dark:text-success-400 hover:text-success-800 dark:hover:text-success-300 rounded hover:bg-success-50 dark:hover:bg-success-900/30"
                                                     title="Manage Applications"
                                                 >
                                                     <Icon path={ICONS.link} className="h-5 w-5"/>
@@ -417,39 +440,42 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
                                             </div>
                                         </div>
                                     </td>
-                                    <td className="p-2 align-middle text-center">
+                                    <td className="p-2 align-middle">
                                         <input
                                             type="number"
                                             value={line.quantity}
                                             onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)}
                                             onFocus={e => e.target.select()}
-                                            className="w-full h-9 px-2 border rounded-md text-sm"
+                                            className={inputClass}
                                         />
                                     </td>
-                                    <td className="p-2 align-middle text-center">
+                                    <td className="p-2 align-middle">
                                         <input
                                             type="number"
                                             step="0.01"
                                             value={line.cost_price}
                                             onChange={e => handleLineChange(line.part_id, 'cost_price', e.target.value)}
                                             onFocus={e => e.target.select()}
-                                            className="w-full h-9 px-2 border rounded-md text-sm"
+                                            className={inputClass}
                                         />
                                     </td>
-                                    <td className="p-2 align-middle text-center">
+                                    <td className="p-2 align-middle">
                                         <input
                                             type="number"
                                             step="0.01"
                                             value={line.sale_price}
                                             onChange={e => handleLineChange(line.part_id, 'sale_price', e.target.value)}
                                             onFocus={e => e.target.select()}
-                                            className="w-full h-9 px-2 border rounded-md text-sm"
+                                            className={inputClass}
                                         />
+                                    </td>
+                                    <td className="p-2 align-middle text-right font-mono text-sm font-medium text-gray-900 dark:text-slate-100">
+                                        {formatCurrency((parseFloat(line.quantity) || 0) * (parseFloat(line.cost_price) || 0))}
                                     </td>
                                     <td className="p-2 align-middle text-center">
                                         <button
                                             onClick={() => removeLine(line.part_id)}
-                                            className="inline-flex items-center justify-center h-8 w-8 text-red-500 hover:text-red-700 rounded hover:bg-red-50"
+                                            className="inline-flex items-center justify-center h-8 w-8 text-danger-500 dark:text-danger-400 hover:text-danger-700 dark:hover:text-danger-300 rounded hover:bg-danger-50 dark:hover:bg-danger-900/30"
                                             title="Remove"
                                         >
                                             <Icon path={ICONS.trash} className="h-5 w-5"/>
@@ -457,13 +483,45 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
                                     </td>
                                 </tr>
                             ))}
+                            {lines.length === 0 && (
+                                <tr>
+                                    <td colSpan="6" className="p-8 text-center text-sm text-gray-500 dark:text-slate-400">
+                                        No items added yet. Search for a part above, scan a barcode, or select a purchase order to begin.
+                                    </td>
+                                </tr>
+                            )}
                         </tbody>
                     </table>
                 </div>
 
-                <div className="flex justify-end pt-4 border-t">
-                    <button onClick={handlePostTransaction} className="bg-green-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-green-700 transition">
-                        Post Transaction
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 pt-4 border-t border-gray-200 dark:border-slate-700">
+                    <div className="flex flex-wrap items-center gap-x-8 gap-y-1 text-sm">
+                        <div>
+                            <span className="text-gray-500 dark:text-slate-400">Items: </span>
+                            <span className="font-semibold text-gray-900 dark:text-slate-100">{totals.lineCount}</span>
+                        </div>
+                        <div>
+                            <span className="text-gray-500 dark:text-slate-400">Total Quantity: </span>
+                            <span className="font-semibold text-gray-900 dark:text-slate-100">{totals.totalQuantity.toLocaleString()}</span>
+                        </div>
+                        <div>
+                            <span className="text-gray-500 dark:text-slate-400">Total Cost: </span>
+                            <span className="font-mono font-bold text-lg text-gray-900 dark:text-slate-100">{formatCurrency(totals.totalCost)}</span>
+                        </div>
+                    </div>
+                    <button
+                        onClick={handlePostTransaction}
+                        disabled={posting || !selectedSupplier || lines.length === 0}
+                        className="bg-success-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-success-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                        {posting ? (
+                            <>
+                                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                                Posting...
+                            </>
+                        ) : (
+                            'Post Transaction'
+                        )}
                     </button>
                 </div>
             </div>

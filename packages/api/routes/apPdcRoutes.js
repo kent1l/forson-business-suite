@@ -2,6 +2,8 @@ const express = require('express');
 const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const apPdcService = require('../services/apPdcService');
+const apLedgerService = require('../services/apLedgerService');
+const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const router = express.Router();
 
 // GET /ap/pdc/summary-stats - KPI summary metrics for outbound Treasury Desk header cards
@@ -283,7 +285,7 @@ router.get('/ap/cheque-register', protect, hasPermission(['ap-pdc:view']), async
 
 // ── Supplier bills (minimal — header-only, just enough to attach outbound cheques to a real liability) ──
 
-router.get('/ap/supplier-bills', protect, hasPermission(['ap-pdc:view']), async (req, res) => {
+router.get('/ap/supplier-bills', protect, hasPermission(['ap-pdc:view', 'ap:view']), async (req, res) => {
     try {
         const { supplier_id, status } = req.query;
         const params = [];
@@ -306,21 +308,64 @@ router.get('/ap/supplier-bills', protect, hasPermission(['ap-pdc:view']), async 
     }
 });
 
-router.post('/ap/supplier-bills', protect, hasPermission(['ap-pdc:manage']), async (req, res) => {
+// POST /ap/supplier-bills - Create a payable directly against a supplier (no PO/GRN
+// required). Auto-generates a bill_number when none is supplied, and posts the
+// BILL_POSTED ap_ledger entry in the same transaction so the new liability shows up
+// in AP balances/aging immediately, exactly like the automatic GRN-triggered path does.
+router.post('/ap/supplier-bills', protect, hasPermission(['ap:manage']), async (req, res) => {
+    const { supplier_id, po_id, grn_id, bill_number, bill_date, due_date, total_amount, notes } = req.body;
+    const parsedAmount = parseFloat(total_amount);
+    if (!supplier_id || !parsedAmount || parsedAmount <= 0) {
+        return res.status(400).json({ message: 'supplier_id and a positive total_amount are required' });
+    }
+
+    const client = await db.getClient();
     try {
-        const { supplier_id, po_id, grn_id, bill_number, bill_date, due_date, total_amount, notes } = req.body;
-        if (!supplier_id || !total_amount) {
-            return res.status(400).json({ message: 'supplier_id and total_amount are required' });
+        await client.query('BEGIN');
+
+        let resolvedDueDate = due_date || null;
+        if (!resolvedDueDate) {
+            const { rows: [supplier] } = await client.query(
+                'SELECT payment_terms_days FROM supplier WHERE supplier_id = $1', [supplier_id]
+            );
+            if (supplier?.payment_terms_days) {
+                const { rows: [computed] } = await client.query(
+                    `SELECT (COALESCE($1::date, CURRENT_DATE) + ($2::int || ' days')::interval)::date AS due_date`,
+                    [bill_date || null, supplier.payment_terms_days]
+                );
+                resolvedDueDate = computed.due_date;
+            }
         }
-        const { rows: [row] } = await db.query(
+
+        const resolvedBillNumber = bill_number || await getNextDocumentNumber(client, 'BILL');
+
+        const { rows: [bill] } = await client.query(
             `INSERT INTO supplier_bill (supplier_id, po_id, grn_id, bill_number, bill_date, due_date, total_amount, notes, created_by)
              VALUES ($1, $2, $3, $4, COALESCE($5, CURRENT_DATE), $6, $7, $8, $9) RETURNING *`,
-            [supplier_id, po_id || null, grn_id || null, bill_number || null, bill_date, due_date || null, total_amount, notes || null, req.user?.employee_id]
+            [supplier_id, po_id || null, grn_id || null, resolvedBillNumber, bill_date || null, resolvedDueDate, parsedAmount, notes || null, req.user?.employee_id]
         );
-        res.status(201).json({ success: true, data: row });
+
+        await apLedgerService.appendEntry(client, {
+            supplierId: supplier_id,
+            billId: bill.bill_id,
+            entryType: 'BILL_POSTED',
+            amount: parsedAmount,
+            referenceNo: resolvedBillNumber,
+            notes: notes || `Manually recorded payable ${resolvedBillNumber}`,
+            createdBy: req.user?.employee_id,
+        });
+
+        await client.query('COMMIT');
+        res.status(201).json({ success: true, data: bill });
     } catch (err) {
+        await client.query('ROLLBACK');
         console.error('Create Supplier Bill Error:', err.message);
+        if (err.code === '23505') {
+            return res.status(409).json({ message: 'A bill with this number already exists.' });
+        }
         res.status(500).json({ message: 'Failed to create supplier bill' });
+    } finally {
+        client.release();
     }
 });
 
