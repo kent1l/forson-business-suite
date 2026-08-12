@@ -18,11 +18,9 @@ import SettingsPage from '../../pages/SettingsPage';
 import POSPage from '../../pages/POSPage';
 import PurchaseOrderPage from '../../pages/PurchaseOrderPage';
 import AccountsReceivablePage from '../../pages/AccountsReceivablePage';
-import PdcTreasuryPage from '../../pages/PdcTreasuryPage';
-import BankAccountsPage from '../../pages/BankAccountsPage';
+import ChequesTreasuryPage from '../../pages/ChequesTreasuryPage';
 import SalesHistoryPage from '../../pages/SalesHistoryPage'; // <-- Import new page
 import DocumentsPage from '../../pages/DocumentsPage';
-import ChequePrintingPage from '../../pages/ChequePrintingPage';
 import CycleCountExecutionPage from '../../pages/CycleCountExecutionPage';
 import ManagerReviewDesk from '../cycleCount/ManagerReviewDesk';
 import CashierApprovalDesk from '../../pages/CashierApprovalDesk';
@@ -50,11 +48,9 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'invoicing': return <InvoicingPage user={user} onNavigate={onNavigate} pageState={currentPage === 'invoicing' ? pageState : null} />;
             case 'sales_history': return <SalesHistoryPage />; // <-- Add case for new page
             case 'documents': return <DocumentsPage />;
-            case 'cheques': return <ChequePrintingPage />;
             case 'purchase_orders': return <PurchaseOrderPage />;
             case 'ar': return <AccountsReceivablePage />;
-            case 'pdc': return <PdcTreasuryPage />;
-            case 'bank_accounts': return <BankAccountsPage />;
+            case 'cheques_treasury': return <ChequesTreasuryPage />;
             case 'soa_gen': return <SoaGenPage />;
             case 'staged_sales': return <CashierApprovalDesk onNavigate={onNavigate} />;
             case 'inventory': return <InventoryPage user={user} />;
