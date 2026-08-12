@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/* Self-hosted variable fonts (bundled by Vite rather than pulled from a CDN,
+   since this app is deployed on-premise and may not have outbound internet).
+   Manrope is the UI/display face; JetBrains Mono is the utility face reserved
+   for machine codes - SKUs, part numbers, invoice numbers - where a fixed
+   advance width makes character-by-character comparison possible. */
+@import "@fontsource-variable/manrope";
+@import "@fontsource-variable/jetbrains-mono";
+
 /* Class-based dark mode: toggled via a `dark` class on <html> (see ThemeContext),
    rather than Tailwind v4's CSS-only default which only follows OS preference. */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -10,6 +18,11 @@
    document.documentElement.style.setProperty(). success/warning/danger/neutral
    are fixed (not customizable) so status-color meaning stays consistent app-wide. */
 @theme {
+  /* `font-sans` is already applied at the layout root, so overriding the token
+     here restyles the whole app. System faces stay as the fallback stack. */
+  --font-sans: 'Manrope Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+
   --color-primary-50: #eff6ff;
   --color-primary-100: #dbeafe;
   --color-primary-500: #3b82f6;
@@ -52,6 +65,29 @@
   --color-neutral-600: #475569;
   --color-neutral-700: #334155;
   --color-neutral-900: #0f172a;
+
+  /* Card elevation. Two stacked shadows - a tight contact shadow plus a wider,
+     softer ambient one - read as depth without the muddy grey halo a single
+     large blur produces. `shadow-card` is the resting state for panels;
+     `shadow-card-hover` is only for cards that are actually clickable. */
+  --shadow-card: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.06);
+  --shadow-card-hover: 0 2px 4px -1px rgb(15 23 42 / 0.06), 0 8px 16px -4px rgb(15 23 42 / 0.10);
+}
+
+@layer base {
+  /* Manrope's default rendering is slightly heavy on low-DPI screens; grayscale
+     antialiasing keeps the UI weights honest across platforms. */
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Figures that get compared down a column - currency, quantities, counts -
+     must not reflow as digits change, so they take fixed-width numerals. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
 }
 
 /* Dark-mode variants of the fixed semantic tokens (primary/accent are

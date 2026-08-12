@@ -205,56 +205,44 @@ router.get('/dashboard/enhanced-stats', async (req, res) => {
         const [
             todayRevenueRes,
             outstandingARRes,
-            inventoryValueRes,
-            lowStockCountRes,
+            inventoryAndLowStockRes,
             recentSalesRes,
             topProductsRes,
             totalExpensesRes,
             searchSyncHealth
         ] = await Promise.all([
-            // Today's revenue
+            // Today's/yesterday's revenue, net of same-day credit notes/refunds
+            // (matches the "net sales" definition used by /dashboard/sales-chart).
             db.query(`
                 SELECT
-                    COALESCE(SUM(total_amount) FILTER (WHERE invoice_date::date = CURRENT_DATE), 0) as today_revenue,
-                    COALESCE(SUM(total_amount) FILTER (WHERE invoice_date::date = CURRENT_DATE - INTERVAL '1 day'), 0) as yesterday_revenue
-                FROM invoice 
-                WHERE status IN ('Paid', 'Partially Paid')
+                    COALESCE((SELECT SUM(total_amount) FROM invoice WHERE status IN ('Paid', 'Partially Paid') AND invoice_date::date = CURRENT_DATE), 0)
+                    - COALESCE((SELECT SUM(total_amount) FROM credit_note WHERE refund_date::date = CURRENT_DATE), 0) as today_revenue,
+                    COALESCE((SELECT SUM(total_amount) FROM invoice WHERE status IN ('Paid', 'Partially Paid') AND invoice_date::date = CURRENT_DATE - INTERVAL '1 day'), 0)
+                    - COALESCE((SELECT SUM(total_amount) FROM credit_note WHERE refund_date::date = CURRENT_DATE - INTERVAL '1 day'), 0) as yesterday_revenue
             `),
-            
+
             // Outstanding A/R (authoritative: ar_ledger cash-basis balance, not invoice.amount_paid)
             db.query(`
                 SELECT COALESCE(SUM(ledger_balance), 0) as outstanding_ar
                 FROM vw_customer_ar_balance
                 WHERE ledger_balance > 0
             `),
-            
-            // Inventory value
-            db.query(`
-                SELECT COALESCE(SUM(COALESCE(p.wac_cost, p.last_cost, 0) * COALESCE(stock.quantity, 0)), 0) as inventory_value
-                FROM part p
-                LEFT JOIN (
-                    SELECT part_id, SUM(quantity) as quantity
-                    FROM inventory_transaction
-                    GROUP BY part_id
-                ) stock ON p.part_id = stock.part_id
-                WHERE p.is_active = true
-            `),
-            
-            // Low stock count
+
+            // Inventory value + low stock count, sharing a single aggregation pass
+            // over inventory_transaction instead of scanning/grouping it twice.
             db.query(`
                 WITH stock_totals AS (
                     SELECT part_id, SUM(quantity) as quantity
                     FROM inventory_transaction
                     GROUP BY part_id
                 )
-                SELECT COUNT(*) as low_stock_count
+                SELECT
+                    COALESCE(SUM(COALESCE(p.wac_cost, p.last_cost, 0) * COALESCE(st.quantity, 0)) FILTER (WHERE p.is_active = true), 0) as inventory_value,
+                    COUNT(*) FILTER (WHERE p.low_stock_warning = TRUE AND COALESCE(st.quantity, 0) <= p.warning_quantity AND p.is_active = TRUE) as low_stock_count
                 FROM part p
                 LEFT JOIN stock_totals st ON st.part_id = p.part_id
-                WHERE p.low_stock_warning = TRUE 
-                AND COALESCE(st.quantity, 0) <= p.warning_quantity
-                AND p.is_active = TRUE
             `),
-            
+
             // Recent sales (last 5)
             db.query(`
                 SELECT 
@@ -318,11 +306,11 @@ router.get('/dashboard/enhanced-stats', async (req, res) => {
                     value: parseFloat(outstandingARRes.rows[0].outstanding_ar)
                 },
                 inventoryValue: {
-                    value: parseFloat(inventoryValueRes.rows[0].inventory_value)
+                    value: parseFloat(inventoryAndLowStockRes.rows[0].inventory_value)
                 },
                 lowStockCount: {
-                    value: parseInt(lowStockCountRes.rows[0].low_stock_count),
-                    urgent: parseInt(lowStockCountRes.rows[0].low_stock_count) > 0
+                    value: parseInt(inventoryAndLowStockRes.rows[0].low_stock_count, 10),
+                    urgent: parseInt(inventoryAndLowStockRes.rows[0].low_stock_count, 10) > 0
                 },
                 totalExpensesMonth: {
                     value: parseFloat(totalExpensesRes.rows[0].total_expenses) || 0
