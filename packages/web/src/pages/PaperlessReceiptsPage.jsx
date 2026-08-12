@@ -93,6 +93,21 @@ export default function PaperlessReceiptsPage() {
         return Math.ceil(selectedDocIds.size / 4) || 0;
     }, [selectedDocIds.size]);
 
+    // Preview a single document (opens in new tab via authenticated blob fetch)
+    const handlePreviewDoc = async (docId) => {
+        try {
+            const res = await api.get(`/paperless/documents/${docId}/preview`, {
+                responseType: 'blob',
+            });
+            const blob = new Blob([res.data], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
+            window.open(url, '_blank', 'noopener,noreferrer');
+        } catch (err) {
+            toast.error('Failed to load receipt preview');
+            console.error(err);
+        }
+    };
+
     // Consolidate Selected Receipts into 2x2 A4 PDF
     const handleConsolidate = async () => {
         if (selectedDocIds.size === 0) {
@@ -284,15 +299,14 @@ export default function PaperlessReceiptsPage() {
                                                 </div>
                                             </td>
                                             <td className="p-4 text-right">
-                                                <a
-                                                    href={`/api/paperless/documents/${doc.id}/preview`}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handlePreviewDoc(doc.id)}
                                                     className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800"
                                                 >
                                                     <Icon icon={ICONS.search} className="w-3.5 h-3.5" />
                                                     Preview
-                                                </a>
+                                                </button>
                                             </td>
                                         </tr>
                                     );
