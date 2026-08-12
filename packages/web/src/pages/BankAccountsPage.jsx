@@ -5,13 +5,14 @@ import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../utils/currency';
 import Modal from '../components/ui/Modal';
 
-const emptyForm = { account_name: '', bank_name: '', account_number: '', currency: 'PHP', opening_balance: '0', notes: '' };
+const emptyForm = { account_name: '', bank_name: '', account_number: '', currency: 'PHP', opening_balance: '0', notes: '', default_cheque_template_id: '' };
 
 const BankAccountsPage = () => {
     const { hasPermission } = useAuth();
     const canManage = hasPermission('ap-pdc:manage');
 
     const [accounts, setAccounts] = useState([]);
+    const [templates, setTemplates] = useState([]);
     const [loading, setLoading] = useState(true);
     const [modalOpen, setModalOpen] = useState(false);
     const [editingId, setEditingId] = useState(null);
@@ -31,13 +32,26 @@ const BankAccountsPage = () => {
         }
     }, []);
 
-    useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+    const fetchTemplates = useCallback(async () => {
+        try {
+            const res = await api.get('/cheques/templates');
+            setTemplates(res.data || []);
+        } catch (err) {
+            // Not fatal — the account can still be created without a linked print template.
+            console.error('Error fetching cheque templates:', err);
+        }
+    }, []);
+
+    useEffect(() => { fetchAccounts(); fetchTemplates(); }, [fetchAccounts, fetchTemplates]);
+
+    const templateName = (id) => templates.find(t => String(t.id) === String(id))?.bank_name;
 
     const openCreate = () => { setEditingId(null); setForm(emptyForm); setModalOpen(true); };
     const openEdit = (acc) => {
         setEditingId(acc.bank_account_id);
         setForm({
             account_name: acc.account_name, bank_name: acc.bank_name, account_number: acc.account_number || '',
+            default_cheque_template_id: acc.default_cheque_template_id || '',
             currency: acc.currency, opening_balance: String(acc.opening_balance), notes: acc.notes || '',
         });
         setModalOpen(true);
@@ -100,21 +114,29 @@ const BankAccountsPage = () => {
                             <th className="px-6 py-3.5">Bank</th>
                             <th className="px-6 py-3.5">Account #</th>
                             <th className="px-6 py-3.5 text-right">Opening Balance</th>
+                            <th className="px-6 py-3.5">Print Template</th>
                             <th className="px-6 py-3.5">Status</th>
                             {canManage && <th className="px-6 py-3.5 text-center">Actions</th>}
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
                         {loading ? (
-                            <tr><td colSpan={6} className="px-6 py-8 text-center text-gray-400">Loading…</td></tr>
+                            <tr><td colSpan={7} className="px-6 py-8 text-center text-gray-400">Loading…</td></tr>
                         ) : accounts.length === 0 ? (
-                            <tr><td colSpan={6} className="px-6 py-8 text-center text-gray-400">No bank accounts yet.</td></tr>
+                            <tr><td colSpan={7} className="px-6 py-8 text-center text-gray-400">No bank accounts yet.</td></tr>
                         ) : accounts.map(acc => (
                             <tr key={acc.bank_account_id} className="hover:bg-gray-50">
                                 <td className="px-6 py-4 font-semibold text-gray-900">{acc.account_name}</td>
                                 <td className="px-6 py-4">{acc.bank_name}</td>
                                 <td className="px-6 py-4 font-mono">{acc.account_number || '—'}</td>
                                 <td className="px-6 py-4 text-right font-mono">{formatCurrency(acc.opening_balance)}</td>
+                                <td className="px-6 py-4 text-xs">
+                                    {acc.default_cheque_template_id ? (
+                                        <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md border border-blue-200">{templateName(acc.default_cheque_template_id) || `#${acc.default_cheque_template_id}`}</span>
+                                    ) : (
+                                        <span className="text-gray-400">Not linked (manual print)</span>
+                                    )}
+                                </td>
                                 <td className="px-6 py-4">
                                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${acc.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-200 text-gray-600'}`}>
                                         {acc.is_active ? 'Active' : 'Inactive'}
@@ -162,6 +184,17 @@ const BankAccountsPage = () => {
                             <input type="number" step="0.01" value={form.opening_balance} onChange={(e) => setForm({ ...form, opening_balance: e.target.value })}
                                 className="w-full text-xs p-2 border border-gray-300 rounded-lg font-mono focus:ring-2 focus:ring-blue-500" />
                         </div>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Default Cheque Print Template</label>
+                        <select value={form.default_cheque_template_id} onChange={(e) => setForm({ ...form, default_cheque_template_id: e.target.value })}
+                            className="w-full text-xs p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            <option value="">None — print manually from Cheque Printing</option>
+                            {templates.map(t => (
+                                <option key={t.id} value={t.id}>{t.bank_name}</option>
+                            ))}
+                        </select>
+                        <p className="text-[11px] text-gray-400 mt-1">When set, issuing a cheque from this account auto-generates and opens the printable PDF.</p>
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1">Notes</label>

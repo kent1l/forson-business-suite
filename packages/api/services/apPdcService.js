@@ -163,6 +163,7 @@ async function getOutboundClearanceList(db, pdcStatusFilter = null, maturityFilt
       cr.purpose_type,
       cr.bank_account_id,
       ba.account_name                           AS bank_account_name,
+      cr.template_id,
       cr.cheque_number,
       cr.cheque_date,
       cr.amount,
@@ -564,7 +565,7 @@ async function getOutboundClearanceHistory(db, chequeRecordId) {
             l.attempt_number, l.bounce_reason, l.bounce_fee, l.notes, l.created_at, l.created_by,
             u.username AS created_by_username
      FROM cheque_clearance_log l
-     LEFT JOIN users u ON u.user_id = l.created_by
+     LEFT JOIN employee u ON u.employee_id = l.created_by
      WHERE l.cheque_record_id = $1 AND l.cheque_type = 'OUTBOUND_SUPPLIER'
      ORDER BY l.created_at ASC`,
     [chequeRecordId]

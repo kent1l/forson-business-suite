@@ -41,6 +41,19 @@ router.post('/ap/outbound-clearance/issue', protect, hasPermission(['ap-pdc:mana
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
+
+        // Auto-resolve the print template from the bank account's default so the
+        // issued cheque can be immediately handed to the cheque printer without
+        // asking the user to re-select a layout every time.
+        let resolvedTemplateId = template_id || null;
+        if (!resolvedTemplateId) {
+            const { rows: [ba] } = await client.query(
+                'SELECT default_cheque_template_id FROM bank_account WHERE bank_account_id = $1',
+                [bank_account_id]
+            );
+            resolvedTemplateId = ba?.default_cheque_template_id || null;
+        }
+
         const result = await apPdcService.issueOutboundCheque(client, {
             bankAccountId: bank_account_id,
             chequeNumber: cheque_number,
@@ -49,7 +62,7 @@ router.post('/ap/outbound-clearance/issue', protect, hasPermission(['ap-pdc:mana
             amount,
             payee,
             memo,
-            templateId: template_id,
+            templateId: resolvedTemplateId,
             supplierId: supplier_id,
             billIds: bill_ids || [],
             expenseCategoryId: expense_category_id,
@@ -58,7 +71,7 @@ router.post('/ap/outbound-clearance/issue', protect, hasPermission(['ap-pdc:mana
             userId: req.user?.employee_id,
         });
         await client.query('COMMIT');
-        res.status(201).json({ success: true, message: 'Outbound cheque issued', ...result });
+        res.status(201).json({ success: true, message: 'Outbound cheque issued', ...result, templateId: resolvedTemplateId });
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('AP Issue Outbound Cheque Error:', err.message);
@@ -68,6 +81,28 @@ router.post('/ap/outbound-clearance/issue', protect, hasPermission(['ap-pdc:mana
         res.status(500).json({ message: err.message || 'Failed to issue outbound cheque' });
     } finally {
         client.release();
+    }
+});
+
+// GET /ap/cheque-register/next-number - Suggest the next numeric cheque number for a bank account
+router.get('/ap/cheque-register/next-number', protect, hasPermission(['ap-pdc:view']), async (req, res) => {
+    try {
+        const { bank_account_id } = req.query;
+        if (!bank_account_id) return res.status(400).json({ message: 'bank_account_id is required' });
+        const { rows } = await db.query(
+            `SELECT cheque_number FROM cheque_records
+             WHERE bank_account_id = $1 AND cheque_number ~ '^[0-9]+$'
+             ORDER BY (cheque_number::bigint) DESC LIMIT 1`,
+            [bank_account_id]
+        );
+        const last = rows[0]?.cheque_number;
+        if (!last) return res.json({ success: true, data: { next_cheque_number: null } });
+        const width = last.length;
+        const next = String(BigInt(last) + 1n).padStart(width, '0');
+        res.json({ success: true, data: { next_cheque_number: next } });
+    } catch (err) {
+        console.error('Next Cheque Number Error:', err.message);
+        res.status(500).json({ message: 'Failed to compute next cheque number' });
     }
 });
 
@@ -291,14 +326,14 @@ router.get('/bank-accounts', protect, hasPermission(['ap-pdc:view']), async (req
 
 router.post('/bank-accounts', protect, hasPermission(['ap-pdc:manage']), async (req, res) => {
     try {
-        const { account_name, bank_name, account_number, currency, opening_balance, notes } = req.body;
+        const { account_name, bank_name, account_number, currency, opening_balance, notes, default_cheque_template_id } = req.body;
         if (!account_name || !bank_name) {
             return res.status(400).json({ message: 'account_name and bank_name are required' });
         }
         const { rows: [row] } = await db.query(
-            `INSERT INTO bank_account (account_name, bank_name, account_number, currency, opening_balance, notes, created_by)
-             VALUES ($1, $2, $3, COALESCE($4, 'PHP'), COALESCE($5, 0), $6, $7) RETURNING *`,
-            [account_name, bank_name, account_number, currency, opening_balance, notes, req.user?.employee_id]
+            `INSERT INTO bank_account (account_name, bank_name, account_number, currency, opening_balance, notes, default_cheque_template_id, created_by)
+             VALUES ($1, $2, $3, COALESCE($4, 'PHP'), COALESCE($5, 0), $6, $7, $8) RETURNING *`,
+            [account_name, bank_name, account_number, currency, opening_balance, notes, default_cheque_template_id || null, req.user?.employee_id]
         );
         res.status(201).json({ success: true, data: row });
     } catch (err) {
@@ -309,7 +344,7 @@ router.post('/bank-accounts', protect, hasPermission(['ap-pdc:manage']), async (
 
 router.put('/bank-accounts/:id', protect, hasPermission(['ap-pdc:manage']), async (req, res) => {
     try {
-        const { account_name, bank_name, account_number, currency, opening_balance, notes, is_active } = req.body;
+        const { account_name, bank_name, account_number, currency, opening_balance, notes, is_active, default_cheque_template_id } = req.body;
         const { rows: [row] } = await db.query(
             `UPDATE bank_account SET
                 account_name = COALESCE($1, account_name),
@@ -318,9 +353,11 @@ router.put('/bank-accounts/:id', protect, hasPermission(['ap-pdc:manage']), asyn
                 currency = COALESCE($4, currency),
                 opening_balance = COALESCE($5, opening_balance),
                 notes = COALESCE($6, notes),
-                is_active = COALESCE($7, is_active)
-             WHERE bank_account_id = $8 RETURNING *`,
-            [account_name, bank_name, account_number, currency, opening_balance, notes, is_active, req.params.id]
+                is_active = COALESCE($7, is_active),
+                default_cheque_template_id = CASE WHEN $9 THEN $8 ELSE default_cheque_template_id END
+             WHERE bank_account_id = $10 RETURNING *`,
+            [account_name, bank_name, account_number, currency, opening_balance, notes, is_active,
+             default_cheque_template_id || null, default_cheque_template_id !== undefined, req.params.id]
         );
         if (!row) return res.status(404).json({ message: 'Bank account not found' });
         res.json({ success: true, data: row });

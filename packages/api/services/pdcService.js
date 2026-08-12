@@ -219,7 +219,7 @@ async function getChequeClearanceHistory(db, paymentId, sourceTable = 'auto') {
              l.attempt_number, l.bounce_reason, l.bounce_fee, l.notes, l.created_at, l.created_by,
              u.username AS created_by_username
       FROM cheque_clearance_log l
-      LEFT JOIN users u ON u.user_id = l.created_by
+      LEFT JOIN employee u ON u.employee_id = l.created_by
       WHERE l.customer_payment_id = $1
       ORDER BY l.created_at ASC;
     `;
@@ -231,7 +231,7 @@ async function getChequeClearanceHistory(db, paymentId, sourceTable = 'auto') {
              l.action, l.attempt_number, l.bounce_reason, l.bounce_fee, l.notes, l.created_at, l.created_by,
              u.username AS created_by_username
       FROM cheque_clearance_log l
-      LEFT JOIN users u ON u.user_id = l.created_by
+      LEFT JOIN employee u ON u.employee_id = l.created_by
       WHERE l.payment_id = $1 OR l.customer_payment_id = $1
       ORDER BY l.created_at ASC;
     `;

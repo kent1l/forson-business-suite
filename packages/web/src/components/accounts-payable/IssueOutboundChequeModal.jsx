@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { format, parseISO } from 'date-fns';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
@@ -14,6 +15,7 @@ const IssueOutboundChequeModal = ({ isOpen, onClose, onIssued }) => {
     const [bankAccounts, setBankAccounts] = useState([]);
     const [suppliers, setSuppliers] = useState([]);
     const [categories, setCategories] = useState([]);
+    const [templates, setTemplates] = useState([]);
     const [supplierBills, setSupplierBills] = useState([]);
 
     const [form, setForm] = useState({
@@ -37,14 +39,16 @@ const IssueOutboundChequeModal = ({ isOpen, onClose, onIssued }) => {
         resetForm();
         (async () => {
             try {
-                const [baRes, supRes, catRes] = await Promise.all([
+                const [baRes, supRes, catRes, tplRes] = await Promise.all([
                     api.get('/bank-accounts'),
                     api.get('/suppliers'),
                     api.get('/expense-categories'),
+                    api.get('/cheques/templates').catch(() => ({ data: [] })),
                 ]);
                 setBankAccounts(baRes.data?.data || baRes.data || []);
                 setSuppliers(supRes.data?.data || supRes.data || []);
                 setCategories(catRes.data?.data || catRes.data || []);
+                setTemplates(tplRes.data || []);
             } catch (err) {
                 console.error('Error loading issuance form data:', err);
             }
@@ -66,7 +70,24 @@ const IssueOutboundChequeModal = ({ isOpen, onClose, onIssued }) => {
         })();
     }, [form.purpose_type, form.supplier_id]);
 
+    // Suggest the next physical cheque number for the selected bank account —
+    // still freely editable, since the real sequence lives on the paper book.
+    useEffect(() => {
+        if (!form.bank_account_id || form.cheque_number) return;
+        (async () => {
+            try {
+                const res = await api.get('/ap/cheque-register/next-number', { params: { bank_account_id: form.bank_account_id } });
+                const next = res.data?.data?.next_cheque_number;
+                if (next) setForm(prev => (prev.cheque_number ? prev : { ...prev, cheque_number: next }));
+            } catch (err) {
+                console.error('Error suggesting next cheque number:', err);
+            }
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [form.bank_account_id]);
+
     const selectedSupplier = suppliers.find(s => String(s.supplier_id) === String(form.supplier_id));
+    const selectedBankAccount = bankAccounts.find(ba => String(ba.bank_account_id) === String(form.bank_account_id));
 
     const handleChange = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
@@ -104,7 +125,7 @@ const IssueOutboundChequeModal = ({ isOpen, onClose, onIssued }) => {
 
         setSubmitting(true);
         try {
-            await api.post('/ap/outbound-clearance/issue', {
+            const res = await api.post('/ap/outbound-clearance/issue', {
                 bank_account_id: form.bank_account_id,
                 cheque_number: form.cheque_number,
                 cheque_date: form.cheque_date,
@@ -118,6 +139,33 @@ const IssueOutboundChequeModal = ({ isOpen, onClose, onIssued }) => {
                 expense_category_id: form.purpose_type !== 'SUPPLIER_PAYMENT' ? form.expense_category_id : undefined,
             });
             toast.success('Outbound cheque issued');
+
+            const { chequeRecordId, templateId } = res.data || {};
+            const template = templates.find(t => String(t.id) === String(templateId));
+            if (chequeRecordId && template) {
+                try {
+                    const pdfRes = await api.post('/cheques/generate-pdf', {
+                        template_id: template.id,
+                        cheque_record_id: chequeRecordId,
+                        records: [{
+                            date: format(parseISO(form.cheque_date), template.date_format || 'MM-dd-yyyy'),
+                            payee,
+                            amount: parseFloat(form.amount).toFixed(2),
+                            memo: form.memo || '',
+                        }],
+                    }, { responseType: 'blob' });
+                    const pdfBlob = new Blob([pdfRes.data], { type: 'application/pdf' });
+                    const url = URL.createObjectURL(pdfBlob);
+                    window.open(url, '_blank', 'noopener,noreferrer');
+                    toast.success('Cheque PDF ready to print — use 100% print scale.');
+                } catch (printErr) {
+                    console.error('Auto-print failed:', printErr);
+                    toast.error('Cheque saved, but auto-print failed. You can print it from the Treasury Desk.');
+                }
+            } else if (chequeRecordId) {
+                toast('No print template linked to this bank account — link one in Bank Accounts, or print manually from Cheque Printing.', { icon: 'ℹ️' });
+            }
+
             onIssued && onIssued();
             onClose();
         } catch (err) {
@@ -141,6 +189,13 @@ const IssueOutboundChequeModal = ({ isOpen, onClose, onIssued }) => {
                                 <option key={ba.bank_account_id} value={ba.bank_account_id}>{ba.account_name} — {ba.bank_name}</option>
                             ))}
                         </select>
+                        {selectedBankAccount && (
+                            <p className="text-[11px] text-gray-400 mt-1">
+                                {selectedBankAccount.default_cheque_template_id
+                                    ? '✓ Will auto-print on issue'
+                                    : 'No print template linked — will not auto-print'}
+                            </p>
+                        )}
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1">Cheque Number</label>

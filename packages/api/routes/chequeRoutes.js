@@ -386,13 +386,30 @@ router.post('/cheques/settings-import', protect, hasPermission('cheques:manage_s
 });
 
 router.post('/cheques/generate-pdf', protect, hasPermission('cheques:create'), async (req, res) => {
-    const { template_id, records = [], printer_profile_id = null, test_print = false } = req.body;
+    const { template_id, records = [], printer_profile_id = null, test_print = false, cheque_record_id = null } = req.body;
 
     if (!template_id) {
         return res.status(400).json({ message: 'template_id is required' });
     }
     if (!Array.isArray(records) || records.length === 0) {
         return res.status(400).json({ message: 'At least one cheque record is required' });
+    }
+
+    // If this print/reprint is tied to a specific outbound cheque record (from the
+    // PDC Treasury Desk), refuse to produce a physical cheque for one that has
+    // been voided or replaced — printing it would create a second live copy of a
+    // cheque the business has already committed to never honoring.
+    let linkedRecord = null;
+    if (cheque_record_id) {
+        const { rows: [cr] } = await db.query(
+            `SELECT id, status, ap_payment_id, bank_account_id FROM cheque_records WHERE id = $1`,
+            [cheque_record_id]
+        );
+        if (!cr) return res.status(404).json({ message: 'Linked cheque record not found' });
+        if (['VOID', 'REPLACED'].includes(cr.status)) {
+            return res.status(409).json({ message: `Cannot print a cheque with status ${cr.status}` });
+        }
+        linkedRecord = cr;
     }
 
     try {
@@ -452,6 +469,19 @@ router.post('/cheques/generate-pdf', protect, hasPermission('cheques:create'), a
         const dateSegment = new Date().toISOString().slice(0, 10);
         const countSegment = `${normalizedRows.length}-cheque${normalizedRows.length > 1 ? 's' : ''}`;
         const pdfFilename = `${bankSegment}-${countSegment}-${dateSegment}.pdf`;
+
+        if (linkedRecord && linkedRecord.ap_payment_id) {
+            try {
+                await db.query(
+                    `INSERT INTO cheque_clearance_log (cheque_type, ap_payment_id, cheque_record_id, bank_account_id, action, notes, created_by)
+                     VALUES ('OUTBOUND_SUPPLIER', $1, $2, $3, 'PRINTED', $4, $5)`,
+                    [linkedRecord.ap_payment_id, linkedRecord.id, linkedRecord.bank_account_id,
+                     test_print ? 'Test print' : 'Cheque printed from Treasury Desk', req.user?.employee_id]
+                );
+            } catch (logErr) {
+                console.error('Failed to write PRINTED cheque_clearance_log:', logErr.message);
+            }
+        }
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename="${pdfFilename}"`);

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { format, parseISO } from 'date-fns';
 import api from '../api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
@@ -44,6 +45,8 @@ const PdcTreasuryPage = () => {
     const [outboundMaturityFilter, setOutboundMaturityFilter] = useState('ALL');
     const [outboundLoading, setOutboundLoading] = useState(false);
     const [issueModalOpen, setIssueModalOpen] = useState(false);
+    const [chequeTemplates, setChequeTemplates] = useState([]);
+    const [printingId, setPrintingId] = useState(null);
 
     // Modal Action States (shared, parameterized by selectedItem.direction)
     const [selectedItem, setSelectedItem] = useState(null);
@@ -124,6 +127,10 @@ const PdcTreasuryPage = () => {
 
     useEffect(() => { fetchStats(); fetchInboundItems(); }, [fetchStats, fetchInboundItems]);
     useEffect(() => { fetchOutboundStats(); fetchOutboundItems(); }, [fetchOutboundStats, fetchOutboundItems]);
+    useEffect(() => {
+        if (!canViewOutbound) return;
+        api.get('/cheques/templates').then(res => setChequeTemplates(res.data || [])).catch(() => {});
+    }, [canViewOutbound]);
 
     const refreshAll = () => { fetchStats(); fetchInboundItems(); fetchOutboundStats(); fetchOutboundItems(); };
 
@@ -191,6 +198,35 @@ const PdcTreasuryPage = () => {
         setReplaceChequeDateInput('');
         setReplaceReasonInput('');
         setActionModalType('replace');
+    };
+
+    const handlePrintOutbound = async (item) => {
+        const template = chequeTemplates.find(t => String(t.id) === String(item.template_id));
+        if (!template) {
+            toast.error('No print template linked to this cheque\'s bank account. Link one in Bank Accounts, or print manually from Cheque Printing.');
+            return;
+        }
+        setPrintingId(item.cheque_record_id);
+        try {
+            const pdfRes = await api.post('/cheques/generate-pdf', {
+                template_id: template.id,
+                cheque_record_id: item.cheque_record_id,
+                records: [{
+                    date: format(parseISO(String(item.cheque_date).slice(0, 10)), template.date_format || 'MM-dd-yyyy'),
+                    payee: item.company_name || item.payee,
+                    amount: parseFloat(item.amount).toFixed(2),
+                    memo: item.memo || '',
+                }],
+            }, { responseType: 'blob' });
+            const pdfBlob = new Blob([pdfRes.data], { type: 'application/pdf' });
+            const url = URL.createObjectURL(pdfBlob);
+            window.open(url, '_blank', 'noopener,noreferrer');
+        } catch (err) {
+            console.error('Error printing cheque:', err);
+            toast.error(err.response?.data?.message || 'Failed to generate cheque PDF');
+        } finally {
+            setPrintingId(null);
+        }
     };
 
     const handleViewHistory = async (item, direction = 'inbound') => {
@@ -420,6 +456,7 @@ const PdcTreasuryPage = () => {
                         onRedepositCheque={handleRedepositOutbound}
                         onVoidCheque={handleVoidOutbound}
                         onReplaceCheque={handleReplaceOutbound}
+                        onPrintCheque={handlePrintOutbound}
                         onViewHistory={(item) => handleViewHistory(item, 'outbound')}
                     />
                 ) : (
