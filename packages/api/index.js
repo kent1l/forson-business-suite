@@ -11,6 +11,7 @@ const { startWorker: startDedupeScanWorker, runScanCycle } = require('./dedupe-s
 global.runDeduplicationScan = runScanCycle;
 const { startCycleCountEngine } = require('./services/cycleCountService');
 const { startPdcReminderEngine } = require('./services/pdcReminderService');
+const { startLedgerReconciliationEngine } = require('./services/ledgerReconciliationService');
 
 // Set default timezone to Philippine Time
 process.env.TZ = 'Asia/Manila';
@@ -187,4 +188,5 @@ app.listen(PORT, async () => {
   }
   startCycleCountEngine();
   startPdcReminderEngine();
+  startLedgerReconciliationEngine();
 });

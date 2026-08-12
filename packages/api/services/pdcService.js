@@ -53,15 +53,13 @@ function computePdcMaturity(row, staleDays = 180) {
  * @param {string} [maturityFilter] - 'ALL', 'DUE_TODAY', 'FUTURE_PDC', 'STALE_CHEQUE'
  */
 async function getCollectionsClearanceList(db, pdcStatusFilter = null, maturityFilter = null) {
-  // Build WHERE clause for pdc_status filter
-  const statusConditions = pdcStatusFilter && pdcStatusFilter !== 'ALL'
-    ? `AND pdc_status = '${pdcStatusFilter.replace(/'/g, "''")}'`  // safe: validated below
-    : `AND pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED', 'CLEARED', 'BOUNCED')`;
-
   const validStatuses = new Set(['ALL', 'RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED', 'CLEARED', 'BOUNCED']);
   if (pdcStatusFilter && !validStatuses.has(pdcStatusFilter)) {
     throw new Error(`Invalid pdc_status filter: ${pdcStatusFilter}`);
   }
+  // Normalize 'ALL'/absent to null so both queries below can use a single
+  // parameterized ($1) condition instead of building SQL via string interpolation.
+  const normalizedStatus = (pdcStatusFilter && pdcStatusFilter !== 'ALL') ? pdcStatusFilter : null;
 
   // ── PRIMARY: customer_payment rows (new AR receipt flow) ─────────────────
   // Each row represents ONE physical payment instrument (cheque, bank transfer, etc.)
@@ -105,7 +103,10 @@ async function getCollectionsClearanceList(db, pdcStatusFilter = null, maturityF
       -- Only show deferred/cheque-type instruments, not instant cash/bank payments
       (pm.type = 'cheque' OR pm.code IN ('cheque', 'pdc') OR
        cp.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED', 'BOUNCED'))
-      ${statusConditions.replace(/pdc_status/g, 'cp.pdc_status')}
+      AND (
+        ($1::varchar IS NULL AND cp.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED', 'CLEARED', 'BOUNCED'))
+        OR ($1::varchar IS NOT NULL AND cp.pdc_status = $1::varchar)
+      )
     GROUP BY
       cp.payment_id, cp.customer_id, c.company_name, c.first_name, c.last_name,
       cp.amount, cp.pdc_status, cp.method_id, pm.name, pm.code,
@@ -116,10 +117,6 @@ async function getCollectionsClearanceList(db, pdcStatusFilter = null, maturityF
   // ── LEGACY: invoice_payments rows (pre-refactor PDC cheques) ─────────────
   // These rows were created by the old per-invoice payment flow.
   // Kept for backward compat so existing pending cheques remain visible.
-  const ipStatusConditions = pdcStatusFilter && pdcStatusFilter !== 'ALL'
-    ? `AND (ip.pdc_status = '${pdcStatusFilter.replace(/'/g, "''")}' OR (ip.payment_status = 'pending' AND '${pdcStatusFilter}' = 'RECEIVED'))`
-    : `AND (ip.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED', 'BOUNCED') OR ip.payment_status = 'pending')`;
-
   const ipQuery = `
     SELECT
       ip.payment_id,
@@ -151,13 +148,17 @@ async function getCollectionsClearanceList(db, pdcStatusFilter = null, maturityF
       WHERE action = 'BOUNCED' AND customer_payment_id IS NULL
       GROUP BY payment_id
     ) bounce_agg ON bounce_agg.payment_id = ip.payment_id
-    WHERE TRUE ${ipStatusConditions}
+    WHERE TRUE
+      AND (
+        ($1::varchar IS NULL AND (ip.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED', 'BOUNCED') OR ip.payment_status = 'pending'))
+        OR ($1::varchar IS NOT NULL AND (ip.pdc_status = $1::varchar OR (ip.payment_status = 'pending' AND $1::varchar = 'RECEIVED')))
+      )
     ORDER BY ip.created_at DESC
   `;
 
   const [cpResult, ipResult] = await Promise.all([
-    db.query(cpQuery),
-    db.query(ipQuery),
+    db.query(cpQuery, [normalizedStatus]),
+    db.query(ipQuery, [normalizedStatus]),
   ]);
 
   const combined = [...(cpResult?.rows || []), ...(ipResult?.rows || [])].map(computePdcMaturity);
