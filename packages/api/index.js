@@ -10,6 +10,7 @@ const { startSearchRepairWorker } = require('./search-repair-worker');
 const { startWorker: startDedupeScanWorker, runScanCycle } = require('./dedupe-scan-worker');
 global.runDeduplicationScan = runScanCycle;
 const { startCycleCountEngine } = require('./services/cycleCountService');
+const { startPdcReminderEngine } = require('./services/pdcReminderService');
 
 // Set default timezone to Philippine Time
 process.env.TZ = 'Asia/Manila';
@@ -80,6 +81,7 @@ registerRoute('/api', './routes/taxReportRoutes');
 // Finance & Expense Modules
 registerRoute('/api', './routes/expenseCategoryRoutes');
 registerRoute('/api', './routes/expenseRoutes');
+registerRoute('/api', './routes/apPdcRoutes');
 
 // Admin & System Modules
 registerRoute('/api', './routes/employeeRoutes');
@@ -183,4 +185,5 @@ app.listen(PORT, async () => {
     console.log('Legacy part meili listener disabled (set ENABLE_LEGACY_MEILI_PART_LISTENER=true to enable).');
   }
   startCycleCountEngine();
+  startPdcReminderEngine();
 });

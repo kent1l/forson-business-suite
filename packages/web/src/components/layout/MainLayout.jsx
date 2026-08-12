@@ -19,6 +19,7 @@ import POSPage from '../../pages/POSPage';
 import PurchaseOrderPage from '../../pages/PurchaseOrderPage';
 import AccountsReceivablePage from '../../pages/AccountsReceivablePage';
 import PdcTreasuryPage from '../../pages/PdcTreasuryPage';
+import BankAccountsPage from '../../pages/BankAccountsPage';
 import SalesHistoryPage from '../../pages/SalesHistoryPage'; // <-- Import new page
 import DocumentsPage from '../../pages/DocumentsPage';
 import ChequePrintingPage from '../../pages/ChequePrintingPage';
@@ -53,6 +54,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'purchase_orders': return <PurchaseOrderPage />;
             case 'ar': return <AccountsReceivablePage />;
             case 'pdc': return <PdcTreasuryPage />;
+            case 'bank_accounts': return <BankAccountsPage />;
             case 'soa_gen': return <SoaGenPage />;
             case 'staged_sales': return <CashierApprovalDesk onNavigate={onNavigate} />;
             case 'inventory': return <InventoryPage user={user} />;
