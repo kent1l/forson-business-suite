@@ -11,6 +11,7 @@ const { startWorker: startDedupeScanWorker, runScanCycle } = require('./dedupe-s
 global.runDeduplicationScan = runScanCycle;
 const { startCycleCountEngine } = require('./services/cycleCountService');
 const { startPdcReminderEngine } = require('./services/pdcReminderService');
+const { startApDueDateReminderEngine } = require('./services/apDueDateReminderService');
 const { startLedgerReconciliationEngine } = require('./services/ledgerReconciliationService');
 
 // Set default timezone to Philippine Time
@@ -83,6 +84,7 @@ registerRoute('/api', './routes/taxReportRoutes');
 registerRoute('/api', './routes/expenseCategoryRoutes');
 registerRoute('/api', './routes/expenseRoutes');
 registerRoute('/api', './routes/apPdcRoutes');
+registerRoute('/api', './routes/apRoutes');
 
 // Admin & System Modules
 registerRoute('/api', './routes/employeeRoutes');
@@ -188,5 +190,6 @@ app.listen(PORT, async () => {
   }
   startCycleCountEngine();
   startPdcReminderEngine();
+  startApDueDateReminderEngine();
   startLedgerReconciliationEngine();
 });

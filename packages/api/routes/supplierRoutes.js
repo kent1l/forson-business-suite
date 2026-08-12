@@ -64,15 +64,15 @@ router.get('/suppliers', protect, hasPermission('suppliers:view'), async (req, r
 
 // POST a new supplier
 router.post('/suppliers', protect, hasPermission('suppliers:edit'), async (req, res) => {
-    const { supplier_name, contact_person, phone, email, address, is_active } = req.body;
+    const { supplier_name, contact_person, phone, email, address, is_active, payment_terms_days } = req.body;
     if (!supplier_name) {
         return res.status(400).json({ message: 'Supplier name is required.' });
     }
     try {
         const supplier_code = await getNextDocumentNumber(db, 'SUPP');
         const newSupplier = await db.query(
-            'INSERT INTO supplier (supplier_code, supplier_name, contact_person, phone, email, address, is_active) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-            [supplier_code, supplier_name, contact_person, phone, email, address, is_active]
+            'INSERT INTO supplier (supplier_code, supplier_name, contact_person, phone, email, address, is_active, payment_terms_days) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
+            [supplier_code, supplier_name, contact_person, phone, email, address, is_active, payment_terms_days || null]
         );
         res.status(201).json(newSupplier.rows[0]);
     } catch (err) {
@@ -87,7 +87,7 @@ router.post('/suppliers', protect, hasPermission('suppliers:edit'), async (req, 
 // PUT - Update an existing supplier
 router.put('/suppliers/:id', protect, hasPermission('suppliers:edit'), async (req, res) => {
     const { id } = req.params;
-    const { supplier_name, contact_person, phone, email, address, is_active } = req.body;
+    const { supplier_name, contact_person, phone, email, address, is_active, payment_terms_days } = req.body;
 
     if (!supplier_name) {
         return res.status(400).json({ message: 'Supplier name is required' });
@@ -95,8 +95,8 @@ router.put('/suppliers/:id', protect, hasPermission('suppliers:edit'), async (re
 
     try {
         const updatedSupplier = await db.query(
-            'UPDATE supplier SET supplier_name = $1, contact_person = $2, phone = $3, email = $4, address = $5, is_active = $6 WHERE supplier_id = $7 RETURNING *',
-            [supplier_name, contact_person, phone, email, address, is_active, id]
+            'UPDATE supplier SET supplier_name = $1, contact_person = $2, phone = $3, email = $4, address = $5, is_active = $6, payment_terms_days = $7 WHERE supplier_id = $8 RETURNING *',
+            [supplier_name, contact_person, phone, email, address, is_active, payment_terms_days || null, id]
         );
 
         if (updatedSupplier.rows.length === 0) {

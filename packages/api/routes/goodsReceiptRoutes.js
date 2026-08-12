@@ -3,6 +3,7 @@ const db = require('../db');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { hasPermission, protect } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
+const apLedgerService = require('../services/apLedgerService');
 const router = express.Router();
 
 // GET /goods-receipts - Fetch list of posted GRNs with search and sorting
@@ -140,7 +141,9 @@ router.get('/goods-receipts/:id/lines', protect, async (req, res) => {
 // POST /goods-receipts - Create a new Goods Receipt
 router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), async (req, res) => {
   // NEW: Added po_id to destructuring
-  const { supplier_id, received_by, lines, po_id } = req.body;
+  // bill_id: optional — attaches this receipt's stock-in to a pre-existing manually
+  // created supplier_bill (see AddPayableModal) instead of auto-generating a new bill.
+  const { supplier_id, received_by, lines, po_id, bill_id } = req.body;
 
   if (!supplier_id || !received_by || !lines || !Array.isArray(lines) || lines.length === 0) {
     return res.status(400).json({ message: 'Missing required fields.' });
@@ -151,14 +154,24 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
   try {
     await client.query('BEGIN');
 
+    if (bill_id) {
+      const { rows: [bill] } = await client.query(
+        `SELECT bill_id FROM supplier_bill WHERE bill_id = $1 AND supplier_id = $2 AND status != 'Paid'`,
+        [bill_id, supplier_id]
+      );
+      if (!bill) {
+        throw new Error('The selected payable was not found for this supplier, or is already fully paid.');
+      }
+    }
+
     const grn_number = await getNextDocumentNumber(client, 'GRN');
 
     const goodsReceiptQuery = `
-      INSERT INTO goods_receipt (grn_number, supplier_id, received_by)
-      VALUES ($1, $2, $3)
+      INSERT INTO goods_receipt (grn_number, supplier_id, received_by, bill_id)
+      VALUES ($1, $2, $3, $4)
       RETURNING grn_id;
     `;
-    const receiptResult = await client.query(goodsReceiptQuery, [grn_number, supplier_id, received_by]);
+    const receiptResult = await client.query(goodsReceiptQuery, [grn_number, supplier_id, received_by, bill_id || null]);
     const newGrnId = receiptResult.rows[0].grn_id;
 
     for (const line of lines) {
@@ -207,6 +220,47 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
         }
 
         await client.query(`UPDATE purchase_order SET status = $1 WHERE po_id = $2`, [newStatus, po_id]);
+    }
+
+    // --- Auto-create the supplier bill this receipt represents, so AP monitoring
+    // reflects the liability immediately instead of waiting on manual bill entry.
+    // The partial unique index on supplier_bill.grn_id (migration 20260813_04)
+    // makes this idempotent if the request is ever retried. Skipped entirely when
+    // bill_id was provided — the receipt is attaching items to an existing payable,
+    // not creating a new one.
+    const totalAmount = lines.reduce((sum, l) => sum + (parseFloat(l.quantity) * parseFloat(l.cost_price)), 0);
+    if (totalAmount > 0 && !bill_id) {
+      const { rows: [supplier] } = await client.query(
+        'SELECT payment_terms_days FROM supplier WHERE supplier_id = $1', [supplier_id]
+      );
+      const termsDays = supplier?.payment_terms_days || null;
+      const billNumber = await getNextDocumentNumber(client, 'BILL');
+
+      const { rows: [bill] } = await client.query(
+        `INSERT INTO supplier_bill (supplier_id, po_id, grn_id, bill_number, bill_date, due_date, total_amount, created_by)
+         VALUES ($1, $2, $3, $4, CURRENT_DATE, CASE WHEN $5::int IS NOT NULL THEN CURRENT_DATE + ($5::int || ' days')::interval ELSE NULL END, $6, $7)
+         ON CONFLICT (grn_id) WHERE grn_id IS NOT NULL DO NOTHING
+         RETURNING bill_id`,
+        [supplier_id, po_id || null, newGrnId, billNumber, termsDays, totalAmount, received_by]
+      );
+
+      if (bill) {
+        // Back-link the receipt to the bill it created (goods_receipt.bill_id is the
+        // authoritative "which items belong to this bill" pointer used by
+        // GET /ap/supplier-bills/:billId/items — without this, auto-created bills
+        // would show no attached items even though the stock-in already happened).
+        await client.query(`UPDATE goods_receipt SET bill_id = $1 WHERE grn_id = $2`, [bill.bill_id, newGrnId]);
+
+        await apLedgerService.appendEntry(client, {
+          supplierId: supplier_id,
+          billId: bill.bill_id,
+          entryType: 'BILL_POSTED',
+          amount: totalAmount,
+          referenceNo: billNumber,
+          notes: `Auto-posted from goods receipt ${grn_number}`,
+          createdBy: received_by,
+        });
+      }
     }
 
     await client.query('COMMIT');

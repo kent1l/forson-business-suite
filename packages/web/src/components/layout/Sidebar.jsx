@@ -58,6 +58,7 @@ const CATEGORIES = [
         title: 'Finance & Expenses',
         icon: ICONS.receipt,
         items: [
+            { name: 'A/P',                 icon: ICONS.truck,   page: 'ap',                 permission: 'ap:view' },
             { name: 'Cheques & Treasury', icon: ICONS.bank,    page: 'cheques_treasury',   permission: ['cheques:view', 'pdc:view', 'ar:view', 'ap-pdc:view'] },
             { name: 'Bulk SOA Generator', icon: ICONS.documents, page: 'soa_gen',          permission: 'ar:view' },
             { name: 'Expenses',           icon: ICONS.receipt, page: 'expenses',           permission: 'expenses:view' },
