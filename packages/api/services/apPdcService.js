@@ -151,9 +151,9 @@ async function getOutboundClearanceList(db, pdcStatusFilter = null, maturityFilt
   if (pdcStatusFilter && !validStatuses.has(pdcStatusFilter)) {
     throw new Error(`Invalid pdc_status filter: ${pdcStatusFilter}`);
   }
-  const statusConditions = pdcStatusFilter && pdcStatusFilter !== 'ALL'
-    ? `AND cr.status = '${pdcStatusFilter.replace(/'/g, "''")}'`
-    : `AND cr.status NOT IN ('VOID')`;
+  // Normalize 'ALL'/absent to null so the query below can use a single
+  // parameterized ($1) condition instead of building SQL via string interpolation.
+  const normalizedStatus = (pdcStatusFilter && pdcStatusFilter !== 'ALL') ? pdcStatusFilter : null;
 
   const query = `
     SELECT
@@ -188,11 +188,14 @@ async function getOutboundClearanceList(db, pdcStatusFilter = null, maturityFilt
     ) bounce_agg ON bounce_agg.cheque_record_id = cr.id
     WHERE cr.is_deleted = false
       AND (cr.ap_payment_id IS NOT NULL OR cr.expense_id IS NOT NULL)
-      ${statusConditions}
+      AND (
+        ($1::varchar IS NULL AND cr.status NOT IN ('VOID'))
+        OR ($1::varchar IS NOT NULL AND cr.status = $1::varchar)
+      )
     ORDER BY cr.created_at DESC
   `;
 
-  const { rows } = await db.query(query);
+  const { rows } = await db.query(query, [normalizedStatus]);
   const { staleDays } = await getPdcSettings(db);
   const combined = rows.map(r => computePdcMaturity(r, staleDays));
 
