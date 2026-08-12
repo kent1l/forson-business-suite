@@ -9,6 +9,8 @@ import PdcClearanceDeskTable from '../components/accounts-receivable/PdcClearanc
 import PdcOutboundDeskTable from '../components/accounts-payable/PdcOutboundDeskTable';
 import IssueOutboundChequeModal from '../components/accounts-payable/IssueOutboundChequeModal';
 import Modal from '../components/ui/Modal';
+import SegmentedTabs from '../components/ui/SegmentedTabs';
+import StatusBadge from '../components/ui/StatusBadge';
 
 const emptyStats = {
     held_in_safe_count: 0, held_in_safe_total: 0,
@@ -20,6 +22,17 @@ const emptyOutboundStats = {
     due_today_count: 0, due_today_total: 0,
     cleared_month_total: 0, bounced_count: 0, bounced_total: 0,
 };
+
+const HISTORY_ACTION_TONE = {
+    CLEARED: 'success',
+    BOUNCED: 'danger',
+    REDEPOSITED: 'info',
+    VOID: 'neutral',
+    REPLACED: 'warning',
+};
+
+const LABEL_CLASS = 'block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1';
+const TEXT_INPUT_CLASS = 'w-full text-xs p-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100';
 
 const PdcTreasuryPage = () => {
     const { hasPermission } = useAuth();
@@ -370,24 +383,29 @@ const PdcTreasuryPage = () => {
     const heldTotal = activeTab === 'outbound' ? activeStats.held_for_release_total : activeStats.held_in_safe_total;
     const heldCount = activeTab === 'outbound' ? activeStats.held_for_release_count : activeStats.held_in_safe_count;
 
+    const desksTabs = [
+        { key: 'inbound', label: '📥 Customer Cheques (Inbound / AR)' },
+        ...(canViewOutbound ? [{ key: 'outbound', label: '📤 Outbound Cheques (Supplier / Loan / Rent / Other)' }] : []),
+    ];
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900">PDC &amp; Treasury Desk</h1>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">PDC &amp; Treasury Desk</h1>
+                    <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
                         Centralized vault custody, post-dated cheque monitoring, bank clearance, and bounce reversals
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
                     {activeTab === 'outbound' && canManageOutbound && (
                         <button type="button" onClick={() => setIssueModalOpen(true)}
-                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-2 cursor-pointer">
+                            className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-2 cursor-pointer">
                             <span>+</span> Issue Cheque
                         </button>
                     )}
                     <button type="button" onClick={refreshAll}
-                        className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-xl text-xs font-semibold shadow-xs flex items-center gap-2 cursor-pointer">
+                        className="px-4 py-2 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-700 dark:text-slate-200 rounded-xl text-xs font-semibold shadow-xs flex items-center gap-2 cursor-pointer">
                         <span>🔄</span> Refresh Treasury Data
                     </button>
                 </div>
@@ -395,11 +413,11 @@ const PdcTreasuryPage = () => {
 
             {/* Due-today / replacement-needed reminder banner */}
             {(reminderSummary.inboundDueToday + reminderSummary.outboundDueToday + reminderSummary.needsReplacement) > 0 && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-900 flex flex-wrap items-center gap-x-4 gap-y-1">
+                <div className="bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-900/40 rounded-xl px-4 py-3 text-xs text-warning-900 dark:text-warning-300 flex flex-wrap items-center gap-x-4 gap-y-1">
                     <span className="font-bold">⏰ Attention:</span>
                     {reminderSummary.inboundDueToday > 0 && <span>{reminderSummary.inboundDueToday} inbound cheque{reminderSummary.inboundDueToday === 1 ? '' : 's'} due today</span>}
                     {reminderSummary.outboundDueToday > 0 && <span>{reminderSummary.outboundDueToday} outbound cheque{reminderSummary.outboundDueToday === 1 ? '' : 's'} due today</span>}
-                    {reminderSummary.needsReplacement > 0 && <span className="text-rose-700 font-semibold">{reminderSummary.needsReplacement} outbound cheque{reminderSummary.needsReplacement === 1 ? '' : 's'} need replacement</span>}
+                    {reminderSummary.needsReplacement > 0 && <span className="text-danger-700 dark:text-danger-400 font-semibold">{reminderSummary.needsReplacement} outbound cheque{reminderSummary.needsReplacement === 1 ? '' : 's'} need replacement</span>}
                 </div>
             )}
 
@@ -414,17 +432,8 @@ const PdcTreasuryPage = () => {
                     subtitle={`${activeStats.bounced_count} bounced cheque${activeStats.bounced_count === 1 ? '' : 's'} logged`} icon="⚠️" color="rose" loading={activeStatsLoading} />
             </div>
 
-            <div className="border-b border-gray-200 bg-white rounded-xl shadow-xs px-4 pt-2">
-                <div className="flex space-x-8">
-                    <button type="button" onClick={() => setActiveTab('inbound')}
-                        className={`py-3 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${activeTab === 'inbound' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
-                        📥 Customer Cheques (Inbound / AR)
-                    </button>
-                    <button type="button" onClick={() => setActiveTab('outbound')}
-                        className={`py-3 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${activeTab === 'outbound' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
-                        📤 Outbound Cheques (Supplier / Loan / Rent / Other)
-                    </button>
-                </div>
+            <div className="border-b border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-xl shadow-xs px-4 pt-2">
+                <SegmentedTabs tabs={desksTabs} active={activeTab} onChange={setActiveTab} />
             </div>
 
             {activeTab === 'inbound' && (
@@ -460,9 +469,9 @@ const PdcTreasuryPage = () => {
                         onViewHistory={(item) => handleViewHistory(item, 'outbound')}
                     />
                 ) : (
-                    <div className="bg-white p-12 rounded-xl border border-gray-200 text-center shadow-xs space-y-2">
+                    <div className="bg-white dark:bg-slate-800 p-12 rounded-xl border border-gray-200 dark:border-slate-700 text-center shadow-xs space-y-2">
                         <div className="text-4xl">🔒</div>
-                        <p className="text-sm text-gray-600">You do not have permission to view outbound cheques.</p>
+                        <p className="text-sm text-gray-600 dark:text-slate-400">You do not have permission to view outbound cheques.</p>
                     </div>
                 )
             )}
@@ -477,8 +486,8 @@ const PdcTreasuryPage = () => {
             <Modal isOpen={actionModalType === 'clear'} onClose={closeModal} title="Verify Cheque Clearance">
                 {selectedItem && (
                     <div className="space-y-4">
-                        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2 text-xs text-emerald-900">
-                            <p className="font-bold text-emerald-950 text-sm">Confirm Bank Clearance</p>
+                        <div className="p-4 bg-success-50 dark:bg-success-900/20 border border-success-200 dark:border-success-900/40 rounded-xl space-y-2 text-xs text-success-900 dark:text-success-300">
+                            <p className="font-bold text-success-950 dark:text-success-200 text-sm">Confirm Bank Clearance</p>
                             <p>You are marking this cheque payment as <strong>CLEARED</strong> by the bank:</p>
                             <ul className="list-disc pl-4 space-y-1 font-mono">
                                 <li>{selectedItem.direction === 'outbound' ? 'Payee' : 'Customer'}: <strong>{selectedItem.company_name || selectedItem.payee || selectedItem.first_name}</strong></li>
@@ -486,13 +495,13 @@ const PdcTreasuryPage = () => {
                                 <li>Amount: <strong>{formatCurrency(selectedItem.amount)}</strong></li>
                             </ul>
                         </div>
-                        <p className="text-xs text-gray-600">
-                            This will post a <code className="bg-gray-100 px-1 py-0.5 rounded text-blue-700">PAYMENT_SETTLED</code> entry to the {selectedItem.direction === 'outbound' ? "supplier's AP ledger" : "customer's AR ledger"} and update the cash balance.
+                        <p className="text-xs text-gray-600 dark:text-slate-400">
+                            This will post a <code className="bg-gray-100 dark:bg-slate-700 px-1 py-0.5 rounded text-primary-700 dark:text-primary-400">PAYMENT_SETTLED</code> entry to the {selectedItem.direction === 'outbound' ? "supplier's AP ledger" : "customer's AR ledger"} and update the cash balance.
                         </p>
                         <div className="flex justify-end gap-3 pt-2">
-                            <button type="button" onClick={closeModal} className="px-4 py-2 text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg cursor-pointer">Cancel</button>
+                            <button type="button" onClick={closeModal} className="px-4 py-2 text-xs font-semibold text-gray-600 dark:text-slate-300 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg cursor-pointer">Cancel</button>
                             <button type="button" disabled={submittingAction} onClick={confirmVerifyClearance}
-                                className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-xs cursor-pointer disabled:opacity-50">
+                                className="px-4 py-2 text-xs font-bold text-white bg-success-600 hover:bg-success-700 rounded-lg shadow-xs cursor-pointer disabled:opacity-50">
                                 {submittingAction ? 'Processing...' : 'Confirm Clearance'}
                             </button>
                         </div>
@@ -504,32 +513,32 @@ const PdcTreasuryPage = () => {
             <Modal isOpen={actionModalType === 'bounce'} onClose={closeModal} title="Process Bounced Cheque (NSF)">
                 {selectedItem && (
                     <div className="space-y-4">
-                        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl space-y-2 text-xs text-rose-900">
-                            <p className="font-bold text-rose-950 text-sm">⚠️ Automated Reversal Warning</p>
+                        <div className="p-4 bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-900/40 rounded-xl space-y-2 text-xs text-danger-900 dark:text-danger-300">
+                            <p className="font-bold text-danger-950 dark:text-danger-200 text-sm">⚠️ Automated Reversal Warning</p>
                             <p>Bouncing this cheque will automatically:</p>
                             <ul className="list-disc pl-4 space-y-1">
                                 <li>Reverse <strong>{formatCurrency(selectedItem.amount)}</strong> back onto {selectedItem.direction === 'outbound' ? 'open bills' : 'open invoices'}.</li>
-                                <li>Post a <code className="bg-rose-100 px-1 py-0.5 rounded font-mono">PDC_BOUNCED_REVERSAL</code> entry to the {selectedItem.direction === 'outbound' ? 'AP' : 'AR'} ledger.</li>
+                                <li>Post a <code className="bg-danger-100 dark:bg-danger-900/40 px-1 py-0.5 rounded font-mono">PDC_BOUNCED_REVERSAL</code> entry to the {selectedItem.direction === 'outbound' ? 'AP' : 'AR'} ledger.</li>
                                 <li>Place {selectedItem.direction === 'outbound' ? 'supplier' : 'customer'} <strong>{selectedItem.company_name || selectedItem.payee}</strong> on <strong>{selectedItem.direction === 'outbound' ? 'Payment Hold' : 'Credit Hold'}</strong>.</li>
                             </ul>
                         </div>
                         <div className="space-y-3">
                             <div>
-                                <label className="block text-xs font-semibold text-gray-700 mb-1">Bounce Reason:</label>
+                                <label className={LABEL_CLASS}>Bounce Reason:</label>
                                 <input type="text" value={bounceReasonInput} onChange={(e) => setBounceReasonInput(e.target.value)}
-                                    className="w-full text-xs p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500"
+                                    className={`${TEXT_INPUT_CLASS} focus:ring-2 focus:ring-danger-500`}
                                     placeholder="e.g. NSF / Insufficient Funds, Account Closed" />
                             </div>
                             <div>
-                                <label className="block text-xs font-semibold text-gray-700 mb-1">Bank Penalty Fee (₱):</label>
+                                <label className={LABEL_CLASS}>Bank Penalty Fee (₱):</label>
                                 <input type="number" step="0.01" value={bounceFeeInput} onChange={(e) => setBounceFeeInput(e.target.value)}
-                                    className="w-full text-xs p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 font-mono" />
+                                    className={`${TEXT_INPUT_CLASS} focus:ring-2 focus:ring-danger-500 font-mono`} />
                             </div>
                         </div>
                         <div className="flex justify-end gap-3 pt-2">
-                            <button type="button" onClick={closeModal} className="px-4 py-2 text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg cursor-pointer">Cancel</button>
+                            <button type="button" onClick={closeModal} className="px-4 py-2 text-xs font-semibold text-gray-600 dark:text-slate-300 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg cursor-pointer">Cancel</button>
                             <button type="button" disabled={submittingAction} onClick={confirmMarkBounced}
-                                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-xs cursor-pointer disabled:opacity-50">
+                                className="px-4 py-2 text-xs font-bold text-white bg-danger-600 hover:bg-danger-700 rounded-lg shadow-xs cursor-pointer disabled:opacity-50">
                                 {submittingAction ? 'Processing...' : 'Confirm Cheque Bounce'}
                             </button>
                         </div>
@@ -541,25 +550,25 @@ const PdcTreasuryPage = () => {
             <Modal isOpen={actionModalType === 'redeposit'} onClose={closeModal} title="Re-deposit Bounced Cheque">
                 {selectedItem && (
                     <div className="space-y-4">
-                        <p className="text-xs text-gray-600">
+                        <p className="text-xs text-gray-600 dark:text-slate-400">
                             Re-presenting cheque <strong>#{selectedItem.cheque_number || selectedItem.reference_number || selectedItem.payment_id}</strong> for bank clearance attempt.
                         </p>
                         <div className="space-y-3">
                             <div>
-                                <label className="block text-xs font-semibold text-gray-700 mb-1">Re-deposit Notes:</label>
+                                <label className={LABEL_CLASS}>Re-deposit Notes:</label>
                                 <input type="text" value={redepositNotesInput} onChange={(e) => setRedepositNotesInput(e.target.value)}
-                                    className="w-full text-xs p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                                    className={`${TEXT_INPUT_CLASS} focus:ring-2 focus:ring-primary-500`} />
                             </div>
-                            <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                            <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-slate-300 cursor-pointer">
                                 <input type="checkbox" checked={liftHoldInput} onChange={(e) => setLiftHoldInput(e.target.checked)}
-                                    className="rounded text-blue-600 focus:ring-blue-500" />
+                                    className="rounded text-primary-600 focus:ring-primary-500" />
                                 <span>Lift {selectedItem.direction === 'outbound' ? 'payment' : 'credit'} hold upon re-deposit</span>
                             </label>
                         </div>
                         <div className="flex justify-end gap-3 pt-2">
-                            <button type="button" onClick={closeModal} className="px-4 py-2 text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg cursor-pointer">Cancel</button>
+                            <button type="button" onClick={closeModal} className="px-4 py-2 text-xs font-semibold text-gray-600 dark:text-slate-300 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg cursor-pointer">Cancel</button>
                             <button type="button" disabled={submittingAction} onClick={confirmRedeposit}
-                                className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs cursor-pointer disabled:opacity-50">
+                                className="px-4 py-2 text-xs font-bold text-white bg-primary-600 hover:bg-primary-700 rounded-lg shadow-xs cursor-pointer disabled:opacity-50">
                                 {submittingAction ? 'Processing...' : 'Confirm Re-deposit'}
                             </button>
                         </div>
@@ -571,18 +580,18 @@ const PdcTreasuryPage = () => {
             <Modal isOpen={actionModalType === 'void'} onClose={closeModal} title="Void Cheque">
                 {selectedItem && (
                     <div className="space-y-4">
-                        <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-700">
+                        <div className="p-4 bg-gray-50 dark:bg-slate-700/50 border border-gray-200 dark:border-slate-600 rounded-xl text-xs text-gray-700 dark:text-slate-300">
                             Voiding cheque <strong>#{selectedItem.cheque_number}</strong> marks it as spoiled/never issued. This keeps the cheque-number sequence explainable — the number will never be reused.
                         </div>
                         <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1">Reason (required):</label>
+                            <label className={LABEL_CLASS}>Reason (required):</label>
                             <input type="text" value={voidReasonInput} onChange={(e) => setVoidReasonInput(e.target.value)}
-                                className="w-full text-xs p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500" placeholder="e.g. Writing mistake, misprint" />
+                                className={`${TEXT_INPUT_CLASS} focus:ring-2 focus:ring-gray-500`} placeholder="e.g. Writing mistake, misprint" />
                         </div>
                         <div className="flex justify-end gap-3 pt-2">
-                            <button type="button" onClick={closeModal} className="px-4 py-2 text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg cursor-pointer">Cancel</button>
+                            <button type="button" onClick={closeModal} className="px-4 py-2 text-xs font-semibold text-gray-600 dark:text-slate-300 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg cursor-pointer">Cancel</button>
                             <button type="button" disabled={submittingAction} onClick={confirmVoid}
-                                className="px-4 py-2 text-xs font-bold text-white bg-gray-700 hover:bg-gray-800 rounded-lg shadow-xs cursor-pointer disabled:opacity-50">
+                                className="px-4 py-2 text-xs font-bold text-white bg-gray-700 hover:bg-gray-800 dark:bg-slate-600 dark:hover:bg-slate-500 rounded-lg shadow-xs cursor-pointer disabled:opacity-50">
                                 {submittingAction ? 'Processing...' : 'Confirm Void'}
                             </button>
                         </div>
@@ -594,30 +603,30 @@ const PdcTreasuryPage = () => {
             <Modal isOpen={actionModalType === 'replace'} onClose={closeModal} title="Replace Cheque">
                 {selectedItem && (
                     <div className="space-y-4">
-                        <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900">
+                        <div className="p-4 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-900/40 rounded-xl text-xs text-warning-900 dark:text-warning-300">
                             Cheque <strong>#{selectedItem.cheque_number}</strong> is no longer usable. A new cheque will be issued for the same obligation, linked back to this one for a continuous audit trail.
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                             <div>
-                                <label className="block text-xs font-semibold text-gray-700 mb-1">New Cheque Number:</label>
+                                <label className={LABEL_CLASS}>New Cheque Number:</label>
                                 <input type="text" value={replaceChequeNumberInput} onChange={(e) => setReplaceChequeNumberInput(e.target.value)}
-                                    className="w-full text-xs p-2 border border-gray-300 rounded-lg font-mono focus:ring-2 focus:ring-amber-500" />
+                                    className={`${TEXT_INPUT_CLASS} font-mono focus:ring-2 focus:ring-warning-500`} />
                             </div>
                             <div>
-                                <label className="block text-xs font-semibold text-gray-700 mb-1">New Cheque Date:</label>
+                                <label className={LABEL_CLASS}>New Cheque Date:</label>
                                 <input type="date" value={replaceChequeDateInput} onChange={(e) => setReplaceChequeDateInput(e.target.value)}
-                                    className="w-full text-xs p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500" />
+                                    className={`${TEXT_INPUT_CLASS} focus:ring-2 focus:ring-warning-500`} />
                             </div>
                         </div>
                         <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1">Reason:</label>
+                            <label className={LABEL_CLASS}>Reason:</label>
                             <input type="text" value={replaceReasonInput} onChange={(e) => setReplaceReasonInput(e.target.value)}
-                                className="w-full text-xs p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500" placeholder="e.g. Bounced twice, gone stale" />
+                                className={`${TEXT_INPUT_CLASS} focus:ring-2 focus:ring-warning-500`} placeholder="e.g. Bounced twice, gone stale" />
                         </div>
                         <div className="flex justify-end gap-3 pt-2">
-                            <button type="button" onClick={closeModal} className="px-4 py-2 text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg cursor-pointer">Cancel</button>
+                            <button type="button" onClick={closeModal} className="px-4 py-2 text-xs font-semibold text-gray-600 dark:text-slate-300 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg cursor-pointer">Cancel</button>
                             <button type="button" disabled={submittingAction} onClick={confirmReplace}
-                                className="px-4 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-xs cursor-pointer disabled:opacity-50">
+                                className="px-4 py-2 text-xs font-bold text-white bg-warning-600 hover:bg-warning-700 rounded-lg shadow-xs cursor-pointer disabled:opacity-50">
                                 {submittingAction ? 'Processing...' : 'Issue Replacement'}
                             </button>
                         </div>
@@ -629,41 +638,33 @@ const PdcTreasuryPage = () => {
             <Modal isOpen={actionModalType === 'history'} onClose={closeModal} title="Cheque Audit & Clearance History">
                 {selectedItem && (
                     <div className="space-y-4">
-                        <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 flex justify-between items-center text-xs">
+                        <div className="p-3 bg-gray-50 dark:bg-slate-700/50 rounded-lg border border-gray-200 dark:border-slate-600 flex justify-between items-center text-xs">
                             <div>
-                                <span className="font-bold text-gray-900">{selectedItem.company_name || selectedItem.payee || selectedItem.first_name}</span>
-                                <span className="text-gray-400 ml-2 font-mono">Ref: #{selectedItem.cheque_number || selectedItem.reference_number || selectedItem.payment_id}</span>
+                                <span className="font-bold text-gray-900 dark:text-slate-100">{selectedItem.company_name || selectedItem.payee || selectedItem.first_name}</span>
+                                <span className="text-gray-400 dark:text-slate-500 ml-2 font-mono">Ref: #{selectedItem.cheque_number || selectedItem.reference_number || selectedItem.payment_id}</span>
                             </div>
-                            <span className="font-bold font-mono text-blue-900">{formatCurrency(selectedItem.amount)}</span>
+                            <span className="font-bold font-mono text-primary-900 dark:text-primary-400">{formatCurrency(selectedItem.amount)}</span>
                         </div>
                         {historyLoading ? (
-                            <div className="text-center py-6 text-xs text-gray-500 animate-pulse">Loading history timeline...</div>
+                            <div className="text-center py-6 text-xs text-gray-500 dark:text-slate-400 animate-pulse">Loading history timeline...</div>
                         ) : clearanceHistory.length === 0 ? (
-                            <div className="text-center py-6 text-xs text-gray-400">No log entries found for this cheque.</div>
+                            <div className="text-center py-6 text-xs text-gray-400 dark:text-slate-500">No log entries found for this cheque.</div>
                         ) : (
                             <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
                                 {clearanceHistory.map((log) => (
-                                    <div key={log.log_id} className="p-3 bg-white border border-gray-200 rounded-lg shadow-2xs space-y-1 text-xs">
+                                    <div key={log.log_id} className="p-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg shadow-2xs space-y-1 text-xs">
                                         <div className="flex justify-between items-center">
-                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                                log.action === 'CLEARED' ? 'bg-emerald-100 text-emerald-800' :
-                                                log.action === 'BOUNCED' ? 'bg-rose-100 text-rose-800' :
-                                                log.action === 'REDEPOSITED' ? 'bg-blue-100 text-blue-800' :
-                                                log.action === 'VOID' ? 'bg-gray-200 text-gray-700' :
-                                                log.action === 'REPLACED' ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-700'
-                                            }`}>
-                                                {log.action} (Attempt #{log.attempt_number || 1})
-                                            </span>
-                                            <span className="text-[10px] text-gray-400">{new Date(log.created_at).toLocaleString()}</span>
+                                            <StatusBadge tone={HISTORY_ACTION_TONE[log.action] || 'neutral'} label={`${log.action} (Attempt #${log.attempt_number || 1})`} pill={false} className="text-[10px]" />
+                                            <span className="text-[10px] text-gray-400 dark:text-slate-500">{new Date(log.created_at).toLocaleString()}</span>
                                         </div>
-                                        {log.notes && <p className="text-gray-700 font-medium">{log.notes}</p>}
-                                        {log.bounce_reason && <p className="text-rose-600 font-mono text-[11px]">Reason: {log.bounce_reason}</p>}
+                                        {log.notes && <p className="text-gray-700 dark:text-slate-300 font-medium">{log.notes}</p>}
+                                        {log.bounce_reason && <p className="text-danger-600 dark:text-danger-400 font-mono text-[11px]">Reason: {log.bounce_reason}</p>}
                                     </div>
                                 ))}
                             </div>
                         )}
                         <div className="flex justify-end pt-2">
-                            <button type="button" onClick={closeModal} className="px-4 py-2 text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg cursor-pointer">Close</button>
+                            <button type="button" onClick={closeModal} className="px-4 py-2 text-xs font-semibold text-gray-600 dark:text-slate-300 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg cursor-pointer">Close</button>
                         </div>
                     </div>
                 )}

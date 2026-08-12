@@ -24,7 +24,6 @@ const CATEGORIES = [
             { name: 'Approval Queue', icon: ICONS.ar,            page: 'staged_sales',  permission: 'invoicing:create', badge: true },
             { name: 'Invoicing',      icon: ICONS.invoice,       page: 'invoicing',     permission: 'invoicing:create' },
             { name: 'Sales History',  icon: ICONS.history,       page: 'sales_history', permission: 'invoicing:create' },
-            { name: 'Cheques',        icon: ICONS.receipt,       page: 'cheques',       permission: 'cheques:view' },
             { name: 'A/R',            icon: ICONS.ar,            page: 'ar',            permission: 'ar:view' },
         ],
     },
@@ -59,8 +58,7 @@ const CATEGORIES = [
         title: 'Finance & Expenses',
         icon: ICONS.receipt,
         items: [
-            { name: 'PDC & Treasury',    icon: ICONS.receipt, page: 'pdc',                permission: ['pdc:view', 'ar:view', 'ap-pdc:view'] },
-            { name: 'Bank Accounts',    icon: ICONS.receipt, page: 'bank_accounts',      permission: 'ap-pdc:view' },
+            { name: 'Cheques & Treasury', icon: ICONS.bank,    page: 'cheques_treasury',   permission: ['cheques:view', 'pdc:view', 'ar:view', 'ap-pdc:view'] },
             { name: 'Bulk SOA Generator', icon: ICONS.documents, page: 'soa_gen',          permission: 'ar:view' },
             { name: 'Expenses',           icon: ICONS.receipt, page: 'expenses',           permission: 'expenses:view' },
             { name: 'Expense Categories', icon: ICONS.tag,     page: 'expense_categories', permission: 'expenses:manage_categories' },

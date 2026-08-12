@@ -37,14 +37,14 @@ const PaginationControls = ({
 
     return (
         <div className={`mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between ${className}`}>
-            <div className="text-sm text-gray-600">
+            <div className="text-sm text-gray-600 dark:text-slate-400">
                 Showing {start}-{end} of {total} items
             </div>
             <div className="flex flex-wrap items-center gap-2">
-                <label htmlFor="pageSize" className="text-sm text-gray-600">Rows per page</label>
+                <label htmlFor="pageSize" className="text-sm text-gray-600 dark:text-slate-400">Rows per page</label>
                 <select
                     id="pageSize"
-                    className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+                    className="rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 px-2 py-1 text-sm"
                     value={pageSize}
                     onChange={(e) => onPageSizeChange(Number(e.target.value))}
                 >
@@ -54,7 +54,7 @@ const PaginationControls = ({
                 </select>
                 <button
                     type="button"
-                    className="rounded-md border border-gray-300 px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                     onClick={() => handlePageChange(safePage - 1)}
                     disabled={safePage <= 1}
                 >
@@ -63,15 +63,15 @@ const PaginationControls = ({
                 <div className="hidden items-center gap-1 md:flex">
                     {pageButtons[0] > 1 && (
                         <>
-                            <button type="button" className="rounded-md border border-gray-300 px-2 py-1 text-sm" onClick={() => handlePageChange(1)}>1</button>
-                            {pageButtons[0] > 2 && <span className="px-1 text-xs text-gray-500">…</span>}
+                            <button type="button" className="rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 px-2 py-1 text-sm" onClick={() => handlePageChange(1)}>1</button>
+                            {pageButtons[0] > 2 && <span className="px-1 text-xs text-gray-500 dark:text-slate-500">…</span>}
                         </>
                     )}
                     {pageButtons.map((pageNumber) => (
                         <button
                             key={pageNumber}
                             type="button"
-                            className={`rounded-md border px-2 py-1 text-sm ${pageNumber === safePage ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-gray-300'}`}
+                            className={`rounded-md border px-2 py-1 text-sm ${pageNumber === safePage ? 'border-primary-600 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400' : 'border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200'}`}
                             onClick={() => handlePageChange(pageNumber)}
                         >
                             {pageNumber}
@@ -79,24 +79,24 @@ const PaginationControls = ({
                     ))}
                     {pageButtons[pageButtons.length - 1] < totalPages && (
                         <>
-                            {pageButtons[pageButtons.length - 1] < totalPages - 1 && <span className="px-1 text-xs text-gray-500">…</span>}
-                            <button type="button" className="rounded-md border border-gray-300 px-2 py-1 text-sm" onClick={() => handlePageChange(totalPages)}>{totalPages}</button>
+                            {pageButtons[pageButtons.length - 1] < totalPages - 1 && <span className="px-1 text-xs text-gray-500 dark:text-slate-500">…</span>}
+                            <button type="button" className="rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 px-2 py-1 text-sm" onClick={() => handlePageChange(totalPages)}>{totalPages}</button>
                         </>
                     )}
                 </div>
-                <span className="text-sm text-gray-700">
+                <span className="text-sm text-gray-700 dark:text-slate-300">
                     Page {safePage} / {totalPages}
                 </span>
                 <button
                     type="button"
-                    className="rounded-md border border-gray-300 px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                     onClick={() => handlePageChange(safePage + 1)}
                     disabled={safePage >= totalPages}
                 >
                     Next
                 </button>
                 <div className="flex items-center gap-1">
-                    <label htmlFor="jumpPage" className="text-sm text-gray-600">Jump</label>
+                    <label htmlFor="jumpPage" className="text-sm text-gray-600 dark:text-slate-400">Jump</label>
                     <input
                         id="jumpPage"
                         type="number"
@@ -104,11 +104,11 @@ const PaginationControls = ({
                         max={totalPages}
                         value={jumpPage}
                         onChange={(e) => setJumpPage(e.target.value)}
-                        className="w-16 rounded-md border border-gray-300 px-2 py-1 text-sm"
+                        className="w-16 rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 px-2 py-1 text-sm"
                     />
                     <button
                         type="button"
-                        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+                        className="rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 px-2 py-1 text-sm"
                         onClick={() => handlePageChange(Number(jumpPage || safePage))}
                     >
                         Go

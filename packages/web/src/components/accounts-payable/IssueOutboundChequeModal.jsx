@@ -11,6 +11,9 @@ const PURPOSE_OPTIONS = [
     { value: 'OTHER_EXPENSE', label: 'Other Expense' },
 ];
 
+const LABEL_CLASS = 'block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1';
+const INPUT_CLASS = 'w-full text-xs p-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:ring-2 focus:ring-primary-500 focus:border-primary-500';
+
 const IssueOutboundChequeModal = ({ isOpen, onClose, onIssued }) => {
     const [bankAccounts, setBankAccounts] = useState([]);
     const [suppliers, setSuppliers] = useState([]);
@@ -181,16 +184,16 @@ const IssueOutboundChequeModal = ({ isOpen, onClose, onIssued }) => {
             <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                     <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">Bank Account</label>
+                        <label className={LABEL_CLASS}>Bank Account</label>
                         <select value={form.bank_account_id} onChange={(e) => handleChange('bank_account_id', e.target.value)}
-                            className="w-full text-xs p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            className={INPUT_CLASS}>
                             <option value="">Select account…</option>
                             {bankAccounts.map(ba => (
                                 <option key={ba.bank_account_id} value={ba.bank_account_id}>{ba.account_name} — {ba.bank_name}</option>
                             ))}
                         </select>
                         {selectedBankAccount && (
-                            <p className="text-[11px] text-gray-400 mt-1">
+                            <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">
                                 {selectedBankAccount.default_cheque_template_id
                                     ? '✓ Will auto-print on issue'
                                     : 'No print template linked — will not auto-print'}
@@ -198,35 +201,37 @@ const IssueOutboundChequeModal = ({ isOpen, onClose, onIssued }) => {
                         )}
                     </div>
                     <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">Cheque Number</label>
+                        <label className={LABEL_CLASS}>Cheque Number</label>
                         <input type="text" value={form.cheque_number} onChange={(e) => handleChange('cheque_number', e.target.value)}
-                            className="w-full text-xs p-2 border border-gray-300 rounded-lg font-mono focus:ring-2 focus:ring-blue-500" placeholder="e.g. 0001234" />
+                            className={`${INPUT_CLASS} font-mono`} placeholder="e.g. 0001234" />
                     </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                     <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">Cheque Date</label>
+                        <label className={LABEL_CLASS}>Cheque Date</label>
                         <input type="date" value={form.cheque_date} onChange={(e) => handleChange('cheque_date', e.target.value)}
-                            className="w-full text-xs p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                            className={INPUT_CLASS} />
                     </div>
                     <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">Amount (₱)</label>
+                        <label className={LABEL_CLASS}>Amount (₱)</label>
                         <input type="number" step="0.01" value={form.amount} onChange={(e) => handleChange('amount', e.target.value)}
-                            className="w-full text-xs p-2 border border-gray-300 rounded-lg font-mono focus:ring-2 focus:ring-blue-500" />
+                            className={`${INPUT_CLASS} font-mono`} />
                     </div>
                 </div>
 
                 <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">Purpose</label>
+                    <label className={LABEL_CLASS}>Purpose</label>
                     <div className="flex flex-wrap gap-2">
                         {PURPOSE_OPTIONS.map(opt => (
                             <button
                                 key={opt.value}
                                 type="button"
                                 onClick={() => handleChange('purpose_type', opt.value)}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-bold border cursor-pointer ${
-                                    form.purpose_type === opt.value ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold border cursor-pointer transition-colors ${
+                                    form.purpose_type === opt.value
+                                        ? 'bg-primary-600 text-white border-primary-600'
+                                        : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 border-gray-300 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700'
                                 }`}
                             >
                                 {opt.label}
@@ -238,9 +243,9 @@ const IssueOutboundChequeModal = ({ isOpen, onClose, onIssued }) => {
                 {form.purpose_type === 'SUPPLIER_PAYMENT' ? (
                     <>
                         <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1">Supplier</label>
+                            <label className={LABEL_CLASS}>Supplier</label>
                             <select value={form.supplier_id} onChange={(e) => handleChange('supplier_id', e.target.value)}
-                                className="w-full text-xs p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                className={INPUT_CLASS}>
                                 <option value="">Select supplier…</option>
                                 {suppliers.map(s => (
                                     <option key={s.supplier_id} value={s.supplier_id}>{s.supplier_name}</option>
@@ -249,13 +254,13 @@ const IssueOutboundChequeModal = ({ isOpen, onClose, onIssued }) => {
                         </div>
                         {supplierBills.length > 0 && (
                             <div>
-                                <label className="block text-xs font-semibold text-gray-700 mb-1">Apply to Bills (optional)</label>
-                                <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
+                                <label className={LABEL_CLASS}>Apply to Bills (optional)</label>
+                                <div className="max-h-32 overflow-y-auto border border-gray-200 dark:border-slate-700 rounded-lg divide-y divide-gray-100 dark:divide-slate-700">
                                     {supplierBills.map(bill => (
-                                        <label key={bill.bill_id} className="flex items-center gap-2 px-3 py-2 text-xs cursor-pointer hover:bg-gray-50">
+                                        <label key={bill.bill_id} className="flex items-center gap-2 px-3 py-2 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-700 dark:text-slate-300">
                                             <input type="checkbox" checked={form.bill_ids.includes(bill.bill_id)} onChange={() => toggleBill(bill.bill_id)} />
                                             <span className="font-mono">{bill.bill_number || `#${bill.bill_id}`}</span>
-                                            <span className="text-gray-400 flex-1">
+                                            <span className="text-gray-400 dark:text-slate-500 flex-1">
                                                 Owed: ₱{(parseFloat(bill.total_amount) - parseFloat(bill.amount_paid)).toFixed(2)}
                                             </span>
                                         </label>
@@ -267,9 +272,9 @@ const IssueOutboundChequeModal = ({ isOpen, onClose, onIssued }) => {
                 ) : (
                     <>
                         <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1">Expense Category</label>
+                            <label className={LABEL_CLASS}>Expense Category</label>
                             <select value={form.expense_category_id} onChange={(e) => handleChange('expense_category_id', e.target.value)}
-                                className="w-full text-xs p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                className={INPUT_CLASS}>
                                 <option value="">Select category…</option>
                                 {categories.map(c => (
                                     <option key={c.category_id} value={c.category_id}>{c.category_name}</option>
@@ -277,31 +282,31 @@ const IssueOutboundChequeModal = ({ isOpen, onClose, onIssued }) => {
                             </select>
                         </div>
                         <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1">Payee</label>
+                            <label className={LABEL_CLASS}>Payee</label>
                             <input type="text" value={form.payee} onChange={(e) => handleChange('payee', e.target.value)}
-                                className="w-full text-xs p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                                className={INPUT_CLASS} />
                         </div>
                     </>
                 )}
 
                 <div className="grid grid-cols-2 gap-3">
                     <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">Reference # (optional)</label>
+                        <label className={LABEL_CLASS}>Reference # (optional)</label>
                         <input type="text" value={form.reference_number} onChange={(e) => handleChange('reference_number', e.target.value)}
-                            className="w-full text-xs p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                            className={INPUT_CLASS} />
                     </div>
                     <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">Memo (optional)</label>
+                        <label className={LABEL_CLASS}>Memo (optional)</label>
                         <input type="text" value={form.memo} onChange={(e) => handleChange('memo', e.target.value)}
-                            className="w-full text-xs p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                            className={INPUT_CLASS} />
                     </div>
                 </div>
 
                 <div className="flex justify-end gap-3 pt-2">
-                    <button type="button" onClick={onClose} className="px-4 py-2 text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg cursor-pointer">
+                    <button type="button" onClick={onClose} className="px-4 py-2 text-xs font-semibold text-gray-600 dark:text-slate-300 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg cursor-pointer">
                         Cancel
                     </button>
-                    <button type="submit" disabled={submitting} className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs cursor-pointer disabled:opacity-50">
+                    <button type="submit" disabled={submitting} className="px-4 py-2 text-xs font-bold text-white bg-primary-600 hover:bg-primary-700 rounded-lg shadow-xs cursor-pointer disabled:opacity-50">
                         {submitting ? 'Issuing…' : 'Issue Cheque'}
                     </button>
                 </div>
