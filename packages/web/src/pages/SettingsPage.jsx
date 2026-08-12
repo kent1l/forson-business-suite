@@ -11,70 +11,71 @@ import DataUtilsSettings from '../components/settings/DataUtilsSettings';
 import PermissionsSettings from '../components/settings/PermissionsSettings'; // <-- NEW: Import the component
 import PaymentMethodSettings from '../components/settings/PaymentMethodSettings';
 import DeduplicationSettings from '../components/settings/DeduplicationSettings';
+import BrandIdentitySettings from '../components/settings/BrandIdentitySettings';
 
 const MobileAppSettings = ({ settings, handleChange }) => {
     const [showQR, setShowQR] = useState(false);
     return (
         <div className="space-y-4">
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Mobile App Version (OTA Update)</label>
-                <input 
-                    type="text" 
-                    name="mobile_app_version" 
-                    value={settings.mobile_app_version || ''} 
-                    onChange={handleChange} 
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg" 
-                    placeholder="1.0.0" 
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Mobile App Version (OTA Update)</label>
+                <input
+                    type="text"
+                    name="mobile_app_version"
+                    value={settings.mobile_app_version || ''}
+                    onChange={handleChange}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg"
+                    placeholder="1.0.0"
                 />
-                <p className="mt-1 text-xs text-gray-500">
+                <p className="mt-1 text-xs text-gray-500 dark:text-slate-500">
                     Updating this version number will force all active mobile warehouse clients to download the latest `.apk` binary.
                 </p>
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1 mt-4">Release Notes (Optional)</label>
-                <textarea 
-                    name="mobile_app_release_notes" 
-                    value={settings.mobile_app_release_notes || ''} 
-                    onChange={handleChange} 
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg" 
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1 mt-4">Release Notes (Optional)</label>
+                <textarea
+                    name="mobile_app_release_notes"
+                    value={settings.mobile_app_release_notes || ''}
+                    onChange={handleChange}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg"
                     rows="3"
-                    placeholder="Added new barcode scanning features..." 
+                    placeholder="Added new barcode scanning features..."
                 ></textarea>
-                <p className="mt-1 text-xs text-gray-500">
+                <p className="mt-1 text-xs text-gray-500 dark:text-slate-500">
                     This message will be displayed on the update screen for all users.
                 </p>
             </div>
-            
-            <div className="pt-4 border-t border-gray-200 mt-6">
-                <h3 className="text-sm font-medium text-gray-700 mb-2">Device Provisioning</h3>
-                <p className="text-xs text-gray-500 mb-3">
+
+            <div className="pt-4 border-t border-gray-200 dark:border-slate-700 mt-6">
+                <h3 className="text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Device Provisioning</h3>
+                <p className="text-xs text-gray-500 dark:text-slate-500 mb-3">
                     Generate a QR code that warehouse staff can scan to instantly access the mobile setup portal and download the app.
                 </p>
-                <button 
-                    type="button" 
+                <button
+                    type="button"
                     onClick={() => setShowQR(true)}
-                    className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-slate-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
                 >
-                    <QrCode className="h-5 w-5 mr-2 text-gray-400" />
+                    <QrCode className="h-5 w-5 mr-2 text-gray-400 dark:text-slate-500" />
                     Show QR Code
                 </button>
             </div>
-            
+
             <Modal isOpen={showQR} onClose={() => setShowQR(false)} title="Provisioning QR Code">
                 <div className="flex flex-col items-center justify-center p-6 text-center">
                     <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-4 inline-block">
-                        <QRCodeSVG 
-                            value={`${window.location.origin}/mobile-setup`} 
+                        <QRCodeSVG
+                            value={`${window.location.origin}/mobile-setup`}
                             size={256}
                             level="H"
                             includeMargin={true}
                         />
                     </div>
-                    <h4 className="text-lg font-bold text-gray-900 mb-1">Scan to Install</h4>
-                    <p className="text-sm text-gray-500">
+                    <h4 className="text-lg font-bold text-gray-900 dark:text-slate-100 mb-1">Scan to Install</h4>
+                    <p className="text-sm text-gray-500 dark:text-slate-500">
                         Point a device camera at this QR code to open the OTA download portal.
                     </p>
-                    <div className="mt-6 bg-gray-50 rounded px-4 py-2 text-xs font-mono text-gray-600 border border-gray-200 w-full truncate">
+                    <div className="mt-6 bg-gray-50 dark:bg-slate-900 rounded px-4 py-2 text-xs font-mono text-gray-600 dark:text-slate-400 border border-gray-200 dark:border-slate-700 w-full truncate">
                         {`${window.location.origin}/mobile-setup`}
                     </div>
                 </div>
@@ -86,50 +87,50 @@ const MobileAppSettings = ({ settings, handleChange }) => {
 const CompanyInfoSettings = ({ settings, handleChange }) => (
     <div className="space-y-4">
         <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
-            <input type="text" name="COMPANY_NAME" value={settings.COMPANY_NAME} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Company Name</label>
+            <input type="text" name="COMPANY_NAME" value={settings.COMPANY_NAME} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
         </div>
         <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Company Address</label>
-            <input type="text" name="COMPANY_ADDRESS" value={settings.COMPANY_ADDRESS} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Company Address</label>
+            <input type="text" name="COMPANY_ADDRESS" value={settings.COMPANY_ADDRESS} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Company Phone</label>
-                <input type="text" name="COMPANY_PHONE" value={settings.COMPANY_PHONE} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Company Phone</label>
+                <input type="text" name="COMPANY_PHONE" value={settings.COMPANY_PHONE} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Company Email</label>
-                <input type="email" name="COMPANY_EMAIL" value={settings.COMPANY_EMAIL} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-            </div>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Company Website</label>
-                <input type="text" name="COMPANY_WEBSITE" value={settings.COMPANY_WEBSITE || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="https://forson.ph" />
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Tax Identification No. (TIN)</label>
-                <input type="text" name="COMPANY_TIN" value={settings.COMPANY_TIN || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="123-456-789-000" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Company Email</label>
+                <input type="email" name="COMPANY_EMAIL" value={settings.COMPANY_EMAIL} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
             </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Remittance Bank Name</label>
-                <input type="text" name="COMPANY_BANK_NAME" value={settings.COMPANY_BANK_NAME || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="BDO Unibank, Inc." />
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Company Website</label>
+                <input type="text" name="COMPANY_WEBSITE" value={settings.COMPANY_WEBSITE || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" placeholder="https://forson.ph" />
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Remittance Bank Account #</label>
-                <input type="text" name="COMPANY_BANK_ACCOUNT" value={settings.COMPANY_BANK_ACCOUNT || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="00-1234-5678-90" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Tax Identification No. (TIN)</label>
+                <input type="text" name="COMPANY_TIN" value={settings.COMPANY_TIN || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" placeholder="123-456-789-000" />
+            </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Remittance Bank Name</label>
+                <input type="text" name="COMPANY_BANK_NAME" value={settings.COMPANY_BANK_NAME || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" placeholder="BDO Unibank, Inc." />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Remittance Bank Account #</label>
+                <input type="text" name="COMPANY_BANK_ACCOUNT" value={settings.COMPANY_BANK_ACCOUNT || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" placeholder="00-1234-5678-90" />
             </div>
         </div>
         <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Application Timezone</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Application Timezone</label>
             <select
                 name="APP_TIMEZONE"
                 value={settings.APP_TIMEZONE || 'Asia/Manila'}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 dark:text-slate-100"
             >
                 <option value="Asia/Manila">Asia/Manila (PHT, UTC+8)</option>
                 <option value="Asia/Singapore">Asia/Singapore (SGT, UTC+8)</option>
@@ -144,7 +145,7 @@ const CompanyInfoSettings = ({ settings, handleChange }) => (
                 <option value="America/Los_Angeles">America/Los_Angeles (PST/PDT, UTC-8/-7)</option>
                 <option value="Australia/Sydney">Australia/Sydney (AEST/AEDT, UTC+10/+11)</option>
             </select>
-            <p className="mt-1 text-xs text-gray-500">Configures the default timezone used for reports, backups, and scheduler logs.</p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-slate-500">Configures the default timezone used for reports, backups, and scheduler logs.</p>
         </div>
     </div>
 );
@@ -152,16 +153,16 @@ const CompanyInfoSettings = ({ settings, handleChange }) => (
 const FinancialSettings = ({ settings, handleChange }) => (
      <div className="space-y-4">
         <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Currency Symbol</label>
-            <input type="text" name="DEFAULT_CURRENCY_SYMBOL" value={settings.DEFAULT_CURRENCY_SYMBOL} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Currency Symbol</label>
+            <input type="text" name="DEFAULT_CURRENCY_SYMBOL" value={settings.DEFAULT_CURRENCY_SYMBOL} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
         </div>
         <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Default Payment Terms</label>
-            <input type="text" name="DEFAULT_PAYMENT_TERMS" value={settings.DEFAULT_PAYMENT_TERMS} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Default Payment Terms</label>
+            <input type="text" name="DEFAULT_PAYMENT_TERMS" value={settings.DEFAULT_PAYMENT_TERMS} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
         </div>
         <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Footer Message</label>
-            <textarea name="INVOICE_FOOTER_MESSAGE" value={settings.INVOICE_FOOTER_MESSAGE} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows="3"></textarea>
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Invoice Footer Message</label>
+            <textarea name="INVOICE_FOOTER_MESSAGE" value={settings.INVOICE_FOOTER_MESSAGE} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" rows="3"></textarea>
         </div>
     </div>
 );
@@ -170,46 +171,46 @@ const FinancialSettings = ({ settings, handleChange }) => (
 const CycleCountSettings = ({ settings, handleChange }) => (
     <div className="space-y-4">
         <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Enable Cycle Counting</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Enable Cycle Counting</label>
             <div className="mt-2 flex items-center">
                 <input
                     type="checkbox"
                     name="CYCLE_COUNT_ENABLED"
                     checked={settings.CYCLE_COUNT_ENABLED === 'true'}
                     onChange={(e) => handleChange({ target: { name: 'CYCLE_COUNT_ENABLED', value: e.target.checked ? 'true' : 'false' } })}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 dark:border-slate-600 rounded"
                 />
-                <span className="ml-2 text-sm text-gray-600">Turn on automated nightly task generation</span>
+                <span className="ml-2 text-sm text-gray-600 dark:text-slate-300">Turn on automated nightly task generation</span>
             </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Schedule (CRON format)</label>
-                <input type="text" name="CYCLE_COUNT_SCHEDULE" value={settings.CYCLE_COUNT_SCHEDULE || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="0 2 * * *" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Schedule (CRON format)</label>
+                <input type="text" name="CYCLE_COUNT_SCHEDULE" value={settings.CYCLE_COUNT_SCHEDULE || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" placeholder="0 2 * * *" />
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Items Per Batch</label>
-                <input type="number" name="CYCLE_COUNT_BATCH_SIZE" value={settings.CYCLE_COUNT_BATCH_SIZE || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Items Per Batch</label>
+                <input type="number" name="CYCLE_COUNT_BATCH_SIZE" value={settings.CYCLE_COUNT_BATCH_SIZE || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Points per day uncounted</label>
-                <input type="number" name="CYCLE_COUNT_UNCOUNTED_WEIGHT" value={settings.CYCLE_COUNT_UNCOUNTED_WEIGHT || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Points per day uncounted</label>
+                <input type="number" name="CYCLE_COUNT_UNCOUNTED_WEIGHT" value={settings.CYCLE_COUNT_UNCOUNTED_WEIGHT || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Points per sale (30d)</label>
-                <input type="number" name="CYCLE_COUNT_VELOCITY_WEIGHT" value={settings.CYCLE_COUNT_VELOCITY_WEIGHT || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Points per sale (30d)</label>
+                <input type="number" name="CYCLE_COUNT_VELOCITY_WEIGHT" value={settings.CYCLE_COUNT_VELOCITY_WEIGHT || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Points for negative stock</label>
-                <input type="number" name="CYCLE_COUNT_NEGATIVE_STOCK_WEIGHT" value={settings.CYCLE_COUNT_NEGATIVE_STOCK_WEIGHT || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Points for negative stock</label>
+                <input type="number" name="CYCLE_COUNT_NEGATIVE_STOCK_WEIGHT" value={settings.CYCLE_COUNT_NEGATIVE_STOCK_WEIGHT || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Auto-Approve Max Variance Qty</label>
-                <input type="number" name="CYCLE_COUNT_MAX_VARIANCE_QTY" value={settings.CYCLE_COUNT_MAX_VARIANCE_QTY || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Auto-Approve Max Variance Qty</label>
+                <input type="number" name="CYCLE_COUNT_MAX_VARIANCE_QTY" value={settings.CYCLE_COUNT_MAX_VARIANCE_QTY || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Auto-Approve Max Financial Impact</label>
-                <input type="number" step="0.01" name="CYCLE_COUNT_MAX_FINANCIAL_IMPACT" value={settings.CYCLE_COUNT_MAX_FINANCIAL_IMPACT || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Auto-Approve Max Financial Impact</label>
+                <input type="number" step="0.01" name="CYCLE_COUNT_MAX_FINANCIAL_IMPACT" value={settings.CYCLE_COUNT_MAX_FINANCIAL_IMPACT || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
             </div>
         </div>
     </div>
@@ -315,43 +316,43 @@ const TaxRateSettings = ({ settings, handleChange }) => {
     if (loading) {
         return (
             <div className="flex items-center justify-center py-8">
-                <div className="text-sm text-gray-500">Loading tax rates...</div>
+                <div className="text-sm text-gray-500 dark:text-slate-500">Loading tax rates...</div>
             </div>
         );
     }
 
     return (
         <div>
-            <div className="pb-4 mb-4 border-b">
+            <div className="pb-4 mb-4 border-b border-gray-200 dark:border-slate-700">
                 <div className="flex items-center">
-                    <input 
-                        type="checkbox" 
-                        name="DEFAULT_IS_TAX_INCLUSIVE" 
+                    <input
+                        type="checkbox"
+                        name="DEFAULT_IS_TAX_INCLUSIVE"
                         id="default_is_tax_inclusive"
-                        checked={settings.DEFAULT_IS_TAX_INCLUSIVE === 'true'} 
-                        onChange={handleChange} 
-                        className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" 
+                        checked={settings.DEFAULT_IS_TAX_INCLUSIVE === 'true'}
+                        onChange={handleChange}
+                        className="h-4 w-4 text-primary-600 border-gray-300 dark:border-slate-600 rounded focus:ring-primary-500"
                     />
-                    <label htmlFor="default_is_tax_inclusive" className="ml-2 block text-sm text-gray-900">
+                    <label htmlFor="default_is_tax_inclusive" className="ml-2 block text-sm text-gray-900 dark:text-slate-100">
                         New parts default to "Price is Tax Inclusive"
                     </label>
                 </div>
-                <p className="mt-1 text-xs text-gray-500">
+                <p className="mt-1 text-xs text-gray-500 dark:text-slate-500">
                     When enabled, new parts will have tax-inclusive pricing by default. This setting does not affect existing parts.
                 </p>
             </div>
 
             <div className="flex justify-between items-center mb-4">
                 <div>
-                    <p className="text-sm text-gray-600">Configure tax rates for your products and services.</p>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-sm text-gray-600 dark:text-slate-300">Configure tax rates for your products and services.</p>
+                    <p className="text-xs text-gray-500 dark:text-slate-500 mt-1">
                         {taxRates.length === 0 ? 'No tax rates configured.' : `${taxRates.length} tax rate(s) configured.`}
                     </p>
                 </div>
-                <button 
-                    type="button" 
-                    onClick={() => { setCurrentRate(null); setIsModalOpen(true); }} 
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+                <button
+                    type="button"
+                    onClick={() => { setCurrentRate(null); setIsModalOpen(true); }}
+                    className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-primary-700 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500"
                     aria-label="Add new tax rate"
                 >
                     Add Tax Rate
@@ -359,12 +360,12 @@ const TaxRateSettings = ({ settings, handleChange }) => {
             </div>
 
             {taxRates.length === 0 ? (
-                <div className="text-center py-8 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-500 mb-3">No tax rates configured yet.</p>
-                    <button 
+                <div className="text-center py-8 bg-gray-50 dark:bg-slate-900 rounded-lg">
+                    <p className="text-sm text-gray-500 dark:text-slate-500 mb-3">No tax rates configured yet.</p>
+                    <button
                         type="button"
                         onClick={() => { setCurrentRate(null); setIsModalOpen(true); }}
-                        className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                        className="text-primary-600 dark:text-primary-500 hover:text-primary-800 dark:hover:text-primary-400 text-sm font-medium"
                     >
                         Add your first tax rate
                     </button>
@@ -372,39 +373,39 @@ const TaxRateSettings = ({ settings, handleChange }) => {
             ) : (
                 <div className="space-y-2">
                     {taxRates.map(rate => (
-                        <div key={rate.tax_rate_id} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg hover:bg-gray-100 transition-colors">
+                        <div key={rate.tax_rate_id} className="flex items-center justify-between bg-gray-50 dark:bg-slate-900 p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors">
                             <div className="flex items-center">
                                 <div>
-                                    <span className="text-sm font-medium text-gray-900">{rate.rate_name}</span>
-                                    <span className="ml-2 text-sm text-gray-600">({(rate.rate_percentage * 100).toFixed(2)}%)</span>
+                                    <span className="text-sm font-medium text-gray-900 dark:text-slate-100">{rate.rate_name}</span>
+                                    <span className="ml-2 text-sm text-gray-600 dark:text-slate-400">({(rate.rate_percentage * 100).toFixed(2)}%)</span>
                                 </div>
                                 {rate.is_default && (
                                     <div className="ml-3 flex items-center">
                                         <Icon path={ICONS.star} className="h-4 w-4 text-yellow-500" />
-                                        <span className="ml-1 text-xs text-yellow-700 font-medium">Default</span>
+                                        <span className="ml-1 text-xs text-yellow-700 dark:text-warning-500 font-medium">Default</span>
                                     </div>
                                 )}
                             </div>
                             <div className="flex items-center space-x-2">
                                 {!rate.is_default && (
-                                    <button 
-                                        onClick={() => handleSetDefault(rate.tax_rate_id, rate.rate_name)} 
-                                        className="text-xs font-medium text-gray-600 hover:text-gray-900 px-2 py-1 rounded hover:bg-gray-200 transition-colors"
+                                    <button
+                                        onClick={() => handleSetDefault(rate.tax_rate_id, rate.rate_name)}
+                                        className="text-xs font-medium text-gray-600 dark:text-slate-300 hover:text-gray-900 dark:hover:text-slate-100 px-2 py-1 rounded hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
                                         title="Set as default tax rate"
                                     >
                                         Set Default
                                     </button>
                                 )}
-                                <button 
-                                    onClick={() => { setCurrentRate(rate); setIsModalOpen(true); }} 
-                                    className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50 transition-colors"
+                                <button
+                                    onClick={() => { setCurrentRate(rate); setIsModalOpen(true); }}
+                                    className="text-primary-600 dark:text-primary-500 hover:text-primary-800 dark:hover:text-primary-400 p-1 rounded hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors"
                                     title="Edit tax rate"
                                 >
                                     <Icon path={ICONS.edit} className="h-4 w-4" />
                                 </button>
-                                <button 
-                                    onClick={() => handleDelete(rate.tax_rate_id, rate.rate_name)} 
-                                    className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 transition-colors"
+                                <button
+                                    onClick={() => handleDelete(rate.tax_rate_id, rate.rate_name)}
+                                    className="text-danger-500 hover:text-danger-700 p-1 rounded hover:bg-danger-50 dark:hover:bg-danger-900/30 transition-colors"
                                     title="Delete tax rate"
                                     disabled={rate.is_default}
                                 >
@@ -490,32 +491,32 @@ const TaxRateForm = ({ rate, onSave, onCancel }) => {
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Rate Name</label>
-                <input type="text" name="rate_name" value={formData.rate_name} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Rate Name</label>
+                <input type="text" name="rate_name" value={formData.rate_name} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" required />
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Rate Percentage (e.g., 0.12 for 12%)</label>
-                <input 
-                    type="number" 
-                    step="0.01" 
-                    min="0" 
-                    max="1" 
-                    name="rate_percentage" 
-                    value={formData.rate_percentage} 
-                    onChange={handleChange} 
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg" 
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Rate Percentage (e.g., 0.12 for 12%)</label>
+                <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="1"
+                    name="rate_percentage"
+                    value={formData.rate_percentage}
+                    onChange={handleChange}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg"
                     placeholder="0.12"
-                    required 
+                    required
                 />
                 {formData.rate_percentage && (
-                    <p className="mt-1 text-xs text-gray-500">
+                    <p className="mt-1 text-xs text-gray-500 dark:text-slate-500">
                         This represents {(parseFloat(formData.rate_percentage) * 100).toFixed(2)}%
                     </p>
                 )}
             </div>
             <div className="mt-6 flex justify-end space-x-4">
-                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg">Save</button>
+                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-200 rounded-lg">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-lg">Save</button>
             </div>
         </form>
     );
@@ -559,47 +560,53 @@ const SettingsPage = ({ user }) => {
         toast.promise(promise, {
             loading: 'Saving settings...',
             success: 'Settings saved successfully!',
-            error: 'Failed to save settings.',
+            error: (err) => err.response?.data?.message || 'Failed to save settings.',
         });
+        return promise;
     };
 
     if (user.permission_level_id !== 10) {
         return (
             <div className="text-center p-8">
-                <h1 className="text-2xl font-bold text-red-600">Access Denied</h1>
-                <p className="text-gray-600 mt-2">You do not have permission to view this page.</p>
+                <h1 className="text-2xl font-bold text-danger-600">Access Denied</h1>
+                <p className="text-gray-600 dark:text-slate-300 mt-2">You do not have permission to view this page.</p>
             </div>
         );
     }
 
     if (loading) {
-        return <p>Loading settings...</p>;
+        return <p className="text-gray-700 dark:text-slate-300">Loading settings...</p>;
     }
+
+    const inactiveTabClass = 'border-transparent text-gray-500 dark:text-slate-400 hover:border-gray-300 dark:hover:border-slate-600';
+    const activeTabClass = 'border-primary-600 text-primary-600 dark:text-primary-500';
 
     return (
         <div>
-            <h1 className="text-2xl font-semibold text-gray-800 mb-6">Application Settings</h1>
-            <div className="bg-white p-6 rounded-xl border border-gray-200 max-w-4xl">
+            <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100 mb-6">Application Settings</h1>
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 max-w-4xl">
                 {activeTab === 'payment_methods' ? (
                     <PaymentMethodSettings />
                 ) : (
                     <div>
-                        <div className="mb-6 border-b border-gray-200">
+                        <div className="mb-6 border-b border-gray-200 dark:border-slate-700">
                             <nav className="-mb-px flex space-x-6">
-                                <button type="button" onClick={() => setActiveTab('company')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'company' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Company Info</button>
-                                <button type="button" onClick={() => setActiveTab('financial')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'financial' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Financial</button>
-                                                                <button type="button" onClick={() => setActiveTab('payment_methods')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'payment_methods' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Payment Methods</button>
-                                <button type="button" onClick={() => setActiveTab('cycle_count')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'cycle_count' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Cycle Count</button>
-                                <button type="button" onClick={() => setActiveTab('deduplication')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'deduplication' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Deduplication</button>
-                                <button type="button" onClick={() => setActiveTab('tax_rates')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'tax_rates' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Tax Rates</button>
-                                <button type="button" onClick={() => setActiveTab('permissions')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'permissions' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Roles & Permissions</button>
-                                <button type="button" onClick={() => setActiveTab('backup')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'backup' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Backup & Restore</button>
-                                <button type="button" onClick={() => setActiveTab('data')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'data' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Data Utilities</button>
-                                <button type="button" onClick={() => setActiveTab('mobile_app')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'mobile_app' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:border-gray-300'}`}>Mobile App</button>
+                                <button type="button" onClick={() => setActiveTab('company')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'company' ? activeTabClass : inactiveTabClass}`}>Company Info</button>
+                                <button type="button" onClick={() => setActiveTab('brand_identity')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'brand_identity' ? activeTabClass : inactiveTabClass}`}>Brand Identity</button>
+                                <button type="button" onClick={() => setActiveTab('financial')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'financial' ? activeTabClass : inactiveTabClass}`}>Financial</button>
+                                                                <button type="button" onClick={() => setActiveTab('payment_methods')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'payment_methods' ? activeTabClass : inactiveTabClass}`}>Payment Methods</button>
+                                <button type="button" onClick={() => setActiveTab('cycle_count')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'cycle_count' ? activeTabClass : inactiveTabClass}`}>Cycle Count</button>
+                                <button type="button" onClick={() => setActiveTab('deduplication')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'deduplication' ? activeTabClass : inactiveTabClass}`}>Deduplication</button>
+                                <button type="button" onClick={() => setActiveTab('tax_rates')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'tax_rates' ? activeTabClass : inactiveTabClass}`}>Tax Rates</button>
+                                <button type="button" onClick={() => setActiveTab('permissions')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'permissions' ? activeTabClass : inactiveTabClass}`}>Roles & Permissions</button>
+                                <button type="button" onClick={() => setActiveTab('backup')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'backup' ? activeTabClass : inactiveTabClass}`}>Backup & Restore</button>
+                                <button type="button" onClick={() => setActiveTab('data')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'data' ? activeTabClass : inactiveTabClass}`}>Data Utilities</button>
+                                <button type="button" onClick={() => setActiveTab('mobile_app')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'mobile_app' ? activeTabClass : inactiveTabClass}`}>Mobile App</button>
                             </nav>
                         </div>
 
                                                 {activeTab === 'company' && <CompanyInfoSettings settings={settings} handleChange={handleChange} />}
+                        {activeTab === 'brand_identity' && <BrandIdentitySettings settings={settings} handleChange={handleChange} handleSave={handleSave} />}
                         {activeTab === 'financial' && <FinancialSettings settings={settings} handleChange={handleChange} />}
                         {activeTab === 'tax_rates' && <TaxRateSettings settings={settings} handleChange={handleChange} />}
                         {activeTab === 'cycle_count' && <CycleCountSettings settings={settings} handleChange={handleChange} />}
@@ -611,8 +618,8 @@ const SettingsPage = ({ user }) => {
 
                         {['company', 'financial', 'cycle_count', 'backup', 'mobile_app'].includes(activeTab) && (
                             <form onSubmit={handleSave}>
-                                <div className="pt-4 flex justify-end mt-6 border-t">
-                                    <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
+                                <div className="pt-4 flex justify-end mt-6 border-t border-gray-200 dark:border-slate-700">
+                                    <button type="submit" className="bg-primary-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-primary-700 transition">
                                         Save Settings
                                     </button>
                                 </div>

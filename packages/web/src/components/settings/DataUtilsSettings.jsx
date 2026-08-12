@@ -39,11 +39,11 @@ const ExportCard = ({ entity, title, fields }) => {
     };
 
     return (
-        <div className="p-4 border rounded-lg">
-            <h4 className="font-semibold text-gray-800">{title}</h4>
+        <div className="p-4 border border-gray-200 dark:border-slate-700 rounded-lg">
+            <h4 className="font-semibold text-gray-800 dark:text-slate-200">{title}</h4>
             <div className="flex space-x-2 mt-3">
-                <button onClick={handleExport} className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700">Export Data</button>
-                <button onClick={handleDownloadTemplate} className="text-sm bg-gray-200 text-gray-800 px-3 py-1.5 rounded-md hover:bg-gray-300">Download Template</button>
+                <button onClick={handleExport} className="text-sm bg-primary-600 text-white px-3 py-1.5 rounded-md hover:bg-primary-700">Export Data</button>
+                <button onClick={handleDownloadTemplate} className="text-sm bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-200 px-3 py-1.5 rounded-md hover:bg-gray-300 dark:hover:bg-slate-600">Download Template</button>
             </div>
         </div>
     );
@@ -91,22 +91,22 @@ const ImportCard = ({ entity, title }) => {
     };
 
     return (
-        <div className="p-4 border rounded-lg bg-gray-50">
-            <h4 className="font-semibold text-gray-800">{title}</h4>
+        <div className="p-4 border border-gray-200 dark:border-slate-700 rounded-lg bg-gray-50 dark:bg-slate-900">
+            <h4 className="font-semibold text-gray-800 dark:text-slate-200">{title}</h4>
             <div className="mt-3">
                 <input
                     ref={fileInputRef}
                     type="file"
                     accept=".csv"
                     onChange={handleFileChange}
-                    className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                    className="block w-full text-sm text-gray-500 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary-50 dark:file:bg-primary-900/30 file:text-primary-700 dark:file:text-primary-400 hover:file:bg-primary-100 dark:hover:file:bg-primary-900/50"
                 />
             </div>
             <div className="mt-4">
                 <button
                     onClick={handleImport}
                     disabled={isUploading || !file}
-                    className="w-full bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition disabled:bg-green-300"
+                    className="w-full bg-success-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-success-700 transition disabled:bg-success-100 disabled:text-success-600 dark:disabled:bg-success-900/40"
                 >
                     {isUploading ? 'Uploading...' : `Import ${title}`}
                 </button>
@@ -211,8 +211,8 @@ const DataUtilsSettings = () => {
     return (
         <div className="space-y-8">
             <div>
-                <h3 className="text-lg font-medium text-gray-900">Export Data</h3>
-                <p className="text-sm text-gray-500 mt-1">Download your existing data as a CSV file or get a blank template for importing.</p>
+                <h3 className="text-lg font-medium text-gray-900 dark:text-slate-100">Export Data</h3>
+                <p className="text-sm text-gray-500 dark:text-slate-500 mt-1">Download your existing data as a CSV file or get a blank template for importing.</p>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                     <ExportCard entity="parts" title="Parts" fields={['internal_sku', 'detail', 'brand_name', 'group_name', 'part_numbers', 'barcode', 'is_active', 'last_cost', 'last_sale_price', 'reorder_point', 'warning_quantity', 'measurement_unit', 'is_tax_inclusive_price', 'is_price_change_allowed', 'is_using_default_quantity', 'is_service', 'low_stock_warning']} />
                     <ExportCard entity="customers" title="Customers" fields={['first_name', 'last_name', 'company_name', 'phone', 'email', 'address', 'is_active']} />
@@ -221,8 +221,8 @@ const DataUtilsSettings = () => {
             </div>
 
             <div>
-                <h3 className="text-lg font-medium text-gray-900">Import Data</h3>
-                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800 mt-2">
+                <h3 className="text-lg font-medium text-gray-900 dark:text-slate-100">Import Data</h3>
+                <div className="p-3 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-900 rounded-lg text-sm text-warning-800 dark:text-warning-500 mt-2">
                     <strong>Warning:</strong> Importing a file will update existing records that match the unique key (e.g., SKU, Email) and create new records for those that don't. Please use the templates provided.
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
@@ -233,21 +233,21 @@ const DataUtilsSettings = () => {
             </div>
 
             <div>
-                <h3 className="text-lg font-medium text-gray-900">Search Index</h3>
-                <div className="p-4 border rounded-lg mt-4">
-                    <p className="text-sm text-gray-600 mb-3">Repair search index via background jobs with live progress tracking and cancellation.</p>
+                <h3 className="text-lg font-medium text-gray-900 dark:text-slate-100">Search Index</h3>
+                <div className="p-4 border border-gray-200 dark:border-slate-700 rounded-lg mt-4">
+                    <p className="text-sm text-gray-600 dark:text-slate-300 mb-3">Repair search index via background jobs with live progress tracking and cancellation.</p>
                     <div className="flex gap-2">
                         <button
                             onClick={() => setShowConfirmModal(true)}
                             disabled={isSyncing}
-                            className="bg-purple-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-700 transition disabled:bg-purple-300"
+                            className="bg-purple-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-700 transition disabled:bg-purple-300 dark:disabled:bg-purple-900/40"
                         >
                             {isSyncing ? 'Processing...' : 'Repair Search Index'}
                         </button>
                         {activeJobId && (
                             <button
                                 onClick={() => setShowProgressModal(true)}
-                                className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-semibold hover:bg-gray-300"
+                                className="bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-200 px-4 py-2 rounded-lg font-semibold hover:bg-gray-300 dark:hover:bg-slate-600"
                             >
                                 View Progress
                             </button>
@@ -258,11 +258,11 @@ const DataUtilsSettings = () => {
 
             <Modal isOpen={showConfirmModal} onClose={() => setShowConfirmModal(false)} title="Confirm Search Index Repair">
                 <div className="space-y-4">
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-gray-600 dark:text-slate-300">
                         This runs a background repair job. You can monitor progress and cancel it at any time.
                     </p>
                     <div className="space-y-2">
-                        <label className="flex items-center">
+                        <label className="flex items-center text-gray-900 dark:text-slate-100">
                             <input
                                 type="radio"
                                 value="dry"
@@ -272,7 +272,7 @@ const DataUtilsSettings = () => {
                             />
                             <span className="text-sm">Dry-run: Check connectivity and counts only</span>
                         </label>
-                        <label className="flex items-center">
+                        <label className="flex items-center text-gray-900 dark:text-slate-100">
                             <input
                                 type="radio"
                                 value="full"
@@ -286,7 +286,7 @@ const DataUtilsSettings = () => {
                     <div className="flex justify-end space-x-4 mt-6">
                         <button
                             onClick={() => setShowConfirmModal(false)}
-                            className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg"
+                            className="px-4 py-2 bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-200 rounded-lg"
                         >
                             Close
                         </button>
@@ -306,32 +306,32 @@ const DataUtilsSettings = () => {
                 title={`Search Repair Progress${activeJobId ? ` #${activeJobId}` : ''}`}
                 maxWidth="max-w-xl"
             >
-                {!jobStatus && <p className="text-sm text-gray-600">Waiting for status...</p>}
+                {!jobStatus && <p className="text-sm text-gray-600 dark:text-slate-300">Waiting for status...</p>}
                 {jobStatus && (
                     <div className="space-y-4">
                         <div>
-                            <div className="flex justify-between text-sm text-gray-600 mb-1">
+                            <div className="flex justify-between text-sm text-gray-600 dark:text-slate-300 mb-1">
                                 <span>Status: <strong className="capitalize">{jobStatus.status}</strong></span>
                                 <span>{progressPct}%</span>
                             </div>
-                            <div className="w-full h-2 bg-gray-200 rounded">
+                            <div className="w-full h-2 bg-gray-200 dark:bg-slate-700 rounded">
                                 <div className="h-2 bg-purple-600 rounded" style={{ width: `${Math.min(100, progressPct)}%` }} />
                             </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div className="grid grid-cols-2 gap-2 text-sm text-gray-900 dark:text-slate-100">
                             <p>Total: <strong>{jobStatus.total}</strong></p>
                             <p>Processed: <strong>{jobStatus.processed}</strong></p>
                             <p>Success: <strong>{jobStatus.success}</strong></p>
                             <p>Failed: <strong>{jobStatus.failed}</strong></p>
                         </div>
-                        <p className="text-sm text-gray-600">ETA: {formatEta(jobStatus.estimated_remaining_seconds)}</p>
-                        {jobStatus.error && <p className="text-sm text-red-600">{jobStatus.error}</p>}
+                        <p className="text-sm text-gray-600 dark:text-slate-300">ETA: {formatEta(jobStatus.estimated_remaining_seconds)}</p>
+                        {jobStatus.error && <p className="text-sm text-danger-600">{jobStatus.error}</p>}
                         <div className="flex justify-end gap-2">
                             {isSyncing && (
                                 <button
                                     onClick={handleCancelJob}
                                     disabled={isCancelling}
-                                    className="px-3 py-2 bg-red-600 text-white rounded-lg disabled:bg-red-300"
+                                    className="px-3 py-2 bg-danger-600 text-white rounded-lg disabled:bg-danger-100 disabled:text-danger-600 dark:disabled:bg-danger-900/40"
                                 >
                                     {isCancelling ? 'Cancelling...' : 'Cancel Job'}
                                 </button>

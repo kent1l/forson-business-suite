@@ -22,8 +22,17 @@ router.get('/settings', protect, async (req, res) => {
 
 // PUT /api/settings - Update multiple settings
 // Protected for holders of the settings:edit permission (admins bypass via hasPermission)
+const HEX_COLOR_REGEX = /^#[0-9a-f]{6}$/i;
+
 router.put('/settings', protect, hasPermission('settings:edit'), async (req, res) => {
     const settings = req.body; // Expects an object like { SETTING_KEY: 'new_value', ... }
+
+    for (const key in settings) {
+        if (key.startsWith('BRAND_') && key.endsWith('_COLOR') && settings[key] && !HEX_COLOR_REGEX.test(settings[key])) {
+            return res.status(400).json({ message: `${key} must be a hex color like #2563eb.` });
+        }
+    }
+
     const client = await db.getClient();
 
     try {
