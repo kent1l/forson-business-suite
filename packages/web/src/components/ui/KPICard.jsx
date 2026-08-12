@@ -104,7 +104,7 @@ const KPICard = ({
                 border border-slate-200/80 dark:border-slate-700 shadow-card
                 transition-all duration-200
                 ${isInteractive ? 'cursor-pointer hover:shadow-card-hover hover:-translate-y-0.5 hover:border-slate-300 dark:hover:border-slate-600 outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950' : ''}
-                ${urgent ? 'ring-1 ring-warning-400/60 dark:ring-warning-500/40' : ''}
+                ${urgent ? 'ring-1 ring-warning-500/60 dark:ring-warning-500/40' : ''}
             `}
         >
             <div className="flex items-start justify-between gap-3 mb-4">
