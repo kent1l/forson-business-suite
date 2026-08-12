@@ -70,6 +70,7 @@ async function issueOutboundCheque(client, {
   referenceNumber = null,
   employeeId = null,
   userId = null,
+  overridePaymentHold = false,
 }) {
   if (!['SUPPLIER_PAYMENT', 'LOAN_PAYMENT', 'RENT', 'OTHER_EXPENSE'].includes(purposeType)) {
     throw new Error(`Invalid purpose_type: ${purposeType}`);
@@ -80,6 +81,19 @@ async function issueOutboundCheque(client, {
 
   if (purposeType === 'SUPPLIER_PAYMENT') {
     if (!supplierId) throw new Error('supplierId is required for SUPPLIER_PAYMENT cheques');
+
+    const { rows: [supplier] } = await client.query(
+      `SELECT payment_hold, payment_hold_reason FROM supplier WHERE supplier_id = $1`,
+      [supplierId]
+    );
+    if (supplier?.payment_hold && !overridePaymentHold) {
+      const err = new Error(
+        `Supplier is on payment hold${supplier.payment_hold_reason ? ': ' + supplier.payment_hold_reason : ''}. `
+        + 'Pass override_payment_hold=true with ap:manage permission to proceed anyway.'
+      );
+      err.code = 'PAYMENT_HOLD_BLOCKED';
+      throw err;
+    }
 
     const { rows: [payment] } = await client.query(
       `INSERT INTO ap_payment

@@ -5,19 +5,23 @@ import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import SupplierForm from '../components/forms/SupplierForm';
-import FilterBar from '../components/ui/FilterBar';
+import SupplierDetailDrawer from '../components/suppliers/SupplierDetailDrawer';
+import StatusBadge from '../components/ui/StatusBadge';
+import SegmentedTabs from '../components/ui/SegmentedTabs';
 import PaginationControls from '../components/ui/PaginationControls';
 import SortableHeader from '../components/ui/SortableHeader';
-import { useAuth } from '../contexts/AuthContext'; // <-- NEW: Import useAuth
-import { sortData } from '../utils/sortData';
+import { useAuth } from '../contexts/AuthContext';
+import { formatCurrency } from '../utils/currency';
 
 const SuppliersPage = () => {
-    const { hasPermission } = useAuth(); // <-- NEW: Use the auth context
+    const { hasPermission } = useAuth();
+    const canViewAp = hasPermission('ap:view');
     const [suppliers, setSuppliers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentSupplier, setCurrentSupplier] = useState(null);
+    const [selectedSupplier, setSelectedSupplier] = useState(null);
     const [statusFilter, setStatusFilter] = useState('active');
     const [sortConfig, setSortConfig] = useState({ key: 'supplier_name', direction: 'ASC' });
     const [page, setPage] = useState(1);
@@ -44,9 +48,24 @@ const SuppliersPage = () => {
                     sortOrder: sortConfig.direction
                 }
             });
-            setSuppliers(response.data?.data || []);
+            const baseSuppliers = response.data?.data || [];
             setTotal(response.data?.total || 0);
-        } catch (err) {
+
+            if (!canViewAp || baseSuppliers.length === 0) {
+                setSuppliers(baseSuppliers);
+                return;
+            }
+
+            // Enrich with AP balance/aging in one extra call rather than a full
+            // second round trip per row; falls back gracefully if unavailable.
+            try {
+                const apRes = await api.get('/ap/supplier-summary', { params: { pageSize: 100 } });
+                const apBySupplierId = new Map((apRes.data?.data || apRes.data || []).map(s => [s.supplier_id, s]));
+                setSuppliers(baseSuppliers.map(s => ({ ...s, ap: apBySupplierId.get(s.supplier_id) || null })));
+            } catch {
+                setSuppliers(baseSuppliers);
+            }
+        } catch {
             setError('Failed to fetch suppliers.');
         } finally {
             setLoading(false);
@@ -55,6 +74,7 @@ const SuppliersPage = () => {
 
     useEffect(() => {
         fetchSuppliers();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [statusFilter, page, pageSize, sortConfig]);
 
     useEffect(() => {
@@ -87,7 +107,7 @@ const SuppliersPage = () => {
             </div>
         ));
     };
-    
+
     const confirmDelete = async (supplierId) => {
         const promise = api.delete(`/suppliers/${supplierId}`);
         toast.promise(promise, {
@@ -113,55 +133,78 @@ const SuppliersPage = () => {
         });
     };
 
+    const handleRowClick = (supplier) => {
+        setSelectedSupplier(supplier.ap ? { ...supplier, ...supplier.ap } : supplier);
+    };
+
+    const handleSupplierUpdated = (updated) => {
+        setSelectedSupplier((prev) => prev ? { ...prev, ...updated } : prev);
+        fetchSuppliers();
+    };
+
     return (
         <div>
             <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-semibold text-gray-800">Suppliers</h1>
+                <div>
+                    <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100">Suppliers</h1>
+                    <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">Directory, payables balance, and payment status for every supplier.</p>
+                </div>
                 {hasPermission('suppliers:edit') && (
-                    <button onClick={handleAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
+                    <button onClick={handleAdd} className="bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition">
                         Add Supplier
                     </button>
                 )}
             </div>
 
-            <FilterBar 
-                tabs={filterTabs}
-                activeTab={statusFilter}
-                onTabClick={setStatusFilter}
-            />
+            <div className="border-b border-gray-200 dark:border-slate-700 mb-4">
+                <SegmentedTabs tabs={filterTabs} active={statusFilter} onChange={setStatusFilter} />
+            </div>
 
-            <div className="bg-white p-6 rounded-xl border border-gray-200">
-                {loading && <p>Loading suppliers...</p>}
-                {error && <p className="text-red-500">{error}</p>}
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700">
+                {loading && <p className="text-gray-600 dark:text-slate-400">Loading suppliers...</p>}
+                {error && <p className="text-danger-500">{error}</p>}
                 {!loading && !error && (
                     <>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
-                            <thead className="border-b">
+                            <thead className="border-b border-gray-200 dark:border-slate-700">
                                 <tr>
                                     <SortableHeader column="supplier_name" sortConfig={sortConfig} onSort={handleSort}>Name</SortableHeader>
                                     <SortableHeader className="hidden sm:table-cell" column="contact_person" sortConfig={sortConfig} onSort={handleSort}>Contact Person</SortableHeader>
                                     <SortableHeader className="hidden md:table-cell" column="phone" sortConfig={sortConfig} onSort={handleSort}>Phone</SortableHeader>
+                                    {canViewAp && <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-right">AP Balance</th>}
                                     <SortableHeader className="text-center" column="status" sortConfig={sortConfig} onSort={handleSort}>Status</SortableHeader>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {suppliers.map(supplier => (
-                                    <tr key={supplier.supplier_id} className="border-b hover:bg-gray-50">
-                                        <td className="p-3 text-sm font-medium text-gray-800">{supplier.supplier_name}</td>
-                                        <td className="p-3 text-sm hidden sm:table-cell">{supplier.contact_person}</td>
-                                        <td className="p-3 text-sm hidden md:table-cell">{supplier.phone}</td>
-                                        <td className="p-3 text-sm text-center">
-                                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${supplier.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                                {supplier.is_active ? 'Active' : 'Inactive'}
-                                            </span>
+                                    <tr
+                                        key={supplier.supplier_id}
+                                        onClick={() => handleRowClick(supplier)}
+                                        className="border-b border-gray-100 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer"
+                                    >
+                                        <td className="p-3 text-sm font-medium text-gray-800 dark:text-slate-100">
+                                            <div className="flex items-center gap-2">
+                                                <span>{supplier.supplier_name}</span>
+                                                {supplier.ap?.payment_hold && <StatusBadge tone="danger" label="ON HOLD" />}
+                                            </div>
                                         </td>
-                                        <td className="p-3 text-sm text-right">
+                                        <td className="p-3 text-sm hidden sm:table-cell text-gray-700 dark:text-slate-300">{supplier.contact_person}</td>
+                                        <td className="p-3 text-sm hidden md:table-cell text-gray-700 dark:text-slate-300">{supplier.phone}</td>
+                                        {canViewAp && (
+                                            <td className="p-3 text-sm text-right font-mono text-gray-900 dark:text-slate-100">
+                                                {supplier.ap ? formatCurrency(supplier.ap.total_balance_due) : '—'}
+                                            </td>
+                                        )}
+                                        <td className="p-3 text-sm text-center">
+                                            <StatusBadge tone={supplier.is_active ? 'success' : 'neutral'} label={supplier.is_active ? 'Active' : 'Inactive'} />
+                                        </td>
+                                        <td className="p-3 text-sm text-right" onClick={(e) => e.stopPropagation()}>
                                             {hasPermission('suppliers:edit') && (
                                                 <>
-                                                    <button onClick={() => handleEdit(supplier)} className="text-blue-600 hover:text-blue-800 mr-4"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
-                                                    <button onClick={() => handleDelete(supplier.supplier_id)} className="text-red-600 hover:text-red-800"><Icon path={ICONS.trash} className="h-5 w-5"/></button>
+                                                    <button onClick={() => handleEdit(supplier)} className="text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 mr-4"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
+                                                    <button onClick={() => handleDelete(supplier.supplier_id)} className="text-danger-600 dark:text-danger-400 hover:text-danger-800 dark:hover:text-danger-300"><Icon path={ICONS.trash} className="h-5 w-5"/></button>
                                                 </>
                                             )}
                                         </td>
@@ -186,6 +229,15 @@ const SuppliersPage = () => {
             <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={currentSupplier ? 'Edit Supplier' : 'Add New Supplier'}>
                 <SupplierForm supplier={currentSupplier} onSave={handleSave} onCancel={() => setIsModalOpen(false)} />
             </Modal>
+            {canViewAp && (
+                <SupplierDetailDrawer
+                    supplier={selectedSupplier}
+                    isOpen={!!selectedSupplier}
+                    onClose={() => setSelectedSupplier(null)}
+                    onSupplierUpdated={handleSupplierUpdated}
+                    initialTab="profile"
+                />
+            )}
         </div>
     );
 };

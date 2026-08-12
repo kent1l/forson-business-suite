@@ -3,6 +3,7 @@ const db = require('../db');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { hasPermission, protect } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
+const apLedgerService = require('../services/apLedgerService');
 const router = express.Router();
 
 // GET /goods-receipts - Fetch list of posted GRNs with search and sorting
@@ -207,6 +208,39 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
         }
 
         await client.query(`UPDATE purchase_order SET status = $1 WHERE po_id = $2`, [newStatus, po_id]);
+    }
+
+    // --- Auto-create the supplier bill this receipt represents, so AP monitoring
+    // reflects the liability immediately instead of waiting on manual bill entry.
+    // The partial unique index on supplier_bill.grn_id (migration 20260813_04)
+    // makes this idempotent if the request is ever retried.
+    const totalAmount = lines.reduce((sum, l) => sum + (parseFloat(l.quantity) * parseFloat(l.cost_price)), 0);
+    if (totalAmount > 0) {
+      const { rows: [supplier] } = await client.query(
+        'SELECT payment_terms_days FROM supplier WHERE supplier_id = $1', [supplier_id]
+      );
+      const termsDays = supplier?.payment_terms_days || null;
+      const billNumber = await getNextDocumentNumber(client, 'BILL');
+
+      const { rows: [bill] } = await client.query(
+        `INSERT INTO supplier_bill (supplier_id, po_id, grn_id, bill_number, bill_date, due_date, total_amount, created_by)
+         VALUES ($1, $2, $3, $4, CURRENT_DATE, CASE WHEN $5::int IS NOT NULL THEN CURRENT_DATE + ($5::int || ' days')::interval ELSE NULL END, $6, $7)
+         ON CONFLICT (grn_id) WHERE grn_id IS NOT NULL DO NOTHING
+         RETURNING bill_id`,
+        [supplier_id, po_id || null, newGrnId, billNumber, termsDays, totalAmount, received_by]
+      );
+
+      if (bill) {
+        await apLedgerService.appendEntry(client, {
+          supplierId: supplier_id,
+          billId: bill.bill_id,
+          entryType: 'BILL_POSTED',
+          amount: totalAmount,
+          referenceNo: billNumber,
+          notes: `Auto-posted from goods receipt ${grn_number}`,
+          createdBy: received_by,
+        });
+      }
     }
 
     await client.query('COMMIT');

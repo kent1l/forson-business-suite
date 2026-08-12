@@ -1,15 +1,14 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 
-const SupplierForm = ({ supplier, onSave, onCancel }) => {
-    const [formData, setFormData] = useState({
-        supplier_name: '', contact_person: '', phone: '', 
-        email: '', address: '', is_active: true 
-    });
+const BLANK_FORM = {
+    supplier_name: '', contact_person: '', phone: '',
+    email: '', address: '', payment_terms_days: '', is_active: true
+};
 
-    const initialFormData = useMemo(() => supplier ? { ...supplier } : { 
-        supplier_name: '', contact_person: '', phone: '', 
-        email: '', address: '', is_active: true 
-    }, [supplier]);
+const SupplierForm = ({ supplier, onSave, onCancel }) => {
+    const [formData, setFormData] = useState(BLANK_FORM);
+
+    const initialFormData = useMemo(() => supplier ? { ...BLANK_FORM, ...supplier } : BLANK_FORM, [supplier]);
 
     const isFormDirty = useMemo(() => {
         const keys = Object.keys(formData);
@@ -26,14 +25,7 @@ const SupplierForm = ({ supplier, onSave, onCancel }) => {
     };
 
     useEffect(() => {
-        if (supplier) {
-            setFormData(supplier);
-        } else {
-             setFormData({ 
-                supplier_name: '', contact_person: '', phone: '', 
-                email: '', address: '', is_active: true 
-            });
-        }
+        setFormData(supplier ? { ...BLANK_FORM, ...supplier } : BLANK_FORM);
     }, [supplier]);
 
     const handleChange = (e) => {
@@ -43,7 +35,10 @@ const SupplierForm = ({ supplier, onSave, onCancel }) => {
 
     const handleSubmit = useCallback((e) => {
         e.preventDefault();
-        onSave(formData);
+        onSave({
+            ...formData,
+            payment_terms_days: formData.payment_terms_days === '' ? null : parseInt(formData.payment_terms_days, 10),
+        });
     }, [formData, onSave]);
 
     useEffect(() => {
@@ -76,30 +71,55 @@ const SupplierForm = ({ supplier, onSave, onCancel }) => {
         return () => document.removeEventListener('keydown', handleKeyDown);
     }, [handleSubmit, onCancel, isFormDirty]);
 
+    const inputClass = "w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg";
+    const labelClass = "block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1";
+
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Supplier Name</label>
-                <input type="text" name="supplier_name" value={formData.supplier_name} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
+                <label className={labelClass}>Supplier Name</label>
+                <input type="text" name="supplier_name" value={formData.supplier_name} onChange={handleChange} className={inputClass} required />
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
-                <input type="text" name="contact_person" value={formData.contact_person} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                <label className={labelClass}>Contact Person</label>
+                <input type="text" name="contact_person" value={formData.contact_person || ''} onChange={handleChange} className={inputClass} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label className={labelClass}>Phone</label>
+                    <input type="text" name="phone" value={formData.phone || ''} onChange={handleChange} className={inputClass} />
+                </div>
+                <div>
+                    <label className={labelClass}>Email</label>
+                    <input type="email" name="email" value={formData.email || ''} onChange={handleChange} className={inputClass} />
+                </div>
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                <input type="text" name="phone" value={formData.phone} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                <label className={labelClass}>Address</label>
+                <textarea name="address" value={formData.address || ''} onChange={handleChange} rows={2} className={inputClass} />
+            </div>
+            <div>
+                <label className={labelClass}>Payment Terms (days)</label>
+                <input
+                    type="number"
+                    name="payment_terms_days"
+                    min="0"
+                    placeholder="e.g. 30"
+                    value={formData.payment_terms_days ?? ''}
+                    onChange={handleChange}
+                    className={inputClass}
+                />
+                <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">Used to auto-compute bill due dates when goods are received from this supplier.</p>
             </div>
 
-            {/* NEWLY ADDED */}
             <div className="flex items-center">
-                <input type="checkbox" name="is_active" checked={formData.is_active} onChange={handleChange} className="h-4 w-4 text-blue-600 border-gray-300 rounded" />
-                <label className="ml-2 block text-sm text-gray-900">Account is Active</label>
+                <input type="checkbox" name="is_active" checked={formData.is_active} onChange={handleChange} className="h-4 w-4 text-primary-600 border-gray-300 dark:border-slate-600 rounded" />
+                <label className="ml-2 block text-sm text-gray-900 dark:text-slate-100">Account is Active</label>
             </div>
 
             <div className="mt-6 flex justify-end space-x-4">
-                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>
+                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-100 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-600">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">Save</button>
             </div>
         </form>
     );
