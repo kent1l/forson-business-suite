@@ -118,7 +118,7 @@ const BillItemsPanel = ({ billId }) => {
         <div className="mt-2 border-t border-gray-100 dark:border-slate-700 pt-2 space-y-1">
             {items.data.map((item) => (
                 <div key={item.grn_line_id} className="flex items-center justify-between text-xs">
-                    <span className="text-gray-700 dark:text-slate-300 truncate max-w-[12rem]">{item.detail || item.internal_sku} · {item.grn_number}</span>
+                    <span className="text-gray-700 dark:text-slate-300 truncate max-w-[16rem]">{item.display_name || item.internal_sku}</span>
                     <span className="font-mono text-gray-600 dark:text-slate-400">{item.quantity} × {formatCurrency(item.cost_price)}</span>
                 </div>
             ))}

@@ -362,10 +362,32 @@ router.get('/ap/supplier-bills/:billId/items', protect, hasPermission('ap:view')
             SELECT
                 grl.grn_line_id, grl.grn_id, gr.grn_number, gr.receipt_date,
                 grl.part_id, grl.quantity, grl.cost_price,
-                p.internal_sku, p.detail
+                p.internal_sku, p.detail,
+                CASE
+                    WHEN pn.part_number IS NOT NULL THEN
+                        CASE
+                            WHEN g.group_name IS NOT NULL AND b.brand_name IS NOT NULL THEN CONCAT(g.group_name, ' (', b.brand_name, ') | ', pn.part_number)
+                            WHEN g.group_name IS NOT NULL THEN CONCAT(g.group_name, ' | ', pn.part_number)
+                            WHEN b.brand_name IS NOT NULL THEN CONCAT(b.brand_name, ' | ', pn.part_number)
+                            ELSE pn.part_number
+                        END
+                    ELSE
+                        CASE
+                            WHEN g.group_name IS NOT NULL AND b.brand_name IS NOT NULL THEN CONCAT(g.group_name, ' (', b.brand_name, ') | ', p.internal_sku)
+                            WHEN g.group_name IS NOT NULL THEN CONCAT(g.group_name, ' | ', p.internal_sku)
+                            WHEN b.brand_name IS NOT NULL THEN CONCAT(b.brand_name, ' | ', p.internal_sku)
+                            ELSE p.internal_sku
+                        END
+                END ||
+                CASE WHEN p.detail IS NOT NULL AND p.detail != '' THEN ' | ' || p.detail ELSE '' END AS display_name
             FROM goods_receipt gr
             JOIN goods_receipt_line grl ON grl.grn_id = gr.grn_id
             JOIN part p ON p.part_id = grl.part_id
+            LEFT JOIN brand b ON p.brand_id = b.brand_id
+            LEFT JOIN "group" g ON p.group_id = g.group_id
+            LEFT JOIN part_number pn ON pn.part_id = p.part_id AND pn.display_order = (
+                SELECT MIN(pn2.display_order) FROM part_number pn2 WHERE pn2.part_id = p.part_id
+            )
             WHERE gr.bill_id = $1
             ORDER BY gr.receipt_date ASC, grl.grn_line_id ASC
         `, [billId]);
