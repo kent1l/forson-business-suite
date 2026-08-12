@@ -99,7 +99,7 @@ const ImportCard = ({ entity, title }) => {
                     type="file"
                     accept=".csv"
                     onChange={handleFileChange}
-                    className="block w-full text-sm text-gray-500 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary-50 dark:file:bg-primary-900/30 file:text-primary-700 dark:file:text-primary-400 hover:file:bg-primary-100 dark:hover:file:bg-primary-900/50"
+                    className="block w-full text-sm text-gray-500 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary-50 dark:file:bg-primary-900/30 file:text-primary-700 dark:file:text-primary-500 hover:file:bg-primary-100 dark:hover:file:bg-primary-900/50"
                 />
             </div>
             <div className="mt-4">
@@ -222,7 +222,7 @@ const DataUtilsSettings = () => {
 
             <div>
                 <h3 className="text-lg font-medium text-gray-900 dark:text-slate-100">Import Data</h3>
-                <div className="p-3 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-900 rounded-lg text-sm text-warning-800 dark:text-warning-500 mt-2">
+                <div className="p-3 bg-warning-50 dark:bg-warning-900/20 border border-warning-100 dark:border-warning-900 rounded-lg text-sm text-warning-700 dark:text-warning-500 mt-2">
                     <strong>Warning:</strong> Importing a file will update existing records that match the unique key (e.g., SKU, Email) and create new records for those that don't. Please use the templates provided.
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">

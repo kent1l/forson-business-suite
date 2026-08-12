@@ -109,24 +109,24 @@ const PaymentMethodForm = ({ method, onSave, onCancel }) => {
         <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Code</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Code</label>
                     <input
                         type="text"
                         value={formData.code}
                         onChange={(e) => handleChange('code', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg"
                         placeholder="unique_code"
                         required
                     />
-                    <p className="text-xs text-gray-500 mt-1">Unique identifier (no spaces, lowercase)</p>
+                    <p className="text-xs text-gray-500 dark:text-slate-500 mt-1">Unique identifier (no spaces, lowercase)</p>
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Display Name</label>
                     <input
                         type="text"
                         value={formData.name}
                         onChange={(e) => handleChange('name', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg"
                         placeholder="Credit Card"
                         required
                     />
@@ -135,11 +135,11 @@ const PaymentMethodForm = ({ method, onSave, onCancel }) => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Type</label>
                     <select
                         value={formData.type}
                         onChange={(e) => handleChange('type', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg"
                     >
                         {typeOptions.map(option => (
                             <option key={option.value} value={option.value}>{option.label}</option>
@@ -147,20 +147,20 @@ const PaymentMethodForm = ({ method, onSave, onCancel }) => {
                     </select>
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Sort Order</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Sort Order</label>
                     <input
                         type="number"
                         value={formData.sort_order}
                         onChange={(e) => handleChange('sort_order', parseInt(e.target.value) || 0)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg"
                         min="0"
                     />
                 </div>
             </div>
 
-            <div className="border-t pt-4">
-                <h4 className="text-sm font-medium text-gray-700 mb-3">Payment Rules</h4>
-                
+            <div className="border-t border-gray-200 dark:border-slate-700 pt-4">
+                <h4 className="text-sm font-medium text-gray-700 dark:text-slate-300 mb-3">Payment Rules</h4>
+
                 <div className="space-y-3">
                     <div className="flex items-center">
                         <input
@@ -170,7 +170,7 @@ const PaymentMethodForm = ({ method, onSave, onCancel }) => {
                             onChange={(e) => handleChange('enabled', e.target.checked)}
                             className="mr-2"
                         />
-                        <label htmlFor="enabled" className="text-sm text-gray-700">Enabled</label>
+                        <label htmlFor="enabled" className="text-sm text-gray-700 dark:text-slate-300">Enabled</label>
                     </div>
 
                     <div className="flex items-center">
@@ -181,7 +181,7 @@ const PaymentMethodForm = ({ method, onSave, onCancel }) => {
                             onChange={(e) => handleConfigChange('requires_reference', e.target.checked)}
                             className="mr-2"
                         />
-                        <label htmlFor="requires_reference" className="text-sm text-gray-700">Requires Reference/Auth Code</label>
+                        <label htmlFor="requires_reference" className="text-sm text-gray-700 dark:text-slate-300">Requires Reference/Auth Code</label>
                     </div>
 
                     {formData.config.requires_reference && (
@@ -190,10 +190,10 @@ const PaymentMethodForm = ({ method, onSave, onCancel }) => {
                                 type="text"
                                 value={formData.config.reference_label}
                                 onChange={(e) => handleConfigChange('reference_label', e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg"
                                 placeholder="Auth Code"
                             />
-                            <p className="text-xs text-gray-500 mt-1">Label for reference field</p>
+                            <p className="text-xs text-gray-500 dark:text-slate-500 mt-1">Label for reference field</p>
                         </div>
                     )}
 
@@ -205,7 +205,7 @@ const PaymentMethodForm = ({ method, onSave, onCancel }) => {
                             onChange={(e) => handleConfigChange('requires_receipt_no', e.target.checked)}
                             className="mr-2"
                         />
-                        <label htmlFor="requires_receipt_no" className="text-sm text-gray-700">Requires Physical Receipt Number</label>
+                        <label htmlFor="requires_receipt_no" className="text-sm text-gray-700 dark:text-slate-300">Requires Physical Receipt Number</label>
                     </div>
 
                     <div className="flex items-center">
@@ -216,38 +216,38 @@ const PaymentMethodForm = ({ method, onSave, onCancel }) => {
                             onChange={(e) => handleConfigChange('change_allowed', e.target.checked)}
                             className="mr-2"
                         />
-                        <label htmlFor="change_allowed" className="text-sm text-gray-700">Change Allowed</label>
+                        <label htmlFor="change_allowed" className="text-sm text-gray-700 dark:text-slate-300">Change Allowed</label>
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Settlement Type</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Settlement Type</label>
                         <select
                             value={formData.config.settlement_type}
                             onChange={(e) => handleConfigChange('settlement_type', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg"
                         >
                             <option value="instant">Instant - Funds received immediately (cash, cards)</option>
                             <option value="delayed">Delayed - Funds settle later (bank transfer, cheque)</option>
                             <option value="on_account">On Account - No payment now, invoice remains due</option>
                         </select>
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-gray-500 dark:text-slate-500 mt-1">
                             Instant: counted immediately toward invoice payment. Delayed: marked pending until settled. On Account: no payment recorded.
                         </p>
                     </div>
                 </div>
             </div>
 
-            <div className="flex justify-end space-x-3 pt-4 border-t">
+            <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200 dark:border-slate-700">
                 <button
                     type="button"
                     onClick={onCancel}
-                    className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300"
+                    className="px-4 py-2 bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-200 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-600"
                 >
                     Cancel
                 </button>
                 <button
                     type="submit"
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700"
+                    className="px-6 py-2 bg-primary-600 text-white rounded-lg font-semibold hover:bg-primary-700"
                 >
                     {method ? 'Update' : 'Create'} Method
                 </button>
@@ -395,26 +395,26 @@ const PaymentMethodSettings = () => {
 
     const getTypeColor = (type) => {
         switch (type) {
-            case 'cash': return 'bg-green-100 text-green-800';
-            case 'card': return 'bg-blue-100 text-blue-800';
-            case 'bank': return 'bg-purple-100 text-purple-800';
-            case 'mobile': return 'bg-orange-100 text-orange-800';
-            case 'credit': return 'bg-yellow-100 text-yellow-800';
-            case 'voucher': return 'bg-pink-100 text-pink-800';
-            default: return 'bg-gray-100 text-gray-800';
+            case 'cash': return 'bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-500';
+            case 'card': return 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-500';
+            case 'bank': return 'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-400';
+            case 'mobile': return 'bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-400';
+            case 'credit': return 'bg-warning-100 dark:bg-warning-900/30 text-warning-700 dark:text-warning-500';
+            case 'voucher': return 'bg-pink-100 dark:bg-pink-900/30 text-pink-800 dark:text-pink-400';
+            default: return 'bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-slate-200';
         }
     };
 
     if (loading) {
-        return <div className="text-center py-4">Loading payment methods...</div>;
+        return <div className="text-center py-4 text-gray-500 dark:text-slate-400">Loading payment methods...</div>;
     }
 
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <div>
-                    <h3 className="text-lg font-medium text-gray-900">Payment Methods</h3>
-                    <p className="text-sm text-gray-500">
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-slate-100">Payment Methods</h3>
+                    <p className="text-sm text-gray-500 dark:text-slate-500">
                         Configure available payment methods and their validation rules
                     </p>
                 </div>
@@ -423,19 +423,19 @@ const PaymentMethodSettings = () => {
                         setEditingMethod(null);
                         setIsModalOpen(true);
                     }}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700"
+                    className="bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700"
                 >
                     Add Method
                 </button>
             </div>
 
-            <div className="bg-white rounded-lg border border-gray-200">
+            <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700">
                 {methods.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
+                    <div className="text-center py-8 text-gray-500 dark:text-slate-500">
                         No payment methods configured.
                     </div>
                 ) : (
-                    <div className="divide-y divide-gray-200">
+                    <div className="divide-y divide-gray-200 dark:divide-slate-700">
                         {methods.map((method) => (
                             <div
                                 key={method.method_id}
@@ -443,24 +443,24 @@ const PaymentMethodSettings = () => {
                                 onDragStart={(e) => handleDragStart(e, method)}
                                 onDragOver={handleDragOver}
                                 onDrop={(e) => handleDrop(e, method)}
-                                className={`p-4 hover:bg-gray-50 cursor-move ${!method.enabled ? 'opacity-60' : ''}`}
+                                className={`p-4 hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-move ${!method.enabled ? 'opacity-60' : ''}`}
                             >
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center space-x-3">
                                         <div className="text-xl">{getTypeIcon(method.type)}</div>
                                         <div>
                                             <div className="flex items-center space-x-2">
-                                                <h4 className="font-medium text-gray-900">{method.name}</h4>
+                                                <h4 className="font-medium text-gray-900 dark:text-slate-100">{method.name}</h4>
                                                 <span className={`px-2 py-1 text-xs rounded-full ${getTypeColor(method.type)}`}>
                                                     {method.type}
                                                 </span>
                                                 {!method.enabled && (
-                                                    <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800">
+                                                    <span className="px-2 py-1 text-xs rounded-full bg-danger-100 dark:bg-danger-900/30 text-danger-700 dark:text-danger-500">
                                                         Disabled
                                                     </span>
                                                 )}
                                             </div>
-                                            <p className="text-sm text-gray-500">
+                                            <p className="text-sm text-gray-500 dark:text-slate-500">
                                                 Code: {method.code}
                                                 {method.config.requires_reference && ' • Requires Reference'}
                                                 {method.config.requires_receipt_no && ' • Requires Receipt #'}
@@ -473,9 +473,9 @@ const PaymentMethodSettings = () => {
                                         <button
                                             onClick={() => handleToggleEnabled(method)}
                                             className={`px-3 py-1 text-xs rounded-full ${
-                                                method.enabled 
-                                                    ? 'bg-green-100 text-green-800 hover:bg-green-200' 
-                                                    : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                                                method.enabled
+                                                    ? 'bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-500 hover:bg-success-100 dark:hover:bg-success-900/50'
+                                                    : 'bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-slate-200 hover:bg-gray-200 dark:hover:bg-slate-600'
                                             }`}
                                         >
                                             {method.enabled ? 'Enabled' : 'Disabled'}
@@ -485,13 +485,13 @@ const PaymentMethodSettings = () => {
                                                 setEditingMethod(method);
                                                 setIsModalOpen(true);
                                             }}
-                                            className="p-2 text-gray-400 hover:text-gray-600"
+                                            className="p-2 text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"
                                         >
                                             <Icon path={ICONS.edit} className="h-4 w-4" />
                                         </button>
                                         <button
                                             onClick={() => handleDeleteMethod(method)}
-                                            className="p-2 text-red-400 hover:text-red-600"
+                                            className="p-2 text-danger-500 hover:text-danger-600"
                                         >
                                             <Icon path={ICONS.trash} className="h-4 w-4" />
                                         </button>
@@ -503,7 +503,7 @@ const PaymentMethodSettings = () => {
                 )}
             </div>
 
-            <div className="text-sm text-gray-500">
+            <div className="text-sm text-gray-500 dark:text-slate-500">
                 <p><strong>Tip:</strong> Drag and drop to reorder payment methods. The order affects display in POS and invoicing.</p>
                 <p><strong>Settlement Types:</strong> Instant methods affect cash metrics immediately, delayed methods are for bank transfers and cheques.</p>
             </div>

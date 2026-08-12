@@ -365,7 +365,7 @@ const TaxRateSettings = ({ settings, handleChange }) => {
                     <button
                         type="button"
                         onClick={() => { setCurrentRate(null); setIsModalOpen(true); }}
-                        className="text-primary-600 dark:text-primary-500 hover:text-primary-800 dark:hover:text-primary-400 text-sm font-medium"
+                        className="text-primary-600 dark:text-primary-500 hover:text-primary-700 dark:hover:text-primary-600 text-sm font-medium"
                     >
                         Add your first tax rate
                     </button>
@@ -398,7 +398,7 @@ const TaxRateSettings = ({ settings, handleChange }) => {
                                 )}
                                 <button
                                     onClick={() => { setCurrentRate(rate); setIsModalOpen(true); }}
-                                    className="text-primary-600 dark:text-primary-500 hover:text-primary-800 dark:hover:text-primary-400 p-1 rounded hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors"
+                                    className="text-primary-600 dark:text-primary-500 hover:text-primary-700 dark:hover:text-primary-600 p-1 rounded hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors"
                                     title="Edit tax rate"
                                 >
                                     <Icon path={ICONS.edit} className="h-4 w-4" />

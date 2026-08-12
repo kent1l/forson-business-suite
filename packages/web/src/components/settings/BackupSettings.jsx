@@ -43,7 +43,7 @@ const SectionHeader = ({ title, subtitle }) => (
 );
 
 const InfoBox = ({ children }) => (
-    <div className="mt-3 p-3 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-900 rounded-lg text-sm text-primary-800 dark:text-primary-500 space-y-1">
+    <div className="mt-3 p-3 bg-primary-50 dark:bg-primary-900/20 border border-primary-100 dark:border-primary-900 rounded-lg text-sm text-primary-700 dark:text-primary-500 space-y-1">
         {children}
     </div>
 );
@@ -432,7 +432,7 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
                                                     <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-400 rounded whitespace-nowrap">Uploaded</span>
                                                 )}
                                                 {backup.type === 'manual' && (
-                                                    <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-400 rounded whitespace-nowrap">Manual</span>
+                                                    <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-500 rounded whitespace-nowrap">Manual</span>
                                                 )}
                                             </div>
                                         </td>
@@ -444,7 +444,7 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
                                             <a
                                                 href={`/api/backups/${backup.filename}`}
                                                 download
-                                                className="text-primary-600 dark:text-primary-500 hover:text-primary-800 dark:hover:text-primary-400 font-medium"
+                                                className="text-primary-600 dark:text-primary-500 hover:text-primary-700 dark:hover:text-primary-600 font-medium"
                                             >
                                                 Download
                                             </a>
