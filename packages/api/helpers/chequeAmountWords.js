@@ -25,7 +25,8 @@ function chunkToWords(value) {
 
 function amountToWords(amount, options = {}) {
     const suffix = String(options.suffix || 'pesos').trim() || 'pesos';
-    const numericAmount = Number(amount);
+    const cleaned = typeof amount === 'number' ? amount : String(amount || '').replace(/[^0-9.-]/g, '');
+    const numericAmount = Number(cleaned);
     if (Number.isNaN(numericAmount) || numericAmount < 0) {
         throw new Error('Amount must be a non-negative number');
     }

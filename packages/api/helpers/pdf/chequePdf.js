@@ -75,6 +75,17 @@ function toPdfLibSafeText(text, font) {
     }
 }
 
+function formatNumericAmount(amount) {
+    if (amount === null || amount === undefined || amount === '') return '0.00';
+    const cleaned = String(amount).replace(/[^0-9.-]/g, '');
+    const num = Number(cleaned);
+    if (Number.isNaN(num)) return '0.00';
+    return num.toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
+}
+
 function createFallbackPdf({ rows, template, xOffset, yOffset, testPrint, isLetterFeed }) {
     const positions = template?.field_positions || {};
     const currencySettings = template?.currency_settings || { enabled: true, label: '₱' };
@@ -88,6 +99,7 @@ function createFallbackPdf({ rows, template, xOffset, yOffset, testPrint, isLett
         const words = template?.amount_format === 'upper' ? amountWords.toUpperCase() : amountWords;
         const amountWordsText = applyEndFiller(words, textSettings?.amountWordsFiller, textSettings?.amountWordsFillerEnabled);
         const payeeText = applyEndFiller(row.payee, textSettings?.payeeFiller, textSettings?.payeeFillerEnabled);
+        const formattedAmount = formatNumericAmount(row.amount);
         const drawText = (text, cfg, fallback) => {
             const x = Number(cfg?.x ?? fallback.x) + xOffset;
             const y = Number(cfg?.y ?? fallback.y) + yOffset;
@@ -98,7 +110,7 @@ function createFallbackPdf({ rows, template, xOffset, yOffset, testPrint, isLett
         const lines = [
             drawText(row.date, positions.date, { x: 426, y: 178, fontSize: 11 }),
             drawText(payeeText, positions.payee, { x: 72, y: 136, fontSize: 12 }),
-            drawText(row.amount, positions.amountNumeric, { x: 534, y: 136, fontSize: 12 }),
+            drawText(formattedAmount, positions.amountNumeric, { x: 534, y: 136, fontSize: 12 }),
             drawText(amountWordsText, positions.amountWords, { x: 72, y: 104, fontSize: 11 })
         ];
         if (currencySettings.enabled !== false) {
@@ -258,8 +270,9 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
         } else {
             drawText(row.date, dateCfg, { x: 426, y: 178, fontSize: 11, alignment: 'left', charSpacing: 0 });
         }
+        const formattedAmount = formatNumericAmount(row.amount);
         drawText(payeeText, positions.payee, { x: 72, y: 136, fontSize: 12, alignment: 'left', maxWidth: 380, minFontSize: 8 });
-        drawText(row.amount, positions.amountNumeric, { x: 534, y: 136, fontSize: 12, alignment: 'right' });
+        drawText(formattedAmount, positions.amountNumeric, { x: 534, y: 136, fontSize: 12, alignment: 'right' });
         drawText(amountWordsText, positions.amountWords, { x: 72, y: 104, fontSize: 11, alignment: 'left', maxWidth: 420, minFontSize: 8 });
 
         if (currencySettings.enabled !== false) {
@@ -281,4 +294,4 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
     }
 }
 
-module.exports = { createChequePdf };
+module.exports = { createChequePdf, formatNumericAmount };

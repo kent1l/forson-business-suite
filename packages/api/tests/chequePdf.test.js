@@ -92,3 +92,21 @@ describe('createChequePdf fallback renderer offsets', () => {
         expect(pdfText).toContain('436 198 Td');
     });
 });
+
+describe('formatNumericAmount', () => {
+    const { formatNumericAmount } = require('../helpers/pdf/chequePdf');
+
+    it('formats amounts with commas for thousands and period for centavos without currency or extra symbols', () => {
+        expect(formatNumericAmount(1234567.89)).toBe('1,234,567.89');
+        expect(formatNumericAmount('1234567.89')).toBe('1,234,567.89');
+        expect(formatNumericAmount(1000)).toBe('1,000.00');
+        expect(formatNumericAmount('500.5')).toBe('500.50');
+        expect(formatNumericAmount(0)).toBe('0.00');
+    });
+
+    it('strips existing currency symbols and extra non-numeric characters', () => {
+        expect(formatNumericAmount('₱1,234,567.89')).toBe('1,234,567.89');
+        expect(formatNumericAmount('$ 12,345.60')).toBe('12,345.60');
+        expect(formatNumericAmount('***1000.00***')).toBe('1,000.00');
+    });
+});
