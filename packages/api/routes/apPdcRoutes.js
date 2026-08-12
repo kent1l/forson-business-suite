@@ -293,7 +293,7 @@ router.get('/ap/supplier-bills', protect, hasPermission(['ap-pdc:view']), async 
         else if (!status) { where += ` AND sb.status != 'Paid'`; }
         const { rows } = await db.query(
             `SELECT sb.*, s.supplier_name,
-                    GREATEST(EXTRACT(days FROM (CURRENT_DATE - COALESCE(sb.due_date, sb.bill_date))), 0) AS days_overdue
+                    GREATEST(CURRENT_DATE - COALESCE(sb.due_date, sb.bill_date), 0) AS days_overdue
              FROM supplier_bill sb
              JOIN supplier s ON s.supplier_id = sb.supplier_id
              ${where} ORDER BY sb.due_date NULLS LAST, sb.bill_date`,

@@ -234,7 +234,7 @@ router.get('/ap/suppliers/:supplierId/payments', protect, hasPermission('ap:view
             SELECT
                 p.payment_id, p.payment_date, p.amount, p.reference_number, p.notes,
                 p.pdc_status, p.cheque_date, p.bank_account_id, ba.account_name,
-                pm.method_name,
+                pm.name AS method_name,
                 COALESCE(
                     json_agg(
                         json_build_object('bill_id', a.bill_id, 'bill_number', sb.bill_number, 'amount_allocated', a.amount_allocated)
@@ -246,7 +246,7 @@ router.get('/ap/suppliers/:supplierId/payments', protect, hasPermission('ap:view
             LEFT JOIN ap_payment_allocation a ON a.payment_id = p.payment_id
             LEFT JOIN supplier_bill sb ON sb.bill_id = a.bill_id
             WHERE p.supplier_id = $1
-            GROUP BY p.payment_id, ba.account_name, pm.method_name
+            GROUP BY p.payment_id, ba.account_name, pm.name
             ORDER BY p.payment_date DESC
         `, [supplierId]);
         res.json({ success: true, data: rows });
