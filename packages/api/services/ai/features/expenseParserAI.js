@@ -9,6 +9,40 @@ const expenseLexicon = require('../../expenseLexiconService');
 // model gets steered by examples about a completely different kind of expense.
 const MAX_FEWSHOT_DISTANCE = 0.45;
 
+// Parsing and saving an expense are two separate HTTP requests for the same text,
+// and both used to call the embedding provider independently — doubling embedding
+// cost/latency per entry. This cache lets the save step reuse the vector the parse
+// step already paid for, keyed by the exact text and consumed once. It is
+// intentionally in-process (not Redis/DB): the value is a transient compute
+// artifact for a single user's few-second review window, not data worth
+// persisting or sharing across API instances — a cache miss just falls back to
+// generating a fresh embedding, so this is a pure optimization, never a
+// correctness dependency.
+const EMBEDDING_CACHE_TTL_MS = 10 * 60 * 1000;
+const embeddingCache = new Map(); // normalizedText -> { vector, model, expiresAt }
+
+function cacheEmbedding(text, vector, model) {
+    if (!text || !vector) return;
+    embeddingCache.set(text.trim(), { vector, model, expiresAt: Date.now() + EMBEDDING_CACHE_TTL_MS });
+    // Opportunistic cleanup so an abandoned quick-entry draft can't leak memory.
+    if (embeddingCache.size > 500) {
+        const now = Date.now();
+        for (const [key, entry] of embeddingCache) {
+            if (entry.expiresAt < now) embeddingCache.delete(key);
+        }
+    }
+}
+
+function takeCachedEmbedding(text) {
+    if (!text) return null;
+    const key = text.trim();
+    const entry = embeddingCache.get(key);
+    if (!entry) return null;
+    embeddingCache.delete(key); // single-use
+    if (entry.expiresAt < Date.now()) return null;
+    return entry;
+}
+
 /**
  * Feature module: AI-assisted Natural Language Expense Parser with RAG pgvector dynamic few-shot retrieval.
  */
@@ -91,6 +125,9 @@ class ExpenseParserAI {
                 if (embResult?.vector) {
                     queryVector = JSON.stringify(embResult.vector);
                     queryModel = embResult.model || null;
+                    // Handed off to logParseOutcome() if/when this entry is saved, so
+                    // the same text is never embedded twice.
+                    cacheEmbedding(originalText, embResult.vector, embResult.model);
                 }
             } catch (embErr) {
                 console.warn('[ExpenseParserAI] Failed to generate embedding vector for few-shot query:', embErr.message);
@@ -352,14 +389,23 @@ User expense description: "${safeText}"`;
 
         let vectorJson = null;
         let embeddingModel = null;
-        try {
-            const embRes = await embeddingClient.generateEmbeddingWithPool(String(rawInput).trim());
-            if (embRes?.vector) {
-                vectorJson = JSON.stringify(embRes.vector);
-                embeddingModel = embRes.model || null;
+
+        // Reuse the vector generated when this exact text was parsed, if the user
+        // saved within the cache window — avoids paying for the same embedding twice.
+        const cached = takeCachedEmbedding(String(rawInput));
+        if (cached) {
+            vectorJson = JSON.stringify(cached.vector);
+            embeddingModel = cached.model || null;
+        } else {
+            try {
+                const embRes = await embeddingClient.generateEmbeddingWithPool(String(rawInput).trim());
+                if (embRes?.vector) {
+                    vectorJson = JSON.stringify(embRes.vector);
+                    embeddingModel = embRes.model || null;
+                }
+            } catch (err) {
+                console.warn('[ExpenseParserAI] Failed to embed parse log entry:', err.message);
             }
-        } catch (err) {
-            console.warn('[ExpenseParserAI] Failed to embed parse log entry:', err.message);
         }
 
         try {
