@@ -4,6 +4,7 @@ const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const { parseExpenseText } = require('../services/expenseAIParser');
 const { expenseParserAI } = require('../services/ai');
+const expenseLexicon = require('../services/expenseLexiconService');
 
 const router = express.Router();
 
@@ -240,6 +241,94 @@ router.get('/expenses', protect, hasPermission('expenses:view'), async (req, res
     }
 });
 
+// GET /api/expenses/payees - Distinct previously used payees for autocomplete
+// NOTE: must stay above '/expenses/:id' so it is not captured by that param route.
+router.get('/expenses/payees', protect, hasPermission('expenses:view'), async (req, res) => {
+    const { q } = req.query;
+
+    try {
+        const queryParams = [];
+        let filterSql = '';
+
+        if (q && String(q).trim()) {
+            queryParams.push(`%${String(q).trim().toLowerCase()}%`);
+            filterSql = `AND LOWER(payee) LIKE $${queryParams.length}`;
+        }
+
+        // Most-used payees first so the common vendors surface immediately.
+        const query = `
+            SELECT payee, COUNT(*)::integer AS use_count
+            FROM expense
+            WHERE is_void = false
+              AND payee IS NOT NULL
+              AND TRIM(payee) <> ''
+              ${filterSql}
+            GROUP BY payee
+            ORDER BY use_count DESC, payee ASC
+            LIMIT 20
+        `;
+
+        const result = await db.query(query, queryParams);
+        res.json(result.rows.map(r => r.payee));
+    } catch (error) {
+        console.error('Error fetching expense payees:', error);
+        res.status(500).json({ message: 'Failed to fetch payee suggestions' });
+    }
+});
+
+// GET /api/expenses/check-duplicate - Non-blocking warning for likely double entry
+// NOTE: must stay above '/expenses/:id' so it is not captured by that param route.
+router.get('/expenses/check-duplicate', protect, hasPermission('expenses:view'), async (req, res) => {
+    const { expense_date, amount, payee, exclude_id } = req.query;
+
+    if (!expense_date || !/^\d{4}-\d{2}-\d{2}$/.test(expense_date)) {
+        return res.status(400).json({ message: 'Valid expense date is required (YYYY-MM-DD)' });
+    }
+
+    const numericAmount = parseFloat(amount);
+    if (isNaN(numericAmount) || numericAmount <= 0) {
+        return res.status(400).json({ message: 'Amount must be greater than 0' });
+    }
+
+    try {
+        const queryParams = [expense_date, numericAmount];
+        let payeeSql = 'AND (e.payee IS NULL OR TRIM(e.payee) = \'\')';
+
+        if (payee && String(payee).trim()) {
+            queryParams.push(String(payee).trim().toLowerCase());
+            payeeSql = `AND LOWER(TRIM(e.payee)) = $${queryParams.length}`;
+        }
+
+        let excludeSql = '';
+        const excludeId = parseInt(exclude_id, 10);
+        if (!isNaN(excludeId)) {
+            queryParams.push(excludeId);
+            excludeSql = `AND e.expense_id <> $${queryParams.length}`;
+        }
+
+        const query = `
+            SELECT ${EXPENSE_SELECT_FIELDS}
+            ${EXPENSE_JOIN_TABLES}
+            WHERE e.is_void = false
+              AND e.expense_date = $1
+              AND e.amount = $2
+              ${payeeSql}
+              ${excludeSql}
+            ORDER BY e.created_at DESC
+            LIMIT 5
+        `;
+
+        const result = await db.query(query, queryParams);
+        res.json({
+            isDuplicate: result.rows.length > 0,
+            matches: result.rows
+        });
+    } catch (error) {
+        console.error('Error checking for duplicate expense:', error);
+        res.status(500).json({ message: 'Failed to check for duplicate expense' });
+    }
+});
+
 // GET /api/expenses/:id - Get single expense
 router.get('/expenses/:id', protect, hasPermission('expenses:view'), async (req, res) => {
     const expenseId = parseInt(req.params.id, 10);
@@ -275,7 +364,9 @@ router.post('/expenses', protect, hasPermission('expenses:create'), async (req, 
         payment_method_text = 'Cash',
         reference_no,
         notes,
-        ai_corrections
+        ai_corrections,
+        raw_input,
+        ai_parsed
     } = req.body;
 
     const employeeId = req.user.employee_id;
@@ -306,7 +397,7 @@ router.post('/expenses', protect, hasPermission('expenses:create'), async (req, 
     try {
         // Validate category exists and is active
         const categoryRes = await db.query(
-            'SELECT category_id FROM expense_category WHERE category_id = $1 AND is_active = true',
+            'SELECT category_id, category_name FROM expense_category WHERE category_id = $1 AND is_active = true',
             [parseInt(category_id, 10)]
         );
         if (categoryRes.rows.length === 0) {
@@ -317,15 +408,21 @@ router.post('/expenses', protect, hasPermission('expenses:create'), async (req, 
         let pmId = null;
         let pmText = payment_method_text ? String(payment_method_text).trim().substring(0, 50) : 'Cash';
 
-        if (payment_method_id && !isNaN(parseInt(payment_method_id, 10))) {
+        if (payment_method_id !== null && payment_method_id !== undefined && payment_method_id !== '') {
+            const parsedPmId = parseInt(payment_method_id, 10);
+            if (isNaN(parsedPmId)) {
+                return res.status(400).json({ message: 'Invalid payment method' });
+            }
             const pmRes = await db.query(
                 'SELECT method_id, name FROM payment_methods WHERE method_id = $1 AND enabled = true',
-                [parseInt(payment_method_id, 10)]
+                [parsedPmId]
             );
-            if (pmRes.rows.length > 0) {
-                pmId = pmRes.rows[0].method_id;
-                pmText = pmRes.rows[0].name;
+            // Fail loudly rather than silently recording the expense as Cash.
+            if (pmRes.rows.length === 0) {
+                return res.status(400).json({ message: 'Selected payment method is invalid or disabled' });
             }
+            pmId = pmRes.rows[0].method_id;
+            pmText = pmRes.rows[0].name;
         }
 
         const insertQuery = `
@@ -378,6 +475,44 @@ router.post('/expenses', protect, hasPermission('expenses:create'), async (req, 
             }
         }
 
+        // Learning loop: record what the user actually typed against what they saved,
+        // then propose any new local vocabulary for admin review. Both are best-effort
+        // — a learning failure must never fail the expense itself.
+        if (raw_input && String(raw_input).trim()) {
+            const finalValues = {
+                category_id: parseInt(category_id, 10),
+                category_name: categoryRes.rows[0]?.category_name || null,
+                amount: numericAmount,
+                payee: payee ? String(payee).trim() : null,
+                expense_date,
+                payment_method_id: pmId
+            };
+
+            try {
+                await expenseParserAI.logParseOutcome({
+                    rawInput: raw_input,
+                    parsed: ai_parsed || null,
+                    final: finalValues,
+                    expenseId: newExpenseId,
+                    provider: ai_parsed?.provider || null,
+                    employeeId
+                });
+            } catch (logErr) {
+                console.error('[ExpenseRoutes] Failed to log parse outcome:', logErr.message);
+            }
+
+            try {
+                await expenseLexicon.proposeAliasesFromExpense({
+                    rawInput: raw_input,
+                    categoryId: parseInt(category_id, 10),
+                    payee: payee ? String(payee).trim() : null,
+                    employeeId
+                });
+            } catch (lexErr) {
+                console.error('[ExpenseRoutes] Failed to propose lexicon aliases:', lexErr.message);
+            }
+        }
+
         // Fetch full inserted record
         const getQuery = `
             SELECT ${EXPENSE_SELECT_FIELDS}
@@ -414,7 +549,7 @@ router.put('/expenses/:id', protect, hasPermission('expenses:edit'), async (req,
 
     try {
         // Check if expense exists and is not voided
-        const existing = await db.query('SELECT is_void FROM expense WHERE expense_id = $1', [expenseId]);
+        const existing = await db.query('SELECT is_void, payment_method_id FROM expense WHERE expense_id = $1', [expenseId]);
         if (existing.rows.length === 0) {
             return res.status(404).json({ message: 'Expense record not found' });
         }
@@ -426,19 +561,58 @@ router.put('/expenses/:id', protect, hasPermission('expenses:edit'), async (req,
             return res.status(400).json({ message: 'Valid expense date is required (YYYY-MM-DD)' });
         }
 
+        const dateObj = new Date(expense_date);
+        const maxFutureDate = new Date();
+        maxFutureDate.setDate(maxFutureDate.getDate() + 365);
+        if (dateObj > maxFutureDate) {
+            return res.status(400).json({ message: 'Expense date cannot be more than 365 days in the future' });
+        }
+
+        if (!category_id || isNaN(parseInt(category_id, 10))) {
+            return res.status(400).json({ message: 'Valid expense category is required' });
+        }
+
         const numericAmount = parseFloat(amount);
         if (isNaN(numericAmount) || numericAmount <= 0) {
             return res.status(400).json({ message: 'Amount must be greater than 0' });
         }
+        if (numericAmount > 99999999.99) {
+            return res.status(400).json({ message: 'Amount exceeds maximum limit (99,999,999.99)' });
+        }
 
+        // Validate category exists and is active
+        const categoryRes = await db.query(
+            'SELECT category_id FROM expense_category WHERE category_id = $1 AND is_active = true',
+            [parseInt(category_id, 10)]
+        );
+        if (categoryRes.rows.length === 0) {
+            return res.status(400).json({ message: 'Selected expense category is invalid or inactive' });
+        }
+
+        // Validate payment method if ID provided.
         let pmId = null;
         let pmText = payment_method_text ? String(payment_method_text).trim().substring(0, 50) : 'Cash';
-        if (payment_method_id && !isNaN(parseInt(payment_method_id, 10))) {
-            const pmRes = await db.query('SELECT method_id, name FROM payment_methods WHERE method_id = $1', [parseInt(payment_method_id, 10)]);
-            if (pmRes.rows.length > 0) {
-                pmId = pmRes.rows[0].method_id;
-                pmText = pmRes.rows[0].name;
+
+        if (payment_method_id !== null && payment_method_id !== undefined && payment_method_id !== '') {
+            const parsedPmId = parseInt(payment_method_id, 10);
+            if (isNaN(parsedPmId)) {
+                return res.status(400).json({ message: 'Invalid payment method' });
             }
+
+            // A method that was disabled after this expense was recorded stays editable,
+            // so historical records don't become locked. Switching to a different disabled
+            // method is still rejected.
+            const isUnchangedMethod = existing.rows[0].payment_method_id === parsedPmId;
+            const pmRes = await db.query(
+                `SELECT method_id, name FROM payment_methods
+                 WHERE method_id = $1 AND (enabled = true OR $2::boolean)`,
+                [parsedPmId, isUnchangedMethod]
+            );
+            if (pmRes.rows.length === 0) {
+                return res.status(400).json({ message: 'Selected payment method is invalid or disabled' });
+            }
+            pmId = pmRes.rows[0].method_id;
+            pmText = pmRes.rows[0].name;
         }
 
         const updateQuery = `

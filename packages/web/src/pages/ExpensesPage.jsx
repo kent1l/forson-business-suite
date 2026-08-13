@@ -23,13 +23,17 @@ export default function ExpensesPage() {
         payment_method_id: '',
         payee: '',
         show_void: false,
+        sort_by: 'expense_date',
+        sort_dir: 'desc',
         page: 1
     });
 
     const [loading, setLoading] = useState(false);
     const [formModalOpen, setFormModalOpen] = useState(false);
     const [editingExpense, setEditingExpense] = useState(null);
+    const [prefillExpense, setPrefillExpense] = useState(null); // "duplicate entry" source
     const [aiParsedData, setAiParsedData] = useState(null);
+    const [aiRawInput, setAiRawInput] = useState('');
     const [formSubmitLoading, setFormSubmitLoading] = useState(false);
 
     // Fetch dropdown options once on mount
@@ -61,7 +65,9 @@ export default function ExpensesPage() {
                 category_id: filters.category_id || undefined,
                 payment_method_id: filters.payment_method_id || undefined,
                 payee: filters.payee || undefined,
-                show_void: filters.show_void ? 'true' : 'false'
+                show_void: filters.show_void ? 'true' : 'false',
+                sort_by: filters.sort_by || 'expense_date',
+                sort_dir: filters.sort_dir || 'desc'
             };
 
             const [listRes, summaryCatRes, summaryMonthRes] = await Promise.all([
@@ -98,6 +104,8 @@ export default function ExpensesPage() {
             payment_method_id: '',
             payee: '',
             show_void: false,
+            sort_by: 'expense_date',
+            sort_dir: 'desc',
             page: 1
         });
     };
@@ -106,21 +114,56 @@ export default function ExpensesPage() {
         setFilters(prev => ({ ...prev, page: newPage }));
     };
 
+    // Clicking the active column flips direction; a new column starts descending.
+    const handleSortChange = (field) => {
+        setFilters(prev => ({
+            ...prev,
+            sort_by: field,
+            sort_dir: prev.sort_by === field && prev.sort_dir === 'desc' ? 'asc' : 'desc',
+            page: 1
+        }));
+    };
+
+    // rawText is what the user literally typed (often Cebuano or local shorthand).
+    // It must survive all the way to POST /expenses — it is the only text the
+    // learning loop can use to pick up local vocabulary.
     const handleQuickEntryParsed = (parsed, rawText) => {
         setEditingExpense(null);
+        setPrefillExpense(null);
         setAiParsedData(parsed);
+        setAiRawInput(rawText || '');
         setFormModalOpen(true);
     };
 
     const handleOpenCreateModal = () => {
         setEditingExpense(null);
+        setPrefillExpense(null);
         setAiParsedData(null);
+        setAiRawInput('');
         setFormModalOpen(true);
     };
 
     const handleOpenEditModal = (expense) => {
         setEditingExpense(expense);
+        setPrefillExpense(null);
         setAiParsedData(null);
+        setAiRawInput('');
+        setFormModalOpen(true);
+    };
+
+    // Re-use a past expense as the starting point for a new one (rent, subscriptions, etc.).
+    // Dates default to today since the intent is "same expense, this period".
+    const handleDuplicateExpense = (expense) => {
+        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+        setEditingExpense(null);
+        setAiParsedData(null);
+        setAiRawInput('');
+        setPrefillExpense({
+            ...expense,
+            expense_id: undefined,
+            expense_date: today,
+            reference_no: '' // reference numbers are unique per document, never copy them
+        });
         setFormModalOpen(true);
     };
 
@@ -192,7 +235,9 @@ export default function ExpensesPage() {
                 onFilterChange={handleFilterChange}
                 onClearFilters={handleClearFilters}
                 onPageChange={handlePageChange}
+                onSortChange={handleSortChange}
                 onEdit={handleOpenEditModal}
+                onDuplicate={handleDuplicateExpense}
                 onVoid={handleVoidExpense}
                 loading={loading}
             />
@@ -202,8 +247,10 @@ export default function ExpensesPage() {
                 <ExpenseForm
                     categories={categories}
                     paymentMethods={paymentMethods}
-                    initialData={editingExpense}
+                    initialData={editingExpense || prefillExpense}
+                    isDuplicating={!editingExpense && !!prefillExpense}
                     aiParsedData={aiParsedData}
+                    aiRawInput={aiRawInput}
                     onSubmit={handleFormSubmit}
                     onClose={() => setFormModalOpen(false)}
                     loading={formSubmitLoading}

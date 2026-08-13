@@ -27,6 +27,7 @@ import ManagerReviewDesk from '../cycleCount/ManagerReviewDesk';
 import CashierApprovalDesk from '../../pages/CashierApprovalDesk';
 import ExpensesPage from '../../pages/ExpensesPage';
 import ExpenseCategoriesPage from '../../pages/ExpenseCategoriesPage';
+import ExpenseLexiconPage from '../../pages/ExpenseLexiconPage';
 import PaperlessReceiptsPage from '../../pages/PaperlessReceiptsPage';
 import SoaGenPage from '../../pages/SoaGenPage';
 
@@ -60,6 +61,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'manager_audit': return <ManagerReviewDesk />;
             case 'expenses': return <ExpensesPage />;
             case 'expense_categories': return <ExpenseCategoriesPage />;
+            case 'expense_lexicon': return <ExpenseLexiconPage />;
             case 'paperless_receipts': return <PaperlessReceiptsPage />;
             case 'employees': return <EmployeesPage user={user} />;
             case 'settings': return <SettingsPage user={user} />;

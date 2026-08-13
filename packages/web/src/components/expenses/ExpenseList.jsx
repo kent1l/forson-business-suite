@@ -11,7 +11,9 @@ export default function ExpenseList({
     onFilterChange,
     onClearFilters,
     onPageChange,
+    onSortChange,
     onEdit,
+    onDuplicate,
     onVoid,
     loading = false
 }) {
@@ -50,6 +52,27 @@ export default function ExpenseList({
         const d = new Date(str + 'T00:00:00');
         if (isNaN(d.getTime())) return String(dateVal);
         return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
+    };
+
+    // Only these map to whitelisted sort fields on the API.
+    const SortableHeader = ({ field, label, align = 'left' }) => {
+        const isActive = filters.sort_by === field;
+        const arrow = !isActive ? '↕' : filters.sort_dir === 'asc' ? '↑' : '↓';
+        return (
+            <th className={`py-3 px-4 ${align === 'right' ? 'text-right' : 'text-left'}`}>
+                <button
+                    type="button"
+                    onClick={() => onSortChange && onSortChange(field)}
+                    className={`inline-flex items-center gap-1 uppercase tracking-wider font-semibold cursor-pointer hover:text-blue-600 transition-colors ${
+                        isActive ? 'text-blue-600' : 'text-slate-600'
+                    }`}
+                    title={`Sort by ${label}`}
+                >
+                    <span>{label}</span>
+                    <span className={isActive ? 'text-blue-500' : 'text-slate-300'}>{arrow}</span>
+                </button>
+            </th>
+        );
     };
 
     return (
@@ -159,10 +182,10 @@ export default function ExpenseList({
                 <table className="w-full text-left border-collapse text-xs">
                     <thead>
                         <tr className="bg-slate-100/70 border-b border-slate-200 text-slate-600 uppercase tracking-wider font-semibold">
-                            <th className="py-3 px-4">Date</th>
-                            <th className="py-3 px-4">Category</th>
+                            <SortableHeader field="expense_date" label="Date" />
+                            <SortableHeader field="category_name" label="Category" />
                             <th className="py-3 px-4">Payee / Vendor</th>
-                            <th className="py-3 px-4 text-right">Amount</th>
+                            <SortableHeader field="amount" label="Amount" align="right" />
                             <th className="py-3 px-4">Method</th>
                             <th className="py-3 px-4">Ref No.</th>
                             <th className="py-3 px-4">Notes</th>
@@ -230,28 +253,40 @@ export default function ExpenseList({
                                             {item.created_by ? `${item.created_by.first_name || ''} ${item.created_by.last_name || item.created_by.username || ''}`.trim() : '-'}
                                         </td>
                                         <td className="py-3 px-4 text-center whitespace-nowrap no-line-through">
-                                            {isVoid ? (
-                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
-                                                    VOIDED
-                                                </span>
-                                            ) : (
-                                                <div className="flex items-center justify-center space-x-1">
+                                            <div className="flex items-center justify-center space-x-1">
+                                                {isVoid && (
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
+                                                        VOIDED
+                                                    </span>
+                                                )}
+                                                {onDuplicate && (
                                                     <button
-                                                        onClick={() => onEdit(item)}
-                                                        title="Edit expense"
-                                                        className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors cursor-pointer"
+                                                        onClick={() => onDuplicate(item)}
+                                                        title="Record a new expense using this one as a starting point"
+                                                        className="p-1 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-colors cursor-pointer"
                                                     >
-                                                        <Icon path={ICONS.edit} className="w-4 h-4" />
+                                                        <Icon path={ICONS.copy} className="w-4 h-4" />
                                                     </button>
-                                                    <button
-                                                        onClick={() => { setVoidModalExpense(item); setVoidReason(''); setVoidError(''); }}
-                                                        title="Void expense"
-                                                        className="p-1 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer"
-                                                    >
-                                                        <Icon path={ICONS.trash} className="w-4 h-4" />
-                                                    </button>
-                                                </div>
-                                            )}
+                                                )}
+                                                {!isVoid && (
+                                                    <>
+                                                        <button
+                                                            onClick={() => onEdit(item)}
+                                                            title="Edit expense"
+                                                            className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors cursor-pointer"
+                                                        >
+                                                            <Icon path={ICONS.edit} className="w-4 h-4" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => { setVoidModalExpense(item); setVoidReason(''); setVoidError(''); }}
+                                                            title="Void expense"
+                                                            className="p-1 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer"
+                                                        >
+                                                            <Icon path={ICONS.trash} className="w-4 h-4" />
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 );
