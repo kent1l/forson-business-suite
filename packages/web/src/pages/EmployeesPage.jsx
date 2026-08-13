@@ -13,6 +13,7 @@ import LoadingState from '../components/ui/LoadingState';
 import ErrorState from '../components/ui/ErrorState';
 import EmptyState from '../components/ui/EmptyState';
 import EmployeeForm from '../components/hr/EmployeeForm';
+import BulkEditForm from '../components/hr/BulkEditForm';
 import EmployeeDetailDrawer from '../components/hr/EmployeeDetailDrawer';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -87,6 +88,8 @@ const EmployeesPage = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentEmployee, setCurrentEmployee] = useState(null);
     const [drawerEmployeeId, setDrawerEmployeeId] = useState(null);
+    const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([]);
+    const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
 
     const [statusFilter, setStatusFilter] = useState('active');
     const [departmentFilter, setDepartmentFilter] = useState('');
@@ -152,7 +155,7 @@ const EmployeesPage = () => {
             .catch(() => { /* filters degrade to "All"; the list still works */ });
     }, [canView]);
 
-    useEffect(() => { setPage(1); }, [statusFilter, departmentFilter, employmentStatusFilter, search]);
+    useEffect(() => { setPage(1); setSelectedEmployeeIds([]); }, [statusFilter, departmentFilter, employmentStatusFilter, search]);
 
     const stats = useMemo(() => {
         const noLogin = employees.filter((e) => !e.has_system_access).length;
@@ -161,6 +164,43 @@ const EmployeesPage = () => {
     }, [employees]);
 
     const handleSort = (key, direction) => { setSortConfig({ key, direction }); setPage(1); };
+
+    const handleSelectAll = (e) => {
+        if (e.target.checked) {
+            setSelectedEmployeeIds(employees.map(emp => emp.employee_id));
+        } else {
+            setSelectedEmployeeIds([]);
+        }
+    };
+
+    const handleSelectEmployee = (id, checked) => {
+        if (checked) {
+            setSelectedEmployeeIds(prev => [...prev, id]);
+        } else {
+            setSelectedEmployeeIds(prev => prev.filter(e => e !== id));
+        }
+    };
+
+    const handleBulkSave = async (payload) => {
+        if (Object.keys(payload).length === 0) {
+            toast.error('No changes to save.');
+            return;
+        }
+        const promise = api.put('/employees/bulk', {
+            employee_ids: selectedEmployeeIds,
+            ...payload
+        });
+        toast.promise(promise, {
+            loading: 'Updating employees…',
+            success: (res) => {
+                setIsBulkModalOpen(false);
+                setSelectedEmployeeIds([]);
+                fetchEmployees();
+                return `Updated ${res.data?.updated || selectedEmployeeIds.length} employees`;
+            },
+            error: (err) => err.response?.data?.message || 'Failed to bulk update employees.',
+        });
+    };
 
     const handleSave = async (employeeData) => {
         const promise = currentEmployee
@@ -198,12 +238,20 @@ const EmployeesPage = () => {
         <div>
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100">Employees</h1>
-                {canEdit && (
-                    <button onClick={() => { setCurrentEmployee(null); setIsModalOpen(true); }}
-                        className="bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition">
-                        Add Employee
-                    </button>
-                )}
+                <div className="flex gap-3">
+                    {canEdit && selectedEmployeeIds.length > 0 && (
+                        <button onClick={() => setIsBulkModalOpen(true)}
+                            className="bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 px-4 py-2 rounded-lg font-semibold hover:bg-primary-200 dark:hover:bg-primary-800/40 transition">
+                            Bulk Edit ({selectedEmployeeIds.length})
+                        </button>
+                    )}
+                    {canEdit && (
+                        <button onClick={() => { setCurrentEmployee(null); setIsModalOpen(true); }}
+                            className="bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition">
+                            Add Employee
+                        </button>
+                    )}
+                </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
@@ -247,6 +295,16 @@ const EmployeesPage = () => {
                             <table className="w-full text-left">
                                 <thead className="border-b border-gray-200 dark:border-slate-700">
                                     <tr>
+                                        {canEdit && (
+                                            <th className="p-3 w-10">
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={employees.length > 0 && selectedEmployeeIds.length === employees.length}
+                                                    onChange={handleSelectAll}
+                                                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                                                />
+                                            </th>
+                                        )}
                                         <SortableHeader column="employee_code" sortConfig={sortConfig} onSort={handleSort}>Code</SortableHeader>
                                         <SortableHeader column="full_name" sortConfig={sortConfig} onSort={handleSort}>Name</SortableHeader>
                                         <SortableHeader column="department_name" sortConfig={sortConfig} onSort={handleSort}>Department</SortableHeader>
@@ -263,6 +321,16 @@ const EmployeesPage = () => {
                                             onClick={() => setDrawerEmployeeId(emp.employee_id)}
                                             className="border-b border-gray-100 dark:border-slate-700/60 hover:bg-gray-50 dark:hover:bg-slate-700/40 cursor-pointer"
                                         >
+                                            {canEdit && (
+                                                <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                                                    <input 
+                                                        type="checkbox"
+                                                        checked={selectedEmployeeIds.includes(emp.employee_id)}
+                                                        onChange={(e) => handleSelectEmployee(emp.employee_id, e.target.checked)}
+                                                        className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                                                    />
+                                                </td>
+                                            )}
                                             <td className="p-3 text-xs tabular-nums text-gray-500 dark:text-slate-400">{emp.employee_code || '—'}</td>
                                             <td className="p-3 text-sm font-medium text-gray-800 dark:text-slate-100">
                                                 {emp.first_name} {emp.last_name}
@@ -322,6 +390,22 @@ const EmployeesPage = () => {
                     managers={allEmployees}
                     onSave={handleSave}
                     onCancel={() => setIsModalOpen(false)}
+                />
+            </Modal>
+
+            <Modal
+                isOpen={isBulkModalOpen}
+                onClose={() => setIsBulkModalOpen(false)}
+                maxWidth="max-w-md"
+                bodyClassName="p-0"
+                header={<h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Bulk Edit Employees</h2>}
+            >
+                <BulkEditForm
+                    selectedCount={selectedEmployeeIds.length}
+                    departments={departments}
+                    managers={allEmployees}
+                    onSave={handleBulkSave}
+                    onCancel={() => setIsBulkModalOpen(false)}
                 />
             </Modal>
 

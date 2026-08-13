@@ -378,16 +378,73 @@ router.post('/employees', protect, hasPermission('employees:edit'), blockNonAdmi
 const blockNonAdminEditingAdmin = async (req, res, next) => {
     try {
         if (Number(req.user?.permission_level_id) === 10) return next();
-        const target = await db.query('SELECT permission_level_id FROM employee WHERE employee_id = $1', [req.params.id]);
-        if (target.rows[0] && Number(target.rows[0].permission_level_id) === 10) {
-            return res.status(403).json({ message: 'Only an admin can modify another admin\'s account.' });
+        
+        const ids = req.body.employee_ids;
+        if (ids && Array.isArray(ids) && ids.length > 0) {
+            const targets = await db.query('SELECT employee_id FROM employee WHERE employee_id = ANY($1) AND permission_level_id = 10', [ids]);
+            if (targets.rows.length > 0) {
+                return res.status(403).json({ message: 'Only an admin can modify another admin\'s account.' });
+            }
         }
+        
+        if (req.params.id) {
+            const target = await db.query('SELECT permission_level_id FROM employee WHERE employee_id = $1', [req.params.id]);
+            if (target.rows[0] && Number(target.rows[0].permission_level_id) === 10) {
+                return res.status(403).json({ message: 'Only an admin can modify another admin\'s account.' });
+            }
+        }
+        
         next();
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
     }
 };
+
+// PUT /employees/bulk - update multiple HR profiles at once.
+router.put('/employees/bulk', protect, hasPermission(['employees:edit', 'hr:manage_employees']), blockNonAdminEditingAdmin, async (req, res) => {
+    const { employee_ids } = req.body;
+    if (!employee_ids || !Array.isArray(employee_ids) || employee_ids.length === 0) {
+        return res.status(400).json({ message: 'No employees selected for bulk edit' });
+    }
+
+    const fields = pickProfileFields(req.body);
+    // Don't allow clearing names or personal specifics in bulk
+    delete fields.first_name;
+    delete fields.last_name;
+    delete fields.middle_name;
+    delete fields.suffix;
+    delete fields.mobile_no;
+    delete fields.personal_email;
+    delete fields.emergency_contact_name;
+    delete fields.emergency_contact_phone;
+
+    if (Object.keys(fields).length === 0) {
+        return res.status(400).json({ message: 'No updatable fields were provided' });
+    }
+
+    try {
+        const names = Object.keys(fields);
+        const assignments = names.map((n, i) => `${n} = $${i + 1}`);
+        const params = names.map((n) => fields[n]);
+        params.push(employee_ids);
+
+        const updatedEmployees = await db.query(
+            `UPDATE employee SET ${assignments.join(', ')}
+             WHERE employee_id = ANY($${params.length})
+             RETURNING employee_id`,
+            params
+        );
+
+        res.json({ updated: updatedEmployees.rowCount });
+    } catch (err) {
+        if (err.code === '23514') {
+            return res.status(400).json({ message: 'Invalid employment type or status.' });
+        }
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
 
 // PUT /employees/:id - update the HR profile only.
 // Credentials and role are NOT settable here; use the /access endpoints below.
