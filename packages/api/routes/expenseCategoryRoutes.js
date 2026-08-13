@@ -82,24 +82,27 @@ router.put('/expense-categories/reorder', protect, hasPermission('expenses:manag
 
     const employeeId = req.user.employee_id;
 
+    const client = await db.getClient();
     try {
-        await db.query('BEGIN');
+        await client.query('BEGIN');
         for (const item of items) {
             if (item.category_id && typeof item.sort_order === 'number') {
-                await db.query(
-                    `UPDATE expense_category 
-                     SET sort_order = $1, modified_by = $2, updated_at = NOW() 
+                await client.query(
+                    `UPDATE expense_category
+                     SET sort_order = $1, modified_by = $2, updated_at = NOW()
                      WHERE category_id = $3`,
                     [item.sort_order, employeeId, item.category_id]
                 );
             }
         }
-        await db.query('COMMIT');
+        await client.query('COMMIT');
         res.json({ message: 'Category sort order updated successfully' });
     } catch (error) {
-        await db.query('ROLLBACK');
+        await client.query('ROLLBACK');
         console.error('Error reordering expense categories:', error);
         res.status(500).json({ message: 'Failed to reorder expense categories' });
+    } finally {
+        client.release();
     }
 });
 

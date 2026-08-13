@@ -426,9 +426,32 @@ router.put('/expenses/:id', protect, hasPermission('expenses:edit'), async (req,
             return res.status(400).json({ message: 'Valid expense date is required (YYYY-MM-DD)' });
         }
 
+        const dateObj = new Date(expense_date);
+        const maxFutureDate = new Date();
+        maxFutureDate.setDate(maxFutureDate.getDate() + 365);
+        if (dateObj > maxFutureDate) {
+            return res.status(400).json({ message: 'Expense date cannot be more than 365 days in the future' });
+        }
+
+        if (!category_id || isNaN(parseInt(category_id, 10))) {
+            return res.status(400).json({ message: 'Valid expense category is required' });
+        }
+
         const numericAmount = parseFloat(amount);
         if (isNaN(numericAmount) || numericAmount <= 0) {
             return res.status(400).json({ message: 'Amount must be greater than 0' });
+        }
+        if (numericAmount > 99999999.99) {
+            return res.status(400).json({ message: 'Amount exceeds maximum limit (99,999,999.99)' });
+        }
+
+        // Validate category exists and is active
+        const categoryRes = await db.query(
+            'SELECT category_id FROM expense_category WHERE category_id = $1 AND is_active = true',
+            [parseInt(category_id, 10)]
+        );
+        if (categoryRes.rows.length === 0) {
+            return res.status(400).json({ message: 'Selected expense category is invalid or inactive' });
         }
 
         let pmId = null;
