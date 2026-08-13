@@ -5,16 +5,33 @@ pools:
     description: "Cascading embedding pool prioritizing free tiers with vector dimension 768"
     dimensions: 768
     fallback_chain:
+      # Both Gemini models are called directly against Google's API (not routed
+      # through OpenRouter's paid re-billing of the same models) and are free under
+      # Google's Gemini API free tier. Both support outputDimensionality natively
+      # via Matryoshka truncation, verified live at 768 dims for this project on
+      # 2026-08-13.
       - provider: gemini
-        model: "text-embedding-004"
+        model: "gemini-embedding-2"
         api_key_env: "GEMINI_API_KEY"
-      - provider: openrouter
-        model: "nvidia/nemotron-3-embed-1b:free"
-        api_key_env: "OPENROUTER_API_KEY"
-      - provider: openrouter
-        model: "nvidia/llama-nemotron-embed-vl-1b-v2:free"
-        api_key_env: "OPENROUTER_API_KEY"
+        dimensions_override: 768
+      # "text-embedding-004" (the model previously configured here) has been
+      # retired by Google and returns HTTP 404 on every call. gemini-embedding-001
+      # is its GA successor and is kept as an in-provider fallback so a transient
+      # issue with -2 doesn't take the whole free path down at once.
+      - provider: gemini
+        model: "gemini-embedding-001"
+        api_key_env: "GEMINI_API_KEY"
+        dimensions_override: 768
+      # NOTE: OpenRouter's only genuinely free (":free") embedding model,
+      # nvidia/nemotron-3-embed-1b:free, has a FIXED native output of 2048
+      # dimensions and rejects any other `dimensions` value outright (confirmed
+      # live: HTTP 400 "dimensions must be one of 2048"). It cannot be used here
+      # without either changing this pool's dimension to 2048 (which would break
+      # OpenAI compatibility below, capped at 1536) or storing its vectors in a
+      # separate column — not worth the complexity for a last-resort fallback, so
+      # it has been removed rather than left in as a fallback entry that can never
+      # actually succeed.
       - provider: openai
         model: "text-embedding-3-small"
-        dimensions_override: 768 # Ensure OpenAI outputs matching 768 dimensions if supported, or handle mapping
-        api_key_env: "OPENAI_API_KEY"
+        dimensions_override: 768 # OpenAI supports arbitrary reduced dimensions natively
+        api_key_env: "OPENAI_API_KEY" # NOTE: paid (not free) and requires OPENAI_API_KEY to be set; only reached if both Gemini models fail

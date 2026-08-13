@@ -47,7 +47,13 @@ class EmbeddingClient {
                 body: JSON.stringify({
                     content: {
                         parts: [{ text }]
-                    }
+                    },
+                    // gemini-embedding-001/2 both support this directly (Matryoshka
+                    // truncation done server-side) — without it Gemini returns its full
+                    // native 3072-dim vector and we were previously slicing it down
+                    // client-side, which worked by luck but wasted bandwidth and bypassed
+                    // Google's own supported reduction path.
+                    outputDimensionality: dimensions_override || targetDim
                 })
             });
 
@@ -66,8 +72,13 @@ class EmbeddingClient {
                 model,
                 input: text
             };
-            if (dimensions_override || targetDim) {
-                bodyObj.dimensions = dimensions_override || targetDim;
+            // Only send `dimensions` when a candidate explicitly declares it supports
+            // dimension reduction (dimensions_override). Some OpenRouter embedding
+            // models (e.g. the nvidia/*:free tier) have a fixed native output size and
+            // reject any `dimensions` value that doesn't match it — sending our pool's
+            // default target unconditionally made those candidates fail on every call.
+            if (dimensions_override) {
+                bodyObj.dimensions = dimensions_override;
             }
             const response = await fetch(url, {
                 method: 'POST',
@@ -126,15 +137,23 @@ class EmbeddingClient {
             throw err;
         }
 
-        // Adjust vector dimensions to targetDim if needed
-        if (vector.length !== targetDim) {
-            if (vector.length > targetDim) {
-                vector = vector.slice(0, targetDim);
-            } else {
-                while (vector.length < targetDim) {
-                    vector.push(0);
-                }
-            }
+        // Adjust vector dimensions to targetDim if needed. Truncating a LONGER vector
+        // is safe for cosine-distance search (pgvector's <=> operator normalizes by
+        // magnitude, so dropping trailing components changes precision, not
+        // correctness) and matches how Gemini/OpenAI's own Matryoshka-trained models
+        // are designed to be shortened. A vector coming back SHORTER than requested is
+        // a different situation — there is no valid way to invent the missing
+        // components, so zero-padding would silently store a degraded vector next to
+        // full-quality ones in the same column. That candidate is treated as failed
+        // instead, so the caller falls through to the next provider in the chain.
+        if (vector.length > targetDim) {
+            vector = vector.slice(0, targetDim);
+        } else if (vector.length < targetDim) {
+            const err = new Error(
+                `${provider}/${model} returned a ${vector.length}-dim vector, shorter than the required ${targetDim} dims`
+            );
+            err.status = 502;
+            throw err;
         }
 
         return vector;
