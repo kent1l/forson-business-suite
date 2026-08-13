@@ -33,6 +33,48 @@ const FILTER_TABS = [
     { key: 'all', label: 'All' },
 ];
 
+
+// The modal header doubles as an identity strip: a monogram, the full name, the
+// employee code and the current status. Editing a record without seeing whose
+// record it is was the most disorienting thing about the old modal.
+const initialsOf = (e) => `${(e?.first_name || '?')[0]}${(e?.last_name || '')[0] || ''}`.toUpperCase();
+
+const EmployeeModalHeader = ({ employee }) => {
+    if (!employee) {
+        return (
+            <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Add employee</h2>
+                <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
+                    Only a name is required. Everything else can follow later.
+                </p>
+            </div>
+        );
+    }
+    const fullName = [employee.first_name, employee.middle_name, employee.last_name, employee.suffix]
+        .filter(Boolean).join(' ');
+    return (
+        <div className="flex items-center gap-3 min-w-0">
+            <div className="flex-shrink-0 h-10 w-10 rounded-full bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 flex items-center justify-center text-sm font-bold">
+                {initialsOf(employee)}
+            </div>
+            <div className="min-w-0">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100 truncate">{fullName}</h2>
+                <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                    {employee.employee_code && (
+                        <span className="text-xs tabular-nums text-gray-500 dark:text-slate-400">{employee.employee_code}</span>
+                    )}
+                    {employee.position_title && (
+                        <span className="text-xs text-gray-500 dark:text-slate-400">· {employee.position_title}</span>
+                    )}
+                    <StatusBadge tone={STATUS_TONE[employee.employment_status] || 'neutral'}
+                        label={employee.employment_status || 'Unknown'} />
+                    {!employee.has_system_access && <StatusBadge tone="neutral" label="No login" />}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const EmployeesPage = () => {
     const { hasPermission } = useAuth();
     const [employees, setEmployees] = useState([]);
@@ -266,7 +308,13 @@ const EmployeesPage = () => {
                 )}
             </div>
 
-            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={currentEmployee ? 'Edit Employee' : 'Add New Employee'}>
+            <Modal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                maxWidth="max-w-3xl"
+                bodyClassName="p-0"
+                header={<EmployeeModalHeader employee={currentEmployee} />}
+            >
                 <EmployeeForm
                     employee={currentEmployee}
                     roles={roles}
