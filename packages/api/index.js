@@ -89,6 +89,9 @@ registerRoute('/api', './routes/apRoutes');
 
 // Human Resources Module
 registerRoute('/api/hr', './routes/hrRoutes');
+registerRoute('/api/dtr', './routes/dtrRoutes');
+registerRoute('/api/leave', './routes/leaveRoutes');
+registerRoute('/api/payroll', './routes/payrollRoutes');
 
 // Admin & System Modules
 registerRoute('/api', './routes/employeeRoutes');

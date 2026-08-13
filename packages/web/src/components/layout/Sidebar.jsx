@@ -59,6 +59,9 @@ const CATEGORIES = [
         items: [
             { name: 'Employees',   icon: ICONS.employees, page: 'employees',   permission: ['employees:view', 'hr:view'] },
             { name: 'Departments', icon: ICONS.tag,       page: 'departments', permission: 'hr:view' },
+            { name: 'Time Records', icon: ICONS.history,  page: 'dtr',         permission: 'dtr:view' },
+            { name: 'Leave',       icon: ICONS.documents, page: 'leave',       permission: 'leave:view' },
+            { name: 'Payroll',     icon: ICONS.dollar,    page: 'payroll',     permission: 'payroll:view' },
         ],
     },
     {

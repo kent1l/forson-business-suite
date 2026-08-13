@@ -288,4 +288,149 @@ router.get('/employees/:id/sensitive-access-log', protect, hasPermission('hr:vie
     }
 });
 
+// --- Work schedules ------------------------------------------------------
+
+router.get('/work-schedules', protect, hasPermission('hr:view'), async (req, res) => {
+    try {
+        const { rows } = await db.query(
+            `SELECT ws.schedule_id, ws.schedule_name, ws.description, ws.is_default, ws.is_active,
+                    COALESCE(
+                        JSON_AGG(
+                            JSON_BUILD_OBJECT(
+                                'day_of_week', wsd.day_of_week,
+                                'is_rest_day', wsd.is_rest_day,
+                                'time_in', wsd.time_in,
+                                'time_out', wsd.time_out,
+                                'break_minutes', wsd.break_minutes,
+                                'expected_hours', wsd.expected_hours
+                            ) ORDER BY wsd.day_of_week
+                        ) FILTER (WHERE wsd.schedule_day_id IS NOT NULL), '[]'
+                    ) AS days,
+                    (SELECT COUNT(*)::int FROM employee e
+                      WHERE e.work_schedule_id = ws.schedule_id AND e.is_active) AS employee_count
+             FROM work_schedule ws
+             LEFT JOIN work_schedule_day wsd ON wsd.schedule_id = ws.schedule_id
+             GROUP BY ws.schedule_id
+             ORDER BY ws.is_default DESC, ws.schedule_name`
+        );
+        res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// Replaces the whole week in one transaction: a schedule is only coherent as a
+// complete set of seven days, so partial updates are not offered.
+router.put('/work-schedules/:id', protect, hasPermission('hr:manage_schedules'), async (req, res) => {
+    const { schedule_name, description, is_active, days } = req.body;
+    if (!schedule_name || !schedule_name.trim()) {
+        return res.status(400).json({ message: 'Schedule name is required' });
+    }
+    if (!Array.isArray(days) || days.length !== 7) {
+        return res.status(400).json({ message: 'Exactly seven day rows (Sunday to Saturday) are required' });
+    }
+    for (const day of days) {
+        if (!day.is_rest_day && (!day.time_in || !day.time_out)) {
+            return res.status(400).json({ message: 'A working day needs both a time in and a time out' });
+        }
+    }
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        const { rows } = await client.query(
+            `UPDATE work_schedule
+             SET schedule_name = $1, description = $2, is_active = $3, modified_by = $4, updated_at = now()
+             WHERE schedule_id = $5 RETURNING schedule_id`,
+            [schedule_name.trim(), description || null, is_active !== false, req.user.employee_id, req.params.id]
+        );
+        if (rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: 'Work schedule not found' });
+        }
+
+        await client.query('DELETE FROM work_schedule_day WHERE schedule_id = $1', [req.params.id]);
+        for (const day of days) {
+            await client.query(
+                `INSERT INTO work_schedule_day
+                    (schedule_id, day_of_week, is_rest_day, time_in, time_out, break_minutes, expected_hours)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+                [req.params.id, day.day_of_week, Boolean(day.is_rest_day),
+                    day.is_rest_day ? null : day.time_in,
+                    day.is_rest_day ? null : day.time_out,
+                    day.break_minutes ?? 60, day.expected_hours ?? 8]
+            );
+        }
+        await client.query('COMMIT');
+        res.json({ schedule_id: Number(req.params.id), days: days.length });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        if (err.code === '23505') return res.status(409).json({ message: 'A schedule with that name already exists.' });
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    } finally {
+        client.release();
+    }
+});
+
+// --- Holidays ------------------------------------------------------------
+
+router.get('/holidays', protect, hasPermission('hr:view'), async (req, res) => {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    try {
+        const { rows } = await db.query(
+            `SELECT holiday_id, TO_CHAR(holiday_date, 'YYYY-MM-DD') AS holiday_date,
+                    holiday_name, holiday_type, is_nationwide, locality, notes
+             FROM holiday
+             WHERE EXTRACT(YEAR FROM holiday_date) = $1
+             ORDER BY holiday_date`,
+            [year]
+        );
+        res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+router.post('/holidays', protect, hasPermission('hr:manage_schedules'), async (req, res) => {
+    const { holiday_date, holiday_name, holiday_type, is_nationwide, locality, notes } = req.body;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(holiday_date || '')) {
+        return res.status(400).json({ message: 'holiday_date is required in YYYY-MM-DD format' });
+    }
+    if (!holiday_name || !holiday_name.trim()) {
+        return res.status(400).json({ message: 'holiday_name is required' });
+    }
+    try {
+        const { rows } = await db.query(
+            `INSERT INTO holiday (holiday_date, holiday_name, holiday_type, is_nationwide, locality, notes, created_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             RETURNING holiday_id, TO_CHAR(holiday_date, 'YYYY-MM-DD') AS holiday_date,
+                       holiday_name, holiday_type, is_nationwide, locality, notes`,
+            [holiday_date, holiday_name.trim(), holiday_type || 'Regular',
+                is_nationwide !== false, locality || null, notes || null, req.user.employee_id]
+        );
+        res.status(201).json(rows[0]);
+    } catch (err) {
+        if (err.code === '23505') return res.status(409).json({ message: 'That holiday is already on the calendar.' });
+        if (err.code === '23514') return res.status(400).json({ message: 'Invalid holiday type.' });
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+router.delete('/holidays/:id', protect, hasPermission('hr:manage_schedules'), async (req, res) => {
+    try {
+        const { rows } = await db.query(
+            'DELETE FROM holiday WHERE holiday_id = $1 RETURNING holiday_id', [req.params.id]
+        );
+        if (rows.length === 0) return res.status(404).json({ message: 'Holiday not found' });
+        res.json({ holiday_id: Number(req.params.id), deleted: true });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
 module.exports = router;

@@ -15,6 +15,9 @@ import InventoryPage from '../../pages/InventoryPage';
 import ReportingPage from '../../pages/ReportingPage';
 import EmployeesPage from '../../pages/EmployeesPage';
 import DepartmentsPage from '../../pages/DepartmentsPage';
+import DtrPage from '../../pages/DtrPage';
+import LeavePage from '../../pages/LeavePage';
+import PayrollPage from '../../pages/PayrollPage';
 import SettingsPage from '../../pages/SettingsPage';
 import POSPage from '../../pages/POSPage';
 import PurchaseOrderPage from '../../pages/PurchaseOrderPage';
@@ -66,6 +69,9 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'paperless_receipts': return <PaperlessReceiptsPage />;
             case 'employees': return <EmployeesPage user={user} />;
             case 'departments': return <DepartmentsPage />;
+            case 'dtr': return <DtrPage />;
+            case 'leave': return <LeavePage />;
+            case 'payroll': return <PayrollPage />;
             case 'settings': return <SettingsPage user={user} />;
             default: return <Dashboard />;
         }
