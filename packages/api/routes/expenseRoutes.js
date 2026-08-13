@@ -405,15 +405,21 @@ router.post('/expenses', protect, hasPermission('expenses:create'), async (req, 
         let pmId = null;
         let pmText = payment_method_text ? String(payment_method_text).trim().substring(0, 50) : 'Cash';
 
-        if (payment_method_id && !isNaN(parseInt(payment_method_id, 10))) {
+        if (payment_method_id !== null && payment_method_id !== undefined && payment_method_id !== '') {
+            const parsedPmId = parseInt(payment_method_id, 10);
+            if (isNaN(parsedPmId)) {
+                return res.status(400).json({ message: 'Invalid payment method' });
+            }
             const pmRes = await db.query(
                 'SELECT method_id, name FROM payment_methods WHERE method_id = $1 AND enabled = true',
-                [parseInt(payment_method_id, 10)]
+                [parsedPmId]
             );
-            if (pmRes.rows.length > 0) {
-                pmId = pmRes.rows[0].method_id;
-                pmText = pmRes.rows[0].name;
+            // Fail loudly rather than silently recording the expense as Cash.
+            if (pmRes.rows.length === 0) {
+                return res.status(400).json({ message: 'Selected payment method is invalid or disabled' });
             }
+            pmId = pmRes.rows[0].method_id;
+            pmText = pmRes.rows[0].name;
         }
 
         const insertQuery = `
@@ -502,7 +508,7 @@ router.put('/expenses/:id', protect, hasPermission('expenses:edit'), async (req,
 
     try {
         // Check if expense exists and is not voided
-        const existing = await db.query('SELECT is_void FROM expense WHERE expense_id = $1', [expenseId]);
+        const existing = await db.query('SELECT is_void, payment_method_id FROM expense WHERE expense_id = $1', [expenseId]);
         if (existing.rows.length === 0) {
             return res.status(404).json({ message: 'Expense record not found' });
         }
@@ -542,14 +548,30 @@ router.put('/expenses/:id', protect, hasPermission('expenses:edit'), async (req,
             return res.status(400).json({ message: 'Selected expense category is invalid or inactive' });
         }
 
+        // Validate payment method if ID provided.
         let pmId = null;
         let pmText = payment_method_text ? String(payment_method_text).trim().substring(0, 50) : 'Cash';
-        if (payment_method_id && !isNaN(parseInt(payment_method_id, 10))) {
-            const pmRes = await db.query('SELECT method_id, name FROM payment_methods WHERE method_id = $1', [parseInt(payment_method_id, 10)]);
-            if (pmRes.rows.length > 0) {
-                pmId = pmRes.rows[0].method_id;
-                pmText = pmRes.rows[0].name;
+
+        if (payment_method_id !== null && payment_method_id !== undefined && payment_method_id !== '') {
+            const parsedPmId = parseInt(payment_method_id, 10);
+            if (isNaN(parsedPmId)) {
+                return res.status(400).json({ message: 'Invalid payment method' });
             }
+
+            // A method that was disabled after this expense was recorded stays editable,
+            // so historical records don't become locked. Switching to a different disabled
+            // method is still rejected.
+            const isUnchangedMethod = existing.rows[0].payment_method_id === parsedPmId;
+            const pmRes = await db.query(
+                `SELECT method_id, name FROM payment_methods
+                 WHERE method_id = $1 AND (enabled = true OR $2::boolean)`,
+                [parsedPmId, isUnchangedMethod]
+            );
+            if (pmRes.rows.length === 0) {
+                return res.status(400).json({ message: 'Selected payment method is invalid or disabled' });
+            }
+            pmId = pmRes.rows[0].method_id;
+            pmText = pmRes.rows[0].name;
         }
 
         const updateQuery = `

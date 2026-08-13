@@ -271,6 +271,83 @@ describe('Expense Recording Module Routes', () => {
         });
     });
 
+    describe('Payment method validation', () => {
+        test('POST should reject a disabled or unknown payment method instead of silently using Cash', async () => {
+            db.query.mockResolvedValueOnce({ rows: [{ category_id: 2 }] }); // category ok
+            db.query.mockResolvedValueOnce({ rows: [] });                   // payment method misses
+
+            const res = await request(app)
+                .post('/api/expenses')
+                .send({ expense_date: '2026-07-23', category_id: 2, amount: 1500, payment_method_id: 99 });
+
+            expect(res.status).toBe(400);
+            expect(res.body.message).toMatch(/payment method is invalid or disabled/i);
+        });
+
+        test('PUT should reject switching to a disabled payment method', async () => {
+            db.query.mockResolvedValueOnce({ rows: [{ is_void: false, payment_method_id: 1 }] });
+            db.query.mockResolvedValueOnce({ rows: [{ category_id: 2 }] }); // category ok
+            db.query.mockResolvedValueOnce({ rows: [] });                   // payment method misses
+
+            const res = await request(app)
+                .put('/api/expenses/1')
+                .send({ expense_date: '2026-07-23', category_id: 2, amount: 1500, payment_method_id: 99 });
+
+            expect(res.status).toBe(400);
+            expect(res.body.message).toMatch(/payment method is invalid or disabled/i);
+        });
+
+        test('PUT should still allow editing a record whose original method was later disabled', async () => {
+            db.query.mockResolvedValueOnce({ rows: [{ is_void: false, payment_method_id: 7 }] });
+            db.query.mockResolvedValueOnce({ rows: [{ category_id: 2 }] });          // category ok
+            db.query.mockResolvedValueOnce({ rows: [{ method_id: 7, name: 'Cheque' }] }); // grandfathered
+            db.query.mockResolvedValueOnce({ rows: [] });                            // update
+            db.query.mockResolvedValueOnce({ rows: [{ expense_id: 1, amount: 1500 }] }); // fetch
+
+            const res = await request(app)
+                .put('/api/expenses/1')
+                .send({ expense_date: '2026-07-23', category_id: 2, amount: 1500, payment_method_id: 7 });
+
+            expect(res.status).toBe(200);
+            // The grandfather clause must be scoped to the record's own current method.
+            const pmCall = db.query.mock.calls.find(c => /FROM payment_methods/.test(c[0]));
+            expect(pmCall[1]).toEqual([7, true]);
+        });
+    });
+
+    describe('Expense summary endpoints', () => {
+        test('by-category should coerce SUM strings to numbers for the dashboard', async () => {
+            db.query.mockResolvedValueOnce({
+                rows: [
+                    { category_id: 1, category_name: 'Rent', total_amount: '25000.00', count: 2 },
+                    { category_id: 2, category_name: 'Utilities', total_amount: '4500.50', count: 3 }
+                ]
+            });
+
+            const res = await request(app)
+                .get('/api/expenses/summary/by-category')
+                .query({ date_from: '2026-07-01', date_to: '2026-07-31' });
+
+            expect(res.status).toBe(200);
+            expect(res.body[0].total_amount).toBe(25000);
+            expect(res.body[1].total_amount).toBe(4500.5);
+            // Voided expenses must never reach the totals.
+            expect(db.query.mock.calls[0][0]).toMatch(/e\.is_void = false/);
+        });
+
+        test('monthly should exclude voided expenses and return numeric totals', async () => {
+            db.query.mockResolvedValueOnce({
+                rows: [{ month_key: '2026-07', month_label: 'Jul 2026', year: 2026, month: 7, total_amount: '29500.50', count: 5 }]
+            });
+
+            const res = await request(app).get('/api/expenses/summary/monthly');
+
+            expect(res.status).toBe(200);
+            expect(res.body[0].total_amount).toBe(29500.5);
+            expect(db.query.mock.calls[0][0]).toMatch(/is_void = false/);
+        });
+    });
+
     describe('GET /api/expenses/check-duplicate', () => {
         test('should flag an existing expense with the same date, amount, and payee', async () => {
             db.query.mockResolvedValueOnce({
