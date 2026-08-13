@@ -288,6 +288,185 @@ router.get('/employees/:id/sensitive-access-log', protect, hasPermission('hr:vie
     }
 });
 
+// --- Recurring pay components (benefits and deductions) ------------------
+// Assigning these is a compensation decision, so it sits behind the same
+// Admin-only permission as pay rates.
+
+router.get('/pay-components', protect, hasPermission('hr:view'), async (req, res) => {
+    try {
+        const { rows } = await db.query(
+            `SELECT component_code, component_name, component_type, is_taxable, is_statutory, is_system, sort_order
+             FROM pay_component
+             WHERE is_active
+               -- is_assignable excludes everything the engine produces itself:
+               -- basic pay, overtime, statutory contributions and loan codes.
+               -- Offering BASIC here would let someone double-pay a salary.
+               AND is_assignable = true
+               AND component_type IN ('EARNING', 'DEDUCTION')
+             ORDER BY component_type DESC, sort_order, component_name`
+        );
+        res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+router.get('/employees/:id/pay-components', protect, hasPermission('hr:manage_compensation'), async (req, res) => {
+    try {
+        const { rows } = await db.query(
+            `SELECT epc.epc_id, epc.component_code, epc.amount, epc.rate_percent, epc.frequency,
+                    TO_CHAR(epc.effective_from, 'YYYY-MM-DD') AS effective_from,
+                    TO_CHAR(epc.effective_to, 'YYYY-MM-DD') AS effective_to,
+                    epc.is_active, epc.notes,
+                    pc.component_name, pc.component_type, pc.is_taxable
+             FROM employee_pay_component epc
+             JOIN pay_component pc ON pc.component_code = epc.component_code
+             WHERE epc.employee_id = $1
+             ORDER BY pc.component_type DESC, epc.effective_from DESC`,
+            [req.params.id]
+        );
+        res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+router.post('/employees/:id/pay-components', protect, hasPermission('hr:manage_compensation'), async (req, res) => {
+    const { component_code, amount, rate_percent, frequency, effective_from, effective_to, notes } = req.body;
+
+    if (!component_code) return res.status(400).json({ message: 'component_code is required' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(effective_from || '')) {
+        return res.status(400).json({ message: 'effective_from is required in YYYY-MM-DD format' });
+    }
+    const hasAmount = amount !== undefined && amount !== null && amount !== '';
+    const hasRate = rate_percent !== undefined && rate_percent !== null && rate_percent !== '';
+    if (hasAmount === hasRate) {
+        return res.status(400).json({ message: 'Provide either a fixed amount or a percentage of basic pay, not both.' });
+    }
+
+    try {
+        const { rows } = await db.query(
+            `INSERT INTO employee_pay_component
+                (employee_id, component_code, amount, rate_percent, frequency, effective_from, effective_to, notes, created_by)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+             RETURNING epc_id, component_code, amount, rate_percent, frequency,
+                       TO_CHAR(effective_from, 'YYYY-MM-DD') AS effective_from,
+                       TO_CHAR(effective_to, 'YYYY-MM-DD') AS effective_to`,
+            [req.params.id, component_code, hasAmount ? Number(amount) : null,
+                hasRate ? Number(rate_percent) : null, frequency || 'EVERY_CUTOFF',
+                effective_from, effective_to || null, notes || null, req.user.employee_id]
+        );
+        res.status(201).json(rows[0]);
+    } catch (err) {
+        if (err.code === '23P01') {
+            return res.status(409).json({ message: 'That component already applies to this employee over those dates.' });
+        }
+        if (err.code === '23503') return res.status(404).json({ message: 'Employee or component not found' });
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+router.delete('/employees/:id/pay-components/:epcId', protect, hasPermission('hr:manage_compensation'), async (req, res) => {
+    try {
+        // Deactivated rather than deleted: a component that has already been
+        // paid on a payslip should remain explainable.
+        const { rows } = await db.query(
+            `UPDATE employee_pay_component
+             SET is_active = false, modified_by = $1, updated_at = now()
+             WHERE epc_id = $2 AND employee_id = $3
+             RETURNING epc_id`,
+            [req.user.employee_id, req.params.epcId, req.params.id]
+        );
+        if (rows.length === 0) return res.status(404).json({ message: 'Assignment not found' });
+        res.json({ epc_id: Number(req.params.epcId), is_active: false });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// --- Standing statutory overrides ---------------------------------------
+
+router.get('/employees/:id/statutory-overrides', protect, hasPermission('payroll:override'), async (req, res) => {
+    try {
+        const { rows } = await db.query(
+            `SELECT o.override_id, o.component_code, o.override_amount, o.reason,
+                    TO_CHAR(o.effective_from, 'YYYY-MM-DD') AS effective_from,
+                    TO_CHAR(o.effective_to, 'YYYY-MM-DD') AS effective_to,
+                    o.is_active, pc.component_name,
+                    TRIM(CONCAT_WS(' ', e.first_name, e.last_name)) AS created_by_name,
+                    o.created_at
+             FROM employee_statutory_override o
+             JOIN pay_component pc ON pc.component_code = o.component_code
+             LEFT JOIN employee e ON o.created_by = e.employee_id
+             WHERE o.employee_id = $1
+             ORDER BY o.effective_from DESC`,
+            [req.params.id]
+        );
+        res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+router.post('/employees/:id/statutory-overrides', protect, hasPermission('payroll:override'), async (req, res) => {
+    const { component_code, override_amount, reason, effective_from, effective_to } = req.body;
+
+    if (!reason || !String(reason).trim()) {
+        return res.status(400).json({ message: 'A reason is required when overriding a statutory amount.' });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(effective_from || '')) {
+        return res.status(400).json({ message: 'effective_from is required in YYYY-MM-DD format' });
+    }
+    const value = Number(override_amount);
+    if (!Number.isFinite(value) || value < 0) {
+        return res.status(400).json({ message: 'override_amount must be a non-negative number' });
+    }
+
+    try {
+        const { rows } = await db.query(
+            `INSERT INTO employee_statutory_override
+                (employee_id, component_code, override_amount, reason, effective_from, effective_to, created_by)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)
+             RETURNING override_id, component_code, override_amount, reason,
+                       TO_CHAR(effective_from, 'YYYY-MM-DD') AS effective_from`,
+            [req.params.id, component_code, value, String(reason).trim(),
+                effective_from, effective_to || null, req.user.employee_id]
+        );
+        res.status(201).json(rows[0]);
+    } catch (err) {
+        if (err.code === '23P01') {
+            return res.status(409).json({ message: 'An override for that contribution already covers those dates.' });
+        }
+        if (err.code === '23514') {
+            return res.status(400).json({ message: 'Only SSS, WISP, PhilHealth, Pag-IBIG and withholding tax can be overridden.' });
+        }
+        if (err.code === '23503') return res.status(404).json({ message: 'Employee or component not found' });
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+router.delete('/employees/:id/statutory-overrides/:overrideId', protect, hasPermission('payroll:override'), async (req, res) => {
+    try {
+        const { rows } = await db.query(
+            `UPDATE employee_statutory_override
+             SET is_active = false, modified_by = $1, updated_at = now()
+             WHERE override_id = $2 AND employee_id = $3 RETURNING override_id`,
+            [req.user.employee_id, req.params.overrideId, req.params.id]
+        );
+        if (rows.length === 0) return res.status(404).json({ message: 'Override not found' });
+        res.json({ override_id: Number(req.params.overrideId), is_active: false });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
 // --- Work schedules ------------------------------------------------------
 
 router.get('/work-schedules', protect, hasPermission('hr:view'), async (req, res) => {

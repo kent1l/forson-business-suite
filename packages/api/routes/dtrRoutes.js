@@ -3,6 +3,7 @@ const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const dtrService = require('../services/hr/dtrService');
+const timePunchService = require('../services/hr/timePunchService');
 
 const router = express.Router();
 
@@ -189,6 +190,129 @@ router.get('/:id/history', protect, hasPermission('dtr:view'), async (req, res) 
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
+    }
+});
+
+// --- Time capture (phase 7) ---------------------------------------------
+// Punches are recorded raw and the DTR day is derived from them, so a disputed
+// day can be re-derived rather than argued about.
+
+router.get('/punch/state', protect, hasPermission('dtr:punch'), async (req, res) => {
+    try {
+        res.json(await timePunchService.getPunchState(db, { employeeId: req.user.employee_id }));
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+/** Clock in or out. Always for the caller — never an employee id from the body. */
+router.post('/punch', protect, hasPermission('dtr:punch'), async (req, res) => {
+    const { direction, latitude, longitude } = req.body;
+    if (!['IN', 'OUT'].includes(direction)) {
+        return res.status(400).json({ message: "direction must be 'IN' or 'OUT'" });
+    }
+    try {
+        const punch = await timePunchService.recordPunch(db, {
+            employeeId: req.user.employee_id,
+            direction,
+            source: req.body.source === 'Mobile' ? 'Mobile' : 'Web',
+            ipAddress: req.ip,
+            latitude,
+            longitude,
+            actorId: req.user.employee_id,
+        });
+        if (!punch) {
+            return res.status(409).json({ message: 'That punch was already recorded.' });
+        }
+        res.status(201).json(punch);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+router.get('/punches', protect, hasPermission('dtr:view'), async (req, res) => {
+    const { employee_id, from, to } = req.query;
+    if (!ISO_DATE.test(from || '') || !ISO_DATE.test(to || '')) {
+        return res.status(400).json({ message: 'from and to are required in YYYY-MM-DD format' });
+    }
+    try {
+        const params = [from, to];
+        let where = 'WHERE t.punch_date BETWEEN $1 AND $2';
+        if (employee_id) { where += ' AND t.employee_id = $3'; params.push(Number(employee_id)); }
+
+        const { rows } = await db.query(
+            `SELECT t.punch_id, t.employee_id, t.punch_at, t.direction, t.source, t.device_id,
+                    TO_CHAR(t.punch_date, 'YYYY-MM-DD') AS punch_date,
+                    TRIM(CONCAT_WS(' ', e.first_name, e.last_name)) AS employee_name
+             FROM time_punch t
+             JOIN employee e ON t.employee_id = e.employee_id
+             ${where}
+             ORDER BY t.punch_at DESC`,
+            params
+        );
+        res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+/** Imports a biometric export. Unmatched ids are reported, never dropped quietly. */
+router.post('/punches/import', protect, hasPermission('dtr:import'), async (req, res) => {
+    const { csv } = req.body;
+    if (!csv || typeof csv !== 'string') {
+        return res.status(400).json({ message: 'csv content is required' });
+    }
+    const client = await db.getClient();
+    try {
+        const { rows: parsedRows, errors } = timePunchService.parsePunchCsv(csv);
+        if (parsedRows.length === 0) {
+            return res.status(400).json({ message: 'No usable rows were found.', errors });
+        }
+        await client.query('BEGIN');
+        const result = await timePunchService.importPunches(client, {
+            parsedRows, actorId: req.user.employee_id,
+        });
+        await client.query('COMMIT');
+        res.status(201).json({ ...result, parse_errors: errors });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    } finally {
+        client.release();
+    }
+});
+
+/** Rebuilds DTR days from recorded punches. Manual corrections are preserved. */
+router.post('/punches/derive', protect, hasPermission('dtr:edit'), async (req, res) => {
+    const { from, to, employee_ids } = req.body;
+    if (!ISO_DATE.test(from || '') || !ISO_DATE.test(to || '')) {
+        return res.status(400).json({ message: 'from and to are required in YYYY-MM-DD format' });
+    }
+    const client = await db.getClient();
+    try {
+        let ids = Array.isArray(employee_ids) ? employee_ids.map(Number).filter(Number.isFinite) : null;
+        if (!ids || ids.length === 0) {
+            const { rows } = await db.query(
+                'SELECT employee_id FROM employee WHERE is_active AND is_payroll_eligible'
+            );
+            ids = rows.map((r) => r.employee_id);
+        }
+        await client.query('BEGIN');
+        const result = await timePunchService.deriveDtrFromPunches(client, {
+            employeeIds: ids, dateFrom: from, dateTo: to, actorId: req.user.employee_id,
+        });
+        await client.query('COMMIT');
+        res.json(result);
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    } finally {
+        client.release();
     }
 });
 

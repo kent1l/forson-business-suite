@@ -92,6 +92,7 @@ const CATEGORIES = [
 
 const TOP_ITEMS = [
     { name: 'Dashboard', icon: ICONS.dashboard, page: 'dashboard', permission: 'dashboard:view' },
+    { name: 'My Pay',    icon: ICONS.dollar,    page: 'my_pay',    permission: 'payslip:view_own' },
     { name: 'POS',        icon: ICONS.pos,       page: 'pos',       permission: 'pos:use' },
 ];
 

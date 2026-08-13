@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Payslips</title>
+<style>
+    /*
+     * Payslips laid out N-up on A4 so a whole cutoff prints on a few sheets and
+     * is guillotined apart.
+     *
+     * Two constraints drive every choice here:
+     *   1. These get printed on an office mono laser. So the design carries
+     *      meaning through rules, weight and whitespace — never through colour
+     *      or background fills, which turn into mud at 600dpi greyscale.
+     *   2. At 4-up each slip is only ~70mm tall. Type is therefore small, so
+     *      what matters is HIERARCHY: the employee's name and the net pay must
+     *      be findable at a glance; everything else can be quiet.
+     */
+
+    @page {
+        size: A4 portrait;
+        margin: 8mm;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+        /* A local stack, deliberately: a webfont @import would need network
+           access inside puppeteer and silently fall back if it were slow. */
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        color: #000;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    .sheet {
+        page-break-after: always;
+        display: grid;
+        gap: 0;
+        /* 297mm less 16mm of margin. */
+        height: 281mm;
+    }
+    .sheet:last-child { page-break-after: auto; }
+
+    /*
+     * Every layout is a VERTICAL stack rather than a 2x2 grid. Full page width
+     * is what lets earnings and deductions sit side by side and stay readable;
+     * halving the width to fit two across forces the columns to wrap and costs
+     * far more legibility than the extra slip is worth.
+     *
+     * At 281mm of usable height 4-up gives each slip ~70mm, which fits a slip
+     * carrying a full set of six deductions. Denser layouts were tested and
+     * rejected: 5-up silently clipped the Total Deductions row and 6-up printed
+     * the net pay over the figures. Because slips are guillotined apart, all
+     * rows must be equal height, so the density must suit the tallest slip.
+     */
+    .sheet.up-2 { grid-template-rows: repeat(2, 1fr); }
+    .sheet.up-3 { grid-template-rows: repeat(3, 1fr); }
+    .sheet.up-4 { grid-template-rows: repeat(4, 1fr); }
+    .sheet { grid-template-columns: 1fr; }
+
+    /* The cut guide is a hairline dashed rule, not a border box: a full box
+       around each slip wastes 2mm of usable height on every edge. */
+    .slip {
+        padding: 2.5mm 4mm;
+        border-bottom: 0.3mm dashed #999;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    .slip.last-in-sheet { border-bottom: none; }
+
+    /* --- Header --- */
+    .head { display: flex; justify-content: space-between; align-items: baseline; gap: 3mm; }
+    .company { font-size: 7pt; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; }
+    .doctype { font-size: 5.5pt; letter-spacing: 0.12em; text-transform: uppercase; color: #555; }
+
+    .who { margin-top: 1.5mm; display: flex; justify-content: space-between; align-items: baseline; gap: 3mm; }
+    .name { font-size: 9.5pt; font-weight: 700; line-height: 1.1; }
+    .meta { font-size: 5.8pt; color: #444; text-align: right; line-height: 1.35; white-space: nowrap; }
+    .sub { font-size: 6pt; color: #444; margin-top: 0.4mm; }
+
+    .rule { border-top: 0.35mm solid #000; margin: 1.8mm 0 1.2mm; }
+
+    /* --- Earnings / deductions --- */
+    /* overflow:hidden here is load-bearing. Without it a slip with more
+       deduction lines than the row height allows paints its table straight over
+       the net-pay block below — which produced overlapping, unreadable figures
+       at high densities. Clipping inside the column is contained and visible;
+       overlapping numbers on a payslip are not. */
+    .cols { display: flex; gap: 4mm; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+    .col { flex: 1; min-width: 0; overflow: hidden; }
+    .col-title {
+        font-size: 5.5pt; font-weight: 700; letter-spacing: 0.1em;
+        text-transform: uppercase; color: #333;
+        border-bottom: 0.2mm solid #bbb; padding-bottom: 0.6mm; margin-bottom: 0.8mm;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    td { font-size: 6.6pt; padding: 0.35mm 0; vertical-align: top; line-height: 1.25; }
+    td.amt {
+        text-align: right; white-space: nowrap;
+        font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
+    }
+    td.lbl { color: #222; }
+    td.qty { font-size: 5.6pt; color: #666; white-space: nowrap; }
+    .subtotal td {
+        border-top: 0.2mm solid #bbb; padding-top: 0.7mm;
+        font-weight: 700; font-size: 6.6pt;
+    }
+
+    /* --- Net pay: the one thing everyone actually looks for --- */
+    /* flex-shrink:0 keeps the net-pay block at full size no matter how tall
+       the columns above it get. */
+    .foot { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 1.5mm; gap: 3mm; flex-shrink: 0; }
+    .stats { font-size: 5.6pt; color: #555; line-height: 1.4; }
+    .net { text-align: right; }
+    .net-label { font-size: 5.5pt; letter-spacing: 0.1em; text-transform: uppercase; color: #333; }
+    .net-value {
+        font-size: 12pt; font-weight: 700; line-height: 1.05;
+        font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
+        border-top: 0.5mm solid #000; padding-top: 0.5mm; margin-top: 0.3mm;
+    }
+
+    .note { font-size: 5pt; color: #777; margin-top: 1mm; }
+</style>
+</head>
+<body>
+{{#sheets}}
+<div class="sheet up-{{perPage}}">
+    {{#slips}}
+    <div class="slip {{#lastInSheet}}last-in-sheet{{/lastInSheet}}">
+        <div class="head">
+            <span class="company">{{company.name}}</span>
+            <span class="doctype">Payslip {{payslip_no}}</span>
+        </div>
+
+        <div class="who">
+            <div>
+                <div class="name">{{employee_name}}</div>
+                <div class="sub">{{employee_code}}{{#position_title}} · {{position_title}}{{/position_title}}{{#department_name}} · {{department_name}}{{/department_name}}</div>
+            </div>
+            <div class="meta">
+                {{period_label}}<br />
+                Pay date {{pay_date}}
+            </div>
+        </div>
+
+        <div class="rule"></div>
+
+        <div class="cols">
+            <div class="col">
+                <div class="col-title">Earnings</div>
+                <table>
+                    {{#earnings}}
+                    <tr>
+                        <td class="lbl">{{label}}{{#qty}} <span class="qty">{{qty}}</span>{{/qty}}</td>
+                        <td class="amt">{{amount}}</td>
+                    </tr>
+                    {{/earnings}}
+                    <tr class="subtotal">
+                        <td>Gross Pay</td>
+                        <td class="amt">{{gross_pay}}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="col">
+                <div class="col-title">Deductions</div>
+                <table>
+                    {{#deductions}}
+                    <tr>
+                        <td class="lbl">{{label}}</td>
+                        <td class="amt">{{amount}}</td>
+                    </tr>
+                    {{/deductions}}
+                    {{^deductions}}
+                    <tr><td class="lbl">—</td><td class="amt">0.00</td></tr>
+                    {{/deductions}}
+                    <tr class="subtotal">
+                        <td>Total Deductions</td>
+                        <td class="amt">{{total_deductions}}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <div class="foot">
+            <div class="stats">
+                Days paid {{days_paid}}{{#overtime_hours}} · OT {{overtime_hours}} hrs{{/overtime_hours}}<br />
+                Rate {{daily_rate}}/day
+            </div>
+            <div class="net">
+                <div class="net-label">Net Pay</div>
+                <div class="net-value">{{net_pay}}</div>
+            </div>
+        </div>
+
+        {{#show_employer_note}}
+        <div class="note">Employer share (not deducted from you): {{total_employer_contrib}}</div>
+        {{/show_employer_note}}
+    </div>
+    {{/slips}}
+</div>
+{{/sheets}}
+</body>
+</html>

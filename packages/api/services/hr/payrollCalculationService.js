@@ -26,6 +26,33 @@ const monthlyBasisFor = (compensation, policy) => {
 };
 
 /**
+ * Resolves a recurring component's amount for one cutoff.
+ *
+ * `rate_percent` is a percentage of the basic pay actually earned this cutoff,
+ * so a percentage-based allowance shrinks with absences the same way basic does.
+ * MONTHLY amounts split across cutoffs; the *_CUTOFF options land wholly on one.
+ */
+const componentAmountFor = (component, { basicPay, cutoffSeq }) => {
+    const base = component.rate_percent != null
+        ? round2(basicPay * Number(component.rate_percent))
+        : round2(Number(component.amount) || 0);
+
+    switch (component.frequency) {
+        case 'FIRST_CUTOFF':
+            return cutoffSeq === 1 ? base : 0;
+        case 'SECOND_CUTOFF':
+            return cutoffSeq === 2 ? base : 0;
+        case 'MONTHLY': {
+            const first = round2(base / 2);
+            return cutoffSeq === 1 ? first : round2(base - first);
+        }
+        case 'EVERY_CUTOFF':
+        default:
+            return base;
+    }
+};
+
+/**
  * Computes one payslip.
  *
  * @param {object} input
@@ -40,6 +67,7 @@ const monthlyBasisFor = (compensation, policy) => {
  */
 const computePayslip = ({
     employee, compensation, dtrSummary, loans = [], policy, statutoryTables, cutoffSeq,
+    payComponents = [], statutoryOverrides = {}, adjustments = [],
 }) => {
     if (!compensation) {
         const err = new Error(`No compensation on record for ${employee.employee_name} as of this period.`);
@@ -91,7 +119,57 @@ const computePayslip = ({
         amount: nightDiffPay, isTaxable: true, sortOrder: 3,
     });
 
-    const grossPay = round2(basicPay + overtimePay + nightDiffPay);
+    // --- Recurring components and one-off additions ----------------------
+    // ADD adjustments are folded in here, alongside the standing components,
+    // so a one-off bonus behaves exactly like a component for gross and tax.
+    const oneOffAdditions = adjustments
+        .filter((a) => a.adjustment_type === 'ADD')
+        .map((a) => ({
+            component_code: a.component_code,
+            component_name: a.component_name || a.component_code,
+            component_type: a.component_type,
+            is_taxable: a.is_taxable,
+            amount: a.amount,
+            frequency: 'EVERY_CUTOFF',
+            _oneOff: true,
+        }));
+
+    // An OVERRIDE on a non-statutory component replaces the recurring amount.
+    const overrideByComponent = new Map(
+        adjustments.filter((a) => a.adjustment_type === 'OVERRIDE').map((a) => [a.component_code, a])
+    );
+
+    let allowancesTaxable = 0;
+    let allowancesNonTaxable = 0;
+    let otherDeductions = 0;
+
+    for (const component of [...payComponents, ...oneOffAdditions]) {
+        const override = overrideByComponent.get(component.component_code);
+        const amount = override
+            ? round2(Number(override.amount))
+            : componentAmountFor(component, { basicPay, cutoffSeq });
+        if (amount === 0) continue;
+
+        if (component.component_type === 'DEDUCTION') {
+            otherDeductions = round2(otherDeductions + amount);
+            addLine({
+                lineType: 'DEDUCTION', componentCode: component.component_code,
+                description: component.component_name, amount, isTaxable: false, sortOrder: 45,
+            });
+        } else {
+            if (component.is_taxable) allowancesTaxable = round2(allowancesTaxable + amount);
+            else allowancesNonTaxable = round2(allowancesNonTaxable + amount);
+            addLine({
+                lineType: 'EARNING', componentCode: component.component_code,
+                description: component.component_name, amount,
+                isTaxable: Boolean(component.is_taxable), sortOrder: 10,
+            });
+        }
+    }
+
+    const grossPay = round2(
+        basicPay + overtimePay + nightDiffPay + allowancesTaxable + allowancesNonTaxable
+    );
 
     // --- Statutory contributions ----------------------------------------
     // Contributions are monthly by law, so they are computed on a monthly basis
@@ -103,10 +181,26 @@ const computePayslip = ({
     const philhealth = statutory.computePhilHealth(statutoryTables, monthlyBasis);
     const pagibig = statutory.computePagIbig(statutoryTables, monthlyBasis);
 
-    const sssEe = statutory.prorateMonthly(sss.ee, schedule, cutoffSeq);
-    const sssMpfEe = statutory.prorateMonthly(sss.mpfEe, schedule, cutoffSeq);
-    const philhealthEe = statutory.prorateMonthly(philhealth.ee, schedule, cutoffSeq);
-    const pagibigEe = statutory.prorateMonthly(pagibig.ee, schedule, cutoffSeq);
+    // A standing override replaces the MONTHLY figure, which is then prorated
+    // exactly like a computed one — so an override behaves identically to a
+    // table value from here on.
+    const monthlyOrOverride = (code, computed) => (
+        statutoryOverrides[code] != null ? Number(statutoryOverrides[code]) : computed
+    );
+    // A run-scoped OVERRIDE replaces the final per-cutoff amount instead, since
+    // it is a statement about this payslip rather than about the schedule.
+    const applyRunOverride = (code, value) => {
+        const adj = overrideByComponent.get(code);
+        return adj ? round2(Number(adj.amount)) : value;
+    };
+    const resolveStatutory = (code, monthlyComputed) => applyRunOverride(
+        code, statutory.prorateMonthly(monthlyOrOverride(code, monthlyComputed), schedule, cutoffSeq)
+    );
+
+    const sssEe = resolveStatutory('SSS_EE', sss.ee);
+    const sssMpfEe = resolveStatutory('SSS_MPF_EE', sss.mpfEe);
+    const philhealthEe = resolveStatutory('PHIC_EE', philhealth.ee);
+    const pagibigEe = resolveStatutory('HDMF_EE', pagibig.ee);
 
     const sssEr = statutory.prorateMonthly(sss.er, schedule, cutoffSeq);
     const sssMpfEr = statutory.prorateMonthly(sss.mpfEr, schedule, cutoffSeq);
@@ -123,12 +217,23 @@ const computePayslip = ({
     // Statutory contributions are deductible under TRAIN, so tax is computed on
     // gross less those contributions — not on gross.
     const statutoryDeductions = round2(sssEe + sssMpfEe + philhealthEe + pagibigEe);
-    const taxableIncome = round2(Math.max(grossPay - statutoryDeductions, 0));
+    // Non-taxable allowances (rice, meal, de minimis) are part of gross but not
+    // of taxable income, so tax is computed on the taxable earnings only.
+    const taxableEarnings = round2(basicPay + overtimePay + nightDiffPay + allowancesTaxable);
+    const taxableIncome = round2(Math.max(taxableEarnings - statutoryDeductions, 0));
     const wtax = statutory.computeWithholdingTax(statutoryTables, taxableIncome, 'SEMI_MONTHLY');
+
+    // Tax can be overridden either standing (monthly, prorated) or per run.
+    const withholdingTax = applyRunOverride(
+        'WTAX',
+        statutoryOverrides.WTAX != null
+            ? statutory.prorateMonthly(Number(statutoryOverrides.WTAX), schedule, cutoffSeq)
+            : wtax.tax
+    );
 
     addLine({
         lineType: 'DEDUCTION', componentCode: 'WTAX', description: 'Withholding Tax',
-        amount: wtax.tax, isTaxable: false, sortOrder: 34,
+        amount: withholdingTax, isTaxable: false, sortOrder: 34,
     });
 
     // --- Loans -----------------------------------------------------------
@@ -140,7 +245,11 @@ const computePayslip = ({
         if (Number(loan.deduct_on_cutoff) !== Number(cutoffSeq)) continue;
         const outstanding = round2(Number(loan.principal_amount) - Number(loan.amount_paid));
         if (outstanding <= 0) continue;
-        const amount = round2(Math.min(Number(loan.amortization_amount), outstanding));
+        // An override on a loan component sets the instalment for this run (a
+        // partial payment, say), but still never exceeds what is owed.
+        const scheduled = applyRunOverride(loan.component_code, Number(loan.amortization_amount));
+        const amount = round2(Math.min(scheduled, outstanding));
+        if (amount <= 0) continue;
         loansTotal = round2(loansTotal + amount);
         loanDeductions.push({ loanId: loan.loan_id, amount });
         addLine({
@@ -157,7 +266,7 @@ const computePayslip = ({
     addLine({ lineType: 'EMPLOYER_CONTRIBUTION', componentCode: 'PHIC_ER', description: 'PhilHealth Employer Share', amount: philhealthEr, isTaxable: false, sortOrder: 53 });
     addLine({ lineType: 'EMPLOYER_CONTRIBUTION', componentCode: 'HDMF_ER', description: 'Pag-IBIG Employer Share', amount: pagibigEr, isTaxable: false, sortOrder: 54 });
 
-    const totalDeductions = round2(statutoryDeductions + wtax.tax + loansTotal);
+    const totalDeductions = round2(statutoryDeductions + withholdingTax + loansTotal + otherDeductions);
     const netPay = round2(grossPay - totalDeductions);
     const totalEmployerContrib = round2(sssEr + sssMpfEr + sssEc + philhealthEr + pagibigEr);
 
@@ -183,8 +292,8 @@ const computePayslip = ({
             overtime_pay: overtimePay,
             holiday_pay: 0,
             night_diff_pay: nightDiffPay,
-            allowances_taxable: 0,
-            allowances_nontaxable: 0,
+            allowances_taxable: allowancesTaxable,
+            allowances_nontaxable: allowancesNonTaxable,
             other_earnings: 0,
             gross_pay: grossPay,
 
@@ -192,9 +301,9 @@ const computePayslip = ({
             sss_mpf_ee: sssMpfEe,
             philhealth_ee: philhealthEe,
             pagibig_ee: pagibigEe,
-            withholding_tax: wtax.tax,
+            withholding_tax: withholdingTax,
             loans_total: loansTotal,
-            other_deductions: 0,
+            other_deductions: otherDeductions,
             total_deductions: totalDeductions,
             taxable_income: taxableIncome,
             net_pay: netPay,
@@ -219,8 +328,17 @@ const computePayslip = ({
             philhealthMonthly: philhealth,
             pagibigMonthly: pagibig,
             statutoryDeductions,
+            taxableEarnings,
             taxableIncome,
             taxBracket: wtax,
+            // Recorded so a payslip can always be explained: what the table said
+            // versus what a human forced.
+            computedWithholdingTax: wtax.tax,
+            appliedWithholdingTax: withholdingTax,
+            statutoryOverridesApplied: statutoryOverrides,
+            runAdjustmentsApplied: adjustments.map((a) => ({
+                component: a.component_code, type: a.adjustment_type, amount: a.amount, reason: a.reason,
+            })),
             hourlyRate: round2(hourlyRate),
             statutoryVersions: statutoryTables.versions,
         },

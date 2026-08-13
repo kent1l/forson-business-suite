@@ -188,6 +188,56 @@ const computeRun = async (executor, { runId, computedBy }) => {
         loansByEmployee.get(loan.employee_id).push(loan);
     }
 
+    // Recurring allowances and deductions in force at period end. Taxability
+    // comes from the catalog, never from the assignment, so a reclassification
+    // is one row rather than one per employee.
+    const { rows: componentRows } = await executor.query(
+        `SELECT epc.employee_id, epc.component_code, epc.amount, epc.rate_percent, epc.frequency,
+                pc.component_name, pc.component_type, pc.is_taxable
+         FROM employee_pay_component epc
+         JOIN pay_component pc ON pc.component_code = epc.component_code
+         WHERE epc.employee_id = ANY($1::int[])
+           AND epc.is_active AND pc.is_active
+           AND epc.effective_from <= $2
+           AND (epc.effective_to IS NULL OR epc.effective_to >= $2)`,
+        [employeeIds, run.period_end]
+    );
+    const componentsByEmployee = new Map();
+    for (const row of componentRows) {
+        if (!componentsByEmployee.has(row.employee_id)) componentsByEmployee.set(row.employee_id, []);
+        componentsByEmployee.get(row.employee_id).push(row);
+    }
+
+    const { rows: overrideRows } = await executor.query(
+        `SELECT employee_id, component_code, override_amount
+         FROM employee_statutory_override
+         WHERE employee_id = ANY($1::int[]) AND is_active
+           AND effective_from <= $2
+           AND (effective_to IS NULL OR effective_to >= $2)`,
+        [employeeIds, run.period_end]
+    );
+    const overridesByEmployee = new Map();
+    for (const row of overrideRows) {
+        if (!overridesByEmployee.has(row.employee_id)) overridesByEmployee.set(row.employee_id, {});
+        overridesByEmployee.get(row.employee_id)[row.component_code] = Number(row.override_amount);
+    }
+
+    // Run-scoped adjustments live outside the payslip precisely so a recompute
+    // preserves them.
+    const { rows: adjustmentRows } = await executor.query(
+        `SELECT a.employee_id, a.component_code, a.adjustment_type, a.amount, a.reason,
+                pc.component_name, pc.component_type, pc.is_taxable
+         FROM payroll_run_adjustment a
+         JOIN pay_component pc ON pc.component_code = a.component_code
+         WHERE a.run_id = $1`,
+        [runId]
+    );
+    const adjustmentsByEmployee = new Map();
+    for (const row of adjustmentRows) {
+        if (!adjustmentsByEmployee.has(row.employee_id)) adjustmentsByEmployee.set(row.employee_id, []);
+        adjustmentsByEmployee.get(row.employee_id).push(row);
+    }
+
     // --- Per-employee computation ----------------------------------------
     const warnings = [];
     const totals = { gross: 0, deductions: 0, net: 0, employer: 0 };
@@ -213,6 +263,9 @@ const computeRun = async (executor, { runId, computedBy }) => {
             computed = computePayslip({
                 employee, compensation, dtrSummary,
                 loans: loansByEmployee.get(employee.employee_id) || [],
+                payComponents: componentsByEmployee.get(employee.employee_id) || [],
+                statutoryOverrides: overridesByEmployee.get(employee.employee_id) || {},
+                adjustments: adjustmentsByEmployee.get(employee.employee_id) || [],
                 policy, statutoryTables: tables, cutoffSeq,
             });
         } catch (err) {

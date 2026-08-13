@@ -5,6 +5,8 @@ const { parsePaginationQuery, paginatedResponse } = require('../helpers/paginati
 const payrollRunService = require('../services/hr/payrollRunService');
 const payrollPostingService = require('../services/hr/payrollPostingService');
 const statutoryAdmin = require('../services/hr/statutoryAdminService');
+const reports = require('../services/hr/payrollReportService');
+const { generatePayslipPdf } = require('../helpers/pdf/payslipPdf');
 
 const router = express.Router();
 
@@ -27,6 +29,21 @@ const ERROR_STATUS = {
 const handleError = (err, res) => {
     const status = ERROR_STATUS[err.code];
     if (status) return res.status(status).json({ message: err.message });
+
+    // The partial unique index that keeps one live run per period per scope.
+    // Without this it surfaces as an unexplained 500 when someone creates a run
+    // that already exists.
+    if (err.code === '23505' && /uq_payroll_run_live_period/.test(err.message || '')) {
+        return res.status(409).json({
+            message: 'A payroll run already exists for this period. Void it first if you need to redo it.',
+        });
+    }
+    // Triggers raise check_violation for the state-machine, payslip
+    // immutability and adjustment guards; those are conflicts, not crashes.
+    if (err.code === '23514') {
+        return res.status(409).json({ message: err.message });
+    }
+
     console.error(err.message);
     return res.status(500).send('Server Error');
 };
@@ -279,6 +296,214 @@ router.get('/statutory-versions/:id/brackets', protect, hasPermission('payroll:c
         }
         res.json({ agency, brackets: data });
     } catch (err) { handleError(err, res); }
+});
+
+// --- Payslip PDFs --------------------------------------------------------
+
+/** Loads payslips plus their lines and the company name, ready for rendering. */
+const loadPayslipsForPdf = async (whereSql, params) => {
+    const { rows: payslips } = await db.query(
+        `SELECT p.*, TO_CHAR(r.period_start, 'YYYY-MM-DD') AS period_start,
+                TO_CHAR(r.period_end, 'YYYY-MM-DD') AS period_end,
+                TO_CHAR(r.pay_date, 'YYYY-MM-DD') AS pay_date
+         FROM payroll_payslip p
+         JOIN payroll_run r ON p.run_id = r.run_id
+         ${whereSql}
+         ORDER BY p.department_name NULLS LAST, p.employee_name`,
+        params
+    );
+    if (payslips.length === 0) return null;
+
+    const ids = payslips.map((p) => p.payslip_id);
+    const { rows: lines } = await db.query(
+        `SELECT payslip_id, line_type, component_code, description, quantity, rate, amount, sort_order
+         FROM payroll_payslip_line WHERE payslip_id = ANY($1::bigint[])
+         ORDER BY sort_order, line_id`,
+        [ids]
+    );
+    const linesByPayslip = new Map();
+    for (const line of lines) {
+        const key = String(line.payslip_id);
+        if (!linesByPayslip.has(key)) linesByPayslip.set(key, []);
+        linesByPayslip.get(key).push(line);
+    }
+
+    const { rows: settingRows } = await db.query(
+        "SELECT setting_value FROM settings WHERE setting_key = 'COMPANY_NAME'"
+    );
+
+    return {
+        payslips,
+        linesByPayslip,
+        company: { name: settingRows[0]?.setting_value || 'Company' },
+        periodLabel: `${payslips[0].period_start} to ${payslips[0].period_end}`,
+        payDate: payslips[0].pay_date,
+    };
+};
+
+const sendPdf = (res, buffer, filename) => {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    res.send(buffer);
+};
+
+// Whole run, laid out N-up. `per_page` accepts 2-6; 4 is the default.
+// because full page width keeps the earnings/deductions columns readable.
+router.get('/runs/:id/payslips.pdf', protect, hasPermission('payroll:view'), async (req, res) => {
+    try {
+        const data = await loadPayslipsForPdf('WHERE p.run_id = $1', [req.params.id]);
+        if (!data) return res.status(404).json({ message: 'This run has no payslips to print.' });
+
+        const pdf = await generatePayslipPdf({ ...data, perPage: Number(req.query.per_page) || 4 });
+        sendPdf(res, pdf, `payslips-run-${req.params.id}.pdf`);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ message: 'Failed to generate payslip PDF' });
+    }
+});
+
+router.get('/payslips/:id/pdf', protect, hasPermission('payroll:view'), async (req, res) => {
+    try {
+        const data = await loadPayslipsForPdf('WHERE p.payslip_id = $1', [req.params.id]);
+        if (!data) return res.status(404).json({ message: 'Payslip not found' });
+        // A single payslip still prints in the 3-up frame so a reprint matches
+        // what the employee originally received.
+        const pdf = await generatePayslipPdf({ ...data, perPage: Number(req.query.per_page) || 4 });
+        sendPdf(res, pdf, `payslip-${req.params.id}.pdf`);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ message: 'Failed to generate payslip PDF' });
+    }
+});
+
+/** An employee's own payslip. Scoped to their id, never a supplied one. */
+router.get('/me/payslips/:id/pdf', protect, hasPermission('payslip:view_own'), async (req, res) => {
+    try {
+        const data = await loadPayslipsForPdf(
+            `WHERE p.payslip_id = $1 AND p.employee_id = $2
+               AND r.status IN ('Approved', 'Paid', 'Posted')`,
+            [req.params.id, req.user.employee_id]
+        );
+        if (!data) return res.status(404).json({ message: 'Payslip not found' });
+        const pdf = await generatePayslipPdf({ ...data, perPage: 4 });
+        sendPdf(res, pdf, `payslip-${req.params.id}.pdf`);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ message: 'Failed to generate payslip PDF' });
+    }
+});
+
+// --- Reports -------------------------------------------------------------
+
+router.get('/reports/register/:runId', protect, hasPermission('payroll:view'), async (req, res) => {
+    try {
+        res.json(await reports.payrollRegister(db, { runId: req.params.runId }));
+    } catch (err) { handleError(err, res); }
+});
+
+router.get('/reports/contributions', protect, hasPermission('payroll:view'), async (req, res) => {
+    const { agency, year, month } = req.query;
+    if (!year || !month) return res.status(400).json({ message: 'year and month are required' });
+    try {
+        res.json(await reports.contributionSchedule(db, {
+            agency, year: Number(year), month: Number(month),
+        }));
+    } catch (err) { handleError(err, res); }
+});
+
+router.get('/reports/withholding-tax', protect, hasPermission('payroll:view'), async (req, res) => {
+    if (!req.query.year) return res.status(400).json({ message: 'year is required' });
+    try {
+        res.json(await reports.withholdingTaxReport(db, {
+            year: Number(req.query.year),
+            month: req.query.month ? Number(req.query.month) : null,
+        }));
+    } catch (err) { handleError(err, res); }
+});
+
+router.get('/reports/thirteenth-month', protect, hasPermission('payroll:view'), async (req, res) => {
+    if (!req.query.year) return res.status(400).json({ message: 'year is required' });
+    try {
+        res.json(await reports.thirteenthMonthReport(db, { year: Number(req.query.year) }));
+    } catch (err) { handleError(err, res); }
+});
+
+// --- Run-scoped adjustments ---------------------------------------------
+// These are INPUTS to the computation, not edits to a payslip, so they survive
+// any number of recomputes. The database freezes them once the run leaves
+// Computed, matching the payslip immutability boundary.
+
+router.get('/runs/:id/adjustments', protect, hasPermission('payroll:view'), async (req, res) => {
+    try {
+        const { rows } = await db.query(
+            `SELECT a.adjustment_id, a.employee_id, a.component_code, a.adjustment_type,
+                    a.amount, a.reason, a.created_at,
+                    pc.component_name, pc.component_type,
+                    TRIM(CONCAT_WS(' ', e.first_name, e.last_name)) AS employee_name,
+                    TRIM(CONCAT_WS(' ', c.first_name, c.last_name)) AS created_by_name
+             FROM payroll_run_adjustment a
+             JOIN pay_component pc ON pc.component_code = a.component_code
+             JOIN employee e ON a.employee_id = e.employee_id
+             LEFT JOIN employee c ON a.created_by = c.employee_id
+             WHERE a.run_id = $1
+             ORDER BY e.last_name, a.created_at`,
+            [req.params.id]
+        );
+        res.json(rows);
+    } catch (err) { handleError(err, res); }
+});
+
+router.post('/runs/:id/adjustments', protect, hasPermission('payroll:override'), async (req, res) => {
+    const { employee_id, component_code, adjustment_type = 'ADD', amount, reason } = req.body;
+
+    if (!employee_id || !component_code) {
+        return res.status(400).json({ message: 'employee_id and component_code are required' });
+    }
+    if (!reason || !String(reason).trim()) {
+        return res.status(400).json({ message: 'A reason is required for every adjustment.' });
+    }
+    const value = Number(amount);
+    if (!Number.isFinite(value)) {
+        return res.status(400).json({ message: 'amount must be a number' });
+    }
+
+    try {
+        const { rows } = await db.query(
+            `INSERT INTO payroll_run_adjustment
+                (run_id, employee_id, component_code, adjustment_type, amount, reason, created_by)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)
+             RETURNING adjustment_id, employee_id, component_code, adjustment_type, amount, reason`,
+            [req.params.id, employee_id, component_code, adjustment_type, value,
+                String(reason).trim(), req.user.employee_id]
+        );
+        // The adjustment only reaches the payslip on the next compute.
+        res.status(201).json({ ...rows[0], note: 'Recompute the run to apply this adjustment.' });
+    } catch (err) {
+        if (err.code === '23505') {
+            return res.status(409).json({ message: 'An override for that component already exists on this run.' });
+        }
+        if (err.code === '23514') {
+            return res.status(409).json({ message: err.message.replace(/^.*?ERROR:\s*/, '') });
+        }
+        if (err.code === '23503') return res.status(404).json({ message: 'Run, employee or component not found' });
+        handleError(err, res);
+    }
+});
+
+router.delete('/runs/:id/adjustments/:adjustmentId', protect, hasPermission('payroll:override'), async (req, res) => {
+    try {
+        const { rows } = await db.query(
+            'DELETE FROM payroll_run_adjustment WHERE adjustment_id = $1 AND run_id = $2 RETURNING adjustment_id',
+            [req.params.adjustmentId, req.params.id]
+        );
+        if (rows.length === 0) return res.status(404).json({ message: 'Adjustment not found' });
+        res.json({ adjustment_id: Number(req.params.adjustmentId), deleted: true });
+    } catch (err) {
+        if (err.code === '23514') {
+            return res.status(409).json({ message: 'This run is no longer editable, so its adjustments are frozen.' });
+        }
+        handleError(err, res);
+    }
 });
 
 // --- Editing statutory schedules ----------------------------------------

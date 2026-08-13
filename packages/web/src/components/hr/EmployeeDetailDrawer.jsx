@@ -300,6 +300,264 @@ const CompensationTab = ({ employee }) => {
     );
 };
 
+// --- Benefits, deductions and statutory overrides ------------------------
+
+const FREQUENCY_LABEL = {
+    EVERY_CUTOFF: 'Every cutoff',
+    FIRST_CUTOFF: '1st cutoff only',
+    SECOND_CUTOFF: '2nd cutoff only',
+    MONTHLY: 'Monthly (split)',
+};
+
+const OVERRIDABLE = [
+    ['SSS_EE', 'SSS'],
+    ['SSS_MPF_EE', 'SSS WISP'],
+    ['PHIC_EE', 'PhilHealth'],
+    ['HDMF_EE', 'Pag-IBIG'],
+    ['WTAX', 'Withholding Tax'],
+];
+
+const PayComponentsTab = ({ employee, canOverride }) => {
+    const [catalog, setCatalog] = useState([]);
+    const [assigned, setAssigned] = useState([]);
+    const [overrides, setOverrides] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [addingComponent, setAddingComponent] = useState(false);
+    const [addingOverride, setAddingOverride] = useState(false);
+    const [cForm, setCForm] = useState({ component_code: '', amount: '', frequency: 'MONTHLY', effective_from: '' });
+    const [oForm, setOForm] = useState({ component_code: 'HDMF_EE', override_amount: '', reason: '', effective_from: '' });
+
+    const load = useCallback(async () => {
+        setLoading(true);
+        try {
+            const requests = [
+                api.get('/hr/pay-components'),
+                api.get(`/hr/employees/${employee.employee_id}/pay-components`),
+            ];
+            if (canOverride) requests.push(api.get(`/hr/employees/${employee.employee_id}/statutory-overrides`));
+            const [cat, mine, ov] = await Promise.all(requests);
+            setCatalog(Array.isArray(cat.data) ? cat.data : []);
+            setAssigned(Array.isArray(mine.data) ? mine.data : []);
+            setOverrides(ov && Array.isArray(ov.data) ? ov.data : []);
+        } catch {
+            toast.error('Failed to load pay components');
+        } finally {
+            setLoading(false);
+        }
+    }, [employee.employee_id, canOverride]);
+
+    useEffect(() => { load(); }, [load]);
+
+    const addComponent = async (e) => {
+        e.preventDefault();
+        try {
+            await api.post(`/hr/employees/${employee.employee_id}/pay-components`, cForm);
+            toast.success('Component assigned');
+            setAddingComponent(false);
+            setCForm({ component_code: '', amount: '', frequency: 'MONTHLY', effective_from: '' });
+            load();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to assign component');
+        }
+    };
+
+    const removeComponent = async (epcId) => {
+        if (!window.confirm('Stop applying this component? Past payslips are unaffected.')) return;
+        try {
+            await api.delete(`/hr/employees/${employee.employee_id}/pay-components/${epcId}`);
+            toast.success('Component removed');
+            load();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to remove');
+        }
+    };
+
+    const addOverride = async (e) => {
+        e.preventDefault();
+        try {
+            await api.post(`/hr/employees/${employee.employee_id}/statutory-overrides`, oForm);
+            toast.success('Override saved');
+            setAddingOverride(false);
+            setOForm({ component_code: 'HDMF_EE', override_amount: '', reason: '', effective_from: '' });
+            load();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to save override');
+        }
+    };
+
+    const removeOverride = async (id) => {
+        if (!window.confirm('Remove this override? The standard computed amount will apply again.')) return;
+        try {
+            await api.delete(`/hr/employees/${employee.employee_id}/statutory-overrides/${id}`);
+            toast.success('Override removed');
+            load();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to remove');
+        }
+    };
+
+    if (loading) return <LoadingState />;
+
+    const active = assigned.filter((a) => a.is_active);
+
+    return (
+        <div className="p-4 space-y-6">
+            <div>
+                <div className="flex items-center justify-between mb-2">
+                    <div>
+                        <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-100">Benefits &amp; Deductions</h3>
+                        <p className="text-xs text-gray-500 dark:text-slate-400">
+                            Recurring items added to every payroll run in their date range.
+                        </p>
+                    </div>
+                    {!addingComponent && (
+                        <button type="button" onClick={() => setAddingComponent(true)}
+                            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary-600 text-white hover:bg-primary-700 flex-shrink-0">
+                            Add
+                        </button>
+                    )}
+                </div>
+
+                {addingComponent && (
+                    <form onSubmit={addComponent} className="space-y-2 p-3 mb-3 rounded-lg bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700">
+                        <select required className={INPUT_CLASS} value={cForm.component_code}
+                            onChange={(e) => setCForm({ ...cForm, component_code: e.target.value })}>
+                            <option value="">Select a component…</option>
+                            <optgroup label="Earnings">
+                                {catalog.filter((c) => c.component_type === 'EARNING').map((c) => (
+                                    <option key={c.component_code} value={c.component_code}>
+                                        {c.component_name}{c.is_taxable ? ' (taxable)' : ''}
+                                    </option>
+                                ))}
+                            </optgroup>
+                            <optgroup label="Deductions">
+                                {catalog.filter((c) => c.component_type === 'DEDUCTION').map((c) => (
+                                    <option key={c.component_code} value={c.component_code}>{c.component_name}</option>
+                                ))}
+                            </optgroup>
+                        </select>
+                        <div className="grid grid-cols-2 gap-2">
+                            <input type="number" step="0.01" min="0" required placeholder="Amount" className={INPUT_CLASS}
+                                value={cForm.amount} onChange={(e) => setCForm({ ...cForm, amount: e.target.value })} />
+                            <select className={INPUT_CLASS} value={cForm.frequency}
+                                onChange={(e) => setCForm({ ...cForm, frequency: e.target.value })}>
+                                {Object.entries(FREQUENCY_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                            </select>
+                        </div>
+                        <input type="date" required className={INPUT_CLASS} value={cForm.effective_from}
+                            onChange={(e) => setCForm({ ...cForm, effective_from: e.target.value })} />
+                        <div className="flex gap-2">
+                            <button type="submit" className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary-600 text-white">Save</button>
+                            <button type="button" onClick={() => setAddingComponent(false)}
+                                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-200">Cancel</button>
+                        </div>
+                    </form>
+                )}
+
+                {active.length === 0 ? (
+                    <p className="text-sm text-gray-500 dark:text-slate-400 py-4 text-center">Nothing assigned yet.</p>
+                ) : (
+                    <table className="w-full text-left text-sm">
+                        <tbody>
+                            {active.map((a) => (
+                                <tr key={a.epc_id} className="border-b border-gray-100 dark:border-slate-800">
+                                    <td className="py-2">
+                                        <div className="text-gray-900 dark:text-slate-100">{a.component_name}</div>
+                                        <div className="text-xs text-gray-500 dark:text-slate-400">
+                                            {FREQUENCY_LABEL[a.frequency]} · from {a.effective_from}
+                                        </div>
+                                    </td>
+                                    <td className="py-2 text-right">
+                                        <StatusBadge tone={a.component_type === 'EARNING' ? 'success' : 'warning'}
+                                            label={a.component_type === 'EARNING' ? 'Earning' : 'Deduction'} />
+                                    </td>
+                                    <td className="py-2 text-right tabular-nums text-gray-900 dark:text-slate-100">
+                                        {a.rate_percent != null ? `${(Number(a.rate_percent) * 100).toFixed(2)}%` : peso(a.amount)}
+                                    </td>
+                                    <td className="py-2 text-right">
+                                        <button onClick={() => removeComponent(a.epc_id)}
+                                            className="text-xs text-danger-600 hover:text-danger-800">Remove</button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
+            </div>
+
+            {canOverride && (
+                <div className="border-t border-gray-200 dark:border-slate-700 pt-4">
+                    <div className="flex items-center justify-between mb-2">
+                        <div>
+                            <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-100">Statutory Overrides</h3>
+                            <p className="text-xs text-gray-500 dark:text-slate-400">
+                                Replace a computed contribution with a fixed monthly amount. Every override is logged with its reason.
+                            </p>
+                        </div>
+                        {!addingOverride && (
+                            <button type="button" onClick={() => setAddingOverride(true)}
+                                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-200 flex-shrink-0">
+                                Add
+                            </button>
+                        )}
+                    </div>
+
+                    {addingOverride && (
+                        <form onSubmit={addOverride} className="space-y-2 p-3 mb-3 rounded-lg bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800">
+                            <div className="grid grid-cols-2 gap-2">
+                                <select className={INPUT_CLASS} value={oForm.component_code}
+                                    onChange={(e) => setOForm({ ...oForm, component_code: e.target.value })}>
+                                    {OVERRIDABLE.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+                                </select>
+                                <input type="number" step="0.01" min="0" required placeholder="Monthly amount"
+                                    className={INPUT_CLASS} value={oForm.override_amount}
+                                    onChange={(e) => setOForm({ ...oForm, override_amount: e.target.value })} />
+                            </div>
+                            <input type="date" required className={INPUT_CLASS} value={oForm.effective_from}
+                                onChange={(e) => setOForm({ ...oForm, effective_from: e.target.value })} />
+                            <textarea required rows={2} placeholder="Reason (required)" className={INPUT_CLASS}
+                                value={oForm.reason} onChange={(e) => setOForm({ ...oForm, reason: e.target.value })} />
+                            <div className="flex gap-2">
+                                <button type="submit" className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary-600 text-white">Save</button>
+                                <button type="button" onClick={() => setAddingOverride(false)}
+                                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-200">Cancel</button>
+                            </div>
+                        </form>
+                    )}
+
+                    {overrides.filter((o) => o.is_active).length === 0 ? (
+                        <p className="text-sm text-gray-500 dark:text-slate-400 py-4 text-center">
+                            No overrides — standard rates apply.
+                        </p>
+                    ) : (
+                        <table className="w-full text-left text-sm">
+                            <tbody>
+                                {overrides.filter((o) => o.is_active).map((o) => (
+                                    <tr key={o.override_id} className="border-b border-gray-100 dark:border-slate-800">
+                                        <td className="py-2">
+                                            <div className="text-gray-900 dark:text-slate-100">{o.component_name}</div>
+                                            <div className="text-xs text-gray-500 dark:text-slate-400">
+                                                from {o.effective_from} · {o.reason}
+                                            </div>
+                                        </td>
+                                        <td className="py-2 text-right tabular-nums text-gray-900 dark:text-slate-100">
+                                            {peso(o.override_amount)}/mo
+                                        </td>
+                                        <td className="py-2 text-right">
+                                            <button onClick={() => removeOverride(o.override_id)}
+                                                className="text-xs text-danger-600 hover:text-danger-800">Remove</button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
 // --- Government IDs ------------------------------------------------------
 
 const GOV_FIELDS = [
@@ -397,6 +655,7 @@ const EmployeeDetailDrawer = ({ employeeId, isOpen, onClose, roles = [], onEmplo
 
     const canSeeSensitive = hasPermission('hr:view_sensitive');
     const canSeeCompensation = hasPermission('hr:manage_compensation');
+    const canOverride = hasPermission('payroll:override');
     const canManageAccess = hasPermission('employees:edit');
 
     const load = useCallback(async () => {
@@ -424,6 +683,7 @@ const EmployeeDetailDrawer = ({ employeeId, isOpen, onClose, roles = [], onEmplo
         { key: 'profile', label: 'Profile' },
         { key: 'employment', label: 'Employment' },
         ...(canSeeCompensation ? [{ key: 'compensation', label: 'Compensation' }] : []),
+        ...(canSeeCompensation ? [{ key: 'components', label: 'Pay Items' }] : []),
         ...(canSeeSensitive ? [{ key: 'government', label: 'Government IDs' }] : []),
     ];
 
@@ -455,6 +715,9 @@ const EmployeeDetailDrawer = ({ employeeId, isOpen, onClose, roles = [], onEmplo
                         <EmploymentTab employee={employee} roles={roles} canManageAccess={canManageAccess} onEmployeeChanged={handleChanged} />
                     )}
                     {activeTab === 'compensation' && canSeeCompensation && <CompensationTab employee={employee} />}
+                    {activeTab === 'components' && canSeeCompensation && (
+                        <PayComponentsTab employee={employee} canOverride={canOverride} />
+                    )}
                     {activeTab === 'government' && canSeeSensitive && <GovernmentIdsTab employee={employee} />}
                 </div>
             )}

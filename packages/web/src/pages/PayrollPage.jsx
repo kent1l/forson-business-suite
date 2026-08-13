@@ -50,10 +50,17 @@ const PayrollPage = () => {
     const [voidRun, setVoidRun] = useState(null);
     const [voidReason, setVoidReason] = useState('');
     const [warnings, setWarnings] = useState([]);
+    const [adjustments, setAdjustments] = useState([]);
+    const [addingAdj, setAddingAdj] = useState(false);
+    const [adjForm, setAdjForm] = useState({ employee_id: '', component_code: '', adjustment_type: 'ADD', amount: '', reason: '' });
+    const [components, setComponents] = useState([]);
+    const [employees, setEmployees] = useState([]);
+    const [perPage, setPerPage] = useState(4);
 
     const canView = hasPermission('payroll:view');
     const canCompute = hasPermission('payroll:compute');
     const canVoid = hasPermission('payroll:void');
+    const canOverride = hasPermission('payroll:override');
 
     const load = useCallback(async () => {
         if (!canView) { setLoading(false); return; }
@@ -67,6 +74,15 @@ const PayrollPage = () => {
             ]);
             setRuns(Array.isArray(runsRes.data) ? runsRes.data : (runsRes.data?.data || []));
             setPeriods(Array.isArray(periodsRes.data) ? periodsRes.data : []);
+            // Reference data for the adjustment form; failure here must not
+            // block the run list, so it is fetched separately and swallowed.
+            Promise.all([
+                api.get('/hr/pay-components'),
+                api.get('/employees', { params: { status: 'active' } }),
+            ]).then(([c, e]) => {
+                setComponents(Array.isArray(c.data) ? c.data : []);
+                setEmployees(Array.isArray(e.data) ? e.data : (e.data?.data || []));
+            }).catch(() => {});
         } catch {
             setError('Failed to load payroll runs.');
         } finally {
@@ -80,11 +96,60 @@ const PayrollPage = () => {
         setSelectedRun(run);
         setWarnings([]);
         try {
-            const { data } = await api.get(`/payroll/runs/${run.run_id}/payslips`);
-            setPayslips(Array.isArray(data) ? data : []);
+            const [slipRes, adjRes] = await Promise.all([
+                api.get(`/payroll/runs/${run.run_id}/payslips`),
+                api.get(`/payroll/runs/${run.run_id}/adjustments`),
+            ]);
+            setPayslips(Array.isArray(slipRes.data) ? slipRes.data : []);
+            setAdjustments(Array.isArray(adjRes.data) ? adjRes.data : []);
         } catch {
             toast.error('Failed to load payslips');
             setPayslips([]);
+            setAdjustments([]);
+        }
+    };
+
+    const addAdjustment = async (e) => {
+        e.preventDefault();
+        try {
+            await api.post(`/payroll/runs/${selectedRun.run_id}/adjustments`, {
+                ...adjForm, amount: Number(adjForm.amount),
+            });
+            toast.success('Adjustment added — recompute the run to apply it.');
+            setAdjForm({ employee_id: '', component_code: '', adjustment_type: 'ADD', amount: '', reason: '' });
+            setAddingAdj(false);
+            openRun(selectedRun);
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to add adjustment');
+        }
+    };
+
+    const removeAdjustment = async (id) => {
+        try {
+            await api.delete(`/payroll/runs/${selectedRun.run_id}/adjustments/${id}`);
+            toast.success('Adjustment removed — recompute to apply.');
+            openRun(selectedRun);
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to remove adjustment');
+        }
+    };
+
+    // The PDF endpoint needs the auth header, so it is fetched as a blob and
+    // opened from an object URL rather than linked to directly.
+    const printPayslips = async () => {
+        const toastId = toast.loading('Building payslips…');
+        try {
+            const res = await api.get(`/payroll/runs/${selectedRun.run_id}/payslips.pdf`, {
+                params: { per_page: perPage }, responseType: 'blob',
+            });
+            const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+            window.open(url, '_blank');
+            // Revoking immediately would race the new tab; a delay is the
+            // pragmatic fix and the URL is scoped to this document anyway.
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+            toast.success('Payslips ready', { id: toastId });
+        } catch {
+            toast.error('Failed to build payslips', { id: toastId });
         }
     };
 
@@ -202,6 +267,21 @@ const PayrollPage = () => {
                                             {busy ? 'Working…' : a.label}
                                         </button>
                                     ))}
+                                {payslips.length > 0 && (
+                                    <>
+                                        <select value={perPage} onChange={(e) => setPerPage(Number(e.target.value))}
+                                            className="px-2 py-1.5 text-xs border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
+                                            title="Payslips per A4 sheet">
+                                            <option value={4}>4 per sheet</option>
+                                            <option value={3}>3 per sheet</option>
+                                            <option value={2}>2 per sheet</option>
+                                        </select>
+                                        <button onClick={printPayslips}
+                                            className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-200">
+                                            Print payslips
+                                        </button>
+                                    </>
+                                )}
                                 {canVoid && !['Voided'].includes(selectedRun.status) && (
                                     <button disabled={busy} onClick={() => setVoidRun(selectedRun)}
                                         className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-danger-100 text-danger-800 hover:bg-danger-200 dark:bg-danger-900/30 dark:text-danger-400 disabled:opacity-50">
@@ -231,6 +311,86 @@ const PayrollPage = () => {
                             <ul className="text-xs text-warning-700 dark:text-warning-500 space-y-0.5 max-h-40 overflow-y-auto">
                                 {warnings.map((w, i) => <li key={i}>• {w}</li>)}
                             </ul>
+                        </div>
+                    )}
+
+                    {canOverride && ['Draft', 'Computed'].includes(selectedRun.status) && (
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 mb-6">
+                            <div className="flex items-center justify-between mb-2">
+                                <div>
+                                    <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-100">Adjustments</h3>
+                                    <p className="text-xs text-gray-500 dark:text-slate-400">
+                                        One-off changes for this run only. They survive a recompute and freeze once the run is approved.
+                                    </p>
+                                </div>
+                                {!addingAdj && (
+                                    <button onClick={() => setAddingAdj(true)}
+                                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-200">
+                                        Add
+                                    </button>
+                                )}
+                            </div>
+
+                            {addingAdj && (
+                                <form onSubmit={addAdjustment} className="space-y-2 p-3 mb-3 rounded-lg bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700">
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <select required className={INPUT_CLASS} value={adjForm.employee_id}
+                                            onChange={(e) => setAdjForm({ ...adjForm, employee_id: e.target.value })}>
+                                            <option value="">Employee…</option>
+                                            {employees.map((e) => (
+                                                <option key={e.employee_id} value={e.employee_id}>{e.first_name} {e.last_name}</option>
+                                            ))}
+                                        </select>
+                                        <select required className={INPUT_CLASS} value={adjForm.component_code}
+                                            onChange={(e) => setAdjForm({ ...adjForm, component_code: e.target.value })}>
+                                            <option value="">Component…</option>
+                                            {components.map((c) => (
+                                                <option key={c.component_code} value={c.component_code}>{c.component_name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <select className={INPUT_CLASS} value={adjForm.adjustment_type}
+                                            onChange={(e) => setAdjForm({ ...adjForm, adjustment_type: e.target.value })}>
+                                            <option value="ADD">Add an extra line</option>
+                                            <option value="OVERRIDE">Override the computed amount</option>
+                                        </select>
+                                        <input type="number" step="0.01" required placeholder="Amount" className={INPUT_CLASS}
+                                            value={adjForm.amount} onChange={(e) => setAdjForm({ ...adjForm, amount: e.target.value })} />
+                                    </div>
+                                    <textarea required rows={2} placeholder="Reason (required)" className={INPUT_CLASS}
+                                        value={adjForm.reason} onChange={(e) => setAdjForm({ ...adjForm, reason: e.target.value })} />
+                                    <div className="flex gap-2">
+                                        <button type="submit" className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary-600 text-white">Save</button>
+                                        <button type="button" onClick={() => setAddingAdj(false)}
+                                            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-200">Cancel</button>
+                                    </div>
+                                </form>
+                            )}
+
+                            {adjustments.length === 0 ? (
+                                <p className="text-sm text-gray-500 dark:text-slate-400 py-3 text-center">No adjustments on this run.</p>
+                            ) : (
+                                <table className="w-full text-left text-sm">
+                                    <tbody>
+                                        {adjustments.map((a) => (
+                                            <tr key={a.adjustment_id} className="border-b border-gray-100 dark:border-slate-800">
+                                                <td className="py-2 text-gray-900 dark:text-slate-100">{a.employee_name}</td>
+                                                <td className="py-2 text-gray-600 dark:text-slate-300">{a.component_name}</td>
+                                                <td className="py-2">
+                                                    <StatusBadge tone={a.adjustment_type === 'OVERRIDE' ? 'warning' : 'info'} label={a.adjustment_type} />
+                                                </td>
+                                                <td className="py-2 text-right tabular-nums text-gray-900 dark:text-slate-100">{peso(a.amount)}</td>
+                                                <td className="py-2 text-xs text-gray-500 dark:text-slate-400 max-w-[180px] truncate">{a.reason}</td>
+                                                <td className="py-2 text-right">
+                                                    <button onClick={() => removeAdjustment(a.adjustment_id)}
+                                                        className="text-xs text-danger-600 hover:text-danger-800">Remove</button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
                         </div>
                     )}
 
