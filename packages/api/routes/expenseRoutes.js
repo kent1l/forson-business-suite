@@ -240,6 +240,94 @@ router.get('/expenses', protect, hasPermission('expenses:view'), async (req, res
     }
 });
 
+// GET /api/expenses/payees - Distinct previously used payees for autocomplete
+// NOTE: must stay above '/expenses/:id' so it is not captured by that param route.
+router.get('/expenses/payees', protect, hasPermission('expenses:view'), async (req, res) => {
+    const { q } = req.query;
+
+    try {
+        const queryParams = [];
+        let filterSql = '';
+
+        if (q && String(q).trim()) {
+            queryParams.push(`%${String(q).trim().toLowerCase()}%`);
+            filterSql = `AND LOWER(payee) LIKE $${queryParams.length}`;
+        }
+
+        // Most-used payees first so the common vendors surface immediately.
+        const query = `
+            SELECT payee, COUNT(*)::integer AS use_count
+            FROM expense
+            WHERE is_void = false
+              AND payee IS NOT NULL
+              AND TRIM(payee) <> ''
+              ${filterSql}
+            GROUP BY payee
+            ORDER BY use_count DESC, payee ASC
+            LIMIT 20
+        `;
+
+        const result = await db.query(query, queryParams);
+        res.json(result.rows.map(r => r.payee));
+    } catch (error) {
+        console.error('Error fetching expense payees:', error);
+        res.status(500).json({ message: 'Failed to fetch payee suggestions' });
+    }
+});
+
+// GET /api/expenses/check-duplicate - Non-blocking warning for likely double entry
+// NOTE: must stay above '/expenses/:id' so it is not captured by that param route.
+router.get('/expenses/check-duplicate', protect, hasPermission('expenses:view'), async (req, res) => {
+    const { expense_date, amount, payee, exclude_id } = req.query;
+
+    if (!expense_date || !/^\d{4}-\d{2}-\d{2}$/.test(expense_date)) {
+        return res.status(400).json({ message: 'Valid expense date is required (YYYY-MM-DD)' });
+    }
+
+    const numericAmount = parseFloat(amount);
+    if (isNaN(numericAmount) || numericAmount <= 0) {
+        return res.status(400).json({ message: 'Amount must be greater than 0' });
+    }
+
+    try {
+        const queryParams = [expense_date, numericAmount];
+        let payeeSql = 'AND (e.payee IS NULL OR TRIM(e.payee) = \'\')';
+
+        if (payee && String(payee).trim()) {
+            queryParams.push(String(payee).trim().toLowerCase());
+            payeeSql = `AND LOWER(TRIM(e.payee)) = $${queryParams.length}`;
+        }
+
+        let excludeSql = '';
+        const excludeId = parseInt(exclude_id, 10);
+        if (!isNaN(excludeId)) {
+            queryParams.push(excludeId);
+            excludeSql = `AND e.expense_id <> $${queryParams.length}`;
+        }
+
+        const query = `
+            SELECT ${EXPENSE_SELECT_FIELDS}
+            ${EXPENSE_JOIN_TABLES}
+            WHERE e.is_void = false
+              AND e.expense_date = $1
+              AND e.amount = $2
+              ${payeeSql}
+              ${excludeSql}
+            ORDER BY e.created_at DESC
+            LIMIT 5
+        `;
+
+        const result = await db.query(query, queryParams);
+        res.json({
+            isDuplicate: result.rows.length > 0,
+            matches: result.rows
+        });
+    } catch (error) {
+        console.error('Error checking for duplicate expense:', error);
+        res.status(500).json({ message: 'Failed to check for duplicate expense' });
+    }
+});
+
 // GET /api/expenses/:id - Get single expense
 router.get('/expenses/:id', protect, hasPermission('expenses:view'), async (req, res) => {
     const expenseId = parseInt(req.params.id, 10);

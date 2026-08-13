@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import api from '../../api';
 import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
 
@@ -6,6 +7,7 @@ export default function ExpenseForm({
     categories = [],
     paymentMethods = [],
     initialData = null,
+    isDuplicating = false,
     aiParsedData = null,
     onSubmit,
     onClose,
@@ -27,9 +29,41 @@ export default function ExpenseForm({
     const [aiMeta, setAiMeta] = useState(null); // stores original AI suggestions for correction tracking
     const [errors, setErrors] = useState({});
 
+    // Payee autocomplete — keeps vendor spelling consistent so reporting totals don't fragment.
+    const [payeeSuggestions, setPayeeSuggestions] = useState([]);
+    const [showPayeeSuggestions, setShowPayeeSuggestions] = useState(false);
+    const payeeWrapRef = useRef(null);
+
+    // Non-blocking duplicate warning (same date + amount + payee already recorded).
+    const [duplicateMatches, setDuplicateMatches] = useState([]);
+    const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false);
+    const [checkingDuplicate, setCheckingDuplicate] = useState(false);
+
     const cleanDateStr = (val) => {
         if (!val) return today;
         return typeof val === 'string' ? val.split('T')[0] : today;
+    };
+
+    // Displays "15,000.50" while the underlying form value stays a plain numeric string.
+    const formatAmountDisplay = (raw) => {
+        if (raw === '' || raw === null || raw === undefined) return '';
+        const str = String(raw);
+        const [intPart, decPart] = str.split('.');
+        const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        if (decPart === undefined) return withCommas;
+        return `${withCommas}.${decPart}`;
+    };
+
+    const handleAmountChange = (input) => {
+        // Strip everything except digits and a single decimal point, cap at 2 decimals.
+        let cleaned = String(input).replace(/[^0-9.]/g, '');
+        const firstDot = cleaned.indexOf('.');
+        if (firstDot !== -1) {
+            cleaned = `${cleaned.slice(0, firstDot + 1)}${cleaned.slice(firstDot + 1).replace(/\./g, '')}`;
+            const [i, d] = cleaned.split('.');
+            cleaned = `${i}.${d.slice(0, 2)}`;
+        }
+        handleChange('amount', cleaned);
     };
 
     useEffect(() => {
@@ -68,7 +102,45 @@ export default function ExpenseForm({
         if (errors[field]) {
             setErrors(prev => ({ ...prev, [field]: null }));
         }
+        // Any change to the identity of the expense re-opens the duplicate question.
+        if (field === 'expense_date' || field === 'amount' || field === 'payee') {
+            setDuplicateMatches([]);
+            setDuplicateAcknowledged(false);
+        }
     };
+
+    // Debounced payee lookup against previously recorded payees.
+    useEffect(() => {
+        if (!showPayeeSuggestions) return undefined;
+
+        let cancelled = false;
+        const timer = setTimeout(async () => {
+            try {
+                const res = await api.get('/expenses/payees', {
+                    params: { q: formData.payee || undefined }
+                });
+                if (!cancelled) setPayeeSuggestions(Array.isArray(res.data) ? res.data : []);
+            } catch {
+                if (!cancelled) setPayeeSuggestions([]);
+            }
+        }, 250);
+
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [formData.payee, showPayeeSuggestions]);
+
+    // Close the suggestion dropdown when clicking outside of it.
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (payeeWrapRef.current && !payeeWrapRef.current.contains(event.target)) {
+                setShowPayeeSuggestions(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     const handlePaymentMethodChange = (e) => {
         const selectedId = e.target.value;
@@ -100,9 +172,35 @@ export default function ExpenseForm({
         return Object.keys(errs).length === 0;
     };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
         if (!validate()) return;
+
+        // Warn (never block) if an identical expense is already on file for this date.
+        // Existing matches mean the user has already been shown the warning for this exact
+        // date/amount/payee combination, so a second submit is their confirmation to proceed.
+        if (duplicateMatches.length === 0 && !duplicateAcknowledged) {
+            setCheckingDuplicate(true);
+            try {
+                const res = await api.get('/expenses/check-duplicate', {
+                    params: {
+                        expense_date: formData.expense_date,
+                        amount: parseFloat(formData.amount),
+                        payee: formData.payee?.trim() || undefined,
+                        exclude_id: initialData?.expense_id || undefined
+                    }
+                });
+                if (res.data?.isDuplicate) {
+                    setDuplicateMatches(res.data.matches || []);
+                    setCheckingDuplicate(false);
+                    return; // Surface the warning; user confirms with "Save anyway".
+                }
+            } catch {
+                // Duplicate checking is advisory only — never let it block a legitimate save.
+            } finally {
+                setCheckingDuplicate(false);
+            }
+        }
 
         // Build AI correction list if AI was used and user modified fields
         let corrections = [];
@@ -166,10 +264,14 @@ export default function ExpenseForm({
                         </span>
                         <div>
                             <h3 className="text-lg font-bold text-slate-800">
-                                {initialData ? 'Edit Expense Record' : 'Record New Expense'}
+                                {isDuplicating
+                                    ? 'Duplicate Expense'
+                                    : initialData ? 'Edit Expense Record' : 'Record New Expense'}
                             </h3>
                             <p className="text-xs text-slate-500">
-                                {initialData ? `Expense #${initialData.expense_id}` : 'Fill in the structured expense details below'}
+                                {isDuplicating
+                                    ? 'Copied from a previous entry — review the date and amount before saving'
+                                    : initialData ? `Expense #${initialData.expense_id}` : 'Fill in the structured expense details below'}
                             </p>
                         </div>
                     </div>
@@ -205,11 +307,10 @@ export default function ExpenseForm({
                             <div className="relative">
                                 <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400 font-semibold text-sm">₱</span>
                                 <input
-                                    type="number"
-                                    step="0.01"
-                                    min="0.01"
-                                    value={formData.amount}
-                                    onChange={(e) => handleChange('amount', e.target.value)}
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={formatAmountDisplay(formData.amount)}
+                                    onChange={(e) => handleAmountChange(e.target.value)}
                                     placeholder="0.00"
                                     className={`w-full pl-8 pr-3 py-2 text-sm bg-white border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
                                         errors.amount ? 'border-red-500 focus:ring-red-500' : isAiField('amount') ? 'border-blue-300 bg-blue-50/20' : 'border-slate-300'
@@ -289,7 +390,7 @@ export default function ExpenseForm({
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {/* Payee */}
-                        <div>
+                        <div className="relative" ref={payeeWrapRef}>
                             <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
                                 Payee / Vendor
                                 {isAiField('payee') && <span className="ml-1 text-[10px] text-blue-600 bg-blue-50 px-1 rounded">◆ AI</span>}
@@ -298,11 +399,34 @@ export default function ExpenseForm({
                                 type="text"
                                 value={formData.payee}
                                 onChange={(e) => handleChange('payee', e.target.value)}
+                                onFocus={() => setShowPayeeSuggestions(true)}
+                                autoComplete="off"
                                 placeholder="e.g. Meralco, Landlord, Shell"
                                 className={`w-full px-3 py-2 text-sm bg-white border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
                                     isAiField('payee') ? 'border-blue-300 bg-blue-50/20' : 'border-slate-300'
                                 }`}
                             />
+                            {showPayeeSuggestions && payeeSuggestions.length > 0 && (
+                                <ul className="absolute z-10 mt-1 w-full max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg py-1">
+                                    {payeeSuggestions.map((name) => (
+                                        <li key={name}>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    handleChange('payee', name);
+                                                    setShowPayeeSuggestions(false);
+                                                }}
+                                                className="w-full text-left px-3 py-1.5 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 cursor-pointer transition-colors"
+                                            >
+                                                {name}
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                            <p className="text-[10px] text-slate-400 mt-1">
+                                Pick an existing name when possible so reports group correctly.
+                            </p>
                         </div>
 
                         {/* Reference No */}
@@ -334,6 +458,34 @@ export default function ExpenseForm({
                         ></textarea>
                     </div>
 
+                    {/* Possible duplicate warning — advisory, never blocking */}
+                    {duplicateMatches.length > 0 && !duplicateAcknowledged && (
+                        <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg space-y-2">
+                            <div className="flex items-start space-x-2">
+                                <Icon path={ICONS.warning} className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                                <div className="text-xs text-amber-900">
+                                    <p className="font-semibold">This looks like it may already be recorded.</p>
+                                    <p className="text-amber-800 mt-0.5">
+                                        Found {duplicateMatches.length} existing expense{duplicateMatches.length > 1 ? 's' : ''} with the same date, amount, and payee:
+                                    </p>
+                                </div>
+                            </div>
+                            <ul className="space-y-1 pl-6">
+                                {duplicateMatches.map((m) => (
+                                    <li key={m.expense_id} className="text-xs text-amber-900 bg-amber-100/60 rounded px-2 py-1">
+                                        <span className="font-semibold">#{m.expense_id}</span>
+                                        {' · '}{m.category?.category_name || 'Uncategorized'}
+                                        {' · ₱'}{parseFloat(m.amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        {m.reference_no ? ` · Ref ${m.reference_no}` : ''}
+                                    </li>
+                                ))}
+                            </ul>
+                            <p className="text-[11px] text-amber-700 pl-6">
+                                If this is a separate, genuine expense, choose “Save anyway”.
+                            </p>
+                        </div>
+                    )}
+
                     {/* Footer Actions */}
                     <div className="flex items-center justify-end space-x-3 pt-4 border-t border-slate-100">
                         <button
@@ -346,19 +498,29 @@ export default function ExpenseForm({
                         </button>
                         <button
                             type="submit"
-                            disabled={loading}
-                            className="px-5 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-500 rounded-lg shadow-sm transition-colors cursor-pointer inline-flex items-center"
+                            disabled={loading || checkingDuplicate}
+                            onClick={() => {
+                                // Second press after a duplicate warning means "yes, save it".
+                                if (duplicateMatches.length > 0) setDuplicateAcknowledged(true);
+                            }}
+                            className={`px-5 py-2 text-sm font-medium text-white rounded-lg shadow-sm transition-colors cursor-pointer inline-flex items-center disabled:opacity-60 ${
+                                duplicateMatches.length > 0 && !duplicateAcknowledged
+                                    ? 'bg-amber-600 hover:bg-amber-500'
+                                    : 'bg-blue-600 hover:bg-blue-500'
+                            }`}
                         >
-                            {loading ? (
+                            {loading || checkingDuplicate ? (
                                 <>
                                     <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                     </svg>
-                                    <span>Saving...</span>
+                                    <span>{checkingDuplicate ? 'Checking...' : 'Saving...'}</span>
                                 </>
+                            ) : duplicateMatches.length > 0 && !duplicateAcknowledged ? (
+                                <span>Save anyway</span>
                             ) : (
-                                <span>{initialData ? 'Update Expense' : 'Save Expense Record'}</span>
+                                <span>{initialData && !isDuplicating ? 'Update Expense' : 'Save Expense Record'}</span>
                             )}
                         </button>
                     </div>
