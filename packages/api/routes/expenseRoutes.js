@@ -4,6 +4,7 @@ const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const { parseExpenseText } = require('../services/expenseAIParser');
 const { expenseParserAI } = require('../services/ai');
+const expenseLexicon = require('../services/expenseLexiconService');
 
 const router = express.Router();
 
@@ -363,7 +364,9 @@ router.post('/expenses', protect, hasPermission('expenses:create'), async (req, 
         payment_method_text = 'Cash',
         reference_no,
         notes,
-        ai_corrections
+        ai_corrections,
+        raw_input,
+        ai_parsed
     } = req.body;
 
     const employeeId = req.user.employee_id;
@@ -394,7 +397,7 @@ router.post('/expenses', protect, hasPermission('expenses:create'), async (req, 
     try {
         // Validate category exists and is active
         const categoryRes = await db.query(
-            'SELECT category_id FROM expense_category WHERE category_id = $1 AND is_active = true',
+            'SELECT category_id, category_name FROM expense_category WHERE category_id = $1 AND is_active = true',
             [parseInt(category_id, 10)]
         );
         if (categoryRes.rows.length === 0) {
@@ -469,6 +472,44 @@ router.post('/expenses', protect, hasPermission('expenses:create'), async (req, 
                         console.error('[ExpenseRoutes] Failed to record correction embedding:', corrErr.message);
                     }
                 }
+            }
+        }
+
+        // Learning loop: record what the user actually typed against what they saved,
+        // then propose any new local vocabulary for admin review. Both are best-effort
+        // — a learning failure must never fail the expense itself.
+        if (raw_input && String(raw_input).trim()) {
+            const finalValues = {
+                category_id: parseInt(category_id, 10),
+                category_name: categoryRes.rows[0]?.category_name || null,
+                amount: numericAmount,
+                payee: payee ? String(payee).trim() : null,
+                expense_date,
+                payment_method_id: pmId
+            };
+
+            try {
+                await expenseParserAI.logParseOutcome({
+                    rawInput: raw_input,
+                    parsed: ai_parsed || null,
+                    final: finalValues,
+                    expenseId: newExpenseId,
+                    provider: ai_parsed?.provider || null,
+                    employeeId
+                });
+            } catch (logErr) {
+                console.error('[ExpenseRoutes] Failed to log parse outcome:', logErr.message);
+            }
+
+            try {
+                await expenseLexicon.proposeAliasesFromExpense({
+                    rawInput: raw_input,
+                    categoryId: parseInt(category_id, 10),
+                    payee: payee ? String(payee).trim() : null,
+                    employeeId
+                });
+            } catch (lexErr) {
+                console.error('[ExpenseRoutes] Failed to propose lexicon aliases:', lexErr.message);
             }
         }
 

@@ -63,6 +63,7 @@ const CATEGORIES = [
             { name: 'Bulk SOA Generator', icon: ICONS.documents, page: 'soa_gen',          permission: 'ar:view' },
             { name: 'Expenses',           icon: ICONS.receipt, page: 'expenses',           permission: 'expenses:view' },
             { name: 'Expense Categories', icon: ICONS.tag,     page: 'expense_categories', permission: 'expenses:manage_categories' },
+            { name: 'Learned Terms',      icon: ICONS.star,    page: 'expense_lexicon',    permission: 'expenses:manage_lexicon' },
             { name: 'Paperless Receipts', icon: ICONS.documents, page: 'paperless_receipts', permission: 'documents:view' },
         ],
     },

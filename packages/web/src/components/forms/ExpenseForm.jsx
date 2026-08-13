@@ -9,6 +9,7 @@ export default function ExpenseForm({
     initialData = null,
     isDuplicating = false,
     aiParsedData = null,
+    aiRawInput = '',
     onSubmit,
     onClose,
     loading = false
@@ -207,7 +208,15 @@ export default function ExpenseForm({
         if (aiMeta && aiMeta.original) {
             const orig = aiMeta.original;
             if (orig.category_id && String(orig.category_id) !== String(formData.category_id)) {
-                corrections.push({ field_name: 'category_id', ai_suggestion: orig.category_name || orig.category_id, user_correction: formData.category_id });
+                // Record the corrected category by NAME. Sending the raw ID here used to
+                // produce examples like 'from "Transportation & Delivery" to "3"', which
+                // taught the model to emit bare integers.
+                const chosen = categories.find(c => String(c.category_id) === String(formData.category_id));
+                corrections.push({
+                    field_name: 'category',
+                    ai_suggestion: orig.category_name || String(orig.category_id),
+                    user_correction: chosen ? chosen.category_name : String(formData.category_id)
+                });
             }
             if (orig.amount && parseFloat(orig.amount) !== parseFloat(formData.amount)) {
                 corrections.push({ field_name: 'amount', ai_suggestion: orig.amount, user_correction: formData.amount });
@@ -229,7 +238,11 @@ export default function ExpenseForm({
             payment_method_text: formData.payment_method_text || 'Cash',
             reference_no: formData.reference_no.trim() || null,
             notes: formData.notes.trim() || null,
-            ai_corrections: corrections
+            ai_corrections: corrections,
+            // Carries the user's original wording (and the AI's proposal) to the
+            // server so the lexicon can learn local terms from real entries.
+            raw_input: aiRawInput || null,
+            ai_parsed: aiMeta?.original || null
         };
 
         onSubmit(payload);

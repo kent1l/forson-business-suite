@@ -83,6 +83,7 @@ registerRoute('/api', './routes/taxReportRoutes');
 // Finance & Expense Modules
 registerRoute('/api', './routes/expenseCategoryRoutes');
 registerRoute('/api', './routes/expenseRoutes');
+registerRoute('/api', './routes/expenseLexiconRoutes');
 registerRoute('/api', './routes/apPdcRoutes');
 registerRoute('/api', './routes/apRoutes');
 

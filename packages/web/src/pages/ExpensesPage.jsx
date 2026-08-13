@@ -33,6 +33,7 @@ export default function ExpensesPage() {
     const [editingExpense, setEditingExpense] = useState(null);
     const [prefillExpense, setPrefillExpense] = useState(null); // "duplicate entry" source
     const [aiParsedData, setAiParsedData] = useState(null);
+    const [aiRawInput, setAiRawInput] = useState('');
     const [formSubmitLoading, setFormSubmitLoading] = useState(false);
 
     // Fetch dropdown options once on mount
@@ -123,10 +124,14 @@ export default function ExpensesPage() {
         }));
     };
 
+    // rawText is what the user literally typed (often Cebuano or local shorthand).
+    // It must survive all the way to POST /expenses — it is the only text the
+    // learning loop can use to pick up local vocabulary.
     const handleQuickEntryParsed = (parsed, rawText) => {
         setEditingExpense(null);
         setPrefillExpense(null);
         setAiParsedData(parsed);
+        setAiRawInput(rawText || '');
         setFormModalOpen(true);
     };
 
@@ -134,6 +139,7 @@ export default function ExpensesPage() {
         setEditingExpense(null);
         setPrefillExpense(null);
         setAiParsedData(null);
+        setAiRawInput('');
         setFormModalOpen(true);
     };
 
@@ -141,6 +147,7 @@ export default function ExpensesPage() {
         setEditingExpense(expense);
         setPrefillExpense(null);
         setAiParsedData(null);
+        setAiRawInput('');
         setFormModalOpen(true);
     };
 
@@ -150,6 +157,7 @@ export default function ExpensesPage() {
         const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
         setEditingExpense(null);
         setAiParsedData(null);
+        setAiRawInput('');
         setPrefillExpense({
             ...expense,
             expense_id: undefined,
@@ -242,6 +250,7 @@ export default function ExpensesPage() {
                     initialData={editingExpense || prefillExpense}
                     isDuplicating={!editingExpense && !!prefillExpense}
                     aiParsedData={aiParsedData}
+                    aiRawInput={aiRawInput}
                     onSubmit={handleFormSubmit}
                     onClose={() => setFormModalOpen(false)}
                     loading={formSubmitLoading}
