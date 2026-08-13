@@ -4,6 +4,7 @@ const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const payrollRunService = require('../services/hr/payrollRunService');
 const payrollPostingService = require('../services/hr/payrollPostingService');
+const statutoryAdmin = require('../services/hr/statutoryAdminService');
 
 const router = express.Router();
 
@@ -17,6 +18,10 @@ const ERROR_STATUS = {
     STATUTORY_VERSION_MISSING: 422,
     POSTING_NOT_CONFIGURED: 422,
     VOID_REASON_REQUIRED: 400,
+    VERSION_NOT_FOUND: 404,
+    VERSION_IN_USE: 409,
+    INVALID_EFFECTIVE_DATE: 400,
+    INVALID_BRACKET_PARAMS: 400,
 };
 
 const handleError = (err, res) => {
@@ -275,5 +280,56 @@ router.get('/statutory-versions/:id/brackets', protect, hasPermission('payroll:c
         res.json({ agency, brackets: data });
     } catch (err) { handleError(err, res); }
 });
+
+// --- Editing statutory schedules ----------------------------------------
+// An unused schedule is edited in place; one that has already paid somebody is
+// frozen and must be superseded. The database enforces this independently.
+
+router.post('/statutory-versions', protect, hasPermission('payroll:config'), withTransaction(async (req, client) => {
+    const { agency, version_label, effective_from, source_reference } = req.body;
+    if (!['SSS', 'PHILHEALTH', 'PAGIBIG', 'BIR_WTAX'].includes(agency)) {
+        throw Object.assign(new Error('agency must be one of SSS, PHILHEALTH, PAGIBIG, BIR_WTAX'), { code: 'INVALID_BRACKET_PARAMS' });
+    }
+    if (!version_label || !/^\d{4}-\d{2}-\d{2}$/.test(effective_from || '')) {
+        throw Object.assign(new Error('version_label and a YYYY-MM-DD effective_from are required'), { code: 'INVALID_EFFECTIVE_DATE' });
+    }
+    return statutoryAdmin.createVersion(client, {
+        agency, versionLabel: version_label, effectiveFrom: effective_from,
+        sourceReference: source_reference, createdBy: req.user.employee_id,
+    });
+}));
+
+router.put('/statutory-versions/:id', protect, hasPermission('payroll:config'), withTransaction(
+    (req, client) => statutoryAdmin.updateVersion(client, {
+        versionId: req.params.id,
+        versionLabel: req.body.version_label,
+        effectiveFrom: req.body.effective_from,
+        effectiveTo: req.body.effective_to,
+        sourceReference: req.body.source_reference,
+    })
+));
+
+router.put('/statutory-versions/:id/brackets', protect, hasPermission('payroll:config'), withTransaction(
+    (req, client) => statutoryAdmin.replaceBrackets(client, {
+        versionId: req.params.id, payload: req.body,
+    })
+));
+
+/** Preview a generated SSS table without saving, so rates can be sanity-checked first. */
+router.post('/statutory-versions/preview-sss', protect, hasPermission('payroll:config'), async (req, res) => {
+    try {
+        res.json({ brackets: statutoryAdmin.generateSssBrackets(req.body || {}) });
+    } catch (err) { handleError(err, res); }
+});
+
+router.post('/statutory-versions/:id/supersede', protect, hasPermission('payroll:config'), withTransaction(
+    (req, client) => statutoryAdmin.supersedeVersion(client, {
+        versionId: req.params.id,
+        effectiveFrom: req.body.effective_from,
+        versionLabel: req.body.version_label,
+        sourceReference: req.body.source_reference,
+        createdBy: req.user.employee_id,
+    })
+));
 
 module.exports = router;
