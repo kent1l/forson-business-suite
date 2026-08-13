@@ -50,7 +50,15 @@ const CATEGORIES = [
             { name: 'Customers',    icon: ICONS.customers,    page: 'customers',    permission: 'customers:view' },
             { name: 'Suppliers',    icon: ICONS.suppliers,    page: 'suppliers',    permission: 'suppliers:view' },
             { name: 'Documents',    icon: ICONS.documents,    page: 'documents',    permission: 'documents:view' },
-            { name: 'Employees',    icon: ICONS.employees,    page: 'employees',    permission: 'employees:view' },
+        ],
+    },
+    {
+        key: 'hr',
+        title: 'Human Resources',
+        icon: ICONS.employees,
+        items: [
+            { name: 'Employees',   icon: ICONS.employees, page: 'employees',   permission: ['employees:view', 'hr:view'] },
+            { name: 'Departments', icon: ICONS.tag,       page: 'departments', permission: 'hr:view' },
         ],
     },
     {

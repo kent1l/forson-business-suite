@@ -92,6 +92,11 @@ export const AuthProvider = ({ children }) => {
     }, [logout]);
 
     const hasPermission = useCallback((requiredPermission) => {
+        // The API's hasPermission middleware short-circuits for permission_level_id
+        // 10 (Admin). Mirroring that here keeps the two sides in agreement —
+        // otherwise an admin whose role rows were removed sees nav items hidden
+        // while the API happily accepts the very same calls.
+        if (Number(user?.permission_level_id) === 10) return true;
         if (!Array.isArray(permissions)) {
             console.error("Permissions is not an array:", permissions);
             return false;
@@ -100,7 +105,7 @@ export const AuthProvider = ({ children }) => {
             return requiredPermission.some(p => permissions.includes(p));
         }
         return permissions.includes(requiredPermission);
-    }, [permissions]);
+    }, [permissions, user]);
 
     const value = {
         user,
