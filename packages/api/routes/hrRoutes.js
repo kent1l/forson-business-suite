@@ -312,6 +312,111 @@ router.get('/pay-components', protect, hasPermission('hr:view'), async (req, res
     }
 });
 
+// --- Pay component catalog administration ---------------------------------
+// Lets an admin define custom EARNING/DEDUCTION codes (e.g. a new voluntary
+// deduction) without a migration. System codes (BASIC, statutory
+// contributions, loan codes, etc.) are engine-owned and stay read-only here.
+// `payroll:config` already covers "manage pay components" per its permission
+// description, so it's reused rather than adding a new key.
+
+router.get('/pay-components/all', protect, hasPermission('payroll:config'), async (req, res) => {
+    try {
+        const { rows } = await db.query(
+            `SELECT component_code, component_name, component_type, is_taxable, is_statutory,
+                    is_system, is_assignable, sort_order, is_active
+             FROM pay_component
+             ORDER BY component_type DESC, sort_order, component_name`
+        );
+        res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+router.post('/pay-components', protect, hasPermission('payroll:config'), async (req, res) => {
+    const { component_code, component_name, component_type, is_taxable, sort_order } = req.body;
+
+    const code = String(component_code || '').trim().toUpperCase();
+    const name = String(component_name || '').trim();
+    if (!/^[A-Z0-9_]{2,40}$/.test(code)) {
+        return res.status(400).json({ message: 'Code must be 2-40 characters of A-Z, 0-9 or underscore.' });
+    }
+    if (!name) return res.status(400).json({ message: 'component_name is required' });
+    if (!['EARNING', 'DEDUCTION'].includes(component_type)) {
+        return res.status(400).json({ message: 'component_type must be EARNING or DEDUCTION' });
+    }
+
+    try {
+        // Custom codes are always non-system, non-statutory and assignable —
+        // that's the whole point of this endpoint. Engine-generated and
+        // statutory codes are seeded by migration, not created here.
+        const { rows } = await db.query(
+            `INSERT INTO pay_component
+                (component_code, component_name, component_type, is_taxable, is_statutory,
+                 is_system, is_assignable, sort_order, is_active)
+             VALUES ($1,$2,$3,$4, false, false, true, $5, true)
+             RETURNING component_code, component_name, component_type, is_taxable, is_statutory,
+                       is_system, is_assignable, sort_order, is_active`,
+            [code, name, component_type, is_taxable !== false, Number(sort_order) || 0]
+        );
+        res.status(201).json(rows[0]);
+    } catch (err) {
+        if (err.code === '23505') {
+            return res.status(409).json({ message: `A pay component with code "${code}" already exists.` });
+        }
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+router.put('/pay-components/:code', protect, hasPermission('payroll:config'), async (req, res) => {
+    const { component_name, component_type, is_taxable, sort_order } = req.body;
+
+    const name = String(component_name || '').trim();
+    if (!name) return res.status(400).json({ message: 'component_name is required' });
+    if (!['EARNING', 'DEDUCTION'].includes(component_type)) {
+        return res.status(400).json({ message: 'component_type must be EARNING or DEDUCTION' });
+    }
+
+    try {
+        const { rows } = await db.query(
+            `UPDATE pay_component
+             SET component_name = $1, component_type = $2, is_taxable = $3, sort_order = $4
+             WHERE component_code = $5 AND is_system = false
+             RETURNING component_code, component_name, component_type, is_taxable, is_statutory,
+                       is_system, is_assignable, sort_order, is_active`,
+            [name, component_type, is_taxable !== false, Number(sort_order) || 0, req.params.code]
+        );
+        if (rows.length === 0) {
+            return res.status(404).json({ message: 'Custom pay component not found (system components cannot be edited here).' });
+        }
+        res.json(rows[0]);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+router.put('/pay-components/:code/toggle-active', protect, hasPermission('payroll:config'), async (req, res) => {
+    try {
+        const { rows } = await db.query(
+            `UPDATE pay_component
+             SET is_active = NOT is_active
+             WHERE component_code = $1 AND is_system = false
+             RETURNING component_code, is_active`,
+            [req.params.code]
+        );
+        if (rows.length === 0) {
+            return res.status(404).json({ message: 'Custom pay component not found (system components cannot be deactivated here).' });
+        }
+        res.json(rows[0]);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
 router.get('/employees/:id/pay-components', protect, hasPermission('hr:manage_compensation'), async (req, res) => {
     try {
         const { rows } = await db.query(

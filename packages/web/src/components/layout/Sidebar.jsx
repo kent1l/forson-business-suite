@@ -63,6 +63,7 @@ const CATEGORIES = [
             { name: 'Leave',       icon: ICONS.documents, page: 'leave',       permission: 'leave:view' },
             { name: 'Payroll',     icon: ICONS.dollar,    page: 'payroll',     permission: 'payroll:view' },
             { name: 'Statutory Rates', icon: ICONS.settings, page: 'statutory_tables', permission: 'payroll:config' },
+            { name: 'Pay Components', icon: ICONS.tag, page: 'pay_components', permission: 'payroll:config' },
         ],
     },
     {
