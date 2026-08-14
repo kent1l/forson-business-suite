@@ -20,6 +20,7 @@ import ConnectionBanner from '../components/ui/ConnectionBanner';
 import AppErrorBoundary from '../components/AppErrorBoundary';
 import LoginScreen from '../screens/LoginScreen';
 import apiClient from '../api/client';
+import { isUpdateRequired } from '../utils/version';
 
 // Reminders are worth surfacing while the app is open too -- someone staring at
 // the POS screen at closing time is exactly who needs the clock-out nudge.
@@ -148,7 +149,7 @@ export default function RootLayout() {
         setLatestVer(latestVersion || '1.0.0');
         setCurrentVer(currentVersion);
 
-        if (latestVersion && latestVersion !== currentVersion) {
+        if (isUpdateRequired(currentVersion, latestVersion)) {
           setUpdateRequired(true);
           setReleaseNotes(notes);
           const ipWithProtocol = serverIp.startsWith('http') ? serverIp : `http://${serverIp}`;
