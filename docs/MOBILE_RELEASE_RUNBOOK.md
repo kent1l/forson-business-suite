@@ -59,6 +59,18 @@ See the comments in `android/app/build.gradle` for how to supply the release
 keystore. It is deliberately opt-in: builds keep using the debug key until the
 `FORSON_UPLOAD_*` properties are provided, so this cannot happen by accident.
 
+## Why `cli.appVersionSource` is pinned to `local`
+
+`eas.json` sets `cli.appVersionSource: "local"` deliberately. EAS is moving its
+default to `remote`, which would let EAS manage version numbers itself. That
+would break the update gate: it compares `Constants.expoConfig.version` — which
+comes from `app.json` — against the server setting, so a remotely-managed
+version would be one the gate never sees, and clients would be told to update
+forever or never.
+
+Note that `eas.json` is strictly schema-validated and rejects unknown keys, so
+it cannot carry `//` comment fields. Explanations for its contents belong here.
+
 ## Things that are silently ignored
 
 - `android/` is committed in this repo, so gradle edits do take effect. Do not

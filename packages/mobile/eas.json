@@ -1,6 +1,5 @@
 {
   "cli": {
-    "//": "app.json is the single source of the version. The forced-update gate in src/app/_layout.tsx compares Constants.expoConfig.version against the server's mobile_app_version setting, so letting EAS manage versions remotely would make the build report a version the gate never sees. Pinned explicitly because the EAS default is moving to 'remote'.",
     "appVersionSource": "local"
   },
   "build": {
