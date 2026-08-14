@@ -17,6 +17,11 @@ const dtrService = require('./dtrService');
 const { computePayslip, round2 } = require('./payrollCalculationService');
 const { getNextDocumentNumber } = require('../../helpers/documentNumberGenerator');
 
+// Statuses meaning the employment has ended. Kept distinct from `is_active`,
+// which is a system-access flag that nothing keeps in step with HR status — so
+// a Resigned employee can, and in practice does, still read as active.
+const SEPARATED_STATUSES = new Set(['Resigned', 'Terminated', 'Retired']);
+
 const ALLOWED_TRANSITIONS = {
     Draft: ['Computed', 'Voided'],
     Computed: ['Draft', 'Approved', 'Voided'],
@@ -103,7 +108,7 @@ const createRun = async (executor, { payPeriodId, runType = 'REGULAR', departmen
  */
 const computeRun = async (executor, { runId, computedBy }) => {
     const { rows: runRows } = await executor.query(
-        `SELECT run_id, run_no, status, department_id, pay_period_id,
+        `SELECT run_id, run_no, run_type, status, department_id, pay_period_id,
                 TO_CHAR(period_start, 'YYYY-MM-DD') AS period_start,
                 TO_CHAR(period_end, 'YYYY-MM-DD') AS period_end,
                 TO_CHAR(pay_date, 'YYYY-MM-DD') AS pay_date
@@ -138,12 +143,26 @@ const computeRun = async (executor, { runId, computedBy }) => {
     await executor.query('DELETE FROM payroll_payslip WHERE run_id = $1', [runId]);
 
     // --- Bulk loads (four queries, regardless of headcount) --------------
-    const empParams = [];
-    let empWhere = 'WHERE e.is_active = TRUE AND e.is_payroll_eligible = TRUE';
-    if (run.department_id) { empWhere += ' AND e.department_id = $1'; empParams.push(run.department_id); }
+    // A JOB_ORDER run pays contract-of-service workers; every other run type pays
+    // employees. This one predicate is what keeps the two populations — and
+    // therefore the statutory and BIR reports — apart.
+    const workerClass = run.run_type === 'JOB_ORDER' ? 'JOB_ORDER' : 'EMPLOYEE';
+    const empParams = [workerClass, run.period_start, run.period_end];
+    // Separation is a DATE question, not a flag question. Someone who resigns
+    // mid-cutoff is still owed the days they worked, so they must stay in the
+    // run and be prorated — only a separation BEFORE the period starts removes
+    // them. `is_active` is deliberately not trusted on its own: nothing keeps it
+    // in step with employment_status, so a Resigned employee whose flag was
+    // never flipped would otherwise be paid in full.
+    let empWhere = `WHERE e.is_active = TRUE AND e.is_payroll_eligible = TRUE
+                      AND e.worker_class = $1
+                      AND (e.date_separated IS NULL OR e.date_separated >= $2::date)
+                      AND (e.date_hired IS NULL OR e.date_hired <= $3::date)`;
+    if (run.department_id) { empWhere += ' AND e.department_id = $4'; empParams.push(run.department_id); }
 
     const { rows: employees } = await executor.query(
-        `SELECT e.employee_id, e.employee_code, e.position_title,
+        `SELECT e.employee_id, e.employee_code, e.position_title, e.worker_class,
+                e.employment_status,
                 TRIM(CONCAT_WS(' ', e.first_name, e.last_name)) AS employee_name,
                 TO_CHAR(e.date_hired, 'YYYY-MM-DD')    AS date_hired,
                 TO_CHAR(e.date_separated, 'YYYY-MM-DD') AS date_separated,
@@ -156,7 +175,41 @@ const computeRun = async (executor, { runId, computedBy }) => {
     );
 
     if (employees.length === 0) {
-        const err = new Error('No payroll-eligible employees matched this run.');
+        // "Nobody matched" is useless on its own — three separate gates can
+        // exclude someone, and the one that actually fired is invisible from the
+        // UI. Re-query without the gates to say WHICH one, and name the people,
+        // so the fix is a single click rather than a hunt.
+        const { rows: [diag] } = await executor.query(
+            `SELECT
+                COUNT(*) FILTER (WHERE e.worker_class = $1)                          AS right_class,
+                COUNT(*) FILTER (WHERE e.worker_class = $1 AND NOT e.is_active)      AS inactive,
+                COUNT(*) FILTER (WHERE e.worker_class = $1 AND e.is_active
+                                   AND NOT e.is_payroll_eligible)                    AS not_eligible,
+                COALESCE(STRING_AGG(
+                    TRIM(CONCAT_WS(' ', e.first_name, e.last_name)), ', '
+                ) FILTER (WHERE e.worker_class = $1 AND e.is_active
+                            AND NOT e.is_payroll_eligible), '')                      AS not_eligible_names
+             FROM employee e`,
+            [workerClass]
+        );
+
+        const label = workerClass === 'JOB_ORDER' ? 'job-order worker' : 'employee';
+        let message;
+        if (Number(diag.right_class) === 0) {
+            message = `No ${label}s exist yet. Set a person's worker class to `
+                + `${workerClass === 'JOB_ORDER' ? 'Job Order' : 'Employee'} to include them in this run.`;
+        } else if (Number(diag.not_eligible) > 0) {
+            message = `${diag.not_eligible} ${label}(s) were excluded because "Payroll eligible" is off: `
+                + `${diag.not_eligible_names}. Turn it on in the employee record to pay them.`;
+        } else if (Number(diag.inactive) > 0) {
+            message = `Every ${label} is marked inactive, so none could be paid.`;
+        } else if (run.department_id) {
+            message = `No ${label}s are assigned to the selected department.`;
+        } else {
+            message = `No ${label}s matched this run.`;
+        }
+
+        const err = new Error(message);
         err.code = 'NO_EMPLOYEES';
         throw err;
     }
@@ -167,7 +220,8 @@ const computeRun = async (executor, { runId, computedBy }) => {
     const { rows: compRows } = await executor.query(
         `SELECT DISTINCT ON (employee_id)
                 employee_id, compensation_id, pay_basis, salary_model, base_rate, days_per_year,
-                declared_monthly_basic, sss_msc_override, is_overtime_exempt, is_tardiness_exempt
+                declared_monthly_basic, sss_msc_override, is_overtime_exempt, is_tardiness_exempt,
+                statutory_coverage
          FROM employee_compensation
          WHERE employee_id = ANY($1::int[]) AND effective_date <= $2
          ORDER BY employee_id, effective_date DESC`,
@@ -253,12 +307,32 @@ const computeRun = async (executor, { runId, computedBy }) => {
     // Collected rather than pushed per employee, so one missed DTR generation
     // reads as a single actionable warning instead of a wall of identical ones.
     const monthlyWithoutDtr = [];
+    // Named in a closing warning so a final pay is never missed: someone leaving
+    // mid-cutoff is paid a partial period here, and usually needs a FINAL_PAY
+    // run afterwards for their last entitlements.
+    const separatedThisPeriod = [];
     const totals = { gross: 0, deductions: 0, net: 0, employer: 0 };
     let payslipCount = 0;
 
     for (const employee of employees) {
         const compensation = compensationByEmployee.get(employee.employee_id);
         const dtrSummary = dtrByEmployee.get(employee.employee_id);
+
+        // A separated status with no separation date is unresolvable: we cannot
+        // tell which days of this cutoff were still employment. Paying in full
+        // is the one option that is certainly wrong, so refuse and say what is
+        // missing — this is also what surfaces records whose employment_status
+        // and is_active flag disagree.
+        if (SEPARATED_STATUSES.has(employee.employment_status) && !employee.date_separated) {
+            warnings.push(
+                `${employee.employee_name}: skipped — marked ${employee.employment_status} but has no `
+                + 'separation date, so the last payable day is unknown. Set Date Separated on their record.'
+            );
+            continue;
+        }
+        if (employee.date_separated && employee.date_separated <= run.period_end) {
+            separatedThisPeriod.push(`${employee.employee_name} (${employee.date_separated})`);
+        }
 
         // Paying someone with no recorded rate would be inventing money.
         if (!compensation) {
@@ -304,6 +378,7 @@ const computeRun = async (executor, { runId, computedBy }) => {
             `INSERT INTO payroll_payslip (
                 run_id, employee_id, payslip_no, employee_code, employee_name,
                 position_title, department_name, pay_basis, salary_model, is_overtime_exempt,
+                worker_class, statutory_coverage,
                 daily_rate, monthly_basis, compensation_id,
                 days_worked, days_paid, days_absent, days_on_leave, overtime_hours,
                 basic_pay, overtime_pay, holiday_pay, night_diff_pay,
@@ -314,10 +389,12 @@ const computeRun = async (executor, { runId, computedBy }) => {
                 computation_trace
              ) VALUES (
                 $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
-                $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43
+                $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,
+                $41,$42,$43,$44,$45
              ) RETURNING payslip_id`,
             [runId, h.employee_id, payslipNo, h.employee_code, h.employee_name,
                 h.position_title, h.department_name, h.pay_basis, h.salary_model, h.is_overtime_exempt,
+                h.worker_class, h.statutory_coverage,
                 h.daily_rate, h.monthly_basis, h.compensation_id,
                 h.days_worked, h.days_paid, h.days_absent, h.days_on_leave, h.overtime_hours,
                 h.basic_pay, h.overtime_pay, h.holiday_pay, h.night_diff_pay,
@@ -347,6 +424,14 @@ const computeRun = async (executor, { runId, computedBy }) => {
         totals.deductions = round2(totals.deductions + h.total_deductions);
         totals.net = round2(totals.net + h.net_pay);
         totals.employer = round2(totals.employer + h.total_employer_contrib);
+    }
+
+    if (separatedThisPeriod.length > 0) {
+        warnings.push(
+            `${separatedThisPeriod.length} employee(s) separated during or before this period and were `
+            + `paid only up to their last day: ${separatedThisPeriod.join(', ')}. `
+            + 'Check whether a final pay run is also due.'
+        );
     }
 
     if (monthlyWithoutDtr.length > 0) {

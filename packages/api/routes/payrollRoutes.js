@@ -10,6 +10,10 @@ const { generatePayslipPdf } = require('../helpers/pdf/payslipPdf');
 
 const router = express.Router();
 
+// Mirrors the payroll_run.run_type CHECK constraint. JOB_ORDER pays
+// contract-of-service workers and is excluded from the statutory reports.
+const RUN_TYPES = ['REGULAR', 'THIRTEENTH_MONTH', 'FINAL_PAY', 'SPECIAL', 'JOB_ORDER'];
+
 // Maps service-level error codes onto HTTP responses in one place.
 const ERROR_STATUS = {
     RUN_NOT_FOUND: 404,
@@ -24,6 +28,9 @@ const ERROR_STATUS = {
     VERSION_IN_USE: 409,
     INVALID_EFFECTIVE_DATE: 400,
     INVALID_BRACKET_PARAMS: 400,
+    // Also thrown by payrollReportService for a bad agency; without this entry
+    // a caller's typo surfaced as a 500.
+    INVALID_REPORT_PARAMS: 400,
 };
 
 const handleError = (err, res) => {
@@ -68,6 +75,7 @@ const withTransaction = (handler) => async (req, res) => {
 
 router.get('/periods', protect, hasPermission('payroll:view'), async (req, res) => {
     const year = Number(req.query.year) || new Date().getFullYear();
+    const runType = RUN_TYPES.includes(req.query.run_type) ? req.query.run_type : 'REGULAR';
     try {
         const { rows } = await db.query(
             `SELECT p.pay_period_id, p.period_year, p.period_month, p.period_seq,
@@ -77,10 +85,16 @@ router.get('/periods', protect, hasPermission('payroll:view'), async (req, res) 
                     p.is_closed,
                     r.run_id, r.run_no, r.status AS run_status
              FROM pay_period p
-             LEFT JOIN payroll_run r ON r.pay_period_id = p.pay_period_id AND r.status <> 'Voided'
+             -- Joined on run_type as well as period: a cutoff can legitimately
+             -- hold one REGULAR run and one JOB_ORDER run at the same time, so
+             -- joining on the period alone both hid periods from the "new run"
+             -- picker and fanned out a duplicate row per live run.
+             LEFT JOIN payroll_run r ON r.pay_period_id = p.pay_period_id
+                                    AND r.status <> 'Voided'
+                                    AND r.run_type = $2
              WHERE p.period_year = $1
              ORDER BY p.period_month, p.period_seq`,
-            [year]
+            [year, runType]
         );
         res.json(rows);
     } catch (err) { handleError(err, res); }
@@ -144,6 +158,11 @@ router.post('/runs', protect, hasPermission('payroll:compute'), withTransaction(
     if (!pay_period_id) {
         const err = new Error('pay_period_id is required');
         err.code = 'PERIOD_NOT_FOUND';
+        throw err;
+    }
+    if (run_type && !RUN_TYPES.includes(run_type)) {
+        const err = new Error(`run_type must be one of: ${RUN_TYPES.join(', ')}`);
+        err.code = 'INVALID_REPORT_PARAMS';
         throw err;
     }
     return payrollRunService.createRun(client, {

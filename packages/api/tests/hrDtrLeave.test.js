@@ -164,11 +164,14 @@ describe('resolveDay precedence', () => {
 // --- Generation ----------------------------------------------------------
 
 describe('generateForPeriod', () => {
-    const mockLoads = ({ scheduleRows = [], holidayRows = [], leaveRows = [], inserted = [] }) => {
+    const mockLoads = ({
+        scheduleRows = [], holidayRows = [], leaveRows = [], employmentRows = [], inserted = [],
+    }) => {
         db.query
             .mockResolvedValueOnce({ rows: scheduleRows })   // loadSchedules
             .mockResolvedValueOnce({ rows: holidayRows })    // loadHolidays
             .mockResolvedValueOnce({ rows: leaveRows })      // loadApprovedLeave
+            .mockResolvedValueOnce({ rows: employmentRows }) // loadEmploymentWindows
             .mockResolvedValueOnce({ rows: inserted });      // INSERT ... RETURNING
     };
 
@@ -186,7 +189,7 @@ describe('generateForPeriod', () => {
         });
 
         expect(result).toEqual({ created: 1, skipped: 1, employees: 1, days: 2 });
-        const [sql] = db.query.mock.calls[3];
+        const [sql] = db.query.mock.calls[4];
         // Existing rows must survive a re-run untouched.
         expect(sql).toMatch(/ON CONFLICT \(employee_id, work_date\) DO NOTHING/);
     });
@@ -197,8 +200,8 @@ describe('generateForPeriod', () => {
             employeeIds: [99], periodStart: '2026-08-03', periodEnd: '2026-08-04', createdBy: 1,
         });
         expect(result.created).toBe(0);
-        // Only the three loads ran; no INSERT was attempted.
-        expect(db.query).toHaveBeenCalledTimes(3);
+        // Only the four loads ran; no INSERT was attempted.
+        expect(db.query).toHaveBeenCalledTimes(4);
     });
 
     it('does nothing when given no employees', async () => {
@@ -421,5 +424,81 @@ describe('leave approval', () => {
         const res = await request(app).post('/api/leave/requests/1/approve').send({});
 
         expect(res.status).toBe(409);
+    });
+});
+
+// --- Employment window ---------------------------------------------------
+// An auto-generated "Present" row outside someone's employment is not untidy
+// data: the daily basis pays rate x days_paid, so it is money paid for a day
+// nobody worked. Generation must never create one.
+
+describe('generateForPeriod — employment window', () => {
+    const WEEKDAY_SCHEDULE = [1, 2, 3, 4, 5].map((dow) => ({
+        employee_id: 3, day_of_week: dow, is_rest_day: false,
+        time_in: '08:00', time_out: '17:00', break_minutes: 60,
+    }));
+
+    const runWith = async (employmentRows, { periodStart, periodEnd }) => {
+        db.query
+            .mockResolvedValueOnce({ rows: WEEKDAY_SCHEDULE }) // loadSchedules
+            .mockResolvedValueOnce({ rows: [] })               // loadHolidays
+            .mockResolvedValueOnce({ rows: [] })               // loadApprovedLeave
+            .mockResolvedValueOnce({ rows: employmentRows })   // loadEmploymentWindows
+            .mockResolvedValueOnce({ rows: [] });              // INSERT
+        await dtrService.generateForPeriod(db, {
+            employeeIds: [3], periodStart, periodEnd, createdBy: 1,
+        });
+        // The generated dates are the 2nd bind of every (employee_id, work_date, ...)
+        // tuple in the INSERT; read them back off the params array.
+        const insertCall = db.query.mock.calls[4];
+        if (!insertCall) return [];
+        return (insertCall[1] || []).filter((v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v));
+    };
+
+    // Mon 2026-08-03 .. Fri 2026-08-07
+    it('generates nothing after the separation date', async () => {
+        const dates = await runWith(
+            [{ employee_id: 3, date_hired: '2026-01-01', date_separated: '2026-08-05' }],
+            { periodStart: '2026-08-03', periodEnd: '2026-08-07' }
+        );
+        expect(dates).toEqual(['2026-08-03', '2026-08-04', '2026-08-05']);
+    });
+
+    it('generates nothing before the hire date', async () => {
+        const dates = await runWith(
+            [{ employee_id: 3, date_hired: '2026-08-06', date_separated: null }],
+            { periodStart: '2026-08-03', periodEnd: '2026-08-07' }
+        );
+        expect(dates).toEqual(['2026-08-06', '2026-08-07']);
+    });
+
+    it('generates the whole period when the window is open', async () => {
+        const dates = await runWith(
+            [{ employee_id: 3, date_hired: '2026-01-01', date_separated: null }],
+            { periodStart: '2026-08-03', periodEnd: '2026-08-07' }
+        );
+        expect(dates).toHaveLength(5);
+    });
+
+    it('generates nothing at all when separation precedes the period', async () => {
+        const dates = await runWith(
+            [{ employee_id: 3, date_hired: '2026-01-01', date_separated: '2026-07-31' }],
+            { periodStart: '2026-08-03', periodEnd: '2026-08-07' }
+        );
+        expect(dates).toEqual([]);
+    });
+});
+
+describe('summarizePeriodBulk — employment window', () => {
+    it('bounds the aggregation by hire and separation dates', async () => {
+        db.query.mockResolvedValueOnce({ rows: [] });
+        await dtrService.summarizePeriodBulk(db, {
+            employeeIds: [3], periodStart: '2026-08-01', periodEnd: '2026-08-15',
+        });
+        const [sql] = db.query.mock.calls[0];
+        // Historical rows created before generation honoured the window must
+        // still be unable to pay someone outside their employment.
+        expect(sql).toMatch(/e\.date_hired IS NULL OR dtr\.work_date >= e\.date_hired/);
+        expect(sql).toMatch(/e\.date_separated IS NULL OR dtr\.work_date <= e\.date_separated/);
     });
 });

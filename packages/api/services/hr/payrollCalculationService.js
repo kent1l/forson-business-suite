@@ -315,12 +315,27 @@ const computePayslip = ({
     // --- Statutory contributions ----------------------------------------
     // Contributions are monthly by law, so they are computed on a monthly basis
     // and then prorated onto this cutoff.
-    const monthlyBasis = monthlyBasisFor(compensation, policy);
+    //
+    // A job-order / contract-of-service worker is outside the coverage entirely:
+    // no employee share, no EMPLOYER share, and no compensation withholding.
+    // The tables are not merely zeroed afterwards but skipped, because
+    // PhilHealth lifts any basis below its income floor — computing on a zero
+    // basis would invent a contribution rather than suppress one.
+    const isStatutoryExempt = compensation.statutory_coverage === 'EXEMPT';
+    const NO_CONTRIBUTION = { ee: 0, er: 0, ec: 0, mpfEe: 0, mpfEr: 0, msc: 0, total: 0 };
+
+    const monthlyBasis = isStatutoryExempt ? 0 : monthlyBasisFor(compensation, policy);
     const schedule = policy.statutorySchedule || 'SPLIT_HALF';
 
-    const sss = statutory.computeSSS(statutoryTables, compensation.sss_msc_override || monthlyBasis);
-    const philhealth = statutory.computePhilHealth(statutoryTables, monthlyBasis);
-    const pagibig = statutory.computePagIbig(statutoryTables, monthlyBasis);
+    const sss = isStatutoryExempt
+        ? NO_CONTRIBUTION
+        : statutory.computeSSS(statutoryTables, compensation.sss_msc_override || monthlyBasis);
+    const philhealth = isStatutoryExempt
+        ? NO_CONTRIBUTION
+        : statutory.computePhilHealth(statutoryTables, monthlyBasis);
+    const pagibig = isStatutoryExempt
+        ? NO_CONTRIBUTION
+        : statutory.computePagIbig(statutoryTables, monthlyBasis);
 
     // A standing override replaces the MONTHLY figure, which is then prorated
     // exactly like a computed one — so an override behaves identically to a
@@ -334,9 +349,11 @@ const computePayslip = ({
         const adj = overrideByComponent.get(code);
         return adj ? round2(Number(adj.amount)) : value;
     };
-    const resolveStatutory = (code, monthlyComputed) => applyRunOverride(
+    // An exempt worker is not covered, so a standing or run-scoped override
+    // cannot reintroduce a contribution — coverage wins over both.
+    const resolveStatutory = (code, monthlyComputed) => (isStatutoryExempt ? 0 : applyRunOverride(
         code, statutory.prorateMonthly(monthlyOrOverride(code, monthlyComputed), schedule, cutoffSeq)
-    );
+    ));
 
     const sssEe = resolveStatutory('SSS_EE', sss.ee);
     const sssMpfEe = resolveStatutory('SSS_MPF_EE', sss.mpfEe);
@@ -361,11 +378,19 @@ const computePayslip = ({
     // Non-taxable allowances (rice, meal, de minimis) are part of gross but not
     // of taxable income, so tax is computed on the taxable earnings only.
     const taxableEarnings = round2(basicPay + overtimePay + nightDiffPay + allowancesTaxable);
-    const taxableIncome = round2(Math.max(taxableEarnings - statutoryDeductions, 0));
-    const wtax = statutory.computeWithholdingTax(statutoryTables, taxableIncome, 'SEMI_MONTHLY');
+    // An exempt worker earns a fee, not compensation, so the compensation tax
+    // table does not apply to them at all — the figure is zero rather than
+    // computed-and-suppressed, and taxable income follows so BIR 1601-C
+    // reporting cannot pick up a base that was never taxable.
+    const taxableIncome = isStatutoryExempt
+        ? 0
+        : round2(Math.max(taxableEarnings - statutoryDeductions, 0));
+    const wtax = isStatutoryExempt
+        ? { tax: 0, bracketSeq: null }
+        : statutory.computeWithholdingTax(statutoryTables, taxableIncome, 'SEMI_MONTHLY');
 
     // Tax can be overridden either standing (monthly, prorated) or per run.
-    const withholdingTax = applyRunOverride(
+    const withholdingTax = isStatutoryExempt ? 0 : applyRunOverride(
         'WTAX',
         statutoryOverrides.WTAX != null
             ? statutory.prorateMonthly(Number(statutoryOverrides.WTAX), schedule, cutoffSeq)
@@ -421,6 +446,8 @@ const computePayslip = ({
             pay_basis: compensation.pay_basis,
             salary_model: compensation.salary_model || null,
             is_overtime_exempt: isOvertimeExempt,
+            worker_class: employee.worker_class || 'EMPLOYEE',
+            statutory_coverage: isStatutoryExempt ? 'EXEMPT' : 'COVERED',
             daily_rate: dailyRate,
             monthly_basis: monthlyBasis,
             compensation_id: compensation.compensation_id,
@@ -465,6 +492,8 @@ const computePayslip = ({
         trace: {
             ...basic.trace,
             monthlyBasis,
+            workerClass: employee.worker_class || 'EMPLOYEE',
+            statutoryCoverage: isStatutoryExempt ? 'EXEMPT' : 'COVERED',
             overtimeExempt: isOvertimeExempt,
             tardinessExempt: Boolean(compensation.is_tardiness_exempt),
             statutorySchedule: schedule,

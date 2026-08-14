@@ -77,6 +77,9 @@ const contributionSchedule = async (executor, { agency, year, month }) => {
          LEFT JOIN employee_government_id g ON g.employee_id = p.employee_id
          CROSS JOIN LATERAL (SELECT ${columns}) AS x
          WHERE r.status = ANY($1)
+           -- Job-order workers are outside the coverage, so they must never
+           -- appear on a contribution schedule — not even as zero rows.
+           AND r.run_type <> 'JOB_ORDER'
            AND EXTRACT(YEAR FROM r.period_end) = $2
            AND EXTRACT(MONTH FROM r.period_end) = $3
          GROUP BY p.employee_id, g.sss_no, g.tin, g.philhealth_no, g.pagibig_mid_no
@@ -108,6 +111,9 @@ const withholdingTaxReport = async (executor, { year, month }) => {
          JOIN payroll_run r ON p.run_id = r.run_id
          LEFT JOIN employee_government_id g ON g.employee_id = p.employee_id
          WHERE r.status = ANY($1)
+           -- A job-order fee is not compensation, so it must not inflate the
+           -- gross reported on BIR 1601-C.
+           AND r.run_type <> 'JOB_ORDER'
            AND EXTRACT(YEAR FROM r.period_end) = $2
            AND ($3::int IS NULL OR EXTRACT(MONTH FROM r.period_end) = $3)
          GROUP BY p.employee_id, g.tin

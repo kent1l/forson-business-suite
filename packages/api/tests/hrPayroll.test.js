@@ -694,3 +694,142 @@ describe('computePayslip — monthly edge cases', () => {
         }
     });
 });
+
+// --- Job-order / contract-of-service workers -----------------------------
+// A job-order worker is outside SSS/PhilHealth/Pag-IBIG coverage entirely, and
+// is paid a gross fee with no compensation withholding. The guard must suppress
+// the employer share too — that is the half an amount-override cannot reach.
+
+describe('computePayslip — statutory coverage EXEMPT', () => {
+    const exemptBase = (overrides = {}) => ({
+        employee: { employee_id: 21, employee_name: 'Rico Delgado', worker_class: 'JOB_ORDER' },
+        compensation: {
+            compensation_id: 7, pay_basis: 'daily', base_rate: 800,
+            days_per_year: 313, statutory_coverage: 'EXEMPT',
+        },
+        dtrSummary: { days_paid: 12, overtime_hours: 0 },
+        loans: [], policy: POLICY, statutoryTables: TABLES, cutoffSeq: 1,
+        ...overrides,
+    });
+
+    it('deducts no employee contributions and no withholding tax', () => {
+        const h = computePayslip(exemptBase()).header;
+        expect(h.sss_ee).toBe(0);
+        expect(h.sss_mpf_ee).toBe(0);
+        expect(h.philhealth_ee).toBe(0);
+        expect(h.pagibig_ee).toBe(0);
+        expect(h.withholding_tax).toBe(0);
+        expect(h.taxable_income).toBe(0);
+    });
+
+    it('incurs no EMPLOYER share either', () => {
+        const h = computePayslip(exemptBase()).header;
+        expect(h.sss_er).toBe(0);
+        expect(h.sss_mpf_er).toBe(0);
+        expect(h.sss_ec).toBe(0);
+        expect(h.philhealth_er).toBe(0);
+        expect(h.pagibig_er).toBe(0);
+        expect(h.total_employer_contrib).toBe(0);
+    });
+
+    it('pays the gross fee out in full', () => {
+        const h = computePayslip(exemptBase()).header;
+        expect(h.gross_pay).toBe(9600); // 800 x 12
+        expect(h.net_pay).toBe(9600);
+        expect(h.total_deductions).toBe(0);
+    });
+
+    it('emits no statutory lines at all on the payslip', () => {
+        const { lines } = computePayslip(exemptBase());
+        const statutoryCodes = ['SSS_EE', 'SSS_MPF_EE', 'PHIC_EE', 'HDMF_EE', 'WTAX',
+            'SSS_ER', 'SSS_MPF_ER', 'SSS_EC', 'PHIC_ER', 'HDMF_ER'];
+        for (const code of statutoryCodes) {
+            expect(lines.find((l) => l.componentCode === code)).toBeUndefined();
+        }
+    });
+
+    it('does not lift a low fee to the PhilHealth income floor', () => {
+        // The floor is 10,000/month. Zeroing AFTER computing would have invented
+        // a 250 deduction here, so the tables must be skipped, not zeroed.
+        const h = computePayslip(exemptBase({
+            compensation: { compensation_id: 7, pay_basis: 'daily', base_rate: 300, days_per_year: 313, statutory_coverage: 'EXEMPT' },
+        })).header;
+        expect(h.philhealth_ee).toBe(0);
+        expect(h.monthly_basis).toBe(0);
+    });
+
+    it('cannot have coverage reintroduced by a standing or run override', () => {
+        const h = computePayslip(exemptBase({
+            statutoryOverrides: { SSS_EE: 1000, PHIC_EE: 500, WTAX: 2000 },
+            adjustments: [{ adjustment_type: 'OVERRIDE', component_code: 'HDMF_EE', amount: 200 }],
+        })).header;
+        expect(h.sss_ee).toBe(0);
+        expect(h.philhealth_ee).toBe(0);
+        expect(h.withholding_tax).toBe(0);
+        expect(h.pagibig_ee).toBe(0);
+    });
+
+    it('still recovers a cash advance', () => {
+        const r = computePayslip(exemptBase({
+            loans: [{
+                loan_id: 5, loan_type: 'CASH_ADVANCE', component_code: 'CASH_ADVANCE',
+                principal_amount: 3000, amortization_amount: 1000, amount_paid: 0, deduct_on_cutoff: 1,
+            }],
+        }));
+        expect(r.header.loans_total).toBe(1000);
+        expect(r.header.net_pay).toBe(8600);
+    });
+
+    it('records the class and coverage for audit', () => {
+        const r = computePayslip(exemptBase());
+        expect(r.header.worker_class).toBe('JOB_ORDER');
+        expect(r.header.statutory_coverage).toBe('EXEMPT');
+        expect(r.trace.statutoryCoverage).toBe('EXEMPT');
+    });
+
+    it('works with a flat monthly fee as well as a daily rate', () => {
+        const h = computePayslip(exemptBase({
+            compensation: {
+                compensation_id: 8, pay_basis: 'monthly', salary_model: 'GUARANTEED',
+                base_rate: 40000, days_per_year: 313, statutory_coverage: 'EXEMPT',
+                is_overtime_exempt: true,
+            },
+            periodDays: { schedDaysInPeriod: 13, schedDaysInMonth: 26, contractDays: 13 },
+            dtrSummary: { days_paid: 13, days_absent: 0, days_lwop: 0 },
+        })).header;
+        expect(h.basic_pay).toBe(20000);
+        expect(h.net_pay).toBe(20000);
+        expect(h.total_employer_contrib).toBe(0);
+    });
+});
+
+describe('computePayslip — coverage guard is inert for employees', () => {
+    it('leaves a COVERED employee exactly as before', () => {
+        const covered = {
+            employee: { employee_id: 3, employee_name: 'Grace Pilar' },
+            compensation: {
+                compensation_id: 1, pay_basis: 'daily', base_rate: 610,
+                days_per_year: 313, statutory_coverage: 'COVERED',
+            },
+            dtrSummary: { days_paid: 13, overtime_hours: 0 },
+            loans: [], policy: POLICY, statutoryTables: TABLES, cutoffSeq: 1,
+        };
+        const h = computePayslip(covered).header;
+        // Same figures the pre-existing rank-and-file suite asserts.
+        expect(h.monthly_basis).toBe(15910.83);
+        expect(h.sss_ee).toBe(400);
+        expect(h.net_pay).toBe(round2(h.gross_pay - h.total_deductions));
+        expect(h.total_employer_contrib).toBeGreaterThan(0);
+    });
+
+    it('treats a missing coverage value as COVERED', () => {
+        const h = computePayslip({
+            employee: { employee_id: 3, employee_name: 'Grace Pilar' },
+            compensation: { compensation_id: 1, pay_basis: 'daily', base_rate: 610, days_per_year: 313 },
+            dtrSummary: { days_paid: 13, overtime_hours: 0 },
+            loans: [], policy: POLICY, statutoryTables: TABLES, cutoffSeq: 1,
+        }).header;
+        expect(h.sss_ee).toBe(400);
+        expect(h.statutory_coverage).toBe('COVERED');
+    });
+});

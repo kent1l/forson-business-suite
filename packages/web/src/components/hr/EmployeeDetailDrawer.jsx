@@ -189,17 +189,21 @@ const EmploymentTab = ({ employee, roles, canManageAccess, onEmployeeChanged }) 
 
 // --- Compensation --------------------------------------------------------
 
-const BLANK_COMPENSATION = {
+const blankCompensation = (employee) => ({
     effective_date: '', base_rate: '', reason: '',
     pay_basis: 'daily', salary_model: '',
     is_overtime_exempt: false, is_tardiness_exempt: false,
-};
+    // A job-order worker is outside the coverage, so that is the sensible
+    // starting point — but it stays overridable rather than being derived,
+    // since coverage is a fact about the engagement, not about the job title.
+    statutory_coverage: employee?.worker_class === 'JOB_ORDER' ? 'EXEMPT' : 'COVERED',
+});
 
 const CompensationTab = ({ employee }) => {
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(true);
     const [adding, setAdding] = useState(false);
-    const [form, setForm] = useState(BLANK_COMPENSATION);
+    const [form, setForm] = useState(() => blankCompensation(employee));
     const isMonthly = form.pay_basis === 'monthly';
 
     // Picking a monthly basis pre-selects the arrangement it almost always comes
@@ -235,7 +239,7 @@ const CompensationTab = ({ employee }) => {
             await api.post(`/hr/employees/${employee.employee_id}/compensation`, form);
             toast.success('Rate change recorded');
             setAdding(false);
-            setForm(BLANK_COMPENSATION);
+            setForm(blankCompensation(employee));
             load();
         } catch (err) {
             toast.error(err.response?.data?.message || 'Failed to record rate change');
@@ -303,6 +307,20 @@ const CompensationTab = ({ employee }) => {
                                 : 'Paid exactly half the monthly salary each cutoff regardless of attendance. Only approved leave without pay reduces it.'}
                         </p>
                     )}
+                    <div>
+                        <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Statutory Coverage</label>
+                        <select className={INPUT_CLASS} value={form.statutory_coverage}
+                            onChange={(e) => setForm({ ...form, statutory_coverage: e.target.value })}>
+                            <option value="COVERED">Covered — SSS, PhilHealth, Pag-IBIG and withholding tax apply</option>
+                            <option value="EXEMPT">Exempt — no contributions and no withholding tax</option>
+                        </select>
+                        {form.statutory_coverage === 'EXEMPT' && (
+                            <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                                Nothing is deducted, and no employer share is incurred. Loans and cash
+                                advances are still recovered.
+                            </p>
+                        )}
+                    </div>
                     <div className="flex flex-wrap gap-x-4 gap-y-1">
                         <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-slate-300">
                             <input type="checkbox" checked={form.is_overtime_exempt}
@@ -356,6 +374,9 @@ const CompensationTab = ({ employee }) => {
                                         )}
                                         {row.is_overtime_exempt && (
                                             <span className="ml-1 text-[10px] uppercase text-gray-400 dark:text-slate-500">OT-exempt</span>
+                                        )}
+                                        {row.statutory_coverage === 'EXEMPT' && (
+                                            <span className="ml-1 text-[10px] uppercase text-warning-600 dark:text-warning-500">no statutory</span>
                                         )}
                                     </td>
                                     <td className="py-2 text-right tabular-nums text-gray-900 dark:text-slate-100">

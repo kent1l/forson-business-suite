@@ -54,7 +54,7 @@ const SectionNote = ({ children }) => (
 const EMPTY_FORM = {
     first_name: '', middle_name: '', last_name: '', suffix: '',
     position_title: '', department_id: '', manager_employee_id: '',
-    employment_type: 'Regular', employment_status: 'Active',
+    worker_class: 'EMPLOYEE', employment_type: 'Regular', employment_status: 'Active',
     date_hired: '', birth_date: '', gender: '', civil_status: '',
     mobile_no: '', personal_email: '',
     address_line: '', barangay: '', city: '', province: '', postal_code: '',
@@ -106,6 +106,8 @@ const EmployeeForm = ({ employee, onSave, onCancel, roles = [], departments = []
         () => JSON.stringify(formData) !== JSON.stringify(initialFormData),
         [formData, initialFormData]
     );
+
+    const isJobOrder = formData.worker_class === 'JOB_ORDER';
 
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
@@ -300,11 +302,27 @@ const EmployeeForm = ({ employee, onSave, onCancel, roles = [], departments = []
                                     ))}
                                 </select>
                             </Field>
-                            <Field label="Employment type">
-                                <select name="employment_type" value={formData.employment_type} onChange={handleChange} className={INPUT_CLASS}>
-                                    {EMPLOYMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                            <Field label="Worker class">
+                                <select name="worker_class" value={formData.worker_class} onChange={handleChange} className={INPUT_CLASS}>
+                                    <option value="EMPLOYEE">Employee</option>
+                                    <option value="JOB_ORDER">Job Order / Contract of Service</option>
                                 </select>
+                                {isJobOrder && (
+                                    <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                                        Paid through a separate Job Order payroll run. No SSS, PhilHealth,
+                                        Pag-IBIG or withholding tax, and excluded from the statutory reports.
+                                    </p>
+                                )}
                             </Field>
+                            {/* Regular / Probationary / Casual are employee-only concepts, so the
+                                field is hidden rather than shown with nothing that applies. */}
+                            {!isJobOrder && (
+                                <Field label="Employment type">
+                                    <select name="employment_type" value={formData.employment_type} onChange={handleChange} className={INPUT_CLASS}>
+                                        {EMPLOYMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                                    </select>
+                                </Field>
+                            )}
                             <Field label="Status">
                                 <select name="employment_status" value={formData.employment_status} onChange={handleChange} className={INPUT_CLASS}>
                                     {EMPLOYMENT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -346,10 +364,19 @@ const EmployeeForm = ({ employee, onSave, onCancel, roles = [], departments = []
                                 <span>
                                     <span className="block text-sm text-gray-900 dark:text-slate-100">Include in payroll</span>
                                     <span className="block text-xs text-gray-500 dark:text-slate-400">
-                                        Uncheck for consultants and anyone paid outside this system.
+                                        Uncheck only for people paid entirely outside this system. Job-order
+                                        workers are paid here too — in their own Job Order run — so leave this on.
                                     </span>
                                 </span>
                             </label>
+                            {/* The old hint said "uncheck for consultants", which reads exactly like a
+                                job-order worker and silently excludes them from their own run. */}
+                            {isJobOrder && !formData.is_payroll_eligible && (
+                                <p className="text-xs text-warning-700 dark:text-warning-500 pl-7">
+                                    This job-order worker will be skipped when you compute a Job Order
+                                    payroll run. Tick “Include in payroll” to pay them here.
+                                </p>
+                            )}
                             <label className="flex items-start gap-3 cursor-pointer">
                                 <input type="checkbox" name="is_active" checked={formData.is_active}
                                     onChange={handleChange}

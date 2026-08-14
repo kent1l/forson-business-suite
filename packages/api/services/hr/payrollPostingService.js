@@ -23,7 +23,7 @@ const getSetting = async (executor, key, fallback = null) => {
  */
 const postRunToExpense = async (executor, { runId, postedBy }) => {
     const { rows: runRows } = await executor.query(
-        `SELECT run_id, run_no, status, total_gross, total_employer_contrib, total_net, employee_count,
+        `SELECT run_id, run_no, run_type, status, total_gross, total_employer_contrib, total_net, employee_count,
                 TO_CHAR(period_start, 'YYYY-MM-DD') AS period_start,
                 TO_CHAR(period_end, 'YYYY-MM-DD') AS period_end,
                 TO_CHAR(pay_date, 'YYYY-MM-DD') AS pay_date
@@ -42,37 +42,62 @@ const postRunToExpense = async (executor, { runId, postedBy }) => {
         throw err;
     }
 
-    const salariesCategoryId = Number(await getSetting(executor, 'PAYROLL_EXPENSE_CATEGORY_SALARIES'));
-    const employerCategoryId = Number(await getSetting(executor, 'PAYROLL_EXPENSE_CATEGORY_EMPLOYER'));
     const paymentMethodText = await getSetting(executor, 'PAYROLL_DEFAULT_PAYMENT_METHOD', 'Cash');
-
-    if (!salariesCategoryId || !employerCategoryId) {
-        const err = new Error(
-            'Payroll expense categories are not configured. Set PAYROLL_EXPENSE_CATEGORY_SALARIES and PAYROLL_EXPENSE_CATEGORY_EMPLOYER.'
-        );
-        err.code = 'POSTING_NOT_CONFIGURED';
-        throw err;
-    }
+    const isJobOrder = run.run_type === 'JOB_ORDER';
 
     const label = `Payroll ${run.run_no} (${run.period_start} to ${run.period_end})`;
     const expenseIds = [];
+    let postings;
 
-    const postings = [
-        {
-            categoryId: salariesCategoryId,
+    if (isJobOrder) {
+        // Fees for contracted services, not salaries. Booking them into
+        // 'Salaries & Wages' would overstate the compensation figure that
+        // payroll and BIR reporting are reconciled against. There is no
+        // employer-share row because the coverage does not apply.
+        const jobOrderCategoryId = Number(await getSetting(executor, 'PAYROLL_EXPENSE_CATEGORY_JOB_ORDER'));
+        if (!jobOrderCategoryId) {
+            const err = new Error(
+                'The job-order expense category is not configured. Set PAYROLL_EXPENSE_CATEGORY_JOB_ORDER.'
+            );
+            err.code = 'POSTING_NOT_CONFIGURED';
+            throw err;
+        }
+        postings = [{
+            categoryId: jobOrderCategoryId,
             amount: round2(run.total_gross),
-            notes: `Gross pay for ${run.employee_count} employee(s). `
-                + `Net paid out: ${round2(run.total_net)}. The difference is employee statutory `
-                + 'withholdings and loan deductions, which are liabilities remitted separately — '
-                + 'do NOT record those remittances as a second expense.',
-        },
-        {
-            categoryId: employerCategoryId,
-            amount: round2(run.total_employer_contrib),
-            notes: `Employer share of SSS, PhilHealth and Pag-IBIG for ${run.employee_count} employee(s). `
-                + 'Remitting this to the agencies is settling a liability, not a new expense.',
-        },
-    ];
+            notes: `Fees for ${run.employee_count} job-order / contract-of-service worker(s). `
+                + `Net paid out: ${round2(run.total_net)}. No statutory contributions apply to `
+                + 'this run, and no employer share was incurred.',
+        }];
+    } else {
+        const salariesCategoryId = Number(await getSetting(executor, 'PAYROLL_EXPENSE_CATEGORY_SALARIES'));
+        const employerCategoryId = Number(await getSetting(executor, 'PAYROLL_EXPENSE_CATEGORY_EMPLOYER'));
+
+        if (!salariesCategoryId || !employerCategoryId) {
+            const err = new Error(
+                'Payroll expense categories are not configured. Set PAYROLL_EXPENSE_CATEGORY_SALARIES and PAYROLL_EXPENSE_CATEGORY_EMPLOYER.'
+            );
+            err.code = 'POSTING_NOT_CONFIGURED';
+            throw err;
+        }
+
+        postings = [
+            {
+                categoryId: salariesCategoryId,
+                amount: round2(run.total_gross),
+                notes: `Gross pay for ${run.employee_count} employee(s). `
+                    + `Net paid out: ${round2(run.total_net)}. The difference is employee statutory `
+                    + 'withholdings and loan deductions, which are liabilities remitted separately — '
+                    + 'do NOT record those remittances as a second expense.',
+            },
+            {
+                categoryId: employerCategoryId,
+                amount: round2(run.total_employer_contrib),
+                notes: `Employer share of SSS, PhilHealth and Pag-IBIG for ${run.employee_count} employee(s). `
+                    + 'Remitting this to the agencies is settling a liability, not a new expense.',
+            },
+        ];
+    }
 
     for (const posting of postings) {
         // A run with no employer contributions (or a zero-gross run) should not

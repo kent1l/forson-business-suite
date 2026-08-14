@@ -167,7 +167,7 @@ router.get('/employees/:id/compensation', protect, hasPermission('hr:manage_comp
             `SELECT c.compensation_id, c.employee_id,
                     TO_CHAR(c.effective_date, 'YYYY-MM-DD') AS effective_date,
                     c.pay_basis, c.salary_model, c.base_rate, c.days_per_year,
-                    c.is_overtime_exempt, c.is_tardiness_exempt,
+                    c.is_overtime_exempt, c.is_tardiness_exempt, c.statutory_coverage,
                     c.declared_monthly_basic, c.sss_msc_override, c.reason, c.notes,
                     TRIM(CONCAT_WS(' ', e.first_name, e.last_name)) AS created_by_name,
                     c.created_at
@@ -189,6 +189,7 @@ router.post('/employees/:id/compensation', protect, hasPermission('hr:manage_com
     const {
         effective_date, base_rate, pay_basis = 'daily', days_per_year = 313,
         salary_model, is_overtime_exempt = false, is_tardiness_exempt = false,
+        statutory_coverage = 'COVERED',
         declared_monthly_basic, sss_msc_override, reason, notes,
     } = req.body;
 
@@ -211,24 +212,27 @@ router.post('/employees/:id/compensation', protect, hasPermission('hr:manage_com
     } else if (salary_model) {
         return res.status(400).json({ message: 'A salary model only applies to a monthly pay basis.' });
     }
+    if (!['COVERED', 'EXEMPT'].includes(statutory_coverage)) {
+        return res.status(400).json({ message: 'Statutory coverage must be COVERED or EXEMPT.' });
+    }
 
     try {
         const { rows } = await db.query(
             `INSERT INTO employee_compensation
                 (employee_id, effective_date, pay_basis, salary_model, base_rate, days_per_year,
-                 is_overtime_exempt, is_tardiness_exempt,
+                 is_overtime_exempt, is_tardiness_exempt, statutory_coverage,
                  declared_monthly_basic, sss_msc_override, reason, notes, created_by)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
              -- effective_date must come back via TO_CHAR: a bare DATE is handed to
              -- the driver as a JS Date rendered in Asia/Manila, which shifts it a
              -- day earlier (2026-01-01 -> 2025-12-31T16:00Z).
              RETURNING compensation_id, employee_id,
                        TO_CHAR(effective_date, 'YYYY-MM-DD') AS effective_date,
                        pay_basis, salary_model, base_rate, days_per_year,
-                       is_overtime_exempt, is_tardiness_exempt,
+                       is_overtime_exempt, is_tardiness_exempt, statutory_coverage,
                        declared_monthly_basic, sss_msc_override, reason, notes, created_at`,
             [id, effective_date, pay_basis, salary_model || null, rate, days_per_year,
-                Boolean(is_overtime_exempt), Boolean(is_tardiness_exempt),
+                Boolean(is_overtime_exempt), Boolean(is_tardiness_exempt), statutory_coverage,
                 declared_monthly_basic || null, sss_msc_override || null,
                 reason || null, notes || null, req.user.employee_id]
         );
@@ -261,7 +265,7 @@ router.get('/employees/:id/compensation/effective', protect, hasPermission('hr:m
             `SELECT compensation_id, employee_id,
                     TO_CHAR(effective_date, 'YYYY-MM-DD') AS effective_date,
                     pay_basis, salary_model, base_rate, days_per_year,
-                    is_overtime_exempt, is_tardiness_exempt,
+                    is_overtime_exempt, is_tardiness_exempt, statutory_coverage,
                     declared_monthly_basic, sss_msc_override
              FROM employee_compensation
              WHERE employee_id = $1 AND effective_date <= $2

@@ -43,7 +43,7 @@ const EMPLOYEE_LIST_FIELDS = `
     e.employee_id, e.employee_code, e.first_name, e.middle_name, e.last_name, e.suffix,
     e.position_title, e.permission_level_id, e.username, e.is_active,
     e.department_id, d.department_name,
-    e.employment_type, e.employment_status,
+    e.employment_type, e.employment_status, e.worker_class,
     TO_CHAR(e.date_hired, 'YYYY-MM-DD') AS date_hired,
     (e.username IS NOT NULL) AS has_system_access
 `;
@@ -81,6 +81,9 @@ const EMPLOYEE_PROFILE_COLUMNS = [
     'mobile_no', 'personal_email', 'address_line', 'barangay', 'city', 'province', 'postal_code',
     'emergency_contact_name', 'emergency_contact_relation', 'emergency_contact_phone',
     'department_id', 'manager_employee_id', 'employment_type', 'employment_status',
+    // EMPLOYEE or JOB_ORDER. Decides which payroll run the person is paid in,
+    // and therefore whether they appear in the statutory and BIR reports.
+    'worker_class',
     'date_hired', 'date_regularized', 'date_separated', 'separation_reason',
     'is_payroll_eligible', 'is_active',
     // Which weekly pattern (and therefore which rest days) DTR generation uses

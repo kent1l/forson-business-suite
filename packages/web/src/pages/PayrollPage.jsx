@@ -47,6 +47,7 @@ const PayrollPage = () => {
     const [busy, setBusy] = useState(false);
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [newPeriodId, setNewPeriodId] = useState('');
+    const [newRunType, setNewRunType] = useState('REGULAR');
     const [voidRun, setVoidRun] = useState(null);
     const [voidReason, setVoidReason] = useState('');
     const [warnings, setWarnings] = useState([]);
@@ -70,7 +71,7 @@ const PayrollPage = () => {
             const year = new Date().getFullYear();
             const [runsRes, periodsRes] = await Promise.all([
                 api.get('/payroll/runs', { params: { year } }),
-                api.get('/payroll/periods', { params: { year } }),
+                api.get('/payroll/periods', { params: { year, run_type: newRunType } }),
             ]);
             setRuns(Array.isArray(runsRes.data) ? runsRes.data : (runsRes.data?.data || []));
             setPeriods(Array.isArray(periodsRes.data) ? periodsRes.data : []);
@@ -88,7 +89,10 @@ const PayrollPage = () => {
         } finally {
             setLoading(false);
         }
-    }, [canView]);
+        // newRunType is a dependency because /payroll/periods reports which
+        // periods are still free *for that run type* — a cutoff can hold both a
+        // Regular and a Job Order run, so switching the picker must refetch.
+    }, [canView, newRunType]);
 
     useEffect(() => { load(); }, [load]);
 
@@ -157,7 +161,9 @@ const PayrollPage = () => {
         if (!newPeriodId) return;
         setBusy(true);
         try {
-            const { data } = await api.post('/payroll/runs', { pay_period_id: Number(newPeriodId) });
+            const { data } = await api.post('/payroll/runs', {
+                pay_period_id: Number(newPeriodId), run_type: newRunType,
+            });
             toast.success(`Created ${data.run_no}`);
             setIsCreateOpen(false);
             setNewPeriodId('');
@@ -306,7 +312,7 @@ const PayrollPage = () => {
                     {warnings.length > 0 && (
                         <div className="mb-6 p-4 rounded-xl border border-warning-300 bg-warning-50 dark:bg-warning-900/20 dark:border-warning-800">
                             <h3 className="text-sm font-semibold text-warning-800 dark:text-warning-400 mb-2">
-                                {warnings.length} employee(s) were skipped
+                                {warnings.length} notice(s) from this computation
                             </h3>
                             <ul className="text-xs text-warning-700 dark:text-warning-500 space-y-0.5 max-h-40 overflow-y-auto">
                                 {warnings.map((w, i) => <li key={i}>• {w}</li>)}
@@ -463,7 +469,16 @@ const PayrollPage = () => {
                                     {runs.map((r) => (
                                         <tr key={r.run_id} onClick={() => openRun(r)}
                                             className="border-b border-gray-100 dark:border-slate-700/60 hover:bg-gray-50 dark:hover:bg-slate-700/40 cursor-pointer">
-                                            <td className="p-2 text-sm font-medium tabular-nums text-gray-800 dark:text-slate-100">{r.run_no}</td>
+                                            <td className="p-2 text-sm font-medium tabular-nums text-gray-800 dark:text-slate-100">
+                                                {r.run_no}
+                                                {/* A cutoff can hold both a regular and a job-order run,
+                                                    so the type has to be visible in the list. */}
+                                                {r.run_type && r.run_type !== 'REGULAR' && (
+                                                    <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">
+                                                        {r.run_type.replace(/_/g, ' ')}
+                                                    </span>
+                                                )}
+                                            </td>
                                             <td className="p-2 text-sm tabular-nums text-gray-600 dark:text-slate-300">
                                                 {r.period_start} → {r.period_end}
                                             </td>
@@ -483,6 +498,20 @@ const PayrollPage = () => {
             <Modal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} title="New Payroll Run">
                 <div className="space-y-4">
                     <div>
+                        <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Run Type</label>
+                        <select value={newRunType}
+                            onChange={(e) => { setNewRunType(e.target.value); setNewPeriodId(''); }}
+                            className={INPUT_CLASS}>
+                            <option value="REGULAR">Regular — employees</option>
+                            <option value="JOB_ORDER">Job Order — contract-of-service workers</option>
+                        </select>
+                        <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                            {newRunType === 'JOB_ORDER'
+                                ? 'Pays only workers whose class is Job Order. No statutory contributions or withholding tax, and excluded from the SSS, PhilHealth, Pag-IBIG and BIR reports.'
+                                : 'Pays only employees. Job-order workers are paid in their own run.'}
+                        </p>
+                    </div>
+                    <div>
                         <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Pay Period</label>
                         <select value={newPeriodId} onChange={(e) => setNewPeriodId(e.target.value)} className={INPUT_CLASS}>
                             <option value="">Select a period…</option>
@@ -494,7 +523,8 @@ const PayrollPage = () => {
                         </select>
                         {openPeriods.length === 0 && (
                             <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-                                Every period this year already has a live run. Void one to redo it.
+                                Every period this year already has a live {newRunType === 'JOB_ORDER' ? 'job order' : 'regular'} run.
+                                Void one to redo it.
                             </p>
                         )}
                     </div>

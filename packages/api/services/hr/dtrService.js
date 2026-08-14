@@ -77,6 +77,26 @@ const loadSchedules = async (executor, employeeIds) => {
     return byEmployee;
 };
 
+/**
+ * The employment window per employee, as 'YYYY-MM-DD' strings.
+ *
+ * TO_CHAR rather than a bare DATE on purpose: the driver renders a DATE as a JS
+ * Date in Asia/Manila, which shifts it a day earlier and would silently move
+ * someone's last day.
+ *
+ * @returns {Promise<Map<number, {date_hired: string|null, date_separated: string|null}>>}
+ */
+const loadEmploymentWindows = async (executor, employeeIds) => {
+    const { rows } = await executor.query(
+        `SELECT employee_id,
+                TO_CHAR(date_hired, 'YYYY-MM-DD')    AS date_hired,
+                TO_CHAR(date_separated, 'YYYY-MM-DD') AS date_separated
+         FROM employee WHERE employee_id = ANY($1::int[])`,
+        [employeeIds]
+    );
+    return new Map(rows.map((r) => [r.employee_id, r]));
+};
+
 /** @returns {Promise<Map<string, object>>} 'YYYY-MM-DD' -> holiday row */
 const loadHolidays = async (executor, from, to) => {
     const { rows } = await executor.query(
@@ -194,10 +214,11 @@ const generateForPeriod = async (executor, { employeeIds, periodStart, periodEnd
     }
 
     const dates = eachDate(periodStart, periodEnd);
-    const [schedules, holidays, leaves] = await Promise.all([
+    const [schedules, holidays, leaves, employment] = await Promise.all([
         loadSchedules(executor, employeeIds),
         loadHolidays(executor, periodStart, periodEnd),
         loadApprovedLeave(executor, employeeIds, periodStart, periodEnd),
+        loadEmploymentWindows(executor, employeeIds),
     ]);
 
     const candidates = [];
@@ -206,7 +227,14 @@ const generateForPeriod = async (executor, { employeeIds, periodStart, periodEnd
         // No schedule attached means we cannot say what the employee owed; skip
         // rather than invent a default that payroll would later pay against.
         if (!schedule) continue;
+        const window = employment.get(employeeId) || {};
         for (const isoDate of dates) {
+            // Never manufacture attendance outside the employment window. A row
+            // dated after someone's last day is not merely untidy: the daily
+            // basis pays `rate x days_paid`, so an auto-generated "Present" for
+            // a leaver is money paid for a day nobody worked.
+            if (window.date_hired && isoDate < window.date_hired) continue;
+            if (window.date_separated && isoDate > window.date_separated) continue;
             candidates.push({
                 employee_id: employeeId,
                 ...resolveDay({
@@ -362,9 +390,16 @@ const summarizePeriodBulk = async (executor, { employeeIds, periodStart, periodE
                 COALESCE(SUM(dtr.late_minutes), 0)::int                               AS late_minutes,
                 COALESCE(SUM(dtr.undertime_minutes), 0)::int                          AS undertime_minutes
          FROM daily_time_record dtr
+         JOIN employee e ON e.employee_id = dtr.employee_id
          LEFT JOIN leave_request lr ON lr.leave_id = dtr.leave_id
          LEFT JOIN leave_type    lt ON lt.leave_type_id = lr.leave_type_id
          WHERE dtr.employee_id = ANY($1::int[]) AND dtr.work_date BETWEEN $2 AND $3
+           -- Defence in depth against rows generated before the employment
+           -- window was known (or before generation honoured it). Payroll reads
+           -- this summary, so bounding it here means no historical DTR row can
+           -- pay someone for a day outside their employment.
+           AND (e.date_hired IS NULL OR dtr.work_date >= e.date_hired)
+           AND (e.date_separated IS NULL OR dtr.work_date <= e.date_separated)
          GROUP BY dtr.employee_id`,
         [employeeIds, periodStart, periodEnd]
     );
