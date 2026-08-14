@@ -8,8 +8,10 @@ import useCycleCountStore from '../store/useCycleCountStore';
 import MobileCounter from '../components/MobileCounter';
 import apiClient from '../api/client';
 import PremiumScanner from '../components/ui/PremiumScanner';
+import RequirePermission from '../components/RequirePermission';
+import submitWithOutbox from '../offline/submitWithOutbox';
 
-export default function CountScreen() {
+function CountScreenInner() {
   const router = useRouter();
   const {
     activeBatchData,
@@ -29,7 +31,6 @@ export default function CountScreen() {
   });
   const [scannedBarcode, setScannedBarcode] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [hasPermission, setHasPermission] = useState(true);
   const [serverOffset, setServerOffset] = useState<number>(0);
   const [startTime, setStartTime] = useState<number | null>(null);
 
@@ -117,8 +118,53 @@ export default function CountScreen() {
     }
   };
 
+  /**
+   * Checks a scanned barcode against the item being counted.
+   *
+   * This used to return success unconditionally, which meant the scanner
+   * accepted any barcode at all -- including one from a different part sitting
+   * on the same shelf. The count would then be recorded against the wrong item
+   * with a scan that looked like proof it was the right one.
+   *
+   * In ad-hoc mode there is no expected part yet: the scan is what identifies
+   * the item, so anything the catalogue knows about is valid.
+   */
   const handleResolveBarcode = async (barcode: string) => {
-    return { status: 'success' as const };
+    // A barcode already listed on the line needs no lookup, which also keeps
+    // the common case working with no network at all.
+    if (currentLine.barcodes?.includes(barcode)) {
+      setScannedBarcode(barcode);
+      return { status: 'success' as const };
+    }
+
+    try {
+      const { data } = await apiClient.get(`/parts/barcode/${encodeURIComponent(barcode)}`);
+      const scannedPartId = data?.part_id ?? data?.part?.part_id;
+
+      if (!scannedPartId) {
+        return { status: 'not_found' as const, message: 'That barcode is not in the catalogue.' };
+      }
+
+      if (isAdHocMode) {
+        setScannedBarcode(barcode);
+        return { status: 'success' as const };
+      }
+
+      if (String(scannedPartId) !== String(currentLine?.part_id)) {
+        return {
+          status: 'error' as const,
+          message: `That is ${data?.display_name || 'a different part'}. You are counting ${currentLine?.display_name}.`,
+        };
+      }
+
+      setScannedBarcode(barcode);
+      return { status: 'success' as const };
+    } catch (err: any) {
+      if (err?.response?.status === 404) {
+        return { status: 'not_found' as const, message: 'That barcode is not in the catalogue.' };
+      }
+      return { status: 'error' as const, message: 'Could not check that barcode. Try again.' };
+    }
   };
 
 
@@ -142,14 +188,28 @@ export default function CountScreen() {
         const payload: any = { counted_qty: countedQty, started_at: startedAt };
         if (scannedBarcode) payload.scanned_barcode = scannedBarcode;
 
-        await apiClient.post(`/inventory/cycle-count/lines/${currentLine.line_id}/submit`, payload);
+        // Queued rather than lost if the shop LAN is unreachable. `started_at`
+        // is captured from the synced server clock at the top of this function,
+        // so a count that syncs later still records when it was actually taken.
+        const outcome = await submitWithOutbox('cycle-count-submit', payload, {
+          lineId: currentLine.line_id,
+          displayName: currentLine.display_name,
+        });
         setIsSubmitting(false);
+
+        if (outcome.queued) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        }
 
         if (currentLineIndex + 1 < activeBatchData!.length) {
           setCurrentLineIndex((prev: number) => prev + 1);
           setScannedBarcode(null);
         } else {
-          Alert.alert('Batch Complete', 'All items submitted successfully.', [
+          Alert.alert(
+            'Batch Complete',
+            outcome.queued
+              ? 'All items counted. Some are waiting to sync and will be sent when the server is reachable.'
+              : 'All items submitted successfully.', [
             {
               text: 'OK',
               onPress: () => {
@@ -273,6 +333,19 @@ export default function CountScreen() {
         autoCloseOnSuccess={true}
       />
     </SafeAreaView>
+  );
+}
+
+/**
+ * Guarded at the route, not just hidden on the dashboard. The app registers the
+ * `mobile` URL scheme, so this screen is reachable directly regardless of which
+ * tiles the dashboard chose to render.
+ */
+export default function CountScreen() {
+  return (
+    <RequirePermission permission="cycle_count:execute" title="Cycle count">
+      <CountScreenInner />
+    </RequirePermission>
   );
 }
 

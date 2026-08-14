@@ -304,7 +304,6 @@ export default function PremiumScanner({
             isActive={isCameraActive}
             torchMode={isCameraActive && torch === 'on' ? 'on' : undefined}
             outputs={[barcodeOutput]}
-            enableZoomGesture={true}
           />
         ) : !hasPermission ? (
           <View style={styles.permissionContainer}>

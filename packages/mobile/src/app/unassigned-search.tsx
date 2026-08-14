@@ -18,10 +18,11 @@ import { Ionicons } from '@expo/vector-icons';
 import apiClient from '../api/client';
 import useCycleCountStore from '../store/useCycleCountStore';
 import PremiumScanner from '../components/ui/PremiumScanner';
+import RequirePermission from '../components/RequirePermission';
 
 const DEBOUNCE_MS = 300;
 
-export default function UnassignedSearchScreen() {
+function UnassignedSearchScreenInner() {
   const router = useRouter();
   const { startAdHocCount } = useCycleCountStore();
 
@@ -487,3 +488,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 });
+
+/** Reachable by deep link, so gated here rather than only on the dashboard. */
+export default function UnassignedSearchScreen() {
+  return (
+    <RequirePermission permission="cycle_count:execute" title="Log unassigned">
+      <UnassignedSearchScreenInner />
+    </RequirePermission>
+  );
+}

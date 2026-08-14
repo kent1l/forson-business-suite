@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   sku: {
-    fontFamily: Fonts?.default?.mono ?? 'monospace',
+    fontFamily: Fonts.mono,
     fontSize: 13,
     fontWeight: '700',
     color: '#111827',

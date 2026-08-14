@@ -82,7 +82,10 @@ export default function StagingOverlay({
       setApprovedInvoice(null);
 
       // entrance animation
-      haptics.impact?.('medium');
+      // `haptics.impact` never existed, so the optional call silently did
+      // nothing and the overlay appeared without any feedback. `tap` is the
+      // light impact this wanted.
+      haptics.tap();
       Animated.parallel([
         Animated.timing(opacity, { toValue: 1, duration: 400, useNativeDriver: true }),
         Animated.spring(scale, { toValue: 1, friction: 6, tension: 40, useNativeDriver: true }),

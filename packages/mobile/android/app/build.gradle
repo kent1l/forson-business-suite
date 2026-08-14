@@ -92,8 +92,16 @@ android {
         applicationId 'com.forson.erp'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0.0"
+        // Keep versionName in step with `version` in app.json. The forced-update
+        // gate in src/app/_layout.tsx compares Constants.expoConfig.version --
+        // which comes from app.json -- against the server's mobile_app_version
+        // setting, so a build whose gradle versionName disagrees reports one
+        // version to the user and another to the update check.
+        // versionCode must strictly increase or Android refuses the in-place
+        // upgrade, which for a sideloaded fleet means every phone needs a manual
+        // uninstall.
+        versionCode 2
+        versionName "2.0.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }

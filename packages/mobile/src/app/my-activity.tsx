@@ -23,6 +23,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import apiClient from '../api/client';
+import RequirePermission from '../components/RequirePermission';
 
 type CountLine = {
   line_id: number;
@@ -53,6 +54,8 @@ type SalesActivity = {
     total_approved: number;
     total_rejected: number;
     total_revenue: number;
+    /** Approved revenue in the last 30 days; what the KPI strip actually shows. */
+    total_revenue_30d: number;
   };
   items: SaleItem[];
 };
@@ -156,7 +159,7 @@ function EditCountModal({
   );
 }
 
-export default function MyActivityScreen() {
+function MyActivityScreenInner() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { width: layoutWidth } = useWindowDimensions();
@@ -649,3 +652,12 @@ const ms = StyleSheet.create({
   saveBtn:      { flex: 1, backgroundColor: '#3b82f6', borderRadius: 10, paddingVertical: 13, alignItems: 'center' },
   saveBtnText:  { fontSize: 15, fontWeight: '700', color: '#fff' },
 });
+
+/** Shows the caller's own counts and sales, so either role may open it. */
+export default function MyActivityScreen() {
+  return (
+    <RequirePermission permission={['pos:use', 'cycle_count:execute']} title="My activity">
+      <MyActivityScreenInner />
+    </RequirePermission>
+  );
+}

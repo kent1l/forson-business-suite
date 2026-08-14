@@ -32,19 +32,13 @@ import SavedCartsSheet from '@/components/pos/SavedCartsSheet';
 import { formatPHP } from '@/utils/currency';
 import * as haptics from '@/utils/haptics';
 import { usePermission } from '@/hooks/usePermission';
+import RequirePermission from '../components/RequirePermission';
 
-export default function POSScreen() {
+function PosScreenInner() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const router = useRouter();
   const { hasPermission } = usePermission();
-
-  useEffect(() => {
-    if (!hasPermission('pos:use')) {
-      Alert.alert('Access Denied', 'You do not have permission to use the Point of Sale.');
-      router.back();
-    }
-  }, []);
 
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -636,3 +630,17 @@ const styles = StyleSheet.create({
   snackText: { color: '#fff', fontSize: 14 },
   snackUndo: { color: '#10B981', fontWeight: '800', fontSize: 14 },
 });
+
+/**
+ * The old guard ran in a `useEffect` with `[]` deps, so it read `hasPermission`
+ * from the first render -- before the user had finished hydrating from
+ * SecureStore -- and bounced the user backwards with an alert. Wrapping renders
+ * a refusal instead, and re-evaluates when the user actually loads.
+ */
+export default function PosScreen() {
+  return (
+    <RequirePermission permission="pos:use" title="Point of Sale">
+      <PosScreenInner />
+    </RequirePermission>
+  );
+}

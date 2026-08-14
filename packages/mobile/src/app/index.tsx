@@ -1,34 +1,43 @@
 import React, { useState, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ActivityIndicator,
-  FlatList,
-  TouchableOpacity,
-  RefreshControl,
-  Modal,
-  Platform,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Modal, Platform } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+
 import apiClient from '../api/client';
 import useCycleCountStore from '../store/useCycleCountStore';
 import useAuthStore from '../store/useAuthStore';
+import useOutboxStore from '../offline/outbox';
 import { usePermission } from '../hooks/usePermission';
-import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '@/hooks/use-theme';
+import { Spacing, Radius, FontSize, FontWeight, elevation } from '@/constants/theme';
+import Screen from '../components/ui/Screen';
+import Card from '../components/ui/Card';
+import { LoadingState, EmptyState, ErrorState } from '../components/ui/States';
 
 const fetchAssignedTasks = async () => {
   const { data } = await apiClient.get('/inventory/cycle-count/my-tasks');
   return data;
 };
 
+type Module = {
+  key: string;
+  title: string;
+  subtitle: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  route: string;
+  accent: string;
+  /** Any one of these grants the tile. Absent means always visible. */
+  permission?: string[];
+};
+
 export default function DashboardScreen() {
   const router = useRouter();
+  const theme = useTheme();
   const { setActiveBatch } = useCycleCountStore();
   const { user, logout } = useAuthStore();
-  const { hasPermission } = usePermission();
+  const { hasAny } = usePermission();
+  const queuedCount = useOutboxStore((s) => s.entries.length);
 
   const { data: tasks, isLoading, error, refetch } = useQuery({
     queryKey: ['assignedTasks'],
@@ -42,29 +51,56 @@ export default function DashboardScreen() {
     setRefreshing(true);
     try {
       await refetch();
-    } catch (e) {
-      // Ignore network errors to prevent crashes
+    } catch {
+      // A failed refresh is not worth an error state; the cached list stands.
     } finally {
       setRefreshing(false);
     }
   }, [refetch]);
 
-  if (isLoading) {
-    return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#10B981" />
-      </View>
-    );
-  }
+  /**
+   * Every module the app offers, filtered by permission.
+   *
+   * Declared as data rather than hand-written JSX rows so adding a module is a
+   * one-line change and the grid stays balanced no matter how many tiles a
+   * given role can actually see.
+   */
+  const MODULES: Module[] = [
+    {
+      key: 'hr', title: 'My HR', subtitle: 'Clock in, payslips, leave',
+      icon: 'person-circle', route: '/hr', accent: theme.info,
+      permission: ['dtr:punch', 'payslip:view_own', 'leave:request'],
+    },
+    {
+      key: 'pos', title: 'Point of Sale', subtitle: 'Checkout & invoices',
+      icon: 'cart', route: '/pos', accent: theme.success, permission: ['pos:use'],
+    },
+    {
+      key: 'stock', title: 'Stock Lookup', subtitle: 'Scan & check on hand',
+      icon: 'search', route: '/stock', accent: theme.primary, permission: ['inventory:view'],
+    },
+    {
+      key: 'unassigned', title: 'Log Unassigned', subtitle: 'Cycle count ad-hoc',
+      icon: 'barcode', route: '/unassigned-search', accent: theme.warning,
+      permission: ['cycle_count:execute'],
+    },
+    {
+      key: 'receiving', title: 'Receiving', subtitle: 'Receive against a PO',
+      icon: 'archive', route: '/receiving', accent: theme.accent,
+      permission: ['goods_receipt:create'],
+    },
+    {
+      key: 'activity', title: 'My Activity', subtitle: 'Counts & sales',
+      icon: 'stats-chart', route: '/my-activity', accent: theme.info,
+      permission: ['pos:use', 'cycle_count:execute'],
+    },
+    {
+      key: 'settings', title: 'Settings', subtitle: 'Server & network',
+      icon: 'settings', route: '/settings', accent: theme.textMuted,
+    },
+  ];
 
-  if (error) {
-    return (
-      <View style={styles.centerContainer}>
-        <Text style={styles.errorText}>Failed to load tasks</Text>
-        <Text style={styles.errorText}>{error.message}</Text>
-      </View>
-    );
-  }
+  const visibleModules = MODULES.filter((m) => !m.permission || hasAny(m.permission));
 
   const handleTaskPress = (task: any) => {
     const batchData = tasks.filter((t: any) => t.batch_id === task.batch_id);
@@ -73,488 +109,265 @@ export default function DashboardScreen() {
   };
 
   const renderItem = ({ item }: { item: any }) => (
-    <TouchableOpacity
-      style={styles.taskCard}
-      onPress={() => handleTaskPress(item)}
-      activeOpacity={0.7}
-    >
+    <Card onPress={() => handleTaskPress(item)} style={styles.taskCard}>
       <View style={styles.taskHeader}>
-        <Ionicons name="clipboard-outline" size={20} color="#3b82f6" />
-        <Text style={styles.taskTitle} numberOfLines={1}>{item.display_name}</Text>
+        <Ionicons name="clipboard-outline" size={20} color={theme.primary} />
+        <Text style={[styles.taskTitle, { color: theme.text }]} numberOfLines={1}>
+          {item.display_name}
+        </Text>
       </View>
-      <View style={styles.taskDetails}>
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Part ID:</Text>
-          <Text style={styles.detailValue}>{item.part_id}</Text>
-        </View>
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Batch:</Text>
-          <Text style={styles.detailValue}>{item.batch_id}</Text>
-        </View>
+      <View style={[styles.taskDetails, { backgroundColor: theme.surfaceSunken }]}>
+        <Text style={[styles.detailLabel, { color: theme.textMuted }]}>
+          Part <Text style={{ color: theme.textSecondary, fontWeight: FontWeight.semibold }}>{item.part_id}</Text>
+        </Text>
+        <Text style={[styles.detailLabel, { color: theme.textMuted }]}>
+          Batch <Text style={{ color: theme.textSecondary, fontWeight: FontWeight.semibold }}>{item.batch_id}</Text>
+        </Text>
       </View>
-    </TouchableOpacity>
+    </Card>
   );
 
   const renderHeader = () => {
     const pendingBatches = new Set(tasks?.map((t: any) => t.batch_id)).size || 0;
+
     return (
       <View style={styles.headerContainer}>
-        {/* Welcome Section */}
-        <View style={styles.welcomeBanner}>
-          <View>
-            <Text style={styles.welcomeGreeting}>Hello, {user?.first_name || 'Team Member'} 👋</Text>
-            <Text style={styles.welcomeSubtitle}>Forson Auto Parts ERP Gateway</Text>
-          </View>
-        </View>
+        <Card style={styles.welcomeBanner}>
+          <Text style={[styles.welcomeGreeting, { color: theme.text }]}>
+            Hello, {user?.first_name || 'Team Member'} 👋
+          </Text>
+          <Text style={[styles.welcomeSubtitle, { color: theme.textMuted }]}>
+            Forson Auto Parts ERP Gateway
+          </Text>
+        </Card>
 
-        {/* Quick Actions Grid Gateway */}
-        <Text style={styles.sectionTitle}>Operational Modules</Text>
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Operational Modules</Text>
         <View style={styles.grid}>
-          {/* Row 1 */}
-          <View style={styles.gridRow}>
-            {hasPermission('pos:use') && (
-              <TouchableOpacity
-                style={[styles.gridCard, { borderLeftColor: '#10B981', borderLeftWidth: 4 }]}
-                onPress={() => router.push('/pos')}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.iconBox, { backgroundColor: '#e6f4ea' }]}>
-                  <Ionicons name="cart" size={24} color="#10B981" />
-                </View>
-                <Text style={styles.gridTitle}>Point of Sale</Text>
-                <Text style={styles.gridSubtitle}>Checkout & Invoices</Text>
-              </TouchableOpacity>
-            )}
-
-            {hasPermission('cycle_count:execute') && (
-              <TouchableOpacity
-                style={[styles.gridCard, { borderLeftColor: '#f59e0b', borderLeftWidth: 4 }]}
-                onPress={() => router.push('/unassigned-search')}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.iconBox, { backgroundColor: '#fef3c7' }]}>
-                  <Ionicons name="barcode" size={24} color="#f59e0b" />
-                </View>
-                <Text style={styles.gridTitle}>Log Unassigned</Text>
-                <Text style={styles.gridSubtitle}>Cycle Count Ad-hoc</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Row 2 */}
-          <View style={styles.gridRow}>
-            {(hasPermission('pos:use') || hasPermission('cycle_count:execute')) && (
-              <TouchableOpacity
-                style={[styles.gridCard, { borderLeftColor: '#8b5cf6', borderLeftWidth: 4 }]}
-                onPress={() => router.push('/my-activity')}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.iconBox, { backgroundColor: '#ede9fe' }]}>
-                  <Ionicons name="stats-chart" size={24} color="#8b5cf6" />
-                </View>
-                <Text style={styles.gridTitle}>My Activity</Text>
-                <Text style={styles.gridSubtitle}>Counts & Sales</Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity
-              style={[styles.gridCard, { borderLeftColor: '#6366f1', borderLeftWidth: 4 }]}
-              onPress={() => router.push('/settings')}
-              activeOpacity={0.8}
+          {visibleModules.map((mod) => (
+            <Card
+              key={mod.key}
+              accent={mod.accent}
+              onPress={() => router.push(mod.route as never)}
+              style={styles.gridCard}
             >
-              <View style={[styles.iconBox, { backgroundColor: '#e0e7ff' }]}>
-                <Ionicons name="settings" size={24} color="#6366f1" />
+              <View style={[styles.iconBox, { backgroundColor: theme.surfaceSunken }]}>
+                <Ionicons name={mod.icon} size={22} color={mod.accent} />
               </View>
-              <Text style={styles.gridTitle}>Settings</Text>
-              <Text style={styles.gridSubtitle}>Server & Network</Text>
-            </TouchableOpacity>
-          </View>
+              <Text style={[styles.gridTitle, { color: theme.text }]}>{mod.title}</Text>
+              <Text style={[styles.gridSubtitle, { color: theme.textMuted }]}>{mod.subtitle}</Text>
+            </Card>
+          ))}
         </View>
 
-        {/* Cycle Count Dashboard Stats */}
-        <Text style={styles.sectionTitle}>Inventory Count Summary</Text>
-        <View style={styles.summaryRow}>
-          <View style={styles.summaryCard}>
-            <View style={[styles.statIconBox, { backgroundColor: '#eff6ff' }]}>
-              <Ionicons name="list" size={20} color="#2563eb" />
+        {hasAny(['cycle_count:execute']) && (
+          <>
+            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Inventory Count Summary</Text>
+            <View style={styles.summaryRow}>
+              <Card style={styles.summaryCard}>
+                <View style={[styles.statIconBox, { backgroundColor: theme.primarySoft }]}>
+                  <Ionicons name="list" size={18} color={theme.primary} />
+                </View>
+                <View>
+                  <Text style={[styles.summaryValue, { color: theme.text }]}>{tasks?.length || 0}</Text>
+                  <Text style={[styles.summaryLabel, { color: theme.textMuted }]}>Assigned Lines</Text>
+                </View>
+              </Card>
+              <Card style={styles.summaryCard}>
+                <View style={[styles.statIconBox, { backgroundColor: theme.infoSoft }]}>
+                  <Ionicons name="layers" size={18} color={theme.info} />
+                </View>
+                <View>
+                  <Text style={[styles.summaryValue, { color: theme.text }]}>{pendingBatches}</Text>
+                  <Text style={[styles.summaryLabel, { color: theme.textMuted }]}>Pending Batches</Text>
+                </View>
+              </Card>
             </View>
-            <View>
-              <Text style={styles.summaryValue}>{tasks?.length || 0}</Text>
-              <Text style={styles.summaryLabel}>Assigned Lines</Text>
-            </View>
-          </View>
-          <View style={styles.summaryCard}>
-            <View style={[styles.statIconBox, { backgroundColor: '#fdf2f8' }]}>
-              <Ionicons name="layers" size={20} color="#db2777" />
-            </View>
-            <View>
-              <Text style={styles.summaryValue}>{pendingBatches}</Text>
-              <Text style={styles.summaryLabel}>Pending Batches</Text>
-            </View>
-          </View>
-        </View>
 
-        {/* Assigned tasks header */}
-        <Text style={styles.sectionTitle}>Your Assigned Count Tasks</Text>
+            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Your Assigned Count Tasks</Text>
+          </>
+        )}
       </View>
     );
   };
 
+  if (isLoading) {
+    return <Screen><LoadingState label="Loading your work…" /></Screen>;
+  }
+
   return (
-    <SafeAreaView style={styles.safeArea}>
-      {/* Top Header Navigation */}
-      <View style={styles.topHeader}>
-        <Text style={styles.topHeaderTitle}>FORSON ERP</Text>
-        <TouchableOpacity
-          style={styles.profileBtn}
-          onPress={() => setProfileMenuVisible(true)}
-          accessibilityLabel="Profile Menu"
-        >
-          <Ionicons name="person-circle-outline" size={32} color="#4b5563" />
-        </TouchableOpacity>
+    <Screen edges={['top', 'left', 'right']}>
+      <View style={[styles.topHeader, { backgroundColor: theme.surface, borderBottomColor: theme.border }, elevation(1)]}>
+        <Text style={[styles.topHeaderTitle, { color: theme.text }]}>FORSON ERP</Text>
+        <View style={styles.headerActions}>
+          {queuedCount > 0 && (
+            <TouchableOpacity
+              onPress={() => router.push('/outbox')}
+              accessibilityLabel={`${queuedCount} items waiting to sync`}
+              style={styles.queueBtn}
+            >
+              <Ionicons name="cloud-upload-outline" size={22} color={theme.warning} />
+              <View style={[styles.queueBadge, { backgroundColor: theme.warning }]}>
+                <Text style={styles.queueBadgeText}>{queuedCount}</Text>
+              </View>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={() => setProfileMenuVisible(true)} accessibilityLabel="Profile menu">
+            <Ionicons name="person-circle-outline" size={30} color={theme.textSecondary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Main unified Dashboard Feed */}
       <FlatList
         data={tasks || []}
-        keyExtractor={(item) => item.line_id.toString()}
+        keyExtractor={(item) => String(item.line_id)}
         renderItem={renderItem}
         ListHeaderComponent={renderHeader}
         contentContainerStyle={styles.listContainer}
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>All caught up! No assigned tasks.</Text>
-          </View>
+          error ? (
+            <ErrorState
+              title="Could not load your tasks"
+              description={(error as Error).message}
+              onRetry={refetch}
+            />
+          ) : hasAny(['cycle_count:execute']) ? (
+            <EmptyState
+              icon="checkmark-done-outline"
+              title="All caught up"
+              description="You have no assigned count tasks right now."
+            />
+          ) : null
         }
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#10B981']} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[theme.primary]} tintColor={theme.primary} />
         }
       />
 
-      {/* User profile / session Modal */}
       <Modal
         visible={isProfileMenuVisible}
         animationType="fade"
-        transparent={true}
+        transparent
         onRequestClose={() => setProfileMenuVisible(false)}
       >
         <TouchableOpacity
-          style={styles.modalOverlay}
+          style={[styles.modalOverlay, { backgroundColor: theme.overlay }]}
           activeOpacity={1}
           onPress={() => setProfileMenuVisible(false)}
         >
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>User Account</Text>
+          <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>User Account</Text>
+
+            {[
+              { label: 'My Profile', icon: 'person-outline' as const, route: '/profile' },
+              { label: 'Pending Sync', icon: 'cloud-upload-outline' as const, route: '/outbox' },
+              { label: 'Settings', icon: 'settings-outline' as const, route: '/settings' },
+            ].map((item) => (
+              <TouchableOpacity
+                key={item.route}
+                style={[styles.menuButton, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}
+                onPress={() => {
+                  setProfileMenuVisible(false);
+                  router.push(item.route as never);
+                }}
+              >
+                <Ionicons name={item.icon} size={20} color={theme.primary} />
+                <Text style={[styles.menuButtonText, { color: theme.textSecondary }]}>{item.label}</Text>
+              </TouchableOpacity>
+            ))}
+
+            <View style={[styles.modalDivider, { backgroundColor: theme.border }]} />
 
             <TouchableOpacity
-              style={styles.menuButton}
-              onPress={() => {
-                setProfileMenuVisible(false);
-                router.push('/profile');
-              }}
-            >
-              <Ionicons name="person-outline" size={20} color="#3b82f6" />
-              <Text style={styles.menuButtonText}>My Profile</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.menuButton}
-              onPress={() => {
-                setProfileMenuVisible(false);
-                router.push('/settings');
-              }}
-            >
-              <Ionicons name="settings-outline" size={20} color="#3b82f6" />
-              <Text style={styles.menuButtonText}>Settings</Text>
-            </TouchableOpacity>
-
-            <View style={styles.modalDivider} />
-
-            <TouchableOpacity
-              style={[styles.menuButton, styles.logoutButton]}
+              style={[styles.menuButton, { backgroundColor: theme.dangerSoft, borderColor: theme.danger }]}
               onPress={async () => {
                 setProfileMenuVisible(false);
                 await logout();
               }}
             >
-              <Ionicons name="log-out-outline" size={20} color="#ef4444" />
-              <Text style={styles.logoutButtonText}>Log Out</Text>
+              <Ionicons name="log-out-outline" size={20} color={theme.danger} />
+              <Text style={[styles.menuButtonText, { color: theme.danger, fontWeight: FontWeight.bold }]}>Log Out</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </Modal>
-    </SafeAreaView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#f3f4f6',
-  },
   topHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#ffffff',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.three,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  topHeaderTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#111827',
-    letterSpacing: 1,
+  topHeaderTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.heavy, letterSpacing: 1 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.four },
+  queueBtn: { position: 'relative' },
+  queueBadge: {
+    position: 'absolute', top: -4, right: -8, minWidth: 16, height: 16,
+    borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3,
   },
-  profileBtn: {
-    padding: 2,
-  },
-  headerContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-  },
-  welcomeBanner: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-  },
-  welcomeGreeting: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#111827',
-  },
-  welcomeSubtitle: {
-    fontSize: 13,
-    color: '#6b7280',
-    marginTop: 4,
-  },
+  queueBadgeText: { color: '#fff', fontSize: 10, fontWeight: FontWeight.heavy },
+
+  headerContainer: { paddingHorizontal: Spacing.four, paddingTop: Spacing.four },
+  welcomeBanner: { marginBottom: Spacing.five },
+  welcomeGreeting: { fontSize: FontSize.lg, fontWeight: FontWeight.heavy },
+  welcomeSubtitle: { fontSize: FontSize.base, marginTop: Spacing.one },
+
   sectionTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#374151',
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.heavy,
     letterSpacing: 1.1,
     textTransform: 'uppercase',
-    marginBottom: 10,
-    marginTop: 10,
+    marginBottom: Spacing.three,
+    marginTop: Spacing.three,
   },
-  grid: {
-    marginBottom: 16,
-  },
-  gridRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-    gap: 12,
-  },
-  gridCard: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-  },
+
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.three, marginBottom: Spacing.four },
+  // Two per row, accounting for the gap between them.
+  gridCard: { width: '48%', flexGrow: 1 },
   iconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 10,
+    width: 40, height: 40, borderRadius: Radius.md,
+    justifyContent: 'center', alignItems: 'center', marginBottom: Spacing.three,
   },
-  gridTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#111827',
-  },
-  gridSubtitle: {
-    fontSize: 11,
-    color: '#6b7280',
-    marginTop: 2,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-    gap: 12,
-  },
-  summaryCard: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    gap: 12,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-  },
-  statIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  summaryValue: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#111827',
-  },
-  summaryLabel: {
-    fontSize: 11,
-    color: '#6b7280',
-    marginTop: 1,
-  },
-  listContainer: {
-    paddingBottom: 32,
-  },
-  taskCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
-    marginHorizontal: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-  },
-  taskHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 10,
-  },
-  taskTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#111827',
-    flex: 1,
-  },
+  gridTitle: { fontSize: FontSize.base, fontWeight: FontWeight.heavy },
+  gridSubtitle: { fontSize: FontSize.xs, marginTop: Spacing.half },
+
+  summaryRow: { flexDirection: 'row', gap: Spacing.three, marginBottom: Spacing.five },
+  summaryCard: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
+  statIconBox: { width: 34, height: 34, borderRadius: Radius.sm, justifyContent: 'center', alignItems: 'center' },
+  summaryValue: { fontSize: FontSize.lg, fontWeight: FontWeight.heavy },
+  summaryLabel: { fontSize: FontSize.xs, marginTop: 1 },
+
+  listContainer: { paddingBottom: Spacing.six, flexGrow: 1 },
+  taskCard: { marginHorizontal: Spacing.four, marginBottom: Spacing.three },
+  taskHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, marginBottom: Spacing.three },
+  taskTitle: { flex: 1, fontSize: FontSize.md, fontWeight: FontWeight.bold },
   taskDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    backgroundColor: '#f9fafb',
-    borderRadius: 10,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#f3f4f6',
+    flexDirection: 'row', justifyContent: 'space-between',
+    borderRadius: Radius.sm, padding: Spacing.three,
   },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  detailLabel: {
-    fontSize: 12,
-    color: '#6b7280',
-  },
-  detailValue: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  emptyContainer: {
-    padding: 32,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 13,
-    color: '#9ca3af',
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f3f4f6',
-  },
-  errorText: {
-    color: '#ef4444',
-    fontSize: 14,
-    fontWeight: '600',
-    marginTop: 8,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
+  detailLabel: { fontSize: FontSize.sm },
+
+  modalOverlay: { flex: 1, justifyContent: 'flex-end' },
   modalContent: {
-    backgroundColor: '#ffffff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    paddingBottom: Platform.OS === 'ios' ? 44 : 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 8,
+    borderTopLeftRadius: Radius.xl,
+    borderTopRightRadius: Radius.xl,
+    padding: Spacing.five,
+    paddingBottom: Platform.OS === 'ios' ? Spacing.seven : Spacing.five,
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#111827',
-    marginBottom: 20,
-    textAlign: 'center',
+    fontSize: FontSize.lg, fontWeight: FontWeight.heavy,
+    marginBottom: Spacing.five, textAlign: 'center',
   },
   menuButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f9fafb',
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    gap: 12,
+    flexDirection: 'row', alignItems: 'center',
+    padding: Spacing.four, borderRadius: Radius.md,
+    marginBottom: Spacing.three, borderWidth: StyleSheet.hairlineWidth, gap: Spacing.three,
   },
-  menuButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  modalDivider: {
-    height: 1,
-    backgroundColor: '#e5e7eb',
-    marginVertical: 10,
-  },
-  logoutButton: {
-    backgroundColor: '#fef2f2',
-    borderColor: '#fecaca',
-  },
-  logoutButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#ef4444',
-  },
+  menuButtonText: { fontSize: FontSize.base, fontWeight: FontWeight.semibold },
+  modalDivider: { height: StyleSheet.hairlineWidth, marginVertical: Spacing.three },
 });
