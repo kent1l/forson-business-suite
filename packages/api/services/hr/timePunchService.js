@@ -16,6 +16,25 @@
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
+/**
+ * Maps a punch source onto a value `daily_time_record.source` will accept.
+ *
+ * The two columns have separate CHECK constraints and separate vocabularies.
+ * `time_punch.source` distinguishes 'Mobile-Offline' so a supervisor reviewing
+ * a disputed day can see the punch came from a phone's clock rather than the
+ * server's; `daily_time_record.source` has no such value, and writing one
+ * through would abort the whole derivation batch.
+ *
+ * The distinction is not lost by collapsing it here -- the raw punch keeps it,
+ * which is the row that settles a dispute. The derived day only needs to say
+ * the attendance came from the app.
+ */
+const dtrSourceFor = (punchSource) => {
+    if (punchSource === 'Import') return 'Import';
+    if (punchSource === 'Mobile-Offline') return 'Mobile';
+    return punchSource;
+};
+
 const toTime = (timestamp) => new Date(timestamp).toISOString().slice(11, 19);
 
 const hoursBetween = (startIso, endIso, breakMinutes = 0) => {
@@ -186,7 +205,7 @@ const deriveDtrFromPunches = async (executor, { employeeIds, dateFrom, dateTo, a
                  updated_at = now()`,
             [bucket.employee_id, bucket.date, dayType, dayFraction,
                 toTime(firstIn), toTime(lastOut), breakMinutes, hours, lateMinutes,
-                bucket.source === 'Import' ? 'Import' : bucket.source, actorId]
+                dtrSourceFor(bucket.source), actorId]
         );
         updated += 1;
     }

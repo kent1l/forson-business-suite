@@ -106,20 +106,36 @@ describe('POST /dtr/punch', () => {
         expect(insertParams[3]).toBe('Mobile-Offline');    // and it is marked as such
     });
 
-    test('flags a punch backdated beyond the configured window for HR review', async () => {
+    test('refuses a punch backdated beyond the configured window', async () => {
         const longAgo = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString();
+        db.query.mockResolvedValueOnce({ rows: [{ setting_value: '720' }] });
+
+        const res = await request(app).post('/dtr/punch')
+            .send({ direction: 'IN', source: 'Mobile', punch_at: longAgo });
+
+        // Rejected, not merely annotated. `dtr:punch` is held by every role, so
+        // an unbounded backdate would let anyone write attendance onto a day
+        // they did not work, and the derivation turns that into paid hours. A
+        // note in a column nothing reads is not a control.
+        expect(res.statusCode).toBe(400);
+        expect(res.body.code).toBe('PUNCH_TOO_OLD');
+        expect(db.query.mock.calls.some((c) => /INSERT INTO time_punch/i.test(c[0]))).toBe(false);
+    });
+
+    test('still accepts an offline punch inside the window, marked as such', async () => {
+        const withinWindow = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
         db.query
             .mockResolvedValueOnce({ rows: [{ setting_value: '720' }] })
             .mockResolvedValueOnce(okInsert({ source: 'Mobile-Offline' }));
 
         const res = await request(app).post('/dtr/punch')
-            .send({ direction: 'IN', source: 'Mobile', punch_at: longAgo });
+            .send({ direction: 'IN', source: 'Mobile', punch_at: withinWindow });
 
         expect(res.statusCode).toBe(201);
-        // Stored anyway — losing a real clock-in is worse than accepting a late
-        // one — but never silently.
-        const notes = db.query.mock.calls[1][1][10];
-        expect(notes).toMatch(/needs hr review/i);
+        expect(db.query.mock.calls[1][1][3]).toBe('Mobile-Offline');
+        // The capture context is still recorded, so a supervisor reviewing a
+        // disputed day can see the punch came from a phone's clock.
+        expect(db.query.mock.calls[1][1][10]).toMatch(/captured offline/i);
     });
 
     test('a retried offline flush resolves to the punch it already created', async () => {

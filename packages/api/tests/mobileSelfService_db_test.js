@@ -92,6 +92,43 @@ const run = async () => {
         } catch { sourceAccepted = false; }
         check("the source CHECK admits 'Mobile-Offline'", sourceAccepted);
 
+
+        // --- An offline punch must survive DTR derivation ------------------
+        // daily_time_record.source has its own CHECK constraint and does NOT
+        // admit 'Mobile-Offline'. Writing the punch source straight through
+        // aborted the whole derivation batch, which would have made the
+        // offline-punch feature break HR's DTR run for the entire company.
+        const workDate = '2026-08-13';
+        await client.query(
+            `INSERT INTO time_punch (employee_id, punch_at, punch_date, direction, source, client_punch_id)
+             VALUES ($1, $2::timestamptz, $3::date, 'IN',  'Mobile-Offline', gen_random_uuid()),
+                    ($1, $4::timestamptz, $3::date, 'OUT', 'Mobile-Offline', gen_random_uuid())`,
+            [employeeId, `${workDate}T00:00:00Z`, workDate, `${workDate}T09:00:00Z`]
+        );
+
+        let derived = null;
+        let deriveError = null;
+        try {
+            derived = await timePunchService.deriveDtrFromPunches(client, {
+                employeeIds: [employeeId], dateFrom: workDate, dateTo: workDate, actorId: employeeId,
+            });
+        } catch (err) {
+            deriveError = err;
+        }
+        check('deriving from an offline punch does not throw', deriveError === null);
+        check('the offline day is actually derived', derived && derived.updated === 1);
+
+        const { rows: dtrRows } = await client.query(
+            `SELECT source, hours_worked FROM daily_time_record
+             WHERE employee_id = $1 AND work_date = $2::date`,
+            [employeeId, workDate]
+        );
+        check('a derived day exists', dtrRows.length === 1);
+        check('it is stored with a source daily_time_record accepts',
+            dtrRows.length === 1 && dtrRows[0].source === 'Mobile');
+        check('the hours are computed from the punches',
+            dtrRows.length === 1 && Number(dtrRows[0].hours_worked) === 8);
+
         await client.query('ROLLBACK');
     } catch (err) {
         await client.query('ROLLBACK').catch(() => {});

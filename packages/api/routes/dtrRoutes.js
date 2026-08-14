@@ -340,14 +340,26 @@ router.post('/punch', protect, hasPermission('dtr:punch'), async (req, res) => {
         }
         punchAt = parsed.toISOString();
         if (driftMinutes > 1) {
-            source = 'Mobile-Offline';
+            // Enforced, not merely annotated. An unbounded backdate would let
+            // any holder of dtr:punch -- which is everyone -- write attendance
+            // onto a day they did not work, and the derivation turns that into
+            // paid hours. A note in a column nothing reads is not a control.
+            //
+            // The window is generous enough to cover a phone that spent a whole
+            // shift out of LAN range. Anything older is a genuine exception and
+            // belongs with HR, who can enter it against the employee's account
+            // deliberately.
             const maxBackdate = await getMaxBackdateMinutes();
             if (driftMinutes > maxBackdate) {
-                notes = `Captured offline ${Math.round(driftMinutes)} minutes before sync, `
-                      + `beyond the ${maxBackdate}-minute window. Needs HR review.`;
-            } else {
-                notes = `Captured offline ${Math.round(driftMinutes)} minutes before sync.`;
+                return res.status(400).json({
+                    message: `That punch is ${Math.round(driftMinutes / 60)} hours old, beyond the `
+                           + `${Math.round(maxBackdate / 60)}-hour limit for offline punches. `
+                           + 'Ask HR to record it for you.',
+                    code: 'PUNCH_TOO_OLD',
+                });
             }
+            source = 'Mobile-Offline';
+            notes = `Captured offline ${Math.round(driftMinutes)} minutes before sync.`;
         }
     }
 
@@ -395,7 +407,10 @@ router.get('/punches', protect, hasPermission('dtr:view'), async (req, res) => {
         if (employee_id) { where += ' AND t.employee_id = $3'; params.push(Number(employee_id)); }
 
         const { rows } = await db.query(
-            `SELECT t.punch_id, t.employee_id, t.punch_at, t.direction, t.source, t.device_id,
+            // `notes` carries the offline-capture context. It was previously
+            // returned only by the employee's own /dtr/me/punches, so the one
+            // person who could see the flag was the one who created it.
+            `SELECT t.punch_id, t.employee_id, t.punch_at, t.direction, t.source, t.device_id, t.notes,
                     TO_CHAR(t.punch_date, 'YYYY-MM-DD') AS punch_date,
                     TRIM(CONCAT_WS(' ', e.first_name, e.last_name)) AS employee_name
              FROM time_punch t
