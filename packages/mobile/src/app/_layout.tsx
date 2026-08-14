@@ -66,6 +66,7 @@ function AppShell() {
         <Stack.Screen name="profile" />
         <Stack.Screen name="settings" />
         <Stack.Screen name="outbox" />
+        <Stack.Screen name="hr" />
         <Stack.Screen name="pos" />
         <Stack.Screen name="pos-settlement" options={{ animation: 'slide_from_right' }} />
       </Stack>
