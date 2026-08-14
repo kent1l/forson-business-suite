@@ -10,8 +10,14 @@ import apiClient from '../api/client';
 import PremiumScanner from '../components/ui/PremiumScanner';
 import RequirePermission from '../components/RequirePermission';
 import submitWithOutbox from '../offline/submitWithOutbox';
+import Screen from '../components/ui/Screen';
+import AppHeader from '../components/ui/AppHeader';
+import { useTheme } from '@/hooks/use-theme';
+import { Spacing, Radius, FontSize, FontWeight, type ThemeColors } from '@/constants/theme';
 
 function CountScreenInner() {
+  const theme = useTheme();
+  const styles = React.useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
   const {
     activeBatchData,
@@ -230,7 +236,7 @@ function CountScreenInner() {
   if (isSubmitting) {
     return (
       <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#3b82f6" />
+        <ActivityIndicator size="large" color={theme.primary} />
         <Text style={{ marginTop: 16 }}>
           {isAdHocMode ? 'Submitting find...' : 'Submitting batch...'}
         </Text>
@@ -250,27 +256,29 @@ function CountScreenInner() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.headerStrip}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="arrow-back" size={24} color="#374151" />
+    <Screen>
+      <AppHeader
+        title="Active Count"
+        subtitle={isAdHocMode ? 'Ad-hoc' : `Item ${currentLineIndex + 1} of ${activeBatchData?.length ?? 1}`}
+        right={
+          <TouchableOpacity
+            onPress={openCameraModal}
+            activeOpacity={0.75}
+            accessibilityLabel={hasBarcode ? 'Barcode captured, scan again' : 'Scan barcode'}
+            style={[
+              styles.barcodePill,
+              hasBarcode ? styles.barcodePillSuccess : styles.barcodePillNeutral,
+            ]}
+          >
+            <Ionicons
+              name={hasBarcode ? 'checkmark-circle' : 'barcode-outline'}
+              size={14}
+              color={theme.primaryText}
+            />
+            <Text style={styles.barcodePillText}>Barcode</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Active Count</Text>
-        </View>
-
-        <TouchableOpacity
-          onPress={openCameraModal}
-          activeOpacity={0.75}
-          style={[
-            styles.barcodePill,
-            hasBarcode ? styles.barcodePillSuccess : styles.barcodePillNeutral
-          ]}
-        >
-          <Text style={styles.barcodePillText}>Barcode</Text>
-        </TouchableOpacity>
-      </View>
+        }
+      />
 
       {/* Item details card (item_text_zone) */}
       <View style={styles.itemTextZone}>
@@ -294,7 +302,7 @@ function CountScreenInner() {
       <View style={styles.progressContainer}>
         <View style={styles.metaRow}>
           {isAdHocMode ? (
-            <Text style={[styles.progressText, { color: '#f59e0b', fontWeight: '600' }]}>
+            <Text style={[styles.progressText, { color: theme.warning, fontWeight: FontWeight.semibold }]}>
               ⚠ Unassigned Find
             </Text>
           ) : (
@@ -332,7 +340,7 @@ function CountScreenInner() {
         title={isAdHocMode ? "Ad-hoc Scan" : "Batch Scan"}
         autoCloseOnSuccess={true}
       />
-    </SafeAreaView>
+    </Screen>
   );
 }
 
@@ -349,12 +357,12 @@ export default function CountScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    flexDirection: 'column',
-    backgroundColor: '#fff',
-  },
+/**
+ * Theme-driven so the count screen follows light and dark. Literals that
+ * remain belong to the full-screen camera overlay, which is dark whatever
+ * the app theme is.
+ */
+const makeStyles = (theme: ThemeColors) => StyleSheet.create({
 
   centerContainer: {
     flex: 1,
@@ -365,48 +373,31 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: 'red',
   },
-  headerStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#ffffff',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#111827',
-  },
   barcodePill: {
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+    paddingVertical: Spacing.one + 2,
+    paddingHorizontal: Spacing.three,
+    borderRadius: Radius.pill,
   },
   barcodePillSuccess: {
-    backgroundColor: '#16a34a',
+    backgroundColor: theme.success,
   },
   barcodePillNeutral: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: theme.textMuted,
   },
   barcodePillText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#ffffff',
+    color: theme.primaryText,
   },
   itemTextZone: {
     flex: 1,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: theme.surfaceSunken,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: theme.border,
     justifyContent: 'center',
     alignItems: 'center',
     marginHorizontal: 16,
@@ -416,12 +407,12 @@ const styles = StyleSheet.create({
   itemTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#111827',
+    color: theme.text,
     textAlign: 'center',
   },
   itemSubtitle: {
     fontSize: 14,
-    color: '#6b7280',
+    color: theme.textMuted,
     marginTop: 8,
     textAlign: 'center',
   },
@@ -434,194 +425,20 @@ const styles = StyleSheet.create({
   },
   progressText: {
     fontSize: 12,
-    color: '#6b7280',
+    color: theme.textMuted,
   },
   progressBarTrack: {
     height: 4,
-    backgroundColor: '#e5e7eb',
+    backgroundColor: theme.border,
     borderRadius: 2,
     overflow: 'hidden',
   },
   progressBarFill: {
     height: 4,
-    backgroundColor: '#3b82f6',
+    backgroundColor: theme.primary,
     borderRadius: 2,
   },
   counterZone: {
-    backgroundColor: '#fff',
-  },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-  cameraWrapper: {
-    flex: 1,
-  },
-  cameraHeader: {
-    position: 'absolute',
-    top: 20,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    zIndex: 10,
-  },
-  iconButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  overlay: {
-    ...StyleSheet.absoluteFill,
-    zIndex: 5,
-  },
-  overlayTop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-  },
-  overlayBottom: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    alignItems: 'center',
-    paddingTop: 24,
-  },
-  scanInstruction: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '500',
-    textAlign: 'center',
-    letterSpacing: 0.5,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    overflow: 'hidden',
-  },
-  overlayMiddle: {
-    height: 200,
-    flexDirection: 'row',
-  },
-  overlaySide: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-  },
-  viewfinderCutout: {
-    width: '80%',
-    height: '100%',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
-    borderRadius: 16,
-    backgroundColor: 'transparent',
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  corner: {
-    position: 'absolute',
-    borderColor: '#06b6d4',
-    width: 24,
-    height: 24,
-  },
-  topLeftCorner: {
-    top: -2,
-    left: -2,
-    borderLeftWidth: 4,
-    borderTopWidth: 4,
-    borderTopLeftRadius: 12,
-  },
-  topRightCorner: {
-    top: -2,
-    right: -2,
-    borderRightWidth: 4,
-    borderTopWidth: 4,
-    borderTopRightRadius: 12,
-  },
-  bottomLeftCorner: {
-    bottom: -2,
-    left: -2,
-    borderLeftWidth: 4,
-    borderBottomWidth: 4,
-    borderBottomLeftRadius: 12,
-  },
-  bottomRightCorner: {
-    bottom: -2,
-    right: -2,
-    borderRightWidth: 4,
-    borderBottomWidth: 4,
-    borderBottomRightRadius: 12,
-  },
-  laser: {
-    position: 'absolute',
-    left: '5%',
-    right: '5%',
-    height: 2,
-    backgroundColor: '#06b6d4',
-    shadowColor: '#06b6d4',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 6,
-    elevation: 5,
-  },
-  bottomSheet: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 24,
-    zIndex: 20,
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-  },
-  bottomSheetTitle: {
-    fontSize: 16,
-    color: '#6b7280',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  bottomSheetValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#111827',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  bottomSheetActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  bottomSheetBtn: {
-    flex: 1,
-    minHeight: 56,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginHorizontal: 8,
-  },
-  btnRetake: {
-    backgroundColor: '#f3f4f6',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-  },
-  btnRetakeText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#4b5563',
-  },
-  btnAccept: {
-    backgroundColor: '#3b82f6',
-  },
-  btnAcceptText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
+    backgroundColor: theme.surface,
   },
 });

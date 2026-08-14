@@ -5,8 +5,11 @@ import { SymbolView } from 'expo-symbols';
 import apiClient from '../api/client';
 import useAuthStore from '../store/useAuthStore';
 import useSettingsStore from '../store/useSettingsStore';
+import { useTheme } from '@/hooks/use-theme';
 
 export default function LoginScreen() {
+  const theme = useTheme();
+  const styles = React.useMemo(() => makeStyles(theme), [theme]);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -114,7 +117,7 @@ export default function LoginScreen() {
         accessibilityLabel="Server Settings"
       >
         <SymbolView
-          tintColor="#4b5563"
+          tintColor={theme.textSecondary}
           name={{ ios: 'gearshape', android: 'settings', web: 'settings' }}
           size={24}
         />
@@ -148,7 +151,7 @@ export default function LoginScreen() {
           disabled={isLoading}
         >
           {isLoading ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={theme.primaryText} />
           ) : (
             <Text style={styles.buttonText}>Log In</Text>
           )}
@@ -194,7 +197,7 @@ export default function LoginScreen() {
                 disabled={isTesting}
               >
                 {isTesting ? (
-                  <ActivityIndicator color="#3b82f6" size="small" />
+                  <ActivityIndicator color={theme.primary} size="small" />
                 ) : (
                   <Text style={styles.testButtonText}>Test Connection</Text>
                 )}
@@ -221,19 +224,23 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+/**
+ * Theme-driven. The login screen is the first thing anyone sees, and it was
+ * the last surface still forcing a white card onto a dark phone.
+ */
+const makeStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'center',
     padding: 24,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: theme.background,
   },
   settingsButton: {
     position: 'absolute',
     top: 48,
     right: 24,
     padding: 10,
-    backgroundColor: '#fff',
+    backgroundColor: theme.surface,
     borderRadius: 50,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -242,7 +249,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   card: {
-    backgroundColor: '#fff',
+    backgroundColor: theme.surface,
     padding: 24,
     borderRadius: 12,
     shadowColor: '#000',
@@ -254,38 +261,38 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#1f2937',
+    color: theme.text,
     marginBottom: 8,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 16,
-    color: '#6b7280',
+    color: theme.textMuted,
     marginBottom: 32,
     textAlign: 'center',
   },
   input: {
-    backgroundColor: '#f9fafb',
+    backgroundColor: theme.surfaceMuted,
     borderWidth: 1,
-    borderColor: '#d1d5db',
+    borderColor: theme.border,
     borderRadius: 8,
     padding: 16,
     marginBottom: 16,
     fontSize: 16,
-    color: '#1f2937',
+    color: theme.text,
   },
   button: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: theme.primary,
     padding: 16,
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 8,
   },
   buttonDisabled: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: theme.textMuted,
   },
   buttonText: {
-    color: '#fff',
+    color: theme.primaryText,
     fontSize: 18,
     fontWeight: 'bold',
   },
@@ -297,7 +304,7 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   modalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: theme.surface,
     borderRadius: 16,
     padding: 24,
     width: '100%',
@@ -311,24 +318,24 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#1f2937',
+    color: theme.text,
     marginBottom: 4,
     textAlign: 'center',
   },
   modalSubtitle: {
     fontSize: 14,
-    color: '#6b7280',
+    color: theme.textMuted,
     marginBottom: 20,
     textAlign: 'center',
   },
   modalInput: {
-    backgroundColor: '#f9fafb',
+    backgroundColor: theme.surfaceMuted,
     borderWidth: 1,
-    borderColor: '#d1d5db',
+    borderColor: theme.border,
     borderRadius: 8,
     padding: 14,
     fontSize: 16,
-    color: '#1f2937',
+    color: theme.text,
     marginBottom: 12,
   },
   testResultText: {
@@ -338,10 +345,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   testSuccess: {
-    color: '#10b981',
+    color: theme.success,
   },
   testError: {
-    color: '#ef4444',
+    color: theme.danger,
   },
   modalButtonGroup: {
     flexDirection: 'row',
@@ -357,20 +364,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   testButton: {
-    backgroundColor: '#eff6ff',
+    backgroundColor: theme.primarySoft,
     borderWidth: 1,
-    borderColor: '#bfdbfe',
+    borderColor: theme.primarySoft,
   },
   testButtonText: {
-    color: '#3b82f6',
+    color: theme.primary,
     fontWeight: 'bold',
     fontSize: 14,
   },
   saveButton: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: theme.primary,
   },
   saveButtonText: {
-    color: '#fff',
+    color: theme.primaryText,
     fontWeight: 'bold',
     fontSize: 14,
   },
@@ -379,7 +386,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   closeButtonText: {
-    color: '#9ca3af',
+    color: theme.textMuted,
     fontWeight: '600',
     fontSize: 14,
   },

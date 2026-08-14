@@ -14,6 +14,7 @@ import { Spacing, Radius, FontSize, FontWeight, elevation } from '@/constants/th
 import Screen from '../components/ui/Screen';
 import Card from '../components/ui/Card';
 import { LoadingState, EmptyState, ErrorState } from '../components/ui/States';
+import ClockShortcut from '../components/ClockShortcut';
 
 const fetchAssignedTasks = async () => {
   const { data } = await apiClient.get('/inventory/cycle-count/my-tasks');
@@ -141,6 +142,8 @@ export default function DashboardScreen() {
           </Text>
         </Card>
 
+        <ClockShortcut />
+
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Operational Modules</Text>
         <View style={styles.grid}>
           {visibleModules.map((mod) => (
@@ -153,8 +156,14 @@ export default function DashboardScreen() {
               <View style={[styles.iconBox, { backgroundColor: theme.surfaceSunken }]}>
                 <Ionicons name={mod.icon} size={22} color={mod.accent} />
               </View>
-              <Text style={[styles.gridTitle, { color: theme.text }]}>{mod.title}</Text>
-              <Text style={[styles.gridSubtitle, { color: theme.textMuted }]}>{mod.subtitle}</Text>
+              {/* Bounded so a long label cannot stretch one tile taller than
+                  its neighbour and stagger the grid. */}
+              <Text style={[styles.gridTitle, { color: theme.text }]} numberOfLines={2}>
+                {mod.title}
+              </Text>
+              <Text style={[styles.gridSubtitle, { color: theme.textMuted }]} numberOfLines={2}>
+                {mod.subtitle}
+              </Text>
             </Card>
           ))}
         </View>
@@ -327,14 +336,20 @@ const styles = StyleSheet.create({
   },
 
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.three, marginBottom: Spacing.four },
-  // Two per row, accounting for the gap between them.
-  gridCard: { width: '48%', flexGrow: 1 },
+  /**
+   * Two per row.
+   *
+   * `flexBasis` rather than `width`, and no `flexGrow`: a growing item on a
+   * short final row would stretch to fill the whole width and break the column
+   * rhythm. The percentage leaves room for the gap between the pair.
+   */
+  gridCard: { flexBasis: '48%', flexShrink: 1, minHeight: 132, justifyContent: 'flex-start' },
   iconBox: {
     width: 40, height: 40, borderRadius: Radius.md,
     justifyContent: 'center', alignItems: 'center', marginBottom: Spacing.three,
   },
-  gridTitle: { fontSize: FontSize.base, fontWeight: FontWeight.heavy },
-  gridSubtitle: { fontSize: FontSize.xs, marginTop: Spacing.half },
+  gridTitle: { fontSize: FontSize.base, fontWeight: FontWeight.bold },
+  gridSubtitle: { fontSize: FontSize.xs, marginTop: Spacing.half, lineHeight: 15 },
 
   summaryRow: { flexDirection: 'row', gap: Spacing.three, marginBottom: Spacing.five },
   summaryCard: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
