@@ -7,6 +7,7 @@ import KPICard from '../components/ui/KPICard';
 import LoadingState from '../components/ui/LoadingState';
 import ErrorState from '../components/ui/ErrorState';
 import EmptyState from '../components/ui/EmptyState';
+import AttendanceGrid from '../components/hr/AttendanceGrid';
 import { useAuth } from '../contexts/AuthContext';
 
 const INPUT_CLASS = 'px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500';
@@ -46,7 +47,9 @@ const currentPeriod = () => {
 
 const DtrPage = () => {
     const { hasPermission } = useAuth();
-    const [tab, setTab] = useState('records');
+    // The grid opens first: "who was in this period?" is the question HR asks on
+    // arrival, and the flat table only answers it one row at a time.
+    const [tab, setTab] = useState('grid');
     const [period, setPeriod] = useState(currentPeriod);
     const [departments, setDepartments] = useState([]);
     const [departmentFilter, setDepartmentFilter] = useState('');
@@ -85,7 +88,7 @@ const DtrPage = () => {
                 to: period.to,
                 department: departmentFilter || undefined,
             };
-            if (tab === 'records') {
+            if (tab === 'records' || tab === 'grid') {
                 const { data } = await api.get('/dtr', {
                     params: { ...params, employee_id: employeeFilter || undefined },
                 });
@@ -192,7 +195,7 @@ const DtrPage = () => {
                         {departments.map((d) => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
                     </select>
                 </div>
-                {tab === 'records' && (
+                {tab !== 'summary' && (
                     <div>
                         <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Employee</label>
                         <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)} className={INPUT_CLASS}>
@@ -205,7 +208,7 @@ const DtrPage = () => {
                 )}
             </div>
 
-            {tab === 'records' && (
+            {tab !== 'summary' && (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
                     <KPICard title="Day records" value={stats.rows} icon="invoice" color="blue" loading={loading} />
                     <KPICard title="Days payable" value={stats.paid} icon="currency" color="green" loading={loading} />
@@ -217,7 +220,11 @@ const DtrPage = () => {
 
             <div className="mb-4 border-b border-gray-200 dark:border-slate-700">
                 <SegmentedTabs
-                    tabs={[{ key: 'records', label: 'Daily Records' }, { key: 'summary', label: 'Period Summary' }]}
+                    tabs={[
+                        { key: 'grid', label: 'Attendance Grid' },
+                        { key: 'records', label: 'Daily Records' },
+                        { key: 'summary', label: 'Period Summary' },
+                    ]}
                     active={tab}
                     onChange={setTab}
                 />
@@ -226,6 +233,25 @@ const DtrPage = () => {
             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700">
                 {loading && <LoadingState label="Loading records…" />}
                 {!loading && error && <ErrorState description={error} onRetry={load} />}
+
+                {!loading && !error && tab === 'grid' && (
+                    records.length === 0 ? (
+                        <EmptyState
+                            title="No records for this period"
+                            description={canGenerate
+                                ? 'Use "Generate for period" to create days from each employee\'s work schedule.'
+                                : 'Nothing has been generated for these dates yet.'}
+                        />
+                    ) : (
+                        <AttendanceGrid
+                            records={records}
+                            period={period}
+                            canEdit={canEdit}
+                            savingId={savingId}
+                            onChangeDayType={changeDayType}
+                        />
+                    )
+                )}
 
                 {!loading && !error && tab === 'records' && (
                     records.length === 0 ? (

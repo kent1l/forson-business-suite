@@ -163,7 +163,16 @@ router.put('/:id', protect, hasPermission('dtr:edit'), async (req, res) => {
             modifiedBy: req.user.employee_id,
             reason: req.body.reason,
         });
-        res.json(updated);
+        // Re-select through the shared projection rather than returning the raw
+        // updated row. `RETURNING *` hands back work_date as a DATE, which
+        // serialises to a UTC timestamp ("2026-08-13T16:00:00.000Z" for the 14th
+        // in Manila) — a different shape from the TO_CHAR'd string every read
+        // endpoint returns, and a day off once a client keys anything by date.
+        const { rows } = await db.query(
+            `SELECT ${DTR_SELECT_FIELDS} ${DTR_JOINS} WHERE d.dtr_id = $1`,
+            [updated.dtr_id]
+        );
+        res.json(rows[0]);
     } catch (err) {
         if (err.code === 'DTR_NOT_FOUND') return res.status(404).json({ message: err.message });
         if (err.code === 'DTR_LOCKED') return res.status(409).json({ message: err.message });
