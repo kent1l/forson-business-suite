@@ -341,22 +341,31 @@ const updateEntry = async (executor, { dtrId, changes, modifiedBy, reason }) => 
  */
 const summarizePeriodBulk = async (executor, { employeeIds, periodStart, periodEnd }) => {
     const { rows } = await executor.query(
-        `SELECT employee_id,
-                COALESCE(SUM(day_fraction), 0)::numeric(8,3)                      AS days_paid,
-                COUNT(*) FILTER (WHERE day_type IN ('Present','Half Day'))::int   AS days_worked,
-                COUNT(*) FILTER (WHERE day_type = 'Absent')::int                  AS days_absent,
-                COUNT(*) FILTER (WHERE day_type = 'On Leave')::int                AS days_on_leave,
-                COUNT(*) FILTER (WHERE day_type = 'Holiday')::int                 AS days_holiday,
-                COUNT(*) FILTER (WHERE day_type = 'Holiday Worked')::int          AS days_holiday_worked,
-                COUNT(*) FILTER (WHERE day_type = 'Rest Day Worked')::int         AS days_rest_day_worked,
-                COALESCE(SUM(hours_worked), 0)::numeric(8,2)                      AS hours_worked,
-                COALESCE(SUM(overtime_hours), 0)::numeric(8,2)                    AS overtime_hours,
-                COALESCE(SUM(night_diff_hours), 0)::numeric(8,2)                  AS night_diff_hours,
-                COALESCE(SUM(late_minutes), 0)::int                               AS late_minutes,
-                COALESCE(SUM(undertime_minutes), 0)::int                          AS undertime_minutes
-         FROM daily_time_record
-         WHERE employee_id = ANY($1::int[]) AND work_date BETWEEN $2 AND $3
-         GROUP BY employee_id`,
+        `SELECT dtr.employee_id,
+                COALESCE(SUM(dtr.day_fraction), 0)::numeric(8,3)                      AS days_paid,
+                COUNT(*) FILTER (WHERE dtr.day_type IN ('Present','Half Day'))::int   AS days_worked,
+                COUNT(*) FILTER (WHERE dtr.day_type = 'Absent')::int                  AS days_absent,
+                COUNT(*) FILTER (WHERE dtr.day_type = 'On Leave')::int                AS days_on_leave,
+                -- Unpaid leave is the one absence a GUARANTEED monthly salary still
+                -- deducts: it is an explicit HR act, not a no-show. The fraction
+                -- comes from the leave request, because an unpaid leave writes
+                -- day_fraction = 0 onto the DTR row regardless of its own size.
+                COALESCE(SUM(lr.day_fraction) FILTER (
+                    WHERE dtr.day_type = 'On Leave' AND lt.is_paid = false
+                ), 0)::numeric(8,3)                                                   AS days_lwop,
+                COUNT(*) FILTER (WHERE dtr.day_type = 'Holiday')::int                 AS days_holiday,
+                COUNT(*) FILTER (WHERE dtr.day_type = 'Holiday Worked')::int          AS days_holiday_worked,
+                COUNT(*) FILTER (WHERE dtr.day_type = 'Rest Day Worked')::int         AS days_rest_day_worked,
+                COALESCE(SUM(dtr.hours_worked), 0)::numeric(8,2)                      AS hours_worked,
+                COALESCE(SUM(dtr.overtime_hours), 0)::numeric(8,2)                    AS overtime_hours,
+                COALESCE(SUM(dtr.night_diff_hours), 0)::numeric(8,2)                  AS night_diff_hours,
+                COALESCE(SUM(dtr.late_minutes), 0)::int                               AS late_minutes,
+                COALESCE(SUM(dtr.undertime_minutes), 0)::int                          AS undertime_minutes
+         FROM daily_time_record dtr
+         LEFT JOIN leave_request lr ON lr.leave_id = dtr.leave_id
+         LEFT JOIN leave_type    lt ON lt.leave_type_id = lr.leave_type_id
+         WHERE dtr.employee_id = ANY($1::int[]) AND dtr.work_date BETWEEN $2 AND $3
+         GROUP BY dtr.employee_id`,
         [employeeIds, periodStart, periodEnd]
     );
     return new Map(rows.map((r) => [r.employee_id, r]));
@@ -430,6 +439,25 @@ const removeLeaveFromDtr = async (executor, { leaveId }) => {
 };
 
 /**
+ * The days in a span the employee was actually expected to work: neither a rest
+ * day on their schedule nor a holiday. Pure, given a resolved schedule map.
+ *
+ * A `within` predicate narrows the count to a sub-span — used by payroll to ask
+ * "of this cutoff's working days, how many fell inside the employment contract".
+ */
+const countScheduledDays = (dates, schedule, holidays, within = null) => {
+    let days = 0;
+    for (const isoDate of dates) {
+        if (within && !within(isoDate)) continue;
+        if (holidays.has(isoDate)) continue;
+        const scheduleDay = schedule.get(dayOfWeek(isoDate));
+        if (!scheduleDay || scheduleDay.is_rest_day) continue;
+        days += 1;
+    }
+    return days;
+};
+
+/**
  * Counts the working days a leave span actually consumes, skipping rest days
  * and holidays. Used at request time so the balance reflects real days off.
  */
@@ -442,14 +470,68 @@ const countLeaveWorkingDays = async (executor, { employeeId, dateFrom, dateTo, d
     const schedule = schedules.get(employeeId);
     if (!schedule) return 0;
 
-    let days = 0;
-    for (const isoDate of dates) {
-        if (holidays.has(isoDate)) continue;
-        const scheduleDay = schedule.get(dayOfWeek(isoDate));
-        if (!scheduleDay || scheduleDay.is_rest_day) continue;
-        days += Number(dayFraction);
-    }
+    const days = countScheduledDays(dates, schedule, holidays) * Number(dayFraction);
     return Math.round(days * 100) / 100;
+};
+
+/**
+ * Scheduled working days per employee, for the cutoff and for its whole calendar
+ * month, plus the subset falling inside the employment contract.
+ *
+ * This is the divisor the monthly payroll basis deducts against. It is derived
+ * from the work schedule rather than from DTR rows on purpose: a salaried
+ * employee must be payable even when nobody has generated their DTR, and a day
+ * they were never expected to work cannot be a day they were absent.
+ *
+ * @param {Array} employees - {employee_id, date_hired, date_separated}
+ * @returns {Promise<Map<number, {schedDaysInPeriod, schedDaysInMonth, contractDays}>>}
+ */
+const scheduledDaysBulk = async (executor, { employees, periodStart, periodEnd }) => {
+    const employeeIds = employees.map((e) => e.employee_id);
+    if (employeeIds.length === 0) return new Map();
+
+    // The month enclosing the cutoff, for the MONTH_WORKING_DAYS divisor mode.
+    const monthStart = `${periodStart.slice(0, 7)}-01`;
+    const monthEndDate = new Date(`${monthStart}T00:00:00Z`);
+    monthEndDate.setUTCMonth(monthEndDate.getUTCMonth() + 1);
+    monthEndDate.setUTCDate(0);
+    const monthEnd = monthEndDate.toISOString().slice(0, 10);
+
+    const [schedules, holidays] = await Promise.all([
+        loadSchedules(executor, employeeIds),
+        loadHolidays(executor, monthStart, monthEnd),
+    ]);
+
+    const periodDates = eachDate(periodStart, periodEnd);
+    const monthDates = eachDate(monthStart, monthEnd);
+
+    const out = new Map();
+    for (const employee of employees) {
+        const schedule = schedules.get(employee.employee_id);
+        // No schedule means we cannot say what the employee owed. Zero here is
+        // read by the engine as "no divisor available", which pays the full
+        // entitlement and deducts nothing rather than inventing a default.
+        if (!schedule) {
+            out.set(employee.employee_id, { schedDaysInPeriod: 0, schedDaysInMonth: 0, contractDays: 0 });
+            continue;
+        }
+
+        const hired = employee.date_hired ? String(employee.date_hired).slice(0, 10) : null;
+        const separated = employee.date_separated ? String(employee.date_separated).slice(0, 10) : null;
+        const withinContract = (hired || separated)
+            ? (isoDate) => (!hired || isoDate >= hired) && (!separated || isoDate <= separated)
+            : null;
+
+        const schedDaysInPeriod = countScheduledDays(periodDates, schedule, holidays);
+        out.set(employee.employee_id, {
+            schedDaysInPeriod,
+            schedDaysInMonth: countScheduledDays(monthDates, schedule, holidays),
+            contractDays: withinContract
+                ? countScheduledDays(periodDates, schedule, holidays, withinContract)
+                : schedDaysInPeriod,
+        });
+    }
+    return out;
 };
 
 module.exports = {
@@ -460,6 +542,7 @@ module.exports = {
     applyLeaveToDtr,
     removeLeaveFromDtr,
     countLeaveWorkingDays,
+    scheduledDaysBulk,
     // Exported for unit tests and reuse by the payroll engine.
-    _internal: { eachDate, dayOfWeek, hoursBetween, resolveDay, dayFractionFor },
+    _internal: { eachDate, dayOfWeek, hoursBetween, resolveDay, dayFractionFor, countScheduledDays },
 };

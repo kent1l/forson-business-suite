@@ -15,14 +15,163 @@ const statutory = require('./statutoryService');
 const { round2 } = statutory;
 
 /**
- * Converts a daily rate to the monthly basis the statutory tables index on.
+ * Converts a rate to the monthly basis the statutory tables index on.
  * Uses the company's working-days-per-year divisor unless HR recorded an
  * explicit declared monthly basic for an irregular earner.
+ *
+ * For a monthly earner the base rate already IS the monthly figure, which is
+ * what keeps SSS/PhilHealth/Pag-IBIG anchored to the CONTRACTED salary: neither
+ * an absence nor a mid-month hire moves the contribution basis, because nothing
+ * downstream looks at anything but this function.
  */
 const monthlyBasisFor = (compensation, policy) => {
     if (compensation.declared_monthly_basic) return Number(compensation.declared_monthly_basic);
+    if (compensation.pay_basis === 'monthly') return round2(Number(compensation.base_rate) || 0);
     const daysPerYear = Number(compensation.days_per_year) || Number(policy.workingDaysPerYear) || 313;
     return round2((Number(compensation.base_rate) || 0) * daysPerYear / 12);
+};
+
+/**
+ * The value of one unpaid day against a monthly salary.
+ *
+ * PERIOD_WORKING_DAYS is the default because it is the only mode that closes at
+ * both ends: a fully-absent cutoff deducts exactly the entitlement (pay 0.00),
+ * and a clean month pays exactly the salary. The other two are offered because
+ * some companies contract on them, but both leave a residue on a fully-absent
+ * cutoff — they are documented in the migration that seeds the setting.
+ */
+const unpaidDayValueFor = ({ mode, entitlement, contractDays, monthlySalary, schedDaysInMonth, compensation, policy }) => {
+    switch (mode) {
+        case 'MONTH_WORKING_DAYS':
+            return schedDaysInMonth > 0 ? monthlySalary / schedDaysInMonth : 0;
+        case 'ANNUAL_FACTOR': {
+            const daysPerYear = Number(compensation.days_per_year) || Number(policy.workingDaysPerYear) || 313;
+            return daysPerYear > 0 ? (monthlySalary * 12) / daysPerYear : 0;
+        }
+        case 'PERIOD_WORKING_DAYS':
+        default:
+            return contractDays > 0 ? entitlement / contractDays : 0;
+    }
+};
+
+/**
+ * Basic pay for one cutoff, dispatched on the compensation's pay basis.
+ *
+ * The two bases are computed in opposite directions, and that is the whole
+ * point. A daily earner's pay is built UP from attendance ("no work, no pay").
+ * A monthly earner's pay starts at the contractual half-month and is only ever
+ * reduced — so it cannot drift with the number of working days a cutoff happens
+ * to contain.
+ *
+ * Returns the entitlement separately from the deduction lines so the payslip can
+ * show the contracted figure alongside what was taken off it.
+ */
+const computeBasicPay = ({ compensation, dtrSummary, periodDays, policy, cutoffSeq }) => {
+    const summary = dtrSummary || {};
+
+    if (compensation.pay_basis === 'daily') {
+        const dailyRate = Number(compensation.base_rate) || 0;
+        const daysPaid = Number(summary.days_paid) || 0;
+        const basicPay = round2(dailyRate * daysPaid);
+        return {
+            basicPay,
+            dailyRate,
+            hourlyRate: dailyRate / (Number(policy.standardHoursPerDay) || 8),
+            entitlementLine: {
+                lineType: 'EARNING', componentCode: 'BASIC', description: 'Basic Pay',
+                quantity: daysPaid, rate: dailyRate, amount: basicPay, isTaxable: true, sortOrder: 1,
+            },
+            deductionLines: [],
+            trace: { basicPayModel: 'DAILY_ATTENDANCE', daysPaid, dailyRate },
+        };
+    }
+
+    if (compensation.pay_basis !== 'monthly') {
+        const err = new Error(
+            `Pay basis '${compensation.pay_basis}' is not supported yet. Only daily- and monthly-rated payroll is implemented.`
+        );
+        err.code = 'UNSUPPORTED_PAY_BASIS';
+        throw err;
+    }
+
+    const monthlySalary = Number(compensation.base_rate) || 0;
+    const salaryModel = compensation.salary_model || 'GUARANTEED';
+    const { schedDaysInPeriod = 0, schedDaysInMonth = 0, contractDays = 0 } = periodDays || {};
+
+    // Splitting through prorateMonthly rather than dividing by two is what makes
+    // the two cutoffs sum to the salary EXACTLY at any amount: the second cutoff
+    // takes the remainder, so an odd centavo can never be lost or duplicated.
+    const halfMonth = statutory.prorateMonthly(monthlySalary, 'SPLIT_HALF', cutoffSeq);
+
+    // Days outside the employment contract are not absences — they are days the
+    // employee was not yet (or no longer) owed a salary for, so they reduce the
+    // entitlement itself rather than appearing as a deduction.
+    const isPartialContract = schedDaysInPeriod > 0 && contractDays < schedDaysInPeriod;
+    const entitlement = isPartialContract
+        ? round2(halfMonth * contractDays / schedDaysInPeriod)
+        : round2(halfMonth);
+
+    const divisorMode = policy.monthlyDivisorMode || 'PERIOD_WORKING_DAYS';
+    const dayValue = unpaidDayValueFor({
+        mode: divisorMode, entitlement, contractDays, monthlySalary, schedDaysInMonth, compensation, policy,
+    });
+
+    // GUARANTEED means exactly that: showing up is not a condition of payment.
+    // Only an approved leave-without-pay — a deliberate HR act — reduces it.
+    const lwopDays = Number(summary.days_lwop) || 0;
+    const absentDays = salaryModel === 'ATTENDANCE' ? (Number(summary.days_absent) || 0) : 0;
+
+    const deductionLines = [];
+    let deducted = 0;
+    const addDeduction = (componentCode, description, days) => {
+        if (days <= 0 || dayValue <= 0) return;
+        // Never deduct past the entitlement: a fully-absent cutoff lands on 0.00,
+        // never on a negative payslip.
+        const amount = round2(Math.min(days * dayValue, entitlement - deducted));
+        if (amount <= 0) return;
+        deducted = round2(deducted + amount);
+        deductionLines.push({
+            lineType: 'EARNING', componentCode, description,
+            quantity: days, rate: round2(dayValue), amount: -amount,
+            isTaxable: true, sortOrder: 2,
+        });
+    };
+    addDeduction('LWOP', 'Leave Without Pay', lwopDays);
+    addDeduction('ABSENCE', 'Absences', absentDays);
+
+    const basicPay = round2(entitlement - deducted);
+    // The equivalent daily rate is display-and-overtime only; it never
+    // participates in computing basic pay for a monthly earner.
+    const daysPerYear = Number(compensation.days_per_year) || Number(policy.workingDaysPerYear) || 313;
+    const equivalentDailyRate = round2(monthlySalary * 12 / daysPerYear);
+
+    return {
+        basicPay,
+        dailyRate: equivalentDailyRate,
+        hourlyRate: equivalentDailyRate / (Number(policy.standardHoursPerDay) || 8),
+        entitlementLine: {
+            lineType: 'EARNING', componentCode: 'BASIC', description: 'Basic Pay',
+            quantity: contractDays || schedDaysInPeriod, rate: equivalentDailyRate,
+            amount: entitlement, isTaxable: true, sortOrder: 1,
+        },
+        deductionLines,
+        trace: {
+            basicPayModel: `MONTHLY_${salaryModel}`,
+            monthlySalary,
+            halfMonthEntitlement: round2(halfMonth),
+            proratedEntitlement: entitlement,
+            divisorMode,
+            schedDaysInPeriod,
+            schedDaysInMonth,
+            contractDays,
+            partialContract: isPartialContract,
+            dayValue: round2(dayValue),
+            lwopDays,
+            absentDaysDeducted: absentDays,
+            totalDayDeductions: deducted,
+            equivalentDailyRate,
+        },
+    };
 };
 
 /**
@@ -59,6 +208,8 @@ const componentAmountFor = (component, { basicPay, cutoffSeq }) => {
  * @param {object} input.employee        - identity snapshot fields
  * @param {object} input.compensation    - effective-dated rate row
  * @param {object} input.dtrSummary      - totals from dtrService.summarizePeriodBulk
+ * @param {object} input.periodDays      - from dtrService.scheduledDaysBulk; the
+ *                                         divisor a monthly salary deducts against
  * @param {Array}  input.loans           - active loans due on this cutoff
  * @param {object} input.policy          - PAYROLL_* values snapshotted on the run
  * @param {object} input.statutoryTables - from statutoryService.loadTables
@@ -66,7 +217,7 @@ const componentAmountFor = (component, { basicPay, cutoffSeq }) => {
  * @returns {{header: object, lines: Array, trace: object}}
  */
 const computePayslip = ({
-    employee, compensation, dtrSummary, loans = [], policy, statutoryTables, cutoffSeq,
+    employee, compensation, dtrSummary, periodDays, loans = [], policy, statutoryTables, cutoffSeq,
     payComponents = [], statutoryOverrides = {}, adjustments = [],
 }) => {
     if (!compensation) {
@@ -74,49 +225,39 @@ const computePayslip = ({
         err.code = 'NO_COMPENSATION';
         throw err;
     }
-    // Only the daily basis is implemented. The column accepts other values so
-    // phase 5 can add them without a migration, but paying against an
-    // unimplemented basis silently would be far worse than refusing.
-    if (compensation.pay_basis !== 'daily') {
-        const err = new Error(
-            `Pay basis '${compensation.pay_basis}' is not supported yet (${employee.employee_name}). Only daily-rated payroll is implemented.`
-        );
-        err.code = 'UNSUPPORTED_PAY_BASIS';
-        throw err;
-    }
-
-    const dailyRate = Number(compensation.base_rate) || 0;
     const summary = dtrSummary || {};
-    const daysPaid = Number(summary.days_paid) || 0;
-    const overtimeHours = Number(summary.overtime_hours) || 0;
-    const nightDiffHours = Number(summary.night_diff_hours) || 0;
+    const isOvertimeExempt = Boolean(compensation.is_overtime_exempt);
+    // An exempt employee accrues no premium, so any hours the DTR happens to
+    // carry are ignored rather than silently paid.
+    const overtimeHours = isOvertimeExempt ? 0 : (Number(summary.overtime_hours) || 0);
+    const nightDiffHours = isOvertimeExempt ? 0 : (Number(summary.night_diff_hours) || 0);
 
     const lines = [];
     const addLine = (line) => { if (line.amount !== 0) lines.push(line); };
 
     // --- Earnings --------------------------------------------------------
-    // Days paid already accounts for absences, half days and paid leave: the
-    // DTR's day_fraction is the single source of truth for "how much of this
-    // period does the employee get paid for".
-    const basicPay = round2(dailyRate * daysPaid);
-    addLine({
-        lineType: 'EARNING', componentCode: 'BASIC', description: 'Basic Pay',
-        quantity: daysPaid, rate: dailyRate, amount: basicPay, isTaxable: true, sortOrder: 1,
-    });
+    // Basic pay is computed per pay basis: built up from attendance for a daily
+    // earner, reduced down from the contract for a monthly one. Throws
+    // UNSUPPORTED_PAY_BASIS for the bases still unimplemented.
+    const basic = computeBasicPay({ compensation, dtrSummary, periodDays, policy, cutoffSeq });
+    const { basicPay, dailyRate, hourlyRate } = basic;
+    addLine(basic.entitlementLine);
+    // Unpaid days ride as NEGATIVE earnings rather than deductions, so gross pay
+    // and taxable income both reflect what was actually earned.
+    for (const line of basic.deductionLines) addLine(line);
 
-    const hourlyRate = dailyRate / (Number(policy.standardHoursPerDay) || 8);
     const overtimePay = round2(overtimeHours * hourlyRate * Number(policy.otRateOrdinary || 1.25));
     addLine({
         lineType: 'EARNING', componentCode: 'OT_REG', description: 'Overtime Pay',
         quantity: overtimeHours, rate: round2(hourlyRate * Number(policy.otRateOrdinary || 1.25)),
-        amount: overtimePay, isTaxable: true, sortOrder: 2,
+        amount: overtimePay, isTaxable: true, sortOrder: 3,
     });
 
     const nightDiffPay = round2(nightDiffHours * hourlyRate * Number(policy.nightDiffRate || 0.10));
     addLine({
         lineType: 'EARNING', componentCode: 'NIGHT_DIFF', description: 'Night Differential',
         quantity: nightDiffHours, rate: round2(hourlyRate * Number(policy.nightDiffRate || 0.10)),
-        amount: nightDiffPay, isTaxable: true, sortOrder: 3,
+        amount: nightDiffPay, isTaxable: true, sortOrder: 4,
     });
 
     // --- Recurring components and one-off additions ----------------------
@@ -278,12 +419,14 @@ const computePayslip = ({
             position_title: employee.position_title,
             department_name: employee.department_name,
             pay_basis: compensation.pay_basis,
+            salary_model: compensation.salary_model || null,
+            is_overtime_exempt: isOvertimeExempt,
             daily_rate: dailyRate,
             monthly_basis: monthlyBasis,
             compensation_id: compensation.compensation_id,
 
             days_worked: Number(summary.days_worked) || 0,
-            days_paid: daysPaid,
+            days_paid: Number(summary.days_paid) || 0,
             days_absent: Number(summary.days_absent) || 0,
             days_on_leave: Number(summary.days_on_leave) || 0,
             overtime_hours: overtimeHours,
@@ -320,7 +463,10 @@ const computePayslip = ({
         // Stored on the payslip so anyone can reconstruct how the figure was
         // reached years later, without re-running the engine.
         trace: {
+            ...basic.trace,
             monthlyBasis,
+            overtimeExempt: isOvertimeExempt,
+            tardinessExempt: Boolean(compensation.is_tardiness_exempt),
             statutorySchedule: schedule,
             cutoffSeq,
             sssMsc: sss.msc,
@@ -345,4 +491,4 @@ const computePayslip = ({
     };
 };
 
-module.exports = { computePayslip, monthlyBasisFor, round2 };
+module.exports = { computePayslip, computeBasicPay, monthlyBasisFor, round2 };

@@ -166,7 +166,8 @@ router.get('/employees/:id/compensation', protect, hasPermission('hr:manage_comp
         const { rows } = await db.query(
             `SELECT c.compensation_id, c.employee_id,
                     TO_CHAR(c.effective_date, 'YYYY-MM-DD') AS effective_date,
-                    c.pay_basis, c.base_rate, c.days_per_year,
+                    c.pay_basis, c.salary_model, c.base_rate, c.days_per_year,
+                    c.is_overtime_exempt, c.is_tardiness_exempt,
                     c.declared_monthly_basic, c.sss_msc_override, c.reason, c.notes,
                     TRIM(CONCAT_WS(' ', e.first_name, e.last_name)) AS created_by_name,
                     c.created_at
@@ -187,6 +188,7 @@ router.post('/employees/:id/compensation', protect, hasPermission('hr:manage_com
     const { id } = req.params;
     const {
         effective_date, base_rate, pay_basis = 'daily', days_per_year = 313,
+        salary_model, is_overtime_exempt = false, is_tardiness_exempt = false,
         declared_monthly_basic, sss_msc_override, reason, notes,
     } = req.body;
 
@@ -197,21 +199,36 @@ router.post('/employees/:id/compensation', protect, hasPermission('hr:manage_com
     if (!Number.isFinite(rate) || rate < 0) {
         return res.status(400).json({ message: 'Base rate must be a non-negative number' });
     }
+    // The salary model decides whether attendance can reduce pay at all, so it
+    // must be an explicit choice on a monthly rate rather than a silent default,
+    // and meaningless on any other basis.
+    if (pay_basis === 'monthly') {
+        if (!['GUARANTEED', 'ATTENDANCE'].includes(salary_model)) {
+            return res.status(400).json({
+                message: 'A monthly rate requires a salary model of GUARANTEED or ATTENDANCE.',
+            });
+        }
+    } else if (salary_model) {
+        return res.status(400).json({ message: 'A salary model only applies to a monthly pay basis.' });
+    }
 
     try {
         const { rows } = await db.query(
             `INSERT INTO employee_compensation
-                (employee_id, effective_date, pay_basis, base_rate, days_per_year,
+                (employee_id, effective_date, pay_basis, salary_model, base_rate, days_per_year,
+                 is_overtime_exempt, is_tardiness_exempt,
                  declared_monthly_basic, sss_msc_override, reason, notes, created_by)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
              -- effective_date must come back via TO_CHAR: a bare DATE is handed to
              -- the driver as a JS Date rendered in Asia/Manila, which shifts it a
              -- day earlier (2026-01-01 -> 2025-12-31T16:00Z).
              RETURNING compensation_id, employee_id,
                        TO_CHAR(effective_date, 'YYYY-MM-DD') AS effective_date,
-                       pay_basis, base_rate, days_per_year,
+                       pay_basis, salary_model, base_rate, days_per_year,
+                       is_overtime_exempt, is_tardiness_exempt,
                        declared_monthly_basic, sss_msc_override, reason, notes, created_at`,
-            [id, effective_date, pay_basis, rate, days_per_year,
+            [id, effective_date, pay_basis, salary_model || null, rate, days_per_year,
+                Boolean(is_overtime_exempt), Boolean(is_tardiness_exempt),
                 declared_monthly_basic || null, sss_msc_override || null,
                 reason || null, notes || null, req.user.employee_id]
         );
@@ -243,7 +260,8 @@ router.get('/employees/:id/compensation/effective', protect, hasPermission('hr:m
         const { rows } = await db.query(
             `SELECT compensation_id, employee_id,
                     TO_CHAR(effective_date, 'YYYY-MM-DD') AS effective_date,
-                    pay_basis, base_rate, days_per_year,
+                    pay_basis, salary_model, base_rate, days_per_year,
+                    is_overtime_exempt, is_tardiness_exempt,
                     declared_monthly_basic, sss_msc_override
              FROM employee_compensation
              WHERE employee_id = $1 AND effective_date <= $2

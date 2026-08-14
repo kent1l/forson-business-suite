@@ -39,6 +39,7 @@ const PAYROLL_SETTING_KEYS = [
     'PAYROLL_OT_RATE_ORDINARY', 'PAYROLL_OT_RATE_REST_DAY', 'PAYROLL_REST_DAY_RATE',
     'PAYROLL_REGULAR_HOLIDAY_RATE', 'PAYROLL_REGULAR_HOLIDAY_UNWORKED',
     'PAYROLL_SPECIAL_HOLIDAY_RATE', 'PAYROLL_NIGHT_DIFF_RATE', 'PAYROLL_ROUNDING_MODE',
+    'PAYROLL_MONTHLY_DIVISOR_MODE',
 ];
 
 /** Reads the PAYROLL_* settings into the policy object snapshotted on the run. */
@@ -58,6 +59,7 @@ const loadPolicy = async (executor) => {
         regularHolidayUnworked: Number(raw.PAYROLL_REGULAR_HOLIDAY_UNWORKED) || 1.00,
         specialHolidayRate: Number(raw.PAYROLL_SPECIAL_HOLIDAY_RATE) || 1.30,
         nightDiffRate: Number(raw.PAYROLL_NIGHT_DIFF_RATE) || 0.10,
+        monthlyDivisorMode: raw.PAYROLL_MONTHLY_DIVISOR_MODE || 'PERIOD_WORKING_DAYS',
         standardHoursPerDay: 8,
         roundingMode: raw.PAYROLL_ROUNDING_MODE || 'HALF_UP',
     };
@@ -143,6 +145,8 @@ const computeRun = async (executor, { runId, computedBy }) => {
     const { rows: employees } = await executor.query(
         `SELECT e.employee_id, e.employee_code, e.position_title,
                 TRIM(CONCAT_WS(' ', e.first_name, e.last_name)) AS employee_name,
+                TO_CHAR(e.date_hired, 'YYYY-MM-DD')    AS date_hired,
+                TO_CHAR(e.date_separated, 'YYYY-MM-DD') AS date_separated,
                 d.department_name
          FROM employee e
          LEFT JOIN department d ON e.department_id = d.department_id
@@ -162,8 +166,8 @@ const computeRun = async (executor, { runId, computedBy }) => {
     // period end. DISTINCT ON is the cheapest way to express "latest per group".
     const { rows: compRows } = await executor.query(
         `SELECT DISTINCT ON (employee_id)
-                employee_id, compensation_id, pay_basis, base_rate, days_per_year,
-                declared_monthly_basic, sss_msc_override
+                employee_id, compensation_id, pay_basis, salary_model, base_rate, days_per_year,
+                declared_monthly_basic, sss_msc_override, is_overtime_exempt, is_tardiness_exempt
          FROM employee_compensation
          WHERE employee_id = ANY($1::int[]) AND effective_date <= $2
          ORDER BY employee_id, effective_date DESC`,
@@ -173,6 +177,12 @@ const computeRun = async (executor, { runId, computedBy }) => {
 
     const dtrByEmployee = await dtrService.summarizePeriodBulk(executor, {
         employeeIds, periodStart: run.period_start, periodEnd: run.period_end,
+    });
+
+    // Scheduled working days per employee: the divisor a monthly salary deducts
+    // unpaid days against, and the basis for prorating a mid-cutoff hire.
+    const periodDaysByEmployee = await dtrService.scheduledDaysBulk(executor, {
+        employees, periodStart: run.period_start, periodEnd: run.period_end,
     });
 
     const { rows: loanRows } = await executor.query(
@@ -240,6 +250,9 @@ const computeRun = async (executor, { runId, computedBy }) => {
 
     // --- Per-employee computation ----------------------------------------
     const warnings = [];
+    // Collected rather than pushed per employee, so one missed DTR generation
+    // reads as a single actionable warning instead of a wall of identical ones.
+    const monthlyWithoutDtr = [];
     const totals = { gross: 0, deductions: 0, net: 0, employer: 0 };
     let payslipCount = 0;
 
@@ -247,21 +260,28 @@ const computeRun = async (executor, { runId, computedBy }) => {
         const compensation = compensationByEmployee.get(employee.employee_id);
         const dtrSummary = dtrByEmployee.get(employee.employee_id);
 
-        // Skipping is the right call for both: paying someone with no recorded
-        // rate, or with no time recorded at all, would be inventing money.
+        // Paying someone with no recorded rate would be inventing money.
         if (!compensation) {
             warnings.push(`${employee.employee_name}: skipped — no compensation on record as of ${run.period_end}.`);
             continue;
         }
-        if (!dtrSummary) {
+        // A daily earner with no time recorded has earned nothing we can prove,
+        // so skipping is right. A monthly earner is owed a contractual salary
+        // whether or not anyone generated their DTR — attendance is an exception
+        // record for them, not the basis of payment. They are paid in full and
+        // named in a warning, so a missed DTR generation still cannot pass
+        // unnoticed.
+        if (!dtrSummary && compensation.pay_basis === 'daily') {
             warnings.push(`${employee.employee_name}: skipped — no daily time records for this period.`);
             continue;
         }
+        if (!dtrSummary) monthlyWithoutDtr.push(employee.employee_name);
 
         let computed;
         try {
             computed = computePayslip({
                 employee, compensation, dtrSummary,
+                periodDays: periodDaysByEmployee.get(employee.employee_id),
                 loans: loansByEmployee.get(employee.employee_id) || [],
                 payComponents: componentsByEmployee.get(employee.employee_id) || [],
                 statutoryOverrides: overridesByEmployee.get(employee.employee_id) || {},
@@ -283,7 +303,8 @@ const computeRun = async (executor, { runId, computedBy }) => {
         const { rows: payslipRows } = await executor.query(
             `INSERT INTO payroll_payslip (
                 run_id, employee_id, payslip_no, employee_code, employee_name,
-                position_title, department_name, pay_basis, daily_rate, monthly_basis, compensation_id,
+                position_title, department_name, pay_basis, salary_model, is_overtime_exempt,
+                daily_rate, monthly_basis, compensation_id,
                 days_worked, days_paid, days_absent, days_on_leave, overtime_hours,
                 basic_pay, overtime_pay, holiday_pay, night_diff_pay,
                 allowances_taxable, allowances_nontaxable, other_earnings, gross_pay,
@@ -293,10 +314,11 @@ const computeRun = async (executor, { runId, computedBy }) => {
                 computation_trace
              ) VALUES (
                 $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
-                $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41
+                $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43
              ) RETURNING payslip_id`,
             [runId, h.employee_id, payslipNo, h.employee_code, h.employee_name,
-                h.position_title, h.department_name, h.pay_basis, h.daily_rate, h.monthly_basis, h.compensation_id,
+                h.position_title, h.department_name, h.pay_basis, h.salary_model, h.is_overtime_exempt,
+                h.daily_rate, h.monthly_basis, h.compensation_id,
                 h.days_worked, h.days_paid, h.days_absent, h.days_on_leave, h.overtime_hours,
                 h.basic_pay, h.overtime_pay, h.holiday_pay, h.night_diff_pay,
                 h.allowances_taxable, h.allowances_nontaxable, h.other_earnings, h.gross_pay,
@@ -325,6 +347,13 @@ const computeRun = async (executor, { runId, computedBy }) => {
         totals.deductions = round2(totals.deductions + h.total_deductions);
         totals.net = round2(totals.net + h.net_pay);
         totals.employer = round2(totals.employer + h.total_employer_contrib);
+    }
+
+    if (monthlyWithoutDtr.length > 0) {
+        warnings.push(
+            `${monthlyWithoutDtr.length} monthly-paid employee(s) had no daily time records for this period `
+            + `and were paid their full salary. Verify DTR generation ran: ${monthlyWithoutDtr.join(', ')}.`
+        );
     }
 
     if (payslipCount === 0) {

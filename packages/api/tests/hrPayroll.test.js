@@ -1,5 +1,5 @@
 const statutory = require('../services/hr/statutoryService');
-const { computePayslip } = require('../services/hr/payrollCalculationService');
+const { computePayslip, round2 } = require('../services/hr/payrollCalculationService');
 const { assertTransition, ALLOWED_TRANSITIONS } = require('../services/hr/payrollRunService');
 
 /**
@@ -357,9 +357,11 @@ describe('computePayslip — guards', () => {
     });
 
     it('refuses an unimplemented pay basis rather than paying something wrong', () => {
-        expect(() => computePayslip({
-            ...base, compensation: { pay_basis: 'monthly', base_rate: 20000 },
-        })).toThrow(/not supported yet/);
+        for (const payBasis of ['hourly', 'commission']) {
+            expect(() => computePayslip({
+                ...base, compensation: { pay_basis: payBasis, base_rate: 20000 },
+            })).toThrow(/not supported yet/);
+        }
     });
 
     it('honours a declared monthly basic over the derived one', () => {
@@ -441,6 +443,254 @@ describe('payroll run state machine', () => {
     it('allows voiding from every non-terminal state', () => {
         for (const state of ['Draft', 'Computed', 'Approved', 'Paid', 'Posted']) {
             expect(() => assertTransition(state, 'Voided')).not.toThrow();
+        }
+    });
+});
+
+// --- Monthly pay basis ---------------------------------------------------
+// The defining property of a monthly salary is that it does NOT vary with the
+// number of working days a semi-monthly cutoff happens to contain. Every case
+// below is a hand-computed reference figure.
+
+const MONTHLY_POLICY = { ...POLICY, monthlyDivisorMode: 'PERIOD_WORKING_DAYS' };
+
+/** A cutoff with 14 scheduled working days, all inside the contract. */
+const FULL_PERIOD = { schedDaysInPeriod: 14, schedDaysInMonth: 26, contractDays: 14 };
+
+const monthlyBase = (overrides = {}) => ({
+    employee: { employee_id: 9, employee_name: 'Elena Marquez' },
+    compensation: {
+        compensation_id: 5, pay_basis: 'monthly', salary_model: 'GUARANTEED',
+        base_rate: 30000, days_per_year: 313, is_overtime_exempt: true, is_tardiness_exempt: true,
+    },
+    dtrSummary: { days_paid: 14, days_absent: 0, days_lwop: 0, overtime_hours: 0 },
+    periodDays: FULL_PERIOD,
+    loans: [], policy: MONTHLY_POLICY, statutoryTables: TABLES, cutoffSeq: 1,
+    ...overrides,
+});
+
+const basicOf = (result) => result.header.basic_pay;
+
+describe('computePayslip — monthly GUARANTEED salary', () => {
+    it('pays exactly half the monthly salary regardless of the cutoff length', () => {
+        expect(basicOf(computePayslip(monthlyBase({ cutoffSeq: 1 })))).toBe(15000);
+        expect(basicOf(computePayslip(monthlyBase({
+            cutoffSeq: 2,
+            periodDays: { schedDaysInPeriod: 12, schedDaysInMonth: 26, contractDays: 12 },
+            dtrSummary: { days_paid: 12, days_absent: 0, days_lwop: 0 },
+        })))).toBe(15000);
+    });
+
+    it('ignores absences, lateness and undertime entirely', () => {
+        const result = computePayslip(monthlyBase({
+            dtrSummary: {
+                days_paid: 11, days_absent: 3, days_lwop: 0,
+                late_minutes: 200, undertime_minutes: 90,
+            },
+        }));
+        expect(basicOf(result)).toBe(15000);
+        expect(result.lines.find((l) => l.componentCode === 'ABSENCE')).toBeUndefined();
+    });
+
+    it('uses the contracted monthly salary as the statutory basis, not the derived one', () => {
+        const result = computePayslip(monthlyBase());
+        expect(result.header.monthly_basis).toBe(30000);
+        // MSC caps at 20,000 -> EE 1,000/month -> 500 per cutoff, plus WISP on the excess.
+        expect(result.header.sss_ee).toBe(500);
+    });
+
+    it('suppresses overtime and night differential when exempt', () => {
+        const result = computePayslip(monthlyBase({
+            dtrSummary: { days_paid: 14, days_absent: 0, days_lwop: 0, overtime_hours: 10, night_diff_hours: 6 },
+        }));
+        expect(result.header.overtime_pay).toBe(0);
+        expect(result.header.night_diff_pay).toBe(0);
+        expect(result.lines.find((l) => l.componentCode === 'OT_REG')).toBeUndefined();
+    });
+
+    it('still pays overtime to a monthly earner who is NOT exempt', () => {
+        const result = computePayslip(monthlyBase({
+            compensation: { ...monthlyBase().compensation, is_overtime_exempt: false },
+            dtrSummary: { days_paid: 14, days_absent: 0, days_lwop: 0, overtime_hours: 10 },
+        }));
+        // 30,000 * 12 / 313 = 1,150.16 daily -> /8 = 143.77 hourly -> *1.25 * 10
+        expect(result.header.overtime_pay).toBeCloseTo(1797.13, 1);
+    });
+
+    it('pays in full when the DTR has no rows at all', () => {
+        expect(basicOf(computePayslip(monthlyBase({ dtrSummary: null })))).toBe(15000);
+    });
+
+    it('records the whole derivation in the trace', () => {
+        const t = computePayslip(monthlyBase()).trace;
+        expect(t.basicPayModel).toBe('MONTHLY_GUARANTEED');
+        expect(t.monthlySalary).toBe(30000);
+        expect(t.halfMonthEntitlement).toBe(15000);
+        expect(t.divisorMode).toBe('PERIOD_WORKING_DAYS');
+        expect(t.overtimeExempt).toBe(true);
+    });
+});
+
+describe('computePayslip — monthly salary splits exactly', () => {
+    // The property that motivated the whole change: two cutoffs must reconstruct
+    // the monthly salary to the centavo, for any salary and any cutoff shape.
+    it.each([30000, 25000.01, 18333.33, 41666.67, 99999.99, 7.77])(
+        'cutoff 1 + cutoff 2 === %p exactly',
+        (salary) => {
+            const run = (cutoffSeq, schedDays) => basicOf(computePayslip(monthlyBase({
+                cutoffSeq,
+                compensation: { ...monthlyBase().compensation, base_rate: salary },
+                periodDays: { schedDaysInPeriod: schedDays, schedDaysInMonth: 26, contractDays: schedDays },
+                dtrSummary: { days_paid: schedDays, days_absent: 0, days_lwop: 0 },
+            })));
+            // Deliberately lopsided cutoffs — 12 days then 14 — which is exactly
+            // what broke the old daily-rate approach.
+            expect(round2(run(1, 12) + run(2, 14))).toBe(round2(salary));
+        }
+    );
+
+    it('holds across every month shape including a leap February', () => {
+        const salary = 33333.33;
+        // (cutoff 1 days, cutoff 2 days) for Feb 2028 (leap), Feb 2026, and a 31-day month.
+        for (const [d1, d2] of [[13, 13], [13, 12], [13, 14]]) {
+            const run = (cutoffSeq, schedDays) => basicOf(computePayslip(monthlyBase({
+                cutoffSeq,
+                compensation: { ...monthlyBase().compensation, base_rate: salary },
+                periodDays: { schedDaysInPeriod: schedDays, schedDaysInMonth: d1 + d2, contractDays: schedDays },
+                dtrSummary: { days_paid: schedDays, days_absent: 0, days_lwop: 0 },
+            })));
+            expect(round2(run(1, d1) + run(2, d2))).toBe(salary);
+        }
+    });
+});
+
+describe('computePayslip — leave without pay', () => {
+    it('deducts approved LWOP even under a GUARANTEED salary', () => {
+        const result = computePayslip(monthlyBase({
+            dtrSummary: { days_paid: 12, days_absent: 0, days_lwop: 2 },
+        }));
+        // 15,000 / 14 scheduled days = 1,071.4286 per day, 2 days off.
+        expect(basicOf(result)).toBe(12857.14);
+        const line = result.lines.find((l) => l.componentCode === 'LWOP');
+        expect(line.amount).toBe(-2142.86);
+        expect(line.lineType).toBe('EARNING'); // negative earning, not a deduction
+    });
+
+    it('reduces gross and taxable income, not just net', () => {
+        const clean = computePayslip(monthlyBase());
+        const withLwop = computePayslip(monthlyBase({
+            dtrSummary: { days_paid: 12, days_absent: 0, days_lwop: 2 },
+        }));
+        expect(withLwop.header.gross_pay).toBeLessThan(clean.header.gross_pay);
+        expect(withLwop.header.taxable_income).toBeLessThan(clean.header.taxable_income);
+    });
+
+    it('handles a half-day unpaid leave', () => {
+        const result = computePayslip(monthlyBase({
+            dtrSummary: { days_paid: 13.5, days_absent: 0, days_lwop: 0.5 },
+        }));
+        expect(basicOf(result)).toBe(14464.29); // 15,000 - 535.71
+    });
+});
+
+describe('computePayslip — monthly ATTENDANCE model', () => {
+    const attendance = (overrides = {}) => monthlyBase({
+        compensation: { ...monthlyBase().compensation, salary_model: 'ATTENDANCE' },
+        ...overrides,
+    });
+
+    it('deducts unpaid absences', () => {
+        expect(basicOf(computePayslip(attendance({
+            dtrSummary: { days_paid: 11, days_absent: 3, days_lwop: 0 },
+        })))).toBe(11785.71); // 15,000 - 3 * 1,071.4286
+    });
+
+    it('lands exactly on zero when every scheduled day is absent', () => {
+        const result = computePayslip(attendance({
+            dtrSummary: { days_paid: 0, days_absent: 14, days_lwop: 0 },
+        }));
+        expect(basicOf(result)).toBe(0);
+    });
+
+    it('never goes negative when absences exceed the scheduled days', () => {
+        expect(basicOf(computePayslip(attendance({
+            dtrSummary: { days_paid: 0, days_absent: 20, days_lwop: 3 },
+        })))).toBe(0);
+    });
+
+    it('still charges statutory contributions on a fully-absent cutoff', () => {
+        const result = computePayslip(attendance({
+            dtrSummary: { days_paid: 0, days_absent: 14, days_lwop: 0 },
+        }));
+        expect(result.header.monthly_basis).toBe(30000);
+        expect(result.header.sss_ee).toBe(500);
+    });
+});
+
+describe('computePayslip — mid-cutoff hire and separation', () => {
+    it('prorates basic pay to the days inside the contract', () => {
+        const result = computePayslip(monthlyBase({
+            cutoffSeq: 2,
+            periodDays: { schedDaysInPeriod: 14, schedDaysInMonth: 26, contractDays: 10 },
+            dtrSummary: { days_paid: 10, days_absent: 0, days_lwop: 0 },
+        }));
+        expect(basicOf(result)).toBe(10714.29); // 15,000 * 10/14
+    });
+
+    it('leaves the statutory basis at the FULL monthly salary', () => {
+        const result = computePayslip(monthlyBase({
+            cutoffSeq: 2,
+            periodDays: { schedDaysInPeriod: 14, schedDaysInMonth: 26, contractDays: 10 },
+            dtrSummary: { days_paid: 10, days_absent: 0, days_lwop: 0 },
+        }));
+        expect(result.header.monthly_basis).toBe(30000);
+        expect(result.trace.partialContract).toBe(true);
+    });
+
+    it('deducts LWOP against the prorated entitlement, not the full half', () => {
+        const result = computePayslip(monthlyBase({
+            periodDays: { schedDaysInPeriod: 14, schedDaysInMonth: 26, contractDays: 10 },
+            dtrSummary: { days_paid: 9, days_absent: 0, days_lwop: 1 },
+        }));
+        // entitlement 10,714.29, day value 10,714.29/10 = 1,071.429
+        expect(basicOf(result)).toBe(9642.86);
+    });
+});
+
+describe('computePayslip — monthly edge cases', () => {
+    it('pays the entitlement and deducts nothing when no schedule is attached', () => {
+        const result = computePayslip(monthlyBase({
+            periodDays: { schedDaysInPeriod: 0, schedDaysInMonth: 0, contractDays: 0 },
+            dtrSummary: { days_paid: 0, days_absent: 5, days_lwop: 2 },
+        }));
+        expect(basicOf(result)).toBe(15000);
+        expect(Number.isFinite(result.header.net_pay)).toBe(true);
+    });
+
+    it('defaults to GUARANTEED when no salary model is recorded', () => {
+        const result = computePayslip(monthlyBase({
+            compensation: { ...monthlyBase().compensation, salary_model: null },
+            dtrSummary: { days_paid: 11, days_absent: 3, days_lwop: 0 },
+        }));
+        expect(basicOf(result)).toBe(15000);
+    });
+
+    it('reconciles net, gross and the payslip lines in every monthly case', () => {
+        const cases = [
+            monthlyBase(),
+            monthlyBase({ dtrSummary: { days_paid: 12, days_absent: 0, days_lwop: 2 } }),
+            monthlyBase({
+                compensation: { ...monthlyBase().compensation, salary_model: 'ATTENDANCE' },
+                dtrSummary: { days_paid: 0, days_absent: 14, days_lwop: 0 },
+            }),
+        ];
+        for (const input of cases) {
+            const { header, lines } = computePayslip(input);
+            expect(header.net_pay).toBe(round2(header.gross_pay - header.total_deductions));
+            const earnings = lines
+                .filter((l) => l.lineType === 'EARNING')
+                .reduce((sum, l) => round2(sum + l.amount), 0);
+            expect(earnings).toBe(header.gross_pay);
         }
     });
 });

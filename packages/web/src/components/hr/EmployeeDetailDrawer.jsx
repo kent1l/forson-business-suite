@@ -189,11 +189,31 @@ const EmploymentTab = ({ employee, roles, canManageAccess, onEmployeeChanged }) 
 
 // --- Compensation --------------------------------------------------------
 
+const BLANK_COMPENSATION = {
+    effective_date: '', base_rate: '', reason: '',
+    pay_basis: 'daily', salary_model: '',
+    is_overtime_exempt: false, is_tardiness_exempt: false,
+};
+
 const CompensationTab = ({ employee }) => {
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(true);
     const [adding, setAdding] = useState(false);
-    const [form, setForm] = useState({ effective_date: '', base_rate: '', reason: '' });
+    const [form, setForm] = useState(BLANK_COMPENSATION);
+    const isMonthly = form.pay_basis === 'monthly';
+
+    // Picking a monthly basis pre-selects the arrangement it almost always comes
+    // with — a guaranteed salary, exempt from overtime and tardiness — while
+    // leaving every part of it overridable. The two exemptions are genuinely
+    // independent of the pay basis: a monthly-paid rank-and-file worker is still
+    // legally entitled to overtime.
+    const changeBasis = (pay_basis) => setForm((prev) => ({
+        ...prev,
+        pay_basis,
+        salary_model: pay_basis === 'monthly' ? (prev.salary_model || 'GUARANTEED') : '',
+        is_overtime_exempt: pay_basis === 'monthly',
+        is_tardiness_exempt: pay_basis === 'monthly',
+    }));
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -215,7 +235,7 @@ const CompensationTab = ({ employee }) => {
             await api.post(`/hr/employees/${employee.employee_id}/compensation`, form);
             toast.success('Rate change recorded');
             setAdding(false);
-            setForm({ effective_date: '', base_rate: '', reason: '' });
+            setForm(BLANK_COMPENSATION);
             load();
         } catch (err) {
             toast.error(err.response?.data?.message || 'Failed to record rate change');
@@ -249,10 +269,51 @@ const CompensationTab = ({ employee }) => {
                                 onChange={(e) => setForm({ ...form, effective_date: e.target.value })} />
                         </div>
                         <div>
-                            <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Daily Rate</label>
+                            <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Pay Basis</label>
+                            <select className={INPUT_CLASS} value={form.pay_basis}
+                                onChange={(e) => changeBasis(e.target.value)}>
+                                <option value="daily">Daily rate</option>
+                                <option value="monthly">Monthly salary</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                        <div>
+                            <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">
+                                {isMonthly ? 'Monthly Salary' : 'Daily Rate'}
+                            </label>
                             <input type="number" step="0.01" min="0" required className={INPUT_CLASS} value={form.base_rate}
                                 onChange={(e) => setForm({ ...form, base_rate: e.target.value })} />
                         </div>
+                        {isMonthly && (
+                            <div>
+                                <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Salary Model</label>
+                                <select className={INPUT_CLASS} value={form.salary_model}
+                                    onChange={(e) => setForm({ ...form, salary_model: e.target.value })}>
+                                    <option value="GUARANTEED">Guaranteed — attendance never reduces pay</option>
+                                    <option value="ATTENDANCE">Attendance-based — unpaid absences deduct</option>
+                                </select>
+                            </div>
+                        )}
+                    </div>
+                    {isMonthly && (
+                        <p className="text-xs text-gray-500 dark:text-slate-400">
+                            {form.salary_model === 'ATTENDANCE'
+                                ? 'Paid exactly half the monthly salary each cutoff, less unpaid absences and approved leave without pay.'
+                                : 'Paid exactly half the monthly salary each cutoff regardless of attendance. Only approved leave without pay reduces it.'}
+                        </p>
+                    )}
+                    <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-slate-300">
+                            <input type="checkbox" checked={form.is_overtime_exempt}
+                                onChange={(e) => setForm({ ...form, is_overtime_exempt: e.target.checked })} />
+                            Exempt from overtime
+                        </label>
+                        <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-slate-300">
+                            <input type="checkbox" checked={form.is_tardiness_exempt}
+                                onChange={(e) => setForm({ ...form, is_tardiness_exempt: e.target.checked })} />
+                            Exempt from tardiness deductions
+                        </label>
                     </div>
                     <div>
                         <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Reason</label>
@@ -274,7 +335,8 @@ const CompensationTab = ({ employee }) => {
                         <thead className="border-b border-gray-200 dark:border-slate-700">
                             <tr className="text-xs text-gray-500 dark:text-slate-400">
                                 <th className="py-2 font-semibold">Effective</th>
-                                <th className="py-2 font-semibold text-right">Daily Rate</th>
+                                <th className="py-2 font-semibold">Basis</th>
+                                <th className="py-2 font-semibold text-right">Rate</th>
                                 <th className="py-2 font-semibold">Reason</th>
                                 <th className="py-2 font-semibold">Recorded By</th>
                             </tr>
@@ -287,7 +349,21 @@ const CompensationTab = ({ employee }) => {
                                         {/* The first row is the newest: history comes back newest-first. */}
                                         {idx === 0 && <span className="ml-2 text-[10px] font-bold uppercase text-success-600">Current</span>}
                                     </td>
-                                    <td className="py-2 text-right tabular-nums text-gray-900 dark:text-slate-100">{peso(row.base_rate)}</td>
+                                    <td className="py-2 text-gray-600 dark:text-slate-400">
+                                        {row.pay_basis === 'monthly' ? 'Monthly' : 'Daily'}
+                                        {row.salary_model === 'ATTENDANCE' && (
+                                            <span className="ml-1 text-[10px] uppercase text-gray-400 dark:text-slate-500">att.</span>
+                                        )}
+                                        {row.is_overtime_exempt && (
+                                            <span className="ml-1 text-[10px] uppercase text-gray-400 dark:text-slate-500">OT-exempt</span>
+                                        )}
+                                    </td>
+                                    <td className="py-2 text-right tabular-nums text-gray-900 dark:text-slate-100">
+                                        {peso(row.base_rate)}
+                                        <span className="ml-1 text-[10px] text-gray-400 dark:text-slate-500">
+                                            {row.pay_basis === 'monthly' ? '/mo' : '/day'}
+                                        </span>
+                                    </td>
                                     <td className="py-2 text-gray-600 dark:text-slate-400">{row.reason || '—'}</td>
                                     <td className="py-2 text-gray-600 dark:text-slate-400">{row.created_by_name || '—'}</td>
                                 </tr>
