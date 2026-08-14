@@ -10,16 +10,52 @@ const arLedger = require('../services/arLedgerService');
 const router = express.Router();
 
 // POST /sales/staging - Stage a transaction from Mobile POS
-router.post('/sales/staging', protect, hasPermission('pos:use'), async (req, res) => {
-    const { customer_id, employee_id, lines, tax_rate_id, payment_method_id, tendered_amount, physical_receipt_no } = req.body;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-    if (!customer_id || !employee_id || !lines || !Array.isArray(lines) || lines.length === 0) {
+/**
+ * Stages a sale for cashier approval.
+ *
+ * The staging employee comes from the token, never the body: this is the record
+ * of who rang the sale up, and it feeds the per-employee activity and revenue
+ * figures, so it must not be settable by the caller.
+ *
+ * An optional `client_ref` makes the write idempotent. Two genuine cash sales
+ * for the same amount seconds apart are indistinguishable, so the server cannot
+ * dedupe on its own -- but a client that queues and retries can say "this is the
+ * same sale I sent before", and a retry whose original succeeded then resolves
+ * to that sale instead of staging a duplicate for the cashier to catch.
+ */
+router.post('/sales/staging', protect, hasPermission('pos:use'), async (req, res) => {
+    const { customer_id, lines, tax_rate_id, payment_method_id, tendered_amount, physical_receipt_no, client_ref } = req.body;
+    const employee_id = req.user.employee_id;
+
+    if (!customer_id || !lines || !Array.isArray(lines) || lines.length === 0) {
         return res.status(400).json({ message: 'Missing required staging fields.' });
+    }
+    if (client_ref && !UUID_RE.test(client_ref)) {
+        return res.status(400).json({ message: 'client_ref must be a UUID' });
     }
 
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
+
+        // A retry of a sale that already landed resolves to the original rather
+        // than creating a second one.
+        if (client_ref) {
+            const { rows: existing } = await client.query(
+                'SELECT staged_sale_id FROM staged_sale WHERE client_ref = $1', [client_ref]
+            );
+            if (existing.length > 0) {
+                await client.query('ROLLBACK');
+                return res.status(200).json({
+                    message: 'Transaction was already staged.',
+                    staged_sale_id: existing[0].staged_sale_id,
+                    staged_number: `STG-${existing[0].staged_sale_id}`,
+                    duplicate: true,
+                });
+            }
+        }
 
         let subtotal = 0;
         for (const line of lines) {
@@ -27,8 +63,8 @@ router.post('/sales/staging', protect, hasPermission('pos:use'), async (req, res
         }
 
         const insertQuery = `
-            INSERT INTO staged_sale (customer_id, employee_id, total_amount, tax_rate_id, physical_receipt_no, payment_method_id, tendered_amount, status, staged_date)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', CURRENT_TIMESTAMP)
+            INSERT INTO staged_sale (customer_id, employee_id, total_amount, tax_rate_id, physical_receipt_no, payment_method_id, tendered_amount, status, staged_date, client_ref)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', CURRENT_TIMESTAMP, $8)
             RETURNING staged_sale_id;
         `;
         const result = await client.query(insertQuery, [
@@ -38,7 +74,8 @@ router.post('/sales/staging', protect, hasPermission('pos:use'), async (req, res
             tax_rate_id || null,
             physical_receipt_no || null,
             payment_method_id,
-            tendered_amount || null
+            tendered_amount || null,
+            client_ref || null
         ]);
 
         const stagedSaleId = result.rows[0].staged_sale_id;
@@ -58,6 +95,27 @@ router.post('/sales/staging', protect, hasPermission('pos:use'), async (req, res
         });
     } catch (err) {
         await client.query('ROLLBACK');
+
+        // Two flushes of the same queued sale can both pass the lookup above
+        // and race to insert. The unique index is what actually enforces this,
+        // so a violation here means the other attempt won -- which is a success,
+        // not an error.
+        if (err.code === '23505' && client_ref) {
+            try {
+                const { rows } = await db.query(
+                    'SELECT staged_sale_id FROM staged_sale WHERE client_ref = $1', [client_ref]
+                );
+                if (rows.length > 0) {
+                    return res.status(200).json({
+                        message: 'Transaction was already staged.',
+                        staged_sale_id: rows[0].staged_sale_id,
+                        staged_number: `STG-${rows[0].staged_sale_id}`,
+                        duplicate: true,
+                    });
+                }
+            } catch { /* fall through to the generic error below */ }
+        }
+
         console.error('Error staging sale:', err.message);
         res.status(500).json({ message: 'Error writing transaction staging record.' });
     } finally {

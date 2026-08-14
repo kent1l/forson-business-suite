@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
+import * as Crypto from 'expo-crypto';
 import apiClient from '../api/client';
 
 const usePosStore = create((set, get) => ({
@@ -208,12 +209,16 @@ const usePosStore = create((set, get) => ({
 
     const stagingPayload = {
       customer_id: paymentData.customer_id,
-      employee_id: paymentData.employee_id,
       lines,
       tax_rate_id: paymentData.tax_rate_id || null,
       payment_method_id: paymentData.payment_method_id,
       tendered_amount: paymentData.tendered_amount !== null && paymentData.tendered_amount !== undefined ? Number(paymentData.tendered_amount) : null,
       physical_receipt_no: paymentData.physical_receipt_no || null,
+      // Makes a resend idempotent. Without it, a reply lost on a flaky LAN --
+      // where the sale actually staged -- would put a duplicate in front of the
+      // cashier on the next attempt. The staging employee is no longer sent:
+      // the server takes it from the token so it cannot be spoofed.
+      client_ref: Crypto.randomUUID(),
     };
 
     const { data } = await apiClient.post('/sales/staging', stagingPayload);

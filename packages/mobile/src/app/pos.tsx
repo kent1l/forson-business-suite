@@ -348,7 +348,14 @@ function PosScreenInner() {
           </View>
 
           {/* Middle 40%: Results */}
-          {/* TODO: Evaluate @shopify/flash-list for 10k+ row performance vs FlatList */}
+          {/*
+            FlatList is the right tool here, not @shopify/flash-list. The 10k-row
+            case that motivated looking at it cannot arise: powerSearchRoutes.js
+            caps its Meilisearch query at 200 hits, so that is the ceiling on
+            `results`. FlashList would add a native dependency and APK weight to
+            solve a problem this screen does not have -- and APK size is
+            hard-won here. The windowing props below are enough at this scale.
+          */}
           <View style={[styles.middleArea, { backgroundColor: bg }]}>
             <FlatList
               data={results}
@@ -356,6 +363,10 @@ function PosScreenInner() {
               renderItem={({ item }) => (
                 <ProductListItem item={item} onPress={handleAddToCart} />
               )}
+              initialNumToRender={12}
+              maxToRenderPerBatch={12}
+              windowSize={7}
+              removeClippedSubviews
               overScrollMode="never"
               keyboardShouldPersistTaps="handled"
               ListEmptyComponent={
