@@ -20,6 +20,7 @@ import LeavePage from '../../pages/LeavePage';
 import PayrollPage from '../../pages/PayrollPage';
 import StatutoryTablesPage from '../../pages/StatutoryTablesPage';
 import PayComponentsPage from '../../pages/PayComponentsPage';
+import WorkSchedulesPage from '../../pages/WorkSchedulesPage';
 import MyPayslipsPage from '../../pages/MyPayslipsPage';
 import SettingsPage from '../../pages/SettingsPage';
 import POSPage from '../../pages/POSPage';
@@ -77,6 +78,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'payroll': return <PayrollPage />;
             case 'statutory_tables': return <StatutoryTablesPage />;
             case 'pay_components': return <PayComponentsPage />;
+            case 'work_schedules': return <WorkSchedulesPage />;
             case 'my_pay': return <MyPayslipsPage />;
             case 'settings': return <SettingsPage user={user} />;
             default: return <Dashboard />;

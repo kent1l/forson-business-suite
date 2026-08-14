@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import SegmentedTabs from '../ui/SegmentedTabs';
+import api from '../../api';
 
 /**
  * Create/edit form for an employee's HR record.
@@ -58,7 +59,7 @@ const EMPTY_FORM = {
     mobile_no: '', personal_email: '',
     address_line: '', barangay: '', city: '', province: '', postal_code: '',
     emergency_contact_name: '', emergency_contact_relation: '', emergency_contact_phone: '',
-    is_active: true, is_payroll_eligible: true,
+    is_active: true, is_payroll_eligible: true, work_schedule_id: '',
     has_system_access: false, username: '', password: '', permission_level_id: '',
 };
 
@@ -72,7 +73,16 @@ const FIELD_TAB = {
 const EmployeeForm = ({ employee, onSave, onCancel, roles = [], departments = [], managers = [] }) => {
     const [tab, setTab] = useState('personal');
     const [errors, setErrors] = useState({});
+    const [workSchedules, setWorkSchedules] = useState([]);
     const formRef = useRef(null);
+
+    // Fetched here rather than threaded down as a prop: the picker is the only
+    // consumer, and every caller of this form would otherwise have to load it.
+    useEffect(() => {
+        api.get('/hr/work-schedules')
+            .then(({ data }) => setWorkSchedules(Array.isArray(data) ? data.filter((s) => s.is_active !== false) : []))
+            .catch(() => { /* picker falls back to "Company default" */ });
+    }, []);
 
     const buildInitial = useCallback(() => {
         if (!employee) return { ...EMPTY_FORM };
@@ -314,6 +324,17 @@ const EmployeeForm = ({ employee, onSave, onCancel, roles = [], departments = []
                                             </option>
                                         ))}
                                 </select>
+                            </Field>
+                            <Field label="Work schedule">
+                                <select name="work_schedule_id" value={formData.work_schedule_id} onChange={handleChange} className={INPUT_CLASS}>
+                                    <option value="">Company default</option>
+                                    {workSchedules.map((s) => (
+                                        <option key={s.schedule_id} value={s.schedule_id}>{s.schedule_name}</option>
+                                    ))}
+                                </select>
+                                <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+                                    Sets which days are rest days when time records are generated.
+                                </p>
                             </Field>
                         </Grid>
 

@@ -51,6 +51,7 @@ const EMPLOYEE_LIST_FIELDS = `
 // Org/employment detail — safe for anyone who can already see the roster.
 const EMPLOYEE_EMPLOYMENT_FIELDS = `
     e.manager_employee_id, e.is_payroll_eligible,
+    e.work_schedule_id,
     NULLIF(TRIM(CONCAT_WS(' ', m.first_name, m.last_name)), '') AS manager_name,
     TO_CHAR(e.date_regularized, 'YYYY-MM-DD') AS date_regularized,
     TO_CHAR(e.date_separated, 'YYYY-MM-DD') AS date_separated,
@@ -82,6 +83,10 @@ const EMPLOYEE_PROFILE_COLUMNS = [
     'department_id', 'manager_employee_id', 'employment_type', 'employment_status',
     'date_hired', 'date_regularized', 'date_separated', 'separation_reason',
     'is_payroll_eligible', 'is_active',
+    // Which weekly pattern (and therefore which rest days) DTR generation uses
+    // for this employee. Assignable here so a person on a different rest day
+    // does not need a database edit.
+    'work_schedule_id',
 ];
 
 // Narrows a request body to the writable profile columns it actually mentions,

@@ -604,48 +604,112 @@ router.get('/work-schedules', protect, hasPermission('hr:view'), async (req, res
     }
 });
 
-// Replaces the whole week in one transaction: a schedule is only coherent as a
-// complete set of seven days, so partial updates are not offered.
-router.put('/work-schedules/:id', protect, hasPermission('hr:manage_schedules'), async (req, res) => {
-    const { schedule_name, description, is_active, days } = req.body;
+// A schedule is only coherent as a complete set of seven days, so both create
+// and update take the whole week and reject anything partial.
+const validateWeek = ({ schedule_name, days }) => {
     if (!schedule_name || !schedule_name.trim()) {
-        return res.status(400).json({ message: 'Schedule name is required' });
+        return 'Schedule name is required';
     }
     if (!Array.isArray(days) || days.length !== 7) {
-        return res.status(400).json({ message: 'Exactly seven day rows (Sunday to Saturday) are required' });
+        return 'Exactly seven day rows (Sunday to Saturday) are required';
+    }
+    const seen = new Set(days.map((d) => Number(d.day_of_week)));
+    if (seen.size !== 7 || [...seen].some((d) => !Number.isInteger(d) || d < 0 || d > 6)) {
+        return 'Each day of the week (0 = Sunday to 6 = Saturday) must appear exactly once';
+    }
+    if (days.every((d) => d.is_rest_day)) {
+        return 'A schedule needs at least one working day';
     }
     for (const day of days) {
         if (!day.is_rest_day && (!day.time_in || !day.time_out)) {
-            return res.status(400).json({ message: 'A working day needs both a time in and a time out' });
+            return 'A working day needs both a time in and a time out';
         }
     }
+    return null;
+};
+
+const writeScheduleDays = async (client, scheduleId, days) => {
+    await client.query('DELETE FROM work_schedule_day WHERE schedule_id = $1', [scheduleId]);
+    for (const day of days) {
+        await client.query(
+            `INSERT INTO work_schedule_day
+                (schedule_id, day_of_week, is_rest_day, time_in, time_out, break_minutes, expected_hours)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [scheduleId, day.day_of_week, Boolean(day.is_rest_day),
+                day.is_rest_day ? null : day.time_in,
+                day.is_rest_day ? null : day.time_out,
+                day.break_minutes ?? 60, day.expected_hours ?? 8]
+        );
+    }
+};
+
+// Only one schedule may carry is_default, enforced by the uq_work_schedule_default
+// partial unique index. That index is checked per statement, not at commit, so the
+// incumbent must be demoted BEFORE the newcomer is promoted — the other order
+// trips the constraint even though the transaction would have ended up valid.
+const clearDefaults = async (client, keepScheduleId = null) => {
+    if (keepScheduleId === null) {
+        await client.query('UPDATE work_schedule SET is_default = false WHERE is_default');
+        return;
+    }
+    await client.query(
+        'UPDATE work_schedule SET is_default = false WHERE is_default AND schedule_id <> $1',
+        [keepScheduleId]
+    );
+};
+
+router.post('/work-schedules', protect, hasPermission('hr:manage_schedules'), async (req, res) => {
+    const { schedule_name, description, is_default, days } = req.body;
+    const invalid = validateWeek(req.body);
+    if (invalid) return res.status(400).json({ message: invalid });
 
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
+        if (is_default) await clearDefaults(client);
+        const { rows } = await client.query(
+            `INSERT INTO work_schedule (schedule_name, description, is_default, created_by)
+             VALUES ($1, $2, $3, $4) RETURNING schedule_id`,
+            [schedule_name.trim(), description || null, Boolean(is_default), req.user.employee_id]
+        );
+        const scheduleId = rows[0].schedule_id;
+        await writeScheduleDays(client, scheduleId, days);
+        await client.query('COMMIT');
+        res.status(201).json({ schedule_id: scheduleId, schedule_name: schedule_name.trim() });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        if (err.code === '23505') return res.status(409).json({ message: 'A schedule with that name already exists.' });
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    } finally {
+        client.release();
+    }
+});
+
+router.put('/work-schedules/:id', protect, hasPermission('hr:manage_schedules'), async (req, res) => {
+    const { schedule_name, description, is_active, is_default, days } = req.body;
+    const invalid = validateWeek(req.body);
+    if (invalid) return res.status(400).json({ message: invalid });
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        if (is_default) await clearDefaults(client, Number(req.params.id));
         const { rows } = await client.query(
             `UPDATE work_schedule
-             SET schedule_name = $1, description = $2, is_active = $3, modified_by = $4, updated_at = now()
-             WHERE schedule_id = $5 RETURNING schedule_id`,
-            [schedule_name.trim(), description || null, is_active !== false, req.user.employee_id, req.params.id]
+             SET schedule_name = $1, description = $2, is_active = $3,
+                 is_default = COALESCE($4, is_default),
+                 modified_by = $5, updated_at = now()
+             WHERE schedule_id = $6 RETURNING schedule_id, is_default`,
+            [schedule_name.trim(), description || null, is_active !== false,
+                is_default === undefined ? null : Boolean(is_default),
+                req.user.employee_id, req.params.id]
         );
         if (rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ message: 'Work schedule not found' });
         }
-
-        await client.query('DELETE FROM work_schedule_day WHERE schedule_id = $1', [req.params.id]);
-        for (const day of days) {
-            await client.query(
-                `INSERT INTO work_schedule_day
-                    (schedule_id, day_of_week, is_rest_day, time_in, time_out, break_minutes, expected_hours)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-                [req.params.id, day.day_of_week, Boolean(day.is_rest_day),
-                    day.is_rest_day ? null : day.time_in,
-                    day.is_rest_day ? null : day.time_out,
-                    day.break_minutes ?? 60, day.expected_hours ?? 8]
-            );
-        }
+        await writeScheduleDays(client, req.params.id, days);
         await client.query('COMMIT');
         res.json({ schedule_id: Number(req.params.id), days: days.length });
     } catch (err) {
