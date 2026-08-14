@@ -18,6 +18,14 @@ jest.mock('../middleware/authMiddleware', () => ({
     protect: (req, res, next) => { req.user = mockCurrentUser; next(); },
     hasPermission: () => (req, res, next) => next(),
     isAdmin: (req, res, next) => next(),
+    // Mirrors the real helper, including the level-10 admin bypass. Routes that
+    // vary their behaviour by permission (filing leave for someone else) call
+    // this inline, so a stub that always allowed would hide those branches.
+    userHasPermission: (req, required) => {
+        const list = Array.isArray(required) ? required : [required];
+        if (Number(req.user?.permission_level_id) === 10) return true;
+        return list.some((p) => (req.user?.permissions || []).includes(p));
+    },
 }));
 
 const db = require('../db');

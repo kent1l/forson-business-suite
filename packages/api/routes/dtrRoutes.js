@@ -69,6 +69,81 @@ router.get('/', protect, hasPermission('dtr:view'), async (req, res) => {
     }
 });
 
+// --- Self-service reads ---------------------------------------------------
+// Everything else in this file is gated on `dtr:view`, which means "see the
+// whole company's attendance". These are the narrow version: same data, always
+// scoped to the caller, so they can be granted to every employee.
+
+// GET /dtr/me - the caller's own timesheet for a date range.
+router.get('/me', protect, hasPermission(['dtr:view_own', 'dtr:view']), async (req, res) => {
+    const { from, to } = req.query;
+    if ((from && !ISO_DATE.test(from)) || (to && !ISO_DATE.test(to))) {
+        return res.status(400).json({ message: 'Dates must be in YYYY-MM-DD format' });
+    }
+
+    const params = [req.user.employee_id];
+    const conditions = ['d.employee_id = $1'];
+    let idx = 2;
+    if (from) { conditions.push(`d.work_date >= $${idx++}`); params.push(from); }
+    if (to) { conditions.push(`d.work_date <= $${idx++}`); params.push(to); }
+
+    try {
+        const { rows } = await db.query(
+            `SELECT ${DTR_SELECT_FIELDS} ${DTR_JOINS}
+             WHERE ${conditions.join(' AND ')}
+             ORDER BY d.work_date DESC`,
+            params
+        );
+        res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// GET /dtr/me/summary - the caller's own period totals.
+router.get('/me/summary', protect, hasPermission(['dtr:view_own', 'dtr:view']), async (req, res) => {
+    const { from, to } = req.query;
+    if (!ISO_DATE.test(from || '') || !ISO_DATE.test(to || '')) {
+        return res.status(400).json({ message: 'from and to are required in YYYY-MM-DD format' });
+    }
+    try {
+        const summaries = await dtrService.summarizePeriodBulk(db, {
+            employeeIds: [req.user.employee_id], periodStart: from, periodEnd: to,
+        });
+        res.json(summaries.get(req.user.employee_id) || {
+            days_paid: 0, days_worked: 0, days_absent: 0, days_on_leave: 0,
+            days_holiday: 0, hours_worked: 0, overtime_hours: 0,
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// GET /dtr/me/punches - the caller's own raw taps, so a disputed day can be
+// checked against what the terminal or phone actually recorded.
+router.get('/me/punches', protect, hasPermission(['dtr:view_own', 'dtr:view']), async (req, res) => {
+    const { from, to } = req.query;
+    if (!ISO_DATE.test(from || '') || !ISO_DATE.test(to || '')) {
+        return res.status(400).json({ message: 'from and to are required in YYYY-MM-DD format' });
+    }
+    try {
+        const { rows } = await db.query(
+            `SELECT punch_id, punch_at, direction, source, notes,
+                    TO_CHAR(punch_date, 'YYYY-MM-DD') AS punch_date
+             FROM time_punch
+             WHERE employee_id = $1 AND punch_date BETWEEN $2 AND $3
+             ORDER BY punch_at DESC`,
+            [req.user.employee_id, from, to]
+        );
+        res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
 // GET /dtr/summary - period totals per employee, the shape payroll will consume.
 router.get('/summary', protect, hasPermission('dtr:view'), async (req, res) => {
     const { from, to, department } = req.query;
@@ -215,26 +290,94 @@ router.get('/punch/state', protect, hasPermission('dtr:punch'), async (req, res)
     }
 });
 
-/** Clock in or out. Always for the caller — never an employee id from the body. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DEFAULT_MAX_BACKDATE_MINUTES = 720;
+
+/** How far a client may backdate an offline punch before it is flagged. */
+const getMaxBackdateMinutes = async () => {
+    const { rows } = await db.query(
+        `SELECT setting_value FROM settings WHERE setting_key = 'DTR_PUNCH_MAX_BACKDATE_MINUTES'`
+    );
+    const parsed = Number(rows[0]?.setting_value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_BACKDATE_MINUTES;
+};
+
+/**
+ * Clock in or out. Always for the caller — never an employee id from the body.
+ *
+ * A mobile client may supply `punch_at` so a punch captured while the shop LAN
+ * was unreachable records the time it was TAKEN rather than the time it synced.
+ * That is payroll-material, so it is bounded: never in the future, and anything
+ * older than the configured window is still stored (losing a real clock-in is
+ * worse than accepting a late one) but flagged for HR review rather than taken
+ * at face value.
+ */
 router.post('/punch', protect, hasPermission('dtr:punch'), async (req, res) => {
-    const { direction, latitude, longitude } = req.body;
+    const { direction, latitude, longitude, punch_at, client_punch_id, device_id } = req.body;
     if (!['IN', 'OUT'].includes(direction)) {
         return res.status(400).json({ message: "direction must be 'IN' or 'OUT'" });
     }
+    if (client_punch_id && !UUID_RE.test(client_punch_id)) {
+        return res.status(400).json({ message: 'client_punch_id must be a UUID' });
+    }
+
+    const employeeId = req.user.employee_id;
+    const isMobile = req.body.source === 'Mobile';
+    let punchAt = null;
+    let source = isMobile ? 'Mobile' : 'Web';
+    let notes = null;
+
+    if (punch_at !== undefined && punch_at !== null) {
+        const parsed = new Date(punch_at);
+        if (Number.isNaN(parsed.getTime())) {
+            return res.status(400).json({ message: 'punch_at must be a valid ISO timestamp' });
+        }
+        const driftMinutes = (Date.now() - parsed.getTime()) / 60000;
+        // A phone clock running slightly fast is normal; a punch genuinely in
+        // the future is not, and would let someone pre-record a clock-out.
+        if (driftMinutes < -5) {
+            return res.status(400).json({ message: 'punch_at cannot be in the future' });
+        }
+        punchAt = parsed.toISOString();
+        if (driftMinutes > 1) {
+            source = 'Mobile-Offline';
+            const maxBackdate = await getMaxBackdateMinutes();
+            if (driftMinutes > maxBackdate) {
+                notes = `Captured offline ${Math.round(driftMinutes)} minutes before sync, `
+                      + `beyond the ${maxBackdate}-minute window. Needs HR review.`;
+            } else {
+                notes = `Captured offline ${Math.round(driftMinutes)} minutes before sync.`;
+            }
+        }
+    }
+
     try {
         const punch = await timePunchService.recordPunch(db, {
-            employeeId: req.user.employee_id,
+            employeeId,
+            punchAt,
             direction,
-            source: req.body.source === 'Mobile' ? 'Mobile' : 'Web',
+            source,
             ipAddress: req.ip,
             latitude,
             longitude,
-            actorId: req.user.employee_id,
+            actorId: employeeId,
+            deviceId: device_id || null,
+            clientPunchId: client_punch_id || null,
+            notes,
         });
-        if (!punch) {
-            return res.status(409).json({ message: 'That punch was already recorded.' });
+
+        if (punch) return res.status(201).json(punch);
+
+        // Nothing inserted: some unique key caught it. If the caller gave a
+        // client id, this is an offline flush retry — hand back the row it
+        // created the first time so the retry is a success, not an error.
+        if (client_punch_id) {
+            const existing = await timePunchService.findPunchByClientId(db, {
+                employeeId, clientPunchId: client_punch_id,
+            });
+            if (existing) return res.status(200).json(existing);
         }
-        res.status(201).json(punch);
+        return res.status(409).json({ message: 'That punch was already recorded.' });
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');

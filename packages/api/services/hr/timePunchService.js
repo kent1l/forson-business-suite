@@ -25,19 +25,50 @@ const hoursBetween = (startIso, endIso, breakMinutes = 0) => {
     return net > 0 ? round2(net / 60) : 0;
 };
 
-/** Records one punch. The unique constraint makes a repeated tap a no-op. */
+const PUNCH_RETURNING = `punch_id, TO_CHAR(punch_date, 'YYYY-MM-DD') AS punch_date,
+                         punch_at, direction, source, client_punch_id, notes`;
+
+/**
+ * Records one punch. The unique constraints make a repeated tap a no-op.
+ *
+ * `ON CONFLICT DO NOTHING` is deliberately untargeted: two different keys can
+ * catch a duplicate. The original (employee_id, punch_at, direction) dedupe
+ * catches a re-uploaded CSV, while client_punch_id catches a mobile client
+ * flushing the same queued punch twice — which is the only one that survives
+ * clock skew, since a retry from a phone need not reproduce the same punch_at.
+ */
 const recordPunch = async (executor, {
-    employeeId, punchAt, direction, source = 'Web', deviceId, ipAddress, latitude, longitude, actorId,
+    employeeId, punchAt, direction, source = 'Web', deviceId, ipAddress,
+    latitude, longitude, actorId, clientPunchId, notes,
 }) => {
     const at = punchAt ? new Date(punchAt) : new Date();
     const { rows } = await executor.query(
         `INSERT INTO time_punch
-            (employee_id, punch_at, punch_date, direction, source, device_id, ip_address, latitude, longitude, created_by)
-         VALUES ($1, $2, ($2::timestamptz AT TIME ZONE 'Asia/Manila')::date, $3, $4, $5, $6, $7, $8, $9)
-         ON CONFLICT (employee_id, punch_at, direction) DO NOTHING
-         RETURNING punch_id, TO_CHAR(punch_date, 'YYYY-MM-DD') AS punch_date, punch_at, direction, source`,
+            (employee_id, punch_at, punch_date, direction, source, device_id,
+             ip_address, latitude, longitude, created_by, client_punch_id, notes)
+         VALUES ($1, $2, ($2::timestamptz AT TIME ZONE 'Asia/Manila')::date,
+                 $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT DO NOTHING
+         RETURNING ${PUNCH_RETURNING}`,
         [employeeId, at.toISOString(), direction, source, deviceId || null,
-            ipAddress || null, latitude || null, longitude || null, actorId || employeeId]
+            ipAddress || null, latitude || null, longitude || null, actorId || employeeId,
+            clientPunchId || null, notes || null]
+    );
+    return rows[0] || null;
+};
+
+/**
+ * The punch a given client id already produced, if any.
+ *
+ * Lets an offline flush retry resolve to the row it created the first time
+ * rather than to a bare conflict, so the app can show the employee the punch
+ * that actually landed instead of an error.
+ */
+const findPunchByClientId = async (executor, { employeeId, clientPunchId }) => {
+    const { rows } = await executor.query(
+        `SELECT ${PUNCH_RETURNING} FROM time_punch
+         WHERE client_punch_id = $1 AND employee_id = $2`,
+        [clientPunchId, employeeId]
     );
     return rows[0] || null;
 };
@@ -261,6 +292,7 @@ const importPunches = async (executor, { parsedRows, actorId }) => {
 
 module.exports = {
     recordPunch,
+    findPunchByClientId,
     getPunchState,
     deriveDtrFromPunches,
     parsePunchCsv,

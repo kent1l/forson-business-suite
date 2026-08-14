@@ -175,6 +175,34 @@ router.post('/login', async (req, res) => {
     }
 });
 
+/**
+ * GET /auth/me - the caller's own account, in the same shape as the login
+ * response.
+ *
+ * `protect` re-reads permissions from the database on every request, but a
+ * client that cached them at login has no way to learn about a role change
+ * until the token expires. That mismatch shows up as UI offering actions the
+ * server then refuses. Clients call this on start and on foreground to stay in
+ * step; the payload matches login's `user` exactly so it can be swapped in
+ * wholesale.
+ */
+router.get('/auth/me', protect, async (req, res) => {
+    try {
+        const { rows } = await db.query(
+            'SELECT * FROM employee WHERE employee_id = $1', [req.user.employee_id]
+        );
+        if (rows.length === 0) return res.status(404).json({ message: 'Account not found' });
+
+        const { password_hash: _hash, password_salt: _salt, ...user_data } = rows[0];
+        // Taken from req.user rather than re-queried: protect already resolved
+        // them, and reusing that keeps this endpoint and the guard consistent.
+        res.json({ ...user_data, permissions: req.user.permissions || [] });
+    } catch (error) {
+        console.error('auth/me error', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
 // PUT /profile - Update current user's profile (username, password)
 router.put('/profile', protect, async (req, res) => {
     const { username, password } = req.body;

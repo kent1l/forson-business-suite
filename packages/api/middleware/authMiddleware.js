@@ -107,4 +107,23 @@ const isAdmin = (req, res, next) => {
     }
 };
 
-module.exports = { protect, isAdmin, hasPermission };
+/**
+ * The same check `hasPermission` performs, usable inside a handler.
+ *
+ * Some routes are open to a broad permission but must behave differently for
+ * privileged callers — filing leave is allowed for everyone, but only someone
+ * with `leave:manage` may file it on another employee's behalf. Expressing that
+ * as middleware would need two routes; expressing it inline needs this.
+ *
+ * Mirrors the middleware exactly, including the level-10 admin bypass, so the
+ * two can never drift apart.
+ */
+const userHasPermission = (req, requiredPermission) => {
+    const requiredList = Array.isArray(requiredPermission) ? requiredPermission : [requiredPermission];
+    const userLevel = req.user && req.user.permission_level_id ? Number(req.user.permission_level_id) : null;
+    if (userLevel === 10) return true;
+    return !!(req.user && Array.isArray(req.user.permissions)
+        && requiredList.some((p) => req.user.permissions.includes(p)));
+};
+
+module.exports = { protect, isAdmin, hasPermission, userHasPermission };
