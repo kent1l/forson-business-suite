@@ -50,7 +50,21 @@ const CATEGORIES = [
             { name: 'Customers',    icon: ICONS.customers,    page: 'customers',    permission: 'customers:view' },
             { name: 'Suppliers',    icon: ICONS.suppliers,    page: 'suppliers',    permission: 'suppliers:view' },
             { name: 'Documents',    icon: ICONS.documents,    page: 'documents',    permission: 'documents:view' },
-            { name: 'Employees',    icon: ICONS.employees,    page: 'employees',    permission: 'employees:view' },
+        ],
+    },
+    {
+        key: 'hr',
+        title: 'Human Resources',
+        icon: ICONS.employees,
+        items: [
+            { name: 'Employees',   icon: ICONS.employees, page: 'employees',   permission: ['employees:view', 'hr:view'] },
+            { name: 'Departments', icon: ICONS.tag,       page: 'departments', permission: 'hr:view' },
+            { name: 'Time Records', icon: ICONS.history,  page: 'dtr',         permission: 'dtr:view' },
+            { name: 'Work Schedules', icon: ICONS.settings, page: 'work_schedules', permission: 'hr:view' },
+            { name: 'Leave',       icon: ICONS.documents, page: 'leave',       permission: 'leave:view' },
+            { name: 'Payroll',     icon: ICONS.dollar,    page: 'payroll',     permission: 'payroll:view' },
+            { name: 'Statutory Rates', icon: ICONS.settings, page: 'statutory_tables', permission: 'payroll:config' },
+            { name: 'Pay Components', icon: ICONS.tag, page: 'pay_components', permission: 'payroll:config' },
         ],
     },
     {
@@ -80,6 +94,7 @@ const CATEGORIES = [
 
 const TOP_ITEMS = [
     { name: 'Dashboard', icon: ICONS.dashboard, page: 'dashboard', permission: 'dashboard:view' },
+    { name: 'My Pay',    icon: ICONS.dollar,    page: 'my_pay',    permission: 'payslip:view_own' },
     { name: 'POS',        icon: ICONS.pos,       page: 'pos',       permission: 'pos:use' },
 ];
 

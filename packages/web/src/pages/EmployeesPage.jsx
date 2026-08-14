@@ -1,248 +1,235 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import api from '../api';
 import toast from 'react-hot-toast';
+import api from '../api';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import FilterBar from '../components/ui/FilterBar';
 import PaginationControls from '../components/ui/PaginationControls';
 import SortableHeader from '../components/ui/SortableHeader';
+import StatusBadge from '../components/ui/StatusBadge';
+import KPICard from '../components/ui/KPICard';
+import LoadingState from '../components/ui/LoadingState';
+import ErrorState from '../components/ui/ErrorState';
+import EmptyState from '../components/ui/EmptyState';
+import EmployeeForm from '../components/hr/EmployeeForm';
+import BulkEditForm from '../components/hr/BulkEditForm';
+import EmployeeDetailDrawer from '../components/hr/EmployeeDetailDrawer';
 import { useAuth } from '../contexts/AuthContext';
-import { sortData } from '../utils/sortData';
 
-const EmployeeForm = ({ employee, onSave, onCancel, roles }) => { // <-- NEW: roles prop
-    const [formData, setFormData] = useState({
-        first_name: '',
-        last_name: '',
-        username: '',
-        position_title: '',
-        permission_level_id: 1,
-        is_active: true,
-        password: ''
-    });
+const SELECT_CLASS = 'px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500';
 
-    const initialFormData = useMemo(() => {
-        if (employee) {
-            return {
-                first_name: employee.first_name || '',
-                last_name: employee.last_name || '',
-                username: employee.username || '',
-                position_title: employee.position_title || '',
-                permission_level_id: employee.permission_level_id || 1,
-                is_active: employee.is_active,
-                password: ''
-            };
-        } else {
-            return {
-                first_name: '', last_name: '', username: '',
-                position_title: '', permission_level_id: 1, is_active: true, password: ''
-            };
-        }
-    }, [employee]);
-
-    const isFormDirty = useMemo(() => {
-        return JSON.stringify(formData) !== JSON.stringify(initialFormData);
-    }, [formData, initialFormData]);
-
-    const isFormElement = (element) => {
-        return element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.tagName === 'SELECT');
-    };
-
-    useEffect(() => {
-        if (employee) {
-            setFormData({
-                first_name: employee.first_name || '',
-                last_name: employee.last_name || '',
-                username: employee.username || '',
-                position_title: employee.position_title || '',
-                permission_level_id: employee.permission_level_id || 1,
-                is_active: employee.is_active,
-                password: ''
-            });
-        } else {
-            setFormData({
-                first_name: '', last_name: '', username: '',
-                position_title: '', permission_level_id: 1, is_active: true, password: ''
-            });
-        }
-    }, [employee]);
-
-    const handleChange = (e) => {
-        const { name, value, type, checked } = e.target;
-        setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
-    };
-
-    const handleSubmit = useCallback((e) => {
-        if (e) e.preventDefault();
-        onSave(formData);
-    }, [formData, onSave]);
-
-    useEffect(() => {
-        const handleKeyDown = (e) => {
-            if (e.target && isFormElement(e.target)) return;
-
-            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-                e.preventDefault();
-                handleSubmit();
-            } else if (e.key === 'Escape') {
-                if (isFormDirty) {
-                    const confirmCancel = window.confirm('You have unsaved changes. Are you sure you want to cancel?');
-                    if (!confirmCancel) return;
-                }
-                onCancel();
-            }
-        };
-
-        document.addEventListener('keydown', handleKeyDown);
-        return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [handleSubmit, onCancel, isFormDirty]);
-
-    return (
-        <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
-                    <input type="text" name="first_name" value={formData.first_name} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
-                    <input type="text" name="last_name" value={formData.last_name} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
-                </div>
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
-                <input type="text" name="username" value={formData.username} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
-            </div>
-             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Position Title</label>
-                <input type="text" name="position_title" value={formData.position_title} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
-                <input type="password" name="password" value={formData.password} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder={employee ? "Leave blank to keep unchanged" : ""} required={!employee} />
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Permission Level</label>
-                <select name="permission_level_id" value={formData.permission_level_id} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                    {/* NEW: Dynamic options from roles prop */}
-                    {roles.map(role => (
-                        <option key={role.permission_level_id} value={role.permission_level_id}>
-                            {role.level_name}
-                        </option>
-                    ))}
-                </select>
-            </div>
-            <div className="flex items-center">
-                <input type="checkbox" name="is_active" checked={formData.is_active} onChange={handleChange} className="h-4 w-4 text-blue-600 border-gray-300 rounded" />
-                <label className="ml-2 block text-sm text-gray-900">Account is Active</label>
-            </div>
-            <div className="mt-6 flex justify-end space-x-4">
-                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Employee</button>
-            </div>
-        </form>
-    );
+const STATUS_TONE = {
+    Active: 'success',
+    'On Leave': 'warning',
+    Suspended: 'warning',
+    Resigned: 'neutral',
+    Terminated: 'danger',
+    Retired: 'neutral',
 };
 
+const FILTER_TABS = [
+    { key: 'active', label: 'Active' },
+    { key: 'inactive', label: 'Inactive' },
+    { key: 'all', label: 'All' },
+];
+
+
+// The modal header doubles as an identity strip: a monogram, the full name, the
+// employee code and the current status. Editing a record without seeing whose
+// record it is was the most disorienting thing about the old modal.
+const initialsOf = (e) => `${(e?.first_name || '?')[0]}${(e?.last_name || '')[0] || ''}`.toUpperCase();
+
+const EmployeeModalHeader = ({ employee }) => {
+    if (!employee) {
+        return (
+            <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Add employee</h2>
+                <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
+                    Only a name is required. Everything else can follow later.
+                </p>
+            </div>
+        );
+    }
+    const fullName = [employee.first_name, employee.middle_name, employee.last_name, employee.suffix]
+        .filter(Boolean).join(' ');
+    return (
+        <div className="flex items-center gap-3 min-w-0">
+            <div className="flex-shrink-0 h-10 w-10 rounded-full bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 flex items-center justify-center text-sm font-bold">
+                {initialsOf(employee)}
+            </div>
+            <div className="min-w-0">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100 truncate">{fullName}</h2>
+                <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                    {employee.employee_code && (
+                        <span className="text-xs tabular-nums text-gray-500 dark:text-slate-400">{employee.employee_code}</span>
+                    )}
+                    {employee.position_title && (
+                        <span className="text-xs text-gray-500 dark:text-slate-400">· {employee.position_title}</span>
+                    )}
+                    <StatusBadge tone={STATUS_TONE[employee.employment_status] || 'neutral'}
+                        label={employee.employment_status || 'Unknown'} />
+                    {!employee.has_system_access && <StatusBadge tone="neutral" label="No login" />}
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const EmployeesPage = () => {
     const { hasPermission } = useAuth();
     const [employees, setEmployees] = useState([]);
-    const [roles, setRoles] = useState([]); // <-- NEW: State for roles
+    const [roles, setRoles] = useState([]);
+    const [departments, setDepartments] = useState([]);
+    const [allEmployees, setAllEmployees] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentEmployee, setCurrentEmployee] = useState(null);
+    const [drawerEmployeeId, setDrawerEmployeeId] = useState(null);
+    const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([]);
+    const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+
     const [statusFilter, setStatusFilter] = useState('active');
+    const [departmentFilter, setDepartmentFilter] = useState('');
+    const [employmentStatusFilter, setEmploymentStatusFilter] = useState('');
+    const [search, setSearch] = useState('');
     const [sortConfig, setSortConfig] = useState({ key: 'full_name', direction: 'ASC' });
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
     const [total, setTotal] = useState(0);
 
-    const filterTabs = [
-        { key: 'active', label: 'Active' },
-        { key: 'inactive', label: 'Inactive' },
-        { key: 'all', label: 'All' },
-    ];
+    const canView = hasPermission('employees:view');
+    const canEdit = hasPermission('employees:edit');
+
+    const fetchEmployees = useCallback(async () => {
+        setLoading(true);
+        setError('');
+        try {
+            const res = await api.get('/employees', {
+                params: {
+                    status: statusFilter,
+                    department: departmentFilter || undefined,
+                    employment_status: employmentStatusFilter || undefined,
+                    search: search.trim() || undefined,
+                    page,
+                    pageSize,
+                    paginated: 1,
+                    sortBy: sortConfig.key,
+                    sortOrder: sortConfig.direction,
+                },
+            });
+            setEmployees(res.data?.data || []);
+            setTotal(res.data?.total || 0);
+        } catch {
+            setError('Failed to load employees.');
+        } finally {
+            setLoading(false);
+        }
+    }, [statusFilter, departmentFilter, employmentStatusFilter, search, page, pageSize, sortConfig]);
 
     useEffect(() => {
-        const fetchData = async () => {
-            if (hasPermission('employees:view')) {
-                try {
-                    setLoading(true);
-                    // Fetch both employees and roles
-                    const [employeesRes, rolesRes] = await Promise.all([
-                        api.get('/employees', {
-                            params: {
-                                status: statusFilter,
-                                page,
-                                pageSize,
-                                paginated: 1,
-                                sortBy: sortConfig.key,
-                                sortOrder: sortConfig.direction
-                            }
-                        }),
-                        api.get('/roles') // <-- NEW: Fetch roles
-                    ]);
-                    setEmployees(employeesRes.data?.data || []);
-                    setTotal(employeesRes.data?.total || 0);
-                    setRoles(rolesRes.data); // <-- NEW: Set roles state
-                } catch {
-                    setError('Failed to fetch data.');
-                    toast.error('Failed to fetch data.');
-                } finally {
-                    setLoading(false);
-                }
-            }
-        };
-        fetchData();
-    }, [statusFilter, page, pageSize, sortConfig, hasPermission]);
+        if (!canView) { setLoading(false); return; }
+        fetchEmployees();
+    }, [canView, fetchEmployees]);
 
+    // Reference data changes rarely, so it is fetched once rather than on every
+    // filter change. The manager list is fetched unpaginated and separately from
+    // the table: picking a supervisor must offer every active employee, not just
+    // whoever happens to be on the current page.
     useEffect(() => {
-        setPage(1);
-    }, [statusFilter]);
+        if (!canView) return;
+        Promise.all([
+            api.get('/roles'),
+            api.get('/hr/departments'),
+            api.get('/employees', { params: { status: 'active' } }),
+        ])
+            .then(([rolesRes, deptRes, allRes]) => {
+                setRoles(Array.isArray(rolesRes.data) ? rolesRes.data : []);
+                setDepartments(Array.isArray(deptRes.data) ? deptRes.data : []);
+                // Unpaginated requests return a bare array; paginated ones return
+                // { data, total }. Handle both rather than assuming one shape.
+                setAllEmployees(Array.isArray(allRes.data) ? allRes.data : (allRes.data?.data || []));
+            })
+            .catch(() => { /* filters degrade to "All"; the list still works */ });
+    }, [canView]);
 
-    const handleSort = (key, direction) => {
-        setSortConfig({ key, direction });
-        setPage(1);
+    useEffect(() => { setPage(1); setSelectedEmployeeIds([]); }, [statusFilter, departmentFilter, employmentStatusFilter, search]);
+
+    const stats = useMemo(() => {
+        const noLogin = employees.filter((e) => !e.has_system_access).length;
+        const regular = employees.filter((e) => e.employment_type === 'Regular').length;
+        return { noLogin, regular };
+    }, [employees]);
+
+    const handleSort = (key, direction) => { setSortConfig({ key, direction }); setPage(1); };
+
+    const handleSelectAll = (e) => {
+        if (e.target.checked) {
+            setSelectedEmployeeIds(employees.map(emp => emp.employee_id));
+        } else {
+            setSelectedEmployeeIds([]);
+        }
     };
 
-
-    const handleAdd = () => {
-        setCurrentEmployee(null);
-        setIsModalOpen(true);
+    const handleSelectEmployee = (id, checked) => {
+        if (checked) {
+            setSelectedEmployeeIds(prev => [...prev, id]);
+        } else {
+            setSelectedEmployeeIds(prev => prev.filter(e => e !== id));
+        }
     };
 
-    const handleEdit = (employee) => {
-        setCurrentEmployee(employee);
-        setIsModalOpen(true);
+    const handleBulkSave = async (payload) => {
+        if (Object.keys(payload).length === 0) {
+            toast.error('No changes to save.');
+            return;
+        }
+        const promise = api.put('/employees/bulk', {
+            employee_ids: selectedEmployeeIds,
+            ...payload
+        });
+        toast.promise(promise, {
+            loading: 'Updating employees…',
+            success: (res) => {
+                setIsBulkModalOpen(false);
+                setSelectedEmployeeIds([]);
+                fetchEmployees();
+                return `Updated ${res.data?.updated || selectedEmployeeIds.length} employees`;
+            },
+            error: (err) => err.response?.data?.message || 'Failed to bulk update employees.',
+        });
     };
 
     const handleSave = async (employeeData) => {
         const promise = currentEmployee
             ? api.put(`/employees/${currentEmployee.employee_id}`, employeeData)
             : api.post('/employees', employeeData);
-
         toast.promise(promise, {
-            loading: 'Saving employee...',
-            success: () => {
-                setIsModalOpen(false);
-                api.get('/employees', { params: { status: statusFilter, page, pageSize, paginated: 1 } })
-                    .then(res => {
-                        setEmployees(res.data?.data || []);
-                        setTotal(res.data?.total || 0);
-                    });
-                return 'Employee saved successfully!';
-            },
+            loading: 'Saving employee…',
+            success: () => { setIsModalOpen(false); fetchEmployees(); return 'Employee saved successfully'; },
             error: (err) => err.response?.data?.message || 'Failed to save employee.',
         });
     };
-    
-    if (!hasPermission('employees:view')) {
+
+    // Editing needs the full record (contact, emergency, employment), which the
+    // list projection does not carry.
+    const openEdit = async (employeeId) => {
+        try {
+            const { data } = await api.get(`/employees/${employeeId}`);
+            setCurrentEmployee(data);
+            setIsModalOpen(true);
+        } catch {
+            toast.error('Failed to load employee');
+        }
+    };
+
+    if (!canView) {
         return (
             <div className="text-center p-8">
-                <h1 className="text-2xl font-bold text-red-600">Access Denied</h1>
-                <p className="text-gray-600 mt-2">You do not have permission to view this page.</p>
+                <h1 className="text-2xl font-bold text-danger-600">Access Denied</h1>
+                <p className="text-gray-600 dark:text-slate-400 mt-2">You do not have permission to view this page.</p>
             </div>
         );
     }
@@ -250,78 +237,185 @@ const EmployeesPage = () => {
     return (
         <div>
             <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-semibold text-gray-800">Employee Management</h1>
-                {hasPermission('employees:edit') && (
-                    <button onClick={handleAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
-                        Add Employee
-                    </button>
-                )}
+                <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100">Employees</h1>
+                <div className="flex gap-3">
+                    {canEdit && selectedEmployeeIds.length > 0 && (
+                        <button onClick={() => setIsBulkModalOpen(true)}
+                            className="bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 px-4 py-2 rounded-lg font-semibold hover:bg-primary-200 dark:hover:bg-primary-800/40 transition">
+                            Bulk Edit ({selectedEmployeeIds.length})
+                        </button>
+                    )}
+                    {canEdit && (
+                        <button onClick={() => { setCurrentEmployee(null); setIsModalOpen(true); }}
+                            className="bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition">
+                            Add Employee
+                        </button>
+                    )}
+                </div>
             </div>
 
-            <FilterBar
-                tabs={filterTabs}
-                activeTab={statusFilter}
-                onTabClick={setStatusFilter}
-            />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                <KPICard title="Headcount" value={total} icon="package" color="blue" loading={loading} />
+                <KPICard title="Regular (this page)" value={stats.regular} icon="invoice" color="green" loading={loading} />
+                <KPICard title="No system login (this page)" value={stats.noLogin} icon="warning" color="amber" loading={loading}
+                    subtitle="Paid staff without accounts" />
+            </div>
 
-            <div className="bg-white p-6 rounded-xl border border-gray-200">
-                {loading && <p>Loading employees...</p>}
-                {error && <p className="text-red-500">{error}</p>}
-                {!loading && !error && (
+            <FilterBar tabs={FILTER_TABS} activeTab={statusFilter} onTabClick={setStatusFilter} />
+
+            <div className="flex flex-wrap gap-3 mb-4">
+                <input
+                    type="search"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search name, code, username, position…"
+                    className={`${SELECT_CLASS} flex-1 min-w-[220px]`}
+                />
+                <select value={departmentFilter} onChange={(e) => setDepartmentFilter(e.target.value)} className={SELECT_CLASS}>
+                    <option value="">All departments</option>
+                    {departments.map((d) => (
+                        <option key={d.department_id} value={d.department_id}>{d.department_name}</option>
+                    ))}
+                </select>
+                <select value={employmentStatusFilter} onChange={(e) => setEmploymentStatusFilter(e.target.value)} className={SELECT_CLASS}>
+                    <option value="">All employment statuses</option>
+                    {Object.keys(STATUS_TONE).map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+            </div>
+
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700">
+                {loading && <LoadingState label="Loading employees…" />}
+                {!loading && error && <ErrorState description={error} onRetry={fetchEmployees} />}
+                {!loading && !error && employees.length === 0 && (
+                    <EmptyState title="No employees found" description="Try a different filter, or add an employee." />
+                )}
+                {!loading && !error && employees.length > 0 && (
                     <>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                            <thead className="border-b">
-                                <tr>
-                                    <SortableHeader column="full_name" sortConfig={sortConfig} onSort={handleSort}>Name</SortableHeader>
-                                    <SortableHeader column="username" sortConfig={sortConfig} onSort={handleSort}>Username</SortableHeader>
-                                    <SortableHeader column="position_title" sortConfig={sortConfig} onSort={handleSort}>Position</SortableHeader>
-                                    <SortableHeader className="text-center" column="status" sortConfig={sortConfig} onSort={handleSort}>Status</SortableHeader>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {employees.map(emp => (
-                                    <tr key={emp.employee_id} className="border-b hover:bg-gray-50">
-                                        <td className="p-3 text-sm font-medium text-gray-800">{emp.first_name} {emp.last_name}</td>
-                                        <td className="p-3 text-sm">{emp.username}</td>
-                                        <td className="p-3 text-sm">{emp.position_title}</td>
-                                        <td className="p-3 text-sm text-center">
-                                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${emp.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                                {emp.is_active ? 'Active' : 'Inactive'}
-                                            </span>
-                                        </td>
-                                        <td className="p-3 text-sm text-right">
-                                            {hasPermission('employees:edit') && (
-                                                <button onClick={() => handleEdit(emp)} className="text-blue-600 hover:text-blue-800"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
-                                            )}
-                                        </td>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left">
+                                <thead className="border-b border-gray-200 dark:border-slate-700">
+                                    <tr>
+                                        {canEdit && (
+                                            <th className="p-3 w-10">
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={employees.length > 0 && selectedEmployeeIds.length === employees.length}
+                                                    onChange={handleSelectAll}
+                                                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                                                />
+                                            </th>
+                                        )}
+                                        <SortableHeader column="employee_code" sortConfig={sortConfig} onSort={handleSort}>Code</SortableHeader>
+                                        <SortableHeader column="full_name" sortConfig={sortConfig} onSort={handleSort}>Name</SortableHeader>
+                                        <SortableHeader column="department_name" sortConfig={sortConfig} onSort={handleSort}>Department</SortableHeader>
+                                        <SortableHeader column="position_title" sortConfig={sortConfig} onSort={handleSort}>Position</SortableHeader>
+                                        <SortableHeader column="employment_status" sortConfig={sortConfig} onSort={handleSort}>Employment</SortableHeader>
+                                        <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-400">Access</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-400 text-right">Actions</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                    <PaginationControls
-                        page={page}
-                        pageSize={pageSize}
-                        total={total}
-                        onPageChange={setPage}
-                        onPageSizeChange={(value) => {
-                            setPageSize(value);
-                            setPage(1);
-                        }}
-                    />
+                                </thead>
+                                <tbody>
+                                    {employees.map((emp) => (
+                                        <tr
+                                            key={emp.employee_id}
+                                            onClick={() => setDrawerEmployeeId(emp.employee_id)}
+                                            className="border-b border-gray-100 dark:border-slate-700/60 hover:bg-gray-50 dark:hover:bg-slate-700/40 cursor-pointer"
+                                        >
+                                            {canEdit && (
+                                                <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                                                    <input 
+                                                        type="checkbox"
+                                                        checked={selectedEmployeeIds.includes(emp.employee_id)}
+                                                        onChange={(e) => handleSelectEmployee(emp.employee_id, e.target.checked)}
+                                                        className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                                                    />
+                                                </td>
+                                            )}
+                                            <td className="p-3 text-xs tabular-nums text-gray-500 dark:text-slate-400">{emp.employee_code || '—'}</td>
+                                            <td className="p-3 text-sm font-medium text-gray-800 dark:text-slate-100">
+                                                {emp.first_name} {emp.last_name}
+                                                {!emp.is_active && <span className="ml-2 text-[10px] font-bold uppercase text-danger-600">Inactive</span>}
+                                            </td>
+                                            <td className="p-3 text-sm text-gray-600 dark:text-slate-300">{emp.department_name || '—'}</td>
+                                            <td className="p-3 text-sm text-gray-600 dark:text-slate-300">{emp.position_title || '—'}</td>
+                                            <td className="p-3 text-sm">
+                                                <StatusBadge
+                                                    tone={STATUS_TONE[emp.employment_status] || 'neutral'}
+                                                    label={emp.employment_status || '—'}
+                                                />
+                                            </td>
+                                            <td className="p-3 text-sm text-gray-600 dark:text-slate-300">
+                                                {emp.has_system_access
+                                                    ? emp.username
+                                                    : <span className="text-xs text-gray-400 dark:text-slate-500">No login</span>}
+                                            </td>
+                                            <td className="p-3 text-sm text-right">
+                                                {canEdit && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); openEdit(emp.employee_id); }}
+                                                        className="text-primary-600 hover:text-primary-800"
+                                                        aria-label={`Edit ${emp.first_name} ${emp.last_name}`}
+                                                    >
+                                                        <Icon path={ICONS.edit} className="h-5 w-5" />
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        <PaginationControls
+                            page={page}
+                            pageSize={pageSize}
+                            total={total}
+                            onPageChange={setPage}
+                            onPageSizeChange={(value) => { setPageSize(value); setPage(1); }}
+                        />
                     </>
                 )}
             </div>
-            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={currentEmployee ? 'Edit Employee' : 'Add New Employee'}>
-                <EmployeeForm 
-                    employee={currentEmployee} 
-                    onSave={handleSave} 
-                    onCancel={() => setIsModalOpen(false)} 
-                    roles={roles} // <-- Pass roles to the form
+
+            <Modal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                maxWidth="max-w-3xl"
+                bodyClassName="p-0"
+                header={<EmployeeModalHeader employee={currentEmployee} />}
+            >
+                <EmployeeForm
+                    employee={currentEmployee}
+                    roles={roles}
+                    departments={departments}
+                    managers={allEmployees}
+                    onSave={handleSave}
+                    onCancel={() => setIsModalOpen(false)}
                 />
             </Modal>
+
+            <Modal
+                isOpen={isBulkModalOpen}
+                onClose={() => setIsBulkModalOpen(false)}
+                maxWidth="max-w-md"
+                bodyClassName="p-0"
+                header={<h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Bulk Edit Employees</h2>}
+            >
+                <BulkEditForm
+                    selectedCount={selectedEmployeeIds.length}
+                    departments={departments}
+                    managers={allEmployees}
+                    onSave={handleBulkSave}
+                    onCancel={() => setIsBulkModalOpen(false)}
+                />
+            </Modal>
+
+            <EmployeeDetailDrawer
+                employeeId={drawerEmployeeId}
+                isOpen={Boolean(drawerEmployeeId)}
+                onClose={() => setDrawerEmployeeId(null)}
+                roles={roles}
+                onEmployeeChanged={fetchEmployees}
+            />
         </div>
     );
 };
