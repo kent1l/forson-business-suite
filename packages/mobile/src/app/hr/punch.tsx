@@ -9,6 +9,7 @@ import apiClient from '../../api/client';
 import submitWithOutbox from '../../offline/submitWithOutbox';
 import useOutboxStore from '../../offline/outbox';
 import useAuthStore from '../../store/useAuthStore';
+import { scheduleClockOutReminder, cancelClockOutReminder } from '../../utils/clockOutReminder';
 import Screen from '../../components/ui/Screen';
 import AppHeader from '../../components/ui/AppHeader';
 import Card from '../../components/ui/Card';
@@ -80,6 +81,13 @@ export default function PunchScreen() {
           : Haptics.NotificationFeedbackType.Success,
       );
       setResult({ queued: outcome.queued, direction: nextDirection, at: capturedAt });
+
+      // A missing clock-out is the most common DTR dispute, since the day is
+      // derived from first-IN to last-OUT. Set the reminder on the way in and
+      // clear it on the way out.
+      if (nextDirection === 'IN') scheduleClockOutReminder();
+      else cancelClockOutReminder();
+
       if (!outcome.queued) refetch();
     } catch (err: any) {
       // Only a refusal reaches here -- a connectivity failure would have been

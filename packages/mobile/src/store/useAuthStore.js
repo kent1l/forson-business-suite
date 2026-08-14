@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { cancelClockOutReminder } from '../utils/clockOutReminder';
 
 /** Written by PersistQueryClientProvider; must not outlive the session. */
 const QUERY_CACHE_KEY = 'REACT_QUERY_OFFLINE_CACHE';
@@ -62,6 +63,9 @@ const useAuthStore = create((set) => ({
       // Leaving it behind would show one employee's data to the next person to
       // sign in on a shared phone.
       await AsyncStorage.removeItem(QUERY_CACHE_KEY);
+      // Otherwise the next person on a shared phone is nudged about a shift
+      // that was not theirs.
+      await cancelClockOutReminder();
       set({ token: null, user: null });
     } catch (e) {
       console.error('Failed to clear auth data', e);

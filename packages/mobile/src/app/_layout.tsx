@@ -6,6 +6,7 @@ import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import * as Notifications from 'expo-notifications';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -19,6 +20,17 @@ import ConnectionBanner from '../components/ui/ConnectionBanner';
 import AppErrorBoundary from '../components/AppErrorBoundary';
 import LoginScreen from '../screens/LoginScreen';
 import apiClient from '../api/client';
+
+// Reminders are worth surfacing while the app is open too -- someone staring at
+// the POS screen at closing time is exactly who needs the clock-out nudge.
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+  }),
+});
 
 const DAY_MS = 1000 * 60 * 60 * 24;
 
