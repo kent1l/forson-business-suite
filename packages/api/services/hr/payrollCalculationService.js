@@ -202,6 +202,174 @@ const componentAmountFor = (component, { basicPay, cutoffSeq }) => {
 };
 
 /**
+ * Final pay for a departing employee.
+ *
+ * This is SUPPLEMENTARY to their last regular payslip, not a replacement for
+ * it: the days they actually worked in their final cutoff are paid by the
+ * REGULAR run, which already prorates to the separation date. What is left over
+ * is what only falls due on separation.
+ *
+ * Composition (per company policy):
+ *   + pro-rated 13th month pay, less whatever has already been paid this year
+ *   - every outstanding loan balance, recovered in full rather than left open
+ *
+ * No statutory contributions: 13th month pay is not part of the SSS, PhilHealth
+ * or Pag-IBIG basis. Withholding applies only to the portion of 13th month and
+ * other benefits exceeding the annual tax-exempt cap (₱90,000 under TRAIN).
+ */
+const computeFinalPay = ({ employee, compensation, loans = [], policy, statutoryTables, finalPay, adjustments = [] }) => {
+    const lines = [];
+    const addLine = (line) => { if (line.amount !== 0) lines.push(line); };
+
+    const basicEarned = Number(finalPay?.basicEarnedThisYear) || 0;
+    const alreadyPaid = Number(finalPay?.thirteenthMonthAlreadyPaid) || 0;
+    const exemptCap = Number(policy.thirteenthMonthExemptCap) || 90000;
+
+    // PD 851: total basic salary earned in the calendar year divided by 12.
+    const entitlement = round2(basicEarned / 12);
+    const thirteenthMonth = round2(Math.max(entitlement - alreadyPaid, 0));
+
+    addLine({
+        lineType: 'EARNING', componentCode: 'THIRTEENTH_MONTH', description: '13th Month Pay (pro-rated)',
+        quantity: null, rate: null, amount: thirteenthMonth, isTaxable: false, sortOrder: 1,
+    });
+
+    // One-off additions (a separation bonus, a last allowance) ride alongside,
+    // so the run-adjustment UI works on a final pay exactly as on a regular one.
+    let otherEarnings = 0;
+    let otherDeductions = 0;
+    for (const adj of adjustments) {
+        const amount = round2(Number(adj.amount) || 0);
+        if (amount === 0) continue;
+        if (adj.adjustment_type === 'ADD') {
+            otherEarnings = round2(otherEarnings + amount);
+            addLine({
+                lineType: 'EARNING', componentCode: adj.component_code,
+                description: adj.component_name || adj.component_code,
+                amount, isTaxable: Boolean(adj.is_taxable), sortOrder: 10,
+            });
+        } else if (adj.adjustment_type === 'DEDUCT') {
+            otherDeductions = round2(otherDeductions + amount);
+            addLine({
+                lineType: 'DEDUCTION', componentCode: adj.component_code,
+                description: adj.component_name || adj.component_code,
+                amount, isTaxable: false, sortOrder: 45,
+            });
+        }
+    }
+
+    const grossPay = round2(thirteenthMonth + otherEarnings);
+
+    // Only the excess over the annual cap is taxable. The cap covers 13th month
+    // AND other benefits for the year, so the figure already paid counts toward
+    // it — otherwise splitting a bonus across two runs would dodge the ceiling.
+    const benefitsForYear = round2(alreadyPaid + thirteenthMonth);
+    const taxableBenefits = round2(Math.max(benefitsForYear - exemptCap, 0));
+    const isExempt = compensation?.statutory_coverage === 'EXEMPT';
+
+    // No tax is withheld here even when there IS an excess, and that is a
+    // deliberate refusal rather than an omission. The excess is taxed at the
+    // employee's marginal rate on their TOTAL annual income, which means
+    // annualisation — a year-end process this system does not implement. Running
+    // the annual table over the excess in isolation would put it in the
+    // 0%-below-250k band and produce a confidently wrong ₱0.00.
+    //
+    // So the amount is computed, recorded on the payslip as taxable income, and
+    // raised as a run warning for the year-end BIR 2316. Visibly unwithheld
+    // beats invisibly under-withheld.
+    const withholdingTax = 0;
+    const requiresAnnualisation = !isExempt && taxableBenefits > 0;
+
+    // Every outstanding loan closes here, regardless of which cutoff it was
+    // scheduled against — there will be no later payslip to deduct from.
+    //
+    // But a payslip can only ever hand money over, never collect it. When the
+    // balances exceed what is payable, recovery stops at zero and the remainder
+    // becomes a debt to chase outside payroll. Letting the net go negative would
+    // produce a "payment" that cannot be made and would silently mark loans as
+    // settled when no money changed hands.
+    const loanDeductions = [];
+    let loansTotal = 0;
+    let unrecoveredLoanBalance = 0;
+    let available = round2(grossPay - withholdingTax - otherDeductions);
+    for (const loan of loans) {
+        const outstanding = round2(Number(loan.principal_amount) - Number(loan.amount_paid));
+        if (outstanding <= 0) continue;
+        const amount = round2(Math.min(outstanding, Math.max(available, 0)));
+        if (amount > 0) {
+            available = round2(available - amount);
+            loansTotal = round2(loansTotal + amount);
+            loanDeductions.push({ loanId: loan.loan_id, amount });
+            const settled = amount >= outstanding;
+            addLine({
+                lineType: 'DEDUCTION', componentCode: loan.component_code,
+                description: `${loan.reference_no ? `${loan.loan_type} (${loan.reference_no})` : loan.loan_type}`
+                    + (settled ? ' — full settlement' : ' — partial, balance remains due'),
+                amount, isTaxable: false, sortOrder: 40,
+            });
+        }
+        unrecoveredLoanBalance = round2(unrecoveredLoanBalance + round2(outstanding - amount));
+    }
+
+    const totalDeductions = round2(withholdingTax + loansTotal + otherDeductions);
+    const netPay = round2(grossPay - totalDeductions);
+
+    return {
+        header: {
+            employee_id: employee.employee_id,
+            employee_code: employee.employee_code,
+            employee_name: employee.employee_name,
+            position_title: employee.position_title,
+            department_name: employee.department_name,
+            pay_basis: compensation?.pay_basis || 'daily',
+            salary_model: compensation?.salary_model || null,
+            is_overtime_exempt: Boolean(compensation?.is_overtime_exempt),
+            worker_class: employee.worker_class || 'EMPLOYEE',
+            statutory_coverage: isExempt ? 'EXEMPT' : 'COVERED',
+            daily_rate: 0,
+            monthly_basis: 0,
+            compensation_id: compensation?.compensation_id || null,
+
+            days_worked: 0, days_paid: 0, days_absent: 0, days_on_leave: 0, overtime_hours: 0,
+
+            basic_pay: 0, overtime_pay: 0, holiday_pay: 0, night_diff_pay: 0,
+            allowances_taxable: 0, allowances_nontaxable: 0,
+            other_earnings: round2(thirteenthMonth + otherEarnings),
+            gross_pay: grossPay,
+
+            sss_ee: 0, sss_mpf_ee: 0, philhealth_ee: 0, pagibig_ee: 0,
+            withholding_tax: withholdingTax,
+            loans_total: loansTotal,
+            other_deductions: otherDeductions,
+            total_deductions: totalDeductions,
+            taxable_income: taxableBenefits,
+            net_pay: netPay,
+
+            sss_er: 0, sss_mpf_er: 0, sss_ec: 0, philhealth_er: 0, pagibig_er: 0,
+            total_employer_contrib: 0,
+        },
+        lines,
+        loanDeductions,
+        trace: {
+            basicPayModel: 'FINAL_PAY',
+            dateSeparated: employee.date_separated || null,
+            basicEarnedThisYear: basicEarned,
+            thirteenthMonthEntitlement: entitlement,
+            thirteenthMonthAlreadyPaid: alreadyPaid,
+            thirteenthMonthPayable: thirteenthMonth,
+            exemptCap,
+            benefitsForYear,
+            taxableBenefits,
+            withholdingTax,
+            requiresAnnualisation,
+            loansSettled: loanDeductions,
+            unrecoveredLoanBalance,
+            statutoryVersions: statutoryTables?.versions,
+        },
+    };
+};
+
+/**
  * Computes one payslip.
  *
  * @param {object} input
@@ -218,8 +386,14 @@ const componentAmountFor = (component, { basicPay, cutoffSeq }) => {
  */
 const computePayslip = ({
     employee, compensation, dtrSummary, periodDays, loans = [], policy, statutoryTables, cutoffSeq,
-    payComponents = [], statutoryOverrides = {}, adjustments = [],
+    payComponents = [], statutoryOverrides = {}, adjustments = [], runType = 'REGULAR',
+    finalPay = null,
 }) => {
+    if (runType === 'FINAL_PAY') {
+        return computeFinalPay({
+            employee, compensation, loans, policy, statutoryTables, finalPay, adjustments,
+        });
+    }
     if (!compensation) {
         const err = new Error(`No compensation on record for ${employee.employee_name} as of this period.`);
         err.code = 'NO_COMPENSATION';
@@ -520,4 +694,4 @@ const computePayslip = ({
     };
 };
 
-module.exports = { computePayslip, computeBasicPay, monthlyBasisFor, round2 };
+module.exports = { computePayslip, computeBasicPay, computeFinalPay, monthlyBasisFor, round2 };

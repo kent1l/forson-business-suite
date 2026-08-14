@@ -833,3 +833,171 @@ describe('computePayslip — coverage guard is inert for employees', () => {
         expect(h.statutory_coverage).toBe('COVERED');
     });
 });
+
+// --- Final pay -----------------------------------------------------------
+// A final pay is SUPPLEMENTARY to the leaver's last regular payslip: the days
+// they worked are paid by the REGULAR run, prorated to the separation date.
+// What is left is what only falls due on separation.
+
+describe('computePayslip — FINAL_PAY', () => {
+    const finalBase = (overrides = {}) => ({
+        runType: 'FINAL_PAY',
+        employee: {
+            employee_id: 31, employee_name: 'Marisol Vega',
+            worker_class: 'EMPLOYEE', date_separated: '2026-08-20',
+        },
+        compensation: { compensation_id: 9, pay_basis: 'daily', base_rate: 1000, days_per_year: 313 },
+        finalPay: { basicEarnedThisYear: 180000, thirteenthMonthAlreadyPaid: 0 },
+        loans: [], policy: { ...POLICY, thirteenthMonthExemptCap: 90000 },
+        statutoryTables: TABLES, cutoffSeq: 2,
+        ...overrides,
+    });
+
+    it('pays the pro-rated 13th month: basic earned divided by twelve', () => {
+        const h = computePayslip(finalBase()).header;
+        expect(h.gross_pay).toBe(15000); // 180,000 / 12
+        expect(h.net_pay).toBe(15000);
+    });
+
+    it('nets off 13th month already paid, so it cannot be paid twice', () => {
+        const h = computePayslip(finalBase({
+            finalPay: { basicEarnedThisYear: 180000, thirteenthMonthAlreadyPaid: 9000 },
+        })).header;
+        expect(h.gross_pay).toBe(6000);
+    });
+
+    it('never goes negative when more was already paid than is owed', () => {
+        const h = computePayslip(finalBase({
+            finalPay: { basicEarnedThisYear: 180000, thirteenthMonthAlreadyPaid: 20000 },
+        })).header;
+        expect(h.gross_pay).toBe(0);
+        expect(h.net_pay).toBe(0);
+    });
+
+    it('charges no statutory contributions — 13th month is outside the basis', () => {
+        const h = computePayslip(finalBase()).header;
+        expect([h.sss_ee, h.philhealth_ee, h.pagibig_ee, h.total_employer_contrib]).toEqual([0, 0, 0, 0]);
+    });
+
+    it('pays no basic pay: the last worked days belong to the regular run', () => {
+        const h = computePayslip(finalBase()).header;
+        expect(h.basic_pay).toBe(0);
+        expect(h.days_paid).toBe(0);
+    });
+
+    it('leaves 13th month untaxed below the exempt cap', () => {
+        expect(computePayslip(finalBase()).header.withholding_tax).toBe(0);
+    });
+
+    it('reports the excess above the exempt cap, and flags it for annualisation', () => {
+        // 1,200,000 / 12 = 100,000 entitlement; 10,000 of it exceeds the cap.
+        const r = computePayslip(finalBase({
+            finalPay: { basicEarnedThisYear: 1200000, thirteenthMonthAlreadyPaid: 0 },
+        }));
+        expect(r.trace.taxableBenefits).toBe(10000);
+        expect(r.header.taxable_income).toBe(10000);
+        // Deliberately NOT withheld here: the excess is taxed at the employee's
+        // marginal rate on TOTAL annual income, which needs year-end
+        // annualisation. Running the annual table over the excess alone would
+        // land in the 0%-below-250k band and report a confidently wrong zero.
+        expect(r.header.withholding_tax).toBe(0);
+        expect(r.trace.requiresAnnualisation).toBe(true);
+    });
+
+    it('does not flag annualisation when the benefit is under the cap', () => {
+        expect(computePayslip(finalBase()).trace.requiresAnnualisation).toBe(false);
+    });
+
+    it('counts benefits already paid toward the cap, so splitting cannot dodge it', () => {
+        const r = computePayslip(finalBase({
+            finalPay: { basicEarnedThisYear: 1200000, thirteenthMonthAlreadyPaid: 50000 },
+        }));
+        // 100,000 entitlement, 50,000 already paid -> 50,000 payable now, but the
+        // cap is measured on the full 100,000 for the year.
+        expect(r.header.gross_pay).toBe(50000);
+        expect(r.trace.benefitsForYear).toBe(100000);
+        expect(r.trace.taxableBenefits).toBe(10000);
+    });
+
+    it('settles every outstanding loan in full, ignoring the cutoff schedule', () => {
+        const r = computePayslip(finalBase({
+            loans: [
+                { loan_id: 1, loan_type: 'CASH_ADVANCE', component_code: 'CASH_ADVANCE',
+                    principal_amount: 6000, amortization_amount: 500, amount_paid: 2000, deduct_on_cutoff: 1 },
+                { loan_id: 2, loan_type: 'SSS_SALARY', component_code: 'SSS_LOAN',
+                    principal_amount: 3000, amortization_amount: 250, amount_paid: 500, deduct_on_cutoff: 2 },
+            ],
+        }));
+        // 4,000 + 2,500 outstanding — the full balances, not the instalments,
+        // and the cutoff-1 loan is settled even though this is cutoff 2.
+        expect(r.header.loans_total).toBe(6500);
+        expect(r.header.net_pay).toBe(8500);
+        expect(r.trace.unrecoveredLoanBalance).toBe(0);
+        expect(r.loanDeductions).toEqual([
+            { loanId: 1, amount: 4000 }, { loanId: 2, amount: 2500 },
+        ]);
+    });
+
+    it('never produces a negative final pay when the loan exceeds it', () => {
+        // 13th month 1,416.67 against a 4,000 balance. A payslip can only hand
+        // money over, never collect it.
+        const r = computePayslip(finalBase({
+            finalPay: { basicEarnedThisYear: 17000, thirteenthMonthAlreadyPaid: 0 },
+            loans: [{ loan_id: 1, loan_type: 'CASH_ADVANCE', component_code: 'CASH_ADVANCE',
+                principal_amount: 6000, amortization_amount: 500, amount_paid: 2000, deduct_on_cutoff: 1 }],
+        }));
+        expect(r.header.gross_pay).toBe(1416.67);
+        expect(r.header.loans_total).toBe(1416.67); // capped at what is payable
+        expect(r.header.net_pay).toBe(0);
+        // The rest is still owed, and must be visible rather than written off.
+        expect(r.trace.unrecoveredLoanBalance).toBe(2583.33);
+    });
+
+    it('records only the recovered amount against the loan, not the whole balance', () => {
+        const r = computePayslip(finalBase({
+            finalPay: { basicEarnedThisYear: 17000, thirteenthMonthAlreadyPaid: 0 },
+            loans: [{ loan_id: 1, loan_type: 'CASH_ADVANCE', component_code: 'CASH_ADVANCE',
+                principal_amount: 6000, amortization_amount: 500, amount_paid: 2000, deduct_on_cutoff: 1 }],
+        }));
+        // Marking the loan fully settled when only part was collected would
+        // silently forgive the balance.
+        expect(r.loanDeductions).toEqual([{ loanId: 1, amount: 1416.67 }]);
+    });
+
+    it('skips a loan that is already fully repaid', () => {
+        const r = computePayslip(finalBase({
+            loans: [{ loan_id: 3, loan_type: 'CASH_ADVANCE', component_code: 'CASH_ADVANCE',
+                principal_amount: 5000, amortization_amount: 500, amount_paid: 5000, deduct_on_cutoff: 1 }],
+        }));
+        expect(r.header.loans_total).toBe(0);
+    });
+
+    it('folds a one-off separation bonus in through run adjustments', () => {
+        const h = computePayslip(finalBase({
+            adjustments: [{
+                adjustment_type: 'ADD', component_code: 'ALLOWANCE_COLA',
+                component_name: 'Separation Bonus', amount: 5000, is_taxable: false,
+            }],
+        })).header;
+        expect(h.gross_pay).toBe(20000);
+    });
+
+    it('reconciles net against gross and deductions', () => {
+        const { header, lines } = computePayslip(finalBase({
+            loans: [{ loan_id: 1, loan_type: 'CASH_ADVANCE', component_code: 'CASH_ADVANCE',
+                principal_amount: 6000, amortization_amount: 500, amount_paid: 2000, deduct_on_cutoff: 1 }],
+        }));
+        expect(header.net_pay).toBe(round2(header.gross_pay - header.total_deductions));
+        const earnings = lines.filter((l) => l.lineType === 'EARNING')
+            .reduce((s, l) => round2(s + l.amount), 0);
+        expect(earnings).toBe(header.gross_pay);
+    });
+
+    it('records the derivation for audit', () => {
+        const t = computePayslip(finalBase()).trace;
+        expect(t.basicPayModel).toBe('FINAL_PAY');
+        expect(t.dateSeparated).toBe('2026-08-20');
+        expect(t.thirteenthMonthEntitlement).toBe(15000);
+        expect(t.exemptCap).toBe(90000);
+    });
+});

@@ -504,11 +504,14 @@ const PayrollPage = () => {
                             className={INPUT_CLASS}>
                             <option value="REGULAR">Regular — employees</option>
                             <option value="JOB_ORDER">Job Order — contract-of-service workers</option>
+                            <option value="FINAL_PAY">Final Pay — departing employees</option>
                         </select>
                         <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                             {newRunType === 'JOB_ORDER'
                                 ? 'Pays only workers whose class is Job Order. No statutory contributions or withholding tax, and excluded from the SSS, PhilHealth, Pag-IBIG and BIR reports.'
-                                : 'Pays only employees. Job-order workers are paid in their own run.'}
+                                : newRunType === 'FINAL_PAY'
+                                    ? 'Pays employees who have a separation date, once each. Covers pro-rated 13th month pay and settles every outstanding loan in full. Their last worked days are paid by the regular run for that cutoff.'
+                                    : 'Pays only employees. Job-order workers are paid in their own run.'}
                         </p>
                     </div>
                     <div>

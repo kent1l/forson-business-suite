@@ -157,7 +157,9 @@ const thirteenthMonthReport = async (executor, { year }) => {
             SELECT p.employee_id, SUM(p.gross_pay)::numeric(14,2) AS already_paid
             FROM payroll_payslip p
             JOIN payroll_run r ON p.run_id = r.run_id
-            WHERE r.status = ANY($1) AND r.run_type = 'THIRTEENTH_MONTH'
+            -- A final pay settles the leaver's 13th month too, so it counts as
+            -- already paid; otherwise this report would keep showing them owed.
+            WHERE r.status = ANY($1) AND r.run_type IN ('THIRTEENTH_MONTH', 'FINAL_PAY')
               AND EXTRACT(YEAR FROM r.period_end) = $2
             GROUP BY p.employee_id
         )

@@ -44,7 +44,7 @@ const PAYROLL_SETTING_KEYS = [
     'PAYROLL_OT_RATE_ORDINARY', 'PAYROLL_OT_RATE_REST_DAY', 'PAYROLL_REST_DAY_RATE',
     'PAYROLL_REGULAR_HOLIDAY_RATE', 'PAYROLL_REGULAR_HOLIDAY_UNWORKED',
     'PAYROLL_SPECIAL_HOLIDAY_RATE', 'PAYROLL_NIGHT_DIFF_RATE', 'PAYROLL_ROUNDING_MODE',
-    'PAYROLL_MONTHLY_DIVISOR_MODE',
+    'PAYROLL_MONTHLY_DIVISOR_MODE', 'PAYROLL_13TH_MONTH_TAX_EXEMPT_CAP',
 ];
 
 /** Reads the PAYROLL_* settings into the policy object snapshotted on the run. */
@@ -65,6 +65,7 @@ const loadPolicy = async (executor) => {
         specialHolidayRate: Number(raw.PAYROLL_SPECIAL_HOLIDAY_RATE) || 1.30,
         nightDiffRate: Number(raw.PAYROLL_NIGHT_DIFF_RATE) || 0.10,
         monthlyDivisorMode: raw.PAYROLL_MONTHLY_DIVISOR_MODE || 'PERIOD_WORKING_DAYS',
+        thirteenthMonthExemptCap: Number(raw.PAYROLL_13TH_MONTH_TAX_EXEMPT_CAP) || 90000,
         standardHoursPerDay: 8,
         roundingMode: raw.PAYROLL_ROUNDING_MODE || 'HALF_UP',
     };
@@ -146,19 +147,51 @@ const computeRun = async (executor, { runId, computedBy }) => {
     // A JOB_ORDER run pays contract-of-service workers; every other run type pays
     // employees. This one predicate is what keeps the two populations — and
     // therefore the statutory and BIR reports — apart.
+    const isFinalPay = run.run_type === 'FINAL_PAY';
     const workerClass = run.run_type === 'JOB_ORDER' ? 'JOB_ORDER' : 'EMPLOYEE';
-    const empParams = [workerClass, run.period_start, run.period_end];
-    // Separation is a DATE question, not a flag question. Someone who resigns
-    // mid-cutoff is still owed the days they worked, so they must stay in the
-    // run and be prorated — only a separation BEFORE the period starts removes
-    // them. `is_active` is deliberately not trusted on its own: nothing keeps it
-    // in step with employment_status, so a Resigned employee whose flag was
-    // never flipped would otherwise be paid in full.
-    let empWhere = `WHERE e.is_active = TRUE AND e.is_payroll_eligible = TRUE
+    // Params are built per branch so every placeholder is actually referenced —
+    // an unused one leaves Postgres unable to infer its type.
+    let empWhere;
+    let empParams;
+    if (isFinalPay) {
+        // The mirror image of a regular run. Final pay is owed precisely to the
+        // people every other run excludes, so it selects ON separation rather
+        // than against it, and cannot require is_active — the separation trigger
+        // has already cleared that. Once per person: a second final pay would
+        // hand over the 13th month twice.
+        empParams = [workerClass, run.period_end, runId];
+        empWhere = `WHERE e.worker_class = $1
+                      AND e.date_separated IS NOT NULL
+                      AND e.date_separated <= $2::date
+                      AND NOT EXISTS (
+                          SELECT 1 FROM payroll_payslip fp
+                          JOIN payroll_run fr ON fr.run_id = fp.run_id
+                          WHERE fp.employee_id = e.employee_id
+                            AND fr.run_type = 'FINAL_PAY'
+                            AND fr.status <> 'Voided'
+                            AND fr.run_id <> $3
+                      )`;
+    } else {
+        // Separation is a DATE question, not a flag question. Someone who resigns
+        // mid-cutoff is still owed the days they worked, so they stay in the run
+        // and are prorated; only a separation BEFORE the period starts removes
+        // them.
+        //
+        // `is_active` is cleared automatically the moment someone is marked
+        // separated, so requiring it outright would exclude exactly the people
+        // this run still owes. Being inside the employment window is therefore
+        // an ALTERNATIVE to being active, not an extra condition on top of it.
+        empParams = [workerClass, run.period_start, run.period_end];
+        empWhere = `WHERE e.is_payroll_eligible = TRUE
                       AND e.worker_class = $1
+                      AND (e.is_active = TRUE OR e.date_separated IS NOT NULL)
                       AND (e.date_separated IS NULL OR e.date_separated >= $2::date)
                       AND (e.date_hired IS NULL OR e.date_hired <= $3::date)`;
-    if (run.department_id) { empWhere += ' AND e.department_id = $4'; empParams.push(run.department_id); }
+    }
+    if (run.department_id) {
+        empParams.push(run.department_id);
+        empWhere += ` AND e.department_id = $${empParams.length}`;
+    }
 
     const { rows: employees } = await executor.query(
         `SELECT e.employee_id, e.employee_code, e.position_title, e.worker_class,
@@ -239,6 +272,35 @@ const computeRun = async (executor, { runId, computedBy }) => {
         employees, periodStart: run.period_start, periodEnd: run.period_end,
     });
 
+    // 13th-month inputs, only for a final pay. Basic earned comes from REGULAR
+    // runs alone (PD 851 counts basic salary, not premiums), and anything
+    // already handed over in a 13th-month or earlier final-pay run is netted
+    // off so the entitlement can never be paid twice.
+    const finalPayByEmployee = new Map();
+    if (isFinalPay) {
+        const { rows: thirteenthRows } = await executor.query(
+            `SELECT p.employee_id,
+                    COALESCE(SUM(p.basic_pay) FILTER (WHERE r.run_type = 'REGULAR'), 0)::numeric(14,2)
+                        AS basic_earned_this_year,
+                    COALESCE(SUM(p.gross_pay) FILTER (WHERE r.run_type IN ('THIRTEENTH_MONTH','FINAL_PAY')), 0)::numeric(14,2)
+                        AS thirteenth_month_already_paid
+             FROM payroll_payslip p
+             JOIN payroll_run r ON r.run_id = p.run_id
+             WHERE p.employee_id = ANY($1::int[])
+               AND r.status = ANY($2)
+               AND r.run_id <> $3
+               AND EXTRACT(YEAR FROM r.period_end) = EXTRACT(YEAR FROM $4::date)
+             GROUP BY p.employee_id`,
+            [employeeIds, ['Approved', 'Paid', 'Posted'], runId, run.period_end]
+        );
+        for (const row of thirteenthRows) {
+            finalPayByEmployee.set(row.employee_id, {
+                basicEarnedThisYear: Number(row.basic_earned_this_year),
+                thirteenthMonthAlreadyPaid: Number(row.thirteenth_month_already_paid),
+            });
+        }
+    }
+
     const { rows: loanRows } = await executor.query(
         `SELECT loan_id, employee_id, loan_type, component_code, reference_no,
                 principal_amount, amortization_amount, amount_paid, deduct_on_cutoff
@@ -311,6 +373,15 @@ const computeRun = async (executor, { runId, computedBy }) => {
     // mid-cutoff is paid a partial period here, and usually needs a FINAL_PAY
     // run afterwards for their last entitlements.
     const separatedThisPeriod = [];
+    // 13th-month and benefits above the annual exempt cap are taxable, but at the
+    // employee's marginal rate on total annual income — which needs year-end
+    // annualisation this system does not perform. Surfaced here so the amount
+    // reaches BIR 2316 rather than being quietly dropped.
+    const needsAnnualisation = [];
+    // A payslip can only pay out, so a loan larger than the final pay cannot be
+    // fully recovered here. The remainder is a debt to pursue outside payroll,
+    // and must be said out loud or it is simply lost.
+    const unrecoveredLoans = [];
     const totals = { gross: 0, deductions: 0, net: 0, employer: 0 };
     let payslipCount = 0;
 
@@ -323,14 +394,14 @@ const computeRun = async (executor, { runId, computedBy }) => {
         // is the one option that is certainly wrong, so refuse and say what is
         // missing — this is also what surfaces records whose employment_status
         // and is_active flag disagree.
-        if (SEPARATED_STATUSES.has(employee.employment_status) && !employee.date_separated) {
+        if (!isFinalPay && SEPARATED_STATUSES.has(employee.employment_status) && !employee.date_separated) {
             warnings.push(
                 `${employee.employee_name}: skipped — marked ${employee.employment_status} but has no `
                 + 'separation date, so the last payable day is unknown. Set Date Separated on their record.'
             );
             continue;
         }
-        if (employee.date_separated && employee.date_separated <= run.period_end) {
+        if (!isFinalPay && employee.date_separated && employee.date_separated <= run.period_end) {
             separatedThisPeriod.push(`${employee.employee_name} (${employee.date_separated})`);
         }
 
@@ -345,11 +416,13 @@ const computeRun = async (executor, { runId, computedBy }) => {
         // record for them, not the basis of payment. They are paid in full and
         // named in a warning, so a missed DTR generation still cannot pass
         // unnoticed.
-        if (!dtrSummary && compensation.pay_basis === 'daily') {
+        // A final pay owes 13th month and loan settlement, neither of which is
+        // attendance-derived, so it needs no DTR at all.
+        if (!isFinalPay && !dtrSummary && compensation.pay_basis === 'daily') {
             warnings.push(`${employee.employee_name}: skipped — no daily time records for this period.`);
             continue;
         }
-        if (!dtrSummary) monthlyWithoutDtr.push(employee.employee_name);
+        if (!isFinalPay && !dtrSummary) monthlyWithoutDtr.push(employee.employee_name);
 
         let computed;
         try {
@@ -361,6 +434,8 @@ const computeRun = async (executor, { runId, computedBy }) => {
                 statutoryOverrides: overridesByEmployee.get(employee.employee_id) || {},
                 adjustments: adjustmentsByEmployee.get(employee.employee_id) || [],
                 policy, statutoryTables: tables, cutoffSeq,
+                runType: run.run_type,
+                finalPay: finalPayByEmployee.get(employee.employee_id),
             });
         } catch (err) {
             if (['NO_COMPENSATION', 'UNSUPPORTED_PAY_BASIS'].includes(err.code)) {
@@ -368,6 +443,17 @@ const computeRun = async (executor, { runId, computedBy }) => {
                 continue;
             }
             throw err;
+        }
+
+        if (computed.trace && computed.trace.unrecoveredLoanBalance > 0) {
+            unrecoveredLoans.push(
+                `${employee.employee_name} (${round2(computed.trace.unrecoveredLoanBalance)})`
+            );
+        }
+        if (computed.trace && computed.trace.requiresAnnualisation) {
+            needsAnnualisation.push(
+                `${employee.employee_name} (${round2(computed.trace.taxableBenefits)})`
+            );
         }
 
         payslipCount += 1;
@@ -424,6 +510,21 @@ const computeRun = async (executor, { runId, computedBy }) => {
         totals.deductions = round2(totals.deductions + h.total_deductions);
         totals.net = round2(totals.net + h.net_pay);
         totals.employer = round2(totals.employer + h.total_employer_contrib);
+    }
+
+    if (unrecoveredLoans.length > 0) {
+        warnings.push(
+            'Loan balances exceeded the final pay and could NOT be fully recovered. These amounts are '
+            + `still owed and must be collected outside payroll: ${unrecoveredLoans.join(', ')}.`
+        );
+    }
+
+    if (needsAnnualisation.length > 0) {
+        warnings.push(
+            'Benefits above the annual tax-exempt cap were paid WITHOUT withholding, because that tax '
+            + 'depends on total annual income and must be settled by year-end annualisation. Include '
+            + `these amounts in the BIR 2316: ${needsAnnualisation.join(', ')}.`
+        );
     }
 
     if (separatedThisPeriod.length > 0) {
