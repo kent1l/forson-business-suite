@@ -92,6 +92,36 @@ const findPunchByClientId = async (executor, { employeeId, clientPunchId }) => {
     return rows[0] || null;
 };
 
+/**
+ * When today's shift is scheduled to end, in Asia/Manila.
+ *
+ * Read from the DTR row when HR has already generated one, since that carries
+ * any correction made for the day, and falling back to the employee's standing
+ * schedule for the weekday otherwise -- a DTR row for today often does not exist
+ * yet, because generation is a periodic HR action rather than a nightly job.
+ *
+ * Null on a rest day, or when the employee has no schedule attached. Callers
+ * must treat that as "unknown" rather than "no shift".
+ */
+const getScheduledEnd = async (executor, { employeeId }) => {
+    const { rows } = await executor.query(
+        `SELECT COALESCE(
+                    (SELECT d.scheduled_time_out
+                     FROM daily_time_record d
+                     WHERE d.employee_id = e.employee_id
+                       AND d.work_date = (now() AT TIME ZONE 'Asia/Manila')::date),
+                    (SELECT CASE WHEN wsd.is_rest_day THEN NULL ELSE wsd.time_out END
+                     FROM work_schedule_day wsd
+                     WHERE wsd.schedule_id = e.work_schedule_id
+                       AND wsd.day_of_week = EXTRACT(DOW FROM (now() AT TIME ZONE 'Asia/Manila'))::smallint)
+                ) AS scheduled_time_out
+         FROM employee e
+         WHERE e.employee_id = $1`,
+        [employeeId]
+    );
+    return rows[0]?.scheduled_time_out ?? null;
+};
+
 /** The most recent punch today, so the UI knows whether to offer IN or OUT. */
 const getPunchState = async (executor, { employeeId }) => {
     const { rows } = await executor.query(
@@ -107,6 +137,10 @@ const getPunchState = async (executor, { employeeId }) => {
     return {
         last_direction: last ? last.direction : null,
         last_punch_at: last ? last.punch_at : null,
+        // 'HH:MM:SS' in Asia/Manila, or null when unknown. Lets the app decide
+        // when to offer a clock-out without shipping schedule rules to the
+        // client.
+        scheduled_time_out: await getScheduledEnd(executor, { employeeId }),
         // Nothing yet today, or the last tap was an OUT: the next one is an IN.
         next_direction: !last || last.direction === 'OUT' ? 'IN' : 'OUT',
     };
@@ -313,6 +347,7 @@ module.exports = {
     recordPunch,
     findPunchByClientId,
     getPunchState,
+    getScheduledEnd,
     deriveDtrFromPunches,
     parsePunchCsv,
     importPunches,

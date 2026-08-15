@@ -1,5 +1,5 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, Alert } from 'react-native';
+import React, { useState, useCallback, useEffect } from 'react';
+import { View, Text, StyleSheet, Alert, AppState } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -15,10 +15,20 @@ import Card from './ui/Card';
 import Button from './ui/Button';
 import { useTheme } from '@/hooks/use-theme';
 import { Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
+import {
+  shouldShowShortcut,
+  manilaMinutesNow,
+  formatScheduledEnd,
+} from './clockShortcutRules';
+
+/** Re-evaluated on a timer so the card appears without needing a reload. */
+const VISIBILITY_TICK_MS = 60 * 1000;
 
 type PunchState = {
   last_direction: 'IN' | 'OUT' | null;
   last_punch_at: string | null;
+  /** 'HH:MM:SS' in Asia/Manila, or null when today's end is unknown. */
+  scheduled_time_out: string | null;
   next_direction: 'IN' | 'OUT';
 };
 
@@ -33,9 +43,11 @@ const timeOf = (iso: string) =>
  * difference between a punch that happens and one that gets forgotten —
  * forgotten punches are the most common DTR dispute.
  *
- * The card hides itself once the day is done: after a clock-out it has nothing
- * useful to offer until tomorrow, and leaving a live-looking button there
- * invites an accidental second shift.
+ * It is shown sparingly, because a shortcut that is always present stops being
+ * read. It appears before the first clock-in, steps aside for the working day,
+ * and returns an hour before the scheduled end so the clock-out is one tap away
+ * when it matters. After the clock-out it disappears until tomorrow -- a
+ * live-looking button there only invites an accidental second shift.
  */
 export default function ClockShortcut() {
   const theme = useTheme();
@@ -60,6 +72,24 @@ export default function ClockShortcut() {
   );
 
   const [busy, setBusy] = useState(false);
+
+  /**
+   * Re-read the wall clock on a timer, and again whenever the app is brought
+   * forward.
+   *
+   * Without this the card would only reappear when something else happened to
+   * re-render the dashboard, so someone who left the app open through the
+   * afternoon would never be offered the clock-out.
+   */
+  const [nowMinutes, setNowMinutes] = useState(manilaMinutesNow);
+  useEffect(() => {
+    const tick = () => setNowMinutes(manilaMinutesNow());
+    const timer = setInterval(tick, VISIBILITY_TICK_MS);
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') tick();
+    });
+    return () => { clearInterval(timer); sub.remove(); };
+  }, []);
 
   const { data, refetch } = useQuery<PunchState>({
     queryKey: ['punchState'],
@@ -119,14 +149,19 @@ export default function ClockShortcut() {
     }
   }, [nextDirection, refetch]);
 
-  if (!canPunch) return null;
-  // Nothing to show before the state is known, and nothing useful after the
-  // day's clock-out.
-  if (!data && !lastQueued) return null;
-  if (lastDirection === 'OUT') return null;
+  if (!shouldShowShortcut({
+    canPunch,
+    hasState: Boolean(data || lastQueued),
+    lastDirection,
+    scheduledTimeOut: data?.scheduled_time_out ?? null,
+    nowMinutes,
+  })) return null;
 
   const clockingIn = nextDirection === 'IN';
   const accent = clockingIn ? theme.success : theme.primary;
+  // Shown only when the schedule is actually known, so the card never implies
+  // an end time it is guessing at.
+  const endsAtLabel = formatScheduledEnd(data?.scheduled_time_out ?? null);
 
   return (
     <Card accent={accent} style={styles.card}>
@@ -136,12 +171,16 @@ export default function ClockShortcut() {
         </View>
         <View style={styles.text}>
           <Text style={[styles.title, { color: theme.text }]}>
-            {clockingIn ? 'Start your day' : 'You are clocked in'}
+            {clockingIn ? 'Start your day' : 'Wrapping up?'}
           </Text>
           <Text style={[styles.detail, { color: theme.textMuted }]} numberOfLines={2}>
-            {lastAt && !clockingIn
-              ? `Since ${timeOf(lastAt)}${lastQueued ? ' · waiting to sync' : ''}`
-              : 'Tap to record your time in'}
+            {clockingIn
+              ? 'Tap to record your time in'
+              : [
+                  lastAt ? `Clocked in at ${timeOf(lastAt)}` : 'You are clocked in',
+                  endsAtLabel ? `shift ends ${endsAtLabel}` : null,
+                  lastQueued ? 'waiting to sync' : null,
+                ].filter(Boolean).join(' · ')}
           </Text>
         </View>
       </View>

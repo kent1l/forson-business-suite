@@ -129,6 +129,57 @@ const run = async () => {
         check('the hours are computed from the punches',
             dtrRows.length === 1 && Number(dtrRows[0].hours_worked) === 8);
 
+
+        // --- Today's scheduled finish, for the dashboard clock shortcut -----
+        // The app hides the clock-out until an hour before the shift ends, so a
+        // wrong or missing answer here either strands the button or shows it
+        // all day.
+        const { rows: [sched] } = await client.query(
+            `INSERT INTO work_schedule (schedule_name) VALUES ('ClaudeTest Schedule')
+             RETURNING schedule_id`
+        );
+        const todayDow = Number((await client.query(
+            `SELECT EXTRACT(DOW FROM (now() AT TIME ZONE 'Asia/Manila'))::smallint AS d`
+        )).rows[0].d);
+
+        await client.query(
+            `INSERT INTO work_schedule_day (schedule_id, day_of_week, is_rest_day, time_in, time_out)
+             VALUES ($1, $2, FALSE, '08:00', '17:00')`,
+            [sched.schedule_id, todayDow]
+        );
+        await client.query('UPDATE employee SET work_schedule_id = $1 WHERE employee_id = $2',
+            [sched.schedule_id, employeeId]);
+
+        const fromSchedule = await timePunchService.getScheduledEnd(client, { employeeId });
+        check('the scheduled finish falls back to the work schedule',
+            String(fromSchedule).startsWith('17:00'));
+
+        // A DTR row for today outranks the standing schedule, since it carries
+        // any correction HR made for the day.
+        await client.query(
+            `INSERT INTO daily_time_record (employee_id, work_date, day_type, scheduled_time_in, scheduled_time_out, source)
+             VALUES ($1, (now() AT TIME ZONE 'Asia/Manila')::date, 'Present', '08:00', '15:30', 'Manual')
+             ON CONFLICT (employee_id, work_date) DO UPDATE SET scheduled_time_out = EXCLUDED.scheduled_time_out`,
+            [employeeId]
+        );
+        const fromDtr = await timePunchService.getScheduledEnd(client, { employeeId });
+        check('a DTR row for today outranks the standing schedule',
+            String(fromDtr).startsWith('15:30'));
+
+        // A rest day has no finish to offer.
+        await client.query('DELETE FROM daily_time_record WHERE employee_id = $1', [employeeId]);
+        await client.query(
+            'UPDATE work_schedule_day SET is_rest_day = TRUE WHERE schedule_id = $1 AND day_of_week = $2',
+            [sched.schedule_id, todayDow]
+        );
+        check('a rest day reports no scheduled finish',
+            (await timePunchService.getScheduledEnd(client, { employeeId })) === null);
+
+        // So does an employee with no schedule attached at all.
+        await client.query('UPDATE employee SET work_schedule_id = NULL WHERE employee_id = $1', [employeeId]);
+        check('an employee with no schedule reports no scheduled finish',
+            (await timePunchService.getScheduledEnd(client, { employeeId })) === null);
+
         await client.query('ROLLBACK');
     } catch (err) {
         await client.query('ROLLBACK').catch(() => {});
