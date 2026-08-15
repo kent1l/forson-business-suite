@@ -77,8 +77,39 @@ test('it waits for state rather than flashing the wrong action', () => {
   assert.strictEqual(show({ hasState: false, lastDirection: null }), false);
 });
 
+test('standard Mon-Sat 7am-5pm schedule visibility window', () => {
+  // Before clock-in: visible
+  assert.strictEqual(show({ scheduledTimeOut: '17:00:00', lastDirection: null, nowMinutes: at(6, 45) }), true);
+  // Clocked in during workday: hidden
+  assert.strictEqual(show({ scheduledTimeOut: '17:00:00', lastDirection: 'IN', nowMinutes: at(8) }), false);
+  assert.strictEqual(show({ scheduledTimeOut: '17:00:00', lastDirection: 'IN', nowMinutes: at(12) }), false);
+  assert.strictEqual(show({ scheduledTimeOut: '17:00:00', lastDirection: 'IN', nowMinutes: at(15, 59) }), false);
+  // 1 hour before scheduled end (16:00): returns
+  assert.strictEqual(show({ scheduledTimeOut: '17:00:00', lastDirection: 'IN', nowMinutes: at(16) }), true);
+  assert.strictEqual(show({ scheduledTimeOut: '17:00:00', lastDirection: 'IN', nowMinutes: at(17) }), true);
+  assert.strictEqual(show({ scheduledTimeOut: '17:00:00', lastDirection: 'IN', nowMinutes: at(18) }), true);
+  // After clock-out: hidden
+  assert.strictEqual(show({ scheduledTimeOut: '17:00:00', lastDirection: 'OUT', nowMinutes: at(17, 5) }), false);
+});
+
+test('standard Sunday 7am-3pm schedule visibility window', () => {
+  // Before clock-in: visible
+  assert.strictEqual(show({ scheduledTimeOut: '15:00:00', lastDirection: null, nowMinutes: at(6, 50) }), true);
+  // Clocked in during workday: hidden
+  assert.strictEqual(show({ scheduledTimeOut: '15:00:00', lastDirection: 'IN', nowMinutes: at(8) }), false);
+  assert.strictEqual(show({ scheduledTimeOut: '15:00:00', lastDirection: 'IN', nowMinutes: at(12) }), false);
+  assert.strictEqual(show({ scheduledTimeOut: '15:00:00', lastDirection: 'IN', nowMinutes: at(13, 59) }), false);
+  // 1 hour before scheduled end (14:00): returns
+  assert.strictEqual(show({ scheduledTimeOut: '15:00:00', lastDirection: 'IN', nowMinutes: at(14) }), true);
+  assert.strictEqual(show({ scheduledTimeOut: '15:00:00', lastDirection: 'IN', nowMinutes: at(15) }), true);
+  assert.strictEqual(show({ scheduledTimeOut: '15:00:00', lastDirection: 'IN', nowMinutes: at(16) }), true);
+  // After clock-out: hidden
+  assert.strictEqual(show({ scheduledTimeOut: '15:00:00', lastDirection: 'OUT', nowMinutes: at(15, 10) }), false);
+});
+
 test('the scheduled end is shown in a readable form', () => {
   assert.strictEqual(formatScheduledEnd('17:00:00'), '5:00 PM');
+  assert.strictEqual(formatScheduledEnd('15:00:00'), '3:00 PM');
   assert.strictEqual(formatScheduledEnd('08:30:00'), '8:30 AM');
   assert.strictEqual(formatScheduledEnd('12:00:00'), '12:00 PM');
   assert.strictEqual(formatScheduledEnd('00:15:00'), '12:15 AM');

@@ -660,7 +660,8 @@ const writeScheduleDays = async (client, scheduleId, days) => {
             [scheduleId, day.day_of_week, Boolean(day.is_rest_day),
                 day.is_rest_day ? null : day.time_in,
                 day.is_rest_day ? null : day.time_out,
-                day.break_minutes ?? 60, day.expected_hours ?? 8]
+                day.break_minutes ?? 60,
+                day.expected_hours ?? (Number(day.day_of_week) === 0 ? 7 : 9)]
         );
     }
 };
