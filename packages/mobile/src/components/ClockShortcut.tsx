@@ -43,8 +43,20 @@ export default function ClockShortcut() {
   const { hasPermission } = usePermission();
   const canPunch = hasPermission('dtr:punch');
 
-  const queuedPunches = useOutboxStore((s) =>
-    s.entries.filter((e) => e.kind === 'time-punch' && e.status === 'pending'),
+  /**
+   * Filtered outside the selector, not inside it.
+   *
+   * Zustand v5 reads through useSyncExternalStore, which compares the snapshot
+   * by reference and re-renders when it changes. A selector ending in `.filter`
+   * builds a fresh array on every call, so the snapshot never compares equal and
+   * the component re-renders forever — React eventually gives up with "Maximum
+   * update depth exceeded". Selecting the stored array keeps the reference
+   * stable and moves the derivation into a memo.
+   */
+  const entries = useOutboxStore((s) => s.entries);
+  const queuedPunches = React.useMemo(
+    () => entries.filter((e) => e.kind === 'time-punch' && e.status === 'pending'),
+    [entries],
   );
 
   const [busy, setBusy] = useState(false);

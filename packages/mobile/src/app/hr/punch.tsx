@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
@@ -38,8 +38,13 @@ const timeOf = (iso: string) =>
 export default function PunchScreen() {
   const theme = useTheme();
   const user = useAuthStore((s) => s.user);
-  const queued = useOutboxStore((s) =>
-    s.entries.filter((e) => e.kind === 'time-punch' && e.status === 'pending'),
+  // Filtered outside the selector: a selector returning a fresh array makes
+  // Zustand's snapshot compare unequal every render and loops. See the note in
+  // ClockShortcut for the full explanation.
+  const entries = useOutboxStore((s) => s.entries);
+  const queued = useMemo(
+    () => entries.filter((e) => e.kind === 'time-punch' && e.status === 'pending'),
+    [entries],
   );
 
   const [busy, setBusy] = useState(false);
