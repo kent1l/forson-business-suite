@@ -13,6 +13,7 @@ export default function LoginScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [loginError, setLoginError] = useState(null);
   const { login } = useAuthStore();
   const { serverIp, setServerIp } = useSettingsStore();
 
@@ -23,34 +24,56 @@ export default function LoginScreen() {
   const [testResult, setTestResult] = useState(null);
 
   const handleLogin = async () => {
-    if (!username || !password) {
-      Alert.alert('Error', 'Please enter both username and password.');
+    if (!username.trim() || !password) {
+      setLoginError('Enter both your username and password.');
       return;
     }
 
     setIsLoading(true);
+    setLoginError(null);
     try {
-      const response = await apiClient.post('/login', { username, password });
+      const response = await apiClient.post('/login', { username: username.trim(), password });
       const { token, user } = response.data;
       if (token && user) {
         await login(token, user);
       } else {
-        Alert.alert('Login Failed', 'Invalid response from server.');
+        setLoginError('The server sent back an unexpected response. Please tell your supervisor.');
       }
     } catch (error) {
-      console.error('Login error:', error);
-      const isNetworkError = !error.response && (error.code === 'ECONNABORTED' || error.message?.includes('Network Error') || error.message?.includes('Network request failed'));
+      const status = error.response?.status;
+      const isNetworkError = !error.response
+        && (error.code === 'ECONNABORTED'
+          || error.message?.includes('Network Error')
+          || error.message?.includes('Network request failed'));
+
       if (isNetworkError) {
+        // The one case worth interrupting for, because the fix is a setting
+        // the user can change from here.
+        setLoginError('Could not reach the server.');
         Alert.alert(
           'Connection Failed',
-          'Could not connect to the server. Would you like to configure the server IP?',
+          'Could not connect to the server. Would you like to configure the server address?',
           [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Configure IP', onPress: () => openSettings() }
-          ]
+            { text: 'Configure', onPress: () => openSettings() },
+          ],
         );
+      } else if (status === 401) {
+        // Expected, and entirely the user's to correct -- so it is shown inline
+        // rather than behind a modal they have to dismiss before retyping, and
+        // it is not logged as an application error.
+        setLoginError('That username or password is not right. Please try again.');
+        setPassword('');
+      } else if (status === 403) {
+        // Credentials were accepted; the account itself is the problem.
+        setLoginError(
+          error.response?.data?.message
+            || 'Your account does not have access to this app. Ask a manager to check it.',
+        );
+      } else if (status >= 500) {
+        setLoginError('The server had a problem signing you in. Please try again in a moment.');
       } else {
-        Alert.alert('Login Failed', error.response?.data?.message || 'Something went wrong. Please try again.');
+        setLoginError(error.response?.data?.message || 'Could not sign you in. Please try again.');
       }
     } finally {
       setIsLoading(false);
@@ -131,7 +154,7 @@ export default function LoginScreen() {
           style={styles.input}
           placeholder="Username"
           value={username}
-          onChangeText={setUsername}
+          onChangeText={(t) => { setUsername(t); if (loginError) setLoginError(null); }}
           autoCapitalize="none"
           editable={!isLoading}
         />
@@ -140,10 +163,21 @@ export default function LoginScreen() {
           style={styles.input}
           placeholder="Password"
           value={password}
-          onChangeText={setPassword}
+          onChangeText={(t) => { setPassword(t); if (loginError) setLoginError(null); }}
           secureTextEntry
           editable={!isLoading}
         />
+
+        {loginError && (
+          <View style={styles.errorBanner} accessibilityLiveRegion="polite">
+            <SymbolView
+              tintColor={theme.danger}
+              name={{ ios: 'exclamationmark.circle.fill', android: 'error', web: 'error' }}
+              size={18}
+            />
+            <Text style={styles.errorBannerText}>{loginError}</Text>
+          </View>
+        )}
 
         <TouchableOpacity
           style={[styles.button, isLoading && styles.buttonDisabled]}
@@ -280,6 +314,23 @@ const makeStyles = (theme) => StyleSheet.create({
     marginBottom: 16,
     fontSize: 16,
     color: theme.text,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: theme.dangerSoft,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  errorBannerText: {
+    flex: 1,
+    color: theme.danger,
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
   },
   button: {
     backgroundColor: theme.primary,
