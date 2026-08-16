@@ -183,9 +183,9 @@ router.get('/dashboard/sales-chart', async (req, res) => {
             SELECT
                 TO_CHAR(d.day, 'Mon DD') as date,
                 (
-                    COALESCE((SELECT SUM(total_amount) FROM invoice WHERE invoice_date::date = d.day AND (status = 'Paid' OR amount_paid >= total_amount)), 0)
+                    COALESCE((SELECT SUM(total_amount) FROM invoice WHERE (invoice_date AT TIME ZONE 'Asia/Manila')::date = d.day AND (status = 'Paid' OR amount_paid >= total_amount)), 0)
                     -
-                    COALESCE((SELECT SUM(total_amount) FROM credit_note WHERE refund_date::date = d.day), 0)
+                    COALESCE((SELECT SUM(total_amount) FROM credit_note WHERE (refund_date AT TIME ZONE 'Asia/Manila')::date = d.day), 0)
                 ) as "total_sales"
             FROM all_days d
             GROUP BY d.day
@@ -215,10 +215,10 @@ router.get('/dashboard/enhanced-stats', async (req, res) => {
             // (matches the "net sales" definition used by /dashboard/sales-chart).
             db.query(`
                 SELECT
-                    COALESCE((SELECT SUM(total_amount) FROM invoice WHERE status IN ('Paid', 'Partially Paid') AND invoice_date::date = CURRENT_DATE), 0)
-                    - COALESCE((SELECT SUM(total_amount) FROM credit_note WHERE refund_date::date = CURRENT_DATE), 0) as today_revenue,
-                    COALESCE((SELECT SUM(total_amount) FROM invoice WHERE status IN ('Paid', 'Partially Paid') AND invoice_date::date = CURRENT_DATE - INTERVAL '1 day'), 0)
-                    - COALESCE((SELECT SUM(total_amount) FROM credit_note WHERE refund_date::date = CURRENT_DATE - INTERVAL '1 day'), 0) as yesterday_revenue
+                    COALESCE((SELECT SUM(total_amount) FROM invoice WHERE status IN ('Paid', 'Partially Paid') AND (invoice_date AT TIME ZONE 'Asia/Manila')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date), 0)
+                    - COALESCE((SELECT SUM(total_amount) FROM credit_note WHERE (refund_date AT TIME ZONE 'Asia/Manila')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date), 0) as today_revenue,
+                    COALESCE((SELECT SUM(total_amount) FROM invoice WHERE status IN ('Paid', 'Partially Paid') AND (invoice_date AT TIME ZONE 'Asia/Manila')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date - INTERVAL '1 day'), 0)
+                    - COALESCE((SELECT SUM(total_amount) FROM credit_note WHERE (refund_date AT TIME ZONE 'Asia/Manila')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date - INTERVAL '1 day'), 0) as yesterday_revenue
             `),
 
             // Outstanding A/R (authoritative: ar_ledger cash-basis balance, not invoice.amount_paid)

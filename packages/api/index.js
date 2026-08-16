@@ -63,6 +63,7 @@ registerRoute('/api', './routes/paymentTermRoutes');
 registerRoute('/api', './routes/arRoutes');
 registerRoute('/api', './routes/soaGenRoutes');
 registerRoute('/api', './routes/walletRoutes');
+registerRoute('/api', './routes/transactionDateRoutes');
 
 // Documents module (Document Management Interface)
 registerRoute('/api', './routes/documentsRoutes');

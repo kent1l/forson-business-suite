@@ -334,10 +334,14 @@ router.put('/goods-receipts/:id', protect, hasPermission('goods_receipt:edit'), 
       const grn_number = verifyResult.rows[0].grn_number;
       console.log('Found GRN number:', grn_number);
 
-      // Update the main GRN record
+      // Update the main GRN record. receipt_date is intentionally left
+      // untouched here — this endpoint edits GRN metadata/lines, and
+      // silently re-dating the receipt to "now" on every edit would fight
+      // the transaction-date-override feature (transactionDateService.js),
+      // which is the only path that should ever move receipt_date.
       const updateGrnQuery = `
         UPDATE goods_receipt
-        SET ${supplier_id ? 'supplier_id = $1,' : ''} received_by = $${supplier_id ? '2' : '1'}, receipt_date = CURRENT_TIMESTAMP
+        SET ${supplier_id ? 'supplier_id = $1,' : ''} received_by = $${supplier_id ? '2' : '1'}
         WHERE grn_id = $${supplier_id ? '3' : '2'}
         RETURNING grn_id;
       `;
