@@ -58,6 +58,20 @@ function manilaDateParts(d) {
     return { year: Number(parts.year), month: Number(parts.month), day: Number(parts.day) };
 }
 
+/**
+ * Formats an instant as the YYYY-MM-DD a person would read off a Manila
+ * calendar — for user-facing conflict messages only. `.toISOString()` would
+ * show the UTC calendar day instead, which can be a day off from what's
+ * actually stored (an invoice at 2026-08-10 02:00 Manila is 2026-08-09 18:00
+ * UTC) and makes a conflict message like "cannot predate the invoice
+ * (2026-08-09)" claim the wrong date for an invoice that really is dated
+ * the 10th.
+ */
+function formatManilaDate(d) {
+    const { year, month, day } = manilaDateParts(d);
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
 function manilaDateOnly(d) {
     const { year, month, day } = manilaDateParts(d);
     return new Date(Date.UTC(year, month - 1, day));
@@ -224,7 +238,7 @@ const invoiceHandler = {
         );
         const earliest = [pay[0].d, cpay[0].d, cn[0].d].filter(Boolean).sort()[0];
         if (earliest && new Date(earliest) < new Date(newDate)) {
-            out.push(`Invoice cannot be dated after a payment or credit note already recorded against it on ${new Date(earliest).toISOString().slice(0, 10)}.`);
+            out.push(`Invoice cannot be dated after a payment or credit note already recorded against it on ${formatManilaDate(earliest)}.`);
         }
 
         const { rows: lines } = await client.query(
@@ -339,7 +353,7 @@ const customerPaymentHandler = {
             [row.payment_id]
         );
         if (rows[0].d && new Date(rows[0].d) > new Date(newDate)) {
-            out.push(`Payment cannot be dated before the invoice it settles (${new Date(rows[0].d).toISOString().slice(0, 10)}).`);
+            out.push(`Payment cannot be dated before the invoice it settles (${formatManilaDate(rows[0].d)}).`);
         }
         return out;
     },
@@ -387,7 +401,7 @@ const invoicePaymentHandler = {
         const out = [];
         const { rows } = await client.query('SELECT invoice_date FROM invoice WHERE invoice_id = $1', [row.invoice_id]);
         if (rows[0] && new Date(rows[0].invoice_date) > new Date(newDate)) {
-            out.push(`Payment cannot be dated before its invoice (${new Date(rows[0].invoice_date).toISOString().slice(0, 10)}).`);
+            out.push(`Payment cannot be dated before its invoice (${formatManilaDate(rows[0].invoice_date)}).`);
         }
         return out;
     },
@@ -596,7 +610,7 @@ const apPaymentHandler = {
             [row.payment_id]
         );
         if (rows[0].d && new Date(rows[0].d) > new Date(newDate)) {
-            out.push(`Payment cannot be dated before the bill it settles (${new Date(rows[0].d).toISOString().slice(0, 10)}).`);
+            out.push(`Payment cannot be dated before the bill it settles (${formatManilaDate(rows[0].d)}).`);
         }
         return out;
     },
@@ -643,7 +657,7 @@ const creditNoteHandler = {
         const out = [];
         const { rows } = await client.query('SELECT invoice_date FROM invoice WHERE invoice_id = $1', [row.invoice_id]);
         if (rows[0] && new Date(rows[0].invoice_date) > new Date(newDate)) {
-            out.push(`Credit note cannot be dated before its invoice (${new Date(rows[0].invoice_date).toISOString().slice(0, 10)}).`);
+            out.push(`Credit note cannot be dated before its invoice (${formatManilaDate(rows[0].invoice_date)}).`);
         }
         const { rows: lines } = await client.query(
             `SELECT part_id, array_agg(inv_trans_id) AS inv_trans_ids
