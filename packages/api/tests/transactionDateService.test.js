@@ -253,10 +253,21 @@ describe('transactionDateService — AR payment date changes', () => {
             // would be a same-day no-op on a second run within the same day.
             // Toggle between two candidate dates to guarantee this run
             // actually changes something, regardless of what a prior run left.
-            const todayStr = new Date().toISOString().slice(0, 10);
-            const currentDateStr = new Date(before[0].settled_at).toISOString().slice(0, 10);
+            //
+            // This MUST compare Manila calendar days, not UTC ones: the
+            // service (shiftPreservingTimeOfDay in transactionDateService.js)
+            // decides "did the day actually change" using the Manila
+            // calendar day, and Manila is UTC+8, so any instant between
+            // 16:00-23:59 UTC is already tomorrow in Manila. A UTC-based
+            // .toISOString().slice(0,10) comparison here disagreed with the
+            // service near that boundary, picked a "different" date that was
+            // actually the same Manila day, and made this assertion flaky
+            // depending on what UTC hour the test happened to run in.
+            const manilaDateStr = (d) => new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+            const todayStr = manilaDateStr(new Date());
+            const currentDateStr = manilaDateStr(before[0].settled_at);
             const targetDate = currentDateStr === todayStr
-                ? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+                ? manilaDateStr(new Date(Date.now() - 24 * 60 * 60 * 1000))
                 : todayStr;
 
             await withCommittedClient((client) =>
@@ -283,9 +294,16 @@ describe('transactionDateService — AR payment date changes', () => {
 
     describe('month-boundary permission gate', () => {
         test('blocks a cross-month change without the unrestricted permission, allows it with', async () => {
-            const lastMonth = new Date();
-            lastMonth.setMonth(lastMonth.getMonth() - 1);
-            const lastMonthStr = lastMonth.toISOString().slice(0, 10);
+            // Built from Manila calendar parts (not JS's local-timezone
+            // getMonth/setMonth, which in a CI container may not be Manila at
+            // all) so this reliably lands a full Manila month behind "now",
+            // matching how the service itself decides month boundaries.
+            const manilaParts = new Intl.DateTimeFormat('en-CA', {
+                timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+            }).formatToParts(new Date()).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
+            const lastMonthDate = new Date(Date.UTC(Number(manilaParts.year), Number(manilaParts.month) - 1, 1));
+            lastMonthDate.setUTCMonth(lastMonthDate.getUTCMonth() - 1);
+            const lastMonthStr = lastMonthDate.toISOString().slice(0, 10);
 
             const withoutPerm = await withClient((client) =>
                 svc.preview(client, 'customer_payment', customerPaymentId, lastMonthStr, false)
