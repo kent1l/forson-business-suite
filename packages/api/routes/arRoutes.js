@@ -799,6 +799,7 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
                 l.notes,
                 l.entry_date,
                 l.created_by,
+                l.payment_source,
                 i.invoice_number,
                 i.physical_receipt_no        AS invoice_physical_receipt_no,
                 cp.physical_receipt_no       AS payment_physical_receipt_no,
@@ -925,6 +926,7 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
                 invoice_id:          entry.invoice_id  || null,
                 payment_id:          entry.payment_id  || null,
                 cn_id:               entry.cn_id        || null,
+                payment_source:      entry.payment_source || null,
             });
         }
 

@@ -1,8 +1,31 @@
+import { useState } from 'react';
 import Icon from '../../ui/Icon';
 import { ICONS } from '../../../constants';
 import { formatCurrency } from '../../../utils/currency';
 import LoadingState from '../../ui/LoadingState';
 import EmptyState from '../../ui/EmptyState';
+import ChangeTransactionDateModal from '../../common/ChangeTransactionDateModal';
+import { useAuth } from '../../../contexts/AuthContext';
+
+// Maps an ar_ledger row's entry_type (plus payment_source, which
+// disambiguates the two payment tables sharing the "PAYMENT_SETTLED" type —
+// see 20260808_01_add_payment_source_to_ar_ledger.sql) to the
+// transactionDateService "kind" + the row's id for that kind. Returns null
+// for entry types the date-change feature doesn't cover (manual ledger
+// adjustments have no anchor document to move).
+function resolveDateChangeTarget(row) {
+    switch (row.event_type) {
+        case 'INVOICE_POSTED':
+            return row.invoice_id ? { kind: 'invoice', id: row.invoice_id } : null;
+        case 'PAYMENT_SETTLED':
+            if (!row.payment_id) return null;
+            return { kind: row.payment_source === 'invoice_payments' ? 'invoice_payment' : 'customer_payment', id: row.payment_id };
+        case 'CREDIT_MEMO_APPLIED':
+            return row.cn_id ? { kind: 'credit_note', id: row.cn_id } : null;
+        default:
+            return null;
+    }
+}
 
 // Customer Ledger & Statement of Account tab: customer search combobox,
 // running-balance ledger table, and PDC/floating-collections breakdown.
@@ -26,7 +49,12 @@ const ARLedgerSoaTab = ({
     soaLoading,
     soaLedger,
     dateRange,
+    onAfterDateChange,
 }) => {
+    const { hasPermission } = useAuth();
+    const canChangeDate = hasPermission(['transaction:change_date', 'transaction:change_date_unrestricted']);
+    const [dateChangeTarget, setDateChangeTarget] = useState(null); // { kind, id, currentDate, label } | null
+
     return (
         <div className="space-y-6">
             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -189,9 +217,31 @@ const ARLedgerSoaTab = ({
                                         <td className="px-5 py-3 text-right font-mono">—</td>
                                         <td className="px-5 py-3 text-right font-mono font-bold text-blue-900">{formatCurrency(soaLedger.opening_balance)}</td>
                                     </tr>
-                                    {soaLedger.ledger_rows.map((row, idx) => (
+                                    {soaLedger.ledger_rows.map((row, idx) => {
+                                        const dateChangeTargetForRow = resolveDateChangeTarget(row);
+                                        return (
                                         <tr key={row.ledger_id || idx} className="hover:bg-gray-50">
-                                            <td className="px-5 py-3.5 whitespace-nowrap">{new Date(row.date).toLocaleDateString()}</td>
+                                            <td className="px-5 py-3.5 whitespace-nowrap">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span>{new Date(row.date).toLocaleDateString()}</span>
+                                                    {canChangeDate && dateChangeTargetForRow && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setDateChangeTarget({
+                                                                ...dateChangeTargetForRow,
+                                                                currentDate: row.date,
+                                                                label: `${row.type_label || row.event_type} — ${row.primary_ref || row.sub_ref || ''}`,
+                                                            })}
+                                                            className="inline-flex items-center justify-center w-5 h-5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-offset-1"
+                                                            title="Change transaction date"
+                                                        >
+                                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                            </svg>
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </td>
                                             <td className="px-5 py-3.5 whitespace-nowrap text-gray-600">{row.due_date ? new Date(row.due_date).toLocaleDateString() : '—'}</td>
                                             <td className="px-5 py-3.5 font-mono text-xs">
                                                 <div className="font-bold text-gray-900">
@@ -211,7 +261,8 @@ const ARLedgerSoaTab = ({
                                             <td className="px-5 py-3.5 text-right font-mono text-emerald-700 font-medium">{row.credit_amount ? formatCurrency(row.credit_amount) : '—'}</td>
                                             <td className="px-5 py-3.5 text-right font-mono font-bold text-gray-900">{formatCurrency(row.running_balance)}</td>
                                         </tr>
-                                    ))}
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
@@ -266,6 +317,21 @@ const ARLedgerSoaTab = ({
                         </div>
                     )}
                 </div>
+            )}
+
+            {dateChangeTarget && (
+                <ChangeTransactionDateModal
+                    isOpen={!!dateChangeTarget}
+                    onClose={() => setDateChangeTarget(null)}
+                    kind={dateChangeTarget.kind}
+                    id={dateChangeTarget.id}
+                    currentDate={dateChangeTarget.currentDate}
+                    transactionLabel={dateChangeTarget.label}
+                    onApplied={() => {
+                        setDateChangeTarget(null);
+                        onAfterDateChange && onAfterDateChange();
+                    }}
+                />
             )}
         </div>
     );

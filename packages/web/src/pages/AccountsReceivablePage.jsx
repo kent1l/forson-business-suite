@@ -241,6 +241,7 @@ const AccountsReceivablePage = () => {
                         soaLoading={ledgerSoa.soaLoading}
                         soaLedger={ledgerSoa.soaLedger}
                         dateRange={dateRange}
+                        onAfterDateChange={() => ledgerSoa.fetchCustomerLedger(ledgerSoa.soaCustomerId)}
                     />
                 </ErrorBoundary>
             )}
