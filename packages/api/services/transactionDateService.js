@@ -124,11 +124,25 @@ async function minRunningStockBalance(client, partId, movedInvTransIds, newDate)
     return rows[0].min_balance === null ? 0 : Number(rows[0].min_balance);
 }
 
+/**
+ * Only blocks a change that would make the part's stock timeline WORSE than
+ * it already is. A part can already have a negative excursion in its history
+ * from before this feature existed (a stale StockOut that oversold before a
+ * corrective Adjustment caught up) — that's a pre-existing data issue, not
+ * something this date change caused, and re-dating an unrelated later
+ * transaction shouldn't be blocked because of it. So this compares the
+ * hypothetical minimum against the current (unmoved) minimum and only flags
+ * a conflict if the change itself pushes the balance lower than where it
+ * already sits.
+ */
 async function assertStockNeverNegative(client, partId, movedInvTransIds, newDate, conflicts) {
-    const minBalance = await minRunningStockBalance(client, partId, movedInvTransIds, newDate);
-    if (minBalance < -0.0001) {
+    const [baselineMin, hypotheticalMin] = await Promise.all([
+        minRunningStockBalance(client, partId, [], newDate),
+        minRunningStockBalance(client, partId, movedInvTransIds, newDate),
+    ]);
+    if (hypotheticalMin < baselineMin - 0.0001) {
         conflicts.push(
-            `Moving this date would drive part #${partId}'s stock negative (${minBalance.toFixed(2)}) at some point in its history.`
+            `Moving this date would drive part #${partId}'s stock further negative (from ${baselineMin.toFixed(2)} to ${hypotheticalMin.toFixed(2)}) at some point in its history.`
         );
     }
 }
