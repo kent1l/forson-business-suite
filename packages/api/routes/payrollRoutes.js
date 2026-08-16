@@ -266,6 +266,36 @@ router.get('/me/payslips', protect, hasPermission('payslip:view_own'), async (re
 
 // --- Statutory configuration --------------------------------------------
 
+/**
+ * One of the caller's own payslips, with its line breakdown.
+ *
+ * Same shape as GET /payslips/:id, but the employee_id predicate — not just the
+ * id — is what authorises the read, so a guessed payslip_id returns 404 rather
+ * than someone else's pay. Runs still in Draft or Computed are excluded: an
+ * employee should not see a figure that payroll may yet recompute.
+ */
+router.get('/me/payslips/:id', protect, hasPermission('payslip:view_own'), async (req, res) => {
+    try {
+        const { rows } = await db.query(
+            `SELECT p.*, TO_CHAR(r.period_start, 'YYYY-MM-DD') AS period_start,
+                    TO_CHAR(r.period_end, 'YYYY-MM-DD') AS period_end,
+                    TO_CHAR(r.pay_date, 'YYYY-MM-DD') AS pay_date, r.status
+             FROM payroll_payslip p
+             JOIN payroll_run r ON p.run_id = r.run_id
+             WHERE p.payslip_id = $1 AND p.employee_id = $2
+               AND r.status IN ('Approved', 'Paid', 'Posted')`,
+            [req.params.id, req.user.employee_id]
+        );
+        if (rows.length === 0) return res.status(404).json({ message: 'Payslip not found' });
+        const { rows: lines } = await db.query(
+            `SELECT line_type, component_code, description, quantity, rate, amount, is_taxable, sort_order
+             FROM payroll_payslip_line WHERE payslip_id = $1 ORDER BY sort_order, line_id`,
+            [req.params.id]
+        );
+        res.json({ ...rows[0], lines });
+    } catch (err) { handleError(err, res); }
+});
+
 router.get('/statutory-versions', protect, hasPermission('payroll:config'), async (req, res) => {
     try {
         const { rows } = await db.query(

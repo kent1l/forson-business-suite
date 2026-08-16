@@ -1,8 +1,12 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
+import { useTheme } from '@/hooks/use-theme';
+import { Radius } from '@/constants/theme';
 
 export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
-  const { width, height } = useWindowDimensions();
+  const theme = useTheme();
+  const styles = React.useMemo(() => makeStyles(theme), [theme]);
+  const { width } = useWindowDimensions();
   const maxContainerWidth = Math.min(width, 500); // Cap width for tablet scaling
   const leftColWidth = maxContainerWidth * 0.4;
   const rightColWidth = maxContainerWidth * 0.6;
@@ -49,12 +53,12 @@ export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
   const buttonStyle = {
     width: BUTTON_SIZE,
     height: ROW_HEIGHT,
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
+    backgroundColor: theme.surface,
+    borderRadius: Radius.md,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.border,
   };
 
   const renderButton = (label, onPress, isSecondary = false) => (
@@ -82,7 +86,7 @@ export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
   const quickActionWidth = Math.floor((maxContainerWidth - 16 - BUTTON_GAP) / 2);
   const containerStyle = {
     flexDirection: 'column',
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.surface,
     paddingHorizontal: 8,
     paddingVertical: 8,
     width: maxContainerWidth,
@@ -170,7 +174,13 @@ export default function MobileCounter({ initialQuantity = 0, onSubmit }) {
   );
 }
 
-const styles = StyleSheet.create({
+/**
+ * Built from the active theme rather than declared statically, so the keypad
+ * follows light and dark like every other surface. It sits directly under the
+ * count display, where a permanently white pad was the most glaring thing left
+ * on a dark screen.
+ */
+const makeStyles = (theme) => StyleSheet.create({
   columnsContainer: {
     flexDirection: 'row',
     alignSelf: 'stretch',
@@ -186,27 +196,27 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingLeft: 8,
     borderLeftWidth: 1,
-    borderLeftColor: '#e5e7eb',
+    borderLeftColor: theme.border,
     alignSelf: 'stretch',
   },
   displayContainer: {
-    backgroundColor: '#f3f4f6',
+    backgroundColor: theme.surfaceSunken,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: theme.border,
   },
   displayLabel: {
     fontWeight: '500',
-    color: '#6b7280',
+    color: theme.textMuted,
     marginBottom: 4,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   displayText: {
     fontWeight: 'bold',
-    color: '#111827',
+    color: theme.text,
     textAlign: 'center',
   },
   quickActionsContainer: {
@@ -215,17 +225,17 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   quickButton: {
-    backgroundColor: '#f3f4f6',
+    backgroundColor: theme.surfaceSunken,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: theme.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   quickButtonText: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#374151',
+    color: theme.textSecondary,
   },
   row: {
     flexDirection: 'row',
@@ -235,18 +245,18 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 28,
     fontWeight: '600',
-    color: '#1f2937',
+    color: theme.text,
     textAlign: 'center',
   },
   secondaryButton: {
-    backgroundColor: '#fee2e2',
-    borderColor: '#fca5a5',
+    backgroundColor: theme.dangerSoft,
+    borderColor: theme.danger,
   },
   secondaryButtonText: {
-    color: '#ef4444',
+    color: theme.danger,
   },
   submitButton: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: theme.primary,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
@@ -254,7 +264,7 @@ const styles = StyleSheet.create({
   submitButtonText: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#ffffff',
+    color: theme.primaryText,
     letterSpacing: 0.3,
   },
 });

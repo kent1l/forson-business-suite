@@ -14,11 +14,11 @@ const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
 
 const blankWeek = () => DAY_NAMES.map((_, dow) => ({
     day_of_week: dow,
-    is_rest_day: dow === 0,
-    time_in: '08:00',
-    time_out: '17:00',
+    is_rest_day: false,
+    time_in: '07:00',
+    time_out: dow === 0 ? '15:00' : '17:00',
     break_minutes: 60,
-    expected_hours: 8,
+    expected_hours: dow === 0 ? 7 : 9,
 }));
 
 /** The API hands back times as HH:MM:SS; <input type="time"> wants HH:MM. */
@@ -26,16 +26,17 @@ const toTimeInput = (v) => (v ? String(v).slice(0, 5) : '');
 
 const normaliseWeek = (days) => {
     const byDow = new Map((days || []).map((d) => [Number(d.day_of_week), d]));
+    const defaults = blankWeek();
     return DAY_NAMES.map((_, dow) => {
         const d = byDow.get(dow);
-        if (!d) return { ...blankWeek()[dow], is_rest_day: true };
+        if (!d) return { ...defaults[dow], is_rest_day: true };
         return {
             day_of_week: dow,
             is_rest_day: Boolean(d.is_rest_day),
-            time_in: toTimeInput(d.time_in) || '08:00',
-            time_out: toTimeInput(d.time_out) || '17:00',
-            break_minutes: d.break_minutes ?? 60,
-            expected_hours: d.expected_hours ?? 8,
+            time_in: toTimeInput(d.time_in) || defaults[dow].time_in,
+            time_out: toTimeInput(d.time_out) || defaults[dow].time_out,
+            break_minutes: d.break_minutes ?? defaults[dow].break_minutes,
+            expected_hours: d.expected_hours ?? defaults[dow].expected_hours,
         };
     });
 };

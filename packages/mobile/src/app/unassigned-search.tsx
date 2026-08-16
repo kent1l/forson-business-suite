@@ -18,10 +18,17 @@ import { Ionicons } from '@expo/vector-icons';
 import apiClient from '../api/client';
 import useCycleCountStore from '../store/useCycleCountStore';
 import PremiumScanner from '../components/ui/PremiumScanner';
+import RequirePermission from '../components/RequirePermission';
+import Screen from '../components/ui/Screen';
+import AppHeader from '../components/ui/AppHeader';
+import { useTheme } from '@/hooks/use-theme';
+import { Spacing, Radius, FontSize, FontWeight, type ThemeColors } from '@/constants/theme';
 
 const DEBOUNCE_MS = 300;
 
-export default function UnassignedSearchScreen() {
+function UnassignedSearchScreenInner() {
+  const theme = useTheme();
+  const styles = React.useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
   const { startAdHocCount } = useCycleCountStore();
 
@@ -147,7 +154,7 @@ export default function UnassignedSearchScreen() {
   const renderResult = ({ item }: { item: any }) => (
     <TouchableOpacity style={styles.resultCard} onPress={() => handleSelectPart(item)} activeOpacity={0.7}>
       <View style={styles.resultIconWrap}>
-        <Ionicons name="cube-outline" size={22} color="#3b82f6" />
+        <Ionicons name="cube-outline" size={22} color={theme.primary} />
       </View>
       <View style={styles.resultInfo}>
         <Text style={styles.resultName} numberOfLines={1}>
@@ -158,29 +165,21 @@ export default function UnassignedSearchScreen() {
           {item.barcodes && item.barcodes.length > 0 ? `  ·  Barcode: ${item.barcodes[0]}${item.barcodes.length > 1 ? ` (+${item.barcodes.length - 1} more)` : ''}` : ''}
         </Text>
       </View>
-      <Ionicons name="chevron-forward" size={18} color="#9ca3af" />
+      <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
     </TouchableOpacity>
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <Screen>
       {/* Scan-resolving overlay */}
       {isScanResolving && (
         <View style={styles.scanResolveOverlay}>
-          <ActivityIndicator size="large" color="#fff" />
+          <ActivityIndicator size="large" color={theme.primaryText} />
           <Text style={styles.scanResolveText}>Looking up barcode…</Text>
         </View>
       )}
 
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Ionicons name="arrow-back" size={24} color="#374151" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Log Unassigned Find</Text>
-        </View>
-      </View>
+      <AppHeader title="Log Unassigned Find" subtitle="Ad-hoc cycle count" />
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -191,13 +190,13 @@ export default function UnassignedSearchScreen() {
         <View style={styles.searchRow}>
           <View style={styles.searchInputWrap}>
             {isSearching
-              ? <ActivityIndicator size="small" color="#9ca3af" style={styles.searchIcon} />
-              : <Ionicons name="search-outline" size={18} color="#9ca3af" style={styles.searchIcon} />
+              ? <ActivityIndicator size="small" color={theme.textMuted} style={styles.searchIcon} />
+              : <Ionicons name="search-outline" size={18} color={theme.textMuted} style={styles.searchIcon} />
             }
             <TextInput
               style={styles.searchInput}
               placeholder="Search by name, SKU, barcode…"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={theme.textMuted}
               value={query}
               onChangeText={setQuery}
               returnKeyType="search"
@@ -207,39 +206,37 @@ export default function UnassignedSearchScreen() {
             />
             {query.length > 0 && (
               <TouchableOpacity onPress={() => { setQuery(''); setResults([]); }}>
-                <Ionicons name="close-circle" size={18} color="#9ca3af" />
+                <Ionicons name="close-circle" size={18} color={theme.textMuted} />
               </TouchableOpacity>
             )}
           </View>
 
           <TouchableOpacity style={styles.scanBtn} onPress={openScanner} activeOpacity={0.8}>
-            <Ionicons name="barcode-outline" size={22} color="#fff" />
+            <Ionicons name="barcode-outline" size={22} color={theme.primaryText} />
           </TouchableOpacity>
         </View>
 
         {/* Staged barcode banner */}
         {pendingBarcodeToLink && (
-          <View style={{ backgroundColor: '#eff6ff', borderLeftWidth: 4, borderLeftColor: '#3b82f6', padding: 10, marginHorizontal: 16, marginBottom: 8, borderRadius: 4, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ color: '#1e40af', fontSize: 13, fontWeight: '600', flex: 1 }}>
-              Staged Barcode to Link: {pendingBarcodeToLink}
+          <View style={styles.stagedBanner}>
+            <Text style={styles.stagedBannerText}>
+              Staged barcode to link: {pendingBarcodeToLink}
             </Text>
-            <TouchableOpacity onPress={() => setPendingBarcodeToLink(null)}>
-              <Ionicons name="close" size={18} color="#1e40af" />
+            <TouchableOpacity onPress={() => setPendingBarcodeToLink(null)} accessibilityLabel="Clear staged barcode">
+              <Ionicons name="close" size={18} color={theme.primary} />
             </TouchableOpacity>
           </View>
         )}
 
         {/* Inline hint */}
         <Text style={styles.hintText}>
-          Type to search · or tap{' '}
-          <Text style={{ color: '#3b82f6' }}>⬛</Text>
-          {' '}to scan a barcode
+          Type to search, or tap the scan button to read a barcode
         </Text>
 
         {/* Error banner */}
         {searchError && (
           <View style={styles.errorBanner}>
-            <Ionicons name="alert-circle-outline" size={16} color="#dc2626" />
+            <Ionicons name="alert-circle-outline" size={16} color={theme.danger} />
             <Text style={styles.errorText}>{searchError}</Text>
           </View>
         )}
@@ -254,7 +251,7 @@ export default function UnassignedSearchScreen() {
           ListEmptyComponent={
             !isSearching && query.trim().length > 0 ? (
               <View style={styles.emptyState}>
-                <Ionicons name="search" size={40} color="#d1d5db" />
+                <Ionicons name="search" size={40} color={theme.borderStrong} />
                 <Text style={styles.emptyText}>No parts found for "{query}"</Text>
               </View>
             ) : null
@@ -272,13 +269,16 @@ export default function UnassignedSearchScreen() {
         title="Scan Barcode"
         autoCloseOnSuccess={true}
       />
-    </SafeAreaView>
+    </Screen>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f3f4f6' },
-  centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+/**
+ * Derived from the active theme so the screen follows light and dark.
+ * Colours that belong to the camera overlay stay literal: that surface sits
+ * over a live preview and is dark regardless of the app theme.
+ */
+const makeStyles = (theme: ThemeColors) => StyleSheet.create({
 
   scanResolveOverlay: {
     ...StyleSheet.absoluteFill,
@@ -290,21 +290,6 @@ const styles = StyleSheet.create({
   },
   scanResolveText: { color: '#fff', fontSize: 15 },
 
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: '#111827' },
 
   searchRow: {
     flexDirection: 'row',
@@ -317,27 +302,27 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: theme.surface,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: theme.border,
     paddingHorizontal: 12,
     height: 48,
   },
   searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 15, color: '#111827', height: '100%' },
+  searchInput: { flex: 1, fontSize: 15, color: theme.text, height: '100%' },
   scanBtn: {
     width: 48,
     height: 48,
     borderRadius: 12,
-    backgroundColor: '#3b82f6',
+    backgroundColor: theme.primary,
     justifyContent: 'center',
     alignItems: 'center',
   },
 
   hintText: {
     fontSize: 11,
-    color: '#9ca3af',
+    color: theme.textMuted,
     textAlign: 'center',
     marginTop: 8,
     marginBottom: 4,
@@ -346,25 +331,25 @@ const styles = StyleSheet.create({
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fee2e2',
+    backgroundColor: theme.dangerSoft,
     marginHorizontal: 16,
     marginTop: 6,
     padding: 10,
     borderRadius: 8,
     gap: 6,
   },
-  errorText: { color: '#dc2626', fontSize: 13, flex: 1 },
+  errorText: { color: theme.danger, fontSize: 13, flex: 1 },
 
   resultsList: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 40 },
   resultCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: theme.surface,
     borderRadius: 12,
     padding: 14,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: theme.border,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.06,
@@ -375,115 +360,47 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 10,
-    backgroundColor: '#eff6ff',
+    backgroundColor: theme.primarySoft,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
   },
   resultInfo: { flex: 1 },
-  resultName: { fontSize: 15, fontWeight: '600', color: '#111827' },
-  resultSku: { fontSize: 12, color: '#6b7280', marginTop: 2 },
+  resultName: { fontSize: 15, fontWeight: '600', color: theme.text },
+  resultSku: { fontSize: 12, color: theme.textMuted, marginTop: 2 },
 
   emptyState: { alignItems: 'center', marginTop: 48, gap: 12 },
-  emptyText: { fontSize: 14, color: '#9ca3af', textAlign: 'center' },
+  emptyText: { fontSize: 14, color: theme.textMuted, textAlign: 'center' },
+
+  stagedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
+    backgroundColor: theme.primarySoft,
+    borderLeftWidth: 4,
+    borderLeftColor: theme.primary,
+    borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.three,
+    marginHorizontal: Spacing.four,
+    marginBottom: Spacing.two,
+  },
+  stagedBannerText: {
+    flex: 1,
+    color: theme.primary,
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+  },
 
   // Camera modal
-  modalContainer: { flex: 1, backgroundColor: '#000' },
-  overlay: { ...StyleSheet.absoluteFill, zIndex: 5 },
-  overlayTop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)' },
-  overlayBottom: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    alignItems: 'center',
-    paddingTop: 24,
-  },
-  scanInstruction: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '500',
-    textAlign: 'center',
-    letterSpacing: 0.5,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    overflow: 'hidden',
-  },
-  overlayMiddle: { height: 200, flexDirection: 'row' },
-  overlaySide: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)' },
-  viewfinderCutout: {
-    width: '75%',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
-    borderRadius: 16,
-    backgroundColor: 'transparent',
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  corner: {
-    position: 'absolute',
-    borderColor: '#06b6d4',
-    width: 24,
-    height: 24,
-  },
-  topLeftCorner: {
-    top: -2,
-    left: -2,
-    borderLeftWidth: 4,
-    borderTopWidth: 4,
-    borderTopLeftRadius: 12,
-  },
-  topRightCorner: {
-    top: -2,
-    right: -2,
-    borderRightWidth: 4,
-    borderTopWidth: 4,
-    borderTopRightRadius: 12,
-  },
-  bottomLeftCorner: {
-    bottom: -2,
-    left: -2,
-    borderLeftWidth: 4,
-    borderBottomWidth: 4,
-    borderBottomLeftRadius: 12,
-  },
-  bottomRightCorner: {
-    bottom: -2,
-    right: -2,
-    borderRightWidth: 4,
-    borderBottomWidth: 4,
-    borderBottomRightRadius: 12,
-  },
-  laser: {
-    position: 'absolute',
-    left: '5%',
-    right: '5%',
-    height: 2,
-    backgroundColor: '#06b6d4',
-    shadowColor: '#06b6d4',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 6,
-    elevation: 5,
-  },
-  cameraHeader: {
-    position: 'absolute',
-    top: 16,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    zIndex: 10,
-  },
-  cameraHint: { color: '#fff', fontSize: 13, opacity: 0.85 },
-  iconButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
 });
+
+/** Reachable by deep link, so gated here rather than only on the dashboard. */
+export default function UnassignedSearchScreen() {
+  return (
+    <RequirePermission permission="cycle_count:execute" title="Log unassigned">
+      <UnassignedSearchScreenInner />
+    </RequirePermission>
+  );
+}

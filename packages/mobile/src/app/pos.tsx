@@ -32,19 +32,13 @@ import SavedCartsSheet from '@/components/pos/SavedCartsSheet';
 import { formatPHP } from '@/utils/currency';
 import * as haptics from '@/utils/haptics';
 import { usePermission } from '@/hooks/usePermission';
+import RequirePermission from '../components/RequirePermission';
 
-export default function POSScreen() {
+function PosScreenInner() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const router = useRouter();
   const { hasPermission } = usePermission();
-
-  useEffect(() => {
-    if (!hasPermission('pos:use')) {
-      Alert.alert('Access Denied', 'You do not have permission to use the Point of Sale.');
-      router.back();
-    }
-  }, []);
 
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -354,7 +348,14 @@ export default function POSScreen() {
           </View>
 
           {/* Middle 40%: Results */}
-          {/* TODO: Evaluate @shopify/flash-list for 10k+ row performance vs FlatList */}
+          {/*
+            FlatList is the right tool here, not @shopify/flash-list. The 10k-row
+            case that motivated looking at it cannot arise: powerSearchRoutes.js
+            caps its Meilisearch query at 200 hits, so that is the ceiling on
+            `results`. FlashList would add a native dependency and APK weight to
+            solve a problem this screen does not have -- and APK size is
+            hard-won here. The windowing props below are enough at this scale.
+          */}
           <View style={[styles.middleArea, { backgroundColor: bg }]}>
             <FlatList
               data={results}
@@ -362,6 +363,10 @@ export default function POSScreen() {
               renderItem={({ item }) => (
                 <ProductListItem item={item} onPress={handleAddToCart} />
               )}
+              initialNumToRender={12}
+              maxToRenderPerBatch={12}
+              windowSize={7}
+              removeClippedSubviews
               overScrollMode="never"
               keyboardShouldPersistTaps="handled"
               ListEmptyComponent={
@@ -636,3 +641,17 @@ const styles = StyleSheet.create({
   snackText: { color: '#fff', fontSize: 14 },
   snackUndo: { color: '#10B981', fontWeight: '800', fontSize: 14 },
 });
+
+/**
+ * The old guard ran in a `useEffect` with `[]` deps, so it read `hasPermission`
+ * from the first render -- before the user had finished hydrating from
+ * SecureStore -- and bounced the user backwards with an alert. Wrapping renders
+ * a refusal instead, and re-evaluates when the user actually loads.
+ */
+export default function PosScreen() {
+  return (
+    <RequirePermission permission="pos:use" title="Point of Sale">
+      <PosScreenInner />
+    </RequirePermission>
+  );
+}

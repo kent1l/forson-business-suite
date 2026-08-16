@@ -37,6 +37,18 @@ apiClient.interceptors.request.use(
   }
 );
 
+/**
+ * Whether a failed request was an attempt to sign in, rather than a call made
+ * with an existing session.
+ *
+ * Matched on the path so it cannot be fooled by a query string or by the
+ * baseURL changing when the server address is reconfigured.
+ */
+const isAuthAttempt = (config) => {
+  const url = config?.url ?? '';
+  return /(^|\/)login\/?($|\?)/.test(url);
+};
+
 // Response interceptor: Handle 401 Unauthorized globally
 apiClient.interceptors.response.use(
   (response) => {
@@ -44,10 +56,21 @@ apiClient.interceptors.response.use(
   },
   (error) => {
     if (error.response && error.response.status === 401) {
-      // Clear token and user state, which will automatically redirect to login
-      // if our navigation routing is observing this state (like in Expo Router).
-      useAuthStore.getState().logout();
-      console.warn('Session expired or unauthorized. Logging out.');
+      // A 401 from the login route means "those credentials are wrong", not
+      // "your session ended". Treating the two the same tore down state that a
+      // failed sign-in never established: logout() clears the persisted query
+      // cache and cancels the pending clock-out reminder, so one mistyped
+      // password -- on a shared phone, by someone who was not even signed in --
+      // could cancel a colleague's reminder. It also logged a misleading
+      // "Session expired" warning that sent us looking in the wrong place.
+      //
+      // The login screen surfaces this case itself, so the interceptor stays
+      // out of the way and only reacts to a token that has genuinely stopped
+      // being accepted.
+      if (!isAuthAttempt(error.config)) {
+        useAuthStore.getState().logout();
+        console.warn('Session expired or unauthorized. Logging out.');
+      }
     }
     if (error.response && error.response.status === 403) {
       console.warn('Permission denied:', error.response?.data?.message);

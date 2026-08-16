@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { protect, hasPermission } = require('../middleware/authMiddleware');
+const { protect, hasPermission, userHasPermission } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const dtrService = require('../services/hr/dtrService');
 
@@ -29,7 +29,9 @@ const LEAVE_JOINS = `
 
 // --- Leave types ---------------------------------------------------------
 
-router.get('/types', protect, hasPermission('leave:view'), async (req, res) => {
+// Anyone who may file leave must be able to read the list of leave types, or
+// the request form has nothing to offer them.
+router.get('/types', protect, hasPermission(['leave:view', 'leave:request', 'leave:view_own']), async (req, res) => {
     try {
         const { rows } = await db.query(
             `SELECT leave_type_id, leave_code, leave_name, description, is_paid,
@@ -69,6 +71,63 @@ router.put('/types/:id', protect, hasPermission('leave:manage'), async (req, res
     }
 });
 
+// --- Self-service reads ---------------------------------------------------
+// `leave:view` means "see everyone's leave". These are the own-record version,
+// safe to grant to every employee.
+
+const balancesForEmployee = async (employeeId, year) => {
+    const { rows } = await db.query(
+        `SELECT lt.leave_type_id, lt.leave_code, lt.leave_name, lt.is_paid,
+                COALESCE(b.entitled_days, 0)     AS entitled_days,
+                COALESCE(b.carried_over_days, 0) AS carried_over_days,
+                COALESCE(b.used_days, 0)         AS used_days,
+                COALESCE(b.entitled_days, 0) + COALESCE(b.carried_over_days, 0)
+                    - COALESCE(b.used_days, 0)   AS remaining_days,
+                b.balance_id
+         FROM leave_type lt
+         LEFT JOIN employee_leave_balance b
+                ON b.leave_type_id = lt.leave_type_id
+               AND b.employee_id = $1 AND b.year = $2
+         WHERE lt.is_active = TRUE
+         ORDER BY lt.sort_order, lt.leave_name`,
+        [employeeId, year]
+    );
+    return rows;
+};
+
+router.get('/me/balances', protect, hasPermission(['leave:view_own', 'leave:view', 'leave:request']), async (req, res) => {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    try {
+        res.json({
+            employee_id: req.user.employee_id,
+            year,
+            balances: await balancesForEmployee(req.user.employee_id, year),
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+router.get('/me/requests', protect, hasPermission(['leave:view_own', 'leave:view', 'leave:request']), async (req, res) => {
+    const { status } = req.query;
+    const params = [req.user.employee_id];
+    let where = 'WHERE lr.employee_id = $1';
+    if (status) { where += ' AND lr.status = $2'; params.push(status); }
+
+    try {
+        const { rows } = await db.query(
+            `SELECT ${LEAVE_SELECT} ${LEAVE_JOINS} ${where}
+             ORDER BY lr.date_from DESC, lr.leave_id DESC`,
+            params
+        );
+        res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
 // --- Balances ------------------------------------------------------------
 
 router.get('/balances/:employeeId', protect, hasPermission('leave:view'), async (req, res) => {
@@ -76,23 +135,8 @@ router.get('/balances/:employeeId', protect, hasPermission('leave:view'), async 
     try {
         // Every active leave type is returned, with zeroes where no balance row
         // exists yet, so the UI shows a complete picture rather than gaps.
-        const { rows } = await db.query(
-            `SELECT lt.leave_type_id, lt.leave_code, lt.leave_name, lt.is_paid,
-                    COALESCE(b.entitled_days, 0)     AS entitled_days,
-                    COALESCE(b.carried_over_days, 0) AS carried_over_days,
-                    COALESCE(b.used_days, 0)         AS used_days,
-                    COALESCE(b.entitled_days, 0) + COALESCE(b.carried_over_days, 0)
-                        - COALESCE(b.used_days, 0)   AS remaining_days,
-                    b.balance_id
-             FROM leave_type lt
-             LEFT JOIN employee_leave_balance b
-                    ON b.leave_type_id = lt.leave_type_id
-                   AND b.employee_id = $1 AND b.year = $2
-             WHERE lt.is_active = TRUE
-             ORDER BY lt.sort_order, lt.leave_name`,
-            [req.params.employeeId, year]
-        );
-        res.json({ employee_id: Number(req.params.employeeId), year, balances: rows });
+        const balances = await balancesForEmployee(req.params.employeeId, year);
+        res.json({ employee_id: Number(req.params.employeeId), year, balances });
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
@@ -162,7 +206,16 @@ router.get('/requests', protect, hasPermission('leave:view'), async (req, res) =
 });
 
 router.post('/requests', protect, hasPermission('leave:request'), async (req, res) => {
-    const { employee_id, leave_type_id, date_from, date_to, day_fraction = 1, reason } = req.body;
+    const { leave_type_id, date_from, date_to, day_fraction = 1, reason } = req.body;
+
+    // `leave:request` is held by every employee so they can file for
+    // themselves. Filing on someone else's behalf is an HR action, so an
+    // employee_id in the body is only honoured for `leave:manage` holders —
+    // everyone else silently files for themselves regardless of what they sent.
+    const canFileForOthers = userHasPermission(req, 'leave:manage');
+    const employee_id = canFileForOthers && req.body.employee_id
+        ? Number(req.body.employee_id)
+        : req.user.employee_id;
 
     if (!employee_id || !leave_type_id) {
         return res.status(400).json({ message: 'employee_id and leave_type_id are required' });
@@ -293,12 +346,19 @@ router.post('/requests/:id/cancel', protect, hasPermission('leave:request'), asy
     try {
         await client.query('BEGIN');
         const { rows } = await client.query(
-            'SELECT leave_id, status FROM leave_request WHERE leave_id = $1 FOR UPDATE', [req.params.id]
+            'SELECT leave_id, status, employee_id FROM leave_request WHERE leave_id = $1 FOR UPDATE', [req.params.id]
         );
         const leave = rows[0];
         if (!leave) {
             await client.query('ROLLBACK');
             return res.status(404).json({ message: 'Leave request not found' });
+        }
+        // Cancelling is open to every `leave:request` holder, so it must be
+        // restricted to the requester's own filings. Only HR may cancel on
+        // someone else's behalf.
+        if (leave.employee_id !== req.user.employee_id && !userHasPermission(req, 'leave:manage')) {
+            await client.query('ROLLBACK');
+            return res.status(403).json({ message: 'You may only cancel your own leave requests.' });
         }
         if (leave.status === 'Cancelled' || leave.status === 'Rejected') {
             await client.query('ROLLBACK');

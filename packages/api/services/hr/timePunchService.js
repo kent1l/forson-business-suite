@@ -16,6 +16,25 @@
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
+/**
+ * Maps a punch source onto a value `daily_time_record.source` will accept.
+ *
+ * The two columns have separate CHECK constraints and separate vocabularies.
+ * `time_punch.source` distinguishes 'Mobile-Offline' so a supervisor reviewing
+ * a disputed day can see the punch came from a phone's clock rather than the
+ * server's; `daily_time_record.source` has no such value, and writing one
+ * through would abort the whole derivation batch.
+ *
+ * The distinction is not lost by collapsing it here -- the raw punch keeps it,
+ * which is the row that settles a dispute. The derived day only needs to say
+ * the attendance came from the app.
+ */
+const dtrSourceFor = (punchSource) => {
+    if (punchSource === 'Import') return 'Import';
+    if (punchSource === 'Mobile-Offline') return 'Mobile';
+    return punchSource;
+};
+
 const toTime = (timestamp) => new Date(timestamp).toISOString().slice(11, 19);
 
 const hoursBetween = (startIso, endIso, breakMinutes = 0) => {
@@ -25,21 +44,82 @@ const hoursBetween = (startIso, endIso, breakMinutes = 0) => {
     return net > 0 ? round2(net / 60) : 0;
 };
 
-/** Records one punch. The unique constraint makes a repeated tap a no-op. */
+const PUNCH_RETURNING = `punch_id, TO_CHAR(punch_date, 'YYYY-MM-DD') AS punch_date,
+                         punch_at, direction, source, client_punch_id, notes`;
+
+/**
+ * Records one punch. The unique constraints make a repeated tap a no-op.
+ *
+ * `ON CONFLICT DO NOTHING` is deliberately untargeted: two different keys can
+ * catch a duplicate. The original (employee_id, punch_at, direction) dedupe
+ * catches a re-uploaded CSV, while client_punch_id catches a mobile client
+ * flushing the same queued punch twice — which is the only one that survives
+ * clock skew, since a retry from a phone need not reproduce the same punch_at.
+ */
 const recordPunch = async (executor, {
-    employeeId, punchAt, direction, source = 'Web', deviceId, ipAddress, latitude, longitude, actorId,
+    employeeId, punchAt, direction, source = 'Web', deviceId, ipAddress,
+    latitude, longitude, actorId, clientPunchId, notes,
 }) => {
     const at = punchAt ? new Date(punchAt) : new Date();
     const { rows } = await executor.query(
         `INSERT INTO time_punch
-            (employee_id, punch_at, punch_date, direction, source, device_id, ip_address, latitude, longitude, created_by)
-         VALUES ($1, $2, ($2::timestamptz AT TIME ZONE 'Asia/Manila')::date, $3, $4, $5, $6, $7, $8, $9)
-         ON CONFLICT (employee_id, punch_at, direction) DO NOTHING
-         RETURNING punch_id, TO_CHAR(punch_date, 'YYYY-MM-DD') AS punch_date, punch_at, direction, source`,
+            (employee_id, punch_at, punch_date, direction, source, device_id,
+             ip_address, latitude, longitude, created_by, client_punch_id, notes)
+         VALUES ($1, $2, ($2::timestamptz AT TIME ZONE 'Asia/Manila')::date,
+                 $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT DO NOTHING
+         RETURNING ${PUNCH_RETURNING}`,
         [employeeId, at.toISOString(), direction, source, deviceId || null,
-            ipAddress || null, latitude || null, longitude || null, actorId || employeeId]
+            ipAddress || null, latitude || null, longitude || null, actorId || employeeId,
+            clientPunchId || null, notes || null]
     );
     return rows[0] || null;
+};
+
+/**
+ * The punch a given client id already produced, if any.
+ *
+ * Lets an offline flush retry resolve to the row it created the first time
+ * rather than to a bare conflict, so the app can show the employee the punch
+ * that actually landed instead of an error.
+ */
+const findPunchByClientId = async (executor, { employeeId, clientPunchId }) => {
+    const { rows } = await executor.query(
+        `SELECT ${PUNCH_RETURNING} FROM time_punch
+         WHERE client_punch_id = $1 AND employee_id = $2`,
+        [clientPunchId, employeeId]
+    );
+    return rows[0] || null;
+};
+
+/**
+ * When today's shift is scheduled to end, in Asia/Manila.
+ *
+ * Read from the DTR row when HR has already generated one, since that carries
+ * any correction made for the day, and falling back to the employee's standing
+ * schedule for the weekday otherwise -- a DTR row for today often does not exist
+ * yet, because generation is a periodic HR action rather than a nightly job.
+ *
+ * Null on a rest day, or when the employee has no schedule attached. Callers
+ * must treat that as "unknown" rather than "no shift".
+ */
+const getScheduledEnd = async (executor, { employeeId }) => {
+    const { rows } = await executor.query(
+        `SELECT COALESCE(
+                    (SELECT d.scheduled_time_out
+                     FROM daily_time_record d
+                     WHERE d.employee_id = e.employee_id
+                       AND d.work_date = (now() AT TIME ZONE 'Asia/Manila')::date),
+                    (SELECT CASE WHEN wsd.is_rest_day THEN NULL ELSE wsd.time_out END
+                     FROM work_schedule_day wsd
+                     WHERE wsd.schedule_id = e.work_schedule_id
+                       AND wsd.day_of_week = EXTRACT(DOW FROM (now() AT TIME ZONE 'Asia/Manila'))::smallint)
+                ) AS scheduled_time_out
+         FROM employee e
+         WHERE e.employee_id = $1`,
+        [employeeId]
+    );
+    return rows[0]?.scheduled_time_out ?? null;
 };
 
 /** The most recent punch today, so the UI knows whether to offer IN or OUT. */
@@ -57,6 +137,10 @@ const getPunchState = async (executor, { employeeId }) => {
     return {
         last_direction: last ? last.direction : null,
         last_punch_at: last ? last.punch_at : null,
+        // 'HH:MM:SS' in Asia/Manila, or null when unknown. Lets the app decide
+        // when to offer a clock-out without shipping schedule rules to the
+        // client.
+        scheduled_time_out: await getScheduledEnd(executor, { employeeId }),
         // Nothing yet today, or the last tap was an OUT: the next one is an IN.
         next_direction: !last || last.direction === 'OUT' ? 'IN' : 'OUT',
     };
@@ -155,7 +239,7 @@ const deriveDtrFromPunches = async (executor, { employeeIds, dateFrom, dateTo, a
                  updated_at = now()`,
             [bucket.employee_id, bucket.date, dayType, dayFraction,
                 toTime(firstIn), toTime(lastOut), breakMinutes, hours, lateMinutes,
-                bucket.source === 'Import' ? 'Import' : bucket.source, actorId]
+                dtrSourceFor(bucket.source), actorId]
         );
         updated += 1;
     }
@@ -261,7 +345,9 @@ const importPunches = async (executor, { parsedRows, actorId }) => {
 
 module.exports = {
     recordPunch,
+    findPunchByClientId,
     getPunchState,
+    getScheduledEnd,
     deriveDtrFromPunches,
     parsePunchCsv,
     importPunches,

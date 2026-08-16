@@ -135,11 +135,20 @@ router.get('/inventory/:partId/history', protect, hasPermission('inventory:view'
 });
 
 // POST /api/inventory/adjust (This route remains unchanged)
+/**
+ * Records a manual stock adjustment.
+ *
+ * The actor is taken from the token, never from the body. This used to require
+ * an `employee_id` in the request and write it verbatim, which meant anyone
+ * holding `inventory:adjust` could attribute a stock change to a colleague --
+ * and an audit trail that can be addressed to someone else is not an audit
+ * trail. Clients may still send the field; it is ignored.
+ */
 router.post('/inventory/adjust', protect, hasPermission('inventory:adjust'), async (req, res) => {
-    const { part_id, quantity, notes, employee_id } = req.body;
+    const { part_id, quantity, notes } = req.body;
 
-    if (!part_id || !quantity || !employee_id) {
-        return res.status(400).json({ message: 'Part ID, quantity, and employee ID are required.' });
+    if (!part_id || !quantity) {
+        return res.status(400).json({ message: 'Part ID and quantity are required.' });
     }
 
     try {
@@ -147,7 +156,7 @@ router.post('/inventory/adjust', protect, hasPermission('inventory:adjust'), asy
             INSERT INTO inventory_transaction (part_id, trans_type, quantity, notes, employee_id)
             VALUES ($1, 'Adjustment', $2, $3, $4) RETURNING *;
         `;
-        const newTransaction = await db.query(transactionQuery, [part_id, quantity, notes, employee_id]);
+        const newTransaction = await db.query(transactionQuery, [part_id, quantity, notes, req.user.employee_id]);
         res.status(201).json(newTransaction.rows[0]);
     } catch (err) {
         console.error(err.message);

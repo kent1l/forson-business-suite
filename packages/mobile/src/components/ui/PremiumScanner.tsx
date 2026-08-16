@@ -34,7 +34,6 @@ import {
   VIEWPORT_WIDTH_PCT,
   VIEWPORT_HEIGHT_PX,
 } from '@/utils/scannerPipeline';
-import { useTheme } from '@/hooks/use-theme';
 import { Spacing } from '@/constants/theme';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -62,7 +61,6 @@ export default function PremiumScanner({
   title = 'Premium Scanner',
   autoCloseOnSuccess = true,
 }: PremiumScannerProps) {
-  const theme = useTheme();
   const device = useCameraDevice('back');
   const { hasPermission, requestPermission } = useCameraPermission();
 
@@ -279,15 +277,21 @@ export default function PremiumScanner({
     opacity: successFlash.value,
   }));
 
-  const isDark = theme.background === '#000000';
-
+  /**
+   * The drawer is always dark, whatever the app theme is.
+   *
+   * It floats over a live camera feed, and every control inside it is drawn in
+   * white — so the surface underneath has to be dark for any of it to be
+   * legible. This previously keyed off the app's light/dark setting and picked
+   * a near-white glass in light mode, rendering white text on white.
+   */
   const containerStyle = [
     styles.drawer,
     Platform.select({
       ios: {},
       default: {
-        backgroundColor: isDark ? 'rgba(33, 34, 37, 0.95)' : 'rgba(240, 240, 243, 0.95)',
-        borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+        backgroundColor: 'rgba(21, 22, 25, 0.94)',
+        borderColor: 'rgba(255, 255, 255, 0.12)',
         borderWidth: 1,
       },
     }),
@@ -304,7 +308,6 @@ export default function PremiumScanner({
             isActive={isCameraActive}
             torchMode={isCameraActive && torch === 'on' ? 'on' : undefined}
             outputs={[barcodeOutput]}
-            enableZoomGesture={true}
           />
         ) : !hasPermission ? (
           <View style={styles.permissionContainer}>

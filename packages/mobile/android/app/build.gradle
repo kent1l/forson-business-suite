@@ -92,8 +92,16 @@ android {
         applicationId 'com.forson.erp'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0.0"
+        // Keep versionName in step with `version` in app.json. The forced-update
+        // gate in src/app/_layout.tsx compares Constants.expoConfig.version --
+        // which comes from app.json -- against the server's mobile_app_version
+        // setting, so a build whose gradle versionName disagrees reports one
+        // version to the user and another to the update check.
+        // versionCode must strictly increase or Android refuses the in-place
+        // upgrade, which for a sideloaded fleet means every phone needs a manual
+        // uninstall.
+        versionCode 3
+        versionName "2.1.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
@@ -104,15 +112,43 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+
+        // Real release signing, used only when the credentials are supplied.
+        //
+        // Deliberately opt-in. Android identifies an app by its signature, so
+        // the first build signed with a different key cannot install over the
+        // existing one: every phone in the sideloaded fleet would need a manual
+        // uninstall and reinstall, losing anything still sitting in the offline
+        // outbox. Flipping that silently on the next build would be an outage.
+        //
+        // To switch, generate a keystore, keep it OUT of the repo, and supply:
+        //   FORSON_UPLOAD_STORE_FILE, FORSON_UPLOAD_STORE_PASSWORD,
+        //   FORSON_UPLOAD_KEY_ALIAS, FORSON_UPLOAD_KEY_PASSWORD
+        // via ~/.gradle/gradle.properties locally or EAS secrets in CI. Plan the
+        // cutover with a release note telling staff to uninstall first, and make
+        // sure the outbox is empty on every device before they do.
+        release {
+            if (project.hasProperty('FORSON_UPLOAD_STORE_FILE')) {
+                storeFile file(FORSON_UPLOAD_STORE_FILE)
+                storePassword FORSON_UPLOAD_STORE_PASSWORD
+                keyAlias FORSON_UPLOAD_KEY_ALIAS
+                keyPassword FORSON_UPLOAD_KEY_PASSWORD
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Falls back to the debug key when no release credentials are
+            // configured, which keeps the current sideload flow working. This
+            // is not suitable for a public store listing -- the debug keystore
+            // is committed and its password is public knowledge -- but it is
+            // what the existing fleet is already signed with.
+            signingConfig project.hasProperty('FORSON_UPLOAD_STORE_FILE')
+                ? signingConfigs.release
+                : signingConfigs.debug
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds
