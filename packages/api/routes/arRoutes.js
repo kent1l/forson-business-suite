@@ -543,7 +543,7 @@ router.get('/ar/ledger/:customerId', protect, hasPermission('ar:view'), async (r
         const { rows } = await db.query(`
             SELECT
                 l.ledger_id, l.entry_type, l.amount, l.balance_after,
-                l.payment_channel, l.reference_no, l.notes, l.created_at,
+                l.payment_channel, l.reference_no, l.notes, l.entry_date,
                 l.invoice_id, i.invoice_number,
                 l.payment_id,
                 l.cn_id, cn.cn_number,
@@ -797,8 +797,9 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
                 l.reference_no,
                 l.payment_channel,
                 l.notes,
-                l.created_at,
+                l.entry_date,
                 l.created_by,
+                l.payment_source,
                 i.invoice_number,
                 i.physical_receipt_no        AS invoice_physical_receipt_no,
                 cp.physical_receipt_no       AS payment_physical_receipt_no,
@@ -814,7 +815,7 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
             LEFT JOIN customer_payment cp ON l.payment_id = cp.payment_id
             LEFT JOIN credit_note cn ON l.cn_id  = cn.cn_id
             WHERE l.customer_id = $1
-            ORDER BY l.created_at ASC, l.ledger_id ASC
+            ORDER BY l.entry_date ASC, l.ledger_id ASC
         `, [customerId]);
 
         // Pending cheques: customer_payment rows that are RECEIVED/DEPOSITED (not yet cleared)
@@ -858,7 +859,7 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
 
         for (const entry of ledgerRes.rows) {
             const amt = Number(entry.amount) || 0;
-            const entryDate = new Date(entry.created_at);
+            const entryDate = new Date(entry.entry_date);
 
             if (startFilter && entryDate < startFilter) {
                 openingBalance += amt;
@@ -880,7 +881,7 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
             const primaryRef = physReceipt || '-';
             let subRef = null;
             if (entry.payment_id) {
-                const d = entry.created_at ? new Date(entry.created_at) : new Date();
+                const d = entry.entry_date ? new Date(entry.entry_date) : new Date();
                 const yyyymm = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
                 const seq = String(entry.payment_id).padStart(4, '0');
                 const trackingNo = `PMT-${yyyymm}-${seq}`;
@@ -901,7 +902,7 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
 
             ledgerRows.push({
                 ledger_id:           entry.ledger_id,
-                date:                entry.created_at,
+                date:                entry.entry_date,
                 invoice_date:        entry.invoice_date   || null,
                 due_date:            entry.due_date        || null,
                 invoice_terms:       entry.invoice_terms  || null,
@@ -925,6 +926,7 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
                 invoice_id:          entry.invoice_id  || null,
                 payment_id:          entry.payment_id  || null,
                 cn_id:               entry.cn_id        || null,
+                payment_source:      entry.payment_source || null,
             });
         }
 
@@ -1027,7 +1029,7 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
                 l.cn_id,
                 l.reference_no,
                 l.payment_channel,
-                l.created_at,
+                l.entry_date,
                 l.notes,
                 i.invoice_number,
                 i.physical_receipt_no        AS invoice_physical_receipt_no,
@@ -1043,7 +1045,7 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
             LEFT JOIN customer_payment cp ON l.payment_id = cp.payment_id
             LEFT JOIN credit_note cn ON l.cn_id   = cn.cn_id
             WHERE l.customer_id = $1
-            ORDER BY l.created_at ASC, l.ledger_id ASC
+            ORDER BY l.entry_date ASC, l.ledger_id ASC
         `, [customerId]);
 
         // Pending cheques (committed but not yet cleared — shown as a breakdown)
@@ -1075,7 +1077,7 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
 
         for (const entry of ledgerRes.rows) {
             const amt = Number(entry.amount) || 0;
-            const entryDate = new Date(entry.created_at);
+            const entryDate = new Date(entry.entry_date);
 
             if (startFilter && entryDate < startFilter) {
                 openingBalance += amt;
@@ -1095,7 +1097,7 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
             const primaryRef = physReceipt || '-';
             let subRef = null;
             if (entry.payment_id) {
-                const d = entry.created_at ? new Date(entry.created_at) : new Date();
+                const d = entry.entry_date ? new Date(entry.entry_date) : new Date();
                 const yyyymm = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
                 const seq = String(entry.payment_id).padStart(4, '0');
                 const trackingNo = `PMT-${yyyymm}-${seq}`;
@@ -1115,7 +1117,7 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
             }
 
             ledgerRows.push({
-                date:                entry.created_at,
+                date:                entry.entry_date,
                 invoice_date:        entry.invoice_date   || null,
                 due_date:            entry.due_date        || null,
                 invoice_terms:       entry.invoice_terms  || null,

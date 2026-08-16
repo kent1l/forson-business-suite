@@ -54,7 +54,7 @@ describe('AR Ledger Service & Endpoints', () => {
             expect(result).toBe('42');
             expect(client.query).toHaveBeenCalledWith(
                 expect.stringContaining('append_ar_ledger_entry'),
-                [10, 101, null, null, 'INVOICE_POSTED', 1500.50, null, 'INV-101', 'Invoice posted', 1, null]
+                [10, 101, null, null, 'INVOICE_POSTED', 1500.50, null, 'INV-101', 'Invoice posted', 1, null, null]
             );
         });
     });
@@ -139,7 +139,7 @@ describe('AR Ledger Service & Endpoints', () => {
             expect(res.status).toBe(201);
             expect(client.query).toHaveBeenCalledWith(
                 expect.stringContaining('append_ar_ledger_entry'),
-                [10, null, null, null, 'CREDIT_ADJUSTMENT', -100.00, null, null, 'Courtesy credit', 1, null]
+                [10, null, null, null, 'CREDIT_ADJUSTMENT', -100.00, null, null, 'Courtesy credit', 1, null, null]
             );
         });
 

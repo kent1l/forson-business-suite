@@ -24,6 +24,10 @@
  * @param {string}  [opts.notes]
  * @param {number}  [opts.createdBy]        — employee_id
  * @param {string}  [opts.paymentSource]    — 'invoice_payments' | 'customer_payment'
+ * @param {Date|string} [opts.entryDate]    — business date this entry represents;
+ *                                             defaults to now (see append_ar_ledger_entry
+ *                                             in 20260816_01_add_entry_date_to_ledgers.sql).
+ *                                             Corrected later only via transactionDateService.
  * @returns {Promise<number>} ledger_id of the newly inserted row
  */
 async function appendEntry(client, {
@@ -38,15 +42,16 @@ async function appendEntry(client, {
   notes          = null,
   createdBy      = null,
   paymentSource  = null,
+  entryDate      = null,
 }) {
   const { rows } = await client.query(
     `SELECT append_ar_ledger_entry(
        $1, $2, $3, $4,
        $5::ar_ledger_entry_type,
-       $6, $7, $8, $9, $10, $11
+       $6, $7, $8, $9, $10, $11, COALESCE($12, CURRENT_TIMESTAMP)
      ) AS ledger_id`,
     [customerId, invoiceId, paymentId, cnId,
-     entryType, amount, paymentChannel, referenceNo, notes, createdBy, paymentSource],
+     entryType, amount, paymentChannel, referenceNo, notes, createdBy, paymentSource, entryDate],
   );
   return rows[0].ledger_id;
 }

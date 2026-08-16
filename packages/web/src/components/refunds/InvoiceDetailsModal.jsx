@@ -6,6 +6,8 @@ import RefundForm from './RefundForm';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatPhysicalReceiptNumber } from '../../utils/receiptNumberFormatter';
+import ChangeTransactionDateModal from '../common/ChangeTransactionDateModal';
+import TransactionDateHistory from '../common/TransactionDateHistory';
 
 // Helper function to get payment status badge styles
 const getPaymentStatusBadge = (status) => {
@@ -31,6 +33,8 @@ const formatPaymentStatus = (status) => {
 void React;
 void Modal;
 void RefundForm;
+void ChangeTransactionDateModal;
+void TransactionDateHistory;
 
 const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
     const { settings } = useSettings();
@@ -42,6 +46,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
     const [showRefundForm, setShowRefundForm] = useState(false);
     const [isEditingReceiptNo, setIsEditingReceiptNo] = useState(false);
     const [editingReceiptNo, setEditingReceiptNo] = useState('');
+    const [showChangeDate, setShowChangeDate] = useState(false);
 
     useEffect(() => {
         if (!isOpen || !invoice) return;
@@ -382,6 +387,14 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                         Delete Invoice
                                     </button>
                                 )}
+                                {hasPermission(['transaction:change_date', 'transaction:change_date_unrestricted']) && (
+                                    <button
+                                        onClick={() => setShowChangeDate(true)}
+                                        className="bg-white border border-gray-300 text-gray-700 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-gray-50"
+                                    >
+                                        Change Date
+                                    </button>
+                                )}
                             </div>
                             <div className="flex-1 text-right">
                                 <button
@@ -395,8 +408,27 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                     )}
 
                     {showRefundForm && <RefundForm invoice={invoice} lines={lines} onRefundSuccess={handleRefundSuccess} />}
+
+                    <TransactionDateHistory kind="invoice" id={invoice.invoice_id} />
                 </div>
             )}
+
+            <ChangeTransactionDateModal
+                isOpen={showChangeDate}
+                onClose={() => setShowChangeDate(false)}
+                kind="invoice"
+                id={invoice.invoice_id}
+                currentDate={invoice.invoice_date}
+                transactionLabel={`Invoice #${invoice.invoice_number}`}
+                onApplied={() => {
+                    onActionSuccess();
+                    try {
+                        window.dispatchEvent(new CustomEvent('invoices:changed'));
+                    } catch {
+                        // ignore if window not available
+                    }
+                }}
+            />
         </Modal>
     );
 };

@@ -204,7 +204,7 @@ router.get('/ap/suppliers/:supplierId/ledger', protect, hasPermission('ap:view')
         const { rows } = await db.query(`
             SELECT
                 l.ledger_id, l.entry_type, l.amount, l.balance_after,
-                l.payment_channel, l.reference_no, l.notes, l.created_at,
+                l.payment_channel, l.reference_no, l.notes, l.entry_date,
                 l.bill_id, sb.bill_number,
                 l.payment_id, ap.reference_number AS payment_reference_number,
                 e.first_name || ' ' || COALESCE(e.last_name, '') AS created_by_name
