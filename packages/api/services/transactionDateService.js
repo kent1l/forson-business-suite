@@ -97,6 +97,40 @@ function daysBetween(oldDate, newDate) {
     return Math.round(ms / (1000 * 60 * 60 * 24));
 }
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/** Whole calendar days between two instants, measured in Manila. */
+function manilaDayDelta(oldDate, requestedDate) {
+    return Math.round(
+        (manilaDateOnly(requestedDate).getTime() - manilaDateOnly(oldDate).getTime()) / MS_PER_DAY
+    );
+}
+
+/**
+ * Produces the corrected timestamp for a transaction being moved to a new
+ * calendar day, PRESERVING its original time of day.
+ *
+ * Naively doing `new Date('2026-08-14')` yields UTC midnight, which stores as
+ * 08:00 Manila and destroys the real clock time — a sale recorded at 21:38
+ * became 08:00, losing both the actual time and its ordering relative to
+ * other transactions on that day (which matters: the WAC replay orders by
+ * transaction_date, and same-day ties fall back to insertion id).
+ *
+ * Instead we shift by a whole number of Manila days. Manila has no DST, so
+ * N days is exactly N*24h and the time of day survives untouched. This also
+ * means the caller cannot inject an arbitrary time of day — only the
+ * calendar day of their input is honoured.
+ *
+ * The result is clamped to "now" so that moving a late-evening transaction
+ * onto today can never land it in the future.
+ */
+function shiftPreservingTimeOfDay(oldDate, requestedDate) {
+    const delta = manilaDayDelta(oldDate, requestedDate);
+    const shifted = new Date(new Date(oldDate).getTime() + delta * MS_PER_DAY);
+    const now = new Date();
+    return shifted.getTime() > now.getTime() ? now : shifted;
+}
+
 /**
  * Simulates the running stock timeline for a part with one or more of its
  * inventory_transaction rows hypothetically moved to newDate, and returns the
@@ -753,8 +787,8 @@ async function preview(client, kind, id, newDateInput, requesterHasUnrestricted)
         throw err;
     }
 
-    const newDate = new Date(newDateInput);
-    if (isNaN(newDate.getTime())) {
+    const requestedDate = new Date(newDateInput);
+    if (isNaN(requestedDate.getTime())) {
         const err = new Error('Invalid new date.');
         err.status = 400;
         throw err;
@@ -764,7 +798,7 @@ async function preview(client, kind, id, newDateInput, requesterHasUnrestricted)
     const warnings = [];
 
     try {
-        assertNotFuture(newDate);
+        assertNotFuture(requestedDate);
     } catch (e) {
         conflicts.push(e.message);
     }
@@ -773,6 +807,8 @@ async function preview(client, kind, id, newDateInput, requesterHasUnrestricted)
     if (stateBlock) conflicts.push(stateBlock);
 
     const oldDate = handler.currentDate(row);
+    // Keep the transaction's original time of day; only its calendar day moves.
+    const newDate = shiftPreservingTimeOfDay(oldDate, requestedDate);
     const crossesMonth = crossesMonthBoundary(oldDate, newDate);
     if (crossesMonth && !requesterHasUnrestricted) {
         conflicts.push('Crossing a month boundary requires the unrestricted date-change permission.');
@@ -805,7 +841,7 @@ async function preview(client, kind, id, newDateInput, requesterHasUnrestricted)
         transaction_ref: handler.docRef(row),
         old_date: oldDate,
         new_date: newDate.toISOString(),
-        days_shifted: daysBetween(oldDate, newDate),
+        days_shifted: manilaDayDelta(oldDate, requestedDate),
         crosses_month_boundary: crossesMonth,
         requires_unrestricted_permission: crossesMonth,
         blocking_conflicts: conflicts,
@@ -834,14 +870,14 @@ async function apply(client, { kind, id, newDate: newDateInput, reason, employee
         throw err;
     }
 
-    const newDate = new Date(newDateInput);
-    if (isNaN(newDate.getTime())) {
+    const requestedDate = new Date(newDateInput);
+    if (isNaN(requestedDate.getTime())) {
         const err = new Error('Invalid new date.');
         err.status = 400;
         throw err;
     }
 
-    assertNotFuture(newDate);
+    assertNotFuture(requestedDate);
 
     const stateBlock = handler.guardState(row);
     if (stateBlock) {
@@ -851,6 +887,8 @@ async function apply(client, { kind, id, newDate: newDateInput, reason, employee
     }
 
     const oldDate = handler.currentDate(row);
+    // Keep the transaction's original time of day; only its calendar day moves.
+    const newDate = shiftPreservingTimeOfDay(oldDate, requestedDate);
     const crossesMonth = crossesMonthBoundary(oldDate, newDate);
     if (crossesMonth && !requesterHasUnrestricted) {
         const err = new Error('Crossing a month boundary requires the unrestricted date-change permission.');
@@ -892,7 +930,7 @@ async function apply(client, { kind, id, newDate: newDateInput, reason, employee
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
             kind, id, handler.docRef(row), oldDate, newDate.toISOString(),
-            daysBetween(oldDate, newDate), reason.trim(),
+            manilaDayDelta(oldDate, requestedDate), reason.trim(),
             JSON.stringify(cascadeSummary), JSON.stringify(wacImpact),
             employeeId, ip || null, userAgent || null,
         ]
