@@ -15,7 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import apiClient from '../api/client';
+import { searchCatalog, lookupBarcode } from '../offline/catalogQueries';
 import useCycleCountStore from '../store/useCycleCountStore';
 import PremiumScanner from '../components/ui/PremiumScanner';
 import RequirePermission from '../components/RequirePermission';
@@ -45,13 +45,12 @@ function UnassignedSearchScreenInner() {
   const [pendingBarcodeToLink, setPendingBarcodeToLink] = useState<string | null>(null);
 
   // ── Core search function (shared by debounce + barcode scan) ─────────────
+  // Reads the local catalogue rather than the server: the store loses power to
+  // the server without losing it to the phones, and lookup has to survive that.
   const fetchParts = useCallback(async (q: string): Promise<any[]> => {
     const trimmed = q.trim();
     if (!trimmed) return [];
-    const { data } = await apiClient.get('/parts', { params: { search: trimmed } });
-    // API returns { data: [...] } or an array directly
-    const list = Array.isArray(data) ? data : (data?.data ?? data?.results ?? []);
-    return list;
+    return searchCatalog(trimmed);
   }, []);
 
   // ── Debounced autocomplete ────────────────────────────────────────────────
@@ -97,38 +96,26 @@ function UnassignedSearchScreenInner() {
     const trimmed = barcode.trim();
     if (!trimmed) return { status: 'not_found' as const };
     try {
-      // 1. Try exact match lookup
-      const { data } = await apiClient.get(`/parts/barcode/${encodeURIComponent(trimmed)}`);
-      if (data) {
-        startAdHocCount(data);
+      // 1. Exact barcode hit
+      const exact = await lookupBarcode(trimmed);
+      if (exact) {
+        startAdHocCount(exact);
         router.push('/count');
         return { status: 'success' as const };
       }
-    } catch (err: any) {
-      const status = err?.status ?? err?.response?.status;
-      if (status !== 404) {
-        console.error('Barcode lookup error:', err);
-        return { status: 'error' as const, message: 'Server lookup error' };
-      }
-    }
 
-    // 2. Try search parts as fallback
-    try {
+      // 2. Fall back to searching the code as text -- some codes are printed
+      // on the box but recorded as a part number rather than a barcode.
       const list = await fetchParts(trimmed);
       if (list.length > 0) {
-        // Prefer exact barcode match or fallback to top result
-        const exactMatchFromList = list.find(
-          (p: any) => p.barcodes && p.barcodes.includes(trimmed)
-        ) ?? list[0];
-        startAdHocCount(exactMatchFromList);
+        const match = list.find((p: any) => p.barcodes?.includes(trimmed)) ?? list[0];
+        startAdHocCount(match);
         router.push('/count');
         return { status: 'success' as const };
       }
-    } catch (err: any) {
-      const status = err?.status ?? err?.response?.status;
-      if (status !== 404) {
-        console.error('Fetch parts lookup error:', err);
-      }
+    } catch (err) {
+      console.error('Barcode lookup error:', err);
+      return { status: 'error' as const, message: 'Lookup failed' };
     }
 
     // 3. Not found - will trigger the 404 screen in PremiumScanner

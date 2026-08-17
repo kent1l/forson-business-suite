@@ -15,6 +15,7 @@ import useSettingsStore from '../store/useSettingsStore';
 import useBrandStore from '../store/useBrandStore';
 import useOutboxStore from '../offline/outbox';
 import useOutboxSync from '../offline/useOutboxSync';
+import useCatalogSync from '../offline/useCatalogSync';
 import useServerReachability from '../hooks/useServerReachability';
 import ConnectionBanner from '../components/ui/ConnectionBanner';
 import AppErrorBoundary from '../components/AppErrorBoundary';
@@ -66,6 +67,7 @@ function AppShell() {
   const colorScheme = useColorScheme();
   const { status } = useServerReachability();
   useOutboxSync(status === 'online');
+  useCatalogSync(status === 'online');
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>

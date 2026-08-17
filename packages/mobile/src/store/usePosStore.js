@@ -44,7 +44,9 @@ const usePosStore = create((set, get) => ({
         brand_name: product.brand_name,
         sale_price: parseFloat(product.last_sale_price ?? product.sale_price ?? 0),
         quantity: initialQty,
-        stock_qty: product.stock_qty ?? product.stock_on_hand ?? 0,
+        // Left undefined rather than zeroed when the server hasn't answered, so
+        // "unknown stock" stays distinguishable from "none in stock".
+        stock_qty: product.stock_qty ?? product.stock_on_hand,
         is_tax_inclusive_price: product.is_tax_inclusive_price,
       };
       const cart = [...state.cart, item];

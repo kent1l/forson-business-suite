@@ -4,6 +4,8 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import apiClient from '../../api/client';
+import { searchCatalog, lookupBarcode } from '../../offline/catalogQueries';
+import useServerReachability from '../../hooks/useServerReachability';
 import PremiumScanner from '../../components/ui/PremiumScanner';
 import Screen from '../../components/ui/Screen';
 import AppHeader from '../../components/ui/AppHeader';
@@ -17,7 +19,8 @@ type Part = {
   part_id: number;
   internal_sku: string;
   display_name: string;
-  stock_on_hand: string;
+  /** Absent when the server is unreachable -- see the stock column below. */
+  stock_on_hand?: string | null;
   last_sale_price: string | null;
   wac_cost: string | null;
 };
@@ -35,6 +38,8 @@ const SEARCH_DEBOUNCE_MS = 300;
 export default function StockLookupScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const { status: reachability } = useServerReachability();
+  const isOnline = reachability === 'online';
 
   const [term, setTerm] = useState('');
   const [results, setResults] = useState<Part[]>([]);
@@ -44,6 +49,12 @@ export default function StockLookupScreen() {
   // overwriting fresher results.
   const requestSeq = useRef(0);
 
+  /**
+   * Identity comes from the local catalogue so the screen still answers "which
+   * part is this" during an outage. Stock cannot: it is a live sum, so when the
+   * server is gone the column goes blank rather than quoting a number that was
+   * true an hour ago.
+   */
   const search = useCallback(async (keyword: string) => {
     const seq = ++requestSeq.current;
     if (keyword.trim().length < 2) {
@@ -53,14 +64,37 @@ export default function StockLookupScreen() {
     }
     setSearching(true);
     try {
+      const local = await searchCatalog(keyword.trim());
+      if (seq !== requestSeq.current) return;
+
+      const rows: Part[] = local.map((p) => ({
+        part_id: p.part_id,
+        internal_sku: p.internal_sku ?? '',
+        display_name: p.display_name ?? '',
+        last_sale_price: p.last_sale_price != null ? String(p.last_sale_price) : null,
+        wac_cost: p.wac_cost != null ? String(p.wac_cost) : null,
+        stock_on_hand: undefined,
+      }));
+      setResults(rows);
+
+      if (!isOnline || rows.length === 0) return;
+
       const { data } = await apiClient.get(`/power-search/parts?keyword=${encodeURIComponent(keyword.trim())}`);
-      if (seq === requestSeq.current) setResults(Array.isArray(data) ? data : []);
+      if (seq !== requestSeq.current || !Array.isArray(data)) return;
+
+      const stockById = new Map<number, string>(
+        data.map((d: any) => [d.part_id, d.stock_on_hand])
+      );
+      setResults((prev) =>
+        prev.map((r) => (stockById.has(r.part_id) ? { ...r, stock_on_hand: stockById.get(r.part_id) } : r))
+      );
     } catch {
-      if (seq === requestSeq.current) setResults([]);
+      // The local read is what this screen depends on; a failed stock overlay
+      // just leaves the column blank, which is the honest outcome anyway.
     } finally {
       if (seq === requestSeq.current) setSearching(false);
     }
-  }, []);
+  }, [isOnline]);
 
   useEffect(() => {
     const t = setTimeout(() => search(term), SEARCH_DEBOUNCE_MS);
@@ -70,21 +104,23 @@ export default function StockLookupScreen() {
   /** A scan that resolves to exactly one part goes straight to its detail. */
   const resolveBarcode = async (barcode: string) => {
     try {
-      const { data } = await apiClient.get(`/parts/barcode/${encodeURIComponent(barcode)}`);
-      const partId = data?.part_id ?? data?.part?.part_id;
-      if (!partId) return { status: 'not_found' as const };
+      const part = await lookupBarcode(barcode);
+      if (!part) return { status: 'not_found' as const };
       setScannerOpen(false);
-      router.push(`/stock/${partId}` as never);
+      router.push(`/stock/${part.part_id}` as never);
       return { status: 'success' as const };
-    } catch (err: any) {
-      if (err?.response?.status === 404) return { status: 'not_found' as const };
+    } catch {
       return { status: 'error' as const, message: 'Could not look that up.' };
     }
   };
 
   const renderItem = ({ item }: { item: Part }) => {
+    // Zero is a real answer and must never be how "we don't know" looks.
+    const unknownStock = item.stock_on_hand === undefined || item.stock_on_hand === null;
     const qty = Number(item.stock_on_hand || 0);
-    const tone = qty > 0 ? theme.success : qty < 0 ? theme.danger : theme.textMuted;
+    const tone = unknownStock
+      ? theme.textMuted
+      : qty > 0 ? theme.success : qty < 0 ? theme.danger : theme.textMuted;
 
     return (
       <Card onPress={() => router.push(`/stock/${item.part_id}` as never)} style={styles.resultCard}>
@@ -101,8 +137,10 @@ export default function StockLookupScreen() {
             )}
           </View>
           <View style={styles.qtyBox}>
-            <Text style={[styles.qty, { color: tone }]}>{qty}</Text>
-            <Text style={[styles.qtyLabel, { color: theme.textMuted }]}>on hand</Text>
+            <Text style={[styles.qty, { color: tone }]}>{unknownStock ? '—' : qty}</Text>
+            <Text style={[styles.qtyLabel, { color: theme.textMuted }]}>
+              {unknownStock ? 'offline' : 'on hand'}
+            </Text>
           </View>
         </View>
       </Card>
