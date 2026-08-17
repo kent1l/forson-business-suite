@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { DocumentSearchFilters, DocumentType } from './types';
+import InfoTip from '../ui/InfoTip';
 
 const DOCUMENT_TYPES: DocumentType[] = ['GRN', 'Sales', 'Invoice', 'PurchaseOrders'];
 const DATE_PRESETS = [7, 30, 90, 365];
@@ -21,10 +22,20 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({ filters, applyFilt
     };
     return (
         <aside className="w-64 bg-white border-r border-gray-200 p-4 flex-shrink-0">
-            <h2 className="text-lg font-semibold mb-4">Documents</h2>
+            <h2 className="text-lg font-semibold mb-4 flex items-center gap-1">
+                Documents
+                <InfoTip label="Documents">
+                    This is a read-only library — you look up records that already exist here rather than upload or create new ones from this screen.
+                </InfoTip>
+            </h2>
             <div className="space-y-6">
                 <div>
-                    <h3 className="text-sm font-semibold text-gray-500 mb-2">TYPE</h3>
+                    <h3 className="text-sm font-semibold text-gray-500 mb-2 flex items-center gap-1">
+                        TYPE
+                        <InfoTip label="Type">
+                            Narrows the list to one document type — GRN, Sales, Invoice, or PurchaseOrders — or All.
+                        </InfoTip>
+                    </h3>
                     <div className="space-y-1">
                         {['All', ...DOCUMENT_TYPES].map(type => (
                             <button
@@ -38,7 +49,12 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({ filters, applyFilt
                     </div>
                 </div>
                 <div>
-                    <h3 className="text-sm font-semibold text-gray-500 mb-2">DATE RANGE</h3>
+                    <h3 className="text-sm font-semibold text-gray-500 mb-2 flex items-center gap-1">
+                        DATE RANGE
+                        <InfoTip label="Date Range">
+                            Pick a preset window, or choose Custom Range and enter both a From and To date — Apply won't do anything until both are set.
+                        </InfoTip>
+                    </h3>
                      <div className="space-y-1">
                         {DATE_PRESETS.map(days => (
                             <button

@@ -4,6 +4,7 @@ import api from '../api';
 import toast from 'react-hot-toast';
 import SearchBar from '../components/SearchBar';
 import Icon from '../components/ui/Icon';
+import InfoTip from '../components/ui/InfoTip';
 import Combobox from '../components/ui/Combobox';
 import { ICONS } from '../constants';
 import useDraft from '../hooks/useDraft';
@@ -342,7 +343,14 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                        <label className={labelClass}>Receive Against Purchase Order (Optional)</label>
+                        <label className={`${labelClass} flex items-center gap-1`}>
+                            Receive Against Purchase Order (Optional)
+                            <InfoTip label="Receive Against Purchase Order">
+                                Only Purchase Orders with status Ordered appear in this list. Once a PO becomes
+                                Partially Received, it drops off this list — plan to receive its full remaining
+                                quantity in one pass where possible.
+                            </InfoTip>
+                        </label>
                         <select value={selectedPO ? selectedPO.po_id : ''} onChange={e => handleSelectPO(e.target.value)} className={selectClass}>
                             <option value="">-- Select a PO --</option>
                             {openPOs.map(po => <option key={po.po_id} value={po.po_id}>{po.po_number} - {po.supplier_name}</option>)}
@@ -410,8 +418,25 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
                             <tr>
                                 <th className="p-3 text-xs font-semibold text-gray-600 dark:text-slate-300 uppercase tracking-wide">Part Detail</th>
                                 <th className="p-3 text-xs font-semibold text-gray-600 dark:text-slate-300 uppercase tracking-wide w-28 text-center">Quantity</th>
-                                <th className="p-3 text-xs font-semibold text-gray-600 dark:text-slate-300 uppercase tracking-wide w-32 text-center">Cost Price</th>
-                                <th className="p-3 text-xs font-semibold text-gray-600 dark:text-slate-300 uppercase tracking-wide w-32 text-center">Sale Price</th>
+                                <th className="p-3 text-xs font-semibold text-gray-600 dark:text-slate-300 uppercase tracking-wide w-32 text-center">
+                                    <span className="inline-flex items-center gap-1">
+                                        Cost Price
+                                        <InfoTip label="Cost Price">
+                                            Editable here — this posts directly to inventory valuation and the
+                                            supplier bill amount, not the PO's original cost. Always match the
+                                            physical delivery and supplier invoice.
+                                        </InfoTip>
+                                    </span>
+                                </th>
+                                <th className="p-3 text-xs font-semibold text-gray-600 dark:text-slate-300 uppercase tracking-wide w-32 text-center">
+                                    <span className="inline-flex items-center gap-1">
+                                        Sale Price
+                                        <InfoTip label="Sale Price">
+                                            The price you intend to sell the part at going forward. Optional per
+                                            line — defaults to the part's last sale price if known.
+                                        </InfoTip>
+                                    </span>
+                                </th>
                                 <th className="p-3 text-xs font-semibold text-gray-600 dark:text-slate-300 uppercase tracking-wide w-32 text-right">Line Total</th>
                                 <th className="p-3 text-xs font-semibold text-gray-600 dark:text-slate-300 uppercase tracking-wide w-16 text-center"></th>
                             </tr>

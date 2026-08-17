@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
+import InfoTip from '../components/ui/InfoTip';
 import { ICONS } from '../constants';
 
 const STATUS_TABS = [
@@ -112,6 +113,9 @@ export default function ExpenseLexiconPage() {
                 <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
                     <Icon path={ICONS.star} className="w-6 h-6 text-blue-600" />
                     <span>Learned Expense Terms</span>
+                    <InfoTip label="Learned Expense Terms">
+                        Approving, ignoring, or correcting a term here never changes any expense already recorded — it only affects how future Quick Entry text gets interpreted.
+                    </InfoTip>
                 </h1>
                 <p className="text-sm text-slate-500 mt-1 max-w-3xl">
                     When staff record expenses in everyday language, the system collects the words they use

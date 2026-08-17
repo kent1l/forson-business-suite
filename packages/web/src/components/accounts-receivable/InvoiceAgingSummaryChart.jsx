@@ -30,6 +30,7 @@
  */
 import { exportToCSV } from '../../utils/csv';
 import { formatCurrency } from '../../utils/currency';
+import InfoTip from '../ui/InfoTip';
 
 // Invoice Aging Summary Chart Component
 const InvoiceAgingSummaryChart = ({ agingData, loading = false, onBucketClick }) => {
@@ -64,7 +65,12 @@ const InvoiceAgingSummaryChart = ({ agingData, loading = false, onBucketClick })
     return (
         <div className="bg-white p-6 rounded-lg border border-gray-200 mb-6">
             <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-gray-800">Invoice Aging Summary</h2>
+                <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-1.5">
+                    Invoice Aging Summary
+                    <InfoTip label="Aging Buckets">
+                        How overdue each invoice's remaining balance is, grouped by how many days past its due date it is: Current, 1-30, 31-60, 61-90, and 90+ Days. Invoices with no balance left drop out of aging entirely.
+                    </InfoTip>
+                </h2>
                 <button
                     onClick={() => exportToCSV(agingData, 'invoice-aging-summary.csv')}
                     className="text-sm px-3 py-1 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"

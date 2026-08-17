@@ -7,6 +7,7 @@ import StatusBadge from '../components/ui/StatusBadge';
 import LoadingState from '../components/ui/LoadingState';
 import ErrorState from '../components/ui/ErrorState';
 import EmptyState from '../components/ui/EmptyState';
+import InfoTip from '../components/ui/InfoTip';
 import { useAuth } from '../contexts/AuthContext';
 
 const INPUT_CLASS = 'w-full px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500';
@@ -294,9 +295,23 @@ const LeavePage = () => {
                                     <tr className="text-sm font-semibold text-gray-600 dark:text-slate-400">
                                         <th className="p-2">Leave Type</th>
                                         <th className="p-2 text-right">Entitled</th>
-                                        <th className="p-2 text-right">Carried Over</th>
+                                        <th className="p-2 text-right">
+                                            <span className="inline-flex items-center gap-1 justify-end">
+                                                Carried Over
+                                                <InfoTip label="Carried Over">
+                                                    Days carried over from a prior period, added on top of this period's Entitled days.
+                                                </InfoTip>
+                                            </span>
+                                        </th>
                                         <th className="p-2 text-right">Used</th>
-                                        <th className="p-2 text-right">Remaining</th>
+                                        <th className="p-2 text-right">
+                                            <span className="inline-flex items-center gap-1 justify-end">
+                                                Remaining
+                                                <InfoTip label="Remaining" align="right">
+                                                    Remaining = Entitled + Carried Over − Used. A negative figure is shown in red.
+                                                </InfoTip>
+                                            </span>
+                                        </th>
                                     </tr>
                                 </thead>
                                 <tbody>

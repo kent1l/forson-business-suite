@@ -4,6 +4,7 @@ import { parsePaymentTermsDays } from '../utils/terms';
 import { formatPhysicalReceiptNumber } from '../utils/receiptNumberFormatter';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
+import InfoTip from '../components/ui/InfoTip';
 import { ICONS } from '../constants';
 import SearchBar from '../components/SearchBar';
 import Modal from '../components/ui/Modal';
@@ -462,7 +463,12 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                     {/* Customer and Payment Section */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-8 border-b">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Customer</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
+                                Customer
+                                <InfoTip label="Customer">
+                                    Walk-In customers can only be invoiced Due on Receipt — they cannot be given payment terms. If a customer's Outstanding Balance exceeds their Credit Limit, an Over Limit badge appears and you should check with a supervisor before posting.
+                                </InfoTip>
+                            </label>
                             <div className="flex items-center space-x-2">
                                 <select value={selectedCustomer} onChange={e => setSelectedCustomer(e.target.value)} className="w-full px-3 py-2 border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
                                     <option value="">Select a Customer</option>
@@ -487,8 +493,13 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                             })()}
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Tax Rate</label>
-                            <select 
+                            <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
+                                Tax Rate
+                                <InfoTip label="Tax Rate">
+                                    Applies to invoice lines that don't specify their own rate. A tax-exclusive line adds tax on top of the entered price; a tax-inclusive line backs the tax out of a price that already includes it.
+                                </InfoTip>
+                            </label>
+                            <select
                                 value={selectedTaxRate?.tax_rate_id || ''} 
                                 onChange={e => {
                                     const taxRate = taxRates.find(rate => rate.tax_rate_id === parseInt(e.target.value));
@@ -518,7 +529,12 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                             </div>
                         )}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Physical Receipt No.</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
+                                Physical Receipt No.
+                                <InfoTip label="Physical Receipt No.">
+                                    The number from your pre-printed paper receipt book, so the system record matches the paper copy the customer receives. It's normalized automatically (e.g. "si 4521" becomes "SI-4521") and must be unique.
+                                </InfoTip>
+                            </label>
                             <input
                                 type="text"
                                 value={physicalReceiptNo}
@@ -528,7 +544,12 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Payment Terms</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
+                                Payment Terms
+                                <InfoTip label="Payment Terms">
+                                    Selling on terms lets the customer take the goods now and pay later within a set number of days. "Due on Receipt" means no credit is extended — Walk-In customers are restricted to this option.
+                                </InfoTip>
+                            </label>
                             <div className="flex items-center space-x-3">
                                 <select
                                     value={commonTerms.includes(terms) ? terms : 'custom'}

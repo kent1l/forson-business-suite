@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
+import InfoTip from '../components/ui/InfoTip';
 import { ICONS } from '../constants';
 
 function parseCSV(text) {
@@ -305,7 +306,12 @@ export default function SoaGenPage() {
             <main className="flex-1 max-w-5xl w-full mx-auto p-6 md:p-8 space-y-8">
                 {/* Intro Card */}
                 <div className="bg-gradient-to-br from-slate-950 to-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl">
-                    <h2 className="text-lg font-bold text-slate-200 mb-2">Standalone A/R Statement Engine</h2>
+                    <h2 className="text-lg font-bold text-slate-200 mb-2 flex items-center gap-1.5">
+                        Standalone A/R Statement Engine
+                        <InfoTip label="Standalone A/R Statement Engine">
+                            This tool works entirely from the CSV files you upload below, in memory — it does not read live invoices from the system and does not write anything back to the database. It's a separate reconciliation/statement utility from the invoices posted on the New Invoice page.
+                        </InfoTip>
+                    </h2>
                     <p className="text-slate-400 text-sm leading-relaxed max-w-3xl">
                         Upload custom registry and transaction ledger files below to generate statement documents.
                         This utility operates entirely in-memory, computing balance reconciliation and chronological aging breakdowns without modifying database records.
@@ -321,7 +327,12 @@ export default function SoaGenPage() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             {/* Customers File */}
                             <div className="flex flex-col">
-                                <label className="text-xs font-semibold text-slate-400 mb-2">1. Customer Registry (customers.csv)</label>
+                                <label className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1">
+                                    1. Customer Registry (customers.csv)
+                                    <InfoTip label="Customer Registry (customers.csv)">
+                                        Expected columns: CUSTOMER_ID, COMPANY_NAME, TIN, ADDRESS, PHONE, EMAIL, CREDIT_LIMIT, PAYMENT_TERMS, CREDIT_STATUS, WALLET_BALANCE. Use the sample download below if you don't already have a file in this format.
+                                    </InfoTip>
+                                </label>
                                 <div className="relative border-2 border-dashed border-slate-800 hover:border-indigo-500/50 rounded-lg p-5 flex flex-col items-center justify-center transition-colors bg-slate-900/50">
                                     <input 
                                         type="file" 
@@ -346,7 +357,12 @@ export default function SoaGenPage() {
 
                             {/* Transactions File */}
                             <div className="flex flex-col">
-                                <label className="text-xs font-semibold text-slate-400 mb-2">2. Consolidated Ledger (transactions.csv)</label>
+                                <label className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1">
+                                    2. Consolidated Ledger (transactions.csv)
+                                    <InfoTip label="Consolidated Ledger (transactions.csv)">
+                                        Expected columns: CUSTOMER_ID, DATE, DUE_DATE, INVOICE#, PHYSICAL_RECEIPT#, DESCRIPTION, DEBIT, CREDIT, Note. Use the sample download below if you don't already have a file in this format.
+                                    </InfoTip>
+                                </label>
                                 <div className="relative border-2 border-dashed border-slate-800 hover:border-indigo-500/50 rounded-lg p-5 flex flex-col items-center justify-center transition-colors bg-slate-900/50">
                                     <input 
                                         type="file" 

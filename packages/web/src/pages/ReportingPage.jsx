@@ -1,5 +1,6 @@
 import React, { useState, Suspense, lazy } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import InfoTip from '../components/ui/InfoTip';
 
 // Dynamically import all report components
 const SalesReport = lazy(() => import('../components/reports/SalesReport'));
@@ -40,7 +41,12 @@ const ReportingPage = () => {
 
     return (
         <div>
-            <h1 className="text-2xl font-semibold text-gray-800 mb-6">Reports</h1>
+            <h1 className="text-2xl font-semibold text-gray-800 mb-6 flex items-center gap-2">
+                Reports
+                <InfoTip label="Net vs. Gross">
+                    "Net" in a report name (e.g. Sales Summary (Net)) means refunded amounts have already been backed out of the figures. For refund activity itself, use the Refunds report.
+                </InfoTip>
+            </h1>
             <div className="mb-6 border-b border-gray-200">
                 <nav className="-mb-px flex space-x-6 overflow-x-auto">
                     {reportTabs.map(tab => (

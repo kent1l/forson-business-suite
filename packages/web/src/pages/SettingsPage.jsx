@@ -3,6 +3,7 @@ import api from '../api';
 import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
+import InfoTip from '../components/ui/InfoTip';
 import { ICONS } from '../constants';
 import { QrCode } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -209,7 +210,12 @@ const CycleCountSettings = ({ settings, handleChange }) => (
                 <input type="number" name="CYCLE_COUNT_MAX_VARIANCE_QTY" value={settings.CYCLE_COUNT_MAX_VARIANCE_QTY || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Auto-Approve Max Financial Impact</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1 flex items-center gap-1">
+                    Auto-Approve Max Financial Impact
+                    <InfoTip label="Auto-Approve Max Financial Impact">
+                        Count discrepancies at or below this dollar amount are applied to inventory automatically, with no human review. Set this conservatively — a high number here lets bigger count errors slip through unnoticed.
+                    </InfoTip>
+                </label>
                 <input type="number" step="0.01" name="CYCLE_COUNT_MAX_FINANCIAL_IMPACT" value={settings.CYCLE_COUNT_MAX_FINANCIAL_IMPACT || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
             </div>
         </div>
@@ -495,7 +501,12 @@ const TaxRateForm = ({ rate, onSave, onCancel }) => {
                 <input type="text" name="rate_name" value={formData.rate_name} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" required />
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Rate Percentage (e.g., 0.12 for 12%)</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1 flex items-center gap-1">
+                    Rate Percentage (e.g., 0.12 for 12%)
+                    <InfoTip label="Rate Percentage">
+                        Enter this as a decimal fraction of 1, not a whole-number percentage — 12% is <code>0.12</code>, not <code>12</code>. This value feeds directly into pricing and invoice totals shown to customers.
+                    </InfoTip>
+                </label>
                 <input
                     type="number"
                     step="0.01"

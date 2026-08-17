@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import Icon from '../ui/Icon';
+import InfoTip from '../ui/InfoTip';
 import { ICONS } from '../../constants';
 
 const EMPTY_FORM = { component_name: '', component_type: 'DEDUCTION', is_taxable: true, sort_order: 0 };
@@ -126,8 +127,25 @@ export default function PayComponentManager() {
                                 <th className="py-3 px-4">Code</th>
                                 <th className="py-3 px-4">Name</th>
                                 <th className="py-3 px-4 text-center">Type</th>
-                                <th className="py-3 px-4 text-center">Taxable</th>
-                                <th className="py-3 px-4 text-center">Source</th>
+                                <th className="py-3 px-4 text-center">
+                                    <span className="inline-flex items-center justify-center gap-1">
+                                        Taxable
+                                        <InfoTip label="Taxable">
+                                            Whether this component counts toward taxable income when withholding tax is
+                                            computed for a payslip.
+                                        </InfoTip>
+                                    </span>
+                                </th>
+                                <th className="py-3 px-4 text-center">
+                                    <span className="inline-flex items-center justify-center gap-1">
+                                        Source
+                                        <InfoTip label="Source">
+                                            SYSTEM components (basic pay, overtime, statutory contributions) are built into
+                                            the payroll engine and locked. CUSTOM components are created here and can be
+                                            edited or deactivated.
+                                        </InfoTip>
+                                    </span>
+                                </th>
                                 <th className="py-3 px-4 text-center">Status</th>
                                 <th className="py-3 px-4 text-center">Actions</th>
                             </tr>

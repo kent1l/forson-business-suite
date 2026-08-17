@@ -7,6 +7,7 @@ import KPICard from '../components/ui/KPICard';
 import LoadingState from '../components/ui/LoadingState';
 import ErrorState from '../components/ui/ErrorState';
 import EmptyState from '../components/ui/EmptyState';
+import InfoTip from '../components/ui/InfoTip';
 import { useAuth } from '../contexts/AuthContext';
 
 const INPUT_CLASS = 'w-full px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500';
@@ -459,7 +460,16 @@ const PayrollPage = () => {
                                     <tr className="text-sm font-semibold text-gray-600 dark:text-slate-400">
                                         <th className="p-2">Run</th>
                                         <th className="p-2">Period</th>
-                                        <th className="p-2">Status</th>
+                                        <th className="p-2">
+                                            <span className="inline-flex items-center gap-1">
+                                                Status
+                                                <InfoTip label="Run Status">
+                                                    A run moves through Draft → Computed → Approved → Paid → Posted, or Voided
+                                                    at any point before Posted. Approving locks in the figures — adjustments
+                                                    freeze and the run can no longer be recomputed from scratch.
+                                                </InfoTip>
+                                            </span>
+                                        </th>
                                         <th className="p-2 text-right">Employees</th>
                                         <th className="p-2 text-right">Gross</th>
                                         <th className="p-2 text-right">Net</th>
@@ -515,7 +525,13 @@ const PayrollPage = () => {
                         </p>
                     </div>
                     <div>
-                        <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Pay Period</label>
+                        <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1 flex items-center gap-1">
+                            Pay Period
+                            <InfoTip label="Pay Period">
+                                The date range a run covers, and which half of the month it is. Statutory contributions
+                                are legally monthly amounts, so they get split evenly across both cutoffs.
+                            </InfoTip>
+                        </label>
                         <select value={newPeriodId} onChange={(e) => setNewPeriodId(e.target.value)} className={INPUT_CLASS}>
                             <option value="">Select a period…</option>
                             {openPeriods.map((p) => (

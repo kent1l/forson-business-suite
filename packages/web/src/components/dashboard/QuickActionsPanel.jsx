@@ -1,5 +1,6 @@
 import { Plus, Package, Search, BarChart3, FileText, Truck, Users, Settings } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import InfoTip from '../ui/InfoTip';
 
 const COLOR_VARIANTS = {
     primary: { chip: 'bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400' },
@@ -122,8 +123,11 @@ export const QuickActionsPanel = ({ onNavigate }) => {
         // The action row sits directly on the page canvas rather than inside its
         // own panel - nesting cards inside a card added a frame that earned nothing.
         <section>
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3 flex items-center gap-1">
                 Quick actions
+                <InfoTip label="Quick actions">
+                    Shortcuts to common tasks so you can skip hunting through the sidebar menu. Which tiles you see depends on your permissions.
+                </InfoTip>
             </h3>
 
             {allowedActions.length === 0 ? (

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
+import InfoTip from '../ui/InfoTip';
 
 const PURPOSE_OPTIONS = [
     { value: 'SUPPLIER_PAYMENT', label: 'Supplier Bill Payment' },
@@ -179,7 +180,12 @@ const IssueOutboundChequeModal = ({ isOpen, onClose, onIssued }) => {
                         )}
                     </div>
                     <div>
-                        <label className={LABEL_CLASS}>Cheque Number</label>
+                        <label className={LABEL_CLASS + ' flex items-center gap-1'}>
+                            Cheque Number
+                            <InfoTip label="Cheque Number">
+                                Suggested automatically from the bank account's sequence, but always freely editable — the physical cheque book is the real source of truth.
+                            </InfoTip>
+                        </label>
                         <input type="text" value={form.cheque_number} onChange={(e) => handleChange('cheque_number', e.target.value)}
                             className={`${INPUT_CLASS} font-mono`} placeholder="e.g. 0001234" />
                     </div>
@@ -199,7 +205,12 @@ const IssueOutboundChequeModal = ({ isOpen, onClose, onIssued }) => {
                 </div>
 
                 <div>
-                    <label className={LABEL_CLASS}>Purpose</label>
+                    <label className={LABEL_CLASS + ' flex items-center gap-1'}>
+                        Purpose
+                        <InfoTip label="Purpose">
+                            Only Supplier Bill Payment lets you apply the cheque to open bills. The other purposes require an Expense Category instead.
+                        </InfoTip>
+                    </label>
                     <div className="flex flex-wrap gap-2">
                         {PURPOSE_OPTIONS.map(opt => (
                             <button
@@ -232,7 +243,12 @@ const IssueOutboundChequeModal = ({ isOpen, onClose, onIssued }) => {
                         </div>
                         {supplierBills.length > 0 && (
                             <div>
-                                <label className={LABEL_CLASS}>Apply to Bills (optional)</label>
+                                <label className={LABEL_CLASS + ' flex items-center gap-1'}>
+                                    Apply to Bills (optional)
+                                    <InfoTip label="Apply to Bills" align="right">
+                                        If you don't check any bills, the cheque is still issued but won't reduce a specific bill's balance. Always apply it to the bill(s) it's actually paying.
+                                    </InfoTip>
+                                </label>
                                 <div className="max-h-32 overflow-y-auto border border-gray-200 dark:border-slate-700 rounded-lg divide-y divide-gray-100 dark:divide-slate-700">
                                     {supplierBills.map(bill => (
                                         <label key={bill.bill_id} className="flex items-center gap-2 px-3 py-2 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-700 dark:text-slate-300">

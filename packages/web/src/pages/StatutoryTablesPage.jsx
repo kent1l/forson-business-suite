@@ -5,6 +5,7 @@ import Modal from '../components/ui/Modal';
 import StatusBadge from '../components/ui/StatusBadge';
 import LoadingState from '../components/ui/LoadingState';
 import ErrorState from '../components/ui/ErrorState';
+import InfoTip from '../components/ui/InfoTip';
 import { useAuth } from '../contexts/AuthContext';
 
 const INPUT_CLASS = 'w-full px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500';
@@ -227,7 +228,14 @@ const StatutoryTablesPage = () => {
 
     return (
         <div>
-            <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100 mb-2">Statutory Schedules</h1>
+            <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100 mb-2 flex items-center gap-1">
+                Statutory Schedules
+                <InfoTip label="Statutory Schedules">
+                    The versioned table of government contribution rates (SSS, PhilHealth, Pag-IBIG) and withholding
+                    tax brackets that a run's calculations look up. Schedules are dated, not just replaced, so old
+                    payslips always reproduce the numbers they were actually computed with.
+                </InfoTip>
+            </h1>
             <p className="text-sm text-gray-500 dark:text-slate-400 mb-6 max-w-3xl">
                 Contribution and withholding rates, versioned by effective date. A schedule that has already
                 been used by a payroll run is frozen so historical payslips stay reproducible — change those by
@@ -369,7 +377,13 @@ const StatutoryTablesPage = () => {
                         with the same figures, ready to edit. Payroll runs before that date keep using the old numbers.
                     </p>
                     <div>
-                        <label className={LABEL_CLASS}>Effective from</label>
+                        <label className={`${LABEL_CLASS} flex items-center gap-1`}>
+                            Effective from
+                            <InfoTip label="Effective from">
+                                Closes the current schedule the day before this date and opens a new, editable one with
+                                the same starting figures. Payroll runs before that date keep using the old numbers.
+                            </InfoTip>
+                        </label>
                         <input type="date" className={INPUT_CLASS} value={supersedeForm.effective_from}
                             onChange={(e) => setSupersedeForm((p) => ({ ...p, effective_from: e.target.value }))} />
                     </div>

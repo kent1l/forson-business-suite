@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import api from '../../api';
 import Modal from '../ui/Modal';
 import Combobox from '../ui/Combobox';
+import InfoTip from '../ui/InfoTip';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -82,7 +83,12 @@ const AddPayableModal = ({ isOpen, onClose, onCreated, presetSupplier = null }) 
 
                 <div className="grid grid-cols-2 gap-4">
                     <div>
-                        <label className={labelClass}>Bill Number</label>
+                        <label className={labelClass + ' flex items-center gap-1'}>
+                            Bill Number
+                            <InfoTip label="Bill Number">
+                                Identifies this bill. Leave it blank if the supplier didn't give you one — the system auto-generates one for you.
+                            </InfoTip>
+                        </label>
                         <input type="text" value={form.bill_number} onChange={(e) => handleChange('bill_number', e.target.value)}
                             placeholder="Auto-generated if blank" className={inputClass} />
                     </div>
@@ -99,7 +105,12 @@ const AddPayableModal = ({ isOpen, onClose, onCreated, presetSupplier = null }) 
                         <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">Leave blank to auto-compute from the supplier's payment terms.</p>
                     </div>
                     <div>
-                        <label className={labelClass}>Total Amount</label>
+                        <label className={labelClass + ' flex items-center gap-1'}>
+                            Total Amount
+                            <InfoTip label="Total Amount">
+                                The full amount owed on this bill. Required, and must be greater than zero.
+                            </InfoTip>
+                        </label>
                         <input type="number" step="0.01" min="0" required value={form.total_amount}
                             onChange={(e) => handleChange('total_amount', e.target.value)} className={inputClass} />
                     </div>

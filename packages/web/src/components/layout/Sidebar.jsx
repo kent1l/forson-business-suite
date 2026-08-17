@@ -35,7 +35,6 @@ const CATEGORIES = [
             { name: 'Inventory',       icon: ICONS.inventory,      page: 'inventory',       permission: 'inventory:view' },
             { name: 'Goods Receipt',   icon: ICONS.receipt,        page: 'goods_receipt',   permission: 'goods_receipt:create' },
             { name: 'Purchase Orders', icon: ICONS.purchase_order, page: 'purchase_orders', permission: 'purchase_orders:view' },
-            { name: 'Power Search',    icon: ICONS.power_search,   page: 'power_search',    permission: 'parts:view' },
             { name: 'Cycle Count',     icon: ICONS.dashboard,      page: 'cycle_count',     permission: 'cycle_count:execute' },
             { name: 'Manager Audit',   icon: ICONS.reporting,      page: 'manager_audit',   permission: 'cycle_count:manage' },
         ],
@@ -86,16 +85,18 @@ const CATEGORIES = [
         title: 'System & Analytics',
         icon: ICONS.reporting,
         items: [
-            { name: 'Reporting', icon: ICONS.reporting, page: 'reporting', permission: 'reports:view' },
-            { name: 'Settings',  icon: ICONS.settings,  page: 'settings',  permission: 'settings:view' },
+            { name: 'Reporting',   icon: ICONS.reporting, page: 'reporting', permission: 'reports:view' },
+            { name: 'Settings',    icon: ICONS.settings,  page: 'settings',  permission: 'settings:view' },
+            { name: 'User Guide',  icon: ICONS.guide,     external: true, href: '/user-guide.html', permission: 'dashboard:view' },
         ],
     },
 ];
 
 const TOP_ITEMS = [
-    { name: 'Dashboard', icon: ICONS.dashboard, page: 'dashboard', permission: 'dashboard:view' },
-    { name: 'My Pay',    icon: ICONS.dollar,    page: 'my_pay',    permission: 'payslip:view_own' },
-    { name: 'POS',        icon: ICONS.pos,       page: 'pos',       permission: 'pos:use' },
+    { name: 'Dashboard',    icon: ICONS.dashboard,    page: 'dashboard',    permission: 'dashboard:view' },
+    { name: 'POS',          icon: ICONS.pos,          page: 'pos',          permission: 'pos:use' },
+    { name: 'Power Search', icon: ICONS.power_search, page: 'power_search', permission: 'parts:view' },
+    { name: 'My Pay',       icon: ICONS.dollar,       page: 'my_pay',       permission: 'payslip:view_own' },
 ];
 
 // ─── Accordion: CSS grid-template-rows trick with smooth fade/slide ──
@@ -124,14 +125,20 @@ function AccordionContent({ isOpen, children }) {
 
 // ─── Single nav item ────────────────────────────────────────────────────────
 function NavItem({ item, currentPage, onNavigate, setIsOpen, isCollapsed, pendingCount, categoryTitle }) {
-    const isActive = currentPage === item.page;
+    const isActive = !item.external && currentPage === item.page;
     const badge = item.badge ? pendingCount : 0;
 
     return (
         <div className="relative group/item flex justify-center w-full">
             <a
-                href="#"
+                href={item.external ? item.href : '#'}
+                target={item.external ? '_blank' : undefined}
+                rel={item.external ? 'noopener noreferrer' : undefined}
                 onClick={(e) => {
+                    if (item.external) {
+                        if (setIsOpen) setIsOpen(false);
+                        return; // let the browser open the link in a new tab
+                    }
                     e.preventDefault();
                     onNavigate(item.page);
                     if (setIsOpen) setIsOpen(false);
@@ -214,7 +221,7 @@ function CategoryGroup({ cat, currentPage, onNavigate, setIsOpen, isCollapsed, i
                 <div className="w-8 h-px bg-slate-200/80 my-1" />
                 {visibleItems.map(item => (
                     <NavItem
-                        key={item.page}
+                        key={item.page || item.name}
                         item={item}
                         currentPage={currentPage}
                         onNavigate={onNavigate}
@@ -261,7 +268,7 @@ function CategoryGroup({ cat, currentPage, onNavigate, setIsOpen, isCollapsed, i
                 <div className="space-y-0.5 pb-1 pl-1">
                     {visibleItems.map(item => (
                         <NavItem
-                            key={item.page}
+                            key={item.page || item.name}
                             item={item}
                             currentPage={currentPage}
                             onNavigate={onNavigate}
@@ -410,7 +417,7 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
                         <div className={isCollapsed ? 'space-y-1 w-full flex flex-col items-center' : 'space-y-0.5 mb-4'}>
                             {filteredTopItems.map(item => (
                                 <NavItem
-                                    key={item.page}
+                                    key={item.page || item.name}
                                     item={item}
                                     currentPage={currentPage}
                                     onNavigate={onNavigate}

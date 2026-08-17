@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import Icon from '../../ui/Icon';
+import InfoTip from '../../ui/InfoTip';
 import { ICONS } from '../../../constants';
 import { formatCurrency } from '../../../utils/currency';
 import LoadingState from '../../ui/LoadingState';
@@ -189,7 +190,12 @@ const ARLedgerSoaTab = ({
                                 </p>
                             </div>
                             <div className="text-right">
-                                <div className="text-xs uppercase font-semibold text-gray-500">Net Account Balance</div>
+                                <div className="text-xs uppercase font-semibold text-gray-500 flex items-center justify-end gap-1">
+                                    Net Account Balance
+                                    <InfoTip label="Net Account Balance" align="right">
+                                        The authoritative, ledger-based total this customer owes — drawn from the AR ledger rather than any single invoice, which is why it can differ slightly from adding up the table below by hand if a manual adjustment was posted.
+                                    </InfoTip>
+                                </div>
                                 <div className="text-2xl font-bold font-mono text-blue-700">{formatCurrency(soaLedger.closing_balance)}</div>
                             </div>
                         </div>
@@ -275,6 +281,9 @@ const ARLedgerSoaTab = ({
                                 <h4 className="text-sm font-bold text-amber-900 flex items-center gap-2">
                                     <Icon path={ICONS.history} className="w-4 h-4 shrink-0 text-amber-700" />
                                     <span>Floating Collections / Uncleared Cheques</span>
+                                    <InfoTip label="Floating Collections / Uncleared Cheques">
+                                        Cheque and bank transfer payments are recorded as pending until someone marks them settled after the bank clears them. The customer still technically owes this amount until then.
+                                    </InfoTip>
                                     <span className="px-2 py-0.5 bg-amber-200 text-amber-900 rounded-full text-xs font-semibold">
                                         {soaLedger.pending_cheque_count} Items
                                     </span>

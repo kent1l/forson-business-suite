@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../utils/currency';
 import Modal from '../components/ui/Modal';
 import StatusBadge from '../components/ui/StatusBadge';
+import InfoTip from '../components/ui/InfoTip';
 
 const emptyForm = { account_name: '', bank_name: '', account_number: '', currency: 'PHP', opening_balance: '0', notes: '', default_cheque_template_id: '' };
 
@@ -100,7 +101,12 @@ const BankAccountsPage = () => {
         <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">Bank Accounts</h1>
+                    <div className="flex items-center gap-1.5">
+                        <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">Bank Accounts</h1>
+                        <InfoTip label="Bank Accounts">
+                            These are the business's own accounts — every outbound cheque is drawn from one. There's no delete button; use Deactivate instead, which hides an account from new-cheque issuance while keeping it in history.
+                        </InfoTip>
+                    </div>
                     <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">The business's own bank accounts, used for issuing and reconciling outbound cheques</p>
                 </div>
                 {canManage && (

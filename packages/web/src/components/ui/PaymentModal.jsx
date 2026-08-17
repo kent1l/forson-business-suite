@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSettings } from '../../contexts/SettingsContext';
+import InfoTip from './InfoTip';
 
 const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment, physicalReceipt = '', paymentMethods = [], initialMethod = '' }) => {
     const { settings } = useSettings();
@@ -90,7 +91,12 @@ const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment, physicalReceip
                     </div>
                     {selectedMethod.toLowerCase() === 'cash' && (
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Cash Tendered</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                                Cash Tendered
+                                <InfoTip label="Cash Tendered">
+                                    Leaving this blank or at 0 and confirming treats it as exact change — no change due will be shown.
+                                </InfoTip>
+                            </label>
                             <input
                                 ref={cashInputRef}
                                 type="number"

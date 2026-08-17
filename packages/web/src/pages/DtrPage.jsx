@@ -7,6 +7,7 @@ import KPICard from '../components/ui/KPICard';
 import LoadingState from '../components/ui/LoadingState';
 import ErrorState from '../components/ui/ErrorState';
 import EmptyState from '../components/ui/EmptyState';
+import InfoTip from '../components/ui/InfoTip';
 import AttendanceGrid from '../components/hr/AttendanceGrid';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -268,7 +269,14 @@ const DtrPage = () => {
                                     <tr className="text-sm font-semibold text-gray-600 dark:text-slate-400">
                                         <th className="p-2">Date</th>
                                         <th className="p-2">Employee</th>
-                                        <th className="p-2">Day Type</th>
+                                        <th className="p-2">
+                                            <span className="inline-flex items-center gap-1">
+                                                Day Type
+                                                <InfoTip label="Day Type">
+                                                    Present, Half Day, Absent, On Leave, Rest Day, Rest Day Worked, Holiday, Holiday Worked, or Suspended — this is the attendance value payroll reads. Editable inline unless the day is locked.
+                                                </InfoTip>
+                                            </span>
+                                        </th>
                                         <th className="p-2 text-right">Days</th>
                                         <th className="p-2 text-right">Hours</th>
                                         <th className="p-2">Shift</th>
@@ -332,7 +340,14 @@ const DtrPage = () => {
                                     <tr className="text-sm font-semibold text-gray-600 dark:text-slate-400">
                                         <th className="p-2">Employee</th>
                                         <th className="p-2">Department</th>
-                                        <th className="p-2 text-right">Days Paid</th>
+                                        <th className="p-2 text-right">
+                                            <span className="inline-flex items-center gap-1 justify-end">
+                                                Days Paid
+                                                <InfoTip label="Days Paid" align="right">
+                                                    The sum of each day's day fraction for the period: a whole Present day counts as 1.00, a Half Day as 0.50, and non-working entries count as 0.00.
+                                                </InfoTip>
+                                            </span>
+                                        </th>
                                         <th className="p-2 text-right">Worked</th>
                                         <th className="p-2 text-right">Absent</th>
                                         <th className="p-2 text-right">Leave</th>

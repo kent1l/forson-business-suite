@@ -6,6 +6,7 @@ import { ICONS } from '../../constants';
 import ReportCard from './ReportCard';
 import PaginationControls from '../ui/PaginationControls';
 import SortableHeader from '../ui/SortableHeader';
+import InfoTip from '../ui/InfoTip';
 import { getPaginatedPayload } from '../../utils/paginatedResponse';
 import { sortData } from '../../utils/sortData';
 import { format, parseISO } from 'date-fns';
@@ -117,7 +118,20 @@ const SalesReport = () => {
                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
                     <ReportCard title="Total Sales" value={summary.totalSales} icon={ICONS.invoice} color={{bg: 'bg-green-100', text: 'text-green-600'}} isCurrency={true} />
                     <ReportCard title="Total Cost" value={summary.totalCost} icon={ICONS.receipt} color={{bg: 'bg-orange-100', text: 'text-orange-600'}} isCurrency={true} />
-                    <ReportCard title="Profit" value={summary.profit} icon={ICONS.dashboard} color={{bg: 'bg-blue-100', text: 'text-blue-600'}} isCurrency={true} />
+                    <ReportCard
+                        title={
+                            <span className="inline-flex items-center gap-1">
+                                Profit
+                                <InfoTip label="Profit">
+                                    Profit = Total Sales − Total Cost for the selected period.
+                                </InfoTip>
+                            </span>
+                        }
+                        value={summary.profit}
+                        icon={ICONS.dashboard}
+                        color={{bg: 'bg-blue-100', text: 'text-blue-600'}}
+                        isCurrency={true}
+                    />
                     <ReportCard title="Total Invoices" value={summary.totalInvoices} icon={ICONS.parts} color={{bg: 'bg-indigo-100', text: 'text-indigo-600'}} />
                 </div>
             )}

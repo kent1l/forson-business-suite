@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
+import InfoTip from '../components/ui/InfoTip';
 import { ICONS } from '../constants';
 import SearchBar from '../components/SearchBar';
 import { enrichPartsArray } from '../helpers/applicationCache';
@@ -123,7 +124,14 @@ const InventoryPage = () => {
     return (
         <div>
             <div className="mb-6">
-                <h1 className="text-2xl font-semibold text-gray-800">Inventory Management</h1>
+                <h1 className="text-2xl font-semibold text-gray-800 flex items-center gap-1.5">
+                    Inventory Management
+                    <InfoTip label="Stock on Hand, WAC & Total Value">
+                        WAC (Weighted Average Cost) is the average cost per unit of the stock you're currently
+                        holding, blending everything bought in at different prices over time. Total Value is
+                        Stock on Hand &times; WAC.
+                    </InfoTip>
+                </h1>
                 <div className="mt-3 flex flex-wrap items-center gap-3">
                     <div className="relative w-full max-w-md">
                         <SearchBar

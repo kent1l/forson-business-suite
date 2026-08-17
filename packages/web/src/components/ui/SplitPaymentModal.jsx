@@ -3,6 +3,7 @@ import api from '../../api';
 import toast from 'react-hot-toast';
 import { useSettings } from '../../contexts/SettingsContext';
 import Icon from '../ui/Icon';
+import InfoTip from '../ui/InfoTip';
 import { ICONS } from '../../constants';
 
 const SplitPaymentModal = ({ 
@@ -433,8 +434,11 @@ const SplitPaymentModal = ({
 
                                     <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
                                                 Payment Method <span className="text-red-500">*</span>
+                                                <InfoTip label="Payment Method">
+                                                    Instant methods count right away; delayed methods (e.g. Cheque) stay pending until settled; On Account isn't collected now — it invoices the customer and requires a real, registered customer (not Walk-in).
+                                                </InfoTip>
                                             </label>
                                             <select
                                                 value={payment.method_id}

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
+import InfoTip from '../ui/InfoTip';
 
 const StockAdjustmentForm = ({ part, user, onSave, onCancel }) => {
     const [quantity, setQuantity] = useState('');
@@ -86,8 +87,13 @@ const StockAdjustmentForm = ({ part, user, onSave, onCancel }) => {
             </div>
 
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
                     Adjustment Quantity
+                    <InfoTip label="Adjustment Quantity">
+                        This posts directly to inventory and is logged against your user account. Enter a
+                        positive number to add stock or a negative number to remove it — there is no undo,
+                        only a further adjustment to correct it.
+                    </InfoTip>
                 </label>
                 <p className="text-xs text-gray-500 mb-2">Enter a positive number to add stock (e.g., 5) or a negative number to remove stock (e.g., -2).</p>
                 <input 
