@@ -292,19 +292,20 @@ const ChequeSettingsPanel = () => {
                                 <p className="text-gray-600 dark:text-slate-400">Fine-tune field placements and sizes for this cheque template. All positions are in points (pt).</p>
                             </div>
                             <div className="border border-gray-200 dark:border-slate-700 rounded-lg overflow-hidden">
-                                <div className="hidden lg:grid grid-cols-6 gap-2 px-3 py-2 text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide bg-gray-50 dark:bg-slate-900/40">
+                                <div className="hidden lg:grid grid-cols-7 gap-2 px-3 py-2 text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide bg-gray-50 dark:bg-slate-900/40">
                                     <span>Field</span>
                                     <span>X</span>
                                     <span>Y</span>
                                     <span>Font Size</span>
                                     <span>Max Width</span>
                                     <span>Min Font</span>
+                                    <span>Max Height</span>
                                 </div>
                                 <div className="divide-y divide-gray-100 dark:divide-slate-700">
                                     {Object.entries(selectedTemplate.field_positions || {}).map(([field, cfg]) => {
                                         const showExtras = ['payee', 'amountWords', 'memo'].includes(field);
                                         return (
-                                            <div key={field} className="grid grid-cols-4 lg:grid-cols-6 gap-2 items-center p-2">
+                                            <div key={field} className="grid grid-cols-4 lg:grid-cols-7 gap-2 items-center p-2">
                                                 <span className="font-medium truncate text-gray-800 dark:text-slate-200 text-xs lg:text-sm" title={FIELD_LABELS[field] || field}>{FIELD_LABELS[field] || field}</span>
                                                 <input type="number" className={INPUT_MONO} aria-label={`${field} X`} value={cfg.x ?? 0} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, x: Number(e.target.value) } } })} />
                                                 <input type="number" className={INPUT_MONO} aria-label={`${field} Y`} value={cfg.y ?? 0} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, y: Number(e.target.value) } } })} />
@@ -313,9 +314,10 @@ const ChequeSettingsPanel = () => {
                                                     <>
                                                         <input type="number" className={`${INPUT_MONO} col-span-2 lg:col-span-1`} aria-label={`${field} Max Width`} placeholder="Max Width" value={cfg.maxWidth ?? ''} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, maxWidth: e.target.value ? Number(e.target.value) : null } } })} />
                                                         <input type="number" className={`${INPUT_MONO} col-span-2 lg:col-span-1`} aria-label={`${field} Min Font`} placeholder="Min Font" value={cfg.minFontSize ?? ''} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, minFontSize: e.target.value ? Number(e.target.value) : null } } })} />
+                                                        <input type="number" className={`${INPUT_MONO} col-span-2 lg:col-span-1`} aria-label={`${field} Max Height`} placeholder="Max Height" title="Bounding-box height (pt). Leave blank to keep single-line shrink-to-fit; set to allow wrapping onto extra lines." value={cfg.maxHeight ?? ''} onChange={(e) => updateTemplate({ field_positions: { ...selectedTemplate.field_positions, [field]: { ...cfg, maxHeight: e.target.value ? Number(e.target.value) : null } } })} />
                                                     </>
                                                 ) : (
-                                                    <div className="hidden lg:block lg:col-span-2"></div>
+                                                    <div className="hidden lg:block lg:col-span-3"></div>
                                                 )}
                                             </div>
                                         );
@@ -483,7 +485,7 @@ const ChequeSettingsPanel = () => {
 
                     {activeTab === 'text' && selectedTemplate && (
                         <div className="space-y-3">
-                            <p className="text-gray-600 dark:text-slate-400">Payee overflow mitigation uses template font size and width values; no line wrapping is applied.</p>
+                            <p className="text-gray-600 dark:text-slate-400">Payee and amount-in-words shrink to fit their Max Width first. If a Max Height is also set on the Layout tab, text that still doesn't fit on one line wraps onto additional lines within that box instead of being cut off — otherwise it stays single-line at the minimum font size.</p>
                             <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-3 space-y-2 bg-gray-50 dark:bg-slate-900/40">
                                 <label className="flex items-center gap-2 text-gray-700 dark:text-slate-300">
                                     <input

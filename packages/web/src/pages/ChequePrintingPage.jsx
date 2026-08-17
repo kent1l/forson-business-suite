@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { format, parseISO, isValid } from 'date-fns';
 import toast from 'react-hot-toast';
 import api from '../api';
@@ -8,6 +8,14 @@ import Modal from '../components/ui/Modal';
 import { ICONS } from '../constants';
 
 const blankRow = () => ({ date: format(new Date(), 'yyyy-MM-dd'), payee: '', amount: '', memo: '' });
+
+const STATUS_BADGE_CLASS = {
+    VOID: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-400',
+    REPLACED: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-400',
+    BOUNCED: 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-400',
+    HELD_FOR_RELEASE: 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-400'
+};
+const DEFAULT_STATUS_BADGE_CLASS = 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300';
 
 const BUTTON_BASE = 'inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50';
 const BUTTON_SECONDARY = `${BUTTON_BASE} border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700`;
@@ -30,6 +38,10 @@ const ChequePrintingPage = () => {
     const [historyBankFilter, setHistoryBankFilter] = useState('all');
     const [pendingHistoryEntry, setPendingHistoryEntry] = useState(null);
     const [confirmOpen, setConfirmOpen] = useState(false);
+    // Cheques the user explicitly removed from the queue this session — kept out
+    // of state so a later re-render (e.g. typing in another row) doesn't cause the
+    // auto-append effect to silently bring them back.
+    const dismissedQueueIdsRef = useRef(new Set());
 
     const selectedTemplate = useMemo(() => templates.find((tpl) => String(tpl.id) === String(selectedTemplateId)), [templates, selectedTemplateId]);
 
@@ -66,6 +78,10 @@ const ChequePrintingPage = () => {
 
     const removeRow = (idx) => {
         setRows((prev) => {
+            const removed = prev[idx];
+            if (removed?.cheque_record_id) {
+                dismissedQueueIdsRef.current.add(removed.cheque_record_id);
+            }
             if (prev.length === 1) return [blankRow()];
             const next = prev.filter((_, rowIndex) => rowIndex !== idx);
             return next.length ? next : [blankRow()];
@@ -80,6 +96,13 @@ const ChequePrintingPage = () => {
         return null;
     };
 
+    const normalizeHistoryEntryToRow = (entry) => ({
+        payee: entry.payee || '',
+        amount: Number(entry.amount || 0).toFixed(2),
+        date: entry.cheque_date ? format(new Date(entry.cheque_date), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
+        memo: entry.memo || ''
+    });
+
     const activeRows = rows.filter((row) => row.payee || row.amount || row.memo).map((row) => ({
         ...row,
         amount: String(Math.round(Number(row.amount || 0) * 100) / 100)
@@ -92,7 +115,7 @@ const ChequePrintingPage = () => {
             const matchesBank = historyBankFilter === 'all' || bank === historyBankFilter;
             if (!matchesBank) return false;
             if (!query) return true;
-            return [entry.payee, entry.memo, bank, String(entry.amount)]
+            return [entry.payee, entry.memo, bank, entry.cheque_number, String(entry.amount)]
                 .filter(Boolean)
                 .some((value) => String(value).toLowerCase().includes(query));
         });
@@ -103,6 +126,53 @@ const ChequePrintingPage = () => {
         return banks.sort((a, b) => a.localeCompare(b));
     }, [history]);
 
+    // Cheques issued elsewhere (e.g. the AP/Treasury Desk) land here as
+    // already-persisted, unprinted cheque_records rows — this is the "continuous
+    // printing" queue: anything issued but not yet printed and still valid to
+    // print (not VOID/REPLACED) is a candidate to auto-populate into the editor.
+    const pendingQueueEntries = useMemo(() => (
+        history.filter((entry) => entry.ap_payment_id && !entry.is_printed && !['VOID', 'REPLACED'].includes(entry.status))
+    ), [history]);
+
+    const queuedRecordIds = useMemo(() => (
+        new Set(rows.map((row) => row.cheque_record_id).filter(Boolean))
+    ), [rows]);
+    // Stable primitive key so the auto-append effect only re-runs when queue
+    // membership actually changes, not on every keystroke elsewhere in the editor
+    // (which would otherwise produce a new Set reference each render).
+    const queuedRecordIdsKey = Array.from(queuedRecordIds).sort((a, b) => a - b).join(',');
+
+    // Only auto-append pending cheques that share the currently selected bank
+    // preset — a single PDF/print batch renders every row with one template, so
+    // mixing presets in one batch would misprint whichever ones don't match.
+    // Cheques the user explicitly removed (dismissedQueueIdsRef) stay out even
+    // though they're still "pending" server-side.
+    useEffect(() => {
+        if (!selectedTemplateId) return;
+        const toAdd = pendingQueueEntries.filter((entry) => (
+            Number(entry.template_id) === Number(selectedTemplateId)
+            && !queuedRecordIds.has(entry.id)
+            && !dismissedQueueIdsRef.current.has(entry.id)
+        ));
+        if (!toAdd.length) return;
+        setRows((prev) => {
+            const newRows = toAdd.map((entry) => ({
+                ...normalizeHistoryEntryToRow(entry),
+                cheque_record_id: entry.id,
+                sourceTemplateId: entry.template_id
+            }));
+            const last = prev[prev.length - 1];
+            const isTrailingBlank = last && !last.payee && !last.amount && !last.memo;
+            const base = isTrailingBlank ? prev.slice(0, -1) : prev;
+            return [...base, ...newRows, blankRow()];
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pendingQueueEntries, queuedRecordIdsKey, selectedTemplateId]);
+
+    const otherPresetPendingCount = useMemo(() => (
+        pendingQueueEntries.filter((entry) => !queuedRecordIds.has(entry.id) && Number(entry.template_id) !== Number(selectedTemplateId)).length
+    ), [pendingQueueEntries, queuedRecordIds, selectedTemplateId]);
+
     const requestGeneratePdf = () => {
         if (!selectedTemplate) return toast.error('Select a bank preset first.');
         if (!activeRows.length) return toast.error('Add at least one cheque line.');
@@ -110,11 +180,16 @@ const ChequePrintingPage = () => {
             const validationError = validateRow(row);
             if (validationError) return toast.error(validationError);
         }
+        const mismatched = activeRows.filter((row) => row.sourceTemplateId && Number(row.sourceTemplateId) !== Number(selectedTemplateId));
+        if (mismatched.length) {
+            return toast.error(`${mismatched.length} queued cheque(s) were issued for a different bank preset. Remove them or switch to that preset before printing.`);
+        }
         setConfirmOpen(true);
     };
 
-    const generatePdf = async (sourceRows = activeRows, persist = persistRecords) => {
-        if (!selectedTemplate) return toast.error('Select a bank preset first.');
+    const generatePdf = async (sourceRows = activeRows, persist = persistRecords, templateOverride = null) => {
+        const template = templateOverride || selectedTemplate;
+        if (!template) return toast.error('Select a bank preset first.');
         if (!sourceRows.length) return toast.error('Add at least one cheque line.');
 
         for (const row of sourceRows) {
@@ -124,14 +199,17 @@ const ChequePrintingPage = () => {
 
         setSaving(true);
         try {
-            const templateDateFormat = selectedTemplate.date_format || 'MM-dd-yyyy';
+            const templateDateFormat = template.date_format || 'MM-dd-yyyy';
             const payloadRows = sourceRows.map((row) => ({
-                ...row,
-                date: format(parseISO(row.date), templateDateFormat)
+                date: format(parseISO(row.date), templateDateFormat),
+                payee: row.payee,
+                amount: row.amount,
+                memo: row.memo,
+                cheque_record_id: row.cheque_record_id || undefined
             }));
 
             const pdfResponse = await api.post('/cheques/generate-pdf', {
-                template_id: Number(selectedTemplateId),
+                template_id: Number(template.id),
                 printer_profile_id: selectedProfileId ? Number(selectedProfileId) : null,
                 test_print: testPrintMode,
                 records: payloadRows
@@ -147,17 +225,23 @@ const ChequePrintingPage = () => {
                 toast('Fallback PDF renderer was used because pdf-lib is unavailable.', { icon: '⚠️' });
             }
 
-            if (persist) {
-                const dbPayloadRows = sourceRows.map((row) => ({
+            // Rows sourced from an already-issued (e.g. AP/Treasury) cheque record
+            // are already persisted — only ad-hoc rows entered directly in this
+            // queue need a new cheque_records row.
+            const rowsToPersist = sourceRows.filter((row) => !row.cheque_record_id);
+            if (persist && rowsToPersist.length) {
+                const dbPayloadRows = rowsToPersist.map((row) => ({
                     ...row,
                     payee: (row.payee || '').trim(),
                     memo: (row.memo || '').trim()
                 }));
                 await api.post('/cheques/records', {
-                    template_id: Number(selectedTemplateId),
+                    template_id: Number(template.id),
                     records: dbPayloadRows
                 });
-                toast.success('Cheque generated and saved to history.');
+            }
+            if (persist) {
+                toast.success(rowsToPersist.length ? 'Cheque(s) generated and saved to history.' : 'Cheque(s) generated.');
                 setRows([blankRow()]);
                 await loadData();
             }
@@ -179,13 +263,19 @@ const ChequePrintingPage = () => {
     };
 
     const handleReprint = async (entry) => {
-        if (!selectedTemplate) return toast.error('Select a preset for reprint.');
+        if (['VOID', 'REPLACED'].includes(entry.status)) {
+            return toast.error(`Cannot print a cheque with status ${entry.status}.`);
+        }
+        const entryTemplate = templates.find((tpl) => String(tpl.id) === String(entry.template_id)) || selectedTemplate;
+        if (!entryTemplate) return toast.error('Select a preset for reprint.');
+        if (entry.template_id) setSelectedTemplateId(String(entry.template_id));
         await generatePdf([{
             payee: entry.payee,
             amount: Number(entry.amount).toFixed(2),
             date: entry.cheque_date ? format(new Date(entry.cheque_date), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
-            memo: entry.memo || ''
-        }], false);
+            memo: entry.memo || '',
+            cheque_record_id: entry.id
+        }], false, entryTemplate);
     };
 
     const handleDelete = async (id) => {
@@ -197,13 +287,6 @@ const ChequePrintingPage = () => {
             toast.error(error?.response?.data?.message || 'Delete failed.');
         }
     };
-
-    const normalizeHistoryEntryToRow = (entry) => ({
-        payee: entry.payee || '',
-        amount: Number(entry.amount || 0).toFixed(2),
-        date: entry.cheque_date ? format(new Date(entry.cheque_date), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
-        memo: entry.memo || ''
-    });
 
     const applyHistoryEntryToEditor = (entry, mode = 'overwrite') => {
         const nextRow = normalizeHistoryEntryToRow(entry);
@@ -274,6 +357,12 @@ const ChequePrintingPage = () => {
                             </span>
                         )}
                     </div>
+                    {otherPresetPendingCount > 0 && (
+                        <div className="flex items-start gap-2 text-xs text-primary-700 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-900/40 rounded-lg p-2">
+                            <Icon path={ICONS.info} className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                            <span>{otherPresetPendingCount} more issued cheque{otherPresetPendingCount === 1 ? '' : 's'} pending print for a different bank preset — switch preset above to bring {otherPresetPendingCount === 1 ? 'it' : 'them'} into this queue.</span>
+                        </div>
+                    )}
                     <div className="hidden md:grid grid-cols-[28px_120px_1fr_160px_1fr_80px] gap-3 px-2 text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">
                         <span></span>
                         <span>Date</span>
@@ -285,12 +374,16 @@ const ChequePrintingPage = () => {
 
                     {rows.map((row, idx) => {
                         const isTrailingBlank = idx === rows.length - 1 && !row.payee && !row.amount && !row.memo;
+                        const isQueued = Boolean(row.cheque_record_id);
                         return (
-                            <div key={idx} className={`border rounded-xl p-3 grid grid-cols-1 md:grid-cols-[28px_120px_1fr_160px_1fr_80px] gap-3 md:items-center transition-colors ${isTrailingBlank ? 'border-dashed border-gray-300 dark:border-slate-700 bg-transparent' : 'border-gray-200 dark:border-slate-700 bg-gray-50/70 dark:bg-slate-900/40'}`}>
+                            <div key={idx} className={`border rounded-xl p-3 grid grid-cols-1 md:grid-cols-[28px_120px_1fr_160px_1fr_80px] gap-3 md:items-center transition-colors ${isTrailingBlank ? 'border-dashed border-gray-300 dark:border-slate-700 bg-transparent' : isQueued ? 'border-primary-200 dark:border-primary-900/50 bg-primary-50/40 dark:bg-primary-900/10' : 'border-gray-200 dark:border-slate-700 bg-gray-50/70 dark:bg-slate-900/40'}`}>
                                 <div className="hidden md:flex items-center justify-center">
                                     {!isTrailingBlank && (
-                                        <span className="h-5 w-5 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-400 text-[11px] font-bold flex items-center justify-center">
-                                            {idx + 1}
+                                        <span
+                                            className={`h-5 w-5 rounded-full text-[11px] font-bold flex items-center justify-center ${isQueued ? 'bg-primary-600 text-white' : 'bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-400'}`}
+                                            title={isQueued ? 'Issued from Treasury — queued for printing' : undefined}
+                                        >
+                                            {isQueued ? <Icon path={ICONS.bank} className="h-3 w-3" /> : idx + 1}
                                         </span>
                                     )}
                                 </div>
@@ -315,6 +408,8 @@ const ChequePrintingPage = () => {
                                                     placeholder="0.00"
                                                     data-row={idx}
                                                     data-field-index={fieldIndex}
+                                                    disabled={isQueued}
+                                                    title={isQueued ? 'Issued from Treasury — edit via Accounts Payable' : undefined}
                                                 />
                                             </div>
                                         ) : (
@@ -327,6 +422,8 @@ const ChequePrintingPage = () => {
                                                 placeholder={column.placeholder}
                                                 data-row={idx}
                                                 data-field-index={fieldIndex}
+                                                disabled={isQueued}
+                                                title={isQueued ? 'Issued from Treasury — edit via Accounts Payable' : undefined}
                                             />
                                         )}
                                     </div>
@@ -339,7 +436,7 @@ const ChequePrintingPage = () => {
                                             className={BUTTON_DANGER}
                                             onClick={() => removeRow(idx)}
                                             disabled={rows.length === 1}
-                                            title="Remove this cheque"
+                                            title={isQueued ? 'Remove from this print batch (cheque stays pending)' : 'Remove this cheque'}
                                         >
                                             <Icon path={ICONS.trash} className="h-4 w-4" />
                                             <span className="md:hidden">Remove</span>
@@ -443,25 +540,38 @@ const ChequePrintingPage = () => {
                                     <th className="p-2 text-left">Payee</th>
                                     <th className="p-2 text-left">Amount</th>
                                     <th className="p-2 text-left">Bank</th>
+                                    <th className="p-2 text-left">Cheque #</th>
+                                    <th className="p-2 text-left">Status</th>
                                     <th className="p-2 text-left">Date Issued</th>
                                     <th className="p-2 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="text-gray-700 dark:text-slate-300">
-                                {filteredHistory.map((entry) => (
-                                    <tr key={entry.id} className="border-t border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/40">
-                                        <td className="p-2 whitespace-nowrap">{format(new Date(entry.created_at), 'yyyy-MM-dd HH:mm')}</td>
-                                        <td className="p-2">{entry.payee}</td>
-                                        <td className="p-2">{entry.amount}</td>
-                                        <td className="p-2">{entry.bank_preset || '-'}</td>
-                                        <td className="p-2 whitespace-nowrap">{entry.cheque_date ? format(new Date(entry.cheque_date), 'yyyy-MM-dd') : '-'}</td>
-                                        <td className="p-2 text-right space-x-2 whitespace-nowrap">
-                                            <button className={BUTTON_PRIMARY} onClick={() => handleEditFromHistory(entry)}><Icon path={ICONS.edit} className="h-4 w-4" />Edit</button>
-                                            <button className={BUTTON_SECONDARY} onClick={() => handleReprint(entry)}><Icon path={ICONS.history} className="h-4 w-4" />Reprint</button>
-                                            <button className={BUTTON_DANGER} onClick={() => handleDelete(entry.id)}><Icon path={ICONS.trash} className="h-4 w-4" />Delete</button>
-                                        </td>
-                                    </tr>
-                                ))}
+                                {filteredHistory.map((entry) => {
+                                    const blocked = ['VOID', 'REPLACED'].includes(entry.status);
+                                    return (
+                                        <tr key={entry.id} className="border-t border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/40">
+                                            <td className="p-2 whitespace-nowrap">{format(new Date(entry.created_at), 'yyyy-MM-dd HH:mm')}</td>
+                                            <td className="p-2">{entry.payee}</td>
+                                            <td className="p-2">{entry.amount}</td>
+                                            <td className="p-2">{entry.bank_account_name || entry.bank_preset || '-'}</td>
+                                            <td className="p-2 font-mono whitespace-nowrap">{entry.cheque_number || '-'}</td>
+                                            <td className="p-2">
+                                                {entry.status && (
+                                                    <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${STATUS_BADGE_CLASS[entry.status] || DEFAULT_STATUS_BADGE_CLASS}`}>
+                                                        {entry.status}
+                                                    </span>
+                                                )}
+                                            </td>
+                                            <td className="p-2 whitespace-nowrap">{entry.cheque_date ? format(new Date(entry.cheque_date), 'yyyy-MM-dd') : '-'}</td>
+                                            <td className="p-2 text-right space-x-2 whitespace-nowrap">
+                                                <button className={BUTTON_PRIMARY} onClick={() => handleEditFromHistory(entry)}><Icon path={ICONS.edit} className="h-4 w-4" />Edit</button>
+                                                <button className={BUTTON_SECONDARY} onClick={() => handleReprint(entry)} disabled={blocked} title={blocked ? `Cannot print a cheque with status ${entry.status}` : undefined}><Icon path={ICONS.history} className="h-4 w-4" />Reprint</button>
+                                                <button className={BUTTON_DANGER} onClick={() => handleDelete(entry.id)}><Icon path={ICONS.trash} className="h-4 w-4" />Delete</button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                         {!filteredHistory.length && (
@@ -493,6 +603,7 @@ const ChequePrintingPage = () => {
                         <table className="w-full text-sm">
                             <thead className="bg-gray-50 dark:bg-slate-900/50 sticky top-0">
                                 <tr className="text-gray-700 dark:text-slate-300">
+                                    <th className="p-2 text-left"></th>
                                     <th className="p-2 text-left">Date</th>
                                     <th className="p-2 text-left">Payee</th>
                                     <th className="p-2 text-right">Amount</th>
@@ -502,6 +613,11 @@ const ChequePrintingPage = () => {
                             <tbody className="text-gray-700 dark:text-slate-300">
                                 {activeRows.map((row, idx) => (
                                     <tr key={idx} className="border-t border-gray-200 dark:border-slate-700">
+                                        <td className="p-2">
+                                            {row.cheque_record_id && (
+                                                <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-400" title="Issued from Treasury">AP</span>
+                                            )}
+                                        </td>
                                         <td className="p-2 whitespace-nowrap">{row.date}</td>
                                         <td className="p-2">{row.payee}</td>
                                         <td className="p-2 text-right font-mono">₱{Number(row.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
