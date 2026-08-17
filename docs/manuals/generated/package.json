@@ -1,0 +1,11 @@
+{
+  "name": "forson-user-guide-generator",
+  "private": true,
+  "description": "Builds docs/manuals/generated/user-guide.html from the module manuals in docs/manuals/*.md",
+  "scripts": {
+    "build": "node build.js && node render.js"
+  },
+  "dependencies": {
+    "marked": "^18.0.9"
+  }
+}

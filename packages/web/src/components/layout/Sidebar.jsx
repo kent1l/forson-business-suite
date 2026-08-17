@@ -86,8 +86,9 @@ const CATEGORIES = [
         title: 'System & Analytics',
         icon: ICONS.reporting,
         items: [
-            { name: 'Reporting', icon: ICONS.reporting, page: 'reporting', permission: 'reports:view' },
-            { name: 'Settings',  icon: ICONS.settings,  page: 'settings',  permission: 'settings:view' },
+            { name: 'Reporting',   icon: ICONS.reporting, page: 'reporting', permission: 'reports:view' },
+            { name: 'Settings',    icon: ICONS.settings,  page: 'settings',  permission: 'settings:view' },
+            { name: 'User Guide',  icon: ICONS.guide,     external: true, href: '/user-guide.html', permission: 'dashboard:view' },
         ],
     },
 ];
@@ -124,14 +125,20 @@ function AccordionContent({ isOpen, children }) {
 
 // ─── Single nav item ────────────────────────────────────────────────────────
 function NavItem({ item, currentPage, onNavigate, setIsOpen, isCollapsed, pendingCount, categoryTitle }) {
-    const isActive = currentPage === item.page;
+    const isActive = !item.external && currentPage === item.page;
     const badge = item.badge ? pendingCount : 0;
 
     return (
         <div className="relative group/item flex justify-center w-full">
             <a
-                href="#"
+                href={item.external ? item.href : '#'}
+                target={item.external ? '_blank' : undefined}
+                rel={item.external ? 'noopener noreferrer' : undefined}
                 onClick={(e) => {
+                    if (item.external) {
+                        if (setIsOpen) setIsOpen(false);
+                        return; // let the browser open the link in a new tab
+                    }
                     e.preventDefault();
                     onNavigate(item.page);
                     if (setIsOpen) setIsOpen(false);
@@ -214,7 +221,7 @@ function CategoryGroup({ cat, currentPage, onNavigate, setIsOpen, isCollapsed, i
                 <div className="w-8 h-px bg-slate-200/80 my-1" />
                 {visibleItems.map(item => (
                     <NavItem
-                        key={item.page}
+                        key={item.page || item.name}
                         item={item}
                         currentPage={currentPage}
                         onNavigate={onNavigate}
@@ -261,7 +268,7 @@ function CategoryGroup({ cat, currentPage, onNavigate, setIsOpen, isCollapsed, i
                 <div className="space-y-0.5 pb-1 pl-1">
                     {visibleItems.map(item => (
                         <NavItem
-                            key={item.page}
+                            key={item.page || item.name}
                             item={item}
                             currentPage={currentPage}
                             onNavigate={onNavigate}
@@ -410,7 +417,7 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
                         <div className={isCollapsed ? 'space-y-1 w-full flex flex-col items-center' : 'space-y-0.5 mb-4'}>
                             {filteredTopItems.map(item => (
                                 <NavItem
-                                    key={item.page}
+                                    key={item.page || item.name}
                                     item={item}
                                     currentPage={currentPage}
                                     onNavigate={onNavigate}
