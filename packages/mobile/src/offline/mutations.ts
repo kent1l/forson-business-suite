@@ -30,6 +30,7 @@ import type { AxiosError, AxiosRequestConfig } from 'axios';
 export type OutboxKind =
   | 'cycle-count-submit'
   | 'cycle-count-edit'
+  | 'cycle-count-adhoc'
   | 'time-punch'
   | 'leave-request'
   | 'pos-stage-sale'
@@ -149,6 +150,21 @@ export const MUTATIONS: Record<OutboxKind, MutationDef> = {
     },
     request: (e) => ({ method: 'POST', url: '/sales/staging', data: e.body }),
     invalidates: [['myActivity'], ['stagedSales']],
+  },
+
+  /**
+   * Safe to replay only because of the client_ref carried in the body: an
+   * ad-hoc find both inserts a cycle_count_line and, when the variance
+   * auto-approves, an inventory_transaction adjustment, so a duplicate
+   * request is exactly as dangerous as a duplicate stock adjustment. The
+   * server returns the original row on a replay rather than doubling either.
+   * Same 200-on-duplicate contract as staging and stock-adjust, so no
+   * `isAlreadyApplied`.
+   */
+  'cycle-count-adhoc': {
+    describe: (e) => `Ad-hoc count for ${e.meta?.displayName || `part ${e.body.part_id}`}`,
+    request: (e) => ({ method: 'POST', url: '/inventory/cycle-count/unassigned-find', data: e.body }),
+    invalidates: [['assignedTasks'], ['myProgress']],
   },
 
   /**

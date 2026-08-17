@@ -17,6 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import apiClient from '../api/client';
 import useAuthStore from '../store/useAuthStore';
 import usePosStore from '../store/usePosStore';
+import { useIsOnline } from '../hooks/useServerReachability';
+import { loadCachedList, cacheList } from '../offline/referenceCache';
 import SuccessOverlay from '@/components/pos/SuccessOverlay';
 import StagingOverlay from '@/components/pos/StagingOverlay';
 import CustomerSearchModal from '@/components/pos/CustomerSearchModal';
@@ -32,6 +34,7 @@ function PosSettlementInner() {
   const { hasPermission } = usePermission();
   const user = useAuthStore((s) => s.user);
   const insets = useSafeAreaInsets();
+  const isOnline = useIsOnline();
 
   const cart = usePosStore((s: any) => s.cart);
   const grandTotal = usePosStore((s: any) => s.grandTotal);
@@ -83,15 +86,32 @@ function PosSettlementInner() {
   useEffect(() => {
     (async () => {
       try {
-        const [pmRes, custRes, taxRes] = await Promise.allSettled([
-          apiClient.get('/payment-methods/enabled'),
-          apiClient.get('/customers?status=active'),
-          apiClient.get('/tax-rates'),
-        ]);
+        // Known offline: skip the live attempt entirely rather than let each
+        // request run out its full timeout before falling back. Without this
+        // a cashier opening settlement during a blackout stared at a blank
+        // "Select customer..." screen for ~10s -- and the customer list came
+        // back empty even after that, because there was nowhere to fall back
+        // to. Reference lists are cached from the last successful fetch
+        // specifically so that fallback exists.
+        const [pmRes, custRes, taxRes] = isOnline
+          ? await Promise.allSettled([
+              apiClient.get('/payment-methods/enabled'),
+              apiClient.get('/customers?status=active'),
+              apiClient.get('/tax-rates'),
+            ])
+          : [
+              { status: 'rejected' as const, reason: null },
+              { status: 'rejected' as const, reason: null },
+              { status: 'rejected' as const, reason: null },
+            ];
 
-        const methods = pmRes.status === 'fulfilled' ? (pmRes.value.data || []) : [];
-        const custs = custRes.status === 'fulfilled' ? (custRes.value.data || []) : [];
-        const rates = taxRes.status === 'fulfilled' ? (taxRes.value.data || []) : [];
+        const methods = pmRes.status === 'fulfilled' ? (pmRes.value.data || []) : await loadCachedList('payment_methods');
+        const custs = custRes.status === 'fulfilled' ? (custRes.value.data || []) : await loadCachedList('customers');
+        const rates = taxRes.status === 'fulfilled' ? (taxRes.value.data || []) : await loadCachedList('tax_rates');
+
+        if (pmRes.status === 'fulfilled') cacheList('payment_methods', methods);
+        if (custRes.status === 'fulfilled') cacheList('customers', custs);
+        if (taxRes.status === 'fulfilled') cacheList('tax_rates', rates);
 
         setPaymentMethods(methods);
         setCustomers(custs);

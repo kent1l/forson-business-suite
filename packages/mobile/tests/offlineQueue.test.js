@@ -128,6 +128,11 @@ test('every queued kind builds a request and describes itself', () => {
       body: { part_id: 5, quantity: -2 },
       meta: { displayName: 'Brake Pad' },
     }),
+    'cycle-count-adhoc': entry({
+      kind: 'cycle-count-adhoc',
+      body: { part_id: 5, counted_qty: 3, client_ref: 'deadbeef-0000-1111-2222-333344445555' },
+      meta: { displayName: 'Brake Pad' },
+    }),
   };
 
   for (const [kind, sample] of Object.entries(samples)) {
@@ -200,8 +205,30 @@ test('a queued sale carries the moment the customer actually paid', () => {
   assert.strictEqual(req.data.captured_at, captured);
 });
 
+/**
+ * An ad-hoc find is safe to replay for the same reason a stock adjustment is:
+ * the server recognises the client_ref in the body and returns the original
+ * line rather than inserting a second one -- which, when the variance
+ * auto-approves, would also double the stock adjustment that comes with it.
+ */
+test('a queued ad-hoc count replays with its idempotency key intact', () => {
+  const body = {
+    part_id: 5,
+    counted_qty: 3,
+    client_ref: 'deadbeef-0000-1111-2222-333344445555',
+  };
+  const req = MUTATIONS['cycle-count-adhoc'].request(entry({ kind: 'cycle-count-adhoc', body }));
+  assert.strictEqual(req.method, 'POST');
+  assert.strictEqual(req.url, '/inventory/cycle-count/unassigned-find');
+  assert.deepStrictEqual(req.data, body);
+  assert.strictEqual(
+    MUTATIONS['cycle-count-adhoc'].isAlreadyApplied, undefined,
+    'no rejection means "already done" for this endpoint -- a replay resolves with 200',
+  );
+});
+
 test('new kinds classify failures the same way as the rest of the queue', () => {
-  for (const kind of ['pos-stage-sale', 'stock-adjust']) {
+  for (const kind of ['pos-stage-sale', 'stock-adjust', 'cycle-count-adhoc']) {
     // No response at all: the server is unreachable, so keep it and retry.
     assert.strictEqual(classifyError(kind, axiosError(null)), 'retry');
     assert.strictEqual(classifyError(kind, axiosError(503)), 'retry');
