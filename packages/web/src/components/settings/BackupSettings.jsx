@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import Icon from '../ui/Icon';
+import InfoTip from '../ui/InfoTip';
 import { ICONS } from '../../constants';
 import { format, parseISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
@@ -384,7 +385,12 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
             {/* ── Backup List ── */}
             <div>
                 <div className="flex items-center justify-between mb-4">
-                    <SectionHeader title="Available Backups" subtitle={null} />
+                    <div className="flex items-center gap-1.5">
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-slate-100">Available Backups</h3>
+                        <InfoTip label="Restore">
+                            Restoring overwrites all current data with the selected backup's contents, and this cannot be undone. The app reloads automatically a few seconds after a successful restore — only restore when you're certain.
+                        </InfoTip>
+                    </div>
                     <div className="flex items-center gap-2">
                         <input
                             type="file"

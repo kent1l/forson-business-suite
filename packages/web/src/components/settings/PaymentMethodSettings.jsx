@@ -3,6 +3,7 @@ import api from '../../api';
 import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
 import Icon from '../ui/Icon';
+import InfoTip from '../ui/InfoTip';
 import { ICONS } from '../../constants';
 
 const PaymentMethodForm = ({ method, onSave, onCancel }) => {
@@ -220,7 +221,12 @@ const PaymentMethodForm = ({ method, onSave, onCancel }) => {
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Settlement Type</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1 flex items-center gap-1">
+                            Settlement Type
+                            <InfoTip label="Settlement Type">
+                                Controls when a payment counts as collected money versus a pending receivable. Changing this for a method already used on past transactions changes how future transactions with that method are treated financially — treat it carefully, not as a default to breeze through.
+                            </InfoTip>
+                        </label>
                         <select
                             value={formData.config.settlement_type}
                             onChange={(e) => handleConfigChange('settlement_type', e.target.value)}

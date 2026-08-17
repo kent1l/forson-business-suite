@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import api from '../../api'; // <-- CORRECTED PATH
 import toast from 'react-hot-toast';
 import Icon from '../ui/Icon';
+import InfoTip from '../ui/InfoTip';
 import { ICONS } from '../../constants';
 import Combobox from '../ui/Combobox';
 import SearchBar from '../SearchBar';
@@ -276,7 +277,14 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                 </div>
             </div>
             <div className="relative" ref={searchBarRef}>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Add Part</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                    Add Part
+                    <InfoTip label="Add Part">
+                        Cost is pulled automatically from each part's last recorded cost and isn't editable here.
+                        If the actual price differs when goods arrive, correct it during Goods Receipt — that's
+                        what actually affects inventory valuation.
+                    </InfoTip>
+                </label>
                 <div className="flex items-center space-x-2">
                     <div className="flex-grow">
                         <SearchBar
@@ -342,7 +350,13 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                     </tbody>
                 </table>
             </div>
-            <div className="text-right font-bold">Total: ₱{total.toFixed(2)}</div>
+            <div className="text-right font-bold flex items-center justify-end gap-1">
+                Total: ₱{total.toFixed(2)}
+                <InfoTip label="Total" align="right">
+                    PO Total is the sum of all line subtotals (Quantity × Cost). This won't include any actual
+                    price changes made later during Goods Receipt.
+                </InfoTip>
+            </div>
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
                 <textarea name="notes" value={formData.notes} onChange={handleFormChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows="2"></textarea>

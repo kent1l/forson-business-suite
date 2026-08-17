@@ -5,6 +5,7 @@ import { useSettings } from '../../contexts/SettingsContext';
 import Combobox from '../ui/Combobox';
 import PaginationControls from '../ui/PaginationControls';
 import SortableHeader from '../ui/SortableHeader';
+import InfoTip from '../ui/InfoTip';
 import { getPaginatedPayload } from '../../utils/paginatedResponse';
 import { sortData } from '../../utils/sortData';
 import { format } from 'date-fns';
@@ -130,7 +131,14 @@ const ProfitabilityReport = () => {
                                     <SortableHeader column="display_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Item</SortableHeader>
                                     <SortableHeader className="text-right" column="total_revenue" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Total Revenue</SortableHeader>
                                     <SortableHeader className="text-right" column="total_cost" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Total Cost</SortableHeader>
-                                    <SortableHeader className="text-right" column="total_profit" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Total Profit</SortableHeader>
+                                    <SortableHeader className="text-right" column="total_profit" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>
+                                        <span className="inline-flex items-center gap-1">
+                                            Total Profit
+                                            <InfoTip label="Total Profit" align="right">
+                                                Total Profit = Total Revenue − Total Cost, calculated per item.
+                                            </InfoTip>
+                                        </span>
+                                    </SortableHeader>
                                 </tr>
                             </thead>
                             <tbody>

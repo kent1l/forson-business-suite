@@ -1,4 +1,5 @@
 import Icon from '../../ui/Icon';
+import InfoTip from '../../ui/InfoTip';
 import { ICONS } from '../../../constants';
 import Modal from '../../ui/Modal';
 import ReceivePaymentForm from '../../forms/ReceivePaymentForm';
@@ -89,7 +90,21 @@ const AROverviewTab = ({
             {isActive && !error && (
                 <ErrorBoundary title="This section failed to load" description="The Overview & Aging tab hit an unexpected error. Try again, or switch tabs and come back.">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-                        <KPICard iconName={ICONS.dollar} title="Total Receivables" value={kpiData.totalReceivables.value} trend={kpiData.totalReceivables.trend} trendColorClass={kpiData.totalReceivables.color} loading={loading} />
+                        <KPICard
+                            iconName={ICONS.dollar}
+                            title={
+                                <span className="inline-flex items-center gap-1">
+                                    Total Receivables
+                                    <InfoTip label="Total Receivables">
+                                        The sum of every customer's positive ledger balance across the whole business, drawn from the authoritative AR ledger — not simply a sum of unpaid invoices.
+                                    </InfoTip>
+                                </span>
+                            }
+                            value={kpiData.totalReceivables.value}
+                            trend={kpiData.totalReceivables.trend}
+                            trendColorClass={kpiData.totalReceivables.color}
+                            loading={loading}
+                        />
                         <KPICard iconName={ICONS.documents} title="Invoices Sent" value={kpiData.invoicesSent.value} trend={kpiData.invoicesSent.trend} trendColorClass={kpiData.invoicesSent.color} loading={loading} />
                         <KPICard iconName={ICONS.warning} title="Overdue Invoices" value={kpiData.overdueInvoices.value} trend={kpiData.overdueInvoices.trend} trendColorClass={kpiData.overdueInvoices.color} loading={loading} />
                         <KPICard iconName={ICONS.calendar} title="Avg. Collection Period" value={kpiData.avgCollectionPeriod.value} trend={kpiData.avgCollectionPeriod.trend} trendColorClass={kpiData.avgCollectionPeriod.color} loading={loading} />

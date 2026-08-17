@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import Icon from '../ui/Icon';
+import InfoTip from '../ui/InfoTip';
 import { ICONS } from '../../constants';
 
 export default function ExpenseQuickEntry({ onParsed }) {
@@ -40,8 +41,11 @@ export default function ExpenseQuickEntry({ onParsed }) {
                     <span className="p-1.5 bg-blue-600/30 text-blue-400 rounded-lg border border-blue-500/30">
                         <Icon path={ICONS.star} className="w-5 h-5 text-blue-400" />
                     </span>
-                    <h3 className="text-base font-semibold tracking-wide text-slate-100">
-                        Quick Entry <span className="text-xs font-normal text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">AI Assisted</span>
+                    <h3 className="text-base font-semibold tracking-wide text-slate-100 flex items-center gap-1">
+                        <span>Quick Entry <span className="text-xs font-normal text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">AI Assisted</span></span>
+                        <InfoTip label="Quick Entry">
+                            Type an expense in plain, everyday language and the system will try to extract the amount, date, category, payee, and payment method for you to review before saving. Treat its output as a draft, especially anything flagged low-confidence.
+                        </InfoTip>
                     </h3>
                 </div>
                 <span className="text-xs text-slate-400">Powered by LLM</span>

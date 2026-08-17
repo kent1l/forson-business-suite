@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { useSettings } from '../../contexts/SettingsContext';
 import PaginationControls from '../ui/PaginationControls';
 import SortableHeader from '../ui/SortableHeader';
+import InfoTip from '../ui/InfoTip';
 import { getPaginatedPayload } from '../../utils/paginatedResponse';
 import { sortData } from '../../utils/sortData';
 
@@ -70,8 +71,22 @@ const InventoryValuationReport = () => {
                                     <SortableHeader column="internal_sku" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>SKU</SortableHeader>
                                     <SortableHeader column="display_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Item</SortableHeader>
                                     <SortableHeader className="text-center" column="stock_on_hand" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Stock on Hand</SortableHeader>
-                                    <SortableHeader className="text-right" column="wac_cost" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>WAC</SortableHeader>
-                                    <SortableHeader className="text-right" column="total_value" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Total Value</SortableHeader>
+                                    <SortableHeader className="text-right" column="wac_cost" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>
+                                        <span className="inline-flex items-center gap-1">
+                                            WAC
+                                            <InfoTip label="WAC (Weighted Average Cost)" align="right">
+                                                The item's blended average cost across all purchases, not the price of the most recent purchase.
+                                            </InfoTip>
+                                        </span>
+                                    </SortableHeader>
+                                    <SortableHeader className="text-right" column="total_value" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>
+                                        <span className="inline-flex items-center gap-1">
+                                            Total Value
+                                            <InfoTip label="Total Value" align="right">
+                                                Total Value = Stock on Hand × WAC for that row.
+                                            </InfoTip>
+                                        </span>
+                                    </SortableHeader>
                                 </tr>
                             </thead>
                             <tbody>

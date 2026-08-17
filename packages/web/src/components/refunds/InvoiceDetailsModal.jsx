@@ -8,6 +8,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { formatPhysicalReceiptNumber } from '../../utils/receiptNumberFormatter';
 import ChangeTransactionDateModal from '../common/ChangeTransactionDateModal';
 import TransactionDateHistory from '../common/TransactionDateHistory';
+import InfoTip from '../ui/InfoTip';
 
 // Helper function to get payment status badge styles
 const getPaymentStatusBadge = (status) => {
@@ -35,6 +36,7 @@ void Modal;
 void RefundForm;
 void ChangeTransactionDateModal;
 void TransactionDateHistory;
+void InfoTip;
 
 const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
     const { settings } = useSettings();
@@ -288,7 +290,14 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                     {/* Payments Section */}
                     {payments.length > 0 && (
                         <div>
-                            <h3 className="font-semibold text-gray-800">Payments</h3>
+                            <h3 className="font-semibold text-gray-800 flex items-center gap-1">
+                                Payments
+                                <InfoTip label="Payment Status">
+                                    <strong>Settled</strong> payments have cleared. <strong>Pending</strong> payments (e.g. an
+                                    unconfirmed GCash transfer) haven't affected the balance yet — use Mark Settled once funds
+                                    clear. <strong>Failed</strong> payments didn't go through.
+                                </InfoTip>
+                            </h3>
                             <div className="mt-2 space-y-2">
                                 {payments.map(payment => (
                                     <div key={payment.payment_id} className="bg-gray-50 p-3 rounded-lg border">
@@ -336,7 +345,13 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                 <div className="bg-blue-50 p-3 rounded-lg border border-blue-200 mt-3">
                                     <div className="text-sm">
                                         <div className="flex justify-between">
-                                            <span>Total Paid:</span>
+                                            <span className="flex items-center gap-1">
+                                                Total Paid:
+                                                <InfoTip label="Total Paid">
+                                                    Sum of settled payments only — Pending payments are shown separately below
+                                                    and not included here.
+                                                </InfoTip>
+                                            </span>
                                             <span className="font-mono">
                                                 {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}
                                                 {payments

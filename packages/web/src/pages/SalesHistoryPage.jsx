@@ -5,12 +5,14 @@ import { useSettings } from '../contexts/SettingsContext';
 import DateRangeShortcuts from '../components/ui/DateRangeShortcuts';
 import InvoiceDetailsModal from '../components/refunds/InvoiceDetailsModal';
 import SortableHeader from '../components/ui/SortableHeader';
+import InfoTip from '../components/ui/InfoTip';
 
 // Some static analyzers occasionally report unused JSX imports; reference them here harmlessly
 // to avoid false-positive lint errors.
 void DateRangeShortcuts;
 void InvoiceDetailsModal;
 void SortableHeader;
+void InfoTip;
 import { format, parseISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
@@ -546,7 +548,14 @@ const SalesHistoryPage = () => {
                                             </div>
                                             <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-3">
                                                 <div>
-                                                    <div className="text-xs text-gray-500">Expected Net Cash (Drawer)</div>
+                                                    <div className="text-xs text-gray-500 flex items-center gap-1">
+                                                        Expected Net Cash (Drawer)
+                                                        <InfoTip label="Expected Net Cash (Drawer)">
+                                                            (Cash Tendered − Change Returned) − Cash Refunds Paid. The amount of
+                                                            physical cash that should be in the register after subtracting change
+                                                            and any cash refunds paid out.
+                                                        </InfoTip>
+                                                    </div>
                                                     <div className="font-semibold text-gray-800 text-base">
                                                         {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.expectedNetCashDrawer.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                     </div>
@@ -563,7 +572,14 @@ const SalesHistoryPage = () => {
                                                 </div>
                                                 <div>
                                                     <div className="text-[11px] text-gray-400">Refunds Out: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.refundsApprox.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
-                                                    <div className="text-[11px] text-gray-400">Cash Mix: {(stats.cashMix * 100).toFixed(1)}%</div>
+                                                    <div className="text-[11px] text-gray-400 flex items-center gap-1">
+                                                        <span>Cash Mix: {(stats.cashMix * 100).toFixed(1)}%</span>
+                                                        <InfoTip label="Cash Mix">
+                                                            Cash Collected (Net of Change) ÷ (Cash Collected (Net of Change) +
+                                                            Non-Cash Collections) — the share of collections that came in as cash,
+                                                            calculated before refunds are subtracted.
+                                                        </InfoTip>
+                                                    </div>
                                                 </div>
                                             </div>
                                             <div className="text-[10px] text-gray-400 mt-2">
@@ -591,12 +607,24 @@ const SalesHistoryPage = () => {
                                                     <div className="font-semibold text-yellow-600 text-sm">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.refunds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                                                 </div>
                                                 <div>
-                                                    <div className="text-xs text-gray-500">Net Sales</div>
+                                                    <div className="text-xs text-gray-500 flex items-center justify-center gap-1">
+                                                        Net Sales
+                                                        <InfoTip label="Net Sales (Excl. VAT)">
+                                                            Gross Sales minus Refunds (excluding VAT) — the number accounting
+                                                            reports as actual revenue for the period.
+                                                        </InfoTip>
+                                                    </div>
                                                     <div className="font-semibold text-green-600 text-sm">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.netSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                                                 </div>
                                             </div>
                                             <div className="text-[11px] text-gray-500 mt-2 flex justify-between">
-                                                <span>Net VAT Collected: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.vatCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                                <span className="flex items-center gap-1">
+                                                    Net VAT Collected: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.vatCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    <InfoTip label="Net VAT Collected">
+                                                        VAT charged on sales minus VAT given back on refunds — the tax liability
+                                                        owed to the tax authority for the period.
+                                                    </InfoTip>
+                                                </span>
                                                 <span>Range {dates.startDate} → {dates.endDate}</span>
                                             </div>
                                         </>
@@ -638,11 +666,23 @@ const SalesHistoryPage = () => {
                                                 <div className="text-center">
                                                     <div className="text-xs text-gray-500">Total Collections</div>
                                                     <div className="mt-1 text-sm font-semibold text-green-600">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.totalCollections.toLocaleString(undefined,{maximumFractionDigits:2})}</div>
-                                                    <div className="text-[10px] text-gray-500 mt-0.5">Rate: {(stats.collectionRate*100).toLocaleString(undefined,{maximumFractionDigits:1})}%</div>
+                                                    <div className="text-[10px] text-gray-500 mt-0.5 flex items-center justify-center gap-1">
+                                                        <span>Rate: {(stats.collectionRate*100).toLocaleString(undefined,{maximumFractionDigits:1})}%</span>
+                                                        <InfoTip label="Collection Rate">
+                                                            Amount Collected (incl. VAT) ÷ Net Sales (incl. VAT) — how much of
+                                                            what was billed has actually been collected.
+                                                        </InfoTip>
+                                                    </div>
                                                 </div>
 
                                                 <div className="text-center">
-                                                    <div className="text-xs text-gray-500">Outstanding A/R</div>
+                                                    <div className="text-xs text-gray-500 flex items-center justify-center gap-1">
+                                                        Outstanding A/R
+                                                        <InfoTip label="Outstanding A/R" align="right">
+                                                            Sum of each invoice's (Total − Refunded) minus Amount Paid, floored at
+                                                            ₱0.00 — the total unpaid balance still owed by customers, VAT included.
+                                                        </InfoTip>
+                                                    </div>
                                                     <div className="mt-1 text-sm font-semibold text-red-600">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.arOutstanding.toLocaleString(undefined,{maximumFractionDigits:2})}</div>
                                                     <div className="text-[10px] text-gray-500 mt-0.5">Active Invoices: {stats.netActiveInvoices}</div>
                                                 </div>

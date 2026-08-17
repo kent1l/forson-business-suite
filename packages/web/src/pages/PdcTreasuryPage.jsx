@@ -11,6 +11,7 @@ import IssueOutboundChequeModal from '../components/accounts-payable/IssueOutbou
 import Modal from '../components/ui/Modal';
 import SegmentedTabs from '../components/ui/SegmentedTabs';
 import StatusBadge from '../components/ui/StatusBadge';
+import InfoTip from '../components/ui/InfoTip';
 
 const emptyStats = {
     held_in_safe_count: 0, held_in_safe_total: 0,
@@ -534,13 +535,21 @@ const PdcTreasuryPage = () => {
                         </div>
                         <div className="space-y-3">
                             <div>
-                                <label className={LABEL_CLASS}>Bounce Reason:</label>
+                                <label className={`${LABEL_CLASS} flex items-center gap-1`}>Bounce Reason:
+                                    <InfoTip label="Bounce Reason">
+                                        Why the bank returned the cheque — defaults to "NSF / Insufficient Funds". This is recorded permanently in the cheque's audit history.
+                                    </InfoTip>
+                                </label>
                                 <input type="text" value={bounceReasonInput} onChange={(e) => setBounceReasonInput(e.target.value)}
                                     className={`${TEXT_INPUT_CLASS} focus:ring-2 focus:ring-danger-500`}
                                     placeholder="e.g. NSF / Insufficient Funds, Account Closed" />
                             </div>
                             <div>
-                                <label className={LABEL_CLASS}>Bank Penalty Fee (₱):</label>
+                                <label className={`${LABEL_CLASS} flex items-center gap-1`}>Bank Penalty Fee (₱):
+                                    <InfoTip label="Bank Penalty Fee">
+                                        Fee the bank charged for the bounce. Defaults to ₱250.00 for inbound cheques (a fee the business typically absorbs) and ₱0.00 for outbound.
+                                    </InfoTip>
+                                </label>
                                 <input type="number" step="0.01" value={bounceFeeInput} onChange={(e) => setBounceFeeInput(e.target.value)}
                                     className={`${TEXT_INPUT_CLASS} focus:ring-2 focus:ring-danger-500 font-mono`} />
                             </div>

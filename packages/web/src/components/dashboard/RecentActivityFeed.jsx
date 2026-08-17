@@ -1,5 +1,6 @@
 import { Clock, User, FileText, AlertTriangle, Package, ExternalLink, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import InfoTip from '../ui/InfoTip';
 
 const formatTimeAgo = (dateString) => {
     const date = new Date(dateString);
@@ -99,7 +100,12 @@ export const LowStockAlertsPanel = ({ data = [], loading = false, onManageStock 
             <div className="flex justify-between items-center gap-3 mb-4">
                 <div className="flex items-center gap-2">
                     <AlertTriangle className="h-4 w-4 text-warning-500 dark:text-warning-400" />
-                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 tracking-tight">Stock alerts</h3>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-1">
+                        Stock alerts
+                        <InfoTip label="Stock alerts">
+                            Parts at or below their minimum stock level, showing how many are left (or "Out of stock") and the minimum threshold.
+                        </InfoTip>
+                    </h3>
                 </div>
                 {hasPermission('inventory:view') && onManageStock && (
                     <button

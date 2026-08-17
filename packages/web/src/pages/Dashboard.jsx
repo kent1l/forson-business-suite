@@ -3,6 +3,7 @@ import api from '../api';
 import { RefreshCw, Activity, AlertCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import KPICard from '../components/ui/KPICard';
+import InfoTip from '../components/ui/InfoTip';
 import { SalesTrendChart, TopProductsChart } from '../components/dashboard/AnalyticsCharts';
 import { QuickActionsPanel } from '../components/dashboard/QuickActionsPanel';
 import { RecentActivityFeed } from '../components/dashboard/RecentActivityFeed';
@@ -129,7 +130,12 @@ const Dashboard = ({ onNavigate }) => {
                     </h1>
                     <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 mt-1.5">
                         <Activity className={`h-3.5 w-3.5 ${refreshing ? 'animate-pulse text-primary-500' : ''}`} />
-                        <span>Updated {formatLastUpdated()}</span>
+                        <span className="inline-flex items-center gap-1">
+                            Updated {formatLastUpdated()}
+                            <InfoTip label="Updated time">
+                                This reflects the last time the data below was loaded or refreshed — not the current clock time.
+                            </InfoTip>
+                        </span>
                     </div>
                 </div>
 

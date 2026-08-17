@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import api from '../api';
 // eslint-disable-next-line no-unused-vars
 import Icon from '../components/ui/Icon';
+import InfoTip from '../components/ui/InfoTip';
 import Modal from '../components/ui/Modal';
 import { ICONS } from '../constants';
 
@@ -454,6 +455,9 @@ const ChequePrintingPage = () => {
                         <div>
                             <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-1">
                                 <Icon path={ICONS.bank} className="h-3.5 w-3.5" /> Bank preset
+                                <InfoTip label="Bank preset">
+                                    A saved layout (field positions, date format, amount wording, paper size) that tells the system exactly where to print each piece of text on a specific bank's cheque stock. You need at least one before generating a cheque PDF.
+                                </InfoTip>
                             </label>
                             <select className={INPUT_BASE} value={selectedTemplateId} onChange={(e) => setSelectedTemplateId(e.target.value)}>
                                 {!templates.length && <option value="">No bank preset yet</option>}
@@ -496,6 +500,9 @@ const ChequePrintingPage = () => {
                         <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300 cursor-pointer">
                             <input type="checkbox" className="rounded text-primary-600 focus:ring-primary-500" checked={testPrintMode} onChange={(e) => setTestPrintMode(e.target.checked)} />
                             Test print mode
+                            <InfoTip label="Test print mode">
+                                Watermarks the PDF and skips saving to history — use this to check alignment on plain paper before committing to real cheque stock.
+                            </InfoTip>
                         </label>
                     </div>
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../../api';
 import Icon from '../ui/Icon';
+import InfoTip from '../ui/InfoTip';
 import { ICONS } from '../../constants';
 
 export default function ExpenseForm({
@@ -355,8 +356,11 @@ export default function ExpenseForm({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {/* Category */}
                         <div>
-                            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                                Category <span className="text-red-500">*</span>
+                            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                <span>Category <span className="text-red-500">*</span></span>
+                                <InfoTip label="Category">
+                                    The classification bucket this expense is filed under (e.g. Utilities, Rent). Only active categories appear here — manage the list on the Expense Categories page.
+                                </InfoTip>
                                 {isAiField('category_id') && <span className="ml-1 text-[10px] text-blue-600 bg-blue-50 px-1 rounded">◆ AI</span>}
                                 {getConfidenceWarning('category')}
                             </label>
@@ -379,8 +383,11 @@ export default function ExpenseForm({
 
                         {/* Payment Method */}
                         <div>
-                            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                                Payment Method
+                            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                <span>Payment Method</span>
+                                <InfoTip label="Payment Method">
+                                    Optional. Pick a configured method, or leave it as Custom / Cash Default to simply record the expense as paid in cash.
+                                </InfoTip>
                                 {isAiField('payment_method_id') && <span className="ml-1 text-[10px] text-blue-600 bg-blue-50 px-1 rounded">◆ AI</span>}
                                 {getConfidenceWarning('payment_method')}
                             </label>
@@ -444,8 +451,11 @@ export default function ExpenseForm({
 
                         {/* Reference No */}
                         <div>
-                            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                                Reference / OR / Receipt No.
+                            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                <span>Reference / OR / Receipt No.</span>
+                                <InfoTip label="Reference / OR / Receipt No.">
+                                    The receipt or document number tied to this expense. Optional, but recommended for audit trail whenever a physical receipt exists.
+                                </InfoTip>
                             </label>
                             <input
                                 type="text"

@@ -10,6 +10,7 @@ import useTypeahead from '../hooks/useTypeahead';
 import api from '../api';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
+import InfoTip from '../components/ui/InfoTip';
 import { ICONS } from '../constants';
 import SearchBar from '../components/SearchBar';
 import Modal from '../components/ui/Modal';
@@ -71,7 +72,12 @@ const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave,
                                             <div className={`${lines.length ? 'text-indigo-600' : 'text-slate-300'} mb-1`}>
                                                 <Icon path={ICONS.bookmark} className="h-10 w-10" />
                                             </div>
-                                            <span className="font-semibold text-sm">Save Sale</span>
+                                            <span className="font-semibold text-sm flex items-center gap-1">
+                                                Save Sale
+                                                <InfoTip label="Save Sale">
+                                                    Saved sales live only in this browser (not synced to other tills or devices), capped at the 10 most recent — the oldest is dropped once you go over.
+                                                </InfoTip>
+                                            </span>
                                             <span className="text-[11px] text-slate-500">For later</span>
                                             <span className="mt-1 text-[9px] font-mono uppercase tracking-wide text-slate-400">Alt+S</span>
                                         </div>
@@ -1058,13 +1064,23 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                         <div className="p-4 border-b">
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="flex flex-col">
-                                    <div className="font-semibold text-sm mb-2 whitespace-nowrap">Physical Receipt No:</div>
+                                    <div className="font-semibold text-sm mb-2 whitespace-nowrap flex items-center gap-1">
+                                        Physical Receipt No:
+                                        <InfoTip label="Physical Receipt No.">
+                                            Auto-normalized to LETTERS-DIGITS format when you leave the field (e.g. "si 1234" becomes "SI-1234"). Whether it's required before you can pay depends on a store setting.
+                                        </InfoTip>
+                                    </div>
                                     <div className="p-2 bg-gray-50 rounded-lg">
                                         <input ref={physicalReceiptRef} value={physicalReceiptInput} onChange={(e) => setPhysicalReceiptInput(e.target.value)} onBlur={() => setPhysicalReceiptInput(normalizePhysicalReceipt(physicalReceiptInput))} placeholder="Enter receipt no (Ctrl+P)" className="w-full px-3 py-2 border rounded-md text-sm" />
                                     </div>
                                 </div>
                                 <div className="flex flex-col">
-                                    <div className="font-semibold text-sm mb-2 whitespace-nowrap">Tax Rate:</div>
+                                    <div className="font-semibold text-sm mb-2 whitespace-nowrap flex items-center gap-1">
+                                        Tax Rate:
+                                        <InfoTip label="Tax Rate">
+                                            This is a fallback/override rate for lines whose part doesn't already carry its own tax rate — most parts have a rate wired in already.
+                                        </InfoTip>
+                                    </div>
                                     <div className="p-2 bg-gray-50 rounded-lg">
                                         <select
                                             value={selectedTaxRate?.tax_rate_id || ''}

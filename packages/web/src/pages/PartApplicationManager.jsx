@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../api';
 import Icon from '../components/ui/Icon';
+import InfoTip from '../components/ui/InfoTip';
 import { ICONS } from '../constants';
 import Modal from '../components/ui/Modal';
 import ApplicationSearchCombobox from '../components/applications/ApplicationSearchCombobox';
@@ -192,7 +193,13 @@ const PartApplicationManager = ({ part, onCancel }) => {
 
     return (
         <div>
-            <h3 className="text-md font-medium text-gray-800 mb-2">Linked Applications</h3>
+            <h3 className="text-md font-medium text-gray-800 mb-2 flex items-center gap-1">
+                Linked Applications
+                <InfoTip label="Application">
+                    An Application is a specific vehicle fitment — a Make, Model, and optional Engine, with an
+                    optional year range. Linking one to a part records "this part fits this vehicle."
+                </InfoTip>
+            </h3>
             {loading ? <p>Loading...</p> : (
                 <ul className="bg-gray-50 p-3 rounded-md mb-4 h-32 overflow-y-auto">
                     {linkedApps.map(app => (
@@ -212,7 +219,13 @@ const PartApplicationManager = ({ part, onCancel }) => {
             )}
 
             <form onSubmit={handleLinkApp}>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Link New Application</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                    Link New Application
+                    <InfoTip label="Year Start / Year End">
+                        Optionally limit the fitment to specific model years (e.g., 2010-2015). Leave both
+                        blank if the fitment applies to all years of that vehicle.
+                    </InfoTip>
+                </label>
                 <div className="grid grid-cols-1 gap-2">
                     <div className="flex items-end gap-2">
                         <div className="flex-1">

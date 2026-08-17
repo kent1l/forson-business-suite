@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import Icon from '../components/ui/Icon';
+import InfoTip from '../components/ui/InfoTip';
 import { ICONS } from '../constants';
 import SegmentedTabs from '../components/ui/SegmentedTabs';
 import KPICard from '../components/ui/KPICard';
@@ -90,12 +91,17 @@ const AccountsPayablePage = ({ onNavigate }) => {
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <button
-                        onClick={() => onNavigate && onNavigate('cheques_treasury')}
-                        className="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 rounded-md hover:bg-gray-50 dark:hover:bg-slate-700 text-sm transition-colors font-medium flex items-center gap-1.5"
-                    >
-                        Outbound Cheques &amp; Treasury <Icon path={ICONS.chevronDown} className="w-3.5 h-3.5 -rotate-90" />
-                    </button>
+                    <span className="inline-flex items-center gap-1">
+                        <button
+                            onClick={() => onNavigate && onNavigate('cheques_treasury')}
+                            className="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 rounded-md hover:bg-gray-50 dark:hover:bg-slate-700 text-sm transition-colors font-medium flex items-center gap-1.5"
+                        >
+                            Outbound Cheques &amp; Treasury <Icon path={ICONS.chevronDown} className="w-3.5 h-3.5 -rotate-90" />
+                        </button>
+                        <InfoTip label="Outbound Cheques & Treasury">
+                            This is the only way to pay a supplier — there's no separate cash or bank-transfer payment form. Issuing and applying an outbound cheque to a supplier's bills happens here.
+                        </InfoTip>
+                    </span>
                     {hasPermission('ap:manage') && (
                         <button
                             onClick={() => setIsAddPayableOpen(true)}

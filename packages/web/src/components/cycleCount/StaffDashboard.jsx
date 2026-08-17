@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Play, Search, RefreshCw } from 'lucide-react';
 import StaffProgressTab from './StaffProgressTab';
+import InfoTip from '../ui/InfoTip';
 
 const StaffDashboard = ({ tasks, onStart, onUnassignedFind, onRefresh }) => {
     const [activeTab, setActiveTab] = useState('tasks');
@@ -56,7 +57,13 @@ const StaffDashboard = ({ tasks, onStart, onUnassignedFind, onRefresh }) => {
                     {/* Today's batch */}
                     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
                         <div className="p-6">
-                            <h2 className="text-lg font-semibold text-gray-800 mb-3">Today's Batch</h2>
+                            <h2 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-1">
+                                Today's Batch
+                                <InfoTip label="Cycle Count">
+                                    A scheduled physical stock count. Enter the number you physically counted,
+                                    not an estimate — getting this wrong can trigger incorrect stock corrections.
+                                </InfoTip>
+                            </h2>
                             {totalTasks === 0 ? (
                                 <div className="text-center py-10">
                                     <div className="text-5xl mb-3">✅</div>
@@ -85,7 +92,14 @@ const StaffDashboard = ({ tasks, onStart, onUnassignedFind, onRefresh }) => {
                     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                             <div>
-                                <h2 className="text-lg font-semibold text-gray-800 mb-1">Found something unexpected?</h2>
+                                <h2 className="text-lg font-semibold text-gray-800 mb-1 flex items-center gap-1">
+                                    Found something unexpected?
+                                    <InfoTip label="Unassigned Find">
+                                        If you count something that wasn't in your assigned batch, log it here
+                                        instead of forcing it into a current item — search by barcode, name, or
+                                        SKU, then enter the counted quantity.
+                                    </InfoTip>
+                                </h2>
                                 <p className="text-sm text-gray-500">Log items that are not in your assigned batch.</p>
                             </div>
                             <button

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import api from '../api';
 import Icon from '../components/ui/Icon';
+import InfoTip from '../components/ui/InfoTip';
 import { ICONS } from '../constants';
 import Modal from '../components/ui/Modal';
 import { formatPhysicalReceiptNumber } from '../utils/receiptNumberFormatter';
@@ -312,7 +313,11 @@ export default function CashierApprovalDesk({ onNavigate }) {
                                     )}
                                 </div>
                                 <div className="mt-2">
-                                    <label className="block text-slate-400 text-[10px] uppercase font-bold mb-1">Physical Receipt Number (PRN)</label>
+                                    <label className="flex items-center gap-1 text-slate-400 text-[10px] uppercase font-bold mb-1">Physical Receipt Number (PRN)
+                                        <InfoTip label="Physical Receipt Number (PRN)">
+                                            The physical receipt number written or printed at the point of sale — double-check it matches before approving, since approving posts the transaction permanently.
+                                        </InfoTip>
+                                    </label>
                                     <input
                                         type="text"
                                         value={editablePrn}
@@ -322,7 +327,11 @@ export default function CashierApprovalDesk({ onNavigate }) {
                                     />
                                 </div>
                                 <div className="mt-2">
-                                    <label className="block text-slate-400 text-[10px] uppercase font-bold mb-1">Tendered Amount</label>
+                                    <label className="flex items-center gap-1 text-slate-400 text-[10px] uppercase font-bold mb-1">Tendered Amount
+                                        <InfoTip label="Tendered Amount" align="right">
+                                            Change is calculated automatically as Tendered Amount minus the Grand Total, and only shown when positive.
+                                        </InfoTip>
+                                    </label>
                                     <input
                                         type="number"
                                         step="0.01"

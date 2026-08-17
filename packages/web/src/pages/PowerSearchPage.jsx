@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast'; // Use the configured api instance
 import Icon from '../components/ui/Icon'; // Import the Icon component
+import InfoTip from '../components/ui/InfoTip';
 import { ICONS } from '../constants'; // Import the icon paths
 import SearchBar from '../components/SearchBar';
 import Modal from '../components/ui/Modal';
@@ -71,7 +72,13 @@ const PowerSearchPage = () => {
 
     return (
         <div>
-            <h1 className="text-2xl font-semibold text-gray-800 mb-6">Power Search</h1>
+            <h1 className="text-2xl font-semibold text-gray-800 mb-6 flex items-center gap-1.5">
+                Power Search
+                <InfoTip label="Power Search">
+                    Finds parts only — by SKU, name, part number, brand, or vehicle application. It does not search
+                    invoices or customers; use Sales History for those.
+                </InfoTip>
+            </h1>
 
             {/* --- The New, Simplified Search Bar --- */}
             <div className="bg-white p-4 rounded-xl border border-gray-200 mb-6">
@@ -157,7 +164,13 @@ const PowerSearchPage = () => {
                                 <div className="font-semibold">{selectedPartDetail.last_cost ? Number(selectedPartDetail.last_cost).toFixed(2) : '-'}</div>
                             </div>
                             <div>
-                                <div className="text-sm text-gray-500">WAC</div>
+                                <div className="text-sm text-gray-500 flex items-center gap-1">
+                                    WAC
+                                    <InfoTip label="WAC" align="right">
+                                        Weighted Average Cost — the part's average cost across all units currently in
+                                        stock, recalculated as new stock comes in at different prices.
+                                    </InfoTip>
+                                </div>
                                 <div className="font-semibold">{selectedPartDetail.wac_cost ? Number(selectedPartDetail.wac_cost).toFixed(2) : '-'}</div>
                             </div>
                         </div>

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'react-hot-toast';
 import api from '../../api';
 import TagInput from '../ui/TagInput'; // Corrected Path
+import InfoTip from '../ui/InfoTip';
 
 const CustomerForm = ({ customer, onSave, onCancel }) => {
     const [formData, setFormData] = useState({
@@ -140,7 +141,12 @@ const CustomerForm = ({ customer, onSave, onCancel }) => {
 
             <div className="flex items-center">
                 <input type="checkbox" name="is_active" checked={formData.is_active} onChange={handleChange} className="h-4 w-4 rounded" />
-                <label className="ml-2 block text-sm text-gray-900">Active</label>
+                <label className="ml-2 block text-sm text-gray-900 flex items-center gap-1">
+                    Active
+                    <InfoTip label="Active">
+                        Turning this off retires the customer from the default "Active" filter without deleting their invoice, payment, or wallet history.
+                    </InfoTip>
+                </label>
             </div>
             <div className="mt-6 flex justify-end space-x-4">
                 <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>

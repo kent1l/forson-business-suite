@@ -42,5 +42,11 @@ added, merged, or split. See `STANDARDS.md` and `TEMPLATE.md` for the rules ever
   the manuals as-is. A `documents_manual.md` finding (PreviewComponent uses
   `dangerouslySetInnerHTML` on server-supplied HTML) is a security-review candidate, out of scope
   for this documentation pass.
-- Phase 2 (not in this pass): combined/printable manual generator, in-app contextual tooltips,
-  PR-time staleness check.
+- Phase 2 status:
+  - Combined/printable manual generator: **done** — see docs/manuals/generated/.
+  - In-app contextual tooltips: **done** — a reusable `InfoTip` component
+    (packages/web/src/components/ui/InfoTip.jsx, click-to-open popover on `@headlessui/react`
+    Popover) was added and applied across all 16 modules (83 tips across 44 files), each tip
+    trimmed from that module's manual (usually its Key Concepts / Field Reference / Key
+    Calculations sections) so the manual stays the single source of truth per STANDARDS.md #14.
+  - PR-time staleness check: still not started.

@@ -5,6 +5,7 @@ import LoadingState from '../components/ui/LoadingState';
 import ErrorState from '../components/ui/ErrorState';
 import EmptyState from '../components/ui/EmptyState';
 import StatusBadge from '../components/ui/StatusBadge';
+import InfoTip from '../components/ui/InfoTip';
 import { useAuth } from '../contexts/AuthContext';
 
 const INPUT_CLASS = 'px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500';
@@ -227,7 +228,14 @@ const WorkSchedulesPage = () => {
                                         <thead className="border-b border-gray-200 dark:border-slate-700">
                                             <tr className="text-xs font-semibold text-gray-600 dark:text-slate-400">
                                                 <th className="p-2">Day</th>
-                                                <th className="p-2 text-center">Rest day</th>
+                                                <th className="p-2 text-center">
+                                                    <span className="inline-flex items-center gap-1 justify-center">
+                                                        Rest day
+                                                        <InfoTip label="Rest day">
+                                                            Marks the day non-working and disables its Time In, Time Out, and Break fields. A schedule needs at least one day that isn't a rest day.
+                                                        </InfoTip>
+                                                    </span>
+                                                </th>
                                                 <th className="p-2">Time in</th>
                                                 <th className="p-2">Time out</th>
                                                 <th className="p-2 text-right">Break (min)</th>
