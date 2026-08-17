@@ -86,7 +86,7 @@ router.post('/cheques/templates', protect, hasPermission('cheques:manage_setting
         field_positions = DEFAULT_TEMPLATE,
         date_format = 'MM-dd-yyyy',
         amount_format = 'title_case',
-        currency_settings = { enabled: true, label: '₱' },
+        currency_settings = { enabled: true, label: 'PHP' },
         paper_settings = DEFAULT_PAPER_SETTINGS,
         amount_words_settings = DEFAULT_AMOUNT_WORDS_SETTINGS,
         text_settings = DEFAULT_TEXT_SETTINGS
@@ -174,9 +174,16 @@ router.get('/cheques/history', protect, hasPermission('cheques:view'), async (_r
     try {
         const { rows } = await db.query(
             `SELECT cr.id, cr.payee, cr.amount, cr.cheque_date, cr.memo, cr.created_at, cr.template_id,
-                    ct.bank_name AS bank_preset
+                    cr.status, cr.cheque_number, cr.ap_payment_id, cr.bank_account_id,
+                    ct.bank_name AS bank_preset,
+                    ba.account_name AS bank_account_name,
+                    EXISTS (
+                        SELECT 1 FROM cheque_clearance_log ccl
+                        WHERE ccl.cheque_record_id = cr.id AND ccl.action = 'PRINTED'
+                    ) AS is_printed
              FROM cheque_records cr
              LEFT JOIN cheque_templates ct ON ct.id = cr.template_id
+             LEFT JOIN bank_account ba ON ba.bank_account_id = cr.bank_account_id
              WHERE COALESCE(cr.is_deleted, FALSE) = FALSE
              ORDER BY cr.created_at DESC
              LIMIT 300`
@@ -346,7 +353,7 @@ router.post('/cheques/settings-import', protect, hasPermission('cheques:manage_s
                 JSON.stringify(tpl.field_positions || DEFAULT_TEMPLATE),
                 tpl.date_format || 'MM-dd-yyyy',
                 tpl.amount_format || 'title_case',
-                JSON.stringify(tpl.currency_settings || { enabled: true, label: '₱' }),
+                JSON.stringify(tpl.currency_settings || { enabled: true, label: 'PHP' }),
                 JSON.stringify(tpl.paper_settings || DEFAULT_PAPER_SETTINGS),
                 JSON.stringify(tpl.amount_words_settings || DEFAULT_AMOUNT_WORDS_SETTINGS),
                 JSON.stringify(tpl.text_settings || DEFAULT_TEXT_SETTINGS)
@@ -386,7 +393,7 @@ router.post('/cheques/settings-import', protect, hasPermission('cheques:manage_s
 });
 
 router.post('/cheques/generate-pdf', protect, hasPermission('cheques:create'), async (req, res) => {
-    const { template_id, records = [], printer_profile_id = null, test_print = false, cheque_record_id = null } = req.body;
+    const { template_id, records = [], printer_profile_id = null, test_print = false } = req.body;
 
     if (!template_id) {
         return res.status(400).json({ message: 'template_id is required' });
@@ -395,21 +402,31 @@ router.post('/cheques/generate-pdf', protect, hasPermission('cheques:create'), a
         return res.status(400).json({ message: 'At least one cheque record is required' });
     }
 
-    // If this print/reprint is tied to a specific outbound cheque record (from the
-    // PDC Treasury Desk), refuse to produce a physical cheque for one that has
-    // been voided or replaced — printing it would create a second live copy of a
-    // cheque the business has already committed to never honoring.
-    let linkedRecord = null;
-    if (cheque_record_id) {
-        const { rows: [cr] } = await db.query(
-            `SELECT id, status, ap_payment_id, bank_account_id FROM cheque_records WHERE id = $1`,
-            [cheque_record_id]
+    // Continuous printing lets several queued cheques (e.g. from the AP/PDC
+    // Treasury Desk) go out in one multi-page PDF/print job. Any row tied to a
+    // specific outbound cheque record is checked here: printing a VOID/REPLACED
+    // cheque would create a second live copy of one the business has already
+    // committed to never honoring, so the whole batch is rejected rather than
+    // silently dropping just that page (which would desync the print job from
+    // what the user reviewed).
+    const linkedIds = Array.from(new Set(
+        records.map((record) => record.cheque_record_id).filter(Boolean).map(Number)
+    ));
+    let linkedRecordsById = new Map();
+    if (linkedIds.length) {
+        const { rows: linkedRows } = await db.query(
+            `SELECT id, status, ap_payment_id, bank_account_id FROM cheque_records WHERE id = ANY($1::int[])`,
+            [linkedIds]
         );
-        if (!cr) return res.status(404).json({ message: 'Linked cheque record not found' });
-        if (['VOID', 'REPLACED'].includes(cr.status)) {
-            return res.status(409).json({ message: `Cannot print a cheque with status ${cr.status}` });
+        linkedRecordsById = new Map(linkedRows.map((row) => [row.id, row]));
+        const missing = linkedIds.filter((id) => !linkedRecordsById.has(id));
+        if (missing.length) {
+            return res.status(404).json({ message: `Linked cheque record(s) not found: ${missing.join(', ')}` });
         }
-        linkedRecord = cr;
+        const blocked = linkedRows.filter((row) => ['VOID', 'REPLACED'].includes(row.status));
+        if (blocked.length) {
+            return res.status(409).json({ message: `Cannot print cheque(s) with status ${blocked.map((r) => r.status).join(', ')} (record id ${blocked.map((r) => r.id).join(', ')})` });
+        }
     }
 
     try {
@@ -454,7 +471,8 @@ router.post('/cheques/generate-pdf', protect, hasPermission('cheques:create'), a
                 date: dateValue,
                 payee: String(record.payee).trim(),
                 amount: amount.toFixed(2),
-                memo: record.memo || ''
+                memo: record.memo || '',
+                cheque_record_id: record.cheque_record_id ? Number(record.cheque_record_id) : null
             };
         });
 
@@ -470,13 +488,15 @@ router.post('/cheques/generate-pdf', protect, hasPermission('cheques:create'), a
         const countSegment = `${normalizedRows.length}-cheque${normalizedRows.length > 1 ? 's' : ''}`;
         const pdfFilename = `${bankSegment}-${countSegment}-${dateSegment}.pdf`;
 
-        if (linkedRecord && linkedRecord.ap_payment_id) {
+        for (const row of normalizedRows) {
+            const linkedRecord = row.cheque_record_id ? linkedRecordsById.get(row.cheque_record_id) : null;
+            if (!linkedRecord || !linkedRecord.ap_payment_id) continue;
             try {
                 await db.query(
                     `INSERT INTO cheque_clearance_log (cheque_type, ap_payment_id, cheque_record_id, bank_account_id, action, notes, created_by)
                      VALUES ('OUTBOUND_SUPPLIER', $1, $2, $3, 'PRINTED', $4, $5)`,
                     [linkedRecord.ap_payment_id, linkedRecord.id, linkedRecord.bank_account_id,
-                     test_print ? 'Test print' : 'Cheque printed from Treasury Desk', req.user?.employee_id]
+                     test_print ? 'Test print' : 'Cheque printed from Print Cheques queue', req.user?.employee_id]
                 );
             } catch (logErr) {
                 console.error('Failed to write PRINTED cheque_clearance_log:', logErr.message);

@@ -73,6 +73,34 @@ describe('createChequePdf fallback renderer offsets', () => {
         jest.dontMock('pdf-lib');
     });
 
+    it('wraps text onto multiple lines in the fallback renderer too, when maxHeight allows it', async () => {
+        jest.resetModules();
+        jest.doMock('pdf-lib', () => {
+            throw new Error('Simulated missing pdf-lib');
+        });
+
+        const { createChequePdf: createWithFallback } = require('../helpers/pdf/chequePdf');
+
+        const result = await createWithFallback({
+            rows: [{ date: '04/19/2026', payee: 'Fallback Wrap Test', amount: '999999999.99', memo: '' }],
+            template: {
+                field_positions: {
+                    amountWords: { x: 72, y: 104, fontSize: 11, maxWidth: 100, minFontSize: 8, maxHeight: 60 }
+                },
+                amount_words_settings: { suffix: 'pesos' }
+            },
+            printerProfile: { offset_x: 0, offset_y: 0 }
+        });
+
+        expect(result.renderer).toBe('fallback');
+        expect(result.warning).not.toMatch(/may not fit/);
+        const pdfText = result.buffer.toString('latin1');
+        const btCount = (pdfText.match(/BT \/F1/g) || []).length;
+        // date + payee + amountNumeric + currency = 4 single-line fields; anything
+        // beyond that means amount-in-words wrapped onto more than one line.
+        expect(btCount).toBeGreaterThan(5);
+    });
+
     it('applies final printer offsets in fallback path when pdf-lib is unavailable', async () => {
         jest.resetModules();
         jest.doMock('pdf-lib', () => {
@@ -90,6 +118,135 @@ describe('createChequePdf fallback renderer offsets', () => {
         expect(result.renderer).toBe('fallback');
         const pdfText = result.buffer.toString('latin1');
         expect(pdfText).toContain('436 198 Td');
+    });
+});
+
+describe('createChequePdf overflow warnings', () => {
+    it('warns when amount-in-words cannot fit even at minimum font size', async () => {
+        const result = await createChequePdf({
+            rows: [{
+                date: '04/19/2026',
+                payee: 'Overflow Test',
+                amount: '999999999.99',
+                memo: ''
+            }],
+            template: {
+                field_positions: {
+                    amountWords: { x: 72, y: 104, fontSize: 11, maxWidth: 20, minFontSize: 8 }
+                },
+                amount_words_settings: { suffix: 'pesos' }
+            },
+            printerProfile: { offset_x: 0, offset_y: 0 }
+        });
+
+        expect(result.warning).toBeTruthy();
+        expect(result.warning).toMatch(/amount-in-words/);
+    });
+
+    it('does not warn when text comfortably fits its max width', async () => {
+        const result = await createChequePdf({
+            rows: [{ date: '04/19/2026', payee: 'Short', amount: '10.00', memo: '' }],
+            template: {
+                field_positions: {
+                    payee: { x: 72, y: 136, fontSize: 12, maxWidth: 380, minFontSize: 8 }
+                }
+            },
+            printerProfile: { offset_x: 0, offset_y: 0 }
+        });
+
+        expect(result.warning).toBeFalsy();
+    });
+});
+
+describe('createChequePdf bounding-box text wrapping', () => {
+    it('wraps amount-in-words onto multiple lines when maxHeight allows it, without an overflow warning', async () => {
+        const result = await createChequePdf({
+            rows: [{
+                date: '04/19/2026',
+                payee: 'Wrap Test',
+                amount: '999999999.99',
+                memo: ''
+            }],
+            template: {
+                field_positions: {
+                    amountWords: { x: 72, y: 104, fontSize: 11, maxWidth: 100, minFontSize: 8, maxHeight: 60 }
+                },
+                amount_words_settings: { suffix: 'pesos' }
+            },
+            printerProfile: { offset_x: 0, offset_y: 0 }
+        });
+
+        expect(result.warning).toBeFalsy();
+        expect(Buffer.isBuffer(result.buffer)).toBe(true);
+        expect(result.buffer.length).toBeGreaterThan(100);
+    });
+
+    it('still reports overflow when text cannot fit even after wrapping within maxHeight', async () => {
+        const result = await createChequePdf({
+            rows: [{
+                date: '04/19/2026',
+                payee: 'Wrap Overflow Test',
+                amount: '999999999.99',
+                memo: ''
+            }],
+            template: {
+                field_positions: {
+                    amountWords: { x: 72, y: 104, fontSize: 11, maxWidth: 30, minFontSize: 8, maxHeight: 10 }
+                },
+                amount_words_settings: { suffix: 'pesos' }
+            },
+            printerProfile: { offset_x: 0, offset_y: 0 }
+        });
+
+        expect(result.warning).toBeTruthy();
+        expect(result.warning).toMatch(/amount-in-words/);
+    });
+});
+
+describe('createChequePdf currency label encoding', () => {
+    it('defaults to the ASCII-safe "PHP" label instead of the unencodable ₱ sign', async () => {
+        const result = await createChequePdf({
+            rows: [{ date: '04/19/2026', payee: 'Default Currency Test', amount: '100.00', memo: '' }],
+            template: { field_positions: {} },
+            printerProfile: { offset_x: 0, offset_y: 0 }
+        });
+        if (result.warning) expect(result.warning).not.toMatch(/currency/);
+    });
+
+    it('warns instead of silently substituting "?" when a currency label the font cannot encode is configured', async () => {
+        const result = await createChequePdf({
+            rows: [{ date: '04/19/2026', payee: 'Peso Sign Test', amount: '100.00', memo: '' }],
+            template: {
+                field_positions: {},
+                currency_settings: { enabled: true, label: '₱' }
+            },
+            printerProfile: { offset_x: 0, offset_y: 0 }
+        });
+        expect(result.warning).toBeTruthy();
+        expect(result.warning).toMatch(/currency/);
+        expect(result.warning).toMatch(/can't print/);
+    });
+
+    it('applies the same encoding-safety warning in the fallback renderer', async () => {
+        jest.resetModules();
+        jest.doMock('pdf-lib', () => {
+            throw new Error('Simulated missing pdf-lib');
+        });
+
+        const { createChequePdf: createWithFallback } = require('../helpers/pdf/chequePdf');
+
+        const result = await createWithFallback({
+            rows: [{ date: '04/19/2026', payee: 'Fallback Peso Sign Test', amount: '100.00', memo: '' }],
+            template: {
+                field_positions: {},
+                currency_settings: { enabled: true, label: '₱' }
+            },
+            printerProfile: { offset_x: 0, offset_y: 0 }
+        });
+
+        expect(result.renderer).toBe('fallback');
+        expect(result.warning).toMatch(/currency/);
+        expect(result.warning).toMatch(/can't print/);
     });
 });
 

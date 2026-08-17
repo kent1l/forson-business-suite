@@ -59,6 +59,7 @@ const PdcTreasuryPage = () => {
     const [outboundLoading, setOutboundLoading] = useState(false);
     const [issueModalOpen, setIssueModalOpen] = useState(false);
     const [chequeTemplates, setChequeTemplates] = useState([]);
+    const [defaultPrinterProfileId, setDefaultPrinterProfileId] = useState(null);
     const [printingId, setPrintingId] = useState(null);
 
     // Modal Action States (shared, parameterized by selectedItem.direction)
@@ -143,6 +144,14 @@ const PdcTreasuryPage = () => {
     useEffect(() => {
         if (!canViewOutbound) return;
         api.get('/cheques/templates').then(res => setChequeTemplates(res.data || [])).catch(() => {});
+        // Same default-profile resolution as the Print Cheques page — without this,
+        // generate-pdf falls back to the raw native paper size instead of the
+        // calibrated Letter-backed canvas most printers here actually need.
+        api.get('/cheques/printer-profiles').then(res => {
+            const profiles = res.data || [];
+            const defaultProfile = profiles.find(p => p.is_default) || profiles[0];
+            setDefaultPrinterProfileId(defaultProfile ? defaultProfile.id : null);
+        }).catch(() => {});
     }, [canViewOutbound]);
 
     const refreshAll = () => { fetchStats(); fetchInboundItems(); fetchOutboundStats(); fetchOutboundItems(); };
@@ -223,12 +232,13 @@ const PdcTreasuryPage = () => {
         try {
             const pdfRes = await api.post('/cheques/generate-pdf', {
                 template_id: template.id,
-                cheque_record_id: item.cheque_record_id,
+                printer_profile_id: defaultPrinterProfileId || undefined,
                 records: [{
                     date: format(parseISO(String(item.cheque_date).slice(0, 10)), template.date_format || 'MM-dd-yyyy'),
                     payee: item.company_name || item.payee,
                     amount: parseFloat(item.amount).toFixed(2),
                     memo: item.memo || '',
+                    cheque_record_id: item.cheque_record_id
                 }],
             }, { responseType: 'blob' });
             const pdfBlob = new Blob([pdfRes.data], { type: 'application/pdf' });

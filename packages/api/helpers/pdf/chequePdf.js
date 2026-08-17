@@ -10,6 +10,128 @@ try {
 
 const DEFAULT_PAPER = { width: 576, height: 216 }; // 8in x 3in @ 72 DPI
 
+// Standard Helvetica AFM widths (1/1000 em) so the fallback (no pdf-lib) renderer
+// can approximate the same shrink-to-fit and alignment behavior as the primary
+// pdf-lib renderer instead of drawing raw, unaligned, non-shrinking text.
+const HELVETICA_WIDTHS = {
+    ' ': 278, '!': 278, '"': 355, '#': 556, '$': 556, '%': 889, '&': 667, "'": 191,
+    '(': 333, ')': 333, '*': 389, '+': 584, ',': 278, '-': 333, '.': 278, '/': 278,
+    '0': 556, '1': 556, '2': 556, '3': 556, '4': 556, '5': 556, '6': 556, '7': 556, '8': 556, '9': 556,
+    ':': 278, ';': 278, '<': 584, '=': 584, '>': 584, '?': 556, '@': 1015,
+    A: 667, B: 667, C: 722, D: 722, E: 667, F: 611, G: 778, H: 722, I: 278, J: 500, K: 667, L: 556, M: 833, N: 722, O: 778, P: 667, Q: 778, R: 722, S: 667, T: 611, U: 722, V: 667, W: 944, X: 667, Y: 667, Z: 611,
+    '[': 278, '\\': 278, ']': 278, '^': 469, _: 556, '`': 333,
+    a: 556, b: 556, c: 500, d: 556, e: 556, f: 278, g: 556, h: 556, i: 222, j: 222, k: 500, l: 222, m: 833, n: 556, o: 556, p: 556, q: 556, r: 333, s: 500, t: 278, u: 556, v: 500, w: 722, x: 500, y: 500, z: 500,
+    '{': 334, '|': 260, '}': 334, '~': 584
+};
+const HELVETICA_DEFAULT_WIDTH = 556;
+
+function estimateTextWidth(text, fontSize) {
+    const content = String(text || '');
+    let units = 0;
+    for (const char of content) {
+        units += HELVETICA_WIDTHS[char] ?? HELVETICA_DEFAULT_WIDTH;
+    }
+    return (units / 1000) * fontSize;
+}
+
+// Greedy word-wrap: splits `text` into lines that each fit within `maxWidth` at
+// `fontSize`, per `measure(text, fontSize) -> width`. A single word wider than
+// maxWidth is hard-broken character by character (rare, but a very long unbroken
+// payee token shouldn't blow through the bounding box silently).
+function wrapTextToLines(measure, text, fontSize, maxWidth) {
+    const words = String(text || '').split(/\s+/).filter(Boolean);
+    if (!words.length) return [''];
+    const lines = [];
+    let current = '';
+    for (const word of words) {
+        if (!current && measure(word, fontSize) > maxWidth) {
+            let remainder = word;
+            while (remainder.length > 1 && measure(remainder, fontSize) > maxWidth) {
+                let cut = remainder.length - 1;
+                while (cut > 1 && measure(remainder.slice(0, cut), fontSize) > maxWidth) cut -= 1;
+                lines.push(remainder.slice(0, cut));
+                remainder = remainder.slice(cut);
+            }
+            current = remainder;
+            continue;
+        }
+        const candidate = current ? `${current} ${word}` : word;
+        if (measure(candidate, fontSize) <= maxWidth) {
+            current = candidate;
+        } else {
+            lines.push(current);
+            current = word;
+        }
+    }
+    if (current) lines.push(current);
+    return lines;
+}
+
+// Fits `text` into a bounding box: shrink-to-fit on one line first (down to
+// minFontSize); if it still doesn't fit and a maxHeight is configured, wrap onto
+// as many lines as fit within that height instead of silently truncating. Only
+// reports `overflowed` when the text genuinely cannot fit even wrapped.
+function fitTextBox({ text, measure, preferredSize, minFontSize = 8, maxWidth, maxHeight, lineHeightFactor = 1.15 }) {
+    const content = String(text || '');
+    if (!content || !maxWidth || !Number.isFinite(maxWidth)) {
+        return { lines: [content], size: preferredSize, overflowed: false };
+    }
+
+    let size = preferredSize;
+    while (size > minFontSize && measure(content, size) > maxWidth) {
+        size -= 0.25;
+    }
+    size = Math.max(size, minFontSize);
+    if (measure(content, size) <= maxWidth) {
+        return { lines: [content], size, overflowed: false };
+    }
+
+    if (!maxHeight || !Number.isFinite(maxHeight)) {
+        return { lines: [content], size, overflowed: true };
+    }
+
+    const wrapSize = minFontSize;
+    const lineHeight = wrapSize * lineHeightFactor;
+    const maxLines = Math.max(1, Math.floor(maxHeight / lineHeight));
+    const lines = wrapTextToLines(measure, content, wrapSize, maxWidth);
+    if (lines.length <= maxLines) {
+        return { lines, size: wrapSize, overflowed: false };
+    }
+
+    const visible = lines.slice(0, maxLines);
+    const lastIndex = visible.length - 1;
+    let lastLine = visible[lastIndex];
+    while (lastLine.length > 1 && measure(`${lastLine}…`, wrapSize) > maxWidth) {
+        lastLine = lastLine.slice(0, -1);
+    }
+    visible[lastIndex] = `${lastLine}…`;
+    return { lines: visible, size: wrapSize, overflowed: true };
+}
+
+// The fallback renderer writes raw bytes straight into the PDF content stream
+// against a base-14 Helvetica font — anything outside the ASCII range this
+// font's AFM widths cover (see HELVETICA_WIDTHS) would otherwise come out as
+// garbled bytes rather than the intended glyph, so it's substituted with "?"
+// here, same as the pdf-lib path does via toPdfLibSafeText.
+function toFallbackSafeText(text) {
+    const content = String(text || '');
+    let replaced = false;
+    const safe = Array.from(content).map((char) => {
+        const code = char.codePointAt(0);
+        if (code >= 32 && code <= 126) return char;
+        replaced = true;
+        return '?';
+    }).join('');
+    return { text: safe, replaced };
+}
+
+function estimateAlignedX({ text, x, alignment = 'left', fontSize }) {
+    const width = estimateTextWidth(text, fontSize);
+    if (alignment === 'right') return x - width;
+    if (alignment === 'center') return x - (width / 2);
+    return x;
+}
+
 function applyEndFiller(text, filler, enabled) {
     const content = String(text || '').trim();
     if (!enabled) return content;
@@ -41,37 +163,28 @@ function resolveAlignedX({
     return x;
 }
 
-function fitFontSize({
-    text,
-    font,
-    preferredSize,
-    maxWidth,
-    minFontSize = 8
-}) {
-    const content = String(text || '');
-    if (!content || !maxWidth || !Number.isFinite(maxWidth)) return preferredSize;
-
-    let size = preferredSize;
-    while (size > minFontSize && font.widthOfTextAtSize(content, size) > maxWidth) {
-        size -= 0.25;
-    }
-    return Math.max(size, minFontSize);
-}
-
+// pdf-lib's standard-14 fonts (Helvetica included) only encode WinAnsi, which
+// excludes many currency/Unicode symbols (e.g. the Philippine peso sign ₱).
+// Rather than let an unencodable character silently become "?" on a printed
+// cheque, this reports back whether a substitution happened so the caller can
+// warn instead of failing silently.
 function toPdfLibSafeText(text, font) {
     const content = String(text || '');
     try {
         font.encodeText(content);
-        return content;
+        return { text: content, replaced: false };
     } catch {
-        return Array.from(content).map((char) => {
+        let replaced = false;
+        const safe = Array.from(content).map((char) => {
             try {
                 font.encodeText(char);
                 return char;
             } catch {
+                replaced = true;
                 return '?';
             }
         }).join('');
+        return { text: safe, replaced };
     }
 }
 
@@ -86,38 +199,62 @@ function formatNumericAmount(amount) {
     });
 }
 
-function createFallbackPdf({ rows, template, xOffset, yOffset, testPrint, isLetterFeed }) {
+function createFallbackPdf({ rows, template, xOffset, yOffset, testPrint, isLetterFeed, overflowWarnings = [] }) {
     const positions = template?.field_positions || {};
-    const currencySettings = template?.currency_settings || { enabled: true, label: '₱' };
+    const currencySettings = template?.currency_settings || { enabled: true, label: 'PHP' };
     const amountWordsSettings = template?.amount_words_settings || { suffix: 'pesos' };
     const textSettings = template?.text_settings || {};
     const paperSize = resolvePaperSize(template?.paper_settings);
     const pageWidth = isLetterFeed ? 612 : paperSize.width;
     const pageHeight = isLetterFeed ? 792 : paperSize.height;
-    const pages = rows.map((row) => {
+    const pages = rows.map((row, rowIndex) => {
         const amountWords = amountToWords(row.amount, { suffix: amountWordsSettings?.suffix || 'pesos' });
         const words = template?.amount_format === 'upper' ? amountWords.toUpperCase() : amountWords;
         const amountWordsText = applyEndFiller(words, textSettings?.amountWordsFiller, textSettings?.amountWordsFillerEnabled);
         const payeeText = applyEndFiller(row.payee, textSettings?.payeeFiller, textSettings?.payeeFillerEnabled);
         const formattedAmount = formatNumericAmount(row.amount);
-        const drawText = (text, cfg, fallback) => {
-            const x = Number(cfg?.x ?? fallback.x) + xOffset;
-            const y = Number(cfg?.y ?? fallback.y) + yOffset;
-            const size = Number(cfg?.fontSize ?? fallback.fontSize);
-            const escapedText = String(text || '').replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
-            return `BT /F1 ${size} Tf ${x} ${y} Td (${escapedText}) Tj ET`;
+        const drawText = (text, cfg, fallback, fieldLabel) => {
+            const { text: content, replaced } = toFallbackSafeText(text);
+            if (replaced && fieldLabel) {
+                overflowWarnings.push(`Row ${rowIndex + 1} ${fieldLabel} contains a character this font can't print and was replaced with "?"`);
+            }
+            const baseX = Number(cfg?.x ?? fallback.x) + xOffset;
+            const baseY = Number(cfg?.y ?? fallback.y) + yOffset;
+            const preferredSize = Number(cfg?.fontSize ?? fallback.fontSize);
+            const minFontSize = Number(cfg?.minFontSize ?? fallback.minFontSize ?? 8);
+            const maxWidth = Number(cfg?.maxWidth ?? fallback.maxWidth ?? NaN);
+            const maxHeight = Number(cfg?.maxHeight ?? fallback.maxHeight ?? NaN);
+            const alignment = cfg?.alignment ?? fallback.alignment ?? 'left';
+            const { lines, size, overflowed } = fitTextBox({
+                text: content,
+                measure: estimateTextWidth,
+                preferredSize,
+                minFontSize,
+                maxWidth: Number.isFinite(maxWidth) ? maxWidth : undefined,
+                maxHeight: Number.isFinite(maxHeight) ? maxHeight : undefined
+            });
+            if (overflowed && fieldLabel) {
+                overflowWarnings.push(`Row ${rowIndex + 1} ${fieldLabel} text may not fit at minimum font size`);
+            }
+            const lineHeight = size * 1.15;
+            return lines.map((line, i) => {
+                const x = estimateAlignedX({ text: line, x: baseX, alignment, fontSize: size });
+                const y = baseY - (i * lineHeight);
+                const escapedText = line.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+                return `BT /F1 ${size} Tf ${x} ${y} Td (${escapedText}) Tj ET`;
+            }).join('\n');
         };
         const lines = [
-            drawText(row.date, positions.date, { x: 426, y: 178, fontSize: 11 }),
-            drawText(payeeText, positions.payee, { x: 72, y: 136, fontSize: 12 }),
-            drawText(formattedAmount, positions.amountNumeric, { x: 534, y: 136, fontSize: 12 }),
-            drawText(amountWordsText, positions.amountWords, { x: 72, y: 104, fontSize: 11 })
+            drawText(row.date, positions.date, { x: 426, y: 178, fontSize: 11 }, null),
+            drawText(payeeText, positions.payee, { x: 72, y: 136, fontSize: 12, maxWidth: 380, minFontSize: 8 }, 'payee'),
+            drawText(formattedAmount, positions.amountNumeric, { x: 534, y: 136, fontSize: 12, alignment: 'right' }, null),
+            drawText(amountWordsText, positions.amountWords, { x: 72, y: 104, fontSize: 11, maxWidth: 420, minFontSize: 8 }, 'amount-in-words')
         ];
         if (currencySettings.enabled !== false) {
-            lines.push(drawText(currencySettings.label || '₱', positions.currency, { x: 474, y: 136, fontSize: 11 }));
+            lines.push(drawText(currencySettings.label || 'PHP', positions.currency, { x: 474, y: 136, fontSize: 11 }, 'currency'));
         }
         if (testPrint) {
-            lines.push(drawText('*** TEST PRINT ***', { x: 220, y: 198, fontSize: 11 }, { x: 220, y: 198, fontSize: 11 }));
+            lines.push(drawText('*** TEST PRINT ***', { x: 220, y: 198, fontSize: 11 }, { x: 220, y: 198, fontSize: 11 }, null));
         }
         return lines;
     });
@@ -161,7 +298,7 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
     }
 
     const positions = template?.field_positions || {};
-    const currencySettings = template?.currency_settings || { enabled: true, label: '₱' };
+    const currencySettings = template?.currency_settings || { enabled: true, label: 'PHP' };
     const amountWordsSettings = template?.amount_words_settings || { suffix: 'pesos' };
     const textSettings = template?.text_settings || {};
     const paperSize = resolvePaperSize(template?.paper_settings);
@@ -176,11 +313,13 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
     const finalXOffset = baseXOffset + Number(printerProfile.offset_x || 0);
     const finalYOffset = baseYOffset + Number(printerProfile.offset_y || 0);
 
+    const overflowWarnings = [];
+
     if (!PDFDocument || !StandardFonts) {
         return {
-            buffer: createFallbackPdf({ rows, template, xOffset: finalXOffset, yOffset: finalYOffset, testPrint, isLetterFeed }),
+            buffer: createFallbackPdf({ rows, template, xOffset: finalXOffset, yOffset: finalYOffset, testPrint, isLetterFeed, overflowWarnings }),
             renderer: 'fallback',
-            warning: 'pdf-lib unavailable; fallback renderer used'
+            warning: overflowWarnings.length ? overflowWarnings.join('; ') : 'pdf-lib unavailable; fallback renderer used'
         };
     }
 
@@ -188,7 +327,7 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
         const pdfDoc = await PDFDocument.create();
         const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
-        rows.forEach((row) => {
+        rows.forEach((row, rowIndex) => {
             const pageDimensions = isLetterFeed ? [612, 792] : [paperSize.width, paperSize.height];
             const page = pdfDoc.addPage(pageDimensions);
             const amountWords = amountToWords(row.amount, { suffix: amountWordsSettings?.suffix || 'pesos' });
@@ -196,30 +335,42 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
             const amountWordsText = applyEndFiller(words, textSettings?.amountWordsFiller, textSettings?.amountWordsFillerEnabled);
             const payeeText = applyEndFiller(row.payee, textSettings?.payeeFiller, textSettings?.payeeFillerEnabled);
 
-        const drawText = (text, cfg, fallback) => {
+        const drawText = (text, cfg, fallback, fieldLabel) => {
             const baseX = Number(cfg?.x ?? fallback.x) + finalXOffset;
-            const y = Number(cfg?.y ?? fallback.y) + finalYOffset;
+            const baseY = Number(cfg?.y ?? fallback.y) + finalYOffset;
             const preferredSize = Number(cfg?.fontSize ?? fallback.fontSize);
             const minFontSize = Number(cfg?.minFontSize ?? fallback.minFontSize ?? 8);
             const maxWidth = Number(cfg?.maxWidth ?? fallback.maxWidth ?? NaN);
+            const maxHeight = Number(cfg?.maxHeight ?? fallback.maxHeight ?? NaN);
             const alignment = cfg?.alignment ?? fallback.alignment ?? 'left';
-            const safeText = toPdfLibSafeText(text, font);
-            const renderedSize = fitFontSize({
+            const { text: safeText, replaced } = toPdfLibSafeText(text, font);
+            if (replaced && fieldLabel) {
+                overflowWarnings.push(`Row ${rowIndex + 1} ${fieldLabel} contains a character this font can't print and was replaced with "?"`);
+            }
+            const { lines, size: renderedSize, overflowed } = fitTextBox({
                 text: safeText,
-                font,
+                measure: (t, s) => font.widthOfTextAtSize(t, s),
                 preferredSize,
-                maxWidth,
-                minFontSize
+                minFontSize,
+                maxWidth: Number.isFinite(maxWidth) ? maxWidth : undefined,
+                maxHeight: Number.isFinite(maxHeight) ? maxHeight : undefined
             });
-            const x = resolveAlignedX({
-                text: safeText,
-                x: baseX,
-                alignment,
-                font,
-                fontSize: renderedSize,
-                maxWidth
+            if (overflowed && fieldLabel) {
+                overflowWarnings.push(`Row ${rowIndex + 1} ${fieldLabel} text may not fit at minimum font size`);
+            }
+            const lineHeight = renderedSize * 1.15;
+            lines.forEach((line, i) => {
+                const x = resolveAlignedX({
+                    text: line,
+                    x: baseX,
+                    alignment,
+                    font,
+                    fontSize: renderedSize,
+                    maxWidth
+                });
+                const y = baseY - (i * lineHeight);
+                page.drawText(line, { x, y, size: renderedSize, font, characterSpacing: Number(cfg?.charSpacing ?? fallback.charSpacing ?? 0) });
             });
-            page.drawText(safeText, { x, y, size: renderedSize, font, characterSpacing: Number(cfg?.charSpacing ?? fallback.charSpacing ?? 0) });
         };
 
         const drawBoxedDate = (text, cfg, fallback) => {
@@ -268,15 +419,15 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
         if (dateCfg.mode === 'boxed') {
             drawBoxedDate(row.date, dateCfg, { x: 426, y: 178, fontSize: 11, charSpacing: 14 });
         } else {
-            drawText(row.date, dateCfg, { x: 426, y: 178, fontSize: 11, alignment: 'left', charSpacing: 0 });
+            drawText(row.date, dateCfg, { x: 426, y: 178, fontSize: 11, alignment: 'left', charSpacing: 0 }, null);
         }
         const formattedAmount = formatNumericAmount(row.amount);
-        drawText(payeeText, positions.payee, { x: 72, y: 136, fontSize: 12, alignment: 'left', maxWidth: 380, minFontSize: 8 });
-        drawText(formattedAmount, positions.amountNumeric, { x: 534, y: 136, fontSize: 12, alignment: 'right' });
-        drawText(amountWordsText, positions.amountWords, { x: 72, y: 104, fontSize: 11, alignment: 'left', maxWidth: 420, minFontSize: 8 });
+        drawText(payeeText, positions.payee, { x: 72, y: 136, fontSize: 12, alignment: 'left', maxWidth: 380, minFontSize: 8 }, 'payee');
+        drawText(formattedAmount, positions.amountNumeric, { x: 534, y: 136, fontSize: 12, alignment: 'right' }, null);
+        drawText(amountWordsText, positions.amountWords, { x: 72, y: 104, fontSize: 11, alignment: 'left', maxWidth: 420, minFontSize: 8 }, 'amount-in-words');
 
         if (currencySettings.enabled !== false) {
-            drawText(currencySettings.label || '₱', positions.currency, { x: 474, y: 136, fontSize: 11, alignment: 'left' });
+            drawText(currencySettings.label || 'PHP', positions.currency, { x: 474, y: 136, fontSize: 11, alignment: 'left' }, 'currency');
         }
         if (testPrint) {
             page.drawText('*** TEST PRINT ***', { x: 220, y: 198, size: 11, font });
@@ -284,12 +435,20 @@ async function createChequePdf({ rows, template, printerProfile = { offset_x: 0,
         });
 
         const bytes = await pdfDoc.save();
-        return { buffer: Buffer.from(bytes), renderer: 'pdf-lib', warning: null };
-    } catch (error) {
         return {
-            buffer: createFallbackPdf({ rows, template, xOffset: finalXOffset, yOffset: finalYOffset, testPrint, isLetterFeed }),
+            buffer: Buffer.from(bytes),
+            renderer: 'pdf-lib',
+            warning: overflowWarnings.length ? overflowWarnings.join('; ') : null
+        };
+    } catch (error) {
+        const fallbackOverflowWarnings = [];
+        return {
+            buffer: createFallbackPdf({ rows, template, xOffset: finalXOffset, yOffset: finalYOffset, testPrint, isLetterFeed, overflowWarnings: fallbackOverflowWarnings }),
             renderer: 'fallback',
-            warning: `pdf-lib failed (${error.message || 'unknown error'}); fallback renderer used`
+            warning: [
+                `pdf-lib failed (${error.message || 'unknown error'}); fallback renderer used`,
+                ...fallbackOverflowWarnings
+            ].join('; ')
         };
     }
 }
