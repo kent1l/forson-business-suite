@@ -35,7 +35,6 @@ const CATEGORIES = [
             { name: 'Inventory',       icon: ICONS.inventory,      page: 'inventory',       permission: 'inventory:view' },
             { name: 'Goods Receipt',   icon: ICONS.receipt,        page: 'goods_receipt',   permission: 'goods_receipt:create' },
             { name: 'Purchase Orders', icon: ICONS.purchase_order, page: 'purchase_orders', permission: 'purchase_orders:view' },
-            { name: 'Power Search',    icon: ICONS.power_search,   page: 'power_search',    permission: 'parts:view' },
             { name: 'Cycle Count',     icon: ICONS.dashboard,      page: 'cycle_count',     permission: 'cycle_count:execute' },
             { name: 'Manager Audit',   icon: ICONS.reporting,      page: 'manager_audit',   permission: 'cycle_count:manage' },
         ],
@@ -94,9 +93,10 @@ const CATEGORIES = [
 ];
 
 const TOP_ITEMS = [
-    { name: 'Dashboard', icon: ICONS.dashboard, page: 'dashboard', permission: 'dashboard:view' },
-    { name: 'My Pay',    icon: ICONS.dollar,    page: 'my_pay',    permission: 'payslip:view_own' },
-    { name: 'POS',        icon: ICONS.pos,       page: 'pos',       permission: 'pos:use' },
+    { name: 'Dashboard',    icon: ICONS.dashboard,    page: 'dashboard',    permission: 'dashboard:view' },
+    { name: 'POS',          icon: ICONS.pos,          page: 'pos',          permission: 'pos:use' },
+    { name: 'Power Search', icon: ICONS.power_search, page: 'power_search', permission: 'parts:view' },
+    { name: 'My Pay',       icon: ICONS.dollar,       page: 'my_pay',       permission: 'payslip:view_own' },
 ];
 
 // ─── Accordion: CSS grid-template-rows trick with smooth fade/slide ──
