@@ -93,6 +93,43 @@ describe('createChequePdf fallback renderer offsets', () => {
     });
 });
 
+describe('createChequePdf overflow warnings', () => {
+    it('warns when amount-in-words cannot fit even at minimum font size', async () => {
+        const result = await createChequePdf({
+            rows: [{
+                date: '04/19/2026',
+                payee: 'Overflow Test',
+                amount: '999999999.99',
+                memo: ''
+            }],
+            template: {
+                field_positions: {
+                    amountWords: { x: 72, y: 104, fontSize: 11, maxWidth: 20, minFontSize: 8 }
+                },
+                amount_words_settings: { suffix: 'pesos' }
+            },
+            printerProfile: { offset_x: 0, offset_y: 0 }
+        });
+
+        expect(result.warning).toBeTruthy();
+        expect(result.warning).toMatch(/amount-in-words/);
+    });
+
+    it('does not warn when text comfortably fits its max width', async () => {
+        const result = await createChequePdf({
+            rows: [{ date: '04/19/2026', payee: 'Short', amount: '10.00', memo: '' }],
+            template: {
+                field_positions: {
+                    payee: { x: 72, y: 136, fontSize: 12, maxWidth: 380, minFontSize: 8 }
+                }
+            },
+            printerProfile: { offset_x: 0, offset_y: 0 }
+        });
+
+        expect(result.warning).toBeFalsy();
+    });
+});
+
 describe('formatNumericAmount', () => {
     const { formatNumericAmount } = require('../helpers/pdf/chequePdf');
 

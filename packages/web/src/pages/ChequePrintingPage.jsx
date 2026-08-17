@@ -29,6 +29,7 @@ const ChequePrintingPage = () => {
     const [historyQuery, setHistoryQuery] = useState('');
     const [historyBankFilter, setHistoryBankFilter] = useState('all');
     const [pendingHistoryEntry, setPendingHistoryEntry] = useState(null);
+    const [confirmOpen, setConfirmOpen] = useState(false);
 
     const selectedTemplate = useMemo(() => templates.find((tpl) => String(tpl.id) === String(selectedTemplateId)), [templates, selectedTemplateId]);
 
@@ -102,6 +103,16 @@ const ChequePrintingPage = () => {
         return banks.sort((a, b) => a.localeCompare(b));
     }, [history]);
 
+    const requestGeneratePdf = () => {
+        if (!selectedTemplate) return toast.error('Select a bank preset first.');
+        if (!activeRows.length) return toast.error('Add at least one cheque line.');
+        for (const row of activeRows) {
+            const validationError = validateRow(row);
+            if (validationError) return toast.error(validationError);
+        }
+        setConfirmOpen(true);
+    };
+
     const generatePdf = async (sourceRows = activeRows, persist = persistRecords) => {
         if (!selectedTemplate) return toast.error('Select a bank preset first.');
         if (!sourceRows.length) return toast.error('Add at least one cheque line.');
@@ -130,8 +141,10 @@ const ChequePrintingPage = () => {
 
             const renderer = pdfResponse?.headers?.['x-cheque-pdf-renderer'];
             const rendererWarning = pdfResponse?.headers?.['x-cheque-pdf-warning'];
-            if (renderer === 'fallback') {
-                toast((rendererWarning || 'Fallback PDF renderer was used because pdf-lib is unavailable.'), { icon: '⚠️' });
+            if (rendererWarning) {
+                toast(rendererWarning, { icon: '⚠️', duration: 8000 });
+            } else if (renderer === 'fallback') {
+                toast('Fallback PDF renderer was used because pdf-lib is unavailable.', { icon: '⚠️' });
             }
 
             if (persist) {
@@ -151,10 +164,11 @@ const ChequePrintingPage = () => {
 
             const pdfBlob = new Blob([pdfResponse.data], { type: 'application/pdf' });
             const url = URL.createObjectURL(pdfBlob);
-            window.open(url, '_blank', 'noopener,noreferrer');
-            const printOk = window.confirm('PDF opened. Print using 100% scale.\nDid the print preview open correctly?');
-            if (!printOk) {
-                toast.error('Print confirmation failed. Please check popup permissions or browser print settings.');
+            const opened = window.open(url, '_blank', 'noopener,noreferrer');
+            if (!opened) {
+                toast.error('Popup blocked. Allow popups for this site, then try again.');
+            } else {
+                toast.success('PDF opened in a new tab. Print using 100% scale for correct alignment.');
             }
 
         } catch (error) {
@@ -242,7 +256,7 @@ const ChequePrintingPage = () => {
                             <Icon path={ICONS.history} className="h-4 w-4" />
                             View History
                         </button>
-                        <button className={BUTTON_PRIMARY} disabled={saving} onClick={() => generatePdf()}>
+                        <button className={BUTTON_PRIMARY} disabled={saving} onClick={requestGeneratePdf}>
                             <Icon path={ICONS.receipt} className="h-4 w-4" />
                             {saving ? 'Generating…' : 'Generate PDF'}
                         </button>
@@ -464,6 +478,51 @@ const ChequePrintingPage = () => {
                         <button className={BUTTON_SECONDARY} onClick={() => setPendingHistoryEntry(null)}>Cancel</button>
                         <button className={BUTTON_SECONDARY} onClick={() => applyHistoryEntryToEditor(pendingHistoryEntry, 'append')}>Append</button>
                         <button className={BUTTON_PRIMARY} onClick={() => applyHistoryEntryToEditor(pendingHistoryEntry, 'overwrite')}>Overwrite</button>
+                    </div>
+                </div>
+            </Modal>
+
+            <Modal isOpen={confirmOpen} onClose={() => setConfirmOpen(false)} title="Confirm cheque batch">
+                <div className="space-y-4">
+                    <p className="text-sm text-gray-600 dark:text-slate-400">
+                        You are about to generate <span className="font-semibold text-gray-800 dark:text-slate-200">{queueCount} cheque{queueCount === 1 ? '' : 's'}</span> totaling{' '}
+                        <span className="font-mono font-semibold text-gray-800 dark:text-slate-200">₱{queueTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>{' '}
+                        using preset <span className="font-semibold text-gray-800 dark:text-slate-200">{selectedTemplate?.bank_name || '—'}</span>.
+                    </p>
+                    <div className="max-h-64 overflow-auto border border-gray-200 dark:border-slate-700 rounded-lg">
+                        <table className="w-full text-sm">
+                            <thead className="bg-gray-50 dark:bg-slate-900/50 sticky top-0">
+                                <tr className="text-gray-700 dark:text-slate-300">
+                                    <th className="p-2 text-left">Date</th>
+                                    <th className="p-2 text-left">Payee</th>
+                                    <th className="p-2 text-right">Amount</th>
+                                    <th className="p-2 text-left">Memo</th>
+                                </tr>
+                            </thead>
+                            <tbody className="text-gray-700 dark:text-slate-300">
+                                {activeRows.map((row, idx) => (
+                                    <tr key={idx} className="border-t border-gray-200 dark:border-slate-700">
+                                        <td className="p-2 whitespace-nowrap">{row.date}</td>
+                                        <td className="p-2">{row.payee}</td>
+                                        <td className="p-2 text-right font-mono">₱{Number(row.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                        <td className="p-2">{row.memo || '-'}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    {testPrintMode && (
+                        <p className="text-xs text-primary-700 dark:text-primary-400 flex items-start gap-1.5">
+                            <Icon path={ICONS.info} className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                            Test print mode is on — cheques will be watermarked and not saved to history as final.
+                        </p>
+                    )}
+                    <div className="flex flex-wrap gap-2 justify-end">
+                        <button className={BUTTON_SECONDARY} onClick={() => setConfirmOpen(false)}>Cancel</button>
+                        <button className={BUTTON_PRIMARY} disabled={saving} onClick={() => { setConfirmOpen(false); generatePdf(); }}>
+                            <Icon path={ICONS.receipt} className="h-4 w-4" />
+                            Confirm &amp; Generate
+                        </button>
                     </div>
                 </div>
             </Modal>
