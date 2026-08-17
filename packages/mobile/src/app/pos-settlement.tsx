@@ -57,6 +57,8 @@ function PosSettlementInner() {
   const [stagedVisible, setStagedVisible] = useState(false);
   const [stagedSaleId, setStagedSaleId] = useState<number | null>(null);
   const [stagedTxId, setStagedTxId] = useState('');
+  /** True when the sale only reached this phone's queue, not the server. */
+  const [stagedQueued, setStagedQueued] = useState(false);
   const [stagedCustomerName, setStagedCustomerName] = useState('');
   const [stagedAmount, setStagedAmount] = useState(0);
   const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false);
@@ -175,7 +177,8 @@ function PosSettlementInner() {
         haptics.txComplete();
       }
       setStagedSaleId(result.staged_sale_id ?? null);
-      setStagedTxId(result.invoice_number);
+      setStagedTxId(result.invoice_number ?? '');
+      setStagedQueued(!!result.queued);
       setStagedCustomerName(result.customer_name);
       setStagedAmount(result.grand_total);
       setStagedVisible(true);
@@ -425,9 +428,15 @@ function PosSettlementInner() {
       <StagingOverlay
         visible={stagedVisible}
         stagedSaleId={stagedSaleId}
+        queued={stagedQueued}
         transactionId={stagedTxId}
         customerName={stagedCustomerName}
         amount={stagedAmount}
+        onViewQueue={() => {
+          setStagedVisible(false);
+          usePosStore.getState().clearCart();
+          router.replace('/outbox' as never);
+        }}
         onStageAnother={() => {
           setStagedVisible(false);
           usePosStore.getState().clearCart();

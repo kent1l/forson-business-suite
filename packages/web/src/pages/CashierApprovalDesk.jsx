@@ -240,8 +240,22 @@ export default function CashierApprovalDesk({ onNavigate }) {
                                         onClick={() => handleRowClick(sale)}
                                         className="hover:bg-blue-50/50 cursor-pointer transition-colors duration-150"
                                     >
-                                        <td className="px-6 py-4 font-mono font-semibold text-slate-900">STG-{sale.id}</td>
-                                        <td className="px-6 py-4 text-slate-500">{new Date(sale.timestamp).toLocaleString()}</td>
+                                        <td className="px-6 py-4 font-mono font-semibold text-slate-900">
+                                            STG-{sale.id}
+                                            {sale.source === 'Mobile-Offline' && (
+                                                <span
+                                                    className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-sans font-semibold bg-amber-100 text-amber-800 align-middle"
+                                                    title="Rung up offline on a phone and synced later"
+                                                >
+                                                    Offline
+                                                </span>
+                                            )}
+                                        </td>
+                                        {/* The time it was rung up, not the time it reached us -- the queue is
+                                            ordered that way, so showing arrival time would contradict the order. */}
+                                        <td className="px-6 py-4 text-slate-500">
+                                            {new Date(sale.captured_at || sale.timestamp).toLocaleString()}
+                                        </td>
                                         <td className="px-6 py-4 text-slate-600 text-sm">{sale.cashier_name}</td>
                                         <td className="px-6 py-4 text-slate-800 font-medium">{sale.customer_name}</td>
                                         <td className="px-6 py-4 font-mono text-slate-600">{sale.physical_receipt_no || '-'}</td>
@@ -269,6 +283,21 @@ export default function CashierApprovalDesk({ onNavigate }) {
                         </div>
                     ) : selectedSale && (
                         <div className="space-y-6">
+                            {selectedSale.source === 'Mobile-Offline' && (
+                                <div className="flex gap-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
+                                    <span aria-hidden className="text-lg leading-none">⚠</span>
+                                    <div>
+                                        <p className="font-semibold">Rung up offline</p>
+                                        <p className="text-amber-700">
+                                            This sale was taken on a phone at{' '}
+                                            {new Date(selectedSale.captured_at).toLocaleString('en-PH')} and only
+                                            reached the server later. The invoice will be dated to when it was rung
+                                            up, and stock may have been sold since — check the quantities below.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100 shadow-sm text-sm">
                                 <div>
                                     <span className="text-slate-400 block text-[10px] uppercase font-bold mb-1">Staged By</span>
@@ -360,15 +389,30 @@ export default function CashierApprovalDesk({ onNavigate }) {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
-                                            {selectedSale.items?.map((item, idx) => (
-                                                <tr key={idx}>
-                                                    <td className="px-4 py-2.5 font-medium text-slate-800">{item.name}</td>
-                                                    <td className="px-4 py-2.5 text-slate-500 font-mono text-xs">{item.sku}</td>
-                                                    <td className="px-4 py-2.5 text-right font-medium">{item.qty}</td>
-                                                    <td className="px-4 py-2.5 text-right">{item.price_formatted}</td>
-                                                    <td className="px-4 py-2.5 text-right font-bold text-slate-900">{item.total_formatted}</td>
-                                                </tr>
-                                            ))}
+                                            {selectedSale.items?.map((item, idx) => {
+                                                // Neither staging nor approval checks stock, so a sale that
+                                                // sat queued through an outage can be for more than is left.
+                                                // Surfaced here because this desk is the only human checkpoint
+                                                // between an offline sale and the ledger.
+                                                const onHand = Number(item.stock_on_hand);
+                                                const short = Number.isFinite(onHand) && onHand < Number(item.qty);
+                                                return (
+                                                    <tr key={idx} className={short ? 'bg-amber-50' : undefined}>
+                                                        <td className="px-4 py-2.5 font-medium text-slate-800">
+                                                            {item.name}
+                                                            {short && (
+                                                                <span className="block text-xs font-normal text-amber-700">
+                                                                    Only {onHand} on hand — this sale is for {item.qty}.
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2.5 text-slate-500 font-mono text-xs">{item.sku}</td>
+                                                        <td className={`px-4 py-2.5 text-right font-medium ${short ? 'text-amber-700' : ''}`}>{item.qty}</td>
+                                                        <td className="px-4 py-2.5 text-right">{item.price_formatted}</td>
+                                                        <td className="px-4 py-2.5 text-right font-bold text-slate-900">{item.total_formatted}</td>
+                                                    </tr>
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>
