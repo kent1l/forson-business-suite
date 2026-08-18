@@ -96,19 +96,21 @@ router.post('/ap/outbound-clearance/issue', protect, hasPermission(['ap-pdc:mana
     }
 });
 
-// GET /ap/cheque-register/next-number - Suggest the next numeric cheque number for a bank account
+// GET /ap/cheque-register/next-number - Suggest the next cheque number for a bank account,
+// based on whichever cheque was actually issued last for that bank (auto or manually entered) —
+// not the highest number on file, so a manual entry becomes the new baseline for the next suggestion.
 router.get('/ap/cheque-register/next-number', protect, hasPermission(['ap-pdc:view']), async (req, res) => {
     try {
         const { bank_account_id } = req.query;
         if (!bank_account_id) return res.status(400).json({ message: 'bank_account_id is required' });
         const { rows } = await db.query(
             `SELECT cheque_number FROM cheque_records
-             WHERE bank_account_id = $1 AND cheque_number ~ '^[0-9]+$'
-             ORDER BY (cheque_number::bigint) DESC LIMIT 1`,
+             WHERE bank_account_id = $1 AND cheque_number IS NOT NULL
+             ORDER BY id DESC LIMIT 1`,
             [bank_account_id]
         );
         const last = rows[0]?.cheque_number;
-        if (!last) return res.json({ success: true, data: { next_cheque_number: null } });
+        if (!last || !/^[0-9]+$/.test(last)) return res.json({ success: true, data: { next_cheque_number: null } });
         const width = last.length;
         const next = String(BigInt(last) + 1n).padStart(width, '0');
         res.json({ success: true, data: { next_cheque_number: next } });
