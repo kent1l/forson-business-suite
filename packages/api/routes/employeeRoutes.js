@@ -30,6 +30,7 @@ const blockNonAdminGrantingAdmin = (req, res, next) => {
 };
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
+const { manilaDateString } = require('../helpers/manilaDate');
 const router = express.Router();
 
 // Work-roster projection. Assumes `employee e` LEFT JOINed to `department d`.
@@ -119,11 +120,18 @@ const buildDetailFields = (user) => {
 };
 
 // Helper to generate a token
+//
+// `login_date` pins the token to the Manila calendar day it was issued on.
+// `protect` rejects any token whose login_date isn't today, which forces
+// every session to end at the next Manila midnight regardless of how many
+// hours that leaves on the 1-day expiry below -- a user who logs in at
+// 11pm should not still be signed in at 10pm the next day.
 const generateToken = (user) => {
     return jwt.sign({
         employee_id: user.employee_id,
         username: user.username,
-        permission_level_id: user.permission_level_id
+        permission_level_id: user.permission_level_id,
+        login_date: manilaDateString(),
     }, process.env.JWT_SECRET, {
         expiresIn: '1d',
     });
@@ -236,6 +244,40 @@ router.put('/profile', protect, async (req, res) => {
     } catch (error) {
         console.error('Update profile error', error);
         res.status(500).json({ message: 'Server error updating profile' });
+    }
+});
+
+/**
+ * POST /verify-password - confirm the caller's current password.
+ *
+ * Re-checks credentials without issuing a new token or touching the existing
+ * session, so a client can gate re-entry to a sensitive view (payslips, after
+ * a period of inactivity) without forcing a full re-login. Always checked
+ * against the database, never the token, so a password changed moments ago
+ * can't be bypassed with the old one.
+ */
+router.post('/verify-password', protect, async (req, res) => {
+    const { password } = req.body;
+    if (!password) {
+        return res.status(400).json({ message: 'Password is required' });
+    }
+    try {
+        const { rows } = await db.query(
+            'SELECT password_hash FROM employee WHERE employee_id = $1',
+            [req.user.employee_id]
+        );
+        const account = rows[0];
+        if (!account || !account.password_hash) {
+            return res.status(401).json({ message: 'Invalid password' });
+        }
+        const isMatch = await bcrypt.compare(password, account.password_hash);
+        if (!isMatch) {
+            return res.status(401).json({ message: 'Invalid password' });
+        }
+        res.json({ valid: true });
+    } catch (error) {
+        console.error('Verify password error', error);
+        res.status(500).json({ message: 'Server error' });
     }
 });
 

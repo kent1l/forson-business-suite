@@ -164,7 +164,7 @@ function NavItem({ item, currentPage, onNavigate, setIsOpen, isCollapsed, pendin
 
                 {!isCollapsed && (
                     <span className="flex-1 flex items-center justify-between min-w-0">
-                        <span className="truncate leading-none">{item.name}</span>
+                        <span className="truncate leading-tight">{item.name}</span>
                         {badge > 0 && (
                             <span className="ml-2 shrink-0 bg-amber-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center animate-pulse">
                                 {badge > 99 ? '99+' : badge}
