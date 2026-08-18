@@ -6,6 +6,7 @@ import { APP_VERSION_LABEL } from '../../constants/version';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
 import useLocalStorage from '../../hooks/useLocalStorage';
+import { CATEGORIES, TOP_ITEMS } from '../../config/navigation';
 
 // ─── Storage keys ──────────────────────────────────────────────────────────
 const COLLAPSED_KEY = 'forson_sidebar_collapsed';
@@ -13,91 +14,6 @@ const CATEGORIES_KEY = 'forson_sidebar_categories';
 
 // Categories all start collapsed by default (empty set = nothing open)
 const DEFAULT_OPEN_CATEGORIES = {};
-
-// ─── Category definitions ───────────────────────────────────────────────────
-const CATEGORIES = [
-    {
-        key: 'sales',
-        title: 'Sales & Invoicing',
-        icon: ICONS.invoice,
-        items: [
-            { name: 'Approval Queue', icon: ICONS.ar,            page: 'staged_sales',  permission: 'invoicing:create', badge: true },
-            { name: 'Invoicing',      icon: ICONS.invoice,       page: 'invoicing',     permission: 'invoicing:create' },
-            { name: 'Sales History',  icon: ICONS.history,       page: 'sales_history', permission: 'invoicing:create' },
-            { name: 'A/R',            icon: ICONS.ar,            page: 'ar',            permission: 'ar:view' },
-        ],
-    },
-    {
-        key: 'inventory',
-        title: 'Inventory & Warehouse',
-        icon: ICONS.inventory,
-        items: [
-            { name: 'Inventory',       icon: ICONS.inventory,      page: 'inventory',       permission: 'inventory:view' },
-            { name: 'Goods Receipt',   icon: ICONS.receipt,        page: 'goods_receipt',   permission: 'goods_receipt:create' },
-            { name: 'Purchase Orders', icon: ICONS.purchase_order, page: 'purchase_orders', permission: 'purchase_orders:view' },
-            { name: 'Cycle Count',     icon: ICONS.dashboard,      page: 'cycle_count',     permission: 'cycle_count:execute' },
-            { name: 'Manager Audit',   icon: ICONS.reporting,      page: 'manager_audit',   permission: 'cycle_count:manage' },
-        ],
-    },
-    {
-        key: 'master_data',
-        title: 'Directory & Master Data',
-        icon: ICONS.customers,
-        items: [
-            { name: 'Parts',        icon: ICONS.parts,        page: 'parts',        permission: 'parts:view' },
-            { name: 'Applications', icon: ICONS.applications, page: 'applications', permission: 'applications:view' },
-            { name: 'Customers',    icon: ICONS.customers,    page: 'customers',    permission: 'customers:view' },
-            { name: 'Suppliers',    icon: ICONS.suppliers,    page: 'suppliers',    permission: 'suppliers:view' },
-            { name: 'Documents',    icon: ICONS.documents,    page: 'documents',    permission: 'documents:view' },
-        ],
-    },
-    {
-        key: 'hr',
-        title: 'Human Resources',
-        icon: ICONS.employees,
-        items: [
-            { name: 'Employees',   icon: ICONS.employees, page: 'employees',   permission: ['employees:view', 'hr:view'] },
-            { name: 'Departments', icon: ICONS.tag,       page: 'departments', permission: 'hr:view' },
-            { name: 'Time Records', icon: ICONS.history,  page: 'dtr',         permission: 'dtr:view' },
-            { name: 'Work Schedules', icon: ICONS.settings, page: 'work_schedules', permission: 'hr:view' },
-            { name: 'Leave',       icon: ICONS.documents, page: 'leave',       permission: 'leave:view' },
-            { name: 'Payroll',     icon: ICONS.dollar,    page: 'payroll',     permission: 'payroll:view' },
-            { name: 'Statutory Rates', icon: ICONS.settings, page: 'statutory_tables', permission: 'payroll:config' },
-            { name: 'Pay Components', icon: ICONS.tag, page: 'pay_components', permission: 'payroll:config' },
-        ],
-    },
-    {
-        key: 'finance',
-        title: 'Finance & Expenses',
-        icon: ICONS.receipt,
-        items: [
-            { name: 'A/P',                 icon: ICONS.truck,   page: 'ap',                 permission: 'ap:view' },
-            { name: 'Cheques & Treasury', icon: ICONS.bank,    page: 'cheques_treasury',   permission: ['cheques:view', 'pdc:view', 'ar:view', 'ap-pdc:view'] },
-            { name: 'Bulk SOA Generator', icon: ICONS.documents, page: 'soa_gen',          permission: 'ar:view' },
-            { name: 'Expenses',           icon: ICONS.receipt, page: 'expenses',           permission: 'expenses:view' },
-            { name: 'Expense Categories', icon: ICONS.tag,     page: 'expense_categories', permission: 'expenses:manage_categories' },
-            { name: 'Learned Terms',      icon: ICONS.star,    page: 'expense_lexicon',    permission: 'expenses:manage_lexicon' },
-            { name: 'Paperless Receipts', icon: ICONS.documents, page: 'paperless_receipts', permission: 'documents:view' },
-        ],
-    },
-    {
-        key: 'system',
-        title: 'System & Analytics',
-        icon: ICONS.reporting,
-        items: [
-            { name: 'Reporting',   icon: ICONS.reporting, page: 'reporting', permission: 'reports:view' },
-            { name: 'Settings',    icon: ICONS.settings,  page: 'settings',  permission: 'settings:view' },
-            { name: 'User Guide',  icon: ICONS.guide,     external: true, href: '/user-guide.html', permission: 'dashboard:view' },
-        ],
-    },
-];
-
-const TOP_ITEMS = [
-    { name: 'Dashboard',    icon: ICONS.dashboard,    page: 'dashboard',    permission: 'dashboard:view' },
-    { name: 'POS',          icon: ICONS.pos,          page: 'pos',          permission: 'pos:use' },
-    { name: 'Power Search', icon: ICONS.power_search, page: 'power_search', permission: 'parts:view' },
-    { name: 'My Pay',       icon: ICONS.dollar,       page: 'my_pay',       permission: 'payslip:view_own' },
-];
 
 // ─── Accordion: CSS grid-template-rows trick with smooth fade/slide ──
 function AccordionContent({ isOpen, children }) {

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
+import CommandPalette from './CommandPalette';
 import Dashboard from '../../pages/Dashboard';
 import SuppliersPage from '../../pages/SuppliersPage';
 import PartsPage from '../../pages/PartsPage';
@@ -41,6 +42,7 @@ import SoaGenPage from '../../pages/SoaGenPage';
 
 const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLines, setPosLines }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [paletteOpen, setPaletteOpen] = useState(false);
 
     const renderPage = () => {
         switch (currentPage) {
@@ -90,11 +92,12 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
         <div className="flex h-screen bg-slate-50 dark:bg-slate-950 font-sans text-gray-800 dark:text-slate-100">
             <Sidebar user={user} onNavigate={onNavigate} currentPage={currentPage} isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
             <div className="flex-1 flex flex-col overflow-hidden">
-                <Header user={user} onLogout={onLogout} onMenuClick={() => setSidebarOpen(true)} />
+                <Header user={user} onLogout={onLogout} onMenuClick={() => setSidebarOpen(true)} onOpenSearch={() => setPaletteOpen(true)} />
                 <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-50 dark:bg-slate-950 p-4 sm:p-6 md:p-8">
                     {renderPage()}
                 </main>
             </div>
+            <CommandPalette isOpen={paletteOpen} setIsOpen={setPaletteOpen} onNavigate={onNavigate} />
         </div>
     );
 };
