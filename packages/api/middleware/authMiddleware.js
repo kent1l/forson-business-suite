@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const db = require('../db'); // Import db to fetch permissions
+const { manilaDateString } = require('../helpers/manilaDate');
 
 // Middleware to verify the token and attach user with permissions
 const protect = async (req, res, next) => {
@@ -11,6 +12,14 @@ const protect = async (req, res, next) => {
 
             // Verify token
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+            // Every session ends at the next Manila midnight, not just when the
+            // 1-day expiry happens to land. A token minted without login_date
+            // (issued before this check existed) is treated the same as a stale
+            // one -- it's been more than a day since deploy either way.
+            if (decoded.login_date !== manilaDateString()) {
+                return res.status(401).json({ message: 'Session expired, please log in again' });
+            }
 
             // Resolve the employee row itself rather than trusting the token's
             // claims. A JWT lives for a day, so reading permission_level_id from

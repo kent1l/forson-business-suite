@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { cancelClockOutReminder } from '../utils/clockOutReminder';
+import usePayReauthStore from './usePayReauthStore';
 
 /** Written by PersistQueryClientProvider; must not outlive the session. */
 const QUERY_CACHE_KEY = 'REACT_QUERY_OFFLINE_CACHE';
@@ -66,9 +67,13 @@ const useAuthStore = create((set) => ({
       // Otherwise the next person on a shared phone is nudged about a shift
       // that was not theirs.
       await cancelClockOutReminder();
+      // Same shared-phone concern as the reminder above: the next person to
+      // sign in must not inherit an already-unlocked My Pay tab.
+      usePayReauthStore.getState().lock();
       set({ token: null, user: null });
     } catch (e) {
       console.error('Failed to clear auth data', e);
+      usePayReauthStore.getState().lock();
       set({ token: null, user: null });
     }
   }

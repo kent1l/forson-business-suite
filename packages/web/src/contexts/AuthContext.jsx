@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useState, useContext, useCallback, useEffect } from 'react';
+import { lockPayReauth } from '../utils/payReauth';
 
 const AuthContext = createContext();
 
@@ -37,6 +38,7 @@ export const AuthProvider = ({ children }) => {
     // options: { reload: boolean } - reload can be used for forced auto-logout to ensure UI shows login
     const logout = useCallback((options = {}) => {
         localStorage.removeItem('userSession');
+        lockPayReauth();
         setUser(null);
         setPermissions([]);
         if (options.reload) {
