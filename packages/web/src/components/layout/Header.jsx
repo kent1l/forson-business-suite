@@ -4,7 +4,9 @@ import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
 import { useTheme } from '../../contexts/ThemeContext';
 
-const Header = ({ user, onLogout, onMenuClick }) => {
+const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+
+const Header = ({ user, onLogout, onMenuClick, onOpenSearch }) => {
     const { mode, toggleMode } = useTheme() || {};
 
     const getInitials = (name) => {
@@ -43,7 +45,20 @@ const Header = ({ user, onLogout, onMenuClick }) => {
             <div className="hidden sm:inline text-sm text-gray-600 dark:text-slate-400 ml-3">
                 <span className="text-xs text-gray-500 dark:text-slate-500">{formatDateTime(dateTime)}</span>
             </div>
-            <div className="flex-1"></div>
+            <div className="flex-1 flex justify-center">
+                {onOpenSearch && (
+                    <button
+                        onClick={onOpenSearch}
+                        className="hidden sm:flex items-center gap-2 w-full max-w-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 hover:border-gray-300 dark:hover:border-slate-600 transition-colors"
+                    >
+                        <Icon path={ICONS.search} className="h-4 w-4 shrink-0" />
+                        <span className="text-sm flex-1 text-left">Search...</span>
+                        <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded text-[10px] font-mono">
+                            {isMac ? '⌘K' : 'Ctrl K'}
+                        </kbd>
+                    </button>
+                )}
+            </div>
             <div className="flex items-center">
                 {toggleMode && (
                     <button

@@ -9,6 +9,7 @@ import { SettingsProvider } from './contexts/SettingsContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import MobileSetupPage from './pages/MobileSetupPage';
 import SoaGenPage from './pages/SoaGenPage';
+import useRecentPages from './hooks/useRecentPages';
 
 // AppContent remains the same, but it will now always have access to auth and settings
 function AppContent() {
@@ -16,6 +17,7 @@ function AppContent() {
     const [currentPage, setCurrentPage] = useState('dashboard');
     const [pageState, setPageState] = useState(null);
     const [posLines, setPosLines] = useState([]);
+    const { recordVisit } = useRecentPages();
 
     const handleLogout = () => {
         logout();
@@ -25,6 +27,7 @@ function AppContent() {
     const handleNavigate = (page, state = null) => {
         setCurrentPage(page);
         setPageState(state);
+        recordVisit(page);
     };
 
     if (!isAuthenticated) {
