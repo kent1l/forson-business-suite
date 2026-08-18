@@ -145,3 +145,103 @@ describe('POST /sales/staging', () => {
         expect(res.statusCode).toBe(400);
     });
 });
+
+/**
+ * A sale rung up during a blackout reaches us whenever the server comes back,
+ * which may be hours later. Recording it at arrival time would date a Monday
+ * sale to Tuesday, and since capture time now drives invoice_date, that is an
+ * accounting error rather than a cosmetic one.
+ */
+describe('POST /sales/staging with an offline capture time', () => {
+    const minutesAgo = (m) => new Date(Date.now() - m * 60000).toISOString();
+
+    /** Settings reads go through db.query; the staging write goes through the client. */
+    const stagingClient = (stagedSaleId = 55) => {
+        const client = makeClient();
+        client.query.mockImplementation((sql) =>
+            /INSERT INTO staged_sale /i.test(sql)
+                ? Promise.resolve({ rows: [{ staged_sale_id: stagedSaleId }] })
+                : Promise.resolve({ rows: [] }));
+        db.getClient.mockResolvedValueOnce(client);
+        db.query.mockResolvedValue({ rows: [{ setting_value: '720' }] });
+        return client;
+    };
+
+    const insertParams = (client) =>
+        client.query.mock.calls.find((c) => /INSERT INTO staged_sale /i.test(c[0]))[1];
+
+    test('a sale captured while offline is stored with its capture time and marked as such', async () => {
+        const client = stagingClient();
+
+        const res = await request(app)
+            .post('/sales/staging')
+            .send(validBody({ captured_at: minutesAgo(120), source: 'Mobile' }));
+
+        expect(res.statusCode).toBe(201);
+        const params = insertParams(client);
+        expect(params[8]).toMatch(/^\d{4}-\d{2}-\d{2}T/);   // captured_at
+        expect(params[9]).toBe('Mobile-Offline');            // source
+    });
+
+    test('a sale sent immediately is Mobile, not Mobile-Offline', async () => {
+        const client = stagingClient();
+
+        await request(app)
+            .post('/sales/staging')
+            .send(validBody({ captured_at: minutesAgo(0.2), source: 'Mobile' }));
+
+        expect(insertParams(client)[9]).toBe('Mobile');
+    });
+
+    test('a sale with no capture time at all is Web', async () => {
+        const client = stagingClient();
+
+        await request(app).post('/sales/staging').send(validBody());
+
+        const params = insertParams(client);
+        expect(params[8]).toBeNull();
+        expect(params[9]).toBe('Web');
+    });
+
+    test('a sale too old to accept is refused before a transaction is opened', async () => {
+        db.query.mockResolvedValue({ rows: [{ setting_value: '720' }] });
+
+        const res = await request(app)
+            .post('/sales/staging')
+            .send(validBody({ captured_at: minutesAgo(20 * 60) }));
+
+        expect(res.statusCode).toBe(400);
+        expect(res.body.code).toBe('SALE_TOO_OLD');
+        // Nothing was staged, and no connection was taken out of the pool.
+        expect(db.getClient).not.toHaveBeenCalled();
+    });
+
+    test('a future capture time is refused', async () => {
+        db.query.mockResolvedValue({ rows: [{ setting_value: '720' }] });
+
+        const res = await request(app)
+            .post('/sales/staging')
+            .send(validBody({ captured_at: new Date(Date.now() + 60 * 60000).toISOString() }));
+
+        expect(res.statusCode).toBe(400);
+        expect(db.getClient).not.toHaveBeenCalled();
+    });
+
+    test('a replayed offline sale still resolves to the original', async () => {
+        const client = makeClient();
+        client.query.mockImplementation((sql) =>
+            /SELECT staged_sale_id FROM staged_sale WHERE client_ref/i.test(sql)
+                ? Promise.resolve({ rows: [{ staged_sale_id: 77 }] })
+                : Promise.resolve({ rows: [] }));
+        db.getClient.mockResolvedValueOnce(client);
+        db.query.mockResolvedValue({ rows: [{ setting_value: '720' }] });
+
+        const res = await request(app)
+            .post('/sales/staging')
+            .send(validBody({ client_ref: CLIENT_REF, captured_at: minutesAgo(120) }));
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body.duplicate).toBe(true);
+        expect(res.body.staged_sale_id).toBe(77);
+    });
+});

@@ -11,8 +11,12 @@ interface Props {
 export default function ProductListItem({ item, onPress }: Props) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const stock = Number(item.stock_qty ?? item.stock_on_hand ?? 0);
-  const isOutOfStock = isNaN(stock) || stock <= 0;
+  // Stock is only known when the server answered. Treating "unknown" as zero
+  // would mark the whole catalogue out of stock the moment the server drops.
+  const rawStock = item.stock_qty ?? item.stock_on_hand;
+  const stockKnown = rawStock !== undefined && rawStock !== null && !isNaN(Number(rawStock));
+  const stock = Number(rawStock);
+  const isOutOfStock = stockKnown && stock <= 0;
 
   return (
     <TouchableOpacity
@@ -37,7 +41,7 @@ export default function ProductListItem({ item, onPress }: Props) {
         <Text style={[styles.price, isDark && styles.priceDark]}>
           {formatPHP(item.last_sale_price ?? item.sale_price ?? 0)}
         </Text>
-        {isOutOfStock ? (
+        {!stockKnown ? null : isOutOfStock ? (
           <Text style={styles.oos}>Out of Stock</Text>
         ) : (
           <Text style={[styles.stock, isDark && styles.stockDark]}>

@@ -4,7 +4,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
+import * as Crypto from 'expo-crypto';
 import apiClient from '../../api/client';
+import submitWithOutbox from '../../offline/submitWithOutbox';
 import { usePermission } from '../../hooks/usePermission';
 import useServerReachability from '../../hooks/useServerReachability';
 import Screen from '../../components/ui/Screen';
@@ -85,17 +87,34 @@ export default function PartDetailScreen() {
 
     setSaving(true);
     try {
-      await apiClient.post('/inventory/adjust', {
+      const outcome = await submitWithOutbox('stock-adjust', {
         part_id: Number(partId),
         quantity: qty,
         notes: adjustNote.trim(),
-      });
+        // The server returns the original row rather than applying the delta
+        // twice if this is ever resent. Without it a retry moves stock again.
+        client_ref: Crypto.randomUUID(),
+        captured_at: new Date().toISOString(),
+      }, { displayName: part.data?.display_name, quantity: qty });
+
       setAdjusting(false);
       setAdjustQty('');
       setAdjustNote('');
       queryClient.invalidateQueries({ queryKey: ['partDetail', partId] });
       queryClient.invalidateQueries({ queryKey: ['partHistory', partId] });
-      Alert.alert('Stock adjusted', 'The change has been recorded.');
+
+      if (outcome.queued) {
+        // The second sentence matters: on-hand is never cached offline, so the
+        // figure on this screen is the last one the server gave us and will not
+        // move. Promising an update we cannot deliver would be worse than
+        // saying nothing.
+        Alert.alert(
+          'Saved on this phone',
+          'This adjustment will send when the server is back. On-hand will not update until then.',
+        );
+      } else {
+        Alert.alert('Stock adjusted', 'The change has been recorded.');
+      }
     } catch (err: any) {
       Alert.alert('Could not adjust stock', err?.response?.data?.message || 'Please try again.');
     } finally {
@@ -164,17 +183,18 @@ export default function PartDetailScreen() {
                 placeholderTextColor={theme.textMuted}
                 multiline
               />
-              <Text style={[styles.warning, { color: theme.textMuted }]}>
-                Adjustments are sent immediately and cannot be queued offline — a repeated
-                send would double-count the stock.
-              </Text>
+              {!isOnline && (
+                <Text style={[styles.warning, { color: theme.textMuted }]}>
+                  No connection. This will be saved here and sent when the server is
+                  back — on-hand above will not update until then.
+                </Text>
+              )}
               <View style={styles.actions}>
                 <Button
-                  label="Save adjustment"
+                  label={isOnline ? 'Save adjustment' : 'Save offline'}
                   variant="primary"
                   size="sm"
                   loading={saving}
-                  disabled={!isOnline}
                   onPress={submitAdjustment}
                   style={styles.actionBtn}
                 />
@@ -189,11 +209,10 @@ export default function PartDetailScreen() {
             </Card>
           ) : (
             <Button
-              label={isOnline ? 'Adjust stock' : 'Adjust stock (needs connection)'}
+              label={isOnline ? 'Adjust stock' : 'Adjust stock (saves offline)'}
               icon="create-outline"
               variant="secondary"
               fullWidth
-              disabled={!isOnline}
               onPress={() => setAdjusting(true)}
             />
           )

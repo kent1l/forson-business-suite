@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { useTheme } from '@/hooks/use-theme';
 import { Spacing, FontSize, FontWeight } from '@/constants/theme';
 import useOutboxStore from '../../offline/outbox';
+import { useCatalogSyncStore } from '../../offline/catalogSync';
 import type { Reachability } from '../../hooks/useServerReachability';
 
 /**
@@ -27,8 +28,28 @@ export default function ConnectionBanner({ status }: { status: Reachability }) {
   const pending = entries.filter((e) => e.status === 'pending').length;
   const stuck = entries.filter((e) => e.status === 'needs-attention').length;
 
-  if (status === 'online' && pending === 0 && stuck === 0) return null;
-  if (status === 'checking' && entries.length === 0) return null;
+  const catalogStatus = useCatalogSyncStore((s) => s.status);
+  const catalogProgress = useCatalogSyncStore((s) => s.progress);
+
+  // The first catalogue download is the one moment search comes back empty for
+  // a reason the user cannot otherwise see, so it earns the strip -- but only
+  // when nothing more urgent is using it.
+  const bootstrapping = catalogStatus === 'bootstrapping';
+
+  if (status === 'online' && pending === 0 && stuck === 0 && !bootstrapping) return null;
+  if (status === 'checking' && entries.length === 0 && !bootstrapping) return null;
+
+  if (bootstrapping && stuck === 0) {
+    const count = catalogProgress ?? 0;
+    return (
+      <View style={[styles.banner, { backgroundColor: theme.primarySoft }]}>
+        <Ionicons name="cloud-download" size={15} color={theme.primary} />
+        <Text style={[styles.text, { color: theme.primary }]} numberOfLines={1}>
+          {count > 0 ? `Downloading catalog — ${count} parts…` : 'Downloading catalog…'}
+        </Text>
+      </View>
+    );
+  }
 
   const offline = status === 'offline';
   const tone = stuck > 0

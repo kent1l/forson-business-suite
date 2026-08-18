@@ -22,7 +22,7 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import apiClient from '../api/client';
+import { searchCatalog, lookupBarcode } from '../offline/catalogQueries';
 import usePosStore from '../store/usePosStore';
 import SearchBar from '@/components/pos/SearchBar';
 import ProductListItem from '@/components/pos/ProductListItem';
@@ -180,8 +180,7 @@ function PosScreenInner() {
     if (!keyword.trim()) { setResults([]); return; }
     setIsSearching(true);
     try {
-      const { data } = await apiClient.get('/power-search/parts', { params: { keyword } });
-      setResults(data || []);
+      setResults(await searchCatalog(keyword));
     } catch {
       setResults([]);
     } finally {
@@ -200,28 +199,21 @@ function PosScreenInner() {
     if (!trimmed) return { status: 'error' as const, message: 'Empty barcode' };
 
     try {
-      // 1. Direct barcode endpoint lookup
-      const { data } = await apiClient.get(`/parts/barcode/${encodeURIComponent(trimmed)}`);
-      if (data) {
+      // 1. Direct barcode hit
+      const exact = await lookupBarcode(trimmed);
+      if (exact) {
         haptics.success();
-        usePosStore.getState().addToCart(data);
+        usePosStore.getState().addToCart(exact);
         setQuery('');
         setResults([]);
         return { status: 'success' as const };
       }
-    } catch (err: any) {
-      const status = err?.status ?? err?.response?.status;
-      if (status !== 404) {
-        console.error('Barcode lookup error:', err);
-      }
-    }
 
-    // 2. Power search fallback lookup
-    try {
-      const { data: searchResults } = await apiClient.get('/power-search/parts', { params: { keyword: trimmed } });
-      if (searchResults && searchResults.length > 0) {
+      // 2. Fall back to treating the code as searchable text
+      const searchResults = await searchCatalog(trimmed);
+      if (searchResults.length > 0) {
         const exactMatch = searchResults.find(
-          (p: any) =>
+          (p) =>
             p.barcodes?.includes(trimmed) ||
             p.part_numbers?.toLowerCase() === trimmed.toLowerCase()
         ) ?? searchResults[0];
@@ -233,7 +225,7 @@ function PosScreenInner() {
         return { status: 'success' as const };
       }
     } catch (err) {
-      console.error('Search barcode lookup error:', err);
+      console.error('Barcode lookup error:', err);
     }
 
     // 3. Not found -> triggers SKU Not Found (404) screen in PremiumScanner

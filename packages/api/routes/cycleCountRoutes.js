@@ -4,6 +4,8 @@ const { protect, hasPermission } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // GET /api/inventory/cycle-count/server-time
 router.get('/inventory/cycle-count/server-time', protect, (req, res) => {
     res.json({ serverTime: new Date().toISOString() });
@@ -371,15 +373,32 @@ router.post('/inventory/cycle-count/lines/:id/submit', protect, hasPermission('c
 // POST /api/inventory/cycle-count/unassigned-find
 router.post('/inventory/cycle-count/unassigned-find', protect, hasPermission('cycle_count:execute'), async (req, res) => {
     const { employee_id } = req.user;
-    const { part_id, counted_qty, started_at, scanned_barcode } = req.body;
+    const { part_id, counted_qty, started_at, scanned_barcode, client_ref } = req.body;
 
     if (!part_id || counted_qty === undefined) {
         return res.status(400).json({ message: 'part_id and counted_qty are required' });
+    }
+    if (client_ref && !UUID_RE.test(client_ref)) {
+        return res.status(400).json({ message: 'client_ref must be a UUID' });
     }
 
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
+
+        // A retry of an ad-hoc count that already landed resolves to the
+        // original line rather than inserting a second one -- which, when the
+        // variance auto-approved, would also double the stock adjustment
+        // written below.
+        if (client_ref) {
+            const { rows: existing } = await client.query(
+                'SELECT * FROM cycle_count_line WHERE client_ref = $1', [client_ref]
+            );
+            if (existing.length > 0) {
+                await client.query('ROLLBACK');
+                return res.status(200).json({ ...existing[0], duplicate: true });
+            }
+        }
 
         // 1. Ensure part exists, fetch WAC, and snapshot qty
         let system_qty_query;
@@ -473,10 +492,10 @@ router.post('/inventory/cycle-count/unassigned-find', protect, hasPermission('cy
 
         // 3. Insert line
         const lineResult = await client.query(`
-            INSERT INTO cycle_count_line (batch_id, part_id, status, system_qty_snapshot, counted_qty, is_unassigned_find, counted_at, started_at)
-            VALUES ($1, $2, $3, $4, $5, TRUE, CURRENT_TIMESTAMP, $6)
+            INSERT INTO cycle_count_line (batch_id, part_id, status, system_qty_snapshot, counted_qty, is_unassigned_find, counted_at, started_at, client_ref)
+            VALUES ($1, $2, $3, $4, $5, TRUE, CURRENT_TIMESTAMP, $6, $7)
             RETURNING *
-        `, [batch_id, part_id, status, system_qty_snapshot, countedQuantity, started_at ? new Date(started_at) : null]);
+        `, [batch_id, part_id, status, system_qty_snapshot, countedQuantity, started_at ? new Date(started_at) : null, client_ref || null]);
 
         // 3.5 Conditionally update barcode
         if (scanned_barcode && scanned_barcode.trim()) {
@@ -499,6 +518,21 @@ router.post('/inventory/cycle-count/unassigned-find', protect, hasPermission('cy
         res.json(lineResult.rows[0]);
     } catch (err) {
         await client.query('ROLLBACK');
+
+        // Two flushes of the same queued ad-hoc count can both pass the lookup
+        // above and race to insert. The unique index is what actually enforces
+        // this, so a violation means the other attempt won -- a success.
+        if (err.code === '23505' && client_ref) {
+            try {
+                const { rows } = await db.query(
+                    'SELECT * FROM cycle_count_line WHERE client_ref = $1', [client_ref]
+                );
+                if (rows.length > 0) {
+                    return res.status(200).json({ ...rows[0], duplicate: true });
+                }
+            } catch { /* fall through to the generic error below */ }
+        }
+
         console.error(err.message);
         res.status(500).send('Server Error');
     } finally {

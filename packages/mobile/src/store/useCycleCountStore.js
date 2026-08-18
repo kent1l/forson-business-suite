@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import apiClient from '../api/client';
+import * as Crypto from 'expo-crypto';
+import submitWithOutbox from '../offline/submitWithOutbox';
 
 const useCycleCountStore = create((set, get) => ({
   // ── Assigned batch ──────────────────────────────────────────────────────────
@@ -46,12 +47,18 @@ const useCycleCountStore = create((set, get) => ({
       part_id: currentAdHocItem.part_id ?? currentAdHocItem.id,
       counted_qty: countedQty,
       started_at: startedAt,
+      // Makes a resend idempotent -- without it a retried find, or one queued
+      // offline, would insert a second cycle_count_line and (if the variance
+      // auto-approves) double the stock adjustment that comes with it.
+      client_ref: Crypto.randomUUID(),
     };
     if (scannedBarcode) {
       payload.scanned_barcode = scannedBarcode;
     }
-    const { data } = await apiClient.post('/inventory/cycle-count/unassigned-find', payload);
-    return data;
+    const outcome = await submitWithOutbox('cycle-count-adhoc', payload, {
+      displayName: currentAdHocItem.display_name ?? currentAdHocItem.name,
+    });
+    return { ...outcome, data: outcome.queued ? null : outcome.data };
   },
 }));
 

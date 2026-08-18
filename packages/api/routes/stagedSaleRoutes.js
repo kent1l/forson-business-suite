@@ -6,6 +6,7 @@ const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatt
 const { validatePaymentTerms } = require('../helpers/paymentTermsHelper');
 const { calculateInvoiceTax, storeTaxBreakdown, validateTaxCalculation } = require('../services/taxCalculationService');
 const arLedger = require('../services/arLedgerService');
+const { validateCapturedAt } = require('../services/offlineCaptureService');
 
 const router = express.Router();
 
@@ -26,7 +27,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * to that sale instead of staging a duplicate for the cashier to catch.
  */
 router.post('/sales/staging', protect, hasPermission('pos:use'), async (req, res) => {
-    const { customer_id, lines, tax_rate_id, payment_method_id, tendered_amount, physical_receipt_no, client_ref } = req.body;
+    const { customer_id, lines, tax_rate_id, payment_method_id, tendered_amount, physical_receipt_no, client_ref, captured_at } = req.body;
     const employee_id = req.user.employee_id;
 
     if (!customer_id || !lines || !Array.isArray(lines) || lines.length === 0) {
@@ -35,6 +36,22 @@ router.post('/sales/staging', protect, hasPermission('pos:use'), async (req, res
     if (client_ref && !UUID_RE.test(client_ref)) {
         return res.status(400).json({ message: 'client_ref must be a UUID' });
     }
+
+    // Checked before opening a transaction: a sale too stale to accept should
+    // cost nothing. Rejecting does not lose it -- the phone's queue parks a 400
+    // as needs-attention, so it stays visible until someone deals with it.
+    const capture = await validateCapturedAt(captured_at, {
+        tooOldCode: 'SALE_TOO_OLD',
+        tooOldMessage: (hours, limitHours) =>
+            `That sale was rung up ${Math.round(hours)} hours ago, beyond the `
+            + `${Math.round(limitHours)}-hour limit for offline sales. `
+            + 'Ask a supervisor to enter it at the terminal.',
+    });
+    if (!capture.ok) return res.status(capture.status).json(capture.body);
+
+    const source = capture.isOffline
+        ? 'Mobile-Offline'
+        : (req.body.source === 'Mobile' ? 'Mobile' : 'Web');
 
     const client = await db.getClient();
     try {
@@ -62,9 +79,13 @@ router.post('/sales/staging', protect, hasPermission('pos:use'), async (req, res
             subtotal += (parseFloat(line.sale_price) * parseFloat(line.quantity)) - (parseFloat(line.discount_amount) || 0);
         }
 
+        // staged_date stays CURRENT_TIMESTAMP -- it means "when the server learned
+        // of this sale", which is a different and independently useful fact from
+        // captured_at ("when the customer paid"). Collapsing the two would hide
+        // how long a sale sat queued.
         const insertQuery = `
-            INSERT INTO staged_sale (customer_id, employee_id, total_amount, tax_rate_id, physical_receipt_no, payment_method_id, tendered_amount, status, staged_date, client_ref)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', CURRENT_TIMESTAMP, $8)
+            INSERT INTO staged_sale (customer_id, employee_id, total_amount, tax_rate_id, physical_receipt_no, payment_method_id, tendered_amount, status, staged_date, client_ref, captured_at, source)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', CURRENT_TIMESTAMP, $8, $9, $10)
             RETURNING staged_sale_id;
         `;
         const result = await client.query(insertQuery, [
@@ -75,7 +96,9 @@ router.post('/sales/staging', protect, hasPermission('pos:use'), async (req, res
             physical_receipt_no || null,
             payment_method_id,
             tendered_amount || null,
-            client_ref || null
+            client_ref || null,
+            capture.capturedAt,
+            source
         ]);
 
         const stagedSaleId = result.rows[0].staged_sale_id;
@@ -132,6 +155,8 @@ router.get('/sales/staging', protect, hasPermission('pos:use'), async (req, res)
             SELECT 
                 ss.staged_sale_id as id,
                 ss.staged_date as timestamp,
+                ss.captured_at,
+                ss.source,
                 ss.total_amount,
                 ('₱' || TO_CHAR(ss.total_amount, 'FM999,999,999.00')) as total_formatted,
                 ss.status,
@@ -150,7 +175,10 @@ router.get('/sales/staging', protect, hasPermission('pos:use'), async (req, res)
             JOIN employee e ON ss.employee_id = e.employee_id
             JOIN payment_methods pm ON ss.payment_method_id = pm.method_id
             WHERE ss.status = $1
-            ORDER BY ss.staged_date ASC;
+            -- Ordered by when each sale was rung up, not when it arrived, so a
+            -- sale that sat queued through an outage still takes its place in
+            -- the order customers actually stood in.
+            ORDER BY COALESCE(ss.captured_at, ss.staged_date) ASC;
         `;
         const { rows } = await db.query(query, [status]);
         res.json(rows);
@@ -213,6 +241,8 @@ router.get('/sales/staging/:id', protect, hasPermission('pos:use'), async (req, 
             SELECT 
                 ss.staged_sale_id as id,
                 ss.staged_date as timestamp,
+                ss.captured_at,
+                ss.source,
                 ss.total_amount,
                 ('₱' || TO_CHAR(ss.total_amount, 'FM999,999,999.00')) as total_formatted,
                 ss.status,
@@ -248,7 +278,15 @@ router.get('/sales/staging/:id', protect, hasPermission('pos:use'), async (req, 
                 ('₱' || TO_CHAR(ssl.sale_price, 'FM999,999,999.00')) as price_formatted,
                 ('₱' || TO_CHAR(ssl.quantity * ssl.sale_price, 'FM999,999,999.00')) as total_formatted,
                 p.internal_sku as sku,
-                (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS name
+                (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS name,
+                -- Current stock, so the approval desk can see when a sale
+                -- staged offline is asking for more than is left. Only on the
+                -- detail view: on the polled list this would be an aggregate
+                -- per line per row per refresh.
+                COALESCE((
+                    SELECT SUM(it.quantity) FROM inventory_transaction it
+                    WHERE it.part_id = ssl.part_id
+                ), 0) AS stock_on_hand
             FROM staged_sale_line ssl
             JOIN part p ON ssl.part_id = p.part_id
             WHERE ssl.staged_sale_id = $1;
@@ -365,13 +403,34 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
             }
         }
 
-        // Setup COD terms default
-        const termsValidation = validatePaymentTerms({ terms: 'COD', invoice_date: new Date() });
+        /*
+         * The invoice is dated when the sale actually happened, not when it was
+         * approved. For a sale rung up on a phone during a blackout those differ
+         * by however long the server was down, and dating it to the approval
+         * would put a Monday sale in Tuesday's books.
+         *
+         * Two consequences worth knowing:
+         *
+         * 1. This applies to web-staged sales too, not just mobile ones. Any
+         *    staged sale approved on a later day than it was rung up now lands in
+         *    the earlier day's revenue -- which is correct, but it means a day's
+         *    total can still move after that day has closed.
+         * 2. Invoice numbers are still allocated in approval order, so number
+         *    order and date order can disagree for backdated sales.
+         *
+         * How far back this can reach is bounded by MOBILE_OFFLINE_MAX_BACKDATE_MINUTES
+         * (12h by default), which is why that setting must stay under a day: a
+         * longer window would let a sale post into a closed month or tax period.
+         */
+        const invoiceDate = staged.captured_at || staged.staged_date;
 
-        // Create actual invoice: Set both invoice_date, approved_at to CURRENT_TIMESTAMP, and submitted_at to original staging time
+        // Terms are derived from the invoice date, not today, so a backdated
+        // sale's due date is counted from the sale rather than the approval.
+        const termsValidation = validatePaymentTerms({ terms: 'COD', invoice_date: invoiceDate });
+
         const invoiceQuery = `
             INSERT INTO invoice (invoice_number, customer_id, employee_id, total_amount, subtotal_ex_tax, tax_total, amount_paid, status, terms, payment_terms_days, due_date, physical_receipt_no, tax_calculation_version, invoice_date, submitted_at, approved_at, approved_by)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP, $14, CURRENT_TIMESTAMP, $15)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP, $16)
             RETURNING invoice_id;
         `;
         const invoiceRes = await client.query(invoiceQuery, [
@@ -388,6 +447,7 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
             termsValidation.dueDate,
             prn,
             taxCalculation.tax_calculation_version,
+            invoiceDate,
             staged.staged_date,
             reviewerId
         ]);
@@ -410,7 +470,25 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
         // Store tax breakdown
         await storeTaxBreakdown(invoiceId, taxCalculation.tax_breakdown, client);
 
-        // Deduct inventory items and write StockOut transactions (proceeding regardless of stock availability)
+        /*
+         * Deduct inventory and write StockOut rows, proceeding regardless of
+         * stock availability.
+         *
+         * These deliberately keep CURRENT_TIMESTAMP rather than following
+         * invoiceDate above, so an offline sale's document is backdated but its
+         * stock movement is not. That inconsistency is intentional and should
+         * not be "corrected": stock on hand is a running SUM over this table
+         * with no snapshot, so backdating a StockOut rewrites history -- last
+         * night's on-hand figure silently changes, and can be driven negative
+         * for a window when it was genuinely positive. assertStockNeverNegative
+         * in services/transactionDateService.js exists because of exactly that.
+         *
+         * A document dated a few hours late is a bookkeeping wrinkle; a
+         * retroactively negative stock ledger corrupts costing and every "as of"
+         * report. If the business ever needs the movement backdated too, the way
+         * to do it is to run assertStockNeverNegative here and refuse the
+         * approval when it fails -- not to backdate quietly.
+         */
         for (const line of taxCalculation.lines) {
             const { part_id, quantity, sale_price, discount_amount, tax_rate_id, tax_rate_snapshot, tax_base, tax_amount, is_tax_inclusive } = line;
 

@@ -186,6 +186,70 @@ describe('staged sales routes', () => {
     );
   });
 
+  /**
+   * A sale rung up offline is dated when it happened, not when the cashier got
+   * round to approving it. The stock movement is deliberately NOT backdated
+   * with it -- see the comment on the StockOut insert in stagedSaleRoutes.
+   */
+  it('dates the invoice at capture time when a staged sale was taken offline', async () => {
+    const capturedAt = new Date('2026-08-16T14:30:00+08:00');
+    const stagedDate = new Date('2026-08-17T09:00:00+08:00');
+
+    const client = await db.getClient();
+    client.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({
+        rows: [{
+          staged_sale_id: 43, customer_id: 1, employee_id: 10,
+          total_amount: '112.00', tax_rate_id: 1, physical_receipt_no: null,
+          payment_method_id: 2, tendered_amount: '200.00', status: 'PENDING',
+          captured_at: capturedAt, staged_date: stagedDate,
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ staged_line_id: 100, staged_sale_id: 43, part_id: 1, quantity: '1.0000', sale_price: '112.00', discount_amount: '0.00' }],
+      })
+      .mockResolvedValue({ rows: [{ part_id: 1, tax_rate_id: 1, is_tax_inclusive_price: true, invoice_id: 51, wac_cost: '50.00' }] });
+
+    await request(app).post('/api/sales/staging/43/approve-post').send({});
+
+    const invoiceInsert = client.query.mock.calls.find(
+      ([sql]) => typeof sql === 'string' && sql.includes('INSERT INTO invoice ')
+    );
+    expect(invoiceInsert).toBeDefined();
+
+    // invoice_date is param 14, submitted_at param 15 (approved_at is inline).
+    expect(invoiceInsert[1][13]).toEqual(capturedAt);
+    expect(invoiceInsert[1][14]).toEqual(stagedDate);
+  });
+
+  it('falls back to the staging time for sales that were never offline', async () => {
+    const stagedDate = new Date('2026-08-17T09:00:00+08:00');
+
+    const client = await db.getClient();
+    client.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({
+        rows: [{
+          staged_sale_id: 44, customer_id: 1, employee_id: 10,
+          total_amount: '112.00', tax_rate_id: 1, physical_receipt_no: null,
+          payment_method_id: 2, tendered_amount: '200.00', status: 'PENDING',
+          captured_at: null, staged_date: stagedDate,
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ staged_line_id: 101, staged_sale_id: 44, part_id: 1, quantity: '1.0000', sale_price: '112.00', discount_amount: '0.00' }],
+      })
+      .mockResolvedValue({ rows: [{ part_id: 1, tax_rate_id: 1, is_tax_inclusive_price: true, invoice_id: 52, wac_cost: '50.00' }] });
+
+    await request(app).post('/api/sales/staging/44/approve-post').send({});
+
+    const invoiceInsert = client.query.mock.calls.find(
+      ([sql]) => typeof sql === 'string' && sql.includes('INSERT INTO invoice ')
+    );
+    expect(invoiceInsert[1][13]).toEqual(stagedDate);
+  });
+
   it('POST /api/sales/staging/:id/reject rejects staged sale', async () => {
     db.query.mockResolvedValueOnce({
       rows: [{ staged_sale_id: 42, status: 'REJECTED' }]

@@ -3,18 +3,38 @@
  *
  * This registry is the safety boundary for the whole outbox. A blanket "retry
  * any failed POST" interceptor would have been far less code, and would also
- * have silently queued goods receipts and stock adjustments -- neither of which
- * can be replayed without double-counting stock. So queueing is opt-in per
- * mutation kind, and each kind must say explicitly how a replay is made safe.
+ * have silently queued writes that cannot survive a replay. So queueing is
+ * opt-in per mutation kind, and each kind must say explicitly how a replay is
+ * made safe.
  *
- * `isTerminalError` is the important half. A flush retry that gets a rejection
- * meaning "this already landed" has succeeded, not failed, and the queue must
- * drop the entry rather than retry it forever.
+ * Stock adjustments were excluded here for exactly that reason: an adjustment
+ * is a signed delta and stock is the SUM of the ledger, so a retry moved the
+ * quantity twice. They are queueable now only because inventory_transaction
+ * gained a client_ref column and a partial unique index (migration
+ * 20260817_05), which gives a replay something to collide with. The allowlist
+ * has not been relaxed -- the write was made safe first.
+ *
+ * Goods receipts remain excluded, and for now genuinely cannot be queued: each
+ * attempt mints a fresh GRN document number and increments the purchase
+ * order's received quantity, so a replay both double-counts stock and
+ * over-receives the order. Making them safe needs its own design.
+ *
+ * `isAlreadyApplied` is the important half for kinds that signal a duplicate by
+ * rejecting. A flush retry that gets a rejection meaning "this already landed"
+ * has succeeded, not failed, and the queue must drop the entry rather than
+ * retry it forever.
  */
 
 import type { AxiosError, AxiosRequestConfig } from 'axios';
 
-export type OutboxKind = 'cycle-count-submit' | 'cycle-count-edit' | 'time-punch' | 'leave-request';
+export type OutboxKind =
+  | 'cycle-count-submit'
+  | 'cycle-count-edit'
+  | 'cycle-count-adhoc'
+  | 'time-punch'
+  | 'leave-request'
+  | 'pos-stage-sale'
+  | 'stock-adjust';
 
 export type OutboxEntry = {
   id: string;
@@ -107,6 +127,60 @@ export const MUTATIONS: Record<OutboxKind, MutationDef> = {
     request: (e) => ({ method: 'POST', url: '/leave/requests', data: e.body }),
     isAlreadyApplied: (err) => status(err) === 409,
     invalidates: [['myLeaveRequests'], ['myLeaveBalances']],
+  },
+
+  /**
+   * A staged sale is a parked record -- it moves no stock and posts no ledger
+   * entry until a cashier approves it at the desk. That approval is a human
+   * checkpoint, which is what makes a sale synced hours late safe to accept.
+   *
+   * No `isAlreadyApplied`: the server answers a replayed client_ref with 200
+   * and the original sale, so the request resolves and the entry drains on its
+   * own. There is no rejection here that means "already staged" -- the absence
+   * is deliberate, not an omission.
+   *
+   * The body carries ids only, so the description is built from meta.
+   */
+  'pos-stage-sale': {
+    describe: (e) => {
+      const total = Number(e.meta?.grandTotal ?? 0).toLocaleString('en-PH', {
+        style: 'currency', currency: 'PHP',
+      });
+      return `Sale for ${e.meta?.customerName || 'walk-in'} — ${total}`;
+    },
+    request: (e) => ({ method: 'POST', url: '/sales/staging', data: e.body }),
+    invalidates: [['myActivity'], ['stagedSales']],
+  },
+
+  /**
+   * Safe to replay only because of the client_ref carried in the body: an
+   * ad-hoc find both inserts a cycle_count_line and, when the variance
+   * auto-approves, an inventory_transaction adjustment, so a duplicate
+   * request is exactly as dangerous as a duplicate stock adjustment. The
+   * server returns the original row on a replay rather than doubling either.
+   * Same 200-on-duplicate contract as staging and stock-adjust, so no
+   * `isAlreadyApplied`.
+   */
+  'cycle-count-adhoc': {
+    describe: (e) => `Ad-hoc count for ${e.meta?.displayName || `part ${e.body.part_id}`}`,
+    request: (e) => ({ method: 'POST', url: '/inventory/cycle-count/unassigned-find', data: e.body }),
+    invalidates: [['assignedTasks'], ['myProgress']],
+  },
+
+  /**
+   * Safe to replay only because of the client_ref carried in the body: the
+   * server returns the original row rather than appending the delta twice.
+   * Same 200-on-duplicate contract as staging, so no `isAlreadyApplied`.
+   */
+  'stock-adjust': {
+    describe: (e) => {
+      const qty = Number(e.body.quantity ?? 0);
+      return `Stock ${qty > 0 ? '+' : ''}${qty} for ${e.meta?.displayName || `part ${e.body.part_id}`}`;
+    },
+    request: (e) => ({ method: 'POST', url: '/inventory/adjust', data: e.body }),
+    // Prefix keys: the entry has no idea which part screen is mounted when it
+    // finally drains, so every part detail is refreshed.
+    invalidates: [['partDetail'], ['partHistory']],
   },
 };
 

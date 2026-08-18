@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import useAuthStore from '../store/useAuthStore';
 import useSettingsStore from '../store/useSettingsStore';
+import useOutboxStore, { pendingEntries } from '../offline/outbox';
 import useServerReachability from '../hooks/useServerReachability';
 import Screen from '../components/ui/Screen';
 import AppHeader from '../components/ui/AppHeader';
@@ -17,7 +18,8 @@ import { Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 
 export default function SettingsScreen() {
   const theme = useTheme();
-  const { logout } = useAuthStore();
+  const { logout, user } = useAuthStore();
+  const outboxEntries = useOutboxStore((s) => s.entries);
   const { serverIp, setServerIp } = useSettingsStore();
   const { status, recheck } = useServerReachability();
 
@@ -64,6 +66,27 @@ export default function SettingsScreen() {
   };
 
   const handleLogout = () => {
+    // Queued work is only ever drained for the employee who created it, because
+    // the server attributes a write to whoever's token sends it. That is right,
+    // but it means signing out strands anything still waiting -- and an unsent
+    // sale is money the shop has no record of, so it is worth interrupting for.
+    const mine = pendingEntries(outboxEntries, user?.employee_id);
+    if (mine.length > 0) {
+      const sales = mine.filter((e) => e.kind === 'pos-stage-sale').length;
+      const what = sales > 0
+        ? `${sales} sale${sales === 1 ? '' : 's'}`
+        : `${mine.length} item${mine.length === 1 ? '' : 's'}`;
+      Alert.alert(
+        'Not everything has been sent',
+        `You have ${what} still waiting to reach the server. They will only send when you sign back in on this phone.`,
+        [
+          { text: 'Stay signed in', style: 'cancel' },
+          { text: 'Log out anyway', style: 'destructive', onPress: () => logout() },
+        ],
+      );
+      return;
+    }
+
     Alert.alert('Log out?', 'You will need to sign in again to use the app.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Log out', style: 'destructive', onPress: () => logout() },

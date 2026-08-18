@@ -7,6 +7,7 @@ import {
   Modal,
   StyleSheet,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   useColorScheme,
 } from 'react-native';
@@ -53,19 +54,30 @@ export default function PriceOverrideSheet({ visible, item, onClose, onConfirm }
       return;
     }
     haptics.success();
+    // Dismissed explicitly, in the same gesture as the close, rather than
+    // left to whatever implicit blur a tap-outside or button press causes.
+    // Left implicit, the native keyboard-collapse animation and this sheet's
+    // own translateY close animation started at slightly different moments
+    // and raced each other, which is what read as a glitch.
+    Keyboard.dismiss();
     onConfirm(item.part_id, parsed);
+    onClose();
+  };
+
+  const handleClose = () => {
+    Keyboard.dismiss();
     onClose();
   };
 
   if (!visible && !item) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={handleClose}>
       <KeyboardAvoidingView
         style={styles.overlay}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <TouchableOpacity style={StyleSheet.absoluteFill} onPress={onClose} activeOpacity={1} />
+        <TouchableOpacity style={StyleSheet.absoluteFill} onPress={handleClose} activeOpacity={1} />
         <Animated.View style={[styles.sheet, isDark && styles.sheetDark, animStyle]}>
           <View style={styles.handle} />
           <Text style={[styles.title, isDark && styles.titleDark]}>Price Override</Text>
@@ -87,12 +99,14 @@ export default function PriceOverrideSheet({ visible, item, onClose, onConfirm }
             placeholderTextColor="#9ca3af"
             autoFocus
             selectTextOnFocus
+            returnKeyType="done"
+            onSubmitEditing={handleConfirm}
           />
 
           <View style={styles.actions}>
             <TouchableOpacity
               style={[styles.btn, styles.cancelBtn]}
-              onPress={() => { haptics.tap(); onClose(); }}
+              onPress={() => { haptics.tap(); handleClose(); }}
             >
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>

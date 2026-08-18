@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
-import apiClient from '../api/client';
+import submitWithOutbox from '../offline/submitWithOutbox';
 
 const usePosStore = create((set, get) => ({
   // ── Cart state ────────────────────────────────────────────────────────────
@@ -44,7 +44,9 @@ const usePosStore = create((set, get) => ({
         brand_name: product.brand_name,
         sale_price: parseFloat(product.last_sale_price ?? product.sale_price ?? 0),
         quantity: initialQty,
-        stock_qty: product.stock_qty ?? product.stock_on_hand ?? 0,
+        // Left undefined rather than zeroed when the server hasn't answered, so
+        // "unknown stock" stays distinguishable from "none in stock".
+        stock_qty: product.stock_qty ?? product.stock_on_hand,
         is_tax_inclusive_price: product.is_tax_inclusive_price,
       };
       const cart = [...state.cart, item];
@@ -219,11 +221,25 @@ const usePosStore = create((set, get) => ({
       // cashier on the next attempt. The staging employee is no longer sent:
       // the server takes it from the token so it cannot be spoofed.
       client_ref: Crypto.randomUUID(),
+      // Stamped here, when the customer actually paid, rather than on the
+      // server when the queue drains. During a blackout those can be hours
+      // apart, and this value is what the invoice ends up dated by.
+      captured_at: new Date().toISOString(),
+      source: 'Mobile',
     };
 
-    const { data } = await apiClient.post('/sales/staging', stagingPayload);
+    const grandTotal = stagingPayload.lines.reduce((s, l) => s + (l.sale_price * l.quantity), 0);
 
-    // If it was a loaded saved cart, delete it from the queue now that it's complete!
+    const outcome = await submitWithOutbox('pos-stage-sale', stagingPayload, {
+      customerName: paymentData.customer_name,
+      grandTotal,
+      lineCount: lines.length,
+    });
+
+    // Released whether the sale reached the server or only the queue. A queued
+    // sale is already committed, so leaving its saved cart in place would show
+    // the cashier a cart for a sale that is on its way -- and invite them to
+    // ring it up a second time.
     if (activeSavedCartId) {
       const updated = savedCarts.filter(c => c.id !== activeSavedCartId);
       try {
@@ -234,10 +250,13 @@ const usePosStore = create((set, get) => ({
       }
     }
 
+    // No staging number exists until the server assigns one, so the queued
+    // case returns null rather than anything that could be mistaken for one.
     return {
-      staged_sale_id: data.staged_sale_id,
-      invoice_number: data.staged_number,
-      grand_total: stagingPayload.lines.reduce((s, l) => s + (l.sale_price * l.quantity), 0),
+      queued: outcome.queued,
+      staged_sale_id: outcome.queued ? null : outcome.data.staged_sale_id,
+      invoice_number: outcome.queued ? null : outcome.data.staged_number,
+      grand_total: grandTotal,
       customer_name: paymentData.customer_name
     };
   },

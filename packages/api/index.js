@@ -45,6 +45,7 @@ function registerRoute(routePrefix, modulePath) {
 
 // Core Modules
 registerRoute('/api', './routes/partRoutes');
+registerRoute('/api', './routes/catalogSyncRoutes');
 registerRoute('/api', './routes/partMergeRoutes');
 registerRoute('/api', './routes/inventoryRoutes');
 registerRoute('/api', './routes/cycleCountRoutes');

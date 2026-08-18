@@ -20,9 +20,19 @@ interface StagingOverlayProps {
   customerName: string;
   amount: number;
   onStageAnother: () => void;
+  /** The sale is queued on this device and has not reached the server. */
+  queued?: boolean;
+  /** Opens the outbox so the cashier can see what is still waiting to send. */
+  onViewQueue?: () => void;
 }
 
-type OverlayState = 'pending' | 'approved' | 'rejected';
+/**
+ * `queued` is distinct from `pending`: pending means the cashier has the sale
+ * and hasn't approved it yet, queued means nobody has it but this phone. They
+ * must never look alike -- telling someone their sale is awaiting approval when
+ * it is sitting in a queue is worse than telling them nothing.
+ */
+type OverlayState = 'queued' | 'pending' | 'approved' | 'rejected';
 
 const POLL_INTERVAL_MS = 4000;
 
@@ -33,6 +43,8 @@ export default function StagingOverlay({
   customerName,
   amount,
   onStageAnother,
+  queued = false,
+  onViewQueue,
 }: StagingOverlayProps) {
   const [overlayState, setOverlayState] = useState<OverlayState>('pending');
   const [approvedInvoice, setApprovedInvoice] = useState<string | null>(null);
@@ -77,8 +89,11 @@ export default function StagingOverlay({
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (visible && stagedSaleId) {
-      setOverlayState('pending');
+    // Gated on `visible` alone. It previously also required a staged sale id,
+    // which meant a queued sale -- which has none -- skipped the entrance
+    // animation entirely and left an invisible modal over the screen.
+    if (visible) {
+      setOverlayState(queued ? 'queued' : 'pending');
       setApprovedInvoice(null);
 
       // entrance animation
@@ -91,24 +106,26 @@ export default function StagingOverlay({
         Animated.spring(scale, { toValue: 1, friction: 6, tension: 40, useNativeDriver: true }),
       ]).start();
 
-      // spin loop
-      spinLoopRef.current = Animated.loop(
-        Animated.timing(spinVal, { toValue: 1, duration: 3000, easing: Easing.linear, useNativeDriver: true })
-      );
-      spinLoopRef.current.start();
+      // The waiting animations and the poll only make sense once the server
+      // has the sale. A queued one is a settled, static outcome: it will not
+      // change until the outbox drains, so nothing here should suggest motion.
+      if (stagedSaleId) {
+        spinLoopRef.current = Animated.loop(
+          Animated.timing(spinVal, { toValue: 1, duration: 3000, easing: Easing.linear, useNativeDriver: true })
+        );
+        spinLoopRef.current.start();
 
-      // pulse loop
-      pulseLoopRef.current = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseVal, { toValue: 1.4, duration: 1200, easing: Easing.out(Easing.ease), useNativeDriver: true }),
-          Animated.timing(pulseVal, { toValue: 1, duration: 800, easing: Easing.in(Easing.ease), useNativeDriver: true }),
-        ])
-      );
-      pulseLoopRef.current.start();
+        pulseLoopRef.current = Animated.loop(
+          Animated.sequence([
+            Animated.timing(pulseVal, { toValue: 1.4, duration: 1200, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+            Animated.timing(pulseVal, { toValue: 1, duration: 800, easing: Easing.in(Easing.ease), useNativeDriver: true }),
+          ])
+        );
+        pulseLoopRef.current.start();
 
-      // start polling after initial delay
-      setTimeout(() => checkStatus(), 1500);
-      pollRef.current = setInterval(checkStatus, POLL_INTERVAL_MS);
+        setTimeout(() => checkStatus(), 1500);
+        pollRef.current = setInterval(checkStatus, POLL_INTERVAL_MS);
+      }
     } else {
       opacity.setValue(0);
       scale.setValue(0.9);
@@ -117,7 +134,7 @@ export default function StagingOverlay({
       pulseLoopRef.current?.stop();
     }
     return () => stopPolling();
-  }, [visible, stagedSaleId]);
+  }, [visible, stagedSaleId, queued]);
 
   // ── Approved entrance animation ────────────────────────────────────────────
   useEffect(() => {
@@ -242,6 +259,73 @@ export default function StagingOverlay({
             <TouchableOpacity style={styles.secondaryBtn} onPress={onStageAnother}>
               <Text style={styles.secondaryBtnText}>STAGE ANOTHER SALE</Text>
             </TouchableOpacity>
+          </View>
+        </Animated.View>
+      </Modal>
+    );
+  }
+
+  /*
+   * Queued on the device.
+   *
+   * Deliberately not the green success treatment: the money is captured but the
+   * sale has not reached the cashier, and dressing that up as a completed
+   * transaction is how a sale quietly goes missing. No STG number is shown
+   * either -- the server assigns those, and inventing one would put a
+   * fabricated reference on a receipt.
+   */
+  if (overlayState === 'queued') {
+    return (
+      <Modal visible transparent animationType="none">
+        <Animated.View style={[styles.overlay, { opacity }]}>
+          <View style={styles.contentContainer}>
+            <Text style={styles.screenHeader}>SAVED ON THIS PHONE</Text>
+
+            <View style={[styles.successCircle, { backgroundColor: '#F59E0B' }]}>
+              <Ionicons name="cloud-offline" size={48} color="#fff" />
+            </View>
+
+            <Animated.View style={[styles.card, { transform: [{ scale }], marginTop: 32 }]}>
+              <View style={styles.statusBadgeRow}>
+                <Ionicons name="save-outline" size={24} color="#F59E0B" />
+                <Text style={[styles.statusTitle, { color: '#F59E0B' }]}>WAITING TO SEND</Text>
+              </View>
+
+              <View style={styles.divider} />
+
+              <View style={styles.dataRow}>
+                <Text style={styles.label}>Reference</Text>
+                <Text style={styles.valueText}>Assigned when sent</Text>
+              </View>
+
+              <View style={styles.dataRow}>
+                <Text style={styles.label}>Customer</Text>
+                <Text style={styles.valueText}>{customerName}</Text>
+              </View>
+
+              <View style={styles.divider} />
+
+              <View style={styles.totalBlock}>
+                <Text style={styles.totalLabel}>Total Amount</Text>
+                <Text style={styles.totalValue}>{formatPHP(amount)}</Text>
+              </View>
+
+              <Text style={styles.rejectedNote}>
+                No connection to the store server. This sale is saved here and will
+                send automatically once the server is back. It has not reached the
+                cashier yet.
+              </Text>
+            </Animated.View>
+
+            <TouchableOpacity style={styles.secondaryBtn} onPress={onStageAnother}>
+              <Text style={styles.secondaryBtnText}>RING UP ANOTHER</Text>
+            </TouchableOpacity>
+
+            {onViewQueue && (
+              <TouchableOpacity style={styles.linkBtn} onPress={onViewQueue}>
+                <Text style={styles.linkBtnText}>View items waiting to send</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </Animated.View>
       </Modal>
@@ -458,5 +542,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 12,
     lineHeight: 18,
+  },
+  linkBtn: {
+    marginTop: 14,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  linkBtnText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 13,
+    textDecorationLine: 'underline',
   },
 });

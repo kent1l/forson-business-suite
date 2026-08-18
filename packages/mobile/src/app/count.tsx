@@ -180,15 +180,22 @@ function CountScreenInner() {
       const startedAt = startTime ? new Date(startTime + serverOffset).toISOString() : null;
       if (isAdHocMode) {
         // ── Ad-hoc path ──────────────────────────────────────────────────────
-        await submitAdHocCount(countedQty, startedAt, scannedBarcode);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        
+        const outcome = await submitAdHocCount(countedQty, startedAt, scannedBarcode);
+        Haptics.notificationAsync(
+          outcome.queued ? Haptics.NotificationFeedbackType.Warning : Haptics.NotificationFeedbackType.Success
+        );
+
         // Delay clearAdHocMode slightly to prevent state tearing/crashes during unmount
         setTimeout(() => {
           clearAdHocMode();
         }, 100);
-        
+
         router.replace('/unassigned-search');
+        if (outcome.queued) {
+          setTimeout(() => {
+            Alert.alert('Saved Offline', 'This count will be sent when the server is reachable.');
+          }, 300);
+        }
       } else {
         // ── Assigned batch path ──────────────────────────────────────────────
         const payload: any = { counted_qty: countedQty, started_at: startedAt };
