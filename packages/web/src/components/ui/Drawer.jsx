@@ -170,13 +170,13 @@ const Drawer = ({
         };
     }, [shouldRender, lockBodyScroll]);
 
-    // Predefined size classes
+    // Predefined size classes (full-width/height on small screens, capped from `sm:` up)
     const sizeClasses = {
-        sm: position === 'left' || position === 'right' ? 'w-80' : 'h-80',
-        md: position === 'left' || position === 'right' ? 'w-96' : 'h-96',
-        lg: position === 'left' || position === 'right' ? 'w-[32rem]' : 'h-[32rem]',
-        xl: position === 'left' || position === 'right' ? 'w-[40rem]' : 'h-[40rem]',
-        full: position === 'left' || position === 'right' ? 'w-full' : 'h-full'
+        sm: position === 'left' || position === 'right' ? 'w-full sm:w-80 max-h-full' : 'h-full sm:h-80 max-w-full',
+        md: position === 'left' || position === 'right' ? 'w-full sm:w-96 max-h-full' : 'h-full sm:h-96 max-w-full',
+        lg: position === 'left' || position === 'right' ? 'w-full sm:w-[32rem] max-h-full' : 'h-full sm:h-[32rem] max-w-full',
+        xl: position === 'left' || position === 'right' ? 'w-full sm:w-[40rem] max-h-full' : 'h-full sm:h-[40rem] max-w-full',
+        full: position === 'left' || position === 'right' ? 'w-full max-h-full' : 'h-full max-w-full'
     };
 
     // Position classes
@@ -246,17 +246,17 @@ const Drawer = ({
 
             {/* Drawer */}
             <div
-                className={`fixed ${positionClasses[position]} ${typeof size === 'string' && sizeClasses[size] ? sizeClasses[size] : size} bg-white shadow-xl transform transition-transform duration-500 ease-in-out ${
+                className={`fixed ${positionClasses[position]} ${typeof size === 'string' && sizeClasses[size] ? sizeClasses[size] : size} bg-white shadow-xl transform transition-transform duration-500 ease-in-out flex flex-col overflow-hidden ${
                     showDrawer ? "translate-x-0" : position === 'right' ? "translate-x-full" : position === 'left' ? "-translate-x-full" : position === 'top' ? "-translate-y-full" : "translate-y-full"
                 } ${roundedClasses[position]} ${drawerZIndex} ${drawerClassName}`}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby={title ? "drawer-title" : undefined}
             >
-                {header}
+                {header && <div className="flex-shrink-0">{header}</div>}
 
                 {/* Content */}
-                <div className={`flex-1 overflow-y-auto overscroll-contain ${contentClassName}`}>
+                <div className={`flex-1 min-h-0 overflow-y-auto overscroll-contain ${contentClassName}`}>
                     {children}
                 </div>
             </div>
