@@ -2,11 +2,16 @@
 -- Description: Cleanup duplicate physical receipt numbers in invoice_payments, add unique index on customer_payment physical_receipt_no, and add cross-table uniqueness helper function.
 
 -- 1. Cleanup duplicate physical receipt numbers stored in invoice_payments.reference
+-- Skip payment methods that require a reference (invoice_payments_validate trigger
+-- rejects NULLing out reference for those), since the value being cleared here just
+-- duplicated the invoice's receipt/invoice number rather than being a real reference.
 UPDATE public.invoice_payments ip
 SET reference = NULL
-FROM public.invoice i
+FROM public.invoice i, public.payment_methods pm
 WHERE ip.invoice_id = i.invoice_id
+  AND pm.method_id = ip.method_id
   AND ip.reference IS NOT NULL
+  AND COALESCE((pm.config->>'requires_reference')::boolean, false) = false
   AND (
     LOWER(TRIM(ip.reference)) = LOWER(TRIM(i.physical_receipt_no))
     OR LOWER(TRIM(ip.reference)) = LOWER(TRIM(i.invoice_number))
