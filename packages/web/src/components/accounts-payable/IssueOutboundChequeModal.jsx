@@ -70,20 +70,23 @@ const IssueOutboundChequeModal = ({ isOpen, onClose, onIssued }) => {
         })();
     }, [form.purpose_type, form.supplier_id]);
 
-    // Suggest the next physical cheque number for the selected bank account —
-    // still freely editable, since the real sequence lives on the paper book.
+    // Suggest the next physical cheque number for the selected bank account — still
+    // freely editable, since the real sequence lives on the paper book. Re-suggested
+    // every time the bank changes (the number belongs to that bank's cheque book), and
+    // blank when that bank has no prior cheque on record.
     useEffect(() => {
-        if (!form.bank_account_id || form.cheque_number) return;
+        if (!form.bank_account_id) return;
+        let cancelled = false;
         (async () => {
             try {
                 const res = await api.get('/ap/cheque-register/next-number', { params: { bank_account_id: form.bank_account_id } });
                 const next = res.data?.data?.next_cheque_number;
-                if (next) setForm(prev => (prev.cheque_number ? prev : { ...prev, cheque_number: next }));
+                if (!cancelled) setForm(prev => ({ ...prev, cheque_number: next || '' }));
             } catch (err) {
                 console.error('Error suggesting next cheque number:', err);
             }
         })();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        return () => { cancelled = true; };
     }, [form.bank_account_id]);
 
     const selectedSupplier = suppliers.find(s => String(s.supplier_id) === String(form.supplier_id));
