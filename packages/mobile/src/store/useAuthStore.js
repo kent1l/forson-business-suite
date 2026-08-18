@@ -34,6 +34,10 @@ const useAuthStore = create((set) => ({
       await SecureStore.setItemAsync('auth_token', token);
       await SecureStore.setItemAsync('auth_user', JSON.stringify(userData));
       set({ token, user: userData });
+      // My Pay's reauth window starts counting from this sign-in, not from
+      // the next time the user happens to open the tab -- so a fresh login
+      // gets a 15-minute grace period before it asks for the password again.
+      usePayReauthStore.getState().unlock();
     } catch (e) {
       console.error('Failed to save auth data', e);
     }

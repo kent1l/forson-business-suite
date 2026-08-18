@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useState, useContext, useCallback, useEffect } from 'react';
-import { lockPayReauth } from '../utils/payReauth';
+import { lockPayReauth, unlockPayReauth } from '../utils/payReauth';
 
 const AuthContext = createContext();
 
@@ -30,6 +30,10 @@ export const AuthProvider = ({ children }) => {
             permissions: userPermissions
         };
         localStorage.setItem('userSession', JSON.stringify(sessionData));
+        // My Pay's reauth window starts counting from this sign-in, not from
+        // the next time the user happens to open the tab -- so a fresh login
+        // gets a 15-minute grace period before it asks for the password again.
+        unlockPayReauth();
         setUser(loginData.user);
         setPermissions(userPermissions);
     };
