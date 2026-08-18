@@ -33,7 +33,7 @@ export const CATEGORIES = [
         title: 'Directory & Master Data',
         icon: ICONS.customers,
         items: [
-            { name: 'Parts',        icon: ICONS.parts,        page: 'parts',        permission: 'parts:view', keywords: ['products', 'catalog', 'sku'] },
+            { name: 'Parts',        icon: ICONS.parts,        page: 'parts',        permission: 'parts:view', keywords: ['products', 'catalog', 'catalogue', 'sku'] },
             { name: 'Applications', icon: ICONS.applications, page: 'applications', permission: 'applications:view', keywords: ['part fitment', 'vehicle applications'] },
             { name: 'Customers',    icon: ICONS.customers,    page: 'customers',    permission: 'customers:view', keywords: ['clients', 'buyers'] },
             { name: 'Suppliers',    icon: ICONS.suppliers,    page: 'suppliers',    permission: 'suppliers:view', keywords: ['vendors'] },
@@ -47,7 +47,7 @@ export const CATEGORIES = [
         items: [
             { name: 'Employees',   icon: ICONS.employees, page: 'employees',   permission: ['employees:view', 'hr:view'], keywords: ['staff', 'personnel'] },
             { name: 'Departments', icon: ICONS.tag,       page: 'departments', permission: 'hr:view', keywords: ['org structure'] },
-            { name: 'Time Records', icon: ICONS.history,  page: 'dtr',         permission: 'dtr:view', keywords: ['attendance', 'clock in', 'clock out', 'dtr', 'timesheet'] },
+            { name: 'Time Records', icon: ICONS.history,  page: 'dtr',         permission: 'dtr:view', keywords: ['attendance', 'clock in', 'clock out', 'dtr', 'timesheet', 'punch', 'punch in', 'punch out', 'time in', 'time out'] },
             { name: 'Work Schedules', icon: ICONS.settings, page: 'work_schedules', permission: 'hr:view', keywords: ['shifts', 'roster'] },
             { name: 'Leave',       icon: ICONS.documents, page: 'leave',       permission: 'leave:view', keywords: ['vacation', 'time off', 'leave requests'] },
             { name: 'Payroll',     icon: ICONS.dollar,    page: 'payroll',     permission: 'payroll:view', keywords: ['salary', 'wages', 'pay run'] },
@@ -60,8 +60,8 @@ export const CATEGORIES = [
         title: 'Finance & Expenses',
         icon: ICONS.receipt,
         items: [
-            { name: 'A/P',                 icon: ICONS.truck,   page: 'ap',                 permission: 'ap:view', keywords: ['accounts payable', 'payables', 'supplier balance', 'ap'] },
-            { name: 'Cheques & Treasury', icon: ICONS.bank,    page: 'cheques_treasury',   permission: ['cheques:view', 'pdc:view', 'ar:view', 'ap-pdc:view'], keywords: ['pdc', 'post-dated cheques', 'bank'] },
+            { name: 'A/P',                 icon: ICONS.truck,   page: 'ap',                 permission: 'ap:view', keywords: ['accounts payable', 'payables', 'supplier balance', 'ap', 'supplier bill', 'bill'] },
+            { name: 'Cheques & Treasury', icon: ICONS.bank,    page: 'cheques_treasury',   permission: ['cheques:view', 'pdc:view', 'ar:view', 'ap-pdc:view'], keywords: ['pdc', 'post-dated cheques', 'bank', 'check', 'checks', 'cheque', 'cheques'] },
             { name: 'Bulk SOA Generator', icon: ICONS.documents, page: 'soa_gen',          permission: 'ar:view', keywords: ['statement of account', 'soa'] },
             { name: 'Expenses',           icon: ICONS.receipt, page: 'expenses',           permission: 'expenses:view', keywords: ['spending', 'costs'] },
             { name: 'Expense Categories', icon: ICONS.tag,     page: 'expense_categories', permission: 'expenses:manage_categories', keywords: ['expense types'] },
