@@ -69,9 +69,20 @@ const normalizePhone = (value) => {
     return stripped === '' ? null : stripped;
 };
 
+// Stored part number display value (separate from normalizeSku.js's
+// search-index normalization): uppercased on entry to match the auto-parts
+// catalog convention this business already follows for the vast majority of
+// its data.
+const normalizePartNumber = (value) => {
+    const cleaned = normalizeText(value);
+    if (!cleaned) return cleaned;
+    return cleaned.toUpperCase();
+};
+
 module.exports = {
     normalizeText,
     normalizeName,
     normalizeEmail,
     normalizePhone,
+    normalizePartNumber,
 };

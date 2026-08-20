@@ -6,7 +6,7 @@ const db = require('../db');
 const { protect, isAdmin, hasPermission } = require('../middleware/authMiddleware');
 const { generateUniqueCode } = require('../helpers/codeGenerator');
 const { syncPartWithMeili } = require('../meilisearch');
-const { normalizeText, normalizeName, normalizeEmail, normalizePhone } = require('../helpers/normalizeEntity');
+const { normalizeText, normalizeName, normalizeEmail, normalizePhone, normalizePartNumber } = require('../helpers/normalizeEntity');
 const router = express.Router();
 
 // CSV imports are one of the biggest sources of case/whitespace-inconsistent
@@ -186,7 +186,7 @@ router.post('/import/:entity', protect, hasPermission('data-utils:import'), uplo
             const newOrUpdatedRow = result.rows[0];
 
             if (entity === 'parts' && row.part_numbers) {
-                const partNumbers = row.part_numbers.split(';').map(pn => pn.trim()).filter(Boolean);
+                const partNumbers = row.part_numbers.split(';').map(pn => normalizePartNumber(pn)).filter(Boolean);
                 await client.query('DELETE FROM part_number WHERE part_id = $1', [newOrUpdatedRow.part_id]);
                 for (const pn of partNumbers) {
                     await client.query('INSERT INTO part_number (part_id, part_number) VALUES ($1, $2)', [newOrUpdatedRow.part_id, pn]);

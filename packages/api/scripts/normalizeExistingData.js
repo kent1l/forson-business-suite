@@ -28,7 +28,7 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 const db = require('../db');
-const { normalizeText, normalizeName, normalizeEmail, normalizePhone } = require('../helpers/normalizeEntity');
+const { normalizeText, normalizeName, normalizeEmail, normalizePhone, normalizePartNumber } = require('../helpers/normalizeEntity');
 
 const args = process.argv.slice(2);
 const apply = args.includes('--apply');
@@ -70,16 +70,18 @@ const TABLE_CONFIGS = [
             middle_name: normalizeName,
             last_name: normalizeName,
             suffix: normalizeText,
-            position_title: normalizeText,
+            position_title: normalizeName,
             mobile_no: normalizePhone,
             personal_email: normalizeEmail,
             address_line: normalizeText,
             barangay: normalizeText,
             city: normalizeText,
             province: normalizeText,
+            postal_code: normalizeText,
             emergency_contact_name: normalizeName,
-            emergency_contact_relation: normalizeText,
+            emergency_contact_relation: normalizeName,
             emergency_contact_phone: normalizePhone,
+            separation_reason: normalizeText,
         },
     },
     {
@@ -107,9 +109,25 @@ const TABLE_CONFIGS = [
             group_name: normalizeText,
         },
     },
+    {
+        key: 'part_number',
+        table: 'part_number',
+        pk: 'part_number_id',
+        columns: {
+            part_number: normalizePartNumber,
+        },
+        // Excel silently reinterprets short dash-separated tokens like "4-1" as a
+        // date ("4-Jan") before the value ever reaches this database. Uppercasing
+        // that to "4-JAN" would just re-case already-corrupted data — the original
+        // part number is unrecoverable by any normalization rule and needs a human
+        // to work out the intended value from the part's brand/application. So
+        // these are excluded from --apply and reported separately instead.
+        flagForReview: (row) => /^[0-9]{1,2}-[A-Za-z]{3}$/.test(row.part_number || ''),
+        reviewReason: 'looks like an Excel auto-date-mangled value (e.g. "4-Jan") — the original part number may be unrecoverable; needs manual review, not normalization',
+    },
 ];
 
-async function processTable(config) {
+async function processTable(config, flaggedOut) {
     const columnNames = Object.keys(config.columns);
     const { rows } = await db.query(
         `SELECT ${config.pk}, ${columnNames.join(', ')} FROM ${config.table}`
@@ -118,10 +136,17 @@ async function processTable(config) {
     let changed = 0;
     let updated = 0;
     let skipped = 0;
+    let flagged = 0;
 
     const label = config.label || config.table;
 
     for (const row of rows) {
+        if (config.flagForReview && config.flagForReview(row)) {
+            flagged++;
+            flaggedOut.push({ table: label, pk: config.pk, id: row[config.pk], row, reason: config.reviewReason });
+            continue;
+        }
+
         const diff = {};
         const before = {};
         for (const col of columnNames) {
@@ -160,7 +185,7 @@ async function processTable(config) {
         }
     }
 
-    return { table: label, total: rows.length, changed, updated, skipped };
+    return { table: label, total: rows.length, changed, updated, skipped, flagged };
 }
 
 (async function run() {
@@ -173,14 +198,21 @@ async function processTable(config) {
     }
 
     const summary = [];
+    const flaggedRows = [];
     for (const config of configs) {
         console.log(`\n${config.label || config.table}:`);
-        const result = await processTable(config);
+        const result = await processTable(config, flaggedRows);
         summary.push(result);
     }
 
     console.log('\n--- Summary ---');
     console.table(summary);
+
+    if (flaggedRows.length > 0) {
+        console.log(`\n--- Needs manual review (${flaggedRows.length} row(s), excluded from normalization) ---`);
+        console.table(flaggedRows.map((f) => ({ table: f.table, [f.pk]: f.id, ...f.row, reason: f.reason })));
+    }
+
     process.exit(0);
 })().catch((err) => {
     console.error('normalizeExistingData failed:', err);

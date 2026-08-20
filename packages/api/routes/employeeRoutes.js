@@ -41,16 +41,18 @@ const PROFILE_FIELD_NORMALIZERS = {
     middle_name: normalizeName,
     last_name: normalizeName,
     suffix: normalizeText,
-    position_title: normalizeText,
+    position_title: normalizeName,
     mobile_no: normalizePhone,
     personal_email: normalizeEmail,
     address_line: normalizeText,
     barangay: normalizeText,
     city: normalizeText,
     province: normalizeText,
+    postal_code: normalizeText,
     emergency_contact_name: normalizeName,
-    emergency_contact_relation: normalizeText,
+    emergency_contact_relation: normalizeName,
     emergency_contact_phone: normalizePhone,
+    separation_reason: normalizeText,
 };
 
 // Work-roster projection. Assumes `employee e` LEFT JOINed to `department d`.

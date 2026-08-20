@@ -5,7 +5,7 @@ const { meiliClient } = require('../meilisearch');
 const { enqueuePartUpsert, enqueuePartDelete } = require('../services/meiliOutboxService');
 const { activeAliasCondition } = require('../helpers/partNumberSoftDelete');
 const { normalizePartData } = require('../helpers/normalizePart');
-const { normalizeText } = require('../helpers/normalizeEntity');
+const { normalizeText, normalizePartNumber } = require('../helpers/normalizeEntity');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const router = express.Router();
 
@@ -376,7 +376,7 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
         const newPartData = newPart.rows[0];
 
         if (part_numbers_string) {
-            const numbers = part_numbers_string.split(/[,;]/).map(num => num.trim()).filter(Boolean);
+            const numbers = part_numbers_string.split(/[,;]/).map(num => normalizePartNumber(num)).filter(Boolean);
             for (const number of numbers) {
                 // Use guarded INSERT ... SELECT ... WHERE NOT EXISTS so code works even when
                 // the DB uses a partial unique index (soft-delete) or the unique constraint
