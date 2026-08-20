@@ -8,6 +8,20 @@ import ExpenseSummaryCards from '../components/expenses/ExpenseSummaryCards';
 import ExpenseList from '../components/expenses/ExpenseList';
 import ExpenseForm from '../components/forms/ExpenseForm';
 
+const getToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+
+const defaultFilters = () => ({
+    date_from: getToday(),
+    date_to: getToday(),
+    category_id: '',
+    payment_method_id: '',
+    payee: '',
+    show_void: false,
+    sort_by: 'expense_date',
+    sort_dir: 'desc',
+    page: 1
+});
+
 export default function ExpensesPage() {
     const [expenses, setExpenses] = useState([]);
     const [categories, setCategories] = useState([]);
@@ -16,17 +30,7 @@ export default function ExpensesPage() {
     const [monthlySummary, setMonthlySummary] = useState([]);
 
     const [pagination, setPagination] = useState({ page: 1, limit: 25, totalItems: 0, totalPages: 1 });
-    const [filters, setFilters] = useState({
-        date_from: '',
-        date_to: '',
-        category_id: '',
-        payment_method_id: '',
-        payee: '',
-        show_void: false,
-        sort_by: 'expense_date',
-        sort_dir: 'desc',
-        page: 1
-    });
+    const [filters, setFilters] = useState(defaultFilters);
 
     const [loading, setLoading] = useState(false);
     const [formModalOpen, setFormModalOpen] = useState(false);
@@ -97,17 +101,11 @@ export default function ExpensesPage() {
     };
 
     const handleClearFilters = () => {
-        setFilters({
-            date_from: '',
-            date_to: '',
-            category_id: '',
-            payment_method_id: '',
-            payee: '',
-            show_void: false,
-            sort_by: 'expense_date',
-            sort_dir: 'desc',
-            page: 1
-        });
+        setFilters(defaultFilters());
+    };
+
+    const handleDateRangeChange = (dateFrom, dateTo) => {
+        setFilters(prev => ({ ...prev, date_from: dateFrom, date_to: dateTo, page: 1 }));
     };
 
     const handlePageChange = (newPage) => {
@@ -233,6 +231,7 @@ export default function ExpensesPage() {
                 pagination={pagination}
                 filters={filters}
                 onFilterChange={handleFilterChange}
+                onDateRangeChange={handleDateRangeChange}
                 onClearFilters={handleClearFilters}
                 onPageChange={handlePageChange}
                 onSortChange={handleSortChange}
