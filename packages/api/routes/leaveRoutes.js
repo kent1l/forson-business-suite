@@ -3,10 +3,25 @@ const db = require('../db');
 const { protect, hasPermission, userHasPermission } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const dtrService = require('../services/hr/dtrService');
+const notifications = require('../services/notificationService');
 
 const router = express.Router();
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Display name for a notification title; falls back to something printable. */
+async function employeeName(employeeId) {
+    try {
+        const { rows } = await db.query(
+            `SELECT TRIM(BOTH FROM COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')) AS name
+             FROM employee WHERE employee_id = $1`,
+            [employeeId]
+        );
+        return (rows[0] && rows[0].name) || 'An employee';
+    } catch {
+        return 'An employee';
+    }
+}
 
 const LEAVE_SELECT = `
     lr.leave_id, lr.employee_id, lr.leave_type_id,
@@ -247,6 +262,25 @@ router.post('/requests', protect, hasPermission('leave:request'), async (req, re
                        day_fraction, total_days, status`,
             [employee_id, leave_type_id, date_from, date_to, fraction, totalDays, reason || null, req.user.employee_id]
         );
+        // Notifying is deliberately outside the insert and never awaited into
+        // the response path's success condition: a failed alert must not turn a
+        // filed leave request into a 500.
+        const requester = await employeeName(employee_id);
+        notifications.emitSafe({
+            type: 'leave.request_filed',
+            category: 'hr',
+            severity: 'info',
+            title: `${requester} filed a leave request`,
+            body: `${date_from} to ${date_to} (${totalDays} day${Number(totalDays) === 1 ? '' : 's'}). Waiting for approval.`,
+            linkPage: 'leave',
+            entityType: 'leave_request',
+            entityId: rows[0].leave_id,
+            requiredPermission: 'leave:approve',
+            actorEmployeeId: req.user.employee_id,
+            // One notification per request, not per re-file attempt.
+            dedupeKey: `leave.request_filed:${rows[0].leave_id}`,
+        });
+
         res.status(201).json(rows[0]);
     } catch (err) {
         if (err.code === '23P01') {
@@ -303,6 +337,23 @@ router.post('/requests/:id/approve', protect, hasPermission('leave:approve'), as
         });
 
         await client.query('COMMIT');
+
+        // Emitted after COMMIT, not inside the transaction: the requester should
+        // only be told their leave is approved once that is durably true.
+        notifications.emitSafe({
+            type: 'leave.approved',
+            category: 'hr',
+            severity: 'info',
+            title: 'Your leave request was approved',
+            body: `${leave.leave_name}, ${leave.date_from} to ${leave.date_to}.`,
+            linkPage: 'leave',
+            entityType: 'leave_request',
+            entityId: req.params.id,
+            targetEmployeeId: leave.employee_id,
+            actorEmployeeId: req.user.employee_id,
+            dedupeKey: `leave.approved:${req.params.id}`,
+        });
+
         res.json({
             leave_id: Number(req.params.id),
             status: 'Approved',
@@ -327,13 +378,33 @@ router.post('/requests/:id/reject', protect, hasPermission('leave:approve'), asy
              SET status = 'Rejected', approved_by = $1, approved_at = now(),
                  decision_note = $2, modified_by = $1, updated_at = now()
              WHERE leave_id = $3 AND status = 'Pending'
-             RETURNING leave_id, status`,
+             RETURNING leave_id, status, employee_id, decision_note,
+                       TO_CHAR(date_from, 'YYYY-MM-DD') AS date_from,
+                       TO_CHAR(date_to, 'YYYY-MM-DD') AS date_to`,
             [req.user.employee_id, req.body.decision_note || null, req.params.id]
         );
         if (rows.length === 0) {
             return res.status(409).json({ message: 'Leave request not found or no longer pending.' });
         }
-        res.json(rows[0]);
+
+        const rejected = rows[0];
+        notifications.emitSafe({
+            type: 'leave.rejected',
+            category: 'hr',
+            severity: 'warning',
+            title: 'Your leave request was declined',
+            body: rejected.decision_note
+                ? `${rejected.date_from} to ${rejected.date_to} — ${rejected.decision_note}`
+                : `${rejected.date_from} to ${rejected.date_to}.`,
+            linkPage: 'leave',
+            entityType: 'leave_request',
+            entityId: rejected.leave_id,
+            targetEmployeeId: rejected.employee_id,
+            actorEmployeeId: req.user.employee_id,
+            dedupeKey: `leave.rejected:${rejected.leave_id}`,
+        });
+
+        res.json({ leave_id: rejected.leave_id, status: rejected.status });
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');

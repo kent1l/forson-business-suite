@@ -12,7 +12,9 @@ global.runDeduplicationScan = runScanCycle;
 const { startCycleCountEngine } = require('./services/cycleCountService');
 const { startPdcReminderEngine } = require('./services/pdcReminderService');
 const { startApDueDateReminderEngine } = require('./services/apDueDateReminderService');
+const { startArDueDateReminderEngine } = require('./services/arDueDateReminderService');
 const { startLedgerReconciliationEngine } = require('./services/ledgerReconciliationService');
+const { startNotificationGroomer } = require('./services/notificationGroomer');
 
 // Set default timezone to Philippine Time
 process.env.TZ = 'Asia/Manila';
@@ -99,6 +101,7 @@ registerRoute('/api/payroll', './routes/payrollRoutes');
 registerRoute('/api', './routes/employeeRoutes');
 registerRoute('/api', './routes/permissionRoutes');
 registerRoute('/api', './routes/dashboardRoutes');
+registerRoute('/api', './routes/notificationRoutes');
 registerRoute('/api', './routes/powerSearchRoutes');
 registerRoute('/api', './routes/applicationSearchRoutes');
 registerRoute('/api', './routes/reportingRoutes');
@@ -200,5 +203,7 @@ app.listen(PORT, async () => {
   startCycleCountEngine();
   startPdcReminderEngine();
   startApDueDateReminderEngine();
+  startArDueDateReminderEngine();
   startLedgerReconciliationEngine();
+  startNotificationGroomer();
 });

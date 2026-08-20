@@ -92,7 +92,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
         <div className="flex h-screen bg-slate-50 dark:bg-slate-950 font-sans text-gray-800 dark:text-slate-100">
             <Sidebar user={user} onNavigate={onNavigate} currentPage={currentPage} isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
             <div className="flex-1 flex flex-col overflow-hidden">
-                <Header user={user} onLogout={onLogout} onMenuClick={() => setSidebarOpen(true)} onOpenSearch={() => setPaletteOpen(true)} />
+                <Header user={user} onLogout={onLogout} onMenuClick={() => setSidebarOpen(true)} onOpenSearch={() => setPaletteOpen(true)} onNavigate={onNavigate} />
                 <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-50 dark:bg-slate-950 p-4 sm:p-6 md:p-8">
                     {renderPage()}
                 </main>
