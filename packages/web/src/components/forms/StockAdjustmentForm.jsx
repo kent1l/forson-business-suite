@@ -72,22 +72,22 @@ const StockAdjustmentForm = ({ part, user, onSave, onCancel }) => {
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
             {/* Current Stock Display */}
-            <div className="bg-gray-50 p-4 rounded-lg border">
-                <h3 className="text-sm font-semibold text-gray-700 mb-2">Current Stock Information</h3>
+            <div className="bg-gray-50 dark:bg-slate-900/50 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-2">Current Stock Information</h3>
                 <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
-                        <span className="text-gray-600">SKU:</span>
-                        <span className="ml-2 font-mono">{part?.internal_sku}</span>
+                        <span className="text-gray-600 dark:text-slate-400">SKU:</span>
+                        <span className="ml-2 font-mono text-gray-900 dark:text-slate-100">{part?.internal_sku}</span>
                     </div>
                     <div>
-                        <span className="text-gray-600">Current Stock:</span>
-                        <span className="ml-2 font-semibold text-blue-600">{Number(part?.stock_on_hand || 0).toLocaleString()}</span>
+                        <span className="text-gray-600 dark:text-slate-400">Current Stock:</span>
+                        <span className="ml-2 font-semibold font-mono text-primary-600 dark:text-primary-400">{Number(part?.stock_on_hand || 0).toLocaleString()}</span>
                     </div>
                 </div>
             </div>
 
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1 flex items-center gap-1">
                     Adjustment Quantity
                     <InfoTip label="Adjustment Quantity">
                         This posts directly to inventory and is logged against your user account. Enter a
@@ -95,35 +95,35 @@ const StockAdjustmentForm = ({ part, user, onSave, onCancel }) => {
                         only a further adjustment to correct it.
                     </InfoTip>
                 </label>
-                <p className="text-xs text-gray-500 mb-2">Enter a positive number to add stock (e.g., 5) or a negative number to remove stock (e.g., -2).</p>
+                <p className="text-xs text-gray-500 dark:text-slate-400 mb-2">Enter a positive number to add stock (e.g., 5) or a negative number to remove stock (e.g., -2).</p>
                 <input 
                     ref={quantityInputRef}
                     type="number"
                     step="any"
                     value={quantity} 
                     onChange={(e) => setQuantity(e.target.value)} 
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg" 
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500 font-mono" 
                     required 
                 />
                 {quantity && !isNaN(parseFloat(quantity)) && (
-                    <p className="text-xs text-gray-600 mt-1">
-                        New stock will be: <span className="font-semibold">{Number((part?.stock_on_hand || 0) + parseFloat(quantity)).toLocaleString()}</span>
+                    <p className="text-xs text-gray-600 dark:text-slate-400 mt-1">
+                        New stock will be: <span className="font-semibold font-mono text-gray-900 dark:text-slate-100">{Number((part?.stock_on_hand || 0) + parseFloat(quantity)).toLocaleString()}</span>
                     </p>
                 )}
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Reason / Notes</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Reason / Notes</label>
                 <textarea 
                     value={notes} 
                     onChange={(e) => setNotes(e.target.value)} 
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg" 
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm" 
                     rows="3"
                     placeholder="e.g., Stock count correction, Damaged item"
                 ></textarea>
             </div>
-            <div className="mt-6 flex justify-end space-x-4">
-                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Adjustment</button>
+            <div className="mt-6 flex justify-end space-x-3 pt-4 border-t border-gray-200 dark:border-slate-700">
+                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 text-sm font-medium transition-colors">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors shadow-sm">Save Adjustment</button>
             </div>
         </form>
     );

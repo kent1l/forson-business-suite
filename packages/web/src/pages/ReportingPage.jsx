@@ -31,8 +31,8 @@ const ReportingPage = () => {
     if (!hasPermission('reports:view')) {
         return (
             <div className="text-center p-8">
-                <h1 className="text-2xl font-bold text-red-600">Access Denied</h1>
-                <p className="text-gray-600 mt-2">You do not have permission to view this page.</p>
+                <h1 className="text-2xl font-bold text-danger-600 dark:text-danger-400">Access Denied</h1>
+                <p className="text-gray-600 dark:text-slate-400 mt-2">You do not have permission to view this page.</p>
             </div>
         );
     }
@@ -40,20 +40,20 @@ const ReportingPage = () => {
     const ActiveReportComponent = reportTabs.find(tab => tab.key === activeTab)?.component;
 
     return (
-        <div>
-            <h1 className="text-2xl font-semibold text-gray-800 mb-6 flex items-center gap-2">
+        <div className="space-y-6">
+            <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100 flex items-center gap-2">
                 Reports
                 <InfoTip label="Net vs. Gross">
                     "Net" in a report name (e.g. Sales Summary (Net)) means refunded amounts have already been backed out of the figures. For refund activity itself, use the Refunds report.
                 </InfoTip>
             </h1>
-            <div className="mb-6 border-b border-gray-200">
+            <div className="border-b border-gray-200 dark:border-slate-700">
                 <nav className="-mb-px flex space-x-6 overflow-x-auto">
                     {reportTabs.map(tab => (
                         <button 
                             key={tab.key}
                             onClick={() => setActiveTab(tab.key)} 
-                            className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === tab.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
+                            className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap cursor-pointer transition-colors ${activeTab === tab.key ? 'border-primary-600 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 hover:border-gray-300 dark:hover:border-slate-600'}`}
                         >
                             {tab.label}
                         </button>
@@ -62,7 +62,7 @@ const ReportingPage = () => {
             </div>
 
             <div>
-                <Suspense fallback={<p>Loading report...</p>}>
+                <Suspense fallback={<p className="text-sm text-gray-500 dark:text-slate-400">Loading report...</p>}>
                     {ActiveReportComponent && <ActiveReportComponent />}
                 </Suspense>
             </div>

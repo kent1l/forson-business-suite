@@ -122,9 +122,9 @@ const InventoryPage = () => {
     };
 
     return (
-        <div>
-            <div className="mb-6">
-                <h1 className="text-2xl font-semibold text-gray-800 flex items-center gap-1.5">
+        <div className="space-y-6">
+            <div>
+                <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100 flex items-center gap-1.5">
                     Inventory Management
                     <InfoTip label="Stock on Hand, WAC & Total Value">
                         WAC (Weighted Average Cost) is the average cost per unit of the stock you're currently
@@ -142,12 +142,12 @@ const InventoryPage = () => {
                         />
                     </div>
                     <div className="flex items-center gap-2">
-                        <label htmlFor="inventory-global-sort-by" className="text-sm text-gray-600 whitespace-nowrap">Sort all by</label>
+                        <label htmlFor="inventory-global-sort-by" className="text-sm text-gray-600 dark:text-slate-400 whitespace-nowrap">Sort all by</label>
                         <select
                             id="inventory-global-sort-by"
                             value={globalSortBy}
                             onChange={(e) => setGlobalSortBy(e.target.value)}
-                            className="rounded-md border border-gray-300 px-2 py-2 text-sm"
+                            className="rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                         >
                             <option value="sku">SKU</option>
                             <option value="name">Name</option>
@@ -157,12 +157,12 @@ const InventoryPage = () => {
                         </select>
                     </div>
                     <div className="flex items-center gap-2">
-                        <label htmlFor="inventory-global-sort-direction" className="text-sm text-gray-600 whitespace-nowrap">Order</label>
+                        <label htmlFor="inventory-global-sort-direction" className="text-sm text-gray-600 dark:text-slate-400 whitespace-nowrap">Order</label>
                         <select
                             id="inventory-global-sort-direction"
                             value={globalSortDirection}
                             onChange={(e) => setGlobalSortDirection(e.target.value)}
-                            className="rounded-md border border-gray-300 px-2 py-2 text-sm"
+                            className="rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                         >
                             <option value="ASC">Ascending</option>
                             <option value="DESC">Descending</option>
@@ -171,24 +171,24 @@ const InventoryPage = () => {
                 </div>
             </div>
 
-            <div className="bg-white p-6 rounded-xl border border-gray-200">
-                {loading && <p>Loading inventory...</p>}
-                {error && <p className="text-red-500">{error}</p>}
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-card">
+                {loading && <p className="text-gray-500 dark:text-slate-400">Loading inventory...</p>}
+                {error && <p className="text-danger-500 dark:text-danger-400">{error}</p>}
                 {!loading && !error && (
                     <>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
-                            <thead>
-                                <tr className="border-b">
+                            <thead className="bg-gray-50 dark:bg-slate-700/40 border-b border-gray-200 dark:border-slate-700 text-gray-700 dark:text-slate-300">
+                                <tr>
                                     <SortableHeader column="internal_sku" sortConfig={sortConfig} onSort={handleHeaderSort}>SKU</SortableHeader>
                                     <SortableHeader column="display_name" sortConfig={sortConfig} onSort={handleHeaderSort}>Item Name</SortableHeader>
                                     <SortableHeader className="text-center" column="stock_on_hand" sortConfig={sortConfig} onSort={handleHeaderSort}>Stock on Hand</SortableHeader>
                                     <SortableHeader className="text-right" column="wac_cost" sortConfig={sortConfig} onSort={handleHeaderSort}>WAC</SortableHeader>
                                     <SortableHeader className="text-right" column="total_value" sortConfig={sortConfig} onSort={handleHeaderSort}>Total Value</SortableHeader>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-right">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody className="divide-y divide-gray-100 dark:divide-slate-700/60">
                                 {inventory.map(item => {
                                     const stockOnHand = toSafeNumber(item.stock_on_hand);
                                     const wacCost = toSafeNumber(item.wac_cost);
@@ -197,19 +197,19 @@ const InventoryPage = () => {
                                         : stockOnHand * wacCost;
 
                                     return (
-                                    <tr key={item.part_id} className="border-b hover:bg-gray-50">
-                                        <td className="p-3 text-sm font-mono">{item.internal_sku}</td>
-                                        <td className="p-3 text-sm font-medium text-gray-800">{item.display_name}</td>
-                                        <td className="p-3 text-sm text-center font-semibold">{stockOnHand.toLocaleString()}</td>
-                                        <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '$'}{wacCost.toFixed(2)}</td>
-                                        <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '$'}{totalValue.toFixed(2)}</td>
+                                    <tr key={item.part_id} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200 transition-colors">
+                                        <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100">{item.internal_sku}</td>
+                                        <td className="p-3 text-sm font-medium text-gray-900 dark:text-slate-100">{item.display_name}</td>
+                                        <td className="p-3 text-sm text-center font-semibold font-mono text-gray-900 dark:text-slate-100">{stockOnHand.toLocaleString()}</td>
+                                        <td className="p-3 text-sm text-right font-mono text-gray-700 dark:text-slate-300">{settings?.DEFAULT_CURRENCY_SYMBOL || '$'}{wacCost.toFixed(2)}</td>
+                                        <td className="p-3 text-sm text-right font-mono font-medium text-gray-900 dark:text-slate-100">{settings?.DEFAULT_CURRENCY_SYMBOL || '$'}{totalValue.toFixed(2)}</td>
                                         <td className="p-3 text-sm text-right">
                                             {hasPermission('inventory:adjust') && (
-                                                <button onClick={() => handleOpenAdjustmentModal(item)} className="text-blue-600 hover:text-blue-800 mr-4" title="Adjust Stock">
+                                                <button onClick={() => handleOpenAdjustmentModal(item)} className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 mr-4" title="Adjust Stock">
                                                     <Icon path={ICONS.adjust} className="h-5 w-5"/>
                                                 </button>
                                             )}
-                                            <button onClick={() => handleOpenHistoryModal(item)} className="text-gray-600 hover:text-gray-800" title="View History">
+                                            <button onClick={() => handleOpenHistoryModal(item)} className="text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200" title="View History">
                                                 <Icon path={ICONS.history} className="h-5 w-5"/>
                                             </button>
                                         </td>

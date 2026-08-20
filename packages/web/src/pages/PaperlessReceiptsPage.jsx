@@ -137,15 +137,15 @@ export default function PaperlessReceiptsPage() {
     };
 
     return (
-        <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <div className="space-y-6 max-w-7xl mx-auto">
             {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-                        <Icon icon={ICONS.documents} className="w-7 h-7 text-blue-600" />
+                    <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
+                        <Icon icon={ICONS.documents} className="w-7 h-7 text-primary-600 dark:text-primary-400" />
                         Paperless Receipts Consolidation
                     </h1>
-                    <p className="text-slate-500 text-sm mt-1">
+                    <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
                         Fetch thermal and paper receipts from Paperless-ngx and layout 4 receipts per printable A4 page.
                     </p>
                 </div>
@@ -154,10 +154,10 @@ export default function PaperlessReceiptsPage() {
                 <div className="flex items-center gap-3">
                     <div className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-2 border ${
                         health.healthy 
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                            ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' 
                             : health.status === 'loading'
-                                ? 'bg-slate-50 text-slate-600 border-slate-200'
-                                : 'bg-rose-50 text-rose-700 border-rose-200'
+                                ? 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                                : 'bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
                     }`}>
                         <span className={`w-2 h-2 rounded-full ${
                             health.healthy ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
@@ -167,7 +167,7 @@ export default function PaperlessReceiptsPage() {
 
                     <button
                         onClick={checkHealth}
-                        className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition"
+                        className="px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition cursor-pointer"
                     >
                         Check Connection
                     </button>
@@ -175,14 +175,14 @@ export default function PaperlessReceiptsPage() {
             </div>
 
             {/* Filter Bar */}
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+            <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-wrap items-center justify-between gap-4">
                 <div className="flex flex-wrap items-center gap-3 flex-1">
                     {/* Tag Filter */}
                     <div className="w-48">
                         <select
                             value={selectedTag}
                             onChange={(e) => setSelectedTag(e.target.value)}
-                            className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full text-sm bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-gray-900 dark:text-slate-100 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                         >
                             <option value="">All Tags</option>
                             {tags.map(t => (
@@ -199,15 +199,15 @@ export default function PaperlessReceiptsPage() {
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && fetchDocuments()}
-                            className="w-full text-sm border border-slate-300 rounded-lg pl-9 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full text-sm bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 rounded-lg pl-9 pr-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                         />
-                        <Icon icon={ICONS.search} className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                        <Icon icon={ICONS.search} className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3 top-3" />
                     </div>
 
                     <button
                         onClick={fetchDocuments}
                         disabled={loadingDocs}
-                        className="px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition disabled:opacity-50"
+                        className="px-4 py-2 bg-slate-900 dark:bg-slate-700 text-white text-sm font-medium rounded-lg hover:bg-slate-800 dark:hover:bg-slate-600 transition disabled:opacity-50 cursor-pointer"
                     >
                         {loadingDocs ? 'Searching...' : 'Filter'}
                     </button>
@@ -215,14 +215,14 @@ export default function PaperlessReceiptsPage() {
 
                 {/* Batch Action Button */}
                 <div className="flex items-center gap-3">
-                    <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600">
                         {selectedDocIds.size} Selected ({pageCount} A4 Page{pageCount !== 1 ? 's' : ''})
                     </span>
 
                     <button
                         onClick={handleConsolidate}
                         disabled={selectedDocIds.size === 0 || generatingPdf}
-                        className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-2 shadow-sm"
+                        className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold rounded-lg transition disabled:opacity-50 flex items-center gap-2 shadow-sm cursor-pointer"
                     >
                         <Icon icon={ICONS.invoice} className="w-4 h-4" />
                         {generatingPdf ? 'Generating 2x2 PDF...' : 'Consolidate 2x2 A4 PDF'}
@@ -231,17 +231,17 @@ export default function PaperlessReceiptsPage() {
             </div>
 
             {/* Document Grid / Table */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm text-slate-700">
-                        <thead className="bg-slate-50 text-slate-500 uppercase text-[11px] tracking-wider font-semibold border-b border-slate-200">
+                    <table className="w-full text-left text-sm text-slate-700 dark:text-slate-200">
+                        <thead className="bg-slate-50 dark:bg-slate-700/40 text-slate-500 dark:text-slate-300 uppercase text-[11px] tracking-wider font-semibold border-b border-slate-200 dark:border-slate-700">
                             <tr>
                                 <th className="p-4 w-10">
                                     <input
                                         type="checkbox"
                                         checked={documents.length > 0 && selectedDocIds.size === documents.length}
                                         onChange={toggleSelectAll}
-                                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                        className="rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-primary-600 focus:ring-primary-500 cursor-pointer"
                                     />
                                 </th>
                                 <th className="p-4">Paperless ID</th>
@@ -251,16 +251,16 @@ export default function PaperlessReceiptsPage() {
                                 <th className="p-4 text-right">Actions</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-200">
+                        <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                             {loadingDocs ? (
                                 <tr>
-                                    <td colSpan={6} className="text-center p-8 text-slate-500">
+                                    <td colSpan={6} className="text-center p-8 text-slate-500 dark:text-slate-400">
                                         Loading receipts from Paperless-ngx...
                                     </td>
                                 </tr>
                             ) : documents.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="text-center p-8 text-slate-500">
+                                    <td colSpan={6} className="text-center p-8 text-slate-500 dark:text-slate-400">
                                         No receipts found matching filter criteria.
                                     </td>
                                 </tr>
@@ -270,29 +270,29 @@ export default function PaperlessReceiptsPage() {
                                     return (
                                         <tr
                                             key={doc.id}
-                                            className={`hover:bg-slate-50/80 transition ${isSelected ? 'bg-blue-50/50' : ''}`}
+                                            className={`hover:bg-slate-50/80 dark:hover:bg-slate-700/40 transition ${isSelected ? 'bg-primary-50/50 dark:bg-primary-900/20' : ''}`}
                                         >
                                             <td className="p-4">
                                                 <input
                                                     type="checkbox"
                                                     checked={isSelected}
                                                     onChange={() => toggleSelectDoc(doc.id)}
-                                                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                                    className="rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-primary-600 focus:ring-primary-500 cursor-pointer"
                                                 />
                                             </td>
-                                            <td className="p-4 font-mono text-xs font-semibold text-slate-900">
+                                            <td className="p-4 font-mono text-xs font-semibold text-slate-900 dark:text-slate-100">
                                                 #{doc.id}
                                             </td>
-                                            <td className="p-4 font-semibold text-slate-900">
+                                            <td className="p-4 font-semibold text-slate-900 dark:text-slate-100">
                                                 {doc.title}
                                             </td>
-                                            <td className="p-4 text-xs text-slate-600">
+                                            <td className="p-4 text-xs text-slate-600 dark:text-slate-400">
                                                 {doc.created ? new Date(doc.created).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: '2-digit' }) : '—'}
                                             </td>
                                             <td className="p-4">
                                                 <div className="flex flex-wrap gap-1">
                                                     {(doc.tags || []).map(tId => (
-                                                        <span key={tId} className="px-2 py-0.5 text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200 rounded">
+                                                        <span key={tId} className="px-2 py-0.5 text-[10px] font-semibold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600 rounded">
                                                             Tag #{tId}
                                                         </span>
                                                     ))}
@@ -302,7 +302,7 @@ export default function PaperlessReceiptsPage() {
                                                 <button
                                                     type="button"
                                                     onClick={() => handlePreviewDoc(doc.id)}
-                                                    className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800"
+                                                    className="inline-flex items-center gap-1 text-xs font-medium text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 cursor-pointer"
                                                 >
                                                     <Icon icon={ICONS.search} className="w-3.5 h-3.5" />
                                                     Preview
@@ -328,11 +328,11 @@ export default function PaperlessReceiptsPage() {
                     {pdfBlobUrl ? (
                         <iframe
                             src={pdfBlobUrl}
-                            className="w-full h-[70vh] border border-slate-200 rounded-lg shadow-inner"
+                            className="w-full h-[70vh] border border-slate-200 dark:border-slate-700 rounded-lg shadow-inner bg-white"
                             title="2x2 Receipt PDF Preview"
                         />
                     ) : (
-                        <div className="p-8 text-center text-slate-500">
+                        <div className="p-8 text-center text-slate-500 dark:text-slate-400">
                             Generating preview...
                         </div>
                     )}
@@ -340,14 +340,14 @@ export default function PaperlessReceiptsPage() {
                     <div className="flex justify-end gap-3 pt-2">
                         <button
                             onClick={() => setIsPreviewOpen(false)}
-                            className="px-4 py-2 border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50"
+                            className="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm font-medium rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer transition-colors"
                         >
                             Close
                         </button>
                         <a
                             href={pdfBlobUrl}
                             download={`Paperless_2x2_Receipts_${Date.now()}.pdf`}
-                            className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
+                            className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold rounded-lg transition flex items-center gap-2 cursor-pointer shadow-xs"
                         >
                             Download PDF
                         </a>

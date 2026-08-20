@@ -127,19 +127,19 @@ const PartNumberManager = ({ part, onSave, onCancel }) => {
 
     return (
         // Use a more spacious and consistent padding and vertical gap
-        <div className="p-6 flex flex-col gap-6 bg-white">
+        <div className="p-6 flex flex-col gap-6 bg-white dark:bg-slate-800">
             {/* Section for displaying existing numbers */}
             <div>
-                <h3 className="text-sm font-medium text-slate-800 mb-1">Existing Numbers ({numbers.length})</h3>
-                <div className="border rounded-lg bg-slate-50 max-h-60 overflow-y-auto">
+                <h3 className="text-sm font-medium text-slate-800 dark:text-slate-100 mb-1">Existing Numbers ({numbers.length})</h3>
+                <div className="border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/50 max-h-60 overflow-y-auto">
                     {loading ? (
                         <Spinner />
                     ) : (
-                        <ul className="divide-y divide-slate-200">
+                        <ul className="divide-y divide-slate-200 dark:divide-slate-700">
                             {numbers.length > 0 ? (
                                 numbers.map((num, index) => (
-                                    <li key={num.part_number_id} className="flex justify-between items-center p-3 text-sm group hover:bg-slate-100 transition-colors">
-                                        <span className="font-mono text-slate-700" title={index === 0 ? 'Primary alias (top order)' : undefined}>{num.part_number}</span>
+                                    <li key={num.part_number_id} className="flex justify-between items-center p-3 text-sm group hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+                                        <span className="font-mono text-slate-800 dark:text-slate-200" title={index === 0 ? 'Primary alias (top order)' : undefined}>{num.part_number}</span>
                                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                             <button
                                                 type="button"
@@ -147,7 +147,7 @@ const PartNumberManager = ({ part, onSave, onCancel }) => {
                                                 aria-label={`Move ${num.part_number} up`}
                                                 onClick={() => moveNumber(index, -1)}
                                                 disabled={index === 0}
-                                                className="p-1 rounded text-slate-500 hover:bg-slate-200 hover:text-slate-700 disabled:opacity-30 disabled:hover:bg-transparent"
+                                                className="p-1 rounded text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30 disabled:hover:bg-transparent"
                                             >
                                                 <MoveUpIcon />
                                             </button>
@@ -157,7 +157,7 @@ const PartNumberManager = ({ part, onSave, onCancel }) => {
                                                 aria-label={`Move ${num.part_number} down`}
                                                 onClick={() => moveNumber(index, 1)}
                                                 disabled={index === numbers.length - 1}
-                                                className="p-1 rounded text-slate-500 hover:bg-slate-200 hover:text-slate-700 disabled:opacity-30 disabled:hover:bg-transparent"
+                                                className="p-1 rounded text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30 disabled:hover:bg-transparent"
                                             >
                                                <MoveDownIcon />
                                             </button>
@@ -167,7 +167,7 @@ const PartNumberManager = ({ part, onSave, onCancel }) => {
                                                     title="Remove part number"
                                                     aria-label={`Remove ${num.part_number}`}
                                                     onClick={() => setConfirming(num)}
-                                                    className="p-1 rounded text-red-500 hover:bg-red-100 hover:text-red-600"
+                                                    className="p-1 rounded text-danger-500 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-900/30 hover:text-danger-600"
                                                 >
                                                     <TrashIcon />
                                                 </button>
@@ -176,7 +176,7 @@ const PartNumberManager = ({ part, onSave, onCancel }) => {
                                     </li>
                                 ))
                             ) : (
-                                <p className="p-8 text-center text-sm text-slate-500">No part numbers found.</p>
+                                <p className="p-8 text-center text-sm text-slate-500 dark:text-slate-400">No part numbers found.</p>
                             )}
                         </ul>
                     )}
@@ -186,21 +186,21 @@ const PartNumberManager = ({ part, onSave, onCancel }) => {
             {/* Form for adding new numbers */}
             <form onSubmit={handleAddNumbers} className="space-y-3">
                  <div>
-                    <label htmlFor="new-numbers-input" className="block text-sm font-medium text-slate-800">Add New Numbers</label>
-                    <p className="text-xs text-slate-500 mt-1">Enter numbers separated by commas, semicolons, or new lines.</p>
+                    <label htmlFor="new-numbers-input" className="block text-sm font-medium text-slate-800 dark:text-slate-100">Add New Numbers</label>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Enter numbers separated by commas, semicolons, or new lines.</p>
                 </div>
                 <textarea
                     id="new-numbers-input"
                     value={newNumbersString}
                     onChange={(e) => setNewNumbersString(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 rounded-lg shadow-xs font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 transition"
                     rows="3"
                     placeholder="e.g., OEM123, MFG456; ALT789"
                 />
                 <div className="flex justify-end">
                     <button 
                       type="submit" 
-                      className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                      className="inline-flex justify-center py-2 px-4 border border-transparent shadow-xs text-sm font-medium rounded-lg text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors"
                     >
                       Add Numbers
                     </button>
@@ -208,11 +208,11 @@ const PartNumberManager = ({ part, onSave, onCancel }) => {
             </form>
 
             {/* Modal footer with action buttons */}
-            <div className="flex justify-end items-center gap-4 pt-4 border-t border-slate-200">
+            <div className="flex justify-end items-center gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
                 <button
                     type="button"
                     onClick={onCancel}
-                    className="py-2 px-4 text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                    className="py-2 px-4 text-sm font-medium text-slate-700 dark:text-slate-200 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600 rounded-lg shadow-xs transition-colors"
                 >
                     Cancel
                 </button>
@@ -220,28 +220,28 @@ const PartNumberManager = ({ part, onSave, onCancel }) => {
                     type="button"
                     onClick={handleSaveOrder}
                     disabled={numbers.length < 2}
-                    className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="inline-flex justify-center py-2 px-4 border border-transparent shadow-xs text-sm font-medium rounded-lg text-white bg-success-600 hover:bg-success-700 focus:outline-none focus:ring-2 focus:ring-success-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                     Save Order
                 </button>
             </div>
 
             {confirming && (
-                <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 space-y-4">
-                        <h4 className="text-sm font-semibold text-slate-800">Remove Part Number</h4>
-                        <p className="text-sm text-slate-600">
-                            Remove alias <span className="font-mono font-medium text-slate-800">{confirming.part_number}</span> from this item?
+                <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50">
+                    <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-xl w-full max-w-md p-6 space-y-4">
+                        <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Remove Part Number</h4>
+                        <p className="text-sm text-slate-600 dark:text-slate-300">
+                            Remove alias <span className="font-mono font-medium text-slate-900 dark:text-slate-100">{confirming.part_number}</span> from this item?
                             The item remains available. This action cannot be undone.
                         </p>
                         {numbers.length === 1 && (
-                            <p className="text-xs text-red-600 font-medium">You must keep at least one part number.</p>
+                            <p className="text-xs text-danger-600 dark:text-danger-400 font-medium">You must keep at least one part number.</p>
                         )}
                         <div className="flex justify-end gap-3 pt-2">
                             <button
                                 type="button"
                                 onClick={() => setConfirming(null)}
-                                className="px-4 py-2 text-sm rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                                className="px-4 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors"
                             >
                                 Cancel
                             </button>
@@ -249,7 +249,7 @@ const PartNumberManager = ({ part, onSave, onCancel }) => {
                                 type="button"
                                 disabled={numbers.length === 1 || removingId === confirming.part_number_id}
                                 onClick={handleRemove}
-                                className="px-4 py-2 text-sm rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="px-4 py-2 text-sm rounded-lg bg-danger-600 text-white hover:bg-danger-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-xs"
                             >
                                 {removingId === confirming.part_number_id ? 'Removing...' : 'Remove'}
                             </button>

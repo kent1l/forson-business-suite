@@ -79,18 +79,18 @@ const InventoryMovementReport = () => {
     const sortedReportData = sortData(reportData, sortConfig);
     return (
         <>
-            <div className="bg-white p-6 rounded-xl border border-gray-200 mb-6">
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm mb-6">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-                        <input type="date" name="startDate" value={filters.startDate} onChange={(e) => handleFilterChange('startDate', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Start Date</label>
+                        <input type="date" name="startDate" value={filters.startDate} onChange={(e) => handleFilterChange('startDate', e.target.value)} className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500" />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-                        <input type="date" name="endDate" value={filters.endDate} onChange={(e) => handleFilterChange('endDate', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">End Date</label>
+                        <input type="date" name="endDate" value={filters.endDate} onChange={(e) => handleFilterChange('endDate', e.target.value)} className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500" />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Part</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Part</label>
                         <Combobox 
                             options={[{value: '', label: 'All Parts'}, ...partOptions]}
                             value={filters.partId}
@@ -99,17 +99,17 @@ const InventoryMovementReport = () => {
                         />
                     </div>
                     <div className="flex space-x-2">
-                        <button onClick={() => fetchReport('json')} disabled={loading} className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition disabled:bg-blue-300">View Report</button>
-                        <button onClick={() => fetchReport('csv')} disabled={loading} className="w-full bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition disabled:bg-green-300">Export CSV</button>
+                        <button onClick={() => fetchReport('json')} disabled={loading} className="w-full bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition disabled:opacity-50 cursor-pointer">View Report</button>
+                        <button onClick={() => fetchReport('csv')} disabled={loading} className="w-full bg-success-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-success-700 transition disabled:opacity-50 cursor-pointer">Export CSV</button>
                     </div>
                 </div>
             </div>
-            <div className="bg-white p-6 rounded-xl border border-gray-200">
-                {loading ? <p>Loading report...</p> : (
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
+                {loading ? <p className="text-sm text-gray-500 dark:text-slate-400">Loading report...</p> : (
                     <>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
-                            <thead className="border-b">
+                            <thead className="border-b border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300">
                                 <tr>
                                     <SortableHeader column="transaction_date" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Date</SortableHeader>
                                     <SortableHeader column="display_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Item</SortableHeader>
@@ -119,20 +119,20 @@ const InventoryMovementReport = () => {
                                     <SortableHeader column="employee_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>User</SortableHeader>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
                                 {sortedReportData.map((row, index) => (
-                                    <tr key={index} className="border-b hover:bg-gray-50">
+                                    <tr key={index} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200 transition-colors">
                                         <td className="p-3 text-sm whitespace-nowrap">{format(toZonedTime(parseISO(row.transaction_date), 'Asia/Manila'), 'MM/dd/yyyy hh:mm a')}</td>
-                                        <td className="p-3 text-sm font-medium text-gray-800">{row.display_name}</td>
-                                        <td className="p-3 text-sm">{row.trans_type}</td>
-                                        <td className={`p-3 text-sm text-center font-semibold ${row.quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>{row.quantity > 0 ? `+${row.quantity}`: row.quantity}</td>
-                                        <td className="p-3 text-sm font-mono">{row.reference_no}</td>
-                                        <td className="p-3 text-sm">{row.employee_name}</td>
+                                        <td className="p-3 text-sm font-medium text-gray-900 dark:text-slate-100">{row.display_name}</td>
+                                        <td className="p-3 text-sm font-mono text-xs">{row.trans_type}</td>
+                                        <td className={`p-3 text-sm text-center font-semibold ${row.quantity > 0 ? 'text-success-600 dark:text-success-400' : 'text-danger-600 dark:text-danger-400'}`}>{row.quantity > 0 ? `+${row.quantity}`: row.quantity}</td>
+                                        <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100">{row.reference_no}</td>
+                                        <td className="p-3 text-sm text-gray-600 dark:text-slate-400">{row.employee_name}</td>
                                     </tr>
                                 ))}
                                 {sortedReportData.length === 0 && (
                                     <tr>
-                                        <td colSpan="6" className="p-4 text-center text-gray-500">No data to display.</td>
+                                        <td colSpan="6" className="p-4 text-center text-gray-500 dark:text-slate-400">No data to display.</td>
                                     </tr>
                                 )}
                             </tbody>

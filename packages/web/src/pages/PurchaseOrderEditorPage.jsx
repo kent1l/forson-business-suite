@@ -32,15 +32,15 @@ const PurchaseOrderEditorPage = ({ user, existingPO, onDone }) => {
         <div className="max-w-5xl mx-auto pb-32">
             <div className="flex items-center justify-between mb-6">
                 <div>
-                    <h1 className="text-2xl font-semibold text-gray-800">{existingPO ? 'Edit Purchase Order' : 'New Purchase Order'}</h1>
-                    <p className="text-sm text-gray-500 mt-1">Fill in the details below and save when ready.</p>
+                    <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100">{existingPO ? 'Edit Purchase Order' : 'New Purchase Order'}</h1>
+                    <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">Fill in the details below and save when ready.</p>
                 </div>
                 <button
                     onClick={onDone}
-                    className="px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm font-medium"
+                    className="px-4 py-2 rounded-lg bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-700 dark:text-slate-200 text-sm font-medium transition-colors"
                 >Back to List</button>
             </div>
-            <div className="bg-white border rounded-xl p-4 sm:p-6 shadow-sm">
+            <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-4 sm:p-6 shadow-card">
                 <PurchaseOrderForm
                     user={user}
                     existingPO={existingPO}

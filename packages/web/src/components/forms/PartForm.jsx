@@ -42,16 +42,16 @@ const BrandGroupForm = ({ type, onSave, onCancel, initialName = '' }) => {
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{type} Name</label>
-                <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">{type} Name</label>
+                <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" required />
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{type} Code (max 10 chars)</label>
-                <input type="text" value={code} readOnly className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500" placeholder="Will be generated" />
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">{type} Code (max 10 chars)</label>
+                <input type="text" value={code} readOnly className="w-full px-3 py-2 border border-gray-200 dark:border-slate-700 rounded-lg bg-gray-50 dark:bg-slate-900 text-gray-500 dark:text-slate-400 text-sm font-mono" placeholder="Will be generated" />
             </div>
-            <div className="mt-6 flex justify-end space-x-4">
-                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
-                <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">{saving ? 'Saving…' : 'Save'}</button>
+            <div className="mt-6 flex justify-end space-x-3 pt-4 border-t border-gray-200 dark:border-slate-700">
+                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 text-sm font-medium transition-colors">Cancel</button>
+                <button type="submit" disabled={saving} className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors shadow-xs">{saving ? 'Saving…' : 'Save'}</button>
             </div>
         </form>
     );
@@ -265,14 +265,12 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
             setFormData(prev => ({...prev, group_id: newItem.group_id}));
             setIsGroupModalOpen(false);
         }
-    };
-
-    // BooleanSelect used for bulk edit dropdowns
+    };    // BooleanSelect used for bulk edit dropdowns
     function BooleanSelect({ name, label }) {
         return (
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-                <select name={name} value={formData[name]} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">{label}</label>
+                <select name={name} value={formData[name]} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
                     <option value="unchanged">No Change</option>
                     <option value="true">Yes</option>
                     <option value="false">No</option>
@@ -286,14 +284,14 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
             <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto p-1">
                 {!isBulkEdit && (
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Part Numbers (optional)</label>
-                        <textarea name="part_numbers_string" value={formData.part_numbers_string} onChange={handleChange} onFocus={(e) => e.target.select()} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows="2" placeholder="OEM123, MFG456, ALT789"></textarea>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Part Numbers (optional)</label>
+                        <textarea name="part_numbers_string" value={formData.part_numbers_string} onChange={handleChange} onFocus={(e) => e.target.select()} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500" rows="2" placeholder="OEM123, MFG456, ALT789"></textarea>
                     </div>
                 )}
 
                 <div className="flex items-end space-x-2">
                     <div className="flex-grow">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Brand</label>
                         <Combobox
                             options={brandOptions}
                             value={formData.brand_id}
@@ -309,20 +307,20 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                     </div>
                     {/* Read-only lighter brand code display */}
                     <div className="ml-2">
-                        <label className="block text-xs text-gray-500 mb-1">Code</label>
+                        <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Code</label>
                         <input 
                             type="text" 
                             readOnly 
                             tabIndex="-1"
                             value={(brandOptions.find(b => b.value === formData.brand_id)?.code) || ''} 
-                            className="px-2 py-1 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm w-28 pointer-events-none" 
+                            className="px-2 py-1 border border-gray-200 dark:border-slate-700 rounded-lg bg-gray-50 dark:bg-slate-900 text-gray-500 dark:text-slate-400 text-sm font-mono w-28 pointer-events-none" 
                         />
                     </div>
                 </div>
 
                 <div className="flex items-end space-x-2">
                     <div className="flex-grow">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Group</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Group</label>
                          <Combobox
                             options={groupOptions}
                             value={formData.group_id}
@@ -334,21 +332,21 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                     </div>
                     {/* Read-only lighter group code display */}
                     <div className="ml-2">
-                        <label className="block text-xs text-gray-500 mb-1">Code</label>
+                        <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">Code</label>
                         <input 
                             type="text" 
                             readOnly 
                             tabIndex="-1"
                             value={(groupOptions.find(g => g.value === formData.group_id)?.code) || ''} 
-                            className="px-2 py-1 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm w-28 pointer-events-none" 
+                            className="px-2 py-1 border border-gray-200 dark:border-slate-700 rounded-lg bg-gray-50 dark:bg-slate-900 text-gray-500 dark:text-slate-400 text-sm font-mono w-28 pointer-events-none" 
                         />
                     </div>
                 </div>
 
                 {!isBulkEdit && (
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Part Detail</label>
-                        <input type="text" name="detail" value={formData.detail} onChange={handleChange} onFocus={(e) => e.target.select()} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Part Detail</label>
+                        <input type="text" name="detail" value={formData.detail} onChange={handleChange} onFocus={(e) => e.target.select()} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
                     </div>
                 )}
 
@@ -356,28 +354,28 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                 {/* Show applications only when editing an existing part (hide for New Part) */}
                 {!isBulkEdit && part && (
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Applications</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Applications</label>
                         <div className="flex items-center space-x-2">
                             <div className="flex-grow">
-                                <ApplicationSearchCombobox value={null} onChange={(app) => addApplication(app)} placeholder="Search make model engine" />
+                                <ApplicationSearchCombobox value={null} onChange={(app) => addApplication(app)} placeholder="Search make model engine " />
                             </div>
                             {part && (
-                                <button type="button" onClick={() => setIsAppManagerOpen(true)} className="px-2 py-1 border rounded text-sm text-gray-700 hover:bg-gray-100">Manage</button>
+                                <button type="button" onClick={() => setIsAppManagerOpen(true)} className="px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Manage</button>
                             )}
                         </div>
                         <div className="mt-2">
                             <div className="flex flex-wrap items-center gap-2">
                                 {selectedApps.slice(0, 6).map(app => (
-                                    <div key={app.application_id} className="inline-flex items-center space-x-2 bg-gray-50 border rounded-full px-3 py-1 text-xs">
+                                    <div key={app.application_id} className="inline-flex items-center space-x-2 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-full px-3 py-1 text-xs text-gray-800 dark:text-slate-200">
                                         <span className="truncate max-w-[16rem]">{labelForApp(app)}</span>
-                                        <button type="button" onClick={() => removeApplication(app.application_id)} className="text-gray-400 hover:text-red-600 ml-1">{'\u00d7'}</button>
+                                        <button type="button" onClick={() => removeApplication(app.application_id)} className="text-gray-400 dark:text-slate-500 hover:text-danger-600 dark:hover:text-danger-400 ml-1">{'\u00d7'}</button>
                                     </div>
                                 ))}
                                 {selectedApps.length > 6 && (
-                                    <div className="inline-flex items-center text-xs text-gray-500">+{selectedApps.length - 6} more</div>
+                                    <div className="inline-flex items-center text-xs text-gray-500 dark:text-slate-400">+{selectedApps.length - 6} more</div>
                                 )}
                                 {selectedApps.length === 0 && (
-                                    <div className="text-sm text-gray-500">No linked applications</div>
+                                    <div className="text-sm text-gray-500 dark:text-slate-400">No linked applications</div>
                                 )}
                             </div>
                         </div>
@@ -386,14 +384,14 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
 
                 {!isBulkEdit && (
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Tags</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Tags</label>
                         <TagInput value={tags} onChange={setTags} />
                     </div>
                 )}
 
                 <div className="grid grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Last Cost</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Last Cost</label>
                         <input
                             type="text"
                             name="last_cost"
@@ -407,11 +405,11 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                             }}
                             onFocus={(e) => e.target.select()}
                             placeholder={isBulkEdit ? 'No Change' : '0.00'}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                         />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Last Sale Price</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Last Sale Price</label>
                         <input
                             type="text"
                             name="last_sale_price"
@@ -425,13 +423,13 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                             }}
                             onFocus={(e) => e.target.select()}
                             placeholder={isBulkEdit ? 'No Change' : '0.00'}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                         />
                     </div>
                 </div>
 
-                <div className="pt-4 border-t">
-                    <button type="button" onClick={() => setShowAdvanced(!showAdvanced)} className="text-sm font-medium text-blue-600 hover:text-blue-800">
+                <div className="pt-4 border-t border-gray-200 dark:border-slate-700">
+                    <button type="button" onClick={() => setShowAdvanced(!showAdvanced)} className="text-sm font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300">
                         {showAdvanced ? 'Hide Advanced Options' : 'Show Advanced Options'}
                     </button>
                     <div className={`transition-all duration-300 ease-in-out overflow-hidden ${showAdvanced ? 'max-h-[500px] mt-4' : 'max-h-0'}`}>
@@ -439,31 +437,31 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                             <div className="grid grid-cols-2 gap-4">
                                 {!isBulkEdit && (
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Barcodes</label>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Barcodes</label>
                                         <TagInput value={barcodes} onChange={setBarcodes} placeholder="Scan/type barcode + Enter" />
                                     </div>
                                 )}
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
-                                    <input type="text" name="measurement_unit" value={formData.measurement_unit} onChange={handleChange} onFocus={(e) => e.target.select()} placeholder={isBulkEdit ? 'No Change' : 'pcs'} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Unit</label>
+                                    <input type="text" name="measurement_unit" value={formData.measurement_unit} onChange={handleChange} onFocus={(e) => e.target.select()} placeholder={isBulkEdit ? 'No Change' : 'pcs'} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Point</label>
-                                    <input type="number" name="reorder_point" value={formData.reorder_point} onChange={handleChange} onFocus={(e) => e.target.select()} placeholder={isBulkEdit ? 'No Change' : '1'} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Reorder Point</label>
+                                    <input type="number" name="reorder_point" value={formData.reorder_point} onChange={handleChange} onFocus={(e) => e.target.select()} placeholder={isBulkEdit ? 'No Change' : '1'} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Warning Qty</label>
-                                    <input type="number" name="warning_quantity" value={formData.warning_quantity} onChange={handleChange} onFocus={(e) => e.target.select()} placeholder={isBulkEdit ? 'No Change' : '1'} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Warning Qty</label>
+                                    <input type="number" name="warning_quantity" value={formData.warning_quantity} onChange={handleChange} onFocus={(e) => e.target.select()} placeholder={isBulkEdit ? 'No Change' : '1'} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Tax Rate</label>
-                                    <select name="tax_rate_id" value={formData.tax_rate_id} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Tax Rate</label>
+                                    <select name="tax_rate_id" value={formData.tax_rate_id} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
                                         <option value="">{isBulkEdit ? 'No Change' : 'Select a Tax Rate'}</option>
                                         {taxRates.map(rate => <option key={rate.tax_rate_id} value={rate.tax_rate_id}>{rate.rate_name} ({(rate.rate_percentage * 100).toFixed(2)}%)</option>)}
                                     </select>
                                 </div>
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-gray-200 dark:border-slate-700">
                                 {isBulkEdit ? (
                                     <>
                                         <BooleanSelect name="is_active" label="Active" />
@@ -475,12 +473,12 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                                     </>
                                 ) : (
                                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 col-span-2">
-                                        <div className="flex items-center"><input type="checkbox" name="is_active" checked={formData.is_active} onChange={handleChange} className="h-4 w-4" /><label className="ml-2 text-sm">Active</label></div>
-                                        <div className="flex items-center"><input type="checkbox" name="is_service" checked={formData.is_service} onChange={handleChange} className="h-4 w-4" /><label className="ml-2 text-sm">Is Service</label></div>
-                                        <div className="flex items-center"><input type="checkbox" name="low_stock_warning" checked={formData.low_stock_warning} onChange={handleChange} className="h-4 w-4" /><label className="ml-2 text-sm">Low Stock Warning</label></div>
-                                        <div className="flex items-center"><input type="checkbox" name="is_price_change_allowed" checked={formData.is_price_change_allowed} onChange={handleChange} className="h-4 w-4" /><label className="ml-2 text-sm">Price Change Allowed</label></div>
-                                        <div className="flex items-center"><input type="checkbox" name="is_using_default_quantity" checked={formData.is_using_default_quantity} onChange={handleChange} className="h-4 w-4" /><label className="ml-2 text-sm">Use Default Qty</label></div>
-                                        <div className="flex items-center"><input type="checkbox" name="is_tax_inclusive_price" checked={formData.is_tax_inclusive_price} onChange={handleChange} className="h-4 w-4" /><label className="ml-2 text-sm">Price is Tax Inclusive</label></div>
+                                        <div className="flex items-center"><input type="checkbox" name="is_active" checked={formData.is_active} onChange={handleChange} className="h-4 w-4 rounded border-gray-300 dark:border-slate-600 text-primary-600 focus:ring-primary-500" /><label className="ml-2 text-sm text-gray-900 dark:text-slate-200">Active</label></div>
+                                        <div className="flex items-center"><input type="checkbox" name="is_service" checked={formData.is_service} onChange={handleChange} className="h-4 w-4 rounded border-gray-300 dark:border-slate-600 text-primary-600 focus:ring-primary-500" /><label className="ml-2 text-sm text-gray-900 dark:text-slate-200">Is Service</label></div>
+                                        <div className="flex items-center"><input type="checkbox" name="low_stock_warning" checked={formData.low_stock_warning} onChange={handleChange} className="h-4 w-4 rounded border-gray-300 dark:border-slate-600 text-primary-600 focus:ring-primary-500" /><label className="ml-2 text-sm text-gray-900 dark:text-slate-200">Low Stock Warning</label></div>
+                                        <div className="flex items-center"><input type="checkbox" name="is_price_change_allowed" checked={formData.is_price_change_allowed} onChange={handleChange} className="h-4 w-4 rounded border-gray-300 dark:border-slate-600 text-primary-600 focus:ring-primary-500" /><label className="ml-2 text-sm text-gray-900 dark:text-slate-200">Price Change Allowed</label></div>
+                                        <div className="flex items-center"><input type="checkbox" name="is_using_default_quantity" checked={formData.is_using_default_quantity} onChange={handleChange} className="h-4 w-4 rounded border-gray-300 dark:border-slate-600 text-primary-600 focus:ring-primary-500" /><label className="ml-2 text-sm text-gray-900 dark:text-slate-200">Use Default Qty</label></div>
+                                        <div className="flex items-center"><input type="checkbox" name="is_tax_inclusive_price" checked={formData.is_tax_inclusive_price} onChange={handleChange} className="h-4 w-4 rounded border-gray-300 dark:border-slate-600 text-primary-600 focus:ring-primary-500" /><label className="ml-2 text-sm text-gray-900 dark:text-slate-200">Price is Tax Inclusive</label></div>
                                     </div>
                                 )}
                             </div>
@@ -488,9 +486,9 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                     </div>
                 </div>
 
-                <div className="mt-6 flex justify-end space-x-4 pt-4 border-t">
-                    <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
-                    <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>
+                <div className="mt-6 flex justify-end space-x-3 pt-4 border-t border-gray-200 dark:border-slate-700">
+                    <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 text-sm font-medium transition-colors">Cancel</button>
+                    <button type="submit" className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors shadow-xs">Save</button>
                 </div>
             </form>
             <Modal isOpen={isBrandModalOpen} onClose={() => { setIsBrandModalOpen(false); setInitialBrandName(''); }} title="Add New Brand">

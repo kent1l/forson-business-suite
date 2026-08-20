@@ -78,7 +78,7 @@ const AROverviewTab = ({
     return (
         <>
             {isActive && error && !loading && (
-                <div className="bg-white rounded-xl border mb-6">
+                <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 mb-6">
                     <ErrorState
                         title="Couldn't load Accounts Receivable data"
                         description="Something went wrong fetching the AR overview. Check your connection and try again."
@@ -177,31 +177,31 @@ const AROverviewTab = ({
                         <>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left">
-                                    <thead className="border-b border-gray-200">
+                                    <thead className="border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-700/40 text-gray-600 dark:text-slate-300">
                                         <tr>
-                                            <th className="p-3 text-sm font-semibold text-gray-600">Invoice #</th>
-                                            <th className="p-3 text-sm font-semibold text-gray-600">Customer</th>
-                                            <th className="p-3 text-sm font-semibold text-gray-600">Invoice Date</th>
-                                            <th className="p-3 text-sm font-semibold text-gray-600">Due Date</th>
-                                            <th className="p-3 text-sm font-semibold text-gray-600 text-right">Amount</th>
-                                            <th className="p-3 text-sm font-semibold text-gray-600 text-right">Balance</th>
-                                            <th className="p-3 text-sm font-semibold text-gray-600 text-center">Actions</th>
+                                            <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Invoice #</th>
+                                            <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Customer</th>
+                                            <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Invoice Date</th>
+                                            <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Due Date</th>
+                                            <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-right">Amount</th>
+                                            <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-right">Balance</th>
+                                            <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-center">Actions</th>
                                         </tr>
                                     </thead>
-                                    <tbody>
+                                    <tbody className="divide-y divide-gray-100 dark:divide-slate-700/60">
                                         {drillDownInvoices.map(invoice => (
-                                            <tr key={invoice.invoice_id} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
-                                                <td className="p-3 text-sm font-mono">{invoice.invoice_number}</td>
+                                            <tr key={invoice.invoice_id} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200 transition-colors">
+                                                <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100">{invoice.invoice_number}</td>
                                                 <td className="p-3 text-sm">{invoice.company_name || `${invoice.first_name || ''} ${invoice.last_name || ''}`.trim()}</td>
-                                                <td className="p-3 text-sm">{new Date(invoice.invoice_date).toLocaleDateString()}</td>
-                                                <td className="p-3 text-sm">{new Date(invoice.due_date).toLocaleDateString()}</td>
+                                                <td className="p-3 text-sm text-gray-600 dark:text-slate-400">{new Date(invoice.invoice_date).toLocaleDateString()}</td>
+                                                <td className="p-3 text-sm text-gray-600 dark:text-slate-400">{new Date(invoice.due_date).toLocaleDateString()}</td>
                                                 <td className="p-3 text-sm text-right font-mono">{formatCurrency(invoice.total_amount)}</td>
-                                                <td className="p-3 text-sm text-right font-mono font-medium">{formatCurrency(invoice.balance_due)}</td>
+                                                <td className="p-3 text-sm text-right font-mono font-medium text-gray-900 dark:text-slate-100">{formatCurrency(invoice.balance_due)}</td>
                                                 <td className="p-3 text-sm text-center">
                                                     {hasPermission('ar:receive_payment') && Number(invoice.balance_due) > 0 && (
                                                         <button
                                                             onClick={() => onReceivePaymentFromDrillDown(invoice)}
-                                                            className="bg-green-600 text-white px-3 py-1 rounded-lg text-xs font-semibold hover:bg-green-700 transition-colors"
+                                                            className="bg-success-600 hover:bg-success-700 text-white px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
                                                         >
                                                             Receive Payment
                                                         </button>

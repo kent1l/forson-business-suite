@@ -36,14 +36,14 @@ import InfoTip from '../ui/InfoTip';
 const InvoiceAgingSummaryChart = ({ agingData, loading = false, onBucketClick }) => {
     if (loading) {
         return (
-            <div className="bg-white p-6 rounded-lg border border-gray-200 mb-6 animate-pulse">
-                <div className="h-6 bg-gray-200 rounded w-48 mb-4"></div>
-                <div className="w-full bg-gray-200 rounded-full h-8 mb-4"></div>
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 mb-6 shadow-card animate-pulse">
+                <div className="h-6 bg-gray-200 dark:bg-slate-700 rounded w-48 mb-4"></div>
+                <div className="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-8 mb-4"></div>
                 <div className="flex justify-between">
                     {[...Array(5)].map((_, i) => (
                         <div key={i} className="flex items-center gap-x-2">
-                            <div className="w-3 h-3 rounded-full bg-gray-200"></div>
-                            <div className="h-3 bg-gray-200 rounded w-16"></div>
+                            <div className="w-3 h-3 rounded-full bg-gray-200 dark:bg-slate-700"></div>
+                            <div className="h-3 bg-gray-200 dark:bg-slate-700 rounded w-16"></div>
                         </div>
                     ))}
                 </div>
@@ -53,19 +53,19 @@ const InvoiceAgingSummaryChart = ({ agingData, loading = false, onBucketClick })
 
     const total = agingData.reduce((sum, item) => sum + item.value, 0);
 
-    // Use colors that match the existing design system (consistent with Dashboard.jsx)
+    // Use colors that match the existing design system
     const colors = {
-        'Current': 'bg-blue-500',
-        '1-30 Days': 'bg-blue-400',
-        '31-60 Days': 'bg-yellow-400',
-        '61-90 Days': 'bg-orange-400',
-        '90+ Days': 'bg-red-500',
+        'Current': 'bg-primary-500',
+        '1-30 Days': 'bg-primary-400',
+        '31-60 Days': 'bg-warning-400',
+        '61-90 Days': 'bg-amber-500',
+        '90+ Days': 'bg-danger-500',
     };
 
     return (
-        <div className="bg-white p-6 rounded-lg border border-gray-200 mb-6">
+        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 mb-6 shadow-card">
             <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-1.5">
+                <h2 className="text-xl font-semibold text-gray-800 dark:text-slate-100 flex items-center gap-1.5">
                     Invoice Aging Summary
                     <InfoTip label="Aging Buckets">
                         How overdue each invoice's remaining balance is, grouped by how many days past its due date it is: Current, 1-30, 31-60, 61-90, and 90+ Days. Invoices with no balance left drop out of aging entirely.
@@ -73,12 +73,12 @@ const InvoiceAgingSummaryChart = ({ agingData, loading = false, onBucketClick })
                 </h2>
                 <button
                     onClick={() => exportToCSV(agingData, 'invoice-aging-summary.csv')}
-                    className="text-sm px-3 py-1 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
+                    className="text-sm px-3 py-1 border border-gray-300 dark:border-slate-600 rounded-md text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
                 >
                     Export
                 </button>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-8 flex overflow-hidden">
+            <div className="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-8 flex overflow-hidden">
                 {agingData.map(item => (
                     <div
                         key={item.name}
@@ -89,7 +89,7 @@ const InvoiceAgingSummaryChart = ({ agingData, loading = false, onBucketClick })
                     ></div>
                 ))}
             </div>
-            <div className="flex justify-between text-sm text-gray-600 mt-4 flex-wrap gap-2">
+            <div className="flex justify-between text-sm text-gray-600 dark:text-slate-400 mt-4 flex-wrap gap-2">
                 {agingData.map(item => (
                     <div key={item.name} className="flex items-center gap-x-2">
                         <span className={`w-3 h-3 rounded-full ${colors[item.name]}`}></span>

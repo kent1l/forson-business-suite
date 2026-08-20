@@ -114,16 +114,16 @@ const MobileCounter = ({ task, onSubmit, onCancel, itemNumber, totalItems, isUna
     ];
 
     return (
-        <div className="flex flex-col h-full max-w-lg mx-auto bg-gray-50 border-x border-gray-200">
+        <div className="flex flex-col h-full max-w-lg mx-auto bg-gray-50 dark:bg-slate-900 border-x border-gray-200 dark:border-slate-700">
             {/* Header */}
-            <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between shadow-sm z-10">
+            <div className="bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700 px-4 py-3 flex items-center justify-between shadow-sm z-10">
                 <button
                     onClick={onCancel}
-                    className="p-2 -ml-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full"
+                    className="p-2 -ml-2 text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-full cursor-pointer"
                 >
                     <X className="w-6 h-6" />
                 </button>
-                <div className="text-center font-medium text-gray-800">
+                <div className="text-center font-medium text-gray-800 dark:text-slate-100">
                     {isUnassigned ? 'Unassigned Find' : `Item ${itemNumber} of ${totalItems}`}
                 </div>
                 <div className="w-10"></div> {/* Spacer to center title */}
@@ -137,53 +137,53 @@ const MobileCounter = ({ task, onSubmit, onCancel, itemNumber, totalItems, isUna
                     <div className="flex-1">
                         <div className="relative mb-2">
                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <Search className="h-5 w-5 text-gray-400" />
+                                <Search className="h-5 w-5 text-gray-400 dark:text-slate-500" />
                             </div>
                             <input
                                 ref={searchInputRef}
                                 type="text"
-                                className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-lg"
+                                className="block w-full pl-10 pr-3 py-3 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:ring-primary-500 focus:border-primary-500 text-lg"
                                 placeholder="Scan barcode or type item name/SKU..."
                                 value={searchQuery}
                                 onChange={handleSearchChange}
                             />
                         </div>
                         {searchQuery.trim().length > 0 && searchQuery.trim().length < 2 && (
-                            <div className="text-sm text-gray-500 mb-3">Type at least 2 characters to search.</div>
+                            <div className="text-sm text-gray-500 dark:text-slate-400 mb-3">Type at least 2 characters to search.</div>
                         )}
-                        {searching && <div className="text-center py-4 text-gray-500">Searching...</div>}
+                        {searching && <div className="text-center py-4 text-gray-500 dark:text-slate-400">Searching...</div>}
                         {!searching && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
-                            <div className="text-center py-4 text-gray-500">No matching parts found.</div>
+                            <div className="text-center py-4 text-gray-500 dark:text-slate-400">No matching parts found.</div>
                         )}
                         <div className="space-y-2">
                             {searchResults.map(part => (
                                 <button
                                     key={part.part_id}
                                     onClick={() => handleSelectPart(part)}
-                                    className="w-full text-left p-4 bg-white border border-gray-200 rounded-lg hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                                    className="w-full text-left p-4 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-primary-50 dark:hover:bg-slate-700/60 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors cursor-pointer"
                                 >
-                                    <div className="font-bold text-gray-900 whitespace-normal break-words line-clamp-3">{getPartDisplayName(part)}</div>
+                                    <div className="font-bold text-gray-900 dark:text-slate-100 whitespace-normal break-words line-clamp-3">{getPartDisplayName(part)}</div>
                                     {getPartSecondaryLabel(part) && (
-                                        <div className="text-sm text-gray-600 whitespace-normal break-words">{getPartSecondaryLabel(part)}</div>
+                                        <div className="text-sm text-gray-600 dark:text-slate-400 whitespace-normal break-words">{getPartSecondaryLabel(part)}</div>
                                     )}
                                 </button>
                             ))}
                         </div>
                     </div>
                 ) : (
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6 text-center">
-                        <h2 className="text-2xl sm:text-3xl font-black text-gray-900 mb-2 tracking-tight whitespace-normal break-words line-clamp-3">
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6 mb-6 text-center">
+                        <h2 className="text-2xl sm:text-3xl font-black text-gray-900 dark:text-slate-100 mb-2 tracking-tight whitespace-normal break-words line-clamp-3">
                             {activeDisplayName}
                         </h2>
                         {activeSecondaryLabel && (
-                            <p className="text-lg text-gray-600 whitespace-normal break-words">
+                            <p className="text-lg text-gray-600 dark:text-slate-400 whitespace-normal break-words">
                                 {activeSecondaryLabel}
                             </p>
                         )}
                         {isUnassigned && (
                             <button
                                 onClick={() => setSelectedPart(null)}
-                                className="mt-4 text-sm text-blue-600 hover:text-blue-800 font-medium"
+                                className="mt-4 text-sm text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 font-medium cursor-pointer"
                             >
                                 Change Item
                             </button>
@@ -195,8 +195,8 @@ const MobileCounter = ({ task, onSubmit, onCancel, itemNumber, totalItems, isUna
                 {(!isUnassigned || selectedPart) && (
                     <div className="mt-auto">
                         {/* Display Input */}
-                        <div className="bg-white border-2 border-blue-200 rounded-xl mb-4 p-4 text-center">
-                            <span className={`text-5xl font-mono tracking-wider ${inputValue ? 'text-gray-900 font-bold' : 'text-gray-300'}`}>
+                        <div className="bg-white dark:bg-slate-800 border-2 border-primary-200 dark:border-primary-800/60 rounded-xl mb-4 p-4 text-center">
+                            <span className={`text-5xl font-mono tracking-wider ${inputValue ? 'text-gray-900 dark:text-slate-100 font-bold' : 'text-gray-300 dark:text-slate-600'}`}>
                                 {inputValue || '0'}
                             </span>
                         </div>
@@ -214,8 +214,8 @@ const MobileCounter = ({ task, onSubmit, onCancel, itemNumber, totalItems, isUna
                                             else handleNumpadClick(btn);
                                         }}
                                         className={`
-                                            h-16 sm:h-20 rounded-xl text-2xl font-semibold transition-colors active:scale-95 shadow-sm
-                                            ${isAction ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-white border border-gray-200 text-gray-900 hover:bg-gray-50'}
+                                            h-16 sm:h-20 rounded-xl text-2xl font-semibold transition-colors active:scale-95 shadow-sm cursor-pointer
+                                            ${isAction ? 'bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-slate-200 hover:bg-gray-300 dark:hover:bg-slate-600' : 'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-700/60'}
                                         `}
                                     >
                                         {btn}
@@ -228,7 +228,7 @@ const MobileCounter = ({ task, onSubmit, onCancel, itemNumber, totalItems, isUna
                         <button
                             onClick={handleSubmitClick}
                             disabled={!inputValue}
-                            className={`w-full py-5 rounded-xl font-bold text-2xl flex items-center justify-center space-x-2 shadow-md transition-colors ${inputValue ? 'bg-green-600 hover:bg-green-700 text-white active:scale-95' : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            className={`w-full py-5 rounded-xl font-bold text-2xl flex items-center justify-center space-x-2 shadow-md transition-colors cursor-pointer ${inputValue ? 'bg-success-600 hover:bg-success-700 text-white active:scale-95' : 'bg-gray-300 dark:bg-slate-700 text-gray-500 dark:text-slate-500 cursor-not-allowed opacity-60'
                                 }`}
                         >
                             <span>Submit Count</span>

@@ -14,13 +14,13 @@ import InfoTip from '../ui/InfoTip';
 const getPaymentStatusBadge = (status) => {
     switch (status?.toLowerCase()) {
         case 'settled':
-            return 'bg-green-100 text-green-800';
+            return 'bg-success-100 dark:bg-success-900/30 text-success-800 dark:text-success-400';
         case 'pending':
-            return 'bg-yellow-100 text-yellow-800';
+            return 'bg-warning-100 dark:bg-warning-900/30 text-warning-800 dark:text-warning-400';
         case 'failed':
-            return 'bg-red-100 text-red-800';
+            return 'bg-danger-100 dark:bg-danger-900/30 text-danger-800 dark:text-danger-400';
         default:
-            return 'bg-gray-100 text-gray-800';
+            return 'bg-neutral-100 dark:bg-slate-700 text-neutral-800 dark:text-slate-300';
     }
 };
 
@@ -148,12 +148,13 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
             // Update the invoice object with the server response
             invoice.physical_receipt_no = response.data.physical_receipt_no;
 
-            toast.success('Physical receipt number updated successfully');
-
-            // Close immediately - no delay needed
+            // Trigger UI updates
             setIsEditingReceiptNo(false);
+            toast.success('Physical receipt number updated');
+            
+            // Trigger refresh on parent page
             onActionSuccess();
-
+            
             // Notify other parts of the app that invoices changed
             try {
                 window.dispatchEvent(new CustomEvent('invoices:changed'));
@@ -165,17 +166,19 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
             const message = error.response?.data?.message || 'Failed to update physical receipt number';
             toast.error(message);
         }
-    };    const handleCancelEditReceiptNo = () => {
-        setEditingReceiptNo(invoice.physical_receipt_no || '');
+    };
+
+    const handleCancelEditReceiptNo = () => {
         setIsEditingReceiptNo(false);
+        setEditingReceiptNo(invoice.physical_receipt_no || ''); // Reset to current value
     };
 
     const handleMarkSettled = async (paymentId) => {
         try {
-            await api.post(`/payments/${paymentId}/settle`);
+            await api.patch(`/payments/${paymentId}/settle`);
             toast.success('Payment marked as settled');
             
-            // Refresh payments data
+            // Refresh payments list
             const paymentsRes = await api.get(`/invoices/${invoice.invoice_id}/payments`);
             setPayments(paymentsRes.data || []);
             
@@ -199,14 +202,14 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Details for Invoice #${invoice.invoice_number}`} maxWidth="max-w-2xl">
-            {loading ? <p>Loading details...</p> : (
+            {loading ? <p className="text-gray-500 dark:text-slate-400 py-4 text-center">Loading details...</p> : (
                 <div className="space-y-4">
                     {/* Physical Receipt Number Editing Section - Only shown when editing */}
                     {isEditingReceiptNo && (
-                        <div className="bg-gray-50 p-4 rounded-lg border-2 border-cyan-200">
+                        <div className="bg-gray-50 dark:bg-slate-900/50 p-4 rounded-lg border-2 border-cyan-300 dark:border-cyan-700">
                             <div className="flex items-center justify-between">
                                 <div className="flex-1">
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
                                         Edit Physical Receipt No.
                                     </label>
                                     <div className="flex items-center gap-2">
@@ -215,33 +218,31 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                             value={editingReceiptNo}
                                             onChange={(e) => {
                                                 const value = e.target.value;
-                                                // Instant formatting as user types
                                                 const formatted = formatPhysicalReceiptNumber(value);
                                                 if (formatted !== editingReceiptNo) {
                                                     setEditingReceiptNo(formatted || '');
                                                 }
                                             }}
                                             onBlur={(e) => {
-                                                // Ensure final formatting on blur
                                                 const formatted = formatPhysicalReceiptNumber(e.target.value);
                                                 setEditingReceiptNo(formatted || '');
                                             }}
-                                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+                                            className="flex-1 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm font-mono bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
                                             placeholder="e.g., SI-1234, ABC/5678, or XYZ 9999"
                                             autoFocus
                                         />
-                                        <span className="text-xs text-gray-500 whitespace-nowrap">
+                                        <span className="text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap">
                                             Formats instantly as you type
                                         </span>
                                         <button
                                             onClick={handleSaveReceiptNo}
-                                            className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors duration-200"
+                                            className="bg-success-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-success-700 transition-colors duration-200"
                                         >
                                             Save
                                         </button>
                                         <button
                                             onClick={handleCancelEditReceiptNo}
-                                            className="bg-gray-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-600 transition-colors duration-200"
+                                            className="bg-gray-500 dark:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-600 dark:hover:bg-slate-500 transition-colors duration-200"
                                         >
                                             Cancel
                                         </button>
@@ -251,37 +252,37 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                         </div>
                     )}
 
-                    <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg text-sm text-slate-700 mb-4 border border-slate-100 shadow-xs">
+                    <div className="grid grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-lg text-sm text-slate-700 dark:text-slate-300 mb-4 border border-slate-100 dark:border-slate-700 shadow-xs">
                         <div>
-                            <span className="font-semibold text-slate-400 block text-[10px] uppercase tracking-wider mb-0.5">Issuer (Staged By)</span>
-                            <span className="font-medium">{invoice.employee_first_name} {invoice.employee_last_name}</span>
+                            <span className="font-semibold text-slate-400 dark:text-slate-500 block text-[10px] uppercase tracking-wider mb-0.5">Issuer (Staged By)</span>
+                            <span className="font-medium text-slate-800 dark:text-slate-100">{invoice.employee_first_name} {invoice.employee_last_name}</span>
                         </div>
                         <div>
-                            <span className="font-semibold text-slate-400 block text-[10px] uppercase tracking-wider mb-0.5">Approved By</span>
-                            <span className="font-medium">{invoice.approved_by_name || 'System Auto-Approved'}</span>
+                            <span className="font-semibold text-slate-400 dark:text-slate-500 block text-[10px] uppercase tracking-wider mb-0.5">Approved By</span>
+                            <span className="font-medium text-slate-800 dark:text-slate-100">{invoice.approved_by_name || 'System Auto-Approved'}</span>
                         </div>
-                        <div className="border-t border-slate-200/60 pt-2">
-                            <span className="font-semibold text-slate-400 block text-[10px] uppercase tracking-wider mb-0.5">Submitted On</span>
-                            <span className="font-mono text-xs">{invoice.submitted_at ? new Date(invoice.submitted_at).toLocaleString('en-US') : 'N/A'}</span>
+                        <div className="border-t border-slate-200/60 dark:border-slate-700/60 pt-2">
+                            <span className="font-semibold text-slate-400 dark:text-slate-500 block text-[10px] uppercase tracking-wider mb-0.5">Submitted On</span>
+                            <span className="font-mono text-xs text-slate-700 dark:text-slate-300">{invoice.submitted_at ? new Date(invoice.submitted_at).toLocaleString('en-US') : 'N/A'}</span>
                         </div>
-                        <div className="border-t border-slate-200/60 pt-2">
-                            <span className="font-semibold text-slate-400 block text-[10px] uppercase tracking-wider mb-0.5">Approved On</span>
-                            <span className="font-mono text-xs">{invoice.approved_at ? new Date(invoice.approved_at).toLocaleString('en-US') : 'N/A'}</span>
+                        <div className="border-t border-slate-200/60 dark:border-slate-700/60 pt-2">
+                            <span className="font-semibold text-slate-400 dark:text-slate-500 block text-[10px] uppercase tracking-wider mb-0.5">Approved On</span>
+                            <span className="font-mono text-xs text-slate-700 dark:text-slate-300">{invoice.approved_at ? new Date(invoice.approved_at).toLocaleString('en-US') : 'N/A'}</span>
                         </div>
                     </div>
 
                     <div>
-                        <h3 className="font-semibold text-gray-800">Items Sold</h3>
-                        <ul className="divide-y divide-gray-200 mt-2">
+                        <h3 className="font-semibold text-gray-800 dark:text-slate-100">Items Sold</h3>
+                        <ul className="divide-y divide-gray-200 dark:divide-slate-700 mt-2">
                             {lines.map(line => (
-                                <li key={line.invoice_line_id} className="py-2 flex justify-between items-center">
+                                <li key={line.invoice_line_id} className="py-2 flex justify-between items-center text-gray-900 dark:text-slate-100">
                                     <div>
-                                        <p className="text-sm font-medium">{line.display_name}</p>
-                                        <p className="text-xs text-gray-500">
+                                        <p className="text-sm font-medium text-gray-900 dark:text-slate-100">{line.display_name}</p>
+                                        <p className="text-xs text-gray-500 dark:text-slate-400">
                                             {line.quantity} x {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(line.sale_price).toFixed(2)}
                                         </p>
                                     </div>
-                                    <p className="text-sm font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{(line.quantity * line.sale_price).toFixed(2)}</p>
+                                    <p className="text-sm font-mono font-semibold text-gray-900 dark:text-slate-100">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{(line.quantity * line.sale_price).toFixed(2)}</p>
                                 </li>
                             ))}
                         </ul>
@@ -290,7 +291,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                     {/* Payments Section */}
                     {payments.length > 0 && (
                         <div>
-                            <h3 className="font-semibold text-gray-800 flex items-center gap-1">
+                            <h3 className="font-semibold text-gray-800 dark:text-slate-100 flex items-center gap-1">
                                 Payments
                                 <InfoTip label="Payment Status">
                                     <strong>Settled</strong> payments have cleared. <strong>Pending</strong> payments (e.g. an
@@ -300,16 +301,16 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                             </h3>
                             <div className="mt-2 space-y-2">
                                 {payments.map(payment => (
-                                    <div key={payment.payment_id} className="bg-gray-50 p-3 rounded-lg border">
+                                    <div key={payment.payment_id} className="bg-gray-50 dark:bg-slate-900/50 p-3 rounded-lg border border-gray-200 dark:border-slate-700">
                                         <div className="flex justify-between items-start">
                                             <div className="flex-1">
                                                 <div className="flex items-center gap-2 mb-1">
-                                                    <span className="text-sm font-medium">{payment.method_name || payment.payment_method}</span>
+                                                    <span className="text-sm font-medium text-gray-900 dark:text-slate-100">{payment.method_name || payment.payment_method}</span>
                                                     <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getPaymentStatusBadge(payment.payment_status)}`}>
                                                         {formatPaymentStatus(payment.payment_status)}
                                                     </span>
                                                 </div>
-                                                <div className="text-sm text-gray-600">
+                                                <div className="text-sm text-gray-600 dark:text-slate-300">
                                                     <div>Amount: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(payment.amount_paid).toFixed(2)}</div>
                                                     {payment.tendered_amount && (
                                                         <div>Tendered: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(payment.tendered_amount).toFixed(2)}</div>
@@ -318,12 +319,12 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                                         <div>Change: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(payment.change_amount).toFixed(2)}</div>
                                                     )}
                                                     {payment.settled_at && (
-                                                        <div className="text-xs text-gray-500">
+                                                        <div className="text-xs text-gray-500 dark:text-slate-400">
                                                             Settled: {new Date(payment.settled_at).toLocaleString()}
                                                         </div>
                                                     )}
                                                     {payment.created_at && (
-                                                        <div className="text-xs text-gray-500">
+                                                        <div className="text-xs text-gray-500 dark:text-slate-400">
                                                             Created: {new Date(payment.created_at).toLocaleString()}
                                                         </div>
                                                     )}
@@ -332,7 +333,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                             {payment.payment_status?.toLowerCase() === 'pending' && (
                                                 <button
                                                     onClick={() => handleMarkSettled(payment.payment_id)}
-                                                    className="bg-green-600 text-white text-xs px-3 py-1 rounded hover:bg-green-700 transition-colors"
+                                                    className="bg-success-600 text-white text-xs px-3 py-1 rounded hover:bg-success-700 transition-colors"
                                                 >
                                                     Mark Settled
                                                 </button>
@@ -342,8 +343,8 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                 ))}
                                 
                                 {/* Payment Summary */}
-                                <div className="bg-blue-50 p-3 rounded-lg border border-blue-200 mt-3">
-                                    <div className="text-sm">
+                                <div className="bg-primary-50 dark:bg-primary-950/40 p-3 rounded-lg border border-primary-200 dark:border-primary-800/60 mt-3">
+                                    <div className="text-sm text-gray-900 dark:text-slate-100">
                                         <div className="flex justify-between">
                                             <span className="flex items-center gap-1">
                                                 Total Paid:
@@ -352,7 +353,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                                     and not included here.
                                                 </InfoTip>
                                             </span>
-                                            <span className="font-mono">
+                                            <span className="font-mono font-semibold">
                                                 {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}
                                                 {payments
                                                     .filter(p => p.payment_status?.toLowerCase() === 'settled')
@@ -361,7 +362,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                             </span>
                                         </div>
                                         {payments.some(p => p.payment_status?.toLowerCase() === 'pending') && (
-                                            <div className="flex justify-between text-yellow-700">
+                                            <div className="flex justify-between text-warning-700 dark:text-warning-300 font-semibold">
                                                 <span>Pending:</span>
                                                 <span className="font-mono">
                                                     {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}
@@ -378,7 +379,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                         </div>
                     )}
                     {paymentsForbidden && (
-                        <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
+                        <div className="mt-4 p-3 bg-warning-50 dark:bg-warning-950/40 border border-warning-200 dark:border-warning-800/60 rounded-lg text-sm text-warning-800 dark:text-warning-300">
                             You do not have permission to view payment details for this invoice.
                         </div>
                     )}
@@ -389,7 +390,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                 {hasPermission('invoice:edit_receipt_no') && (
                                     <button
                                         onClick={handleEditReceiptNo}
-                                        className="bg-cyan-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-cyan-700 transition-colors duration-200 shadow-sm"
+                                        className="bg-cyan-600 dark:bg-cyan-700 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-cyan-700 dark:hover:bg-cyan-600 transition-colors duration-200 shadow-sm"
                                     >
                                         Edit Receipt No.
                                     </button>
@@ -397,7 +398,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                 {hasPermission('invoice:delete') && invoice.status !== 'Cancelled' && (
                                     <button
                                         onClick={handleDelete}
-                                        className="bg-white border border-red-300 text-red-600 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-red-50"
+                                        className="bg-white dark:bg-slate-800 border border-danger-300 dark:border-danger-700 text-danger-600 dark:text-danger-400 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-danger-50 dark:hover:bg-danger-950/30 transition-colors"
                                     >
                                         Void Invoice
                                     </button>
@@ -405,7 +406,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                 {hasPermission(['transaction:change_date', 'transaction:change_date_unrestricted']) && (
                                     <button
                                         onClick={() => setShowChangeDate(true)}
-                                        className="bg-white border border-gray-300 text-gray-700 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-gray-50"
+                                        className="bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
                                     >
                                         Change Date
                                     </button>
@@ -414,7 +415,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                             <div className="flex-1 text-right">
                                 <button
                                     onClick={() => setShowRefundForm(true)}
-                                    className="bg-red-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-red-700"
+                                    className="bg-danger-600 hover:bg-danger-700 text-white font-semibold px-4 py-2 rounded-lg transition-colors"
                                 >
                                     Process Refund
                                 </button>

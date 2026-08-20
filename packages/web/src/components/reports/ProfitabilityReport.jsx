@@ -87,18 +87,18 @@ const ProfitabilityReport = () => {
 
     return (
         <>
-            <div className="bg-white p-6 rounded-xl border border-gray-200 mb-6">
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm mb-6">
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-                        <input type="date" name="startDate" value={filters.startDate} onChange={(e) => handleFilterChange('startDate', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Start Date</label>
+                        <input type="date" name="startDate" value={filters.startDate} onChange={(e) => handleFilterChange('startDate', e.target.value)} className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500" />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-                        <input type="date" name="endDate" value={filters.endDate} onChange={(e) => handleFilterChange('endDate', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">End Date</label>
+                        <input type="date" name="endDate" value={filters.endDate} onChange={(e) => handleFilterChange('endDate', e.target.value)} className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500" />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Brand</label>
                         <Combobox 
                             options={[{value: '', label: 'All Brands'}, ...brandOptions]}
                             value={filters.brandId}
@@ -107,7 +107,7 @@ const ProfitabilityReport = () => {
                         />
                     </div>
                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Group</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Group</label>
                         <Combobox 
                             options={[{value: '', label: 'All Groups'}, ...groupOptions]}
                             value={filters.groupId}
@@ -116,17 +116,17 @@ const ProfitabilityReport = () => {
                         />
                     </div>
                     <div className="flex space-x-2">
-                        <button onClick={() => fetchReport('json')} disabled={loading} className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition disabled:bg-blue-300">View Report</button>
-                        <button onClick={() => fetchReport('csv')} disabled={loading} className="w-full bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition disabled:bg-green-300">Export CSV</button>
+                        <button onClick={() => fetchReport('json')} disabled={loading} className="w-full bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition disabled:opacity-50 cursor-pointer">View Report</button>
+                        <button onClick={() => fetchReport('csv')} disabled={loading} className="w-full bg-success-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-success-700 transition disabled:opacity-50 cursor-pointer">Export CSV</button>
                     </div>
                 </div>
             </div>
-            <div className="bg-white p-6 rounded-xl border border-gray-200">
-                {loading ? <p>Loading report...</p> : (
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
+                {loading ? <p className="text-sm text-gray-500 dark:text-slate-400">Loading report...</p> : (
                     <>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
-                            <thead className="border-b">
+                            <thead className="border-b border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300">
                                 <tr>
                                     <SortableHeader column="display_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Item</SortableHeader>
                                     <SortableHeader className="text-right" column="total_revenue" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Total Revenue</SortableHeader>
@@ -141,18 +141,18 @@ const ProfitabilityReport = () => {
                                     </SortableHeader>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
                                 {sortedReportData.map((row) => (
-                                    <tr key={row.internal_sku} className="border-b hover:bg-gray-50">
-                                        <td className="p-3 text-sm font-medium text-gray-800">{row.display_name}</td>
-                                        <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.total_revenue).toFixed(2)}</td>
-                                        <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.total_cost).toFixed(2)}</td>
-                                        <td className="p-3 text-sm text-right font-mono font-bold text-blue-600">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.total_profit).toFixed(2)}</td>
+                                    <tr key={row.internal_sku} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200 transition-colors">
+                                        <td className="p-3 text-sm font-medium text-gray-900 dark:text-slate-100">{row.display_name}</td>
+                                        <td className="p-3 text-sm text-right font-mono text-gray-900 dark:text-slate-100">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.total_revenue).toFixed(2)}</td>
+                                        <td className="p-3 text-sm text-right font-mono text-gray-900 dark:text-slate-100">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.total_cost).toFixed(2)}</td>
+                                        <td className="p-3 text-sm text-right font-mono font-bold text-primary-600 dark:text-primary-400">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.total_profit).toFixed(2)}</td>
                                     </tr>
                                 ))}
                                 {sortedReportData.length === 0 && (
                                     <tr>
-                                        <td colSpan="4" className="p-4 text-center text-gray-500">No data to display.</td>
+                                        <td colSpan="4" className="p-4 text-center text-gray-500 dark:text-slate-400">No data to display.</td>
                                     </tr>
                                 )}
                             </tbody>

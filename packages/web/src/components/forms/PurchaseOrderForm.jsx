@@ -248,16 +248,16 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
         <>
         <form onSubmit={handleSubmit} className="space-y-4">
             {/* Draft saved indicator */}
-            <div className="flex items-center justify-end text-xs text-gray-500">
+            <div className="flex items-center justify-end text-xs text-gray-500 dark:text-slate-400">
                 {poDraftStatus === 'saving' && <span>Saving draft…</span>}
                 {poDraftStatus === 'saved' && (
                     <span>Draft saved{poLastSavedAt ? ` at ${poLastSavedAt.toLocaleTimeString()}` : ''}</span>
                 )}
-                {poDraftStatus === 'error' && <span className="text-red-600">Draft save failed</span>}
+                {poDraftStatus === 'error' && <span className="text-danger-600 dark:text-danger-400">Draft save failed</span>}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Supplier</label>
                     <Combobox
                         options={supplierOptions}
                         value={formData.selectedSupplier}
@@ -266,18 +266,18 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                     />
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Expected Date</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Expected Date</label>
                     <input
                         type="date"
                         name="expectedDate"
                         value={formData.expectedDate}
                         onChange={handleFormChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                     />
                 </div>
             </div>
             <div className="relative" ref={searchBarRef}>
-                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1 flex items-center gap-1">
                     Add Part
                     <InfoTip label="Add Part">
                         Cost is pulled automatically from each part's last recorded cost and isn't editable here.
@@ -295,12 +295,12 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                         />
                     </div>
                     <div>
-                        <button type="button" onClick={() => setIsNewPartOpen(true)} className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm">New Part</button>
+                        <button type="button" onClick={() => setIsNewPartOpen(true)} className="px-3.5 py-2 bg-success-600 text-white rounded-lg hover:bg-success-700 text-sm font-medium transition-colors shadow-xs">New Part</button>
                     </div>
                 </div>
                 {searchResults.length > 0 && (
                     <ul
-                        className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto scrollbar-thin"
+                        className="absolute z-10 w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg mt-1 shadow-lg max-h-60 overflow-y-auto scrollbar-thin divide-y divide-gray-100 dark:divide-slate-700"
                         onTouchStart={(e) => {
                             isScrollingRef.current = true;
                             e.stopPropagation();
@@ -316,10 +316,10 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                         }}
                     >
                         {searchResults.map(part => (
-                            <li key={part.part_id} onClick={() => addPartToLines(part)} className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm">
+                            <li key={part.part_id} onClick={() => addPartToLines(part)} className="px-4 py-2 hover:bg-primary-50 dark:hover:bg-slate-700/50 cursor-pointer text-sm transition-colors">
                                 <div className="flex items-baseline space-x-2">
-                                    <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
-                                    {part.applications && <div className="text-xs text-gray-500 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
+                                    <div className="text-sm font-medium text-gray-900 dark:text-slate-100 truncate">{part.display_name}</div>
+                                    {part.applications && <div className="text-xs text-gray-500 dark:text-slate-400 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
                                 </div>
                             </li>
                         ))}
@@ -328,12 +328,12 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
             </div>
 
             {/* New Part modal is rendered outside the form to avoid nested forms */}
-            <div className="max-h-64 overflow-y-auto border rounded-lg">
+            <div className="max-h-64 overflow-y-auto border border-gray-200 dark:border-slate-700 rounded-lg">
                 <table className="w-full text-left text-sm">
-                    <tbody>
+                    <tbody className="divide-y divide-gray-100 dark:divide-slate-700/60">
                         {formData.lines.map(line => (
-                            <tr key={line.part_id} className="border-b">
-                                <td className="p-2">{line.display_name}</td>
+                            <tr key={line.part_id} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200">
+                                <td className="p-2 text-gray-900 dark:text-slate-100">{line.display_name}</td>
                                 <td className="p-2 w-20">
                                     <input
                                         type="number"
@@ -341,16 +341,16 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                                         onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)}
                                         onFocus={e => e.target.select()}
                                         onMouseUp={e => e.preventDefault()}
-                                        className="w-full p-1 border rounded-md text-center"
+                                        className="w-full p-1 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-md text-center font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                                     />
                                 </td>
-                                <td className="p-2 w-12 text-center"><button type="button" onClick={() => removeLine(line.part_id)} className="text-red-500 hover:text-red-700"><Icon path={ICONS.trash} className="h-4 w-4" /></button></td>
+                                <td className="p-2 w-12 text-center"><button type="button" onClick={() => removeLine(line.part_id)} className="text-gray-400 hover:text-danger-600 dark:hover:text-danger-400 p-1"><Icon path={ICONS.trash} className="h-4 w-4" /></button></td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
             </div>
-            <div className="text-right font-bold flex items-center justify-end gap-1">
+            <div className="text-right font-bold text-gray-900 dark:text-slate-100 flex items-center justify-end gap-1 font-mono">
                 Total: ₱{total.toFixed(2)}
                 <InfoTip label="Total" align="right">
                     PO Total is the sum of all line subtotals (Quantity × Cost). This won't include any actual
@@ -358,12 +358,12 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                 </InfoTip>
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                <textarea name="notes" value={formData.notes} onChange={handleFormChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows="2"></textarea>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Notes</label>
+                <textarea name="notes" value={formData.notes} onChange={handleFormChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" rows="2"></textarea>
             </div>
-            <div className="mt-6 flex justify-end space-x-4">
-                <button type="button" onClick={clearDraftAndCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">{existingPO ? 'Update Purchase Order' : 'Create Purchase Order'}</button>
+            <div className="mt-6 flex justify-end space-x-3 pt-4 border-t border-gray-100 dark:border-slate-700">
+                <button type="button" onClick={clearDraftAndCancel} className="px-4 py-2 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 text-sm font-medium transition-colors">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors shadow-xs">{existingPO ? 'Update Purchase Order' : 'Create Purchase Order'}</button>
             </div>
         </form>
 

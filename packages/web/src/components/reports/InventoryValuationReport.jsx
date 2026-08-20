@@ -55,18 +55,18 @@ const InventoryValuationReport = () => {
 
     return (
         <>
-            <div className="bg-white p-6 rounded-xl border border-gray-200 mb-6 flex justify-between items-center">
-                <p className="text-lg">This report provides a snapshot of your current inventory's total value.</p>
-                <button onClick={() => fetchReport('csv')} disabled={loading} className="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition disabled:bg-green-300">
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <p className="text-sm sm:text-base text-gray-700 dark:text-slate-300">This report provides a snapshot of your current inventory's total value.</p>
+                <button onClick={() => fetchReport('csv')} disabled={loading} className="bg-success-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-success-700 transition disabled:opacity-50 cursor-pointer whitespace-nowrap">
                     Export CSV
                 </button>
             </div>
-            <div className="bg-white p-6 rounded-xl border border-gray-200">
-                {loading ? <p>Loading report...</p> : (
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
+                {loading ? <p className="text-sm text-gray-500 dark:text-slate-400">Loading report...</p> : (
                     <>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
-                            <thead className="border-b">
+                            <thead className="border-b border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300">
                                 <tr>
                                     <SortableHeader column="internal_sku" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>SKU</SortableHeader>
                                     <SortableHeader column="display_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Item</SortableHeader>
@@ -89,21 +89,21 @@ const InventoryValuationReport = () => {
                                     </SortableHeader>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
                                 {sortedReportData.map((row, index) => (
-                                    <tr key={index} className="border-b hover:bg-gray-50">
-                                        <td className="p-3 text-sm font-mono">{row.internal_sku}</td>
-                                        <td className="p-3 text-sm">{row.display_name}</td>
+                                    <tr key={index} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200 transition-colors">
+                                        <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100">{row.internal_sku}</td>
+                                        <td className="p-3 text-sm font-medium">{row.display_name}</td>
                                         <td className="p-3 text-sm text-center font-semibold">{Number(row.stock_on_hand).toLocaleString()}</td>
-                                        <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.wac_cost).toFixed(2)}</td>
-                                        <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.total_value).toFixed(2)}</td>
+                                        <td className="p-3 text-sm text-right font-mono text-gray-900 dark:text-slate-100">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.wac_cost).toFixed(2)}</td>
+                                        <td className="p-3 text-sm text-right font-mono text-gray-900 dark:text-slate-100">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.total_value).toFixed(2)}</td>
                                     </tr>
                                 ))}
                             </tbody>
-                            <tfoot className="font-bold">
+                            <tfoot className="font-bold border-t border-gray-200 dark:border-slate-700">
                                 <tr>
-                                    <td colSpan="4" className="p-3 text-right text-blue-600">Grand Total Inventory Value:</td>
-                                    <td className="p-3 text-right font-mono text-blue-600">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{grandTotal.toFixed(2)}</td>
+                                    <td colSpan="4" className="p-3 text-right text-primary-600 dark:text-primary-400">Grand Total Inventory Value:</td>
+                                    <td className="p-3 text-right font-mono text-primary-600 dark:text-primary-400">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{grandTotal.toFixed(2)}</td>
                                 </tr>
                             </tfoot>
                     </table>

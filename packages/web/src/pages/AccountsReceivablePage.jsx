@@ -70,18 +70,18 @@ const AccountsReceivablePage = () => {
     }
 
     return (
-        <div className="p-6 bg-gray-50 min-h-screen">
+        <div className="space-y-6">
             {/* Page Header & Navigation Bar */}
-            <header className="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-800">Accounts Receivable</h1>
-                    <p className="text-sm text-gray-500 mt-1">Authoritative A/R Ledger, SOA Reports, PDC Desk & Customer Wallet</p>
+                    <h1 className="text-3xl font-bold text-gray-800 dark:text-slate-100 tracking-tight">Accounts Receivable</h1>
+                    <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">Authoritative A/R Ledger, SOA Reports, PDC Desk & Customer Wallet</p>
                 </div>
                 <div className="flex items-center gap-3">
                     <button
                         onClick={handleRefresh}
                         disabled={overview.loading}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm transition-colors font-medium flex items-center gap-1.5"
+                        className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg disabled:opacity-50 text-sm transition-colors font-medium flex items-center gap-1.5 shadow-sm"
                     >
                         <Icon path={ICONS.refresh} className="w-4 h-4" /> Refresh
                     </button>
@@ -89,13 +89,13 @@ const AccountsReceivablePage = () => {
             </header>
 
             {/* Navigation Tabs */}
-            <div className="bg-white rounded-xl border border-gray-200 p-1.5 mb-6 flex flex-wrap gap-1 shadow-sm">
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-1.5 flex flex-wrap gap-1 shadow-card">
                 <button
                     onClick={() => setActiveTab('overview')}
                     className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 ${
                         activeTab === 'overview'
-                            ? 'bg-blue-600 text-white shadow-sm'
-                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                            ? 'bg-primary-600 text-white shadow-sm'
+                            : 'text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-100 hover:bg-gray-100 dark:hover:bg-slate-700/50'
                     }`}
                 >
                     Overview & Aging
@@ -107,8 +107,8 @@ const AccountsReceivablePage = () => {
                     onClick={() => setActiveTab('ledger_soa')}
                     className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 ${
                         activeTab === 'ledger_soa'
-                            ? 'bg-blue-600 text-white shadow-sm'
-                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                            ? 'bg-primary-600 text-white shadow-sm'
+                            : 'text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-100 hover:bg-gray-100 dark:hover:bg-slate-700/50'
                     }`}
                 >
                     Customer Ledger & SOA
@@ -120,8 +120,8 @@ const AccountsReceivablePage = () => {
                     onClick={() => setActiveTab('wallet')}
                     className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 ${
                         activeTab === 'wallet'
-                            ? 'bg-blue-600 text-white shadow-sm'
-                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                            ? 'bg-primary-600 text-white shadow-sm'
+                            : 'text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-100 hover:bg-gray-100 dark:hover:bg-slate-700/50'
                     }`}
                 >
                     Customer Wallet Management
@@ -132,34 +132,34 @@ const AccountsReceivablePage = () => {
             </div>
 
             {/* Date Range Picker (shared) */}
-            <div className="bg-white p-4 rounded-xl border border-gray-200 mb-6 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 shadow-card flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-2">
-                    <Icon path={ICONS.calendar} className="h-5 w-5 text-gray-500" />
-                    <span className="text-sm font-medium text-gray-700">Statement / Date Range:</span>
+                    <Icon path={ICONS.calendar} className="h-5 w-5 text-gray-500 dark:text-slate-400" />
+                    <span className="text-sm font-medium text-gray-700 dark:text-slate-200">Statement / Date Range:</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                     <div className="flex items-center gap-2">
-                        <label className="text-xs text-gray-600">From:</label>
+                        <label className="text-xs text-gray-600 dark:text-slate-400">From:</label>
                         <input
                             type="date"
                             value={dateRange.startDate.toISOString().split('T')[0]}
                             onChange={(e) => handleDateRangeChange({ ...dateRange, startDate: new Date(e.target.value) })}
-                            className="px-3 py-1.5 border border-gray-300 rounded-md text-sm"
+                            className="px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded-md text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
                         />
                     </div>
                     <div className="flex items-center gap-2">
-                        <label className="text-xs text-gray-600">To:</label>
+                        <label className="text-xs text-gray-600 dark:text-slate-400">To:</label>
                         <input
                             type="date"
                             value={dateRange.endDate.toISOString().split('T')[0]}
                             onChange={(e) => handleDateRangeChange({ ...dateRange, endDate: new Date(e.target.value) })}
-                            className="px-3 py-1.5 border border-gray-300 rounded-md text-sm"
+                            className="px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded-md text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
                         />
                     </div>
                     <DateRangeShortcuts onSelect={handleDatePreset} />
                     <button
                         onClick={() => handleDateRangeChange({ startDate: new Date('1970-01-01'), endDate: new Date() })}
-                        className="px-3 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-md"
+                        className="px-3 py-1.5 text-xs font-semibold text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-950/30 rounded-md transition-colors"
                     >
                         All Time
                     </button>

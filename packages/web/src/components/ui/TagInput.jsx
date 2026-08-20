@@ -53,13 +53,13 @@ const TagInput = ({ value, onChange }) => {
 
     return (
         <div className="relative">
-            <div className="w-full px-3 py-2 border border-gray-300 rounded-lg flex flex-wrap items-center gap-2">
+            <div className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 flex flex-wrap items-center gap-2">
                 {value.map((tag, index) => (
-                    <span key={index} className="bg-blue-100 text-blue-800 text-sm font-medium px-2.5 py-0.5 rounded-full flex items-center">
+                    <span key={index} className="bg-primary-100 dark:bg-primary-900/40 text-primary-800 dark:text-primary-300 text-sm font-medium px-2.5 py-0.5 rounded-full flex items-center">
                         {tag}
                         <button
                             type="button"
-                            className="ml-2 text-blue-600 hover:text-blue-800"
+                            className="ml-2 text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-200"
                             onClick={() => removeTag(tag)}
                         >
                             <Icon path={ICONS.cancel} className="h-3 w-3" />
@@ -71,17 +71,17 @@ const TagInput = ({ value, onChange }) => {
                     value={inputValue}
                     onChange={handleInputChange}
                     onKeyDown={handleKeyDown}
-                    className="flex-grow bg-transparent outline-none text-sm"
+                    className="flex-grow bg-transparent outline-none text-sm text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500"
                     placeholder="Add tags..."
                 />
             </div>
             {suggestions.length > 0 && (
-                <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg max-h-48 overflow-y-auto">
+                <ul className="absolute z-10 w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-md mt-1 shadow-lg max-h-48 overflow-y-auto">
                     {suggestions.map((suggestion, index) => (
                         <li
                             key={index}
                             onClick={() => addTag(suggestion)}
-                            className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm"
+                            className="px-4 py-2 hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer text-sm text-gray-800 dark:text-slate-200"
                         >
                             {suggestion}
                         </li>

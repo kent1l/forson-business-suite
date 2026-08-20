@@ -37,14 +37,14 @@ const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave,
                         return (
                             <div key={i} className="col-span-1">
                                 <div
-                                    className={`flex flex-col w-full h-full rounded-lg border shadow-sm transition-all duration-150 bg-white hover:bg-slate-50 hover:shadow-md cursor-pointer border-gray-200`}
+                                    className={`flex flex-col w-full h-full rounded-lg border shadow-sm transition-all duration-150 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:shadow-md cursor-pointer border-gray-200 dark:border-slate-700`}
                                     onClick={() => openCustomer && openCustomer()}
                                     role="button"
                                 >
                                     <div className="flex-1 flex flex-col items-center justify-center px-2 text-center">
-                                        <div className="mb-1 text-slate-600"><Icon path={ICONS.customers} className="h-8 w-8" /></div>
-                                        <span className="font-semibold text-sm truncate max-w-full">{selectedCustomer ? `${selectedCustomer.first_name} ${selectedCustomer.last_name || ''}` : 'Customer'}</span>
-                                        <span className="text-[11px] text-slate-500">{selectedCustomer ? 'Change' : 'Select customer'}</span>
+                                        <div className="mb-1 text-slate-600 dark:text-slate-300"><Icon path={ICONS.customers} className="h-8 w-8" /></div>
+                                        <span className="font-semibold text-sm truncate max-w-full text-gray-900 dark:text-slate-100">{selectedCustomer ? `${selectedCustomer.first_name} ${selectedCustomer.last_name || ''}` : 'Customer'}</span>
+                                        <span className="text-[11px] text-slate-500 dark:text-slate-400">{selectedCustomer ? 'Change' : 'Select customer'}</span>
                                     </div>
                                     <div className="h-8 w-full flex items-stretch">
                                         <div className="flex-1 border-t border-transparent rounded-b-lg" />
@@ -59,27 +59,27 @@ const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave,
                         return (
                             <div key={i} className="col-span-1 row-start-2">
                                 <div
-                                    className={`flex flex-col w-full h-full rounded-lg border shadow-sm transition-all duration-150 ${canSave ? 'bg-white hover:bg-slate-50 hover:shadow-md cursor-pointer border-blue-300' : 'bg-slate-50 cursor-not-allowed border-slate-200'}`}
+                                    className={`flex flex-col w-full h-full rounded-lg border shadow-sm transition-all duration-150 ${canSave ? 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:shadow-md cursor-pointer border-primary-300 dark:border-primary-700' : 'bg-slate-50 dark:bg-slate-900/50 cursor-not-allowed border-slate-200 dark:border-slate-800'}`}
                                     onClick={() => canSave && handleSaveSale()}
                                     aria-disabled={!canSave}
                                     role="button"
                                 >
                                     <div className={`flex-1 relative px-2 py-2 flex flex-col items-center justify-center text-center overflow-hidden ${!canSave ? 'opacity-55' : ''}`}>
                                         {savedCount > 0 && (
-                                            <span className="absolute top-1.5 right-1.5 bg-indigo-600 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none">{savedCount}</span>
+                                            <span className="absolute top-1.5 right-1.5 bg-primary-600 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none">{savedCount}</span>
                                         )}
                                         <div className={`flex flex-col items-center transition-transform duration-300 ease-out ${savedCount > 0 ? '-translate-y-2' : 'translate-y-0'}`}>
-                                            <div className={`${lines.length ? 'text-indigo-600' : 'text-slate-300'} mb-1`}>
+                                            <div className={`${lines.length ? 'text-primary-600 dark:text-primary-400' : 'text-slate-300 dark:text-slate-600'} mb-1`}>
                                                 <Icon path={ICONS.bookmark} className="h-10 w-10" />
                                             </div>
-                                            <span className="font-semibold text-sm flex items-center gap-1">
+                                            <span className="font-semibold text-sm flex items-center gap-1 text-gray-900 dark:text-slate-100">
                                                 Save Sale
                                                 <InfoTip label="Save Sale">
                                                     Saved sales live only in this browser (not synced to other tills or devices), capped at the 10 most recent — the oldest is dropped once you go over.
                                                 </InfoTip>
                                             </span>
-                                            <span className="text-[11px] text-slate-500">For later</span>
-                                            <span className="mt-1 text-[9px] font-mono uppercase tracking-wide text-slate-400">Alt+S</span>
+                                            <span className="text-[11px] text-slate-500 dark:text-slate-400">For later</span>
+                                            <span className="mt-1 text-[9px] font-mono uppercase tracking-wide text-slate-400 dark:text-slate-500">Alt+S</span>
                                         </div>
                                     </div>
                                     <div className="h-8 w-full flex items-stretch">
@@ -87,7 +87,7 @@ const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave,
                                             <button
                                                 type="button"
                                                 onClick={(e) => { e.stopPropagation(); setShowSaved(true); }}
-                                                className="flex-1 border-t border-slate-200 text-[11px] font-medium text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 flex items-center justify-center rounded-b-lg transition-colors"
+                                                className="flex-1 border-t border-slate-200 dark:border-slate-700 text-[11px] font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 hover:bg-primary-50 dark:hover:bg-primary-950/30 flex items-center justify-center rounded-b-lg transition-colors"
                                             >
                                                 <Icon path={ICONS.bookmark} className="h-3.5 w-3.5 mr-1" /> View Saved ({savedCount})
                                             </button>
@@ -105,21 +105,21 @@ const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave,
                         return (
                             <div key={i} className="col-span-1 row-start-2">
                                 <div
-                                    className={`flex flex-col w-full h-full rounded-lg border shadow-sm transition-all duration-150 ${canVoid ? 'bg-white hover:bg-slate-50 hover:shadow-md cursor-pointer border-red-300' : 'bg-slate-50 border-slate-200 opacity-60'}`}
+                                    className={`flex flex-col w-full h-full rounded-lg border shadow-sm transition-all duration-150 ${canVoid ? 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:shadow-md cursor-pointer border-danger-300 dark:border-danger-800' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 opacity-60'}`}
                                     onClick={() => canVoid && handleVoid()}
                                     aria-disabled={!canVoid}
                                     role="button"
                                 >
                                     <div className={`flex-1 flex flex-col items-center justify-center px-2 text-center relative ${!canVoid ? 'opacity-55' : ''}`}>
-                                        <div className={`${canVoid ? 'text-red-600' : 'text-slate-300'} mb-1`}>
+                                        <div className={`${canVoid ? 'text-danger-600 dark:text-danger-400' : 'text-slate-300 dark:text-slate-600'} mb-1`}>
                                             <Icon path={ICONS.close} className="h-9 w-9" />
                                         </div>
-                                        <span className="font-semibold text-sm">Void Transaction</span>
-                                        <span className="text-[11px] text-slate-500">Clear cart</span>
-                                        <span className="mt-1 text-[9px] font-mono uppercase tracking-wide text-slate-400">Alt+X</span>
+                                        <span className="font-semibold text-sm text-gray-900 dark:text-slate-100">Void Transaction</span>
+                                        <span className="text-[11px] text-slate-500 dark:text-slate-400">Clear cart</span>
+                                        <span className="mt-1 text-[9px] font-mono uppercase tracking-wide text-slate-400 dark:text-slate-500">Alt+X</span>
                                     </div>
                                     <div className="h-8 w-full flex items-stretch">
-                                        <div className="flex-1 border-t border-transparent rounded-b-lg flex items-center justify-center text-[11px] text-red-600 font-medium">&nbsp;</div>
+                                        <div className="flex-1 border-t border-transparent rounded-b-lg flex items-center justify-center text-[11px] text-danger-600 font-medium">&nbsp;</div>
                                     </div>
                                 </div>
                             </div>
@@ -130,27 +130,27 @@ const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave,
                         return (
                             <div key={i} className="col-span-1 row-start-2">
                                 <div
-                                    className={`flex flex-col w-full h-full rounded-lg border shadow-sm transition-all duration-150 ${canVoid ? 'bg-white hover:bg-slate-50 hover:shadow-md cursor-pointer border-indigo-300' : 'bg-slate-50 border-slate-200 opacity-60'}`}
+                                    className={`flex flex-col w-full h-full rounded-lg border shadow-sm transition-all duration-150 ${canVoid ? 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:shadow-md cursor-pointer border-primary-300 dark:border-primary-700' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 opacity-60'}`}
                                     onClick={() => canVoid && handleConvertToInvoice && handleConvertToInvoice()}
                                     aria-disabled={!canVoid}
                                     role="button"
                                 >
                                     <div className={`flex-1 flex flex-col items-center justify-center px-2 text-center relative ${!canVoid ? 'opacity-55' : ''}`}>
-                                        <div className={`${canVoid ? 'text-indigo-600' : 'text-slate-300'} mb-1`}>
+                                        <div className={`${canVoid ? 'text-primary-600 dark:text-primary-400' : 'text-slate-300 dark:text-slate-600'} mb-1`}>
                                             <Icon path={ICONS.invoice} className="h-9 w-9" />
                                         </div>
-                                        <span className="font-semibold text-sm">Convert to Invoice</span>
-                                        <span className="text-[11px] text-slate-500">Send to Invoicing</span>
+                                        <span className="font-semibold text-sm text-gray-900 dark:text-slate-100">Convert to Invoice</span>
+                                        <span className="text-[11px] text-slate-500 dark:text-slate-400">Send to Invoicing</span>
                                     </div>
                                     <div className="h-8 w-full flex items-stretch">
-                                        <div className="flex-1 border-t border-transparent rounded-b-lg flex items-center justify-center text-[11px] text-indigo-600 font-medium">&nbsp;</div>
+                                        <div className="flex-1 border-t border-transparent rounded-b-lg flex items-center justify-center text-[11px] text-primary-600 font-medium">&nbsp;</div>
                                     </div>
                                 </div>
                             </div>
                         );
                     }
 
-                    return <div key={i} className="rounded-lg border border-dashed border-gray-200" />;
+                    return <div key={i} className="rounded-lg border border-dashed border-gray-200 dark:border-slate-700/60 bg-white/40 dark:bg-slate-800/20" />;
                 })}
             </div>
         </div>
@@ -995,17 +995,17 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                                 ref={searchInputRef}
                             />
                             {searchResults.length > 0 && (
-                                <ul id="pos-search-results" className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto scrollbar-thin" role="listbox">
+                                <ul id="pos-search-results" className="absolute z-10 w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto scrollbar-thin" role="listbox">
                                     {searchResults.map((part, index) => {
                                         const itemProps = getItemProps(index);
                                         return (
-                                            <li key={part.part_id} {...itemProps} className={`px-4 py-3 cursor-pointer ${itemProps['aria-selected'] ? 'bg-blue-100' : 'hover:bg-blue-50'}`}>
+                                            <li key={part.part_id} {...itemProps} className={`px-4 py-3 cursor-pointer transition-colors ${itemProps['aria-selected'] ? 'bg-primary-50 dark:bg-primary-900/40' : 'hover:bg-gray-50 dark:hover:bg-slate-700/50'}`}>
                                                 <div className="flex items-baseline justify-between">
                                                     <div className="flex items-baseline space-x-2 flex-1 min-w-0">
-                                                        <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
-                                                        {part.applications && <div className="text-xs text-gray-500 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
+                                                        <div className="text-sm font-medium text-gray-800 dark:text-slate-100 truncate">{part.display_name}</div>
+                                                        {part.applications && <div className="text-xs text-gray-500 dark:text-slate-400 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
                                                     </div>
-                                                    <div className="text-sm font-semibold text-gray-700 ml-2">
+                                                    <div className="text-sm font-semibold text-gray-700 dark:text-slate-300 ml-2">
                                                         {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
                                                     </div>
                                                 </div>
@@ -1015,7 +1015,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                                 </ul>
                             )}
                         </div>
-                        <button onClick={() => setIsNewPartModalOpen(true)} className="bg-blue-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-700 transition whitespace-nowrap">
+                        <button onClick={() => setIsNewPartModalOpen(true)} className="bg-primary-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-primary-700 transition whitespace-nowrap">
                             New Part
                         </button>
                     </div>
@@ -1025,23 +1025,23 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                             onClick={() => handleTriggerPayMethod('cash')}
                             disabled={lines.length === 0}
                             className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition shadow-sm ${lines.length > 0
-                                ? 'bg-white hover:bg-slate-50 border-gray-200 text-slate-700 cursor-pointer'
-                                : 'bg-slate-50 border-gray-200 text-slate-400 cursor-not-allowed'
+                                ? 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border-gray-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer'
+                                : 'bg-slate-50 dark:bg-slate-900/50 border-gray-200 dark:border-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed'
                                 }`}
                         >
-                            <span className={`w-1.5 h-1.5 rounded-full ${lines.length > 0 ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
-                            Cash <kbd className="px-1 py-0.2 text-[9px] bg-slate-100 rounded text-slate-500 font-mono border border-slate-200">Alt+1</kbd>
+                            <span className={`w-1.5 h-1.5 rounded-full ${lines.length > 0 ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`}></span>
+                            Cash <kbd className="px-1 py-0.2 text-[9px] bg-slate-100 dark:bg-slate-900 rounded text-slate-500 dark:text-slate-400 font-mono border border-slate-200 dark:border-slate-700">Alt+1</kbd>
                         </button>
                         <button
                             onClick={() => handleTriggerPayMethod('split')}
                             disabled={lines.length === 0}
                             className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition shadow-sm ${lines.length > 0
-                                ? 'bg-white hover:bg-slate-50 border-gray-200 text-slate-700 cursor-pointer'
-                                : 'bg-slate-50 border-gray-200 text-slate-400 cursor-not-allowed'
+                                ? 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border-gray-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer'
+                                : 'bg-slate-50 dark:bg-slate-900/50 border-gray-200 dark:border-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed'
                                 }`}
                         >
-                            <span className={`w-1.5 h-1.5 rounded-full ${lines.length > 0 ? 'bg-indigo-500' : 'bg-slate-300'}`}></span>
-                            Split Payment <kbd className="px-1 py-0.2 text-[9px] bg-slate-100 rounded text-slate-500 font-mono border border-slate-200">Alt+2</kbd>
+                            <span className={`w-1.5 h-1.5 rounded-full ${lines.length > 0 ? 'bg-primary-500' : 'bg-slate-300 dark:bg-slate-600'}`}></span>
+                            Split Payment <kbd className="px-1 py-0.2 text-[9px] bg-slate-100 dark:bg-slate-900 rounded text-slate-500 dark:text-slate-400 font-mono border border-slate-200 dark:border-slate-700">Alt+2</kbd>
                         </button>
                     </div>
                 </div>
@@ -1060,28 +1060,28 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                             handleConvertToInvoice={handleConvertToInvoice}
                         />
                     </div>
-                    <div className="w-full md:w-1/3 bg-white rounded-xl border border-gray-200 flex flex-col order-1 md:order-2">
-                        <div className="p-4 border-b">
+                    <div className="w-full md:w-1/3 bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 flex flex-col order-1 md:order-2 shadow-card">
+                        <div className="p-4 border-b border-gray-200 dark:border-slate-700">
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="flex flex-col">
-                                    <div className="font-semibold text-sm mb-2 whitespace-nowrap flex items-center gap-1">
+                                    <div className="font-semibold text-sm mb-2 whitespace-nowrap flex items-center gap-1 text-gray-900 dark:text-slate-100">
                                         Physical Receipt No:
                                         <InfoTip label="Physical Receipt No.">
                                             Auto-normalized to LETTERS-DIGITS format when you leave the field (e.g. "si 1234" becomes "SI-1234"). Whether it's required before you can pay depends on a store setting.
                                         </InfoTip>
                                     </div>
-                                    <div className="p-2 bg-gray-50 rounded-lg">
-                                        <input ref={physicalReceiptRef} value={physicalReceiptInput} onChange={(e) => setPhysicalReceiptInput(e.target.value)} onBlur={() => setPhysicalReceiptInput(normalizePhysicalReceipt(physicalReceiptInput))} placeholder="Enter receipt no (Ctrl+P)" className="w-full px-3 py-2 border rounded-md text-sm" />
+                                    <div className="p-2 bg-gray-50 dark:bg-slate-900/50 rounded-lg border border-gray-200 dark:border-slate-700">
+                                        <input ref={physicalReceiptRef} value={physicalReceiptInput} onChange={(e) => setPhysicalReceiptInput(e.target.value)} onBlur={() => setPhysicalReceiptInput(normalizePhysicalReceipt(physicalReceiptInput))} placeholder="Enter receipt no (Ctrl+P)" className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
                                     </div>
                                 </div>
                                 <div className="flex flex-col">
-                                    <div className="font-semibold text-sm mb-2 whitespace-nowrap flex items-center gap-1">
+                                    <div className="font-semibold text-sm mb-2 whitespace-nowrap flex items-center gap-1 text-gray-900 dark:text-slate-100">
                                         Tax Rate:
                                         <InfoTip label="Tax Rate">
                                             This is a fallback/override rate for lines whose part doesn't already carry its own tax rate — most parts have a rate wired in already.
                                         </InfoTip>
                                     </div>
-                                    <div className="p-2 bg-gray-50 rounded-lg">
+                                    <div className="p-2 bg-gray-50 dark:bg-slate-900/50 rounded-lg border border-gray-200 dark:border-slate-700">
                                         <select
                                             value={selectedTaxRate?.tax_rate_id || ''}
                                             onChange={(e) => {
@@ -1089,7 +1089,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                                                 const rate = taxRates.find(r => r.tax_rate_id === parseInt(rateId));
                                                 setSelectedTaxRate(rate || null);
                                             }}
-                                            className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                            className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md text-sm bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
                                         >
                                             <option value="">Select tax rate...</option>
                                             {taxRates.map(rate => (
@@ -1105,41 +1105,41 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                         </div>
                         <div className="flex-1 p-4 overflow-y-auto">
                             {lines.map(line => (
-                                <div key={line.part_id} className="flex items-start mb-4">
+                                <div key={line.part_id} className="flex items-start mb-4 border-b border-gray-100 dark:border-slate-700/60 pb-3">
                                     <div className="flex-grow">
-                                        <p className="text-sm font-medium">{line.display_name}</p>
+                                        <p className="text-sm font-medium text-gray-900 dark:text-slate-100">{line.display_name}</p>
                                         <div className="flex items-center mt-1">
-                                            <input type="number" value={line.quantity} onChange={(e) => handleLineChange(line.part_id, 'quantity', e.target.value)} className="w-16 px-2 py-1 border rounded-md text-sm" />
-                                            <span className="mx-2 text-sm text-gray-500">x</span>
-                                            <input type="number" step="0.01" value={line.sale_price} onChange={(e) => handleLineChange(line.part_id, 'sale_price', e.target.value)} className="w-24 px-2 py-1 border rounded-md text-sm" />
+                                            <input type="number" value={line.quantity} onChange={(e) => handleLineChange(line.part_id, 'quantity', e.target.value)} className="w-16 px-2 py-1 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500" />
+                                            <span className="mx-2 text-sm text-gray-500 dark:text-slate-400">x</span>
+                                            <input type="number" step="0.01" value={line.sale_price} onChange={(e) => handleLineChange(line.part_id, 'sale_price', e.target.value)} className="w-24 px-2 py-1 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500" />
                                         </div>
                                     </div>
-                                    <p className="text-sm font-semibold pt-1">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{(line.quantity * line.sale_price).toFixed(2)}</p>
-                                    <button onClick={() => removeLine(line.part_id)} className="ml-3 text-red-500 hover:text-red-700 pt-1"><Icon path={ICONS.close} className="h-5 w-5" /></button>
+                                    <p className="text-sm font-semibold pt-1 text-gray-900 dark:text-slate-100">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{(line.quantity * line.sale_price).toFixed(2)}</p>
+                                    <button onClick={() => removeLine(line.part_id)} className="ml-3 text-danger-500 hover:text-danger-700 dark:text-danger-400 dark:hover:text-danger-300 pt-1"><Icon path={ICONS.close} className="h-5 w-5" /></button>
                                 </div>
                             ))}
-                            {lines.length === 0 && <p className="text-sm text-gray-500 text-center py-8">No items in cart.</p>}
+                            {lines.length === 0 && <p className="text-sm text-gray-500 dark:text-slate-400 text-center py-8">No items in cart.</p>}
                         </div>
-                        <div className="p-4 border-t space-y-2">
+                        <div className="p-4 border-t border-gray-200 dark:border-slate-700 space-y-2">
                             {/* When there are tax-inclusive items we show both gross entered total and net ex-tax base for clarity */}
                             {hasInclusive && (
-                                <div className="flex justify-between text-xs text-slate-500">
+                                <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
                                     <span>Items Total (Entered)</span>
                                     <span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{grossSubtotal.toFixed(2)}</span>
                                 </div>
                             )}
-                            <div className="flex justify-between text-sm" title={hasInclusive ? 'Net subtotal (exclusive of tax extracted from inclusive line prices)' : 'Sum of line totals before tax'}>
+                            <div className="flex justify-between text-sm text-gray-700 dark:text-slate-300" title={hasInclusive ? 'Net subtotal (exclusive of tax extracted from inclusive line prices)' : 'Sum of line totals before tax'}>
                                 <span>{hasInclusive ? 'Net Subtotal (Ex Tax)' : 'Subtotal'}</span>
                                 <span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{subtotal.toFixed(2)}</span>
                             </div>
-                            <div className="flex justify-between text-sm"><span>Tax</span><span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{tax.toFixed(2)}</span></div>
-                            <div className="flex justify-between font-bold text-lg"><span>Total</span><span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{total.toFixed(2)}</span></div>
+                            <div className="flex justify-between text-sm text-gray-700 dark:text-slate-300"><span>Tax</span><span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{tax.toFixed(2)}</span></div>
+                            <div className="flex justify-between font-bold text-lg text-gray-900 dark:text-slate-50"><span>Total</span><span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{total.toFixed(2)}</span></div>
                             {anomaly && (
-                                <div className="mt-2 p-2 rounded bg-amber-50 border border-amber-200 text-[11px] text-amber-700 leading-snug">
+                                <div className="mt-2 p-2 rounded bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-[11px] text-amber-800 dark:text-amber-300 leading-snug">
                                     <strong>Tax Anomaly:</strong> {anomaly.type === 'HIGH_EFFECTIVE_RATE' && `Effective tax rate ${(anomaly.effectiveRate * 100).toFixed(2)}%`} {anomaly.type === 'RECOMPOSE_MISMATCH' && 'Mismatch between entered and recomposed totals.'}
                                 </div>
                             )}
-                            <button onClick={handleCheckout} className="w-full mt-4 bg-green-600 text-white py-3 rounded-lg font-semibold text-lg hover:bg-green-700 transition">Checkout (Ctrl+Enter)</button>
+                            <button onClick={handleCheckout} className="w-full mt-4 bg-primary-600 text-white py-3 rounded-lg font-semibold text-lg hover:bg-primary-700 transition">Checkout (Ctrl+Enter)</button>
                         </div>
                     </div>
                 </div>
@@ -1172,7 +1172,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                             setIsCustomerModalOpen(false);
                             setIsNewCustomerModalOpen(true);
                         }}
-                        className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition"
+                        className="w-full bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition"
                     >
                         Add New Customer
                     </button>
@@ -1211,10 +1211,10 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
             {/* Void confirmation modal (centered, styled like system) */}
             <Modal isOpen={isVoidConfirmOpen} onClose={() => setIsVoidConfirmOpen(false)} title="Confirm Void" centered>
                 <div className="py-4">
-                    <p className="text-sm text-slate-700">Void current transaction? This will clear the cart.</p>
+                    <p className="text-sm text-gray-700 dark:text-slate-300">Void current transaction? This will clear the cart.</p>
                     <div className="mt-6 flex justify-end space-x-3">
-                        <button onClick={() => setIsVoidConfirmOpen(false)} className="px-4 py-2 bg-gray-100 rounded-md">Cancel</button>
-                        <button onClick={performVoid} className="px-4 py-2 bg-red-600 text-white rounded-md">Void Transaction</button>
+                        <button onClick={() => setIsVoidConfirmOpen(false)} className="px-4 py-2 bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-slate-200 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-md transition">Cancel</button>
+                        <button onClick={performVoid} className="px-4 py-2 bg-danger-600 text-white hover:bg-danger-700 rounded-md transition">Void Transaction</button>
                     </div>
                 </div>
             </Modal>
@@ -1228,14 +1228,14 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
             >
                 <div className="space-y-5" role="dialog" aria-describedby="receipt-missing-desc">
                     <div className="flex items-start gap-4">
-                        <div className="h-10 w-10 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center">
+                        <div className="h-10 w-10 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
                             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M12 9v4" />
                                 <path d="M12 17h.01" />
                                 <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
                             </svg>
                         </div>
-                        <p id="receipt-missing-desc" className="text-sm text-slate-600 leading-relaxed">
+                        <p id="receipt-missing-desc" className="text-sm text-gray-600 dark:text-slate-300 leading-relaxed">
                             You can finish this sale now and optionally add a physical receipt number later. Continue?
                         </p>
                     </div>
@@ -1243,14 +1243,14 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                         <button
                             type="button"
                             onClick={handleCancelReceiptDialog}
-                            className="px-3 py-2 text-sm font-medium rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-400"
+                            className="px-3 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-400 transition"
                         >
                             Cancel
                         </button>
                         <button
                             type="button"
                             onClick={handleConfirmReceiptDialog}
-                            className="px-3 py-2 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500"
+                            className="px-3 py-2 text-sm font-medium rounded-md bg-primary-600 text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-primary-500 transition"
                         >
                             Proceed
                         </button>

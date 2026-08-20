@@ -521,19 +521,19 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
     }, [manualSearchQuery, selectionMode]);
 
     return (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="space-y-6 max-w-7xl mx-auto">
             {/* Header */}
-            <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-6 shadow-card">
                 <div className="flex justify-between items-center">
                     <div>
-                        <h1 className="text-2xl font-bold text-gray-900">Parts Cleanup</h1>
-                        <p className="text-gray-600 mt-1">
+                        <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">Parts Cleanup</h1>
+                        <p className="text-gray-600 dark:text-slate-400 mt-1">
                             Merge duplicate parts to clean up your database. This operation cannot be easily undone.
                         </p>
                     </div>
                     <button
                         onClick={() => onNavigate('parts')}
-                        className="text-gray-600 hover:text-gray-800 flex items-center space-x-2"
+                        className="text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-100 flex items-center space-x-2 px-3 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
                     >
                         <Icon path={ICONS.x} className="h-5 w-5" />
                         <span>Cancel</span>
@@ -542,7 +542,7 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
             </div>
 
             {/* Step Indicator */}
-            <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-6 shadow-card">
                 <div className="flex items-center justify-between">
                     {Object.entries(STEP_TITLES).map(([stepValue, stepTitle], index) => {
                         const isActive = currentStep === stepValue;
@@ -554,21 +554,21 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
                                 <div className={`
                                     flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold
                                     ${isActive 
-                                        ? 'bg-blue-600 text-white' 
+                                        ? 'bg-primary-600 text-white shadow-xs' 
                                         : isCompleted 
-                                            ? 'bg-green-600 text-white' 
-                                            : 'bg-gray-200 text-gray-600'
+                                            ? 'bg-success-600 text-white shadow-xs' 
+                                            : 'bg-gray-200 dark:bg-slate-700 text-gray-600 dark:text-slate-300'
                                     }
                                 `}>
                                     {isCompleted ? '✓' : stepNumber}
                                 </div>
                                 <div className="ml-3">
-                                    <div className={`text-sm font-medium ${isActive ? 'text-blue-600' : 'text-gray-900'}`}>
+                                    <div className={`text-sm font-medium ${isActive ? 'text-primary-600 dark:text-primary-400' : 'text-gray-900 dark:text-slate-200'}`}>
                                         {stepTitle}
                                     </div>
                                 </div>
                                 {index < Object.keys(STEP_TITLES).length - 1 && (
-                                    <div className={`flex-1 h-0.5 mx-4 ${isCompleted ? 'bg-green-600' : 'bg-gray-200'}`} />
+                                    <div className={`flex-1 h-0.5 mx-4 ${isCompleted ? 'bg-success-600' : 'bg-gray-200 dark:bg-slate-700'}`} />
                                 )}
                             </div>
                         );
@@ -577,17 +577,17 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
             </div>
 
             {/* Step Content */}
-            <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-6 shadow-card">
                 {currentStep === STEPS.FIND_DUPLICATES && (
-                    <div className="mb-6 border-b border-gray-200 pb-4">
-                        <div className="inline-flex rounded-lg bg-gray-100 p-1">
+                    <div className="mb-6 border-b border-gray-200 dark:border-slate-700 pb-4">
+                        <div className="inline-flex rounded-lg bg-gray-100 dark:bg-slate-900 p-1">
                             <button
                                 type="button"
                                 onClick={() => setSelectionMode(SELECTION_MODES.AUTOMATIC)}
-                                className={`px-4 py-2 text-sm font-medium rounded-md ${
+                                className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
                                     selectionMode === SELECTION_MODES.AUTOMATIC
-                                        ? 'bg-white text-blue-700 shadow'
-                                        : 'text-gray-700 hover:text-gray-900'
+                                        ? 'bg-white dark:bg-slate-800 text-primary-700 dark:text-primary-300 shadow-xs'
+                                        : 'text-gray-700 dark:text-slate-300 hover:text-gray-900 dark:hover:text-slate-100'
                                 }`}
                             >
                                 Automatic Scan
@@ -599,10 +599,10 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
                                     setHasStartedSearch(false);
                                     setSelectedDuplicateGroups([]);
                                 }}
-                                className={`px-4 py-2 text-sm font-medium rounded-md ${
+                                className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
                                     selectionMode === SELECTION_MODES.MANUAL
-                                        ? 'bg-white text-blue-700 shadow'
-                                        : 'text-gray-700 hover:text-gray-900'
+                                        ? 'bg-white dark:bg-slate-800 text-primary-700 dark:text-primary-300 shadow-xs'
+                                        : 'text-gray-700 dark:text-slate-300 hover:text-gray-900 dark:hover:text-slate-100'
                                 }`}
                             >
                                 Manual Selection
@@ -614,16 +614,16 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
             </div>
 
             {/* Navigation (Sticky Floating Footer) */}
-            <div className="sticky bottom-4 z-50 bg-white rounded-lg border border-gray-200 p-4 shadow-[0_-4px_10px_rgba(0,0,0,0.05)] mt-8">
+            <div className="sticky bottom-4 z-40 bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-4 shadow-lg">
                 <div className="flex justify-between items-center">
                     <button
                         onClick={goPrevious}
                         disabled={!canGoPrevious()}
                         className={`
-                            px-4 py-2 rounded-lg font-semibold flex items-center space-x-2
+                            px-4 py-2 rounded-lg font-semibold flex items-center space-x-2 text-sm transition-colors
                             ${canGoPrevious() 
-                                ? 'text-gray-700 bg-gray-100 hover:bg-gray-200' 
-                                : 'text-gray-400 bg-gray-50 cursor-not-allowed'
+                                ? 'text-gray-700 dark:text-slate-200 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600' 
+                                : 'text-gray-400 dark:text-slate-500 bg-gray-50 dark:bg-slate-900 cursor-not-allowed opacity-50'
                             }
                         `}
                     >
@@ -631,7 +631,7 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
                         <span>Previous</span>
                     </button>
 
-                    <div className="text-sm text-gray-500">
+                    <div className="text-sm text-gray-500 dark:text-slate-400">
                         Step {getStepNumber(currentStep)} of {Object.keys(STEPS).length}
                     </div>
 
@@ -640,10 +640,10 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
                             onClick={goNext}
                             disabled={!canGoNext() || loading}
                             className={`
-                                px-4 py-2 rounded-lg font-semibold flex items-center space-x-2
+                                px-4 py-2 rounded-lg font-semibold flex items-center space-x-2 text-sm transition-colors
                                 ${canGoNext() && !loading
-                                    ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                    ? 'bg-primary-600 text-white hover:bg-primary-700 shadow-xs' 
+                                    : 'bg-gray-200 dark:bg-slate-700 text-gray-400 dark:text-slate-500 cursor-not-allowed opacity-50'
                                 }
                             `}
                         >
@@ -651,7 +651,7 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
                             <Icon path={ICONS.chevronRight} className="h-4 w-4" />
                         </button>
                     ) : (
-                        <div className="text-sm text-gray-500">
+                        <div className="text-sm text-gray-500 dark:text-slate-400">
                             Use the confirmation button above to proceed
                         </div>
                     )}

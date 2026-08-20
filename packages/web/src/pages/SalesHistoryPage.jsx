@@ -20,19 +20,19 @@ import { toZonedTime } from 'date-fns-tz';
 const getStatusBadge = (status) => {
     switch (status) {
         case 'Paid':
-            return 'bg-green-100 text-green-800';
+            return 'bg-success-100 dark:bg-success-900/30 text-success-800 dark:text-success-400';
         case 'Partially Refunded':
-            return 'bg-yellow-100 text-yellow-800';
+            return 'bg-warning-100 dark:bg-warning-900/30 text-warning-800 dark:text-warning-400';
         case 'Fully Refunded':
-            return 'bg-red-100 text-red-800';
+            return 'bg-danger-100 dark:bg-danger-900/30 text-danger-800 dark:text-danger-400';
         case 'Unpaid':
-            return 'bg-gray-100 text-gray-800';
+            return 'bg-neutral-100 dark:bg-slate-700 text-neutral-800 dark:text-slate-300';
         case 'Partially Paid':
-            return 'bg-blue-100 text-blue-800';
+            return 'bg-primary-100 dark:bg-primary-900/30 text-primary-800 dark:text-primary-400';
         case 'Cancelled':
-            return 'bg-slate-200 text-slate-500 line-through';
+            return 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-500 line-through';
         default:
-            return 'bg-gray-100 text-gray-800';
+            return 'bg-neutral-100 dark:bg-slate-700 text-neutral-800 dark:text-slate-300';
     }
 };
 
@@ -454,26 +454,26 @@ const SalesHistoryPage = () => {
 
     return (
         <div>
-            <h1 className="text-2xl font-semibold text-gray-800 mb-6">Sales History</h1>
+            <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100 mb-6">Sales History</h1>
 
-            <div className="bg-white p-6 rounded-xl border border-gray-200 mb-6">
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-card mb-6">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-                        <input type="date" name="startDate" value={dates.startDate} onChange={handleDateChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Start Date</label>
+                        <input type="date" name="startDate" value={dates.startDate} onChange={handleDateChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500" />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-                        <input type="date" name="endDate" value={dates.endDate} onChange={handleDateChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">End Date</label>
+                        <input type="date" name="endDate" value={dates.endDate} onChange={handleDateChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500" />
                     </div>
                     <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Search</label>
                         <input
                             type="text"
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
                             placeholder="Search invoice #, physical receipt no., customer, or item..."
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
                         />
                     </div>
                     <div className="md:col-span-3">
@@ -483,9 +483,9 @@ const SalesHistoryPage = () => {
             </div>
 
             {/* Sales statistics for selected date range */}
-            <div className="bg-white p-4 rounded-xl border border-gray-200 mb-6">
+            <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 shadow-card mb-6">
                 <div className="flex items-center justify-between">
-                    <h2 className="text-lg font-medium text-gray-700">Summary</h2>
+                    <h2 className="text-lg font-medium text-gray-700 dark:text-slate-200">Summary</h2>
                     <button
                         type="button"
                         onClick={() => {
@@ -495,7 +495,7 @@ const SalesHistoryPage = () => {
                                 return next;
                             });
                         }}
-                        className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-800"
+                        className="flex items-center space-x-2 text-sm text-gray-600 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 transition-colors"
                         aria-expanded={!summaryCollapsed}
                     >
                         <span>{summaryCollapsed ? 'Show' : 'Hide'}</span>
@@ -506,25 +506,25 @@ const SalesHistoryPage = () => {
                 </div>
                 {/* Compact view shows when collapsed */}
                 <div className={`mt-3 grid grid-cols-2 sm:grid-cols-5 gap-3 items-stretch ${summaryCollapsed ? '' : 'hidden'}`}>
-                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Net Sales = Gross - Refunds (excluding VAT, excludes Cancelled)">
-                        <div className="text-[11px] text-gray-500">Net Sales (Excl. VAT)</div>
-                        <div className="text-sm font-semibold text-gray-800 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.netSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    <div className="h-full p-2 bg-white dark:bg-slate-900/50 rounded-lg border border-gray-100 dark:border-slate-700 shadow-sm flex flex-col justify-between" title="Net Sales = Gross - Refunds (excluding VAT, excludes Cancelled)">
+                        <div className="text-[11px] text-gray-500 dark:text-slate-400">Net Sales (Excl. VAT)</div>
+                        <div className="text-sm font-semibold text-gray-800 dark:text-slate-100 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.netSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
-                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Amount Collected (including VAT, capped at net invoice amount)">
-                        <div className="text-[11px] text-gray-500">Collected (Incl. VAT)</div>
-                        <div className="text-sm font-semibold text-green-600 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.amountCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    <div className="h-full p-2 bg-white dark:bg-slate-900/50 rounded-lg border border-gray-100 dark:border-slate-700 shadow-sm flex flex-col justify-between" title="Amount Collected (including VAT, capped at net invoice amount)">
+                        <div className="text-[11px] text-gray-500 dark:text-slate-400">Collected (Incl. VAT)</div>
+                        <div className="text-sm font-semibold text-success-600 dark:text-success-400 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.amountCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
-                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Expected Register Cash = Cash Net (Tendered - Change) - Cash Refunds (Approx.)">
-                        <div className="text-[11px] text-gray-500">Expected Net Cash (Drawer)</div>
-                        <div className="text-sm font-semibold text-gray-800 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.expectedNetCashDrawer.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    <div className="h-full p-2 bg-white dark:bg-slate-900/50 rounded-lg border border-gray-100 dark:border-slate-700 shadow-sm flex flex-col justify-between" title="Expected Register Cash = Cash Net (Tendered - Change) - Cash Refunds (Approx.)">
+                        <div className="text-[11px] text-gray-500 dark:text-slate-400">Expected Net Cash (Drawer)</div>
+                        <div className="text-sm font-semibold text-gray-800 dark:text-slate-100 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.expectedNetCashDrawer.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
-                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Collection Rate = Collected / Total Net Invoiced (including VAT)">
-                        <div className="text-[11px] text-gray-500">Collection Rate</div>
-                        <div className="text-sm font-semibold text-gray-800">{(stats.collectionRate * 100).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%</div>
+                    <div className="h-full p-2 bg-white dark:bg-slate-900/50 rounded-lg border border-gray-100 dark:border-slate-700 shadow-sm flex flex-col justify-between" title="Collection Rate = Collected / Total Net Invoiced (including VAT)">
+                        <div className="text-[11px] text-gray-500 dark:text-slate-400">Collection Rate</div>
+                        <div className="text-sm font-semibold text-gray-800 dark:text-slate-100">{(stats.collectionRate * 100).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%</div>
                     </div>
-                    <div className="h-full p-2 bg-white rounded-lg border border-gray-100 shadow-sm flex flex-col justify-between" title="Outstanding A/R = Sum of unpaid balances due (including VAT)">
-                        <div className="text-[11px] text-gray-500">A/R Outstanding</div>
-                        <div className="text-sm font-semibold text-red-600 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.arOutstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    <div className="h-full p-2 bg-white dark:bg-slate-900/50 rounded-lg border border-gray-100 dark:border-slate-700 shadow-sm flex flex-col justify-between" title="Outstanding A/R = Sum of unpaid balances due (including VAT)">
+                        <div className="text-[11px] text-gray-500 dark:text-slate-400">A/R Outstanding</div>
+                        <div className="text-sm font-semibold text-danger-600 dark:text-danger-400 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.arOutstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
                 </div>
 
@@ -537,20 +537,19 @@ const SalesHistoryPage = () => {
                 >
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-stretch">
                         {
-                            // Build an array of card descriptors so we can stagger animations
                             [
                                 {
                                     key: 'operationalReconciliation',
-                                    className: 'bg-gradient-to-br from-white to-blue-50/30 md:col-span-2',
+                                    className: 'bg-gradient-to-br from-white to-blue-50/30 dark:from-slate-800 dark:to-slate-900/60 md:col-span-2',
                                     content: (
                                         <>
-                                            <div className="text-sm text-gray-500 flex items-center justify-between">
-                                                <span className="font-medium text-blue-700 text-xs uppercase tracking-wider">Operational Cash Flow (Tax-Inclusive)</span>
-                                                <span className="text-[10px] uppercase tracking-wide text-gray-400">Drawer Count</span>
+                                            <div className="text-sm text-gray-500 dark:text-slate-400 flex items-center justify-between">
+                                                <span className="font-medium text-primary-700 dark:text-primary-300 text-xs uppercase tracking-wider">Operational Cash Flow (Tax-Inclusive)</span>
+                                                <span className="text-[10px] uppercase tracking-wide text-gray-400 dark:text-slate-500">Drawer Count</span>
                                             </div>
                                             <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-3">
                                                 <div>
-                                                    <div className="text-xs text-gray-500 flex items-center gap-1">
+                                                    <div className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1">
                                                         Expected Net Cash (Drawer)
                                                         <InfoTip label="Expected Net Cash (Drawer)">
                                                             (Cash Tendered − Change Returned) − Cash Refunds Paid. The amount of
@@ -558,23 +557,23 @@ const SalesHistoryPage = () => {
                                                             and any cash refunds paid out.
                                                         </InfoTip>
                                                     </div>
-                                                    <div className="font-semibold text-gray-800 text-base">
+                                                    <div className="font-semibold text-gray-800 dark:text-slate-100 text-base">
                                                         {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.expectedNetCashDrawer.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                     </div>
                                                 </div>
                                                 <div>
-                                                    <div className="text-xs text-gray-500">Non-Cash Collections</div>
-                                                    <div className="font-semibold text-gray-800 text-base">
+                                                    <div className="text-xs text-gray-500 dark:text-slate-400">Non-Cash Collections</div>
+                                                    <div className="font-semibold text-gray-800 dark:text-slate-100 text-base">
                                                         {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.nonCashCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                     </div>
                                                 </div>
                                                 <div>
-                                                    <div className="text-[11px] text-gray-400">Tendered: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.cashInflow.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
-                                                    <div className="text-[11px] text-gray-400">Change: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.changeReturned.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                                                    <div className="text-[11px] text-gray-400 dark:text-slate-500">Tendered: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.cashInflow.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                                                    <div className="text-[11px] text-gray-400 dark:text-slate-500">Change: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.changeReturned.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
                                                 </div>
                                                 <div>
-                                                    <div className="text-[11px] text-gray-400">Refunds Out: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.refundsApprox.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
-                                                    <div className="text-[11px] text-gray-400 flex items-center gap-1">
+                                                    <div className="text-[11px] text-gray-400 dark:text-slate-500">Refunds Out: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.refundsApprox.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                                                    <div className="text-[11px] text-gray-400 dark:text-slate-500 flex items-center gap-1">
                                                         <span>Cash Mix: {(stats.cashMix * 100).toFixed(1)}%</span>
                                                         <InfoTip label="Cash Mix">
                                                             Cash Collected (Net of Change) ÷ (Cash Collected (Net of Change) +
@@ -584,7 +583,7 @@ const SalesHistoryPage = () => {
                                                     </div>
                                                 </div>
                                             </div>
-                                            <div className="text-[10px] text-gray-400 mt-2">
+                                            <div className="text-[10px] text-gray-400 dark:text-slate-500 mt-2">
                                                 Reconcile Expected Net Cash (Drawer) with physical till count.
                                             </div>
                                         </>
@@ -592,34 +591,34 @@ const SalesHistoryPage = () => {
                                 },
                                 {
                                     key: 'financialRevenue',
-                                    className: 'bg-gradient-to-br from-white to-green-50/20 md:col-span-2',
+                                    className: 'bg-gradient-to-br from-white to-green-50/20 dark:from-slate-800 dark:to-slate-900/60 md:col-span-2',
                                     content: (
                                         <>
-                                            <div className="text-sm text-gray-500 flex items-center justify-between">
-                                                <span className="font-medium text-green-700 text-xs uppercase tracking-wider">Accrual & Revenue Statistics (Excl. VAT)</span>
-                                                <span className="text-[10px] uppercase tracking-wide text-gray-400">Financial Reporting</span>
+                                            <div className="text-sm text-gray-500 dark:text-slate-400 flex items-center justify-between">
+                                                <span className="font-medium text-success-700 dark:text-success-400 text-xs uppercase tracking-wider">Accrual & Revenue Statistics (Excl. VAT)</span>
+                                                <span className="text-[10px] uppercase tracking-wide text-gray-400 dark:text-slate-500">Financial Reporting</span>
                                             </div>
                                             <div className="mt-2 grid grid-cols-3 gap-3 text-center">
                                                 <div>
-                                                    <div className="text-xs text-gray-500">Gross Sales</div>
-                                                    <div className="font-semibold text-gray-800 text-sm">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.grossSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                                    <div className="text-xs text-gray-500 dark:text-slate-400">Gross Sales</div>
+                                                    <div className="font-semibold text-gray-800 dark:text-slate-100 text-sm">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.grossSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                                                 </div>
                                                 <div>
-                                                    <div className="text-xs text-gray-500">Refunds</div>
-                                                    <div className="font-semibold text-yellow-600 text-sm">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.refunds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                                    <div className="text-xs text-gray-500 dark:text-slate-400">Refunds</div>
+                                                    <div className="font-semibold text-warning-600 dark:text-warning-400 text-sm">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.refunds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                                                 </div>
                                                 <div>
-                                                    <div className="text-xs text-gray-500 flex items-center justify-center gap-1">
+                                                    <div className="text-xs text-gray-500 dark:text-slate-400 flex items-center justify-center gap-1">
                                                         Net Sales
                                                         <InfoTip label="Net Sales (Excl. VAT)">
                                                             Gross Sales minus Refunds (excluding VAT) — the number accounting
                                                             reports as actual revenue for the period.
                                                         </InfoTip>
                                                     </div>
-                                                    <div className="font-semibold text-green-600 text-sm">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.netSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                                    <div className="font-semibold text-success-600 dark:text-success-400 text-sm">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.netSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                                                 </div>
                                             </div>
-                                            <div className="text-[11px] text-gray-500 mt-2 flex justify-between">
+                                            <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-2 flex justify-between">
                                                 <span className="flex items-center gap-1">
                                                     Net VAT Collected: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.vatCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                     <InfoTip label="Net VAT Collected">
@@ -636,9 +635,9 @@ const SalesHistoryPage = () => {
                                     key: 'invoices',
                                     content: (
                                         <>
-                                            <div className="text-sm text-gray-500">Invoices Issued</div>
-                                            <div className="mt-2 text-2xl font-semibold text-gray-800">{stats.invoicesIssued}</div>
-                                            <div className="text-xs text-gray-500 mt-1">Excludes Cancelled</div>
+                                            <div className="text-sm text-gray-500 dark:text-slate-400">Invoices Issued</div>
+                                            <div className="mt-2 text-2xl font-semibold text-gray-800 dark:text-slate-100">{stats.invoicesIssued}</div>
+                                            <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">Excludes Cancelled</div>
                                         </>
                                     )
                                 },
@@ -646,9 +645,9 @@ const SalesHistoryPage = () => {
                                     key: 'avg',
                                     content: (
                                         <>
-                                            <div className="text-sm text-gray-500">Avg Net Invoice</div>
-                                            <div className="mt-2 text-2xl font-semibold text-gray-800">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.avgNetInvoice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                            <div className="text-xs text-gray-500 mt-1">Net Sales / Net Active</div>
+                                            <div className="text-sm text-gray-500 dark:text-slate-400">Avg Net Invoice</div>
+                                            <div className="mt-2 text-2xl font-semibold text-gray-800 dark:text-slate-100">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.avgNetInvoice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                            <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">Net Sales / Net Active</div>
                                         </>
                                     )
                                 },
@@ -657,36 +656,36 @@ const SalesHistoryPage = () => {
                                     className: 'md:col-span-2',
                                     content: (
                                         <>
-                                            <div className="text-sm text-gray-500">Overview</div>
+                                            <div className="text-sm text-gray-500 dark:text-slate-400">Overview</div>
                                             <div className="mt-2 grid grid-cols-3 gap-3">
                                                 <div className="text-center">
-                                                    <div className="text-xs text-gray-500">Top Customer</div>
-                                                    <div className="mt-1 text-sm font-semibold text-gray-800 truncate" title={stats.topCustomer}>{stats.topCustomer}</div>
-                                                    <div className="text-[10px] text-gray-500 mt-0.5">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.topCustomerNet.toLocaleString(undefined, { maximumFractionDigits: 2 })} ({(stats.topCustomerShare*100).toLocaleString(undefined,{maximumFractionDigits:1})}%)</div>
+                                                    <div className="text-xs text-gray-500 dark:text-slate-400">Top Customer</div>
+                                                    <div className="mt-1 text-sm font-semibold text-gray-800 dark:text-slate-100 truncate" title={stats.topCustomer}>{stats.topCustomer}</div>
+                                                    <div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.topCustomerNet.toLocaleString(undefined, { maximumFractionDigits: 2 })} ({(stats.topCustomerShare*100).toLocaleString(undefined,{maximumFractionDigits:1})}%)</div>
                                                 </div>
 
                                                 <div className="text-center">
-                                                    <div className="text-xs text-gray-500">Total Collections</div>
-                                                    <div className="mt-1 text-sm font-semibold text-green-600">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.totalCollections.toLocaleString(undefined,{maximumFractionDigits:2})}</div>
-                                                    <div className="text-[10px] text-gray-500 mt-0.5 flex items-center justify-center gap-1">
+                                                    <div className="text-xs text-gray-500 dark:text-slate-400">Total Collections</div>
+                                                    <div className="mt-1 text-sm font-semibold text-success-600 dark:text-success-400">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.totalCollections.toLocaleString(undefined,{maximumFractionDigits:2})}</div>
+                                                    <div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5 flex items-center justify-center gap-1">
                                                         <span>Rate: {(stats.collectionRate*100).toLocaleString(undefined,{maximumFractionDigits:1})}%</span>
                                                         <InfoTip label="Collection Rate">
                                                             Amount Collected (incl. VAT) ÷ Net Sales (incl. VAT) — how much of
-                                                            what was billed has actually been collected.
+                                                             what was billed has actually been collected.
                                                         </InfoTip>
                                                     </div>
                                                 </div>
 
                                                 <div className="text-center">
-                                                    <div className="text-xs text-gray-500 flex items-center justify-center gap-1">
+                                                    <div className="text-xs text-gray-500 dark:text-slate-400 flex items-center justify-center gap-1">
                                                         Outstanding A/R
                                                         <InfoTip label="Outstanding A/R" align="right">
                                                             Sum of each invoice's (Total − Refunded) minus Amount Paid, floored at
                                                             ₱0.00 — the total unpaid balance still owed by customers, VAT included.
                                                         </InfoTip>
                                                     </div>
-                                                    <div className="mt-1 text-sm font-semibold text-red-600">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.arOutstanding.toLocaleString(undefined,{maximumFractionDigits:2})}</div>
-                                                    <div className="text-[10px] text-gray-500 mt-0.5">Active Invoices: {stats.netActiveInvoices}</div>
+                                                    <div className="mt-1 text-sm font-semibold text-danger-600 dark:text-danger-400">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.arOutstanding.toLocaleString(undefined,{maximumFractionDigits:2})}</div>
+                                                    <div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">Active Invoices: {stats.netActiveInvoices}</div>
                                                 </div>
                                             </div>
                                         </>
@@ -698,13 +697,13 @@ const SalesHistoryPage = () => {
                                     className: 'md:col-span-2',
                                     content: (
                                         <>
-                                            <div className="text-sm text-gray-500 flex items-center justify-between">
+                                            <div className="text-sm text-gray-500 dark:text-slate-400 flex items-center justify-between">
                                                 <span>Payment Methods</span>
-                                                <span className="text-[10px] uppercase tracking-wide text-gray-400">Breakdown</span>
+                                                <span className="text-[10px] uppercase tracking-wide text-gray-400 dark:text-slate-500">Breakdown</span>
                                             </div>
                                             <div className="mt-2">
                                                 {Object.keys(stats.paymentMethodBreakdown || {}).length === 0 ? (
-                                                    <div className="text-center text-gray-500 text-sm py-4">No payment data for this period</div>
+                                                    <div className="text-center text-gray-500 dark:text-slate-400 text-sm py-4">No payment data for this period</div>
                                                 ) : (
                                                     <div className="space-y-2 max-h-32 overflow-y-auto">
                                                         {Object.values(stats.paymentMethodBreakdown || {})
@@ -715,14 +714,14 @@ const SalesHistoryPage = () => {
                                                                 return (
                                                                     <div key={method.methodName} className="flex items-center justify-between">
                                                                         <div className="flex items-center space-x-2">
-                                                                            <span className="text-sm font-medium text-gray-700">{method.methodName}</span>
-                                                                            <span className="text-xs text-gray-500">({method.count} txns)</span>
+                                                                            <span className="text-sm font-medium text-gray-700 dark:text-slate-200">{method.methodName}</span>
+                                                                            <span className="text-xs text-gray-500 dark:text-slate-400">({method.count} txns)</span>
                                                                         </div>
                                                                         <div className="text-right">
-                                                                            <div className="text-sm font-semibold text-gray-800">
+                                                                            <div className="text-sm font-semibold text-gray-800 dark:text-slate-100">
                                                                                 {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{method.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                                             </div>
-                                                                            <div className="text-xs text-gray-500">{percentage.toFixed(1)}%</div>
+                                                                            <div className="text-xs text-gray-500 dark:text-slate-400">{percentage.toFixed(1)}%</div>
                                                                         </div>
                                                                     </div>
                                                                 );
@@ -730,7 +729,7 @@ const SalesHistoryPage = () => {
                                                     </div>
                                                 )}
                                             </div>
-                                            <div className="text-[11px] text-gray-500 mt-2 flex justify-between">
+                                            <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-2 flex justify-between">
                                                 <span>Cash Mix: {(stats.cashMix * 100).toFixed(1)}%</span>
                                                 <span>Non-Cash: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.nonCashCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                             </div>
@@ -738,7 +737,6 @@ const SalesHistoryPage = () => {
                                     )
                                 }] : [])
                             ].map((card, idx) => {
-                                // stagger only on expand
                                 const delayMs = summaryCollapsed ? 0 : idx * 60;
                                 const transformCollapsed = 'translateY(6px) scale(0.995)';
                                 const transformExpanded = 'translateY(0) scale(1)';
@@ -749,14 +747,12 @@ const SalesHistoryPage = () => {
                                     transitionDelay: `${delayMs}ms`
                                 };
 
-                                // If a card descriptor includes an md:col-span-2 class name, preserve it on the wrapper
                                 const wrapperColSpan = card.className && card.className.includes('md:col-span-2') ? 'md:col-span-2' : '';
-                                // Remove layout helpers from the inner card classes so they are only applied to the wrapper
                                 const innerCardClass = (card.className || 'bg-white').replace('md:col-span-2', '').trim();
 
                                 return (
                                     <div key={card.key} className={`${wrapperColSpan} h-full`} style={style}>
-                                        <div className={`p-4 ${innerCardClass || 'bg-white'} rounded-lg border border-gray-100 shadow-sm h-full flex flex-col justify-between`}>
+                                        <div className={`p-4 ${innerCardClass || 'bg-white dark:bg-slate-900/50'} rounded-lg border border-gray-100 dark:border-slate-700 shadow-sm h-full flex flex-col justify-between`}>
                                             {card.content}
                                         </div>
                                     </div>
@@ -767,17 +763,17 @@ const SalesHistoryPage = () => {
                 </div>
             </div>
 
-            <div className="bg-white p-6 rounded-xl border border-gray-200">
-                {loading ? <p>Loading...</p> : (
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-card">
+                {loading ? <p className="text-gray-500 dark:text-slate-400 py-6 text-center">Loading...</p> : (
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
-                            <thead className="border-b">
+                            <thead className="border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-700/40 text-gray-600 dark:text-slate-300">
                                 <tr>
                                     <SortableHeader column="invoice_number" sortConfig={sortConfig} onSort={handleSort}>Invoice #</SortableHeader>
                                     <SortableHeader column="physical_receipt_no" sortConfig={sortConfig} onSort={handleSort}>Physical Receipt No.</SortableHeader>
                                     <SortableHeader column="invoice_date" sortConfig={sortConfig} onSort={handleSort}>Date</SortableHeader>
-                                    <th className="p-3 text-sm font-semibold text-gray-700">Issuer</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-700">Approved By</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-700 dark:text-slate-300">Issuer</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-700 dark:text-slate-300">Approved By</th>
                                     <SortableHeader column="customer" sortConfig={sortConfig} onSort={handleSort}>Customer</SortableHeader>
                                     <SortableHeader column="status" sortConfig={sortConfig} onSort={handleSort}>Status</SortableHeader>
                                     <SortableHeader column="total_amount" sortConfig={sortConfig} onSort={handleSort}>
@@ -785,25 +781,25 @@ const SalesHistoryPage = () => {
                                     </SortableHeader>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody className="divide-y divide-gray-100 dark:divide-slate-700/60">
                                 {sortedInvoices.map(invoice => (
                                     <tr 
                                         key={invoice.invoice_id} 
-                                        className="border-b hover:bg-blue-50 cursor-pointer"
+                                        className="hover:bg-gray-50 dark:hover:bg-slate-700/40 cursor-pointer text-gray-800 dark:text-slate-200 transition-colors"
                                         onClick={() => handleRowClick(invoice)}
                                     >
-                                        <td className="p-3 text-sm font-mono">{invoice.invoice_number}</td>
-                                        <td className="p-3 text-sm font-mono text-gray-700">{invoice.physical_receipt_no || '-'}</td>
-                                        <td className="p-3 text-sm">{format(toZonedTime(parseISO(invoice.invoice_date), 'Asia/Manila'), 'MM/dd/yyyy')}</td>
-                                        <td className="p-3 text-sm">{invoice.employee_first_name} {invoice.employee_last_name}</td>
-                                        <td className="p-3 text-sm">{invoice.approved_by_name || 'System Auto-Approved'}</td>
-                                        <td className="p-3 text-sm">{invoice.customer_first_name} {invoice.customer_last_name}</td>
+                                        <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100">{invoice.invoice_number}</td>
+                                        <td className="p-3 text-sm font-mono text-gray-700 dark:text-slate-300">{invoice.physical_receipt_no || '-'}</td>
+                                        <td className="p-3 text-sm text-gray-600 dark:text-slate-400">{format(toZonedTime(parseISO(invoice.invoice_date), 'Asia/Manila'), 'MM/dd/yyyy')}</td>
+                                        <td className="p-3 text-sm text-gray-700 dark:text-slate-300">{invoice.employee_first_name} {invoice.employee_last_name}</td>
+                                        <td className="p-3 text-sm text-gray-600 dark:text-slate-400">{invoice.approved_by_name || 'System Auto-Approved'}</td>
+                                        <td className="p-3 text-sm text-gray-800 dark:text-slate-100 font-medium">{invoice.customer_first_name} {invoice.customer_last_name}</td>
                                         <td className="p-3 text-sm">
                                             <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(invoice.status)}`}>
                                                 {invoice.status}
                                             </span>
                                         </td>
-                                        <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(invoice.total_amount).toFixed(2)}</td>
+                                        <td className="p-3 text-sm text-right font-mono font-semibold text-gray-900 dark:text-slate-100">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(invoice.total_amount).toFixed(2)}</td>
                                     </tr>
                                 ))}
                             </tbody>
