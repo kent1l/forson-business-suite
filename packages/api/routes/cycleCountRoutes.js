@@ -633,6 +633,138 @@ router.post('/inventory/cycle-count/lines/:line_id/approve', protect, hasPermiss
     }
 });
 
+// POST /api/inventory/cycle-count/manager/bulk-approve
+router.post('/inventory/cycle-count/manager/bulk-approve', protect, hasPermission('cycle_count:manage'), async (req, res) => {
+    const { line_ids } = req.body;
+    if (!line_ids || !Array.isArray(line_ids) || line_ids.length === 0) {
+        return res.status(400).json({ message: 'line_ids array is required' });
+    }
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+
+        const linesResult = await client.query(`
+            SELECT * FROM cycle_count_line
+            WHERE line_id = ANY($1)
+            FOR UPDATE
+        `, [line_ids]);
+
+        if (linesResult.rows.length !== line_ids.length) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: 'One or more lines not found' });
+        }
+
+        const notPending = linesResult.rows.filter(l => l.status !== 'PENDING_MANAGER_REVIEW');
+        if (notPending.length > 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: 'One or more lines are not pending manager review' });
+        }
+
+        for (const line of linesResult.rows) {
+            const variance_qty = line.counted_qty - line.system_qty_snapshot;
+            const wac_result = await client.query('SELECT wac_cost FROM part WHERE part_id = $1', [line.part_id]);
+            const wac_cost = parseFloat(wac_result.rows[0]?.wac_cost || 0);
+            const financial_impact = Math.abs(variance_qty * wac_cost);
+
+            await client.query(`
+                INSERT INTO inventory_transaction (part_id, quantity, trans_type, reference_no, employee_id)
+                VALUES ($1, $2, 'Cycle Count Adjustment', $3, $4)
+            `, [line.part_id, variance_qty, line.line_id.toString(), req.user.employee_id]);
+
+            await client.query(`
+                UPDATE cycle_count_line
+                SET status = 'APPROVED_ADJUSTED'
+                WHERE line_id = $1
+            `, [line.line_id]);
+
+            await client.query(`
+                INSERT INTO cycle_count_audit_log
+                    (line_id, part_id, action, variance_qty, financial_impact, counted_qty, system_qty_snapshot, actioned_by)
+                VALUES ($1, $2, 'APPROVED', $3, $4, $5, $6, $7)
+            `, [line.line_id, line.part_id, variance_qty, financial_impact, line.counted_qty, line.system_qty_snapshot, req.user.employee_id]);
+        }
+
+        await client.query('COMMIT');
+        res.json({ message: `${linesResult.rows.length} adjustment(s) approved successfully` });
+
+        // Background cache clearance
+        db.query('REFRESH MATERIALIZED VIEW employee_cycle_count_performance;')
+          .catch(err => console.error('[AnalyticsView] Background refresh failure:', err));
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    } finally {
+        client.release();
+    }
+});
+
+// POST /api/inventory/cycle-count/manager/bulk-recount
+router.post('/inventory/cycle-count/manager/bulk-recount', protect, hasPermission('cycle_count:manage'), async (req, res) => {
+    const { line_ids } = req.body;
+    if (!line_ids || !Array.isArray(line_ids) || line_ids.length === 0) {
+        return res.status(400).json({ message: 'line_ids array is required' });
+    }
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+
+        const linesResult = await client.query(`
+            SELECT * FROM cycle_count_line
+            WHERE line_id = ANY($1)
+            FOR UPDATE
+        `, [line_ids]);
+
+        if (linesResult.rows.length !== line_ids.length) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: 'One or more lines not found' });
+        }
+
+        const notPending = linesResult.rows.filter(l => l.status !== 'PENDING_MANAGER_REVIEW');
+        if (notPending.length > 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: 'One or more lines are not pending manager review' });
+        }
+
+        for (const line of linesResult.rows) {
+            await client.query(`
+                UPDATE cycle_count_line
+                SET status = 'RECOUNT_REQUESTED'
+                WHERE line_id = $1
+            `, [line.line_id]);
+
+            await client.query(`
+                INSERT INTO part_inventory_stats (part_id, audit_requested)
+                VALUES ($1, TRUE)
+                ON CONFLICT (part_id) DO UPDATE
+                SET audit_requested = TRUE
+            `, [line.part_id]);
+
+            const variance_qty_recount = line.counted_qty - line.system_qty_snapshot;
+            const wac_rc = await client.query('SELECT wac_cost FROM part WHERE part_id = $1', [line.part_id]);
+            const fi_rc = Math.abs(variance_qty_recount * parseFloat(wac_rc.rows[0]?.wac_cost || 0));
+            await client.query(`
+                INSERT INTO cycle_count_audit_log
+                    (line_id, part_id, action, variance_qty, financial_impact, counted_qty, system_qty_snapshot, actioned_by)
+                VALUES ($1, $2, 'RECOUNT_REQUESTED', $3, $4, $5, $6, $7)
+            `, [line.line_id, line.part_id, variance_qty_recount, fi_rc, line.counted_qty, line.system_qty_snapshot, req.user.employee_id]);
+        }
+
+        await client.query('COMMIT');
+        res.json({ message: `Recount requested for ${linesResult.rows.length} item(s)` });
+
+        // Background cache clearance
+        db.query('REFRESH MATERIALIZED VIEW employee_cycle_count_performance;')
+          .catch(err => console.error('[AnalyticsView] Background refresh failure:', err));
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    } finally {
+        client.release();
+    }
+});
+
 // POST /api/inventory/cycle-count/manager/recount/:id
 router.post('/inventory/cycle-count/manager/recount/:id', protect, hasPermission('cycle_count:manage'), async (req, res) => {
     const { id } = req.params;
