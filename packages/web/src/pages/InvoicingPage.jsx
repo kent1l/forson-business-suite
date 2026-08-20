@@ -56,6 +56,18 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
 
     const commonTerms = fetchedTerms ? fetchedTerms.map(r => String(r.days_to_due)) : commonTermsFromSettings;
 
+    const defaultPaymentTermsDays = useMemo(() => {
+        const parsed = parsePaymentTermsDays(settings?.DEFAULT_PAYMENT_TERMS || '');
+        return parsed !== null ? String(parsed) : (settings?.DEFAULT_PAYMENT_TERMS || '');
+    }, [settings?.DEFAULT_PAYMENT_TERMS]);
+
+    // Distinct from the general DEFAULT_PAYMENT_TERMS default above -- applied
+    // inside SplitPaymentModal when the customer is being invoiced On Account.
+    const onAccountDefaultTermsDays = useMemo(() => {
+        const parsed = parsePaymentTermsDays(settings?.DEFAULT_ON_ACCOUNT_PAYMENT_TERMS || '');
+        return parsed !== null ? String(parsed) : null;
+    }, [settings?.DEFAULT_ON_ACCOUNT_PAYMENT_TERMS]);
+
     useEffect(() => {
         if (searchTerm.trim() === '') {
             setSearchResults([]);
@@ -133,15 +145,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
 
     useEffect(() => {
         if (settings) {
-            const defaultRaw = settings.DEFAULT_PAYMENT_TERMS || '';
-            const m = String(defaultRaw).match(/(\d{1,4})/);
-            if (m) {
-                setTerms(String(parseInt(m[1], 10)));
-            } else if (/due|upon/i.test(defaultRaw)) {
-                setTerms('0');
-            } else {
-                setTerms(String(defaultRaw || ''));
-            }
+            setTerms(defaultPaymentTermsDays);
 
             if (paymentMethodsKey) {
                 const methods = paymentMethodsKey.split(',');
@@ -536,7 +540,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
             success: (response) => {
                 setLines([]);
                 setSelectedCustomer('');
-                setTerms(settings.DEFAULT_PAYMENT_TERMS || '');
+                setTerms(defaultPaymentTermsDays);
                 setLastSavedDraftSignature(null);
                 showViewInvoiceToast(response.data?.invoice_number);
                 return `Invoice ${response.data?.invoice_number || ''} created successfully!`;
@@ -548,7 +552,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                 return 'Failed to create invoice.';
             },
         });
-    }, [selectedCustomer, lines, customers, terms, settings, paymentMethod, physicalReceiptNo, selectedTaxRate, user, total, showViewInvoiceToast]);
+    }, [selectedCustomer, lines, customers, terms, settings, defaultPaymentTermsDays, paymentMethod, physicalReceiptNo, selectedTaxRate, user, total, showViewInvoiceToast]);
 
     // Handle split payment confirmation for invoicing
     const handleConfirmSplitPayment = async (payments, physicalReceiptNo, { employeeId } = {}) => {
@@ -586,7 +590,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
             // Success - reset form
             setLines([]);
             setSelectedCustomer('');
-            setTerms(settings.DEFAULT_PAYMENT_TERMS || '');
+            setTerms(defaultPaymentTermsDays);
             setLastSavedDraftSignature(null);
             setIsSplitPaymentModalOpen(false);
 
@@ -955,6 +959,11 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                     onPhysicalReceiptChange={setPhysicalReceiptNo}
                     requirePhysicalReceipt={true}
                     employeeId={user?.employee_id}
+                    terms={terms}
+                    onTermsChange={setTerms}
+                    commonTerms={commonTerms}
+                    generalDefaultTermsDays={defaultPaymentTermsDays}
+                    onAccountDefaultTermsDays={onAccountDefaultTermsDays}
                     customerName={(() => {
                         const customer = customers.find(c => String(c.customer_id) === String(selectedCustomer));
                         return customer ? `${customer.first_name} ${customer.last_name || ''}`.trim() : '';

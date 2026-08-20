@@ -6,16 +6,21 @@ import Icon from '../ui/Icon';
 import InfoTip from '../ui/InfoTip';
 import { ICONS } from '../../constants';
 
-const SplitPaymentModal = ({ 
-    isOpen, 
-    onClose, 
-    totalDue, 
+const SplitPaymentModal = ({
+    isOpen,
+    onClose,
+    totalDue,
     existingPayments = [],
     onConfirm,
     physicalReceiptNo = '',
     onPhysicalReceiptChange = () => {},
     employeeId = null,
-    customerName = ''
+    customerName = '',
+    terms = '',
+    onTermsChange = () => {},
+    commonTerms = ['0', '7', '15', '30'],
+    generalDefaultTermsDays = '',
+    onAccountDefaultTermsDays = null
 }) => {
     const { settings } = useSettings();
     const [paymentMethods, setPaymentMethods] = useState([]);
@@ -23,6 +28,7 @@ const SplitPaymentModal = ({
     const [loading, setLoading] = useState(false);
     const [showOnAccountConfirmation, setShowOnAccountConfirmation] = useState(false);
     const initializedRef = useRef(false);
+    const appliedOnAccountDefaultRef = useRef(false);
 
     // Check if split payments feature is enabled (memoized to prevent unnecessary re-renders)
     const splitPaymentsEnabled = useMemo(() => 
@@ -114,6 +120,7 @@ const SplitPaymentModal = ({
         } else if (!isOpen) {
             // Reset when modal closes
             initializedRef.current = false;
+            appliedOnAccountDefaultRef.current = false;
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, existingPaymentsKey, fetchPaymentMethods]); // Use stable key
@@ -147,10 +154,29 @@ const SplitPaymentModal = ({
     };
 
     const updatePayment = (id, field, value) => {
-        setPayments(prev => prev.map(payment => 
+        setPayments(prev => prev.map(payment =>
             payment.id === id ? { ...payment, [field]: value } : payment
         ));
     };
+
+    const hasOnAccountLine = useMemo(() => payments.some(payment => {
+        const method = paymentMethods.find(m => String(m.method_id) === String(payment.method_id));
+        return method?.settlement_type === 'on_account';
+    }), [payments, paymentMethods]);
+
+    // The first time this session an On Account line is picked, switch the
+    // invoice's Payment Terms to the configured on-account default -- but
+    // only if terms still match the general default, so an explicit choice
+    // already made on the Invoicing page (e.g. for a specific customer)
+    // isn't clobbered.
+    useEffect(() => {
+        if (hasOnAccountLine && !appliedOnAccountDefaultRef.current && onAccountDefaultTermsDays !== null) {
+            appliedOnAccountDefaultRef.current = true;
+            if (terms === generalDefaultTermsDays) {
+                onTermsChange(onAccountDefaultTermsDays);
+            }
+        }
+    }, [hasOnAccountLine, onAccountDefaultTermsDays, terms, generalDefaultTermsDays, onTermsChange]);
 
     // Calculate totals and validation
     const { totalPayments, totalChange, remaining, canConfirm, validationErrors, onAccountSum, requiresOnAccountConfirmation } = useMemo(() => {
@@ -386,6 +412,37 @@ const SplitPaymentModal = ({
                             <p className="text-xs text-amber-800 dark:text-amber-300 mt-1">
                                 This payment method requires a physical receipt number.
                             </p>
+                        </div>
+                    )}
+
+                    {/* Payment Terms -- surfaced here because On Account doesn't collect
+                        payment now; the customer owes the balance under these terms. */}
+                    {hasOnAccountLine && (
+                        <div className="mb-6 p-4 bg-primary-50 dark:bg-primary-950/30 border border-primary-200 dark:border-primary-800/60 rounded-lg">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2 flex items-center gap-1">
+                                Payment Terms
+                                <InfoTip label="Payment Terms">
+                                    How long the customer has to pay this On Account balance. Defaults to the on-account terms configured in Settings, but can be adjusted per sale.
+                                </InfoTip>
+                            </label>
+                            <div className="flex items-center space-x-3">
+                                <select
+                                    value={commonTerms.includes(terms) ? terms : 'custom'}
+                                    onChange={(e) => onTermsChange(e.target.value)}
+                                    className="px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 text-sm"
+                                >
+                                    {commonTerms.map(ct => <option key={ct} value={ct}>{ct === '0' ? 'Due on Receipt' : `${ct} Days`}</option>)}
+                                    <option value="custom">Custom...</option>
+                                </select>
+                                <input
+                                    type="text"
+                                    value={terms}
+                                    onChange={(e) => onTermsChange(e.target.value)}
+                                    onFocus={(e) => e.target.select()}
+                                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 text-sm"
+                                    placeholder="e.g., 30"
+                                />
+                            </div>
                         </div>
                     )}
 
