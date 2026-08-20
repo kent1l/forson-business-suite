@@ -120,3 +120,34 @@
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+/* Transient highlight for a table row a notification deep-linked to. Tailwind's
+   preflight sets `border-collapse: collapse`, under which box-shadow and border
+   on a <tr> render inconsistently across browsers, so this animates
+   background-color — the one row-level property that is reliable there. */
+@keyframes row-highlight-fade {
+  0%, 60% { background-color: var(--color-warning-100); }
+  100%    { background-color: transparent; }
+}
+
+.row-highlight {
+  animation: row-highlight-fade 4s ease-out forwards;
+  /* The row is focused programmatically to carry screen readers and keyboard
+     users along with the scroll; the tint is the visible cue, so the focus ring
+     would only add noise. */
+  outline: none;
+}
+
+.dark .row-highlight {
+  animation-name: row-highlight-fade-dark;
+}
+
+@keyframes row-highlight-fade-dark {
+  0%, 60% { background-color: color-mix(in srgb, var(--color-warning-500) 22%, transparent); }
+  100%    { background-color: transparent; }
+}
+
+/* Without motion, hold the tint for the same window and drop it in one step —
+   the point is locating the row, which does not require the fade. */
+@media (prefers-reduced-motion: reduce) {
+  .row-highlight { animation-duration: 4s; animation-timing-function: step-end; }
+}

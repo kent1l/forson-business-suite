@@ -12,11 +12,14 @@ import DateRangeShortcuts from '../components/ui/DateRangeShortcuts';
 import useAROverviewData from '../hooks/useAROverviewData';
 import useARLedgerSoa from '../hooks/useARLedgerSoa';
 import useARWallet from '../hooks/useARWallet';
+import useDeepLink from '../hooks/useDeepLink';
 
-const AccountsReceivablePage = () => {
+const AccountsReceivablePage = ({ pageState }) => {
     const { hasPermission } = useAuth();
 
     const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'ledger_soa' | 'wallet'
+    // Lets a notification land on the tab where the alert is actionable.
+    useDeepLink(pageState, ({ tab }) => { if (tab) setActiveTab(tab); });
 
     // Shared across tabs: the customer list (Overview fetches it, Ledger/SOA
     // reuses it for its search combobox) and the statement/report date range.

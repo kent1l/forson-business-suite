@@ -3,10 +3,11 @@ import { Sun, Moon } from 'lucide-react';
 import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
 import { useTheme } from '../../contexts/ThemeContext';
+import NotificationBell from './NotificationBell';
 
 const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 
-const Header = ({ user, onLogout, onMenuClick, onOpenSearch }) => {
+const Header = ({ user, onLogout, onMenuClick, onOpenSearch, onNavigate }) => {
     const { mode, toggleMode } = useTheme() || {};
 
     const getInitials = (name) => {
@@ -60,6 +61,7 @@ const Header = ({ user, onLogout, onMenuClick, onOpenSearch }) => {
                 )}
             </div>
             <div className="flex items-center">
+                <NotificationBell onNavigate={onNavigate} />
                 {toggleMode && (
                     <button
                         onClick={toggleMode}

@@ -5,8 +5,9 @@ import ChequePrintingPage from './ChequePrintingPage';
 import PdcTreasuryPage from './PdcTreasuryPage';
 import BankAccountsPage from './BankAccountsPage';
 import ChequeSettingsPanel from '../components/cheques/ChequeSettingsPanel';
+import useDeepLink from '../hooks/useDeepLink';
 
-const ChequesTreasuryPage = () => {
+const ChequesTreasuryPage = ({ pageState }) => {
     const { hasPermission } = useAuth();
 
     const sections = useMemo(() => ([
@@ -22,6 +23,18 @@ const ChequesTreasuryPage = () => {
     );
 
     const [activeSection, setActiveSection] = useState(() => visibleSections[0]?.key);
+
+    // A deep link names both the section to open and whatever that section needs
+    // to focus on. The remainder is held per-section so it reaches only the
+    // component it was meant for, rather than every section as a dead prop. A
+    // link to a section this user cannot see is ignored, not forced open.
+    const [sectionState, setSectionState] = useState(null);
+    useDeepLink(pageState, ({ section, ...rest }) => {
+        const target = visibleSections.some((s) => s.key === section) ? section : null;
+        if (!target) return;
+        setActiveSection(target);
+        setSectionState({ section: target, state: rest });
+    });
 
     const current = visibleSections.find((section) => section.key === activeSection) || visibleSections[0];
 
@@ -44,7 +57,11 @@ const ChequesTreasuryPage = () => {
                         />
                     </div>
 
-                    {current && <current.Component />}
+                    {current && (
+                        <current.Component
+                            pageState={sectionState?.section === current.key ? sectionState.state : null}
+                        />
+                    )}
                 </>
             ) : (
                 <div className="bg-white dark:bg-slate-800 p-12 rounded-xl border border-gray-200 dark:border-slate-700 text-center shadow-xs space-y-2">

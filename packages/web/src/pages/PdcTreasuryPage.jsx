@@ -12,6 +12,7 @@ import Modal from '../components/ui/Modal';
 import SegmentedTabs from '../components/ui/SegmentedTabs';
 import StatusBadge from '../components/ui/StatusBadge';
 import InfoTip from '../components/ui/InfoTip';
+import useDeepLink from '../hooks/useDeepLink';
 
 const emptyStats = {
     held_in_safe_count: 0, held_in_safe_total: 0,
@@ -35,7 +36,7 @@ const HISTORY_ACTION_TONE = {
 const LABEL_CLASS = 'block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1';
 const TEXT_INPUT_CLASS = 'w-full text-xs p-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100';
 
-const PdcTreasuryPage = () => {
+const PdcTreasuryPage = ({ pageState }) => {
     const { hasPermission } = useAuth();
     const canManage = hasPermission('pdc:manage') || hasPermission('ar:manage');
     const canManageOutbound = hasPermission('ap-pdc:manage');
@@ -58,6 +59,26 @@ const PdcTreasuryPage = () => {
     const [outboundStatusFilter, setOutboundStatusFilter] = useState('ALL');
     const [outboundMaturityFilter, setOutboundMaturityFilter] = useState('ALL');
     const [outboundLoading, setOutboundLoading] = useState(false);
+
+    // Deep link from a notification. The maturity/status filter matters as much
+    // as the tab: "4 cheques mature today" against a desk showing every open
+    // cheque leaves the reader to find the four themselves, which is the whole
+    // problem the notification was supposed to solve.
+    const [inboundHighlight, setInboundHighlight] = useState(null);
+    const [outboundHighlight, setOutboundHighlight] = useState(null);
+
+    useDeepLink(pageState, ({ tab, maturityFilter, statusFilter, highlight }) => {
+        const outbound = tab === 'outbound' && canViewOutbound;
+        if (tab === 'inbound' || outbound) setActiveTab(outbound ? 'outbound' : 'inbound');
+        if (maturityFilter) {
+            (outbound ? setOutboundMaturityFilter : setPdcMaturityFilter)(maturityFilter);
+        }
+        if (statusFilter) {
+            (outbound ? setOutboundStatusFilter : setPdcStatusFilter)(statusFilter);
+        }
+        // Filtering shows the right rows; this marks which ones the alert meant.
+        (outbound ? setOutboundHighlight : setInboundHighlight)(highlight || null);
+    });
     const [issueModalOpen, setIssueModalOpen] = useState(false);
     const [chequeTemplates, setChequeTemplates] = useState([]);
     const [defaultPrinterProfileId, setDefaultPrinterProfileId] = useState(null);
@@ -451,6 +472,7 @@ const PdcTreasuryPage = () => {
                 <PdcClearanceDeskTable
                     items={inboundItems}
                     loading={inboundLoading}
+                    highlight={inboundHighlight}
                     pdcStatusFilter={pdcStatusFilter}
                     onStatusFilterChange={setPdcStatusFilter}
                     maturityFilter={pdcMaturityFilter}
@@ -467,6 +489,7 @@ const PdcTreasuryPage = () => {
                     <PdcOutboundDeskTable
                         items={outboundItems}
                         loading={outboundLoading}
+                        highlight={outboundHighlight}
                         pdcStatusFilter={outboundStatusFilter}
                         onStatusFilterChange={setOutboundStatusFilter}
                         maturityFilter={outboundMaturityFilter}

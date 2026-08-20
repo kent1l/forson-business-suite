@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import api from '../api';
 import Modal from '../components/ui/Modal';
@@ -9,6 +9,8 @@ import ErrorState from '../components/ui/ErrorState';
 import EmptyState from '../components/ui/EmptyState';
 import InfoTip from '../components/ui/InfoTip';
 import { useAuth } from '../contexts/AuthContext';
+import useDeepLink from '../hooks/useDeepLink';
+import useHighlight from '../hooks/useHighlight';
 
 const INPUT_CLASS = 'w-full px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500';
 const FILTER_CLASS = 'px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100';
@@ -77,10 +79,21 @@ const LeaveRequestForm = ({ employees, leaveTypes, onSave, onCancel }) => {
     );
 };
 
-const LeavePage = () => {
+const LeavePage = ({ pageState }) => {
     const { hasPermission } = useAuth();
     const [tab, setTab] = useState('requests');
     const [statusFilter, setStatusFilter] = useState('Pending');
+
+    // An approver following "X filed a leave request" wants the pending queue;
+    // a requester following "your leave was approved" wants their decided one.
+    // The empty string is a real value here — it means "All statuses" — so this
+    // tests for undefined rather than falsiness.
+    const [highlight, setHighlight] = useState(null);
+    useDeepLink(pageState, ({ tab: nextTab, statusFilter: nextStatus, highlight: nextHighlight }) => {
+        if (nextTab) setTab(nextTab);
+        if (nextStatus !== undefined) setStatusFilter(nextStatus);
+        setHighlight(nextHighlight || null);
+    });
     const [requests, setRequests] = useState([]);
     const [leaveTypes, setLeaveTypes] = useState([]);
     const [employees, setEmployees] = useState([]);
@@ -105,8 +118,18 @@ const LeavePage = () => {
         }).catch(() => { /* form degrades; list still works */ });
     }, [canView]);
 
+    // Changing the filter starts a new fetch without cancelling the one already
+    // in flight, so responses can land out of order and an older, narrower
+    // result can overwrite a newer one — the list then shows rows that do not
+    // match the filter on screen. A deep link makes this easy to hit because it
+    // changes the filter in the same beat as the first load. Each call takes a
+    // ticket and only the newest one is allowed to write.
+    const requestSeq = useRef(0);
+
     const load = useCallback(async () => {
         if (!canView) { setLoading(false); return; }
+        const seq = ++requestSeq.current;
+        const isCurrent = () => seq === requestSeq.current;
         setLoading(true);
         setError('');
         try {
@@ -114,21 +137,27 @@ const LeavePage = () => {
                 const { data } = await api.get('/leave/requests', {
                     params: { status: statusFilter || undefined },
                 });
+                if (!isCurrent()) return;
                 setRequests(Array.isArray(data) ? data : (data?.data || []));
             } else if (balanceEmployee) {
                 const { data } = await api.get(`/leave/balances/${balanceEmployee}`);
+                if (!isCurrent()) return;
                 setBalances(data.balances || []);
             } else {
                 setBalances([]);
             }
         } catch {
-            setError('Failed to load leave data.');
+            if (isCurrent()) setError('Failed to load leave data.');
         } finally {
-            setLoading(false);
+            // Only the newest request owns the spinner; a superseded one
+            // clearing it would flash "loaded" while a fetch is still running.
+            if (isCurrent()) setLoading(false);
         }
     }, [canView, tab, statusFilter, balanceEmployee]);
 
     useEffect(() => { load(); }, [load]);
+
+    const { getHighlightProps } = useHighlight(highlight, requests.length);
 
     const fileRequest = async (form) => {
         const promise = api.post('/leave/requests', {
@@ -239,7 +268,10 @@ const LeavePage = () => {
                                 </thead>
                                 <tbody>
                                     {requests.map((r) => (
-                                        <tr key={r.leave_id} className="border-b border-gray-100 dark:border-slate-700/60">
+                                        <tr
+                                            key={r.leave_id}
+                                            {...getHighlightProps(r.leave_id, 'border-b border-gray-100 dark:border-slate-700/60')}
+                                        >
                                             <td className="p-2 text-sm font-medium text-gray-800 dark:text-slate-100">{r.employee_name}</td>
                                             <td className="p-2 text-sm text-gray-600 dark:text-slate-300">
                                                 {r.leave_name}
