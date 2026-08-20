@@ -11,6 +11,8 @@ import BillAgingSummaryChart from '../components/accounts-payable/BillAgingSumma
 import SupplierSummaryTable from '../components/accounts-payable/SupplierSummaryTable';
 import SupplierDetailDrawer from '../components/suppliers/SupplierDetailDrawer';
 import AddPayableModal from '../components/accounts-payable/AddPayableModal';
+import RecordSupplierPaymentModal from '../components/accounts-payable/RecordSupplierPaymentModal';
+import PaymentsRegisterTable from '../components/accounts-payable/PaymentsRegisterTable';
 import useAPOverviewData from '../hooks/useAPOverviewData';
 
 const OverviewTab = ({ overview, onOpenSupplier }) => {
@@ -53,6 +55,8 @@ const AccountsPayablePage = ({ onNavigate }) => {
     const [activeTab, setActiveTab] = useState('overview');
     const [selectedSupplier, setSelectedSupplier] = useState(null);
     const [isAddPayableOpen, setIsAddPayableOpen] = useState(false);
+    const [isRecordPaymentOpen, setIsRecordPaymentOpen] = useState(false);
+    const [paymentsRefreshToken, setPaymentsRefreshToken] = useState(0);
 
     const overview = useAPOverviewData({ hasPermission });
 
@@ -68,8 +72,14 @@ const AccountsPayablePage = ({ onNavigate }) => {
         overview.fetchSupplierSummary();
     }, [overview]);
 
+    const handlePaymentRecorded = useCallback(() => {
+        setPaymentsRefreshToken((n) => n + 1);
+        handleRefresh();
+    }, [handleRefresh]);
+
     const tabs = useMemo(() => ([
         { key: 'overview', label: 'Overview & Aging' },
+        { key: 'payments', label: 'Payments' },
     ]), []);
 
     if (!hasPermission('ap:view')) {
@@ -99,16 +109,24 @@ const AccountsPayablePage = ({ onNavigate }) => {
                             Outbound Cheques &amp; Treasury <Icon path={ICONS.chevronDown} className="w-3.5 h-3.5 -rotate-90" />
                         </button>
                         <InfoTip label="Outbound Cheques & Treasury">
-                            This is the only way to pay a supplier — there's no separate cash or bank-transfer payment form. Issuing and applying an outbound cheque to a supplier's bills happens here.
+                            Cheque payments live here, because a cheque has a lifecycle after it's written — it still has to be deposited, and it can clear, bounce, go stale, or be replaced. Cash, bank transfer and e-wallet payments settle immediately and are recorded with <span className="font-medium">Record Payment</span> instead.
                         </InfoTip>
                     </span>
                     {hasPermission('ap:manage') && (
-                        <button
-                            onClick={() => setIsAddPayableOpen(true)}
-                            className="px-4 py-2 bg-success-600 text-white rounded-md hover:bg-success-700 text-sm transition-colors font-medium flex items-center gap-1.5"
-                        >
-                            <Icon path={ICONS.plus} className="w-4 h-4" /> New Payable
-                        </button>
+                        <>
+                            <button
+                                onClick={() => setIsRecordPaymentOpen(true)}
+                                className="px-4 py-2 bg-success-600 text-white rounded-md hover:bg-success-700 text-sm transition-colors font-medium flex items-center gap-1.5"
+                            >
+                                <Icon path={ICONS.dollar} className="w-4 h-4" /> Record Payment
+                            </button>
+                            <button
+                                onClick={() => setIsAddPayableOpen(true)}
+                                className="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 rounded-md hover:bg-gray-50 dark:hover:bg-slate-700 text-sm transition-colors font-medium flex items-center gap-1.5"
+                            >
+                                <Icon path={ICONS.plus} className="w-4 h-4" /> New Payable
+                            </button>
+                        </>
                     )}
                     <button
                         onClick={handleRefresh}
@@ -128,6 +146,9 @@ const AccountsPayablePage = ({ onNavigate }) => {
                 {activeTab === 'overview' && (
                     <OverviewTab overview={overview} onOpenSupplier={handleOpenSupplier} />
                 )}
+                {activeTab === 'payments' && (
+                    <PaymentsRegisterTable refreshToken={paymentsRefreshToken} />
+                )}
             </ErrorBoundary>
 
             <SupplierDetailDrawer
@@ -142,6 +163,12 @@ const AccountsPayablePage = ({ onNavigate }) => {
                 isOpen={isAddPayableOpen}
                 onClose={() => setIsAddPayableOpen(false)}
                 onCreated={handleRefresh}
+            />
+
+            <RecordSupplierPaymentModal
+                isOpen={isRecordPaymentOpen}
+                onClose={() => setIsRecordPaymentOpen(false)}
+                onRecorded={handlePaymentRecorded}
             />
         </div>
     );
