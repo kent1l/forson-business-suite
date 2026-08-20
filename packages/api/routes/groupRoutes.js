@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { generateUniqueCode } = require('../helpers/codeGenerator');
+const { normalizeText } = require('../helpers/normalizeEntity');
 const router = express.Router();
 
 // GET all groups
@@ -16,7 +17,8 @@ router.get('/groups', async (req, res) => {
 
 // POST a new group - generate code if not supplied
 router.post('/groups', async (req, res) => {
-  const { group_name, group_code } = req.body;
+  const group_name = normalizeText(req.body.group_name);
+  const { group_code } = req.body;
   if (!group_name) {
     return res.status(400).json({ message: 'Group name is required.' });
   }

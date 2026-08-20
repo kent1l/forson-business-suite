@@ -6,7 +6,34 @@ const db = require('../db');
 const { protect, isAdmin, hasPermission } = require('../middleware/authMiddleware');
 const { generateUniqueCode } = require('../helpers/codeGenerator');
 const { syncPartWithMeili } = require('../meilisearch');
+const { normalizeText, normalizeName, normalizeEmail, normalizePhone } = require('../helpers/normalizeEntity');
 const router = express.Router();
+
+// CSV imports are one of the biggest sources of case/whitespace-inconsistent
+// master data (brand/group names especially — an unnormalized lookup here
+// creates a duplicate brand row for every casing variant a spreadsheet has).
+// Mirrors the per-entity normalization applied in the equivalent single-record
+// routes (customerRoutes.js, supplierRoutes.js, brandRoutes.js, groupRoutes.js).
+const normalizeImportRow = (entity, row) => {
+    if (entity === 'parts') {
+        row.brand_name = normalizeText(row.brand_name);
+        row.group_name = normalizeText(row.group_name);
+        row.detail = normalizeText(row.detail);
+    } else if (entity === 'customers') {
+        row.first_name = normalizeName(row.first_name);
+        row.last_name = normalizeName(row.last_name);
+        row.company_name = normalizeText(row.company_name);
+        row.phone = normalizePhone(row.phone);
+        row.email = normalizeEmail(row.email);
+        row.address = normalizeText(row.address);
+    } else if (entity === 'suppliers') {
+        row.supplier_name = normalizeText(row.supplier_name);
+        row.contact_person = normalizeName(row.contact_person);
+        row.phone = normalizePhone(row.phone);
+        row.email = normalizeEmail(row.email);
+        row.address = normalizeText(row.address);
+    }
+};
 
 // Configure multer for in-memory file storage
 const upload = multer({ storage: multer.memoryStorage() });
@@ -104,6 +131,7 @@ router.post('/import/:entity', protect, hasPermission('data-utils:import'), uplo
 
         for (const [index, row] of parsed.data.entries()) {
             const rowNum = index + 2;
+            normalizeImportRow(entity, row);
 
             if (entity === 'parts') {
                 const { brand_name, group_name, internal_sku } = row;

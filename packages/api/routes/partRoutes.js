@@ -5,6 +5,7 @@ const { meiliClient } = require('../meilisearch');
 const { enqueuePartUpsert, enqueuePartDelete } = require('../services/meiliOutboxService');
 const { activeAliasCondition } = require('../helpers/partNumberSoftDelete');
 const { normalizePartData } = require('../helpers/normalizePart');
+const { normalizeText } = require('../helpers/normalizeEntity');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const router = express.Router();
 
@@ -328,6 +329,7 @@ router.get('/parts/:id/tags', protect, hasPermission('parts:view'), async (req, 
 router.post('/parts', protect, hasPermission('parts:create'), async (req, res) => {
     console.log('[DEBUG] POST /parts - Request body:', req.body);
     const { tags, barcodes, created_by, part_numbers_string, ...partData } = req.body;
+    partData.detail = normalizeText(partData.detail);
     // detail is optional; only brand and group are required
     if (!partData.brand_id || !partData.group_id) {
         console.log('[DEBUG] POST /parts - Missing brand_id or group_id');
@@ -437,6 +439,7 @@ router.put('/parts/bulk-update', protect, hasPermission('parts:edit'), async (re
 router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) => {
     const { id } = req.params;
     const { tags, barcodes, modified_by, ...partData } = req.body;
+    partData.detail = normalizeText(partData.detail);
     // detail is optional; only brand and group are required
     if (!partData.brand_id || !partData.group_id) {
         return res.status(400).json({ message: 'Brand and group are required' });
