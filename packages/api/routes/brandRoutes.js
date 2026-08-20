@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { generateUniqueCode } = require('../helpers/codeGenerator');
+const { normalizeText } = require('../helpers/normalizeEntity');
 const router = express.Router();
 
 // GET all brands
@@ -16,7 +17,8 @@ router.get('/brands', async (req, res) => {
 
 // POST a new brand - if brand_code is not provided, generate one using helper
 router.post('/brands', async (req, res) => {
-  const { brand_name, brand_code } = req.body;
+  const brand_name = normalizeText(req.body.brand_name);
+  const { brand_code } = req.body;
   if (!brand_name) {
     return res.status(400).json({ message: 'Brand name is required.' });
   }

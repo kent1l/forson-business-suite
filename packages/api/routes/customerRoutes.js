@@ -3,7 +3,19 @@ const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
+const { normalizeText, normalizeName, normalizeEmail, normalizePhone } = require('../helpers/normalizeEntity');
 const router = express.Router();
+
+// Applies the shared normalization rules to the customer fields that accept
+// freetext, in place, so POST and PUT stay in sync with each other and with
+// scripts/normalizeExistingData.js.
+const normalizeCustomerFields = (customerData) => {
+    customerData.first_name = normalizeName(customerData.first_name);
+    customerData.last_name = normalizeName(customerData.last_name);
+    customerData.company_name = normalizeText(customerData.company_name);
+    customerData.phone = normalizePhone(customerData.phone);
+    customerData.address = normalizeText(customerData.address);
+};
 
 // Helper function to handle tag logic
 const manageTags = async (client, tags, customerId) => {
@@ -194,8 +206,8 @@ router.get('/customers/:id/unpaid-invoices', protect, hasPermission('ar:view'), 
 // POST a new customer
 router.post('/customers', protect, hasPermission('customers:edit'), async (req, res) => {
     const { tags, ...customerData } = req.body;
-    // Sanitize email: convert empty string to null
-    const emailOrNull = customerData.email && customerData.email.trim() !== '' ? customerData.email.trim() : null;
+    normalizeCustomerFields(customerData);
+    const emailOrNull = normalizeEmail(customerData.email);
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
@@ -221,8 +233,8 @@ router.post('/customers', protect, hasPermission('customers:edit'), async (req, 
 router.put('/customers/:id', protect, hasPermission('customers:edit'), async (req, res) => {
     const { id } = req.params;
     const { tags, ...customerData } = req.body;
-    // Sanitize email: convert empty string to null
-    const emailOrNull = customerData.email && customerData.email.trim() !== '' ? customerData.email.trim() : null;
+    normalizeCustomerFields(customerData);
+    const emailOrNull = normalizeEmail(customerData.email);
     const client = await db.getClient();
     try {
         await client.query('BEGIN');

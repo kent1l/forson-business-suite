@@ -5,6 +5,7 @@ const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { syncPartWithMeili } = require('../meilisearch');
 const { getPartDataForMeili } = require('./partRoutes');
 const { activeAliasCondition, softDeleteSupported } = require('../helpers/partNumberSoftDelete');
+const { normalizePartNumber } = require('../helpers/normalizeEntity');
 
 // GET all numbers for a specific part, ordered correctly (exclude soft-deleted)
 router.get('/parts/:partId/numbers', protect, hasPermission('parts:view'), async (req, res) => {
@@ -27,7 +28,7 @@ router.post('/parts/:partId/numbers', protect, hasPermission('parts:edit'), asyn
     return res.status(400).json({ message: 'Numbers string is required.' });
   }
 
-  const numbers = numbersString.split(/[,;]/).map(num => num.trim()).filter(Boolean);
+  const numbers = numbersString.split(/[,;]/).map(num => normalizePartNumber(num)).filter(Boolean);
 
   if (numbers.length === 0) {
     return res.status(400).json({ message: 'No valid part numbers provided.' });

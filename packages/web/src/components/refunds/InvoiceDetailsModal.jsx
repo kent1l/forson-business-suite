@@ -114,10 +114,10 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
 
     const handleDelete = async () => {
         if (!invoice) return;
-        if (!window.confirm(`Delete Invoice #${invoice.invoice_number}? This cannot be undone and will restore stock quantities.`)) return;
+        if (!window.confirm(`Void Invoice #${invoice.invoice_number}? This will restore stock quantities, reverse its effect on the customer's A/R balance, and free up its physical receipt number for reuse. The invoice record itself is kept for audit history and marked Cancelled.`)) return;
         try {
             await api.delete(`/invoices/${invoice.invoice_id}`);
-            toast.success('Invoice deleted');
+            toast.success('Invoice voided');
             onClose();
             onActionSuccess();
             // Notify other parts of the app that invoices changed
@@ -127,7 +127,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                 // ignore if window not available
             }
         } catch (err) {
-            toast.error(err?.response?.data?.message || 'Failed to delete invoice');
+            toast.error(err?.response?.data?.message || 'Failed to void invoice');
         }
     };
 
@@ -394,12 +394,12 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                         Edit Receipt No.
                                     </button>
                                 )}
-                                {hasPermission('invoice:delete') && (
+                                {hasPermission('invoice:delete') && invoice.status !== 'Cancelled' && (
                                     <button
                                         onClick={handleDelete}
                                         className="bg-white border border-red-300 text-red-600 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-red-50"
                                     >
-                                        Delete Invoice
+                                        Void Invoice
                                     </button>
                                 )}
                                 {hasPermission(['transaction:change_date', 'transaction:change_date_unrestricted']) && (

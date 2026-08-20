@@ -31,7 +31,29 @@ const blockNonAdminGrantingAdmin = (req, res, next) => {
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { manilaDateString } = require('../helpers/manilaDate');
+const { normalizeText, normalizeName, normalizeEmail, normalizePhone } = require('../helpers/normalizeEntity');
 const router = express.Router();
+
+// Per-column normalizer for pickProfileFields. Columns not listed here (dates,
+// ids, enums, booleans) pass through unchanged.
+const PROFILE_FIELD_NORMALIZERS = {
+    first_name: normalizeName,
+    middle_name: normalizeName,
+    last_name: normalizeName,
+    suffix: normalizeText,
+    position_title: normalizeName,
+    mobile_no: normalizePhone,
+    personal_email: normalizeEmail,
+    address_line: normalizeText,
+    barangay: normalizeText,
+    city: normalizeText,
+    province: normalizeText,
+    postal_code: normalizeText,
+    emergency_contact_name: normalizeName,
+    emergency_contact_relation: normalizeName,
+    emergency_contact_phone: normalizePhone,
+    separation_reason: normalizeText,
+};
 
 // Work-roster projection. Assumes `employee e` LEFT JOINed to `department d`.
 // `has_system_access` is derived rather than stored: an employee has a login
@@ -101,7 +123,12 @@ const pickProfileFields = (body) => {
     for (const col of EMPLOYEE_PROFILE_COLUMNS) {
         if (body[col] === undefined) continue;
         const value = body[col];
-        out[col] = (typeof value === 'string' && value.trim() === '') ? null : value;
+        if (typeof value === 'string' && value.trim() === '') {
+            out[col] = null;
+            continue;
+        }
+        const normalizer = PROFILE_FIELD_NORMALIZERS[col];
+        out[col] = normalizer ? normalizer(value) : value;
     }
     return out;
 };
@@ -424,7 +451,9 @@ router.post('/employees', protect, hasPermission('employees:edit'), blockNonAdmi
         }
 
         const employee_code = await getNextDocumentNumber(db, 'EMP');
-        const cols = { ...pickProfileFields(req.body), employee_code, first_name, last_name };
+        // first_name/last_name come from pickProfileFields (normalized) since both
+        // are in EMPLOYEE_PROFILE_COLUMNS and validated present above.
+        const cols = { ...pickProfileFields(req.body), employee_code };
         // All four credential columns move together — the employee_login_complete_chk
         // constraint rejects any half-provisioned combination.
         cols.username = wantsLogin ? username : null;

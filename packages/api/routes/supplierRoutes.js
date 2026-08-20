@@ -3,6 +3,7 @@ const db = require('../db');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
+const { normalizeText, normalizeName, normalizeEmail, normalizePhone } = require('../helpers/normalizeEntity');
 const router = express.Router();
 
 // GET all suppliers with status filter
@@ -64,7 +65,12 @@ router.get('/suppliers', protect, hasPermission('suppliers:view'), async (req, r
 
 // POST a new supplier
 router.post('/suppliers', protect, hasPermission('suppliers:edit'), async (req, res) => {
-    const { supplier_name, contact_person, phone, email, address, is_active, payment_terms_days } = req.body;
+    let { supplier_name, contact_person, phone, email, address, is_active, payment_terms_days } = req.body;
+    supplier_name = normalizeText(supplier_name);
+    contact_person = normalizeName(contact_person);
+    phone = normalizePhone(phone);
+    email = normalizeEmail(email);
+    address = normalizeText(address);
     if (!supplier_name) {
         return res.status(400).json({ message: 'Supplier name is required.' });
     }
@@ -87,7 +93,12 @@ router.post('/suppliers', protect, hasPermission('suppliers:edit'), async (req, 
 // PUT - Update an existing supplier
 router.put('/suppliers/:id', protect, hasPermission('suppliers:edit'), async (req, res) => {
     const { id } = req.params;
-    const { supplier_name, contact_person, phone, email, address, is_active, payment_terms_days } = req.body;
+    let { supplier_name, contact_person, phone, email, address, is_active, payment_terms_days } = req.body;
+    supplier_name = normalizeText(supplier_name);
+    contact_person = normalizeName(contact_person);
+    phone = normalizePhone(phone);
+    email = normalizeEmail(email);
+    address = normalizeText(address);
 
     if (!supplier_name) {
         return res.status(400).json({ message: 'Supplier name is required' });
