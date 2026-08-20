@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
+const apPaymentService = require('../services/apPaymentService');
 const router = express.Router();
 
 // GET /ap/aging-summary - Open supplier_bill balances bucketed by age (mirrors /ar/aging-summary)
@@ -403,6 +404,74 @@ router.get('/ap/supplier-bills/:billId/items', protect, hasPermission('ap:view')
     } catch (err) {
         console.error('AP Bill Items Error:', err.message);
         res.status(500).json({ message: 'Failed to fetch bill items' });
+    }
+});
+
+// GET /ap/payment-methods - Methods that may be used to settle a payable directly
+// (cash, bank transfer, e-wallet). Cheques are excluded here on purpose; they are
+// issued from the Treasury desk so the instrument lifecycle is tracked.
+router.get('/ap/payment-methods', protect, hasPermission('ap:view'), async (req, res) => {
+    try {
+        const methods = await apPaymentService.getApPaymentMethods(db);
+        res.json({ success: true, data: methods });
+    } catch (err) {
+        console.error('AP Payment Methods Error:', err.message);
+        res.status(500).json({ message: 'Failed to fetch supplier payment methods' });
+    }
+});
+
+// GET /ap/payments - Cross-supplier payment register
+router.get('/ap/payments', protect, hasPermission('ap:view'), async (req, res) => {
+    try {
+        const { supplier_id, channel, limit } = req.query;
+        const payments = await apPaymentService.listPayments(db, {
+            supplierId: supplier_id ? parseInt(supplier_id, 10) : null,
+            channel,
+            limit,
+        });
+        res.json({ success: true, count: payments.length, data: payments });
+    } catch (err) {
+        console.error('AP Payments List Error:', err.message);
+        res.status(500).json({ message: 'Failed to fetch supplier payments' });
+    }
+});
+
+// POST /ap/payments - Record a non-cheque supplier payment (cash, bank transfer, e-wallet).
+// settlement_date is the day the money actually left and may be backdated, since
+// payments are routinely recorded after the fact. Changing it afterwards requires
+// transaction:change_date and a written reason (see transactionDateRoutes.js).
+router.post('/ap/payments', protect, hasPermission('ap:manage'), async (req, res) => {
+    const {
+        supplier_id, method_id, amount, settlement_date, reference_number,
+        bank_account_id, notes, allocations, override_payment_hold,
+    } = req.body;
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        const result = await apPaymentService.recordDirectPayment(client, {
+            supplierId: supplier_id,
+            methodId: method_id,
+            amount,
+            settlementDate: settlement_date,
+            referenceNumber: reference_number,
+            bankAccountId: bank_account_id,
+            notes,
+            allocations,
+            userId: req.user?.employee_id,
+            overridePaymentHold: Boolean(override_payment_hold),
+        });
+        await client.query('COMMIT');
+        res.status(201).json({ success: true, message: 'Supplier payment recorded', data: result });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('AP Record Payment Error:', err.message);
+        if (err.status) {
+            return res.status(err.status).json({ message: err.message, code: err.code });
+        }
+        res.status(500).json({ message: 'Failed to record supplier payment' });
+    } finally {
+        client.release();
     }
 });
 

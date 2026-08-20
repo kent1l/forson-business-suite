@@ -10,6 +10,7 @@ import PaginationControls from '../components/ui/PaginationControls';
 import { useAuth } from '../contexts/AuthContext';
 import ChangeTransactionDateModal from '../components/common/ChangeTransactionDateModal';
 import TransactionDateHistory from '../components/common/TransactionDateHistory';
+import { formatCurrency } from '../utils/currency';
 
 const GoodsReceiptHistoryPage = ({ user: _user }) => {
     const { hasPermission } = useAuth();
@@ -234,6 +235,9 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
     const hasVoidPermission = hasPermission('goods_receipt:void');
     const hasChangeDatePermission = hasPermission(['transaction:change_date', 'transaction:change_date_unrestricted']);
     const isVoided = selectedGrn?.status === 'Voided';
+    const displayLines = isEditMode ? editedLines : grnLines;
+    const totalQuantity = displayLines.reduce((sum, line) => sum + (parseFloat(line.quantity) || 0), 0);
+    const totalAmount = displayLines.reduce((sum, line) => sum + ((parseFloat(line.quantity) || 0) * (parseFloat(line.cost_price) || 0)), 0);
 
     return (
         <div className="space-y-6">
@@ -379,8 +383,12 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                 <div>
                                     <span className="text-gray-500 dark:text-slate-400">Received By:</span> <span className="font-semibold">{selectedGrn.employee_name}</span>
                                 </div>
+                                <div>
+                                    <span className="text-gray-500 dark:text-slate-400">Total Amount:</span>{' '}
+                                    <span className="font-semibold font-mono text-gray-900 dark:text-slate-100">{formatCurrency(totalAmount)}</span>
+                                </div>
                                 {isVoided && (
-                                    <div>
+                                    <div className="col-span-2">
                                         <span className="text-gray-500 dark:text-slate-400">Voided:</span>{' '}
                                         <span className="font-semibold">{selectedGrn.voided_at ? new Date(selectedGrn.voided_at).toLocaleString() : ''}</span>
                                         {selectedGrn.voided_by_name && (
@@ -407,7 +415,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100 dark:divide-slate-700/60">
-                                    {(isEditMode ? editedLines : grnLines).map((line, index) => (
+                                    {displayLines.map((line, index) => (
                                         <tr key={index} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200">
                                             <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100">{line.internal_sku}</td>
                                             <td className="p-3 text-sm font-medium text-gray-900 dark:text-slate-100">{line.display_name}</td>
@@ -436,7 +444,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                                         step="0.01"
                                                     />
                                                 ) : (
-                                                    `₱${parseFloat(line.cost_price).toFixed(2)}`
+                                                    formatCurrency(line.cost_price)
                                                 )}
                                             </td>
                                             <td className="p-3 text-sm text-right font-mono text-gray-700 dark:text-slate-300">
@@ -451,15 +459,31 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                                         placeholder="Optional"
                                                     />
                                                 ) : (
-                                                    line.sale_price ? `₱${parseFloat(line.sale_price).toFixed(2)}` : '-'
+                                                    line.sale_price ? formatCurrency(line.sale_price) : '-'
                                                 )}
                                             </td>
                                             <td className="p-3 text-sm text-right font-mono font-medium text-gray-900 dark:text-slate-100">
-                                                ₱{(parseFloat(line.quantity) * parseFloat(line.cost_price)).toFixed(2)}
+                                                {formatCurrency((parseFloat(line.quantity) || 0) * (parseFloat(line.cost_price) || 0))}
                                             </td>
                                         </tr>
                                     ))}
                                 </tbody>
+                                {displayLines.length > 0 && (
+                                    <tfoot className="bg-gray-50 dark:bg-slate-700/40 border-t border-gray-200 dark:border-slate-700 font-semibold text-gray-900 dark:text-slate-100">
+                                        <tr>
+                                            <td colSpan="2" className="p-3 text-sm text-right font-semibold text-gray-700 dark:text-slate-300">
+                                                Total:
+                                            </td>
+                                            <td className="p-3 text-sm text-center font-mono">
+                                                {totalQuantity}
+                                            </td>
+                                            <td colSpan="2"></td>
+                                            <td className="p-3 text-sm text-right font-mono font-bold text-gray-900 dark:text-slate-100">
+                                                {formatCurrency(totalAmount)}
+                                            </td>
+                                        </tr>
+                                    </tfoot>
+                                )}
                             </table>
                         </div>
 
