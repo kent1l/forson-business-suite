@@ -93,6 +93,16 @@ describe('transactionDateService — AR payment date changes', () => {
             );
         } else {
             customerPaymentId = cpRes.rows[0].payment_id;
+            const arCp = await db.query(
+                `SELECT ledger_id FROM ar_ledger WHERE payment_id = $1 AND payment_source = 'customer_payment'`,
+                [customerPaymentId]
+            );
+            if (arCp.rows.length === 0) {
+                await db.query(
+                    `SELECT append_ar_ledger_entry($1, NULL, $2, NULL, 'PAYMENT_SETTLED'::ar_ledger_entry_type, -400.00, 'cash', NULL, 'test fixture', $3, 'customer_payment')`,
+                    [testCustomerId, customerPaymentId, testEmployeeId]
+                );
+            }
         }
 
         // A settled invoice_payments (POS split payment) row.
@@ -114,6 +124,16 @@ describe('transactionDateService — AR payment date changes', () => {
             );
         } else {
             invoicePaymentId = ipRes.rows[0].payment_id;
+            const arIp = await db.query(
+                `SELECT ledger_id FROM ar_ledger WHERE payment_id = $1 AND payment_source = 'invoice_payments'`,
+                [invoicePaymentId]
+            );
+            if (arIp.rows.length === 0) {
+                await db.query(
+                    `SELECT append_ar_ledger_entry($1, $2, $3, NULL, 'PAYMENT_SETTLED'::ar_ledger_entry_type, -300.00, 'cash', NULL, 'test fixture', $4, 'invoice_payments')`,
+                    [testCustomerId, testInvoiceId, invoicePaymentId, testEmployeeId]
+                );
+            }
         }
     });
 
