@@ -31,10 +31,12 @@ router.get('/goods-receipts', protect, async (req, res) => {
         gr.voided_at,
         gr.void_reason,
         s.supplier_name,
-        CONCAT(e.first_name, ' ', e.last_name) AS employee_name
+        CONCAT(e.first_name, ' ', e.last_name) AS employee_name,
+        CASE WHEN gr.voided_by IS NOT NULL THEN CONCAT(ve.first_name, ' ', ve.last_name) END AS voided_by_name
       FROM goods_receipt gr
       JOIN supplier s ON gr.supplier_id = s.supplier_id
       JOIN employee e ON gr.received_by = e.employee_id
+      LEFT JOIN employee ve ON gr.voided_by = ve.employee_id
     `;
 
     const params = [];

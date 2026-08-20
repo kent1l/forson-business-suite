@@ -383,6 +383,9 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                     <div>
                                         <span className="text-gray-500 dark:text-slate-400">Voided:</span>{' '}
                                         <span className="font-semibold">{selectedGrn.voided_at ? new Date(selectedGrn.voided_at).toLocaleString() : ''}</span>
+                                        {selectedGrn.voided_by_name && (
+                                            <span className="font-semibold"> by {selectedGrn.voided_by_name}</span>
+                                        )}
                                         {selectedGrn.void_reason && (
                                             <span className="block text-xs text-gray-500 dark:text-slate-400 mt-0.5">Reason: {selectedGrn.void_reason}</span>
                                         )}
