@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import api from '../api';
 import { parsePaymentTermsDays } from '../utils/terms';
 import { formatPhysicalReceiptNumber } from '../utils/receiptNumberFormatter';
@@ -12,9 +12,12 @@ import Combobox from '../components/ui/Combobox';
 import CustomerForm from '../components/forms/CustomerForm';
 import PartForm from '../components/forms/PartForm';
 import SplitPaymentModal from '../components/ui/SplitPaymentModal';
+import SavedSalesPanel from '../components/pos/SavedSalesPanel';
 import { useSettings } from '../contexts/SettingsContext';
 import { formatApplicationText } from '../helpers/applicationTextHelper';
 import { enrichPartsArray } from '../helpers/applicationCache';
+import useTypeahead from '../hooks/useTypeahead';
+import useSavedSales from '../hooks/useSavedSales';
 
 const InvoicingPage = ({ user, onNavigate, pageState }) => {
     const { settings } = useSettings();
@@ -34,6 +37,10 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
     const [groups, setGroups] = useState([]);
     const [taxRates, setTaxRates] = useState([]);
     const [selectedTaxRate, setSelectedTaxRate] = useState(null);
+    const [isDraftsModalOpen, setIsDraftsModalOpen] = useState(false);
+    const [lastSavedDraftSignature, setLastSavedDraftSignature] = useState(null);
+    const [receiptCheck, setReceiptCheck] = useState(null); // { taken, normalized } | null
+    const searchInputRef = useRef(null);
 
     const paymentMethodsKey = settings?.PAYMENT_METHODS || '';
     const paymentMethods = paymentMethodsKey ? paymentMethodsKey.split(',') : [];
@@ -162,6 +169,32 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
         fetchTerms();
     }, []);
 
+    // Live duplicate check for the physical receipt number (advisory — the backend
+    // auto-increments on a collision rather than rejecting, so this just sets expectations early).
+    useEffect(() => {
+        const normalized = formatPhysicalReceiptNumber(physicalReceiptNo);
+        if (!normalized) {
+            setReceiptCheck(null);
+            return;
+        }
+        const debounceTimer = setTimeout(async () => {
+            try {
+                const res = await api.get(`/invoices/check-physical-receipt/${encodeURIComponent(normalized)}`);
+                setReceiptCheck(res.data);
+            } catch (err) {
+                console.error('Failed to check physical receipt number', err);
+            }
+        }, 400);
+        return () => clearTimeout(debounceTimer);
+    }, [physicalReceiptNo]);
+
+    const { saved: savedDrafts, count: savedDraftsCount, saveSale: saveDraft, remove: removeDraft, get: getDraft } = useSavedSales({
+        userId: user?.employee_id,
+        max: 10,
+        storagePrefix: 'invoicing:savedDrafts:',
+        labelPrefix: 'Draft'
+    });
+
     const customerOptions = useMemo(() => customers.map(c => ({
         value: String(c.customer_id),
         label: `${c.first_name} ${c.last_name || ''}`.trim()
@@ -217,6 +250,33 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
             error: 'Failed to save part.'
         });
     };
+
+    // Exact-match barcode/SKU lookup, triggered by pressing Enter with no dropdown item highlighted —
+    // lets a scanner or a known SKU add a line instantly without waiting on the fuzzy search debounce.
+    const handleRapidScan = async (rawValue) => {
+        const term = (rawValue ?? searchTerm).trim();
+        if (!term) return;
+        try {
+            const response = await api.get(`/parts/barcode/${encodeURIComponent(term)}`);
+            const enriched = await enrichPartsArray([response.data]);
+            addPartToLines(enriched[0]);
+        } catch (err) {
+            if (err.response?.status === 404) {
+                toast.error(`No item found for barcode "${term}".`);
+            } else {
+                console.error(err);
+            }
+        }
+    };
+
+    const { getInputProps: getSearchInputProps, getItemProps: getSearchItemProps } = useTypeahead({
+        items: searchResults,
+        onSelect: (item) => addPartToLines(item),
+        onEnterUnselected: handleRapidScan,
+        inputRef: searchInputRef,
+        inputId: 'invoicing-search-input',
+        listboxId: 'invoicing-search-results'
+    });
 
     const handleLineChange = (partId, field, value) => {
         const numericValue = Math.max(0, parseFloat(value) || 0);
@@ -335,6 +395,87 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
         };
     }, [lines, taxRates, selectedTaxRate]);
 
+    // Stable signature of the in-progress invoice, used to avoid saving an identical draft twice in a row.
+    const draftSignature = useMemo(() => {
+        if (!lines.length) return null;
+        const items = [...lines]
+            .map(l => ({ id: l.part_id, q: l.quantity, p: l.sale_price, d: l.discount_amount || 0 }))
+            .sort((a, b) => (a.id > b.id ? 1 : -1));
+        return JSON.stringify({ items, c: selectedCustomer || null, t: selectedTaxRate?.tax_rate_id || null });
+    }, [lines, selectedCustomer, selectedTaxRate]);
+
+    const canSaveDraft = !!lines.length && draftSignature !== lastSavedDraftSignature;
+
+    const handleSaveDraft = useCallback(() => {
+        if (!lines.length) { toast.error('No items to save.'); return; }
+        if (!canSaveDraft) { toast.error('Already saved. Make a change before saving again.'); return; }
+        const cartSnapshot = {
+            items: lines.map(l => ({
+                part_id: l.part_id,
+                display_name: l.display_name,
+                quantity: l.quantity,
+                sale_price: l.sale_price,
+                discount_amount: l.discount_amount || 0,
+                tax_rate_id: l.tax_rate_id || null,
+                is_tax_inclusive_price: l.is_tax_inclusive_price || false
+            })),
+            customerId: selectedCustomer || null,
+            taxRateId: selectedTaxRate?.tax_rate_id || null,
+            terms,
+            paymentMethod,
+            physicalReceiptNo,
+            totals: { subtotal, tax, grandTotal: total }
+        };
+        const entry = saveDraft(cartSnapshot);
+        if (entry) {
+            setLastSavedDraftSignature(draftSignature);
+            toast.success('Draft saved.');
+        }
+    }, [canSaveDraft, lines, selectedCustomer, selectedTaxRate, terms, paymentMethod, physicalReceiptNo, subtotal, tax, total, saveDraft, draftSignature]);
+
+    const handleRestoreDraft = (id) => {
+        const entry = getDraft(id);
+        if (!entry) return;
+        if (lines.length && !window.confirm('Current invoice lines will be replaced. Continue?')) return;
+        const { cart } = entry;
+        const restoredLines = (cart.items || []).map(i => ({
+            part_id: i.part_id,
+            display_name: i.display_name,
+            quantity: i.quantity,
+            sale_price: i.sale_price,
+            discount_amount: i.discount_amount || 0,
+            tax_rate_id: i.tax_rate_id || null,
+            is_tax_inclusive_price: i.is_tax_inclusive_price || false
+        }));
+        setLines(restoredLines);
+        if (cart.customerId) setSelectedCustomer(String(cart.customerId));
+        const taxRate = taxRates.find(r => r.tax_rate_id === cart.taxRateId);
+        if (taxRate) setSelectedTaxRate(taxRate);
+        if (cart.terms !== undefined) setTerms(cart.terms);
+        if (cart.paymentMethod) setPaymentMethod(cart.paymentMethod);
+        if (cart.physicalReceiptNo !== undefined) setPhysicalReceiptNo(cart.physicalReceiptNo);
+        removeDraft(id);
+        setIsDraftsModalOpen(false);
+        toast.success('Draft restored.');
+    };
+
+    // Surface a way to jump to the invoice just posted instead of leaving the user stranded
+    // on a blank form with no next step.
+    const showViewInvoiceToast = useCallback((invoiceNumber) => {
+        if (!invoiceNumber || !onNavigate) return;
+        toast((t) => (
+            <div className="flex items-center gap-3">
+                <span>Invoice {invoiceNumber} posted.</span>
+                <button
+                    onClick={() => { toast.dismiss(t.id); onNavigate('sales_history'); }}
+                    className="text-indigo-600 font-semibold underline whitespace-nowrap"
+                >
+                    View in Sales History
+                </button>
+            </div>
+        ), { duration: 6000 });
+    }, [onNavigate]);
+
     const handlePostInvoice = useCallback(async () => {
         if (!selectedCustomer || lines.length === 0) {
             toast.error('Please select a customer and add at least one item.');
@@ -392,11 +533,13 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
 
         toast.promise(promise, {
             loading: 'Posting invoice...',
-            success: () => {
+            success: (response) => {
                 setLines([]);
                 setSelectedCustomer('');
                 setTerms(settings.DEFAULT_PAYMENT_TERMS || '');
-                return 'Invoice created successfully!';
+                setLastSavedDraftSignature(null);
+                showViewInvoiceToast(response.data?.invoice_number);
+                return `Invoice ${response.data?.invoice_number || ''} created successfully!`;
             },
             error: (err) => {
                 if (err?.response?.status === 409) {
@@ -405,7 +548,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                 return 'Failed to create invoice.';
             },
         });
-    }, [selectedCustomer, lines, customers, terms, settings, paymentMethod, physicalReceiptNo, selectedTaxRate, user, total]);
+    }, [selectedCustomer, lines, customers, terms, settings, paymentMethod, physicalReceiptNo, selectedTaxRate, user, total, showViewInvoiceToast]);
 
     // Handle split payment confirmation for invoicing
     const handleConfirmSplitPayment = async (payments, physicalReceiptNo, { employeeId } = {}) => {
@@ -444,9 +587,11 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
             setLines([]);
             setSelectedCustomer('');
             setTerms(settings.DEFAULT_PAYMENT_TERMS || '');
+            setLastSavedDraftSignature(null);
             setIsSplitPaymentModalOpen(false);
 
-            toast.success('Invoice created successfully!');
+            toast.success(`Invoice ${invoiceResponse.data.invoice_number} created successfully!`);
+            showViewInvoiceToast(invoiceResponse.data.invoice_number);
 
         } catch (err) {
             console.error('Split payment error:', err);
@@ -486,6 +631,17 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                 <div className="flex justify-between items-center mb-6">
                     <h1 className="text-3xl font-bold text-gray-800">New Invoice</h1>
                     <div className="flex items-center space-x-2">
+                        <button onClick={() => setIsDraftsModalOpen(true)} title="Saved drafts" className="relative bg-white text-gray-600 border border-gray-300 px-4 py-2 rounded-lg font-semibold hover:bg-gray-50 transition flex items-center">
+                            <Icon path={ICONS.bookmark} className="h-5 w-5 mr-2" />
+                            Drafts
+                            {savedDraftsCount > 0 && (
+                                <span className="ml-2 bg-indigo-100 text-indigo-700 rounded-full px-2 py-0.5 text-xs font-bold">{savedDraftsCount}</span>
+                            )}
+                        </button>
+                        <button onClick={handleSaveDraft} disabled={!canSaveDraft} title="Save current invoice as a draft" className="bg-white text-gray-600 border border-gray-300 px-4 py-2 rounded-lg font-semibold hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center">
+                            <Icon path={ICONS.bookmark} className="h-5 w-5 mr-2" />
+                            Save Draft
+                        </button>
                         <button onClick={handlePostInvoice} title="Post Invoice (Ctrl+Enter)" className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-indigo-700 transition shadow-sm flex items-center">
                             <Icon path={ICONS.check} className="h-5 w-5 mr-2" />
                             Post Invoice
@@ -577,9 +733,14 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                                 type="text"
                                 value={physicalReceiptNo}
                                 onChange={e => setPhysicalReceiptNo(e.target.value)}
-                                className="w-full px-3 py-2 border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                                className={`w-full px-3 py-2 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 ${receiptCheck?.taken ? 'border-amber-400' : 'border-gray-300'}`}
                                 placeholder={settings?.RECEIPT_NO_HELP_TEXT || 'Enter receipt number'}
                             />
+                            {receiptCheck?.taken && (
+                                <p className="mt-1 text-xs text-amber-600">
+                                    "{receiptCheck.normalized}" is already used on another invoice — it will be auto-assigned the next available number when posted.
+                                </p>
+                            )}
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
@@ -615,10 +776,12 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                         <div className="flex items-center space-x-2">
                             <div className="relative flex-grow">
                                 <SearchBar
+                                    {...getSearchInputProps()}
+                                    ref={searchInputRef}
                                     value={searchTerm}
                                     onChange={setSearchTerm}
                                     onClear={() => setSearchTerm('')}
-                                    placeholder="Search by part name, SKU, or application..."
+                                    placeholder="Search by part name, SKU, or application... (Enter to scan barcode/SKU)"
                                 />
                             </div>
                             <button onClick={() => setIsNewPartModalOpen(true)} className="bg-indigo-50 text-indigo-700 px-4 py-2 rounded-lg font-semibold hover:bg-indigo-100 transition whitespace-nowrap flex items-center">
@@ -627,20 +790,23 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                             </button>
                         </div>
                         {searchResults.length > 0 && (
-                            <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto scrollbar-thin">
-                                {searchResults.map(part => (
-                                    <li key={part.part_id} onClick={() => addPartToLines(part)} className="px-4 py-3 hover:bg-indigo-50 cursor-pointer border-b last:border-b-0">
-                                        <div className="flex items-baseline justify-between">
-                                            <div className="flex items-baseline space-x-2 flex-1 min-w-0">
-                                                <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
-                                                {part.applications && <div className="text-xs text-gray-500 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
+                            <ul id="invoicing-search-results" className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto scrollbar-thin" role="listbox">
+                                {searchResults.map((part, index) => {
+                                    const itemProps = getSearchItemProps(index);
+                                    return (
+                                        <li key={part.part_id} {...itemProps} className={`px-4 py-3 cursor-pointer border-b last:border-b-0 ${itemProps['aria-selected'] ? 'bg-indigo-100' : 'hover:bg-indigo-50'}`}>
+                                            <div className="flex items-baseline justify-between">
+                                                <div className="flex items-baseline space-x-2 flex-1 min-w-0">
+                                                    <div className="text-sm font-medium text-gray-800 truncate">{part.display_name}</div>
+                                                    {part.applications && <div className="text-xs text-gray-500 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
+                                                </div>
+                                                <div className="text-sm font-semibold text-gray-700 ml-4">
+                                                    {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
+                                                </div>
                                             </div>
-                                            <div className="text-sm font-semibold text-gray-700 ml-4">
-                                                {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
-                                            </div>
-                                        </div>
-                                    </li>
-                                ))}
+                                        </li>
+                                    );
+                                })}
                             </ul>
                         )}
                     </div>
@@ -761,6 +927,14 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                     </div>
                 </div>
             </div>
+            <Modal isOpen={isDraftsModalOpen} onClose={() => setIsDraftsModalOpen(false)} title="Saved Drafts">
+                <SavedSalesPanel
+                    saved={savedDrafts}
+                    onRestore={handleRestoreDraft}
+                    onDelete={removeDraft}
+                    currency={settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}
+                />
+            </Modal>
             <Modal isOpen={isCustomerModalOpen} onClose={() => setIsCustomerModalOpen(false)} title="Add New Customer">
                 <CustomerForm onSave={handleNewCustomerSave} onCancel={() => setIsCustomerModalOpen(false)} />
             </Modal>

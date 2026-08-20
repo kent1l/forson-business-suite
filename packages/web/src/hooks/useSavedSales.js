@@ -2,15 +2,17 @@ import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { formatISO } from 'date-fns';
 
-// LocalStorage key prefix
-const KEY_PREFIX = 'pos:savedSales:';
+// LocalStorage key prefix (kept as-is for backwards compatibility with sales already saved by POS)
+const KEY_PREFIX_DEFAULT = 'pos:savedSales:';
 const MAX_SAVES_DEFAULT = 10;
 
 // shape: { id, userId, createdAt, label, cart: { items, customerId, notes, totals } }
-export default function useSavedSales({ userId, max = MAX_SAVES_DEFAULT }) {
+// storagePrefix/labelPrefix let other pages (e.g. Invoicing) keep their own drafts in a separate
+// localStorage namespace and with their own label wording, without touching POS's saved sales.
+export default function useSavedSales({ userId, max = MAX_SAVES_DEFAULT, storagePrefix = KEY_PREFIX_DEFAULT, labelPrefix = 'Sale' }) {
   const [saved, setSaved] = useState([]);
 
-  const storageKey = `${KEY_PREFIX}${userId || 'anonymous'}`;
+  const storageKey = `${storagePrefix}${userId || 'anonymous'}`;
 
   const load = useCallback(() => {
     try {
@@ -48,7 +50,7 @@ export default function useSavedSales({ userId, max = MAX_SAVES_DEFAULT }) {
       return null;
     }
     const id = `${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
-    const label = `Sale ${saved.length + 1}`; // simple incremental label
+    const label = `${labelPrefix} ${saved.length + 1}`; // simple incremental label
     const entry = {
       id,
       userId,
@@ -63,7 +65,7 @@ export default function useSavedSales({ userId, max = MAX_SAVES_DEFAULT }) {
     setSaved(next);
     persist(next);
     return entry;
-  }, [userId, saved, max, persist]);
+  }, [userId, saved, max, persist, labelPrefix]);
 
   const remove = useCallback((id) => {
     setSaved(prev => {
