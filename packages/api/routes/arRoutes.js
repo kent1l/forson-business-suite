@@ -28,11 +28,12 @@ router.get('/ar/dashboard-stats', protect, hasPermission('ar:view'), async (req,
                 WHERE ledger_balance > 0
             `),
             
-            // Invoices sent in date range
+            // Active (open) invoices sent in date range
             db.query(`
                 SELECT COUNT(*) as invoices_sent
                 FROM invoice i
                 WHERE i.invoice_date >= $1 AND i.invoice_date <= $2
+                AND i.status IN ('Unpaid', 'Partially Paid')
             `, [start, end]),
             
             // Overdue invoices count
