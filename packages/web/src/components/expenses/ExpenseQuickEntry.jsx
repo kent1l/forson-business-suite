@@ -56,14 +56,26 @@ export default function ExpenseQuickEntry({ onParsed }) {
             </p>
 
             <form onSubmit={handleParse} className="flex flex-col sm:flex-row items-stretch gap-2">
-                <input
-                    type="text"
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                    placeholder="Describe expense details here..."
-                    disabled={loading}
-                    className="flex-1 px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
-                />
+                <div className="relative flex-1">
+                    <input
+                        type="text"
+                        value={text}
+                        onChange={(e) => setText(e.target.value)}
+                        placeholder="Describe expense details here..."
+                        disabled={loading}
+                        className="w-full px-4 py-2.5 pr-9 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+                    />
+                    {text && !loading && (
+                        <button
+                            type="button"
+                            onClick={() => setText('')}
+                            aria-label="Clear expense description"
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer"
+                        >
+                            <Icon path={ICONS.close} className="w-4 h-4" />
+                        </button>
+                    )}
+                </div>
                 <button
                     type="submit"
                     disabled={loading || !text.trim()}

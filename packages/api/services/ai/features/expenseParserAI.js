@@ -62,57 +62,46 @@ class ExpenseParserAI {
         const originalText = text.trim();
         const safeText = sanitizeInput(originalText);
 
-        // 1. Fetch active categories
+        // 1. Fetch active categories, payment methods, known payees, and approved lexicon in parallel
         let categories = [];
-        try {
-            const categoriesRes = await db.query(
-                `SELECT category_id, category_name, description 
-                 FROM expense_category 
-                 WHERE is_active = true 
-                 ORDER BY sort_order ASC, category_name ASC`
-            );
-            categories = categoriesRes.rows;
-        } catch {
-            // Non-blocking fallback if DB is unavailable
-        }
-
-        // 2. Fetch active payment methods
         let paymentMethods = [];
-        try {
-            const pmRes = await db.query(
-                `SELECT method_id, name 
-                 FROM payment_methods 
-                 WHERE enabled = true 
-                 ORDER BY sort_order ASC`
-            );
-            paymentMethods = pmRes.rows;
-        } catch {
-            // Non-blocking fallback if DB is unavailable
-        }
-
-        // 2b. Known payees — the model cannot recognise this store's vendors unless
-        // it is told who they are. This is the cheapest local-name accuracy win.
         let knownPayees = [];
+        let approvedAliases = [];
+
         try {
-            const payeeRes = await db.query(
-                `SELECT payee, COUNT(*)::int AS use_count
-                 FROM expense
-                 WHERE is_void = false AND payee IS NOT NULL AND TRIM(payee) <> ''
-                 GROUP BY payee
-                 ORDER BY use_count DESC
-                 LIMIT 40`
-            );
-            knownPayees = payeeRes.rows.map(r => r.payee);
+            const [categoriesRes, pmRes, payeeRes, lexiconRes] = await Promise.all([
+                db.query(
+                    `SELECT category_id, category_name, description 
+                     FROM expense_category 
+                     WHERE is_active = true 
+                     ORDER BY sort_order ASC, category_name ASC`
+                ).catch(() => ({ rows: [] })),
+                db.query(
+                    `SELECT method_id, name 
+                     FROM payment_methods 
+                     WHERE enabled = true 
+                     ORDER BY sort_order ASC`
+                ).catch(() => ({ rows: [] })),
+                db.query(
+                    `SELECT payee, COUNT(*)::int AS use_count
+                     FROM expense
+                     WHERE is_void = false AND payee IS NOT NULL AND TRIM(payee) <> ''
+                     GROUP BY payee
+                     ORDER BY use_count DESC
+                     LIMIT 40`
+                ).catch(() => ({ rows: [] })),
+                expenseLexicon.getApprovedAliases().catch(err => {
+                    console.warn('[ExpenseParserAI] Failed to load approved lexicon:', err.message);
+                    return [];
+                })
+            ]);
+
+            categories = categoriesRes?.rows || [];
+            paymentMethods = pmRes?.rows || [];
+            knownPayees = (payeeRes?.rows || []).map(r => r.payee);
+            approvedAliases = Array.isArray(lexiconRes) ? lexiconRes : [];
         } catch {
             // Non-blocking fallback if DB is unavailable
-        }
-
-        // 2c. Approved lexicon — admin-vetted local vocabulary.
-        let approvedAliases = [];
-        try {
-            approvedAliases = await expenseLexicon.getApprovedAliases();
-        } catch (err) {
-            console.warn('[ExpenseParserAI] Failed to load approved lexicon:', err.message);
         }
 
         // 3. Dynamic RAG Few-Shot Retrieval via pgvector Cosine Similarity Search

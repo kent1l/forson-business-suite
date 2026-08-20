@@ -1,6 +1,53 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
+
+const getToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+
+const toISODate = (d) => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+
+const addDays = (dateStr, days) => {
+    const d = new Date(dateStr + 'T00:00:00');
+    d.setDate(d.getDate() + days);
+    return toISODate(d);
+};
+
+const DATE_RANGE_TEMPLATES = [
+    {
+        label: 'Today',
+        getRange: () => { const t = getToday(); return [t, t]; }
+    },
+    {
+        label: 'Yesterday',
+        getRange: () => { const y = addDays(getToday(), -1); return [y, y]; }
+    },
+    {
+        label: 'Last 7 Days',
+        getRange: () => [addDays(getToday(), -6), getToday()]
+    },
+    {
+        label: 'This Month',
+        getRange: () => {
+            const today = getToday();
+            return [`${today.slice(0, 7)}-01`, today];
+        }
+    },
+    {
+        label: 'Last Month',
+        getRange: () => {
+            const d = new Date(getToday() + 'T00:00:00');
+            d.setDate(1);
+            d.setMonth(d.getMonth() - 1);
+            const from = toISODate(d);
+            const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+            return [from, toISODate(lastDay)];
+        }
+    },
+    {
+        label: 'All Time',
+        getRange: () => ['', '']
+    }
+];
 
 export default function ExpenseList({
     expenses = [],
@@ -9,6 +56,7 @@ export default function ExpenseList({
     pagination = {},
     filters = {},
     onFilterChange,
+    onDateRangeChange,
     onClearFilters,
     onPageChange,
     onSortChange,
@@ -21,6 +69,50 @@ export default function ExpenseList({
     const [voidReason, setVoidReason] = useState('');
     const [voidLoading, setVoidLoading] = useState(false);
     const [voidError, setVoidError] = useState('');
+
+    // Local draft state for the date inputs so typing doesn't trigger a
+    // refetch on every keystroke — the filter only commits on blur/Enter,
+    // or when a range template button is clicked.
+    const [dateFromDraft, setDateFromDraft] = useState(filters.date_from || '');
+    const [dateToDraft, setDateToDraft] = useState(filters.date_to || '');
+
+    useEffect(() => {
+        setDateFromDraft(filters.date_from || '');
+    }, [filters.date_from]);
+
+    useEffect(() => {
+        setDateToDraft(filters.date_to || '');
+    }, [filters.date_to]);
+
+    const commitDateFrom = () => {
+        if (dateFromDraft !== (filters.date_from || '')) {
+            onFilterChange('date_from', dateFromDraft);
+        }
+    };
+
+    const commitDateTo = () => {
+        if (dateToDraft !== (filters.date_to || '')) {
+            onFilterChange('date_to', dateToDraft);
+        }
+    };
+
+    const handleDateKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            e.target.blur();
+        }
+    };
+
+    const applyDateRangeTemplate = (getRange) => {
+        const [from, to] = getRange();
+        setDateFromDraft(from);
+        setDateToDraft(to);
+        if (onDateRangeChange) {
+            onDateRangeChange(from, to);
+        } else {
+            onFilterChange('date_from', from);
+            onFilterChange('date_to', to);
+        }
+    };
 
     const handleVoidSubmit = async (e) => {
         e.preventDefault();
@@ -85,7 +177,7 @@ export default function ExpenseList({
                         <span>Filter & Search Expenses</span>
                     </h3>
 
-                    {(filters.date_from || filters.date_to || filters.category_id || filters.payment_method_id || filters.payee || filters.show_void) && (
+                    {(filters.date_from !== getToday() || filters.date_to !== getToday() || filters.category_id || filters.payment_method_id || filters.payee || filters.show_void) && (
                         <button
                             onClick={onClearFilters}
                             className="text-xs font-medium text-primary-600 dark:text-primary-400 hover:underline cursor-pointer"
@@ -143,8 +235,10 @@ export default function ExpenseList({
                     <div>
                         <input
                             type="date"
-                            value={filters.date_from || ''}
-                            onChange={(e) => onFilterChange('date_from', e.target.value)}
+                            value={dateFromDraft}
+                            onChange={(e) => setDateFromDraft(e.target.value)}
+                            onBlur={commitDateFrom}
+                            onKeyDown={handleDateKeyDown}
                             className="w-full px-3 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-gray-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500"
                             placeholder="From Date"
                         />
@@ -154,12 +248,28 @@ export default function ExpenseList({
                     <div>
                         <input
                             type="date"
-                            value={filters.date_to || ''}
-                            onChange={(e) => onFilterChange('date_to', e.target.value)}
+                            value={dateToDraft}
+                            onChange={(e) => setDateToDraft(e.target.value)}
+                            onBlur={commitDateTo}
+                            onKeyDown={handleDateKeyDown}
                             className="w-full px-3 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-gray-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500"
                             placeholder="To Date"
                         />
                     </div>
+                </div>
+
+                {/* Quick Date Range Templates */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                    {DATE_RANGE_TEMPLATES.map(tpl => (
+                        <button
+                            key={tpl.label}
+                            type="button"
+                            onClick={() => applyDateRangeTemplate(tpl.getRange)}
+                            className="px-2.5 py-1 text-[11px] font-medium bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 rounded-full hover:bg-primary-50 hover:border-primary-300 hover:text-primary-700 dark:hover:bg-primary-900/30 dark:hover:border-primary-700 dark:hover:text-primary-300 transition-colors cursor-pointer"
+                        >
+                            {tpl.label}
+                        </button>
+                    ))}
                 </div>
 
                 <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pt-1">

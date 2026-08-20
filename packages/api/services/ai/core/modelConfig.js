@@ -7,14 +7,16 @@ module.exports = {
         google: {
             apiKeyEnv: 'GEMINI_API_KEY',
             keyPoolEnv: 'GEMINI_API_KEY_POOL',
-            defaultModel: 'gemini-3.5-flash-lite',
+            defaultModel: 'gemini-3.7-flash',
             tiers: {
                 ROUTINE: [
+                    'gemini-3.7-flash',
                     'gemini-3.5-flash-lite',
                     'gemini-3.1-flash-lite'
                     // gemini-2.5-flash-lite is excluded due to extremely low RPD limits (20 RPD)
                 ],
                 REASONING: [
+                    'gemini-3.7-flash',
                     'gemini-3.6-flash',
                     'gemini-3.5-flash',
                     'gemini-3-flash',
@@ -31,11 +33,11 @@ module.exports = {
         },
         openrouter: {
             apiKeyEnv: 'OPENROUTER_API_KEY',
-            defaultModel: 'openrouter/free',
+            defaultModel: 'meta-llama/llama-3.3-70b-instruct',
             fallbackChain: [
+                'google/gemini-3.7-flash',
                 'google/gemini-3.5-flash',
                 'google/gemini-2.5-flash',
-                'openrouter/free',
                 'meta-llama/llama-3.3-70b-instruct',
                 'deepseek/deepseek-chat',
                 'qwen/qwen-2.5-coder-32b-instruct'

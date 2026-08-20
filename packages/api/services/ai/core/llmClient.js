@@ -31,8 +31,8 @@ class LLMClient {
 
         // Legacy tier mappings for backwards compatibility
         this.geminiTiers = {
-            ROUTINE: ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'],
-            REASONING: ['gemini-3.6-flash', 'gemini-3.5-flash'],
+            ROUTINE: ['gemini-3.7-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'],
+            REASONING: ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'],
             MICRO: ['gemma-4-31b', 'gemma-4-26b']
         };
     }
@@ -55,7 +55,7 @@ class LLMClient {
     }
 
     get geminiModel() {
-        return 'gemini-3.5-flash-lite';
+        return 'gemini-3.7-flash';
     }
 
     get openaiKey() {

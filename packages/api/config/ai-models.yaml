@@ -21,18 +21,24 @@ pools:
     confidence_threshold: 0.60
     escalation_pool: "expense_reasoning_pool"
     fallback_chain:
-      - provider: gemini
-        model: "gemini-3.5-flash-lite"
       - provider: groq
         model: "llama-3.3-70b-versatile"
+      - provider: gemini
+        model: "gemini-3.7-flash"
+      - provider: gemini
+        model: "gemini-3.5-flash-lite"
       - provider: openrouter
-        model: "openrouter/free"
+        model: "meta-llama/llama-3.3-70b-instruct"
 
   expense_reasoning_pool:
     description: "Escalation pool for ambiguous or low-confidence expense strings"
     fallback_chain:
       - provider: gemini
+        model: "gemini-3.7-flash"
+      - provider: gemini
         model: "gemini-3.6-flash"
+      - provider: groq
+        model: "llama-3.3-70b-versatile"
       - provider: openrouter
         model: "deepseek/deepseek-chat"
 
@@ -40,8 +46,10 @@ pools:
     description: "Complex semantic clustering and cross-reference verification for auto parts"
     fallback_chain:
       - provider: gemini
+        model: "gemini-3.7-flash"
+      - provider: gemini
         model: "gemini-3.6-flash"
-      - provider: openrouter
-        model: "meta-llama/llama-3.3-70b-instruct"
       - provider: groq
         model: "llama-3.3-70b-versatile"
+      - provider: openrouter
+        model: "meta-llama/llama-3.3-70b-instruct"
