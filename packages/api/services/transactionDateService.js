@@ -449,7 +449,9 @@ const goodsReceiptHandler = {
     },
     docRef: (row) => row.grn_number,
     currentDate: (row) => row.receipt_date,
-    guardState: () => null,
+    guardState: (row) => (row.status === 'Voided'
+        ? 'This goods receipt has been voided; its date can no longer be changed.'
+        : null),
     async conflicts(client, row, newDate, conflicts = []) {
         const { rows: lines } = await client.query(
             `SELECT part_id, array_agg(inv_trans_id) AS inv_trans_ids

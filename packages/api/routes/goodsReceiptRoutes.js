@@ -23,15 +23,20 @@ router.get('/goods-receipts', protect, async (req, res) => {
 
   try {
     let query = `
-      SELECT 
+      SELECT
         gr.grn_id,
         gr.grn_number,
         gr.receipt_date,
+        gr.status,
+        gr.voided_at,
+        gr.void_reason,
         s.supplier_name,
-        CONCAT(e.first_name, ' ', e.last_name) AS employee_name
+        CONCAT(e.first_name, ' ', e.last_name) AS employee_name,
+        CASE WHEN gr.voided_by IS NOT NULL THEN CONCAT(ve.first_name, ' ', ve.last_name) END AS voided_by_name
       FROM goods_receipt gr
       JOIN supplier s ON gr.supplier_id = s.supplier_id
       JOIN employee e ON gr.received_by = e.employee_id
+      LEFT JOIN employee ve ON gr.voided_by = ve.employee_id
     `;
 
     const params = [];
@@ -167,11 +172,11 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
     const grn_number = await getNextDocumentNumber(client, 'GRN');
 
     const goodsReceiptQuery = `
-      INSERT INTO goods_receipt (grn_number, supplier_id, received_by, bill_id)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO goods_receipt (grn_number, supplier_id, received_by, bill_id, po_id)
+      VALUES ($1, $2, $3, $4, $5)
       RETURNING grn_id;
     `;
-    const receiptResult = await client.query(goodsReceiptQuery, [grn_number, supplier_id, received_by, bill_id || null]);
+    const receiptResult = await client.query(goodsReceiptQuery, [grn_number, supplier_id, received_by, bill_id || null, po_id || null]);
     const newGrnId = receiptResult.rows[0].grn_id;
 
     for (const line of lines) {
@@ -326,10 +331,13 @@ router.put('/goods-receipts/:id', protect, hasPermission('goods_receipt:edit'), 
     try {
       // Verify the GRN exists and we can update it
       console.log('Verifying GRN exists...');
-      const verifyGrnQuery = 'SELECT grn_id, grn_number FROM goods_receipt WHERE grn_id = $1';
+      const verifyGrnQuery = 'SELECT grn_id, grn_number, status FROM goods_receipt WHERE grn_id = $1';
       const verifyResult = await client.query(verifyGrnQuery, [id]);
       if (verifyResult.rows.length === 0) {
         throw new Error(`GRN with id ${id} not found`);
+      }
+      if (verifyResult.rows[0].status === 'Voided') {
+        throw new Error('This goods receipt has been voided and can no longer be edited.');
       }
       const grn_number = verifyResult.rows[0].grn_number;
       console.log('Found GRN number:', grn_number);
@@ -427,6 +435,169 @@ router.put('/goods-receipts/:id', protect, hasPermission('goods_receipt:edit'), 
       console.log('Releasing database client...');
       client.release();
     }
+  }
+});
+
+// DELETE /goods-receipts/:id - Void a goods receipt: reverses the stock it added, rolls
+// back its contribution to a linked purchase order, and reverses any AP liability it
+// posted — but never hard-deletes the row or its lines. Mirrors the invoice void pattern
+// (see invoiceRoutes.js DELETE /invoices/:id): correcting a mistaken receipt is done the
+// accounting way — reverse it, keep the record, so it "simulates" the receipt never
+// having happened without erasing the audit trail.
+router.delete('/goods-receipts/:id', protect, hasPermission('goods_receipt:void'), async (req, res) => {
+  const { id } = req.params;
+  const { reason } = req.body || {};
+  const client = await db.getClient();
+
+  try {
+    await client.query('BEGIN');
+
+    const { rows: grnRows } = await client.query(
+      'SELECT grn_id, grn_number, bill_id, po_id, status FROM goods_receipt WHERE grn_id = $1 FOR UPDATE',
+      [id]
+    );
+    if (grnRows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Goods receipt not found' });
+    }
+    const grn = grnRows[0];
+    if (grn.status === 'Voided') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: 'This goods receipt has already been voided.' });
+    }
+
+    const { rows: lines } = await client.query(
+      'SELECT part_id, quantity, cost_price FROM goods_receipt_line WHERE grn_id = $1',
+      [id]
+    );
+    if (lines.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: 'This goods receipt has no line items to reverse.' });
+    }
+
+    // Guard: voiding removes stock this receipt added, so it must not drive any
+    // part's current on-hand quantity negative (e.g. some of it was already sold
+    // or transferred out since receiving).
+    const insufficientStock = [];
+    for (const line of lines) {
+      const { rows: stockRows } = await client.query(
+        'SELECT COALESCE(SUM(quantity), 0) AS on_hand FROM inventory_transaction WHERE part_id = $1',
+        [line.part_id]
+      );
+      const onHand = parseFloat(stockRows[0].on_hand);
+      if (onHand - parseFloat(line.quantity) < -0.0001) {
+        insufficientStock.push({ part_id: line.part_id, on_hand: onHand, needed: parseFloat(line.quantity) });
+      }
+    }
+    if (insufficientStock.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        message: 'Cannot void: some of the received stock has already been used elsewhere, and reversing it would drive on-hand quantity negative.',
+        details: insufficientStock,
+      });
+    }
+
+    // If linked to a bill, block the void when the bill already has payments applied —
+    // reversing a paid bill's liability without also reversing the payment/allocation
+    // would leave the AP ledger internally inconsistent.
+    let bill = null;
+    if (grn.bill_id) {
+      const { rows: billRows } = await client.query(
+        'SELECT bill_id, bill_number, supplier_id, amount_paid, status FROM supplier_bill WHERE bill_id = $1 FOR UPDATE',
+        [grn.bill_id]
+      );
+      bill = billRows[0] || null;
+      if (bill && bill.status !== 'Void') {
+        if (parseFloat(bill.amount_paid) > 0) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ message: `Cannot void: linked supplier bill ${bill.bill_number} already has payments applied. Reverse the payment first.` });
+        }
+        // A bill is header-only (no per-line detail), so a partial reversal can't be
+        // computed accurately when other active receipts still share it.
+        const { rows: otherRows } = await client.query(
+          `SELECT COUNT(*)::int AS cnt FROM goods_receipt WHERE bill_id = $1 AND grn_id != $2 AND status = 'Active'`,
+          [grn.bill_id, id]
+        );
+        if (otherRows[0].cnt > 0) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ message: `Cannot void: supplier bill ${bill.bill_number} has other active goods receipts attached to it. Void those first, or handle this bill manually.` });
+        }
+      }
+    }
+
+    // Reverse the stock this receipt added.
+    for (const line of lines) {
+      await client.query(
+        `INSERT INTO inventory_transaction (part_id, trans_type, quantity, unit_cost, reference_no, employee_id, notes)
+         VALUES ($1, 'StockOut', $2, $3, $4, $5, $6)`,
+        [line.part_id, -line.quantity, line.cost_price, grn.grn_number, req.user.employee_id || null, 'SYSTEM REVERSAL: Goods receipt voided']
+      );
+    }
+
+    // Roll back this receipt's contribution to its purchase order, if any.
+    if (grn.po_id) {
+      for (const line of lines) {
+        await client.query(
+          `UPDATE purchase_order_line
+           SET quantity_received = GREATEST(0, quantity_received - $1)
+           WHERE po_id = $2 AND part_id = $3`,
+          [line.quantity, grn.po_id, line.part_id]
+        );
+      }
+
+      const { rows: statusRows } = await client.query(
+        `SELECT COALESCE(SUM(quantity), 0) AS total_ordered, COALESCE(SUM(quantity_received), 0) AS total_received
+         FROM purchase_order_line WHERE po_id = $1`,
+        [grn.po_id]
+      );
+      const totalOrdered = parseFloat(statusRows[0].total_ordered);
+      const totalReceived = parseFloat(statusRows[0].total_received);
+      let newStatus = 'Pending';
+      if (totalReceived > 0) {
+        newStatus = totalReceived >= totalOrdered ? 'Received' : 'Partially Received';
+      }
+      await client.query('UPDATE purchase_order SET status = $1 WHERE po_id = $2', [newStatus, grn.po_id]);
+    }
+
+    // Reverse this receipt's AP liability with a single offsetting adjustment entry
+    // rather than touching (immutable) historical ap_ledger rows, then void the bill —
+    // only reachable once we've established this GRN is the bill's sole active basis.
+    if (bill && bill.status !== 'Void') {
+      const { rows: ledgerRows } = await client.query(
+        'SELECT COALESCE(SUM(amount), 0) AS net FROM ap_ledger WHERE bill_id = $1',
+        [bill.bill_id]
+      );
+      const net = parseFloat(ledgerRows[0].net);
+      if (net !== 0) {
+        const reversalAmount = -net;
+        await apLedgerService.appendEntry(client, {
+          supplierId: bill.supplier_id,
+          billId: bill.bill_id,
+          entryType: reversalAmount >= 0 ? 'DEBIT_ADJUSTMENT' : 'CREDIT_ADJUSTMENT',
+          amount: reversalAmount,
+          referenceNo: grn.grn_number,
+          notes: `SYSTEM REVERSAL: Goods receipt ${grn.grn_number} voided`,
+          createdBy: req.user.employee_id || null,
+        });
+      }
+      await client.query(`UPDATE supplier_bill SET status = 'Void' WHERE bill_id = $1`, [bill.bill_id]);
+    }
+
+    await client.query(
+      `UPDATE goods_receipt
+       SET status = 'Voided', voided_at = CURRENT_TIMESTAMP, voided_by = $1, void_reason = $2
+       WHERE grn_id = $3`,
+      [req.user.employee_id || null, reason || null, id]
+    );
+
+    await client.query('COMMIT');
+    res.json({ message: 'Goods receipt voided and stock reversed.' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Void goods receipt error:', err.message);
+    res.status(500).json({ message: 'Server error voiding goods receipt', error: err.message });
+  } finally {
+    client.release();
   }
 });
 

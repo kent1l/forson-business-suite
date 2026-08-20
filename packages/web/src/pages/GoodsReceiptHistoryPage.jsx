@@ -117,6 +117,22 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
         await fetchGrns();
     };
 
+    const handleVoid = async () => {
+        if (!selectedGrn) return;
+        const reason = window.prompt(
+            `Void GRN ${selectedGrn.grn_number}? This will reverse the stock it received, roll back any linked purchase order's received quantities, and reverse its effect on accounts payable. The record is kept for audit history and marked Voided.\n\nOptional: enter a reason for voiding.`
+        );
+        if (reason === null) return; // user cancelled the prompt
+        try {
+            await api.delete(`/goods-receipts/${selectedGrn.grn_id}`, { data: { reason: reason || null } });
+            toast.success('Goods receipt voided');
+            closeModal();
+            await fetchGrns();
+        } catch (error) {
+            toast.error(error?.response?.data?.message || 'Failed to void goods receipt');
+        }
+    };
+
     const handleEditClick = async () => {
         if (!isEditMode) {
             // Enter edit mode
@@ -215,7 +231,9 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
     };
 
     const hasEditPermission = hasPermission('goods_receipt:edit');
+    const hasVoidPermission = hasPermission('goods_receipt:void');
     const hasChangeDatePermission = hasPermission(['transaction:change_date', 'transaction:change_date_unrestricted']);
+    const isVoided = selectedGrn?.status === 'Voided';
 
     return (
         <div className="space-y-6">
@@ -246,18 +264,19 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                     Supplier
                                 </SortableHeader>
                                 <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Received By</th>
+                                <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Status</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 dark:divide-slate-700/60">
                             {loading ? (
                                 <tr>
-                                    <td colSpan="4" className="p-8 text-center text-gray-500 dark:text-slate-400">
+                                    <td colSpan="5" className="p-8 text-center text-gray-500 dark:text-slate-400">
                                         Loading...
                                     </td>
                                 </tr>
                             ) : grns.length === 0 ? (
                                 <tr>
-                                    <td colSpan="4" className="p-8 text-center text-gray-500 dark:text-slate-400">
+                                    <td colSpan="5" className="p-8 text-center text-gray-500 dark:text-slate-400">
                                         No goods receipts found
                                     </td>
                                 </tr>
@@ -265,15 +284,28 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                 grns.map((grn) => (
                                     <tr
                                         key={grn.grn_id}
-                                        className="hover:bg-gray-50 dark:hover:bg-slate-700/40 cursor-pointer text-gray-800 dark:text-slate-200 transition-colors"
+                                        className={`hover:bg-gray-50 dark:hover:bg-slate-700/40 cursor-pointer transition-colors ${
+                                            grn.status === 'Voided'
+                                                ? 'text-gray-400 dark:text-slate-500'
+                                                : 'text-gray-800 dark:text-slate-200'
+                                        }`}
                                         onClick={() => handleRowClick(grn)}
                                     >
-                                        <td className="p-3 text-sm font-mono font-medium text-gray-900 dark:text-slate-100">{grn.grn_number}</td>
+                                        <td className={`p-3 text-sm font-mono font-medium ${grn.status === 'Voided' ? 'line-through' : 'text-gray-900 dark:text-slate-100'}`}>{grn.grn_number}</td>
                                         <td className="p-3 text-sm text-gray-600 dark:text-slate-300">
                                             {new Date(grn.receipt_date).toLocaleDateString()}
                                         </td>
-                                        <td className="p-3 text-sm text-gray-900 dark:text-slate-100 font-medium">{grn.supplier_name}</td>
+                                        <td className={`p-3 text-sm font-medium ${grn.status === 'Voided' ? '' : 'text-gray-900 dark:text-slate-100'}`}>{grn.supplier_name}</td>
                                         <td className="p-3 text-sm text-gray-600 dark:text-slate-300">{grn.employee_name}</td>
+                                        <td className="p-3 text-sm">
+                                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                                                grn.status === 'Voided'
+                                                    ? 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-500'
+                                                    : 'bg-success-100 dark:bg-success-900/30 text-success-800 dark:text-success-400'
+                                            }`}>
+                                                {grn.status === 'Voided' ? 'Voided' : 'Active'}
+                                            </span>
+                                        </td>
                                     </tr>
                                 ))
                             )}
@@ -307,20 +339,25 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                 <div>
                                     <span className="text-gray-500 dark:text-slate-400">Supplier:</span> <span className="font-semibold">{selectedGrn.supplier_name}</span>
                                 </div>
-                                <div className="flex items-center">
+                                <div className="flex items-center flex-wrap gap-2">
                                     <div><span className="text-gray-500 dark:text-slate-400">Received Date:</span> <span className="font-semibold">{new Date(selectedGrn.receipt_date).toLocaleDateString()}</span></div>
-                                    {hasChangeDatePermission && (
+                                    {isVoided && (
+                                        <span className="px-2 py-1 text-xs font-semibold rounded-full bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-500">
+                                            Voided
+                                        </span>
+                                    )}
+                                    {!isVoided && hasChangeDatePermission && (
                                         <button
                                             onClick={() => setShowChangeDate(true)}
-                                            className="ml-4 px-3 py-1 text-xs font-semibold rounded-lg shadow-xs bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+                                            className="px-3 py-1 text-xs font-semibold rounded-lg shadow-xs bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
                                         >
                                             Change Date
                                         </button>
                                     )}
-                                    {hasEditPermission && (
+                                    {!isVoided && hasEditPermission && (
                                         <button
                                             onClick={handleEditClick}
-                                            className={`ml-2 px-3 py-1 text-xs font-semibold rounded-lg shadow-xs transition-colors ${
+                                            className={`px-3 py-1 text-xs font-semibold rounded-lg shadow-xs transition-colors ${
                                                 isEditMode
                                                     ? 'bg-success-600 text-white hover:bg-success-700'
                                                     : 'bg-primary-600 text-white hover:bg-primary-700'
@@ -330,10 +367,30 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                             {isEditMode ? 'Save' : 'Edit'}
                                         </button>
                                     )}
+                                    {!isVoided && hasVoidPermission && (
+                                        <button
+                                            onClick={handleVoid}
+                                            className="px-3 py-1 text-xs font-semibold rounded-lg shadow-xs bg-white dark:bg-slate-800 border border-danger-300 dark:border-danger-700 text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-950/30 transition-colors"
+                                        >
+                                            Void
+                                        </button>
+                                    )}
                                 </div>
                                 <div>
                                     <span className="text-gray-500 dark:text-slate-400">Received By:</span> <span className="font-semibold">{selectedGrn.employee_name}</span>
                                 </div>
+                                {isVoided && (
+                                    <div>
+                                        <span className="text-gray-500 dark:text-slate-400">Voided:</span>{' '}
+                                        <span className="font-semibold">{selectedGrn.voided_at ? new Date(selectedGrn.voided_at).toLocaleString() : ''}</span>
+                                        {selectedGrn.voided_by_name && (
+                                            <span className="font-semibold"> by {selectedGrn.voided_by_name}</span>
+                                        )}
+                                        {selectedGrn.void_reason && (
+                                            <span className="block text-xs text-gray-500 dark:text-slate-400 mt-0.5">Reason: {selectedGrn.void_reason}</span>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         )}
 
