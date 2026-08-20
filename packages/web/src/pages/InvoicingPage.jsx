@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../api';
 import { parsePaymentTermsDays } from '../utils/terms';
 import { formatPhysicalReceiptNumber } from '../utils/receiptNumberFormatter';
@@ -8,6 +8,7 @@ import InfoTip from '../components/ui/InfoTip';
 import { ICONS } from '../constants';
 import SearchBar from '../components/SearchBar';
 import Modal from '../components/ui/Modal';
+import Combobox from '../components/ui/Combobox';
 import CustomerForm from '../components/forms/CustomerForm';
 import PartForm from '../components/forms/PartForm';
 import SplitPaymentModal from '../components/ui/SplitPaymentModal';
@@ -161,6 +162,11 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
         fetchTerms();
     }, []);
 
+    const customerOptions = useMemo(() => customers.map(c => ({
+        value: String(c.customer_id),
+        label: `${c.first_name} ${c.last_name || ''}`.trim()
+    })), [customers]);
+
     const fetchCustomers = async () => {
         const response = await api.get('/customers');
         setCustomers(response.data);
@@ -174,7 +180,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
             success: (response) => {
                 const newCustomer = response.data;
                 fetchCustomers().then(() => {
-                    setSelectedCustomer(newCustomer.customer_id);
+                    setSelectedCustomer(String(newCustomer.customer_id));
                 });
                 setIsCustomerModalOpen(false);
                 return 'Customer saved successfully!';
@@ -213,142 +219,27 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
     };
 
     const handleLineChange = (partId, field, value) => {
-        const numericValue = parseFloat(value) || 0;
+        const numericValue = Math.max(0, parseFloat(value) || 0);
         setLines(lines.map(line =>
             line.part_id === partId ? { ...line, [field]: numericValue } : line
         ));
     };
 
+    const handleLineTaxRateChange = (partId, value) => {
+        const taxRateId = value ? parseInt(value, 10) : null;
+        setLines(lines.map(line =>
+            line.part_id === partId ? { ...line, tax_rate_id: taxRateId } : line
+        ));
+    };
+
+    const handleLineInclusiveToggle = (partId, checked) => {
+        setLines(lines.map(line =>
+            line.part_id === partId ? { ...line, is_tax_inclusive_price: checked } : line
+        ));
+    };
+
     const removeLine = (partId) => {
         setLines(lines.filter(line => line.part_id !== partId));
-    };
-
-    const handlePostInvoice = async () => {
-        if (!selectedCustomer || lines.length === 0) {
-            toast.error('Please select a customer and add at least one item.');
-            return;
-        }
-
-        const customer = customers.find(c => String(c.customer_id) === String(selectedCustomer));
-        const customerName = customer ? `${customer.first_name} ${customer.last_name || ''}`.trim().toLowerCase() : '';
-        const parsedTermsDays = parsePaymentTermsDays(terms);
-        const isWalkIn = customerName.includes('walk-in') || customerName.includes('walk in');
-
-        if (isWalkIn && parsedTermsDays > 0) {
-            toast.error('Payment terms other than COD are not allowed for Walk-In customers.');
-            return;
-        }
-
-        // Check if split payments are enabled
-        const splitPaymentsEnabled = settings?.ENABLE_SPLIT_PAYMENTS === 'true';
-
-        if (splitPaymentsEnabled) {
-            // Use split payment modal for payment processing
-            setIsSplitPaymentModalOpen(true);
-            return;
-        }
-
-        // Legacy single payment method flow
-        if (!paymentMethod) {
-            toast.error('Please select a payment method.');
-            return;
-        }
-
-        // Set amount_paid based on payment method  
-        const amount_paid = paymentMethod.toLowerCase() === 'cash' ? total : 0;
-
-        const payload = {
-            customer_id: selectedCustomer,
-            employee_id: user.employee_id,
-            payment_method: paymentMethod,
-            amount_paid: amount_paid,
-            terms: terms,
-            payment_terms_days: parsePaymentTermsDays(terms),
-            physical_receipt_no: formatPhysicalReceiptNumber(physicalReceiptNo) || null,
-            tax_rate_id: selectedTaxRate?.tax_rate_id || null,
-            lines: lines.map(line => ({
-                part_id: line.part_id,
-                quantity: line.quantity,
-                sale_price: line.sale_price,
-                discount_amount: line.discount_amount || 0,
-                tax_rate_id: line.tax_rate_id || null,
-                is_tax_inclusive_price: line.is_tax_inclusive_price || false
-            })),
-        };
-
-        const promise = api.post('/invoices', payload);
-
-        toast.promise(promise, {
-            loading: 'Posting invoice...',
-            success: () => {
-                setLines([]);
-                setSelectedCustomer('');
-                setTerms(settings.DEFAULT_PAYMENT_TERMS || '');
-                return 'Invoice created successfully!';
-            },
-            error: (err) => {
-                if (err?.response?.status === 409) {
-                    return err.response.data?.message || 'Physical Receipt No already exists.';
-                }
-                return 'Failed to create invoice.';
-            },
-        });
-    };
-
-    // Handle split payment confirmation for invoicing
-    const handleConfirmSplitPayment = async (payments, physicalReceiptNo, { employeeId } = {}) => {
-        try {
-            // Create the invoice with payments (atomic single-step)
-            const invoicePayload = {
-                customer_id: selectedCustomer,
-                employee_id: employeeId || user.employee_id,
-                terms: terms,
-                payment_terms_days: parsePaymentTermsDays(terms),
-                physical_receipt_no: formatPhysicalReceiptNumber(physicalReceiptNo),
-                tax_rate_id: selectedTaxRate?.tax_rate_id || null,
-                lines: lines.map(line => ({
-                    part_id: line.part_id,
-                    quantity: line.quantity,
-                    sale_price: line.sale_price,
-                    discount_amount: line.discount_amount || 0,
-                    tax_rate_id: line.tax_rate_id || null,
-                    is_tax_inclusive_price: line.is_tax_inclusive_price || false
-                })),
-                payments: payments.map(p => ({
-                    ...p,
-                    reference: formatPhysicalReceiptNumber(physicalReceiptNo) || p.reference
-                }))
-            };
-
-            const invoiceResponse = await api.post('/invoices', invoicePayload);
-            const returnedPhysicalReceiptNo = invoiceResponse.data.physical_receipt_no;
-
-            // Check if physical receipt number was auto-incremented
-            if (returnedPhysicalReceiptNo && returnedPhysicalReceiptNo !== formatPhysicalReceiptNumber(physicalReceiptNo)) {
-                toast.success(`Invoice created! Physical receipt number was auto-incremented to: ${returnedPhysicalReceiptNo}`);
-            }
-
-            // Success - reset form
-            setLines([]);
-            setSelectedCustomer('');
-            setTerms(settings.DEFAULT_PAYMENT_TERMS || '');
-            setIsSplitPaymentModalOpen(false);
-
-            toast.success('Invoice created successfully!');
-
-        } catch (err) {
-            console.error('Split payment error:', err);
-            const backendMessage = err?.response?.data?.message || err?.response?.data?.error || err?.message;
-            if (err?.response?.status === 409) {
-                throw new Error(backendMessage || 'Physical Receipt No already exists.');
-            }
-            // Surface backend validation errors when present
-            if (err?.response?.status === 400 && backendMessage) {
-                toast.error(backendMessage);
-                throw new Error(backendMessage);
-            }
-            throw new Error('Failed to create invoice.');
-        }
     };
 
     // Calculate totals using backend-aligned logic, including tax calculations
@@ -444,6 +335,149 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
         };
     }, [lines, taxRates, selectedTaxRate]);
 
+    const handlePostInvoice = useCallback(async () => {
+        if (!selectedCustomer || lines.length === 0) {
+            toast.error('Please select a customer and add at least one item.');
+            return;
+        }
+
+        const customer = customers.find(c => String(c.customer_id) === String(selectedCustomer));
+        const customerName = customer ? `${customer.first_name} ${customer.last_name || ''}`.trim().toLowerCase() : '';
+        const parsedTermsDays = parsePaymentTermsDays(terms);
+        const isWalkIn = customerName.includes('walk-in') || customerName.includes('walk in');
+
+        if (isWalkIn && parsedTermsDays > 0) {
+            toast.error('Payment terms other than COD are not allowed for Walk-In customers.');
+            return;
+        }
+
+        // Check if split payments are enabled
+        const splitPaymentsEnabled = settings?.ENABLE_SPLIT_PAYMENTS === 'true';
+
+        if (splitPaymentsEnabled) {
+            // Use split payment modal for payment processing
+            setIsSplitPaymentModalOpen(true);
+            return;
+        }
+
+        // Legacy single payment method flow
+        if (!paymentMethod) {
+            toast.error('Please select a payment method.');
+            return;
+        }
+
+        // Set amount_paid based on payment method  
+        const amount_paid = paymentMethod.toLowerCase() === 'cash' ? total : 0;
+
+        const payload = {
+            customer_id: selectedCustomer,
+            employee_id: user.employee_id,
+            payment_method: paymentMethod,
+            amount_paid: amount_paid,
+            terms: terms,
+            payment_terms_days: parsePaymentTermsDays(terms),
+            physical_receipt_no: formatPhysicalReceiptNumber(physicalReceiptNo) || null,
+            tax_rate_id: selectedTaxRate?.tax_rate_id || null,
+            lines: lines.map(line => ({
+                part_id: line.part_id,
+                quantity: line.quantity,
+                sale_price: line.sale_price,
+                discount_amount: line.discount_amount || 0,
+                tax_rate_id: line.tax_rate_id || null,
+                is_tax_inclusive_price: line.is_tax_inclusive_price || false
+            })),
+        };
+
+        const promise = api.post('/invoices', payload);
+
+        toast.promise(promise, {
+            loading: 'Posting invoice...',
+            success: () => {
+                setLines([]);
+                setSelectedCustomer('');
+                setTerms(settings.DEFAULT_PAYMENT_TERMS || '');
+                return 'Invoice created successfully!';
+            },
+            error: (err) => {
+                if (err?.response?.status === 409) {
+                    return err.response.data?.message || 'Physical Receipt No already exists.';
+                }
+                return 'Failed to create invoice.';
+            },
+        });
+    }, [selectedCustomer, lines, customers, terms, settings, paymentMethod, physicalReceiptNo, selectedTaxRate, user, total]);
+
+    // Handle split payment confirmation for invoicing
+    const handleConfirmSplitPayment = async (payments, physicalReceiptNo, { employeeId } = {}) => {
+        try {
+            // Create the invoice with payments (atomic single-step)
+            const invoicePayload = {
+                customer_id: selectedCustomer,
+                employee_id: employeeId || user.employee_id,
+                terms: terms,
+                payment_terms_days: parsePaymentTermsDays(terms),
+                physical_receipt_no: formatPhysicalReceiptNumber(physicalReceiptNo),
+                tax_rate_id: selectedTaxRate?.tax_rate_id || null,
+                lines: lines.map(line => ({
+                    part_id: line.part_id,
+                    quantity: line.quantity,
+                    sale_price: line.sale_price,
+                    discount_amount: line.discount_amount || 0,
+                    tax_rate_id: line.tax_rate_id || null,
+                    is_tax_inclusive_price: line.is_tax_inclusive_price || false
+                })),
+                payments: payments.map(p => ({
+                    ...p,
+                    reference: formatPhysicalReceiptNumber(physicalReceiptNo) || p.reference
+                }))
+            };
+
+            const invoiceResponse = await api.post('/invoices', invoicePayload);
+            const returnedPhysicalReceiptNo = invoiceResponse.data.physical_receipt_no;
+
+            // Check if physical receipt number was auto-incremented
+            if (returnedPhysicalReceiptNo && returnedPhysicalReceiptNo !== formatPhysicalReceiptNumber(physicalReceiptNo)) {
+                toast.success(`Invoice created! Physical receipt number was auto-incremented to: ${returnedPhysicalReceiptNo}`);
+            }
+
+            // Success - reset form
+            setLines([]);
+            setSelectedCustomer('');
+            setTerms(settings.DEFAULT_PAYMENT_TERMS || '');
+            setIsSplitPaymentModalOpen(false);
+
+            toast.success('Invoice created successfully!');
+
+        } catch (err) {
+            console.error('Split payment error:', err);
+            const backendMessage = err?.response?.data?.message || err?.response?.data?.error || err?.message;
+            if (err?.response?.status === 409) {
+                throw new Error(backendMessage || 'Physical Receipt No already exists.');
+            }
+            // Surface backend validation errors when present
+            if (err?.response?.status === 400 && backendMessage) {
+                toast.error(backendMessage);
+                throw new Error(backendMessage);
+            }
+            throw new Error('Failed to create invoice.');
+        }
+    };
+
+    // Keyboard shortcut (Ctrl+Enter / Cmd+Enter) to post the invoice
+    useEffect(() => {
+        const onKey = (e) => {
+            const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+            if ((isMac ? e.metaKey : e.ctrlKey) && e.key === 'Enter') {
+                e.preventDefault();
+                if (selectedCustomer && lines.length > 0) {
+                    handlePostInvoice();
+                }
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [selectedCustomer, lines, handlePostInvoice]);
+
     if (loading) return <p>Loading data...</p>;
 
     return (
@@ -452,7 +486,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                 <div className="flex justify-between items-center mb-6">
                     <h1 className="text-3xl font-bold text-gray-800">New Invoice</h1>
                     <div className="flex items-center space-x-2">
-                        <button onClick={handlePostInvoice} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-indigo-700 transition shadow-sm flex items-center">
+                        <button onClick={handlePostInvoice} title="Post Invoice (Ctrl+Enter)" className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-indigo-700 transition shadow-sm flex items-center">
                             <Icon path={ICONS.check} className="h-5 w-5 mr-2" />
                             Post Invoice
                         </button>
@@ -470,11 +504,15 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                                 </InfoTip>
                             </label>
                             <div className="flex items-center space-x-2">
-                                <select value={selectedCustomer} onChange={e => setSelectedCustomer(e.target.value)} className="w-full px-3 py-2 border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
-                                    <option value="">Select a Customer</option>
-                                    {customers.map(c => <option key={c.customer_id} value={c.customer_id}>{c.first_name} {c.last_name}</option>)}
-                                </select>
-                                <button onClick={() => setIsCustomerModalOpen(true)} className="p-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition">
+                                <div className="flex-1">
+                                    <Combobox
+                                        options={customerOptions}
+                                        value={selectedCustomer}
+                                        onChange={setSelectedCustomer}
+                                        placeholder="Search for a customer..."
+                                    />
+                                </div>
+                                <button onClick={() => setIsCustomerModalOpen(true)} aria-label="Add new customer" title="Add new customer" className="p-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition">
                                     <Icon path={ICONS.plus} className="h-5 w-5" />
                                 </button>
                             </div>
@@ -613,9 +651,11 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                             <thead className="bg-gray-50">
                                 <tr>
                                     <th className="p-4 text-sm font-semibold text-gray-600">Item</th>
-                                    <th className="p-4 text-sm font-semibold text-gray-600 w-32 text-center">Quantity</th>
-                                    <th className="p-4 text-sm font-semibold text-gray-600 w-40 text-right">Sale Price</th>
-                                    <th className="p-4 text-sm font-semibold text-gray-600 w-40 text-right">Line Total</th>
+                                    <th className="p-4 text-sm font-semibold text-gray-600 w-28 text-center">Quantity</th>
+                                    <th className="p-4 text-sm font-semibold text-gray-600 w-36 text-right">Sale Price</th>
+                                    <th className="p-4 text-sm font-semibold text-gray-600 w-32 text-right">Discount</th>
+                                    <th className="p-4 text-sm font-semibold text-gray-600 w-40 text-center">Tax</th>
+                                    <th className="p-4 text-sm font-semibold text-gray-600 w-36 text-right">Line Total</th>
                                     <th className="p-4 text-sm font-semibold text-gray-600 w-16 text-center"></th>
                                 </tr>
                             </thead>
@@ -623,14 +663,37 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                                 {lines.length > 0 ? lines.map(line => (
                                     <tr key={line.part_id} className="border-b last:border-b-0 hover:bg-gray-50">
                                         <td className="p-4 text-sm font-medium text-gray-800">{line.display_name}</td>
-                                        <td className="p-4"><input type="number" value={line.quantity} onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)} onFocus={e => e.target.select()} className="w-full p-2 border-gray-300 rounded-md text-center" /></td>
-                                        <td className="p-4"><input type="number" value={line.sale_price} onChange={e => handleLineChange(line.part_id, 'sale_price', e.target.value)} onFocus={e => e.target.select()} className="w-full p-2 border-gray-300 rounded-md text-right" /></td>
-                                        <td className="p-4 text-sm font-medium text-gray-800 text-right">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{(line.quantity * line.sale_price).toFixed(2)}</td>
-                                        <td className="p-4 text-center"><button onClick={() => removeLine(line.part_id)} className="text-gray-400 hover:text-red-600 transition-colors"><Icon path={ICONS.trash} className="h-5 w-5"/></button></td>
+                                        <td className="p-4"><input type="number" min="0" value={line.quantity} onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)} onFocus={e => e.target.select()} aria-label={`Quantity for ${line.display_name}`} className="w-full p-2 border-gray-300 rounded-md text-center" /></td>
+                                        <td className="p-4"><input type="number" min="0" step="0.01" value={line.sale_price} onChange={e => handleLineChange(line.part_id, 'sale_price', e.target.value)} onFocus={e => e.target.select()} aria-label={`Sale price for ${line.display_name}`} className="w-full p-2 border-gray-300 rounded-md text-right" /></td>
+                                        <td className="p-4"><input type="number" min="0" step="0.01" value={line.discount_amount || 0} onChange={e => handleLineChange(line.part_id, 'discount_amount', e.target.value)} onFocus={e => e.target.select()} aria-label={`Discount for ${line.display_name}`} className="w-full p-2 border-gray-300 rounded-md text-right" /></td>
+                                        <td className="p-4">
+                                            <select
+                                                value={line.tax_rate_id || ''}
+                                                onChange={e => handleLineTaxRateChange(line.part_id, e.target.value)}
+                                                aria-label={`Tax rate for ${line.display_name}`}
+                                                className="w-full p-2 border-gray-300 rounded-md text-xs"
+                                            >
+                                                <option value="">Default</option>
+                                                {taxRates.map(rate => (
+                                                    <option key={rate.tax_rate_id} value={rate.tax_rate_id}>{rate.rate_name}</option>
+                                                ))}
+                                            </select>
+                                            <label className="flex items-center justify-center gap-1 mt-1 text-[10px] text-gray-500">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={!!line.is_tax_inclusive_price}
+                                                    onChange={e => handleLineInclusiveToggle(line.part_id, e.target.checked)}
+                                                    aria-label={`Tax-inclusive price for ${line.display_name}`}
+                                                />
+                                                Tax-incl.
+                                            </label>
+                                        </td>
+                                        <td className="p-4 text-sm font-medium text-gray-800 text-right">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{((line.quantity * line.sale_price) - (line.discount_amount || 0)).toFixed(2)}</td>
+                                        <td className="p-4 text-center"><button onClick={() => removeLine(line.part_id)} aria-label={`Remove ${line.display_name}`} title="Remove line" className="text-gray-400 hover:text-red-600 transition-colors"><Icon path={ICONS.trash} className="h-5 w-5"/></button></td>
                                     </tr>
                                 )) : (
                                     <tr>
-                                        <td colSpan="5" className="text-center py-12 text-gray-500">
+                                        <td colSpan="7" className="text-center py-12 text-gray-500">
                                             <Icon path={ICONS.inbox} className="h-12 w-12 mx-auto text-gray-300 mb-2" />
                                             No items added yet.
                                         </td>
