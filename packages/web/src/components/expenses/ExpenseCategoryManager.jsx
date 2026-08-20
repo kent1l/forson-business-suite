@@ -126,25 +126,25 @@ export default function ExpenseCategoryManager() {
 
     return (
         <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
                 <div>
-                    <h2 className="text-base font-bold text-slate-800">Expense Category Management</h2>
-                    <p className="text-xs text-slate-500">Manage, rename, reorder, and activate/deactivate expense categories for consistent financial classification.</p>
+                    <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">Expense Category Management</h2>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Manage, rename, reorder, and activate/deactivate expense categories for consistent financial classification.</p>
                 </div>
                 <button
                     onClick={() => handleOpenModal()}
-                    className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors cursor-pointer whitespace-nowrap"
+                    className="inline-flex items-center px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors cursor-pointer whitespace-nowrap"
                 >
                     <Icon path={ICONS.plus} className="w-4 h-4 mr-1.5" />
                     <span>Add Expense Category</span>
                 </button>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse text-xs">
                         <thead>
-                            <tr className="bg-slate-100/70 border-b border-slate-200 text-slate-600 uppercase tracking-wider font-semibold">
+                            <tr className="bg-slate-100/70 dark:bg-slate-700/40 border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 uppercase tracking-wider font-semibold">
                                 <th className="py-3 px-4 w-16 text-center">Order</th>
                                 <th className="py-3 px-4">Category Name</th>
                                 <th className="py-3 px-4">Description</th>
@@ -153,30 +153,30 @@ export default function ExpenseCategoryManager() {
                                 <th className="py-3 px-4 text-center">Actions</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                             {loading ? (
                                 <tr>
-                                    <td colSpan="6" className="py-12 text-center text-slate-400">Loading categories...</td>
+                                    <td colSpan="6" className="py-12 text-center text-slate-400 dark:text-slate-500">Loading categories...</td>
                                 </tr>
                             ) : categories.length === 0 ? (
                                 <tr>
-                                    <td colSpan="6" className="py-12 text-center text-slate-400">No categories found</td>
+                                    <td colSpan="6" className="py-12 text-center text-slate-400 dark:text-slate-500">No categories found</td>
                                 </tr>
                             ) : (
                                 categories.map((cat, idx) => (
-                                    <tr key={cat.category_id} className="hover:bg-slate-50 transition-colors">
-                                        <td className="py-3 px-4 text-center font-mono font-semibold text-slate-500">
+                                    <tr key={cat.category_id} className="hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
+                                        <td className="py-3 px-4 text-center font-mono font-semibold text-slate-500 dark:text-slate-400">
                                             {cat.sort_order}
                                         </td>
-                                        <td className="py-3 px-4 font-bold text-slate-800">
+                                        <td className="py-3 px-4 font-bold text-slate-800 dark:text-slate-100">
                                             {cat.category_name}
                                         </td>
-                                        <td className="py-3 px-4 text-slate-500">
-                                            {cat.description || <span className="text-slate-300 italic">No description</span>}
+                                        <td className="py-3 px-4 text-slate-500 dark:text-slate-400">
+                                            {cat.description || <span className="text-slate-300 dark:text-slate-600 italic">No description</span>}
                                         </td>
                                         <td className="py-3 px-4 text-center">
                                             <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
-                                                cat.is_active ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'
+                                                cat.is_active ? 'bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-400 border border-success-200 dark:border-success-900/50' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-600'
                                             }`}>
                                                 {cat.is_active ? 'ACTIVE' : 'INACTIVE'}
                                             </span>
@@ -186,14 +186,14 @@ export default function ExpenseCategoryManager() {
                                                 <button
                                                     onClick={() => handleMove(idx, 'up')}
                                                     disabled={idx === 0}
-                                                    className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer"
+                                                    className="p-1 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30 cursor-pointer"
                                                 >
                                                     <Icon path={ICONS.chevronUp} className="w-4 h-4" />
                                                 </button>
                                                 <button
                                                     onClick={() => handleMove(idx, 'down')}
                                                     disabled={idx === categories.length - 1}
-                                                    className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer"
+                                                    className="p-1 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30 cursor-pointer"
                                                 >
                                                     <Icon path={ICONS.chevronDown} className="w-4 h-4" />
                                                 </button>
@@ -203,7 +203,7 @@ export default function ExpenseCategoryManager() {
                                             <div className="flex items-center justify-center space-x-2">
                                                 <button
                                                     onClick={() => handleOpenModal(cat)}
-                                                    className="px-2.5 py-1 text-[11px] font-medium text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 rounded transition-colors cursor-pointer"
+                                                    className="px-2.5 py-1 text-[11px] font-medium text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 bg-primary-50 dark:bg-primary-900/30 hover:bg-primary-100 dark:hover:bg-primary-900/50 rounded transition-colors cursor-pointer"
                                                 >
                                                     Edit
                                                 </button>
@@ -211,8 +211,8 @@ export default function ExpenseCategoryManager() {
                                                     onClick={() => handleToggleActive(cat)}
                                                     className={`px-2.5 py-1 text-[11px] font-medium rounded transition-colors cursor-pointer ${
                                                         cat.is_active
-                                                            ? 'text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100'
-                                                            : 'text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100'
+                                                            ? 'text-warning-700 dark:text-warning-400 hover:text-warning-900 bg-warning-50 dark:bg-warning-900/30 hover:bg-warning-100'
+                                                            : 'text-success-700 dark:text-success-400 hover:text-success-900 bg-success-50 dark:bg-success-900/30 hover:bg-success-100'
                                                     }`}
                                                 >
                                                     {cat.is_active ? 'Deactivate' : 'Reactivate'}
@@ -229,15 +229,15 @@ export default function ExpenseCategoryManager() {
 
             {/* Create / Edit Modal */}
             {modalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                    <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden">
-                        <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-                            <h3 className="text-sm font-bold text-slate-800">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 w-full max-w-md overflow-hidden">
+                        <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between">
+                            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
                                 {editingCategory ? 'Edit Expense Category' : 'Create New Expense Category'}
                             </h3>
                             <button
                                 onClick={() => setModalOpen(false)}
-                                className="p-1 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
+                                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded cursor-pointer"
                             >
                                 <Icon path={ICONS.close} className="w-5 h-5" />
                             </button>
@@ -245,20 +245,20 @@ export default function ExpenseCategoryManager() {
 
                         <form onSubmit={handleSubmit} className="p-5 space-y-4">
                             <div>
-                                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                                    Category Name <span className="text-red-500">*</span>
+                                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                                    Category Name <span className="text-danger-500">*</span>
                                 </label>
                                 <input
                                     type="text"
                                     value={formData.category_name}
                                     onChange={(e) => setFormData(prev => ({ ...prev, category_name: e.target.value }))}
                                     placeholder="e.g. Advertising, Equipment, Licenses"
-                                    className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                                 />
                             </div>
 
                             <div>
-                                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                                     Description
                                 </label>
                                 <textarea
@@ -266,35 +266,35 @@ export default function ExpenseCategoryManager() {
                                     value={formData.description}
                                     onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                                     placeholder="Optional description of expenses under this category..."
-                                    className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                                    className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
                                 ></textarea>
                             </div>
 
                             <div>
-                                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                                     Display Sort Order
                                 </label>
                                 <input
                                     type="number"
                                     value={formData.sort_order}
                                     onChange={(e) => setFormData(prev => ({ ...prev, sort_order: e.target.value }))}
-                                    className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-gray-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                                 />
                             </div>
 
-                            <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
+                            <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100 dark:border-slate-700">
                                 <button
                                     type="button"
                                     onClick={() => setModalOpen(false)}
                                     disabled={submitLoading}
-                                    className="px-3.5 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer"
+                                    className="px-3.5 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg cursor-pointer transition-colors"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={submitLoading}
-                                    className="px-4 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-500 rounded-lg shadow-sm cursor-pointer"
+                                    className="px-4 py-1.5 text-xs font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg shadow-sm cursor-pointer transition-colors"
                                 >
                                     {submitLoading ? 'Saving...' : editingCategory ? 'Update Category' : 'Create Category'}
                                 </button>

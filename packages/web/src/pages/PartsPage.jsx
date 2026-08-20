@@ -145,11 +145,11 @@ const PartsPage = ({ user, onNavigate }) => {
     const handleDelete = (partId) => {
         toast((t) => (
             <div className="text-center">
-                <p className="font-semibold">Are you sure?</p>
-                <p className="text-sm my-2">This will permanently delete the part.</p>
+                <p className="font-semibold text-gray-900 dark:text-slate-100">Are you sure?</p>
+                <p className="text-sm my-2 text-gray-600 dark:text-slate-400">This will permanently delete the part.</p>
                 <div className="flex justify-center space-x-2 mt-4">
-                    <button onClick={() => { toast.dismiss(t.id); confirmDelete(partId); }} className="px-4 py-2 bg-red-600 text-white rounded-lg">Delete</button>
-                    <button onClick={() => toast.dismiss(t.id)} className="px-4 py-2 bg-gray-200 rounded-lg">Cancel</button>
+                    <button onClick={() => { toast.dismiss(t.id); confirmDelete(partId); }} className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 text-sm font-medium">Delete</button>
+                    <button onClick={() => toast.dismiss(t.id)} className="px-4 py-2 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 text-sm font-medium">Cancel</button>
                 </div>
             </div>
         ));
@@ -217,29 +217,29 @@ const PartsPage = ({ user, onNavigate }) => {
     ];
 
     return (
-        <div>
-            <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-semibold text-gray-800">Parts</h1>
-                <div className="flex items-center space-x-4">
+        <div className="space-y-6">
+            <div className="flex justify-between items-center">
+                <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100">Parts</h1>
+                <div className="flex items-center space-x-3">
                     {selectedParts.length > 0 && hasPermission('parts:edit') && (
-                        <button onClick={() => setIsBulkEditModalOpen(true)} className="bg-yellow-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-yellow-600 transition">
+                        <button onClick={() => setIsBulkEditModalOpen(true)} className="bg-warning-500 hover:bg-warning-600 text-white px-4 py-2 rounded-lg font-semibold transition shadow-sm text-sm">
                             Bulk Edit ({selectedParts.length})
                         </button>
                     )}
                     {hasPermission('parts:merge') && (
-                        <button onClick={() => onNavigate('parts_cleanup')} className="bg-purple-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-700 transition">
+                        <button onClick={() => onNavigate('parts_cleanup')} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-semibold transition shadow-sm text-sm">
                             Cleanup Duplicates
                         </button>
                     )}
                     {hasPermission('parts:create') && (
-                        <button onClick={handleAddNew} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
+                        <button onClick={handleAddNew} className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg font-semibold transition shadow-sm text-sm">
                             New Part
                         </button>
                     )}
                 </div>
             </div>
 
-            <div className="mb-4 space-y-3">
+            <div className="space-y-3">
                 <FilterBar
                     tabs={filterTabs}
                     activeTab={statusFilter}
@@ -255,12 +255,12 @@ const PartsPage = ({ user, onNavigate }) => {
                         />
                     </div>
                     <div className="flex items-center gap-2">
-                        <label htmlFor="parts-global-sort-by" className="text-sm text-gray-600 whitespace-nowrap">Sort all by</label>
+                        <label htmlFor="parts-global-sort-by" className="text-sm text-gray-600 dark:text-slate-400 whitespace-nowrap">Sort all by</label>
                         <select
                             id="parts-global-sort-by"
                             value={globalSortBy}
                             onChange={(e) => setGlobalSortBy(e.target.value)}
-                            className="rounded-md border border-gray-300 px-2 py-2 text-sm"
+                            className="rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                         >
                             <option value="name">Name</option>
                             <option value="sku">SKU</option>
@@ -268,12 +268,12 @@ const PartsPage = ({ user, onNavigate }) => {
                         </select>
                     </div>
                     <div className="flex items-center gap-2">
-                        <label htmlFor="parts-global-sort-direction" className="text-sm text-gray-600 whitespace-nowrap">Order</label>
+                        <label htmlFor="parts-global-sort-direction" className="text-sm text-gray-600 dark:text-slate-400 whitespace-nowrap">Order</label>
                         <select
                             id="parts-global-sort-direction"
                             value={globalSortDirection}
                             onChange={(e) => setGlobalSortDirection(e.target.value)}
-                            className="rounded-md border border-gray-300 px-2 py-2 text-sm"
+                            className="rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                         >
                             <option value="ASC">Ascending</option>
                             <option value="DESC">Descending</option>
@@ -283,12 +283,12 @@ const PartsPage = ({ user, onNavigate }) => {
             </div>
 
 
-            <div className="bg-white p-6 rounded-xl border border-gray-200 relative overflow-hidden">
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-card relative overflow-hidden">
                 {loading && (
-                    <div className="absolute inset-x-0 top-0 h-1 bg-blue-600 animate-pulse z-10" />
+                    <div className="absolute inset-x-0 top-0 h-1 bg-primary-600 animate-pulse z-10" />
                 )}
                 {listError && (
-                    <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    <div className="mb-4 rounded-lg border border-danger-200 dark:border-danger-800/60 bg-danger-50 dark:bg-danger-950/30 px-3 py-2 text-sm text-danger-700 dark:text-danger-400">
                         {listError}
                     </div>
                 )}
@@ -303,52 +303,52 @@ const PartsPage = ({ user, onNavigate }) => {
                             <col className="w-36" />
                         </colgroup>
                         <thead>
-                            <tr className="border-b">
-                                <th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={selectedParts.length === parts.length && parts.length > 0} /></th>
+                            <tr className="bg-gray-50 dark:bg-slate-700/40 border-b border-gray-200 dark:border-slate-700 text-gray-700 dark:text-slate-300">
+                                <th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={selectedParts.length === parts.length && parts.length > 0} className="rounded border-gray-300 dark:border-slate-600 text-primary-600" /></th>
                                 <SortableHeader className="w-36" column="internal_sku" sortConfig={sortConfig} onSort={handleHeaderSort}>SKU</SortableHeader>
                                 <SortableHeader className="w-5/12" column="display_name" sortConfig={sortConfig} onSort={handleHeaderSort}>Item</SortableHeader>
                                 <SortableHeader className="w-5/12" column="application_text" sortConfig={sortConfig} onSort={handleHeaderSort}>Application</SortableHeader>
-                                <th className="p-3 w-44 text-sm font-semibold text-gray-600">Barcodes</th>
-                                <th className="p-3 w-36 text-sm font-semibold text-gray-600 text-right">Actions</th>
+                                <th className="p-3 w-44 text-sm font-semibold text-gray-600 dark:text-slate-300">Barcodes</th>
+                                <th className="p-3 w-36 text-sm font-semibold text-gray-600 dark:text-slate-300 text-right">Actions</th>
                             </tr>
                         </thead>
-                        <tbody className={`transition-opacity duration-150 ${loading ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+                        <tbody className={`divide-y divide-gray-100 dark:divide-slate-700/60 transition-opacity duration-150 ${loading ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
                             {parts.map(part => (
-                                <tr key={part.part_id} className="border-b hover:bg-gray-50">
-                                    <td className="p-3"><input type="checkbox" checked={selectedParts.includes(part.part_id)} onChange={() => handleSelectPart(part.part_id)} /></td>
-                                    <td className="p-3 text-sm font-mono truncate">{part.internal_sku}</td>
-                                    <td className="p-3 text-sm font-medium truncate" title={part.display_name}>{part.display_name}</td>
-                                    <td className="p-3 text-sm truncate" title={formatApplicationText(part.applications, { style: 'tableCell' })}>{formatApplicationText(part.applications, { style: 'tableCell' })}</td>
+                                <tr key={part.part_id} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200 transition-colors">
+                                    <td className="p-3"><input type="checkbox" checked={selectedParts.includes(part.part_id)} onChange={() => handleSelectPart(part.part_id)} className="rounded border-gray-300 dark:border-slate-600 text-primary-600" /></td>
+                                    <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100 truncate">{part.internal_sku}</td>
+                                    <td className="p-3 text-sm font-medium text-gray-900 dark:text-slate-100 truncate" title={part.display_name}>{part.display_name}</td>
+                                    <td className="p-3 text-sm text-gray-700 dark:text-slate-300 truncate" title={formatApplicationText(part.applications, { style: 'tableCell' })}>{formatApplicationText(part.applications, { style: 'tableCell' })}</td>
                                     <td className="p-3 text-sm">
                                         {part.barcodes && part.barcodes.length > 0 ? (
                                             <div className="flex items-center space-x-1">
-                                                <span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded border border-gray-200">{part.barcodes[0]}</span>
+                                                <span className="bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs px-2 py-1 rounded border border-gray-200 dark:border-slate-600 font-mono">{part.barcodes[0]}</span>
                                                 {part.barcodes.length > 1 && (
-                                                    <span className="text-xs text-gray-500 cursor-help" title={part.barcodes.slice(1).join(', ')}>+{part.barcodes.length - 1} more</span>
+                                                    <span className="text-xs text-gray-500 dark:text-slate-400 cursor-help" title={part.barcodes.slice(1).join(', ')}>+{part.barcodes.length - 1} more</span>
                                                 )}
                                             </div>
                                         ) : (
-                                            <span className="text-gray-400 text-xs">-</span>
+                                            <span className="text-gray-400 dark:text-slate-500 text-xs">-</span>
                                         )}
                                     </td>
                                     <td className="p-3 text-sm text-right">
-                                        <div className="flex justify-end items-center space-x-4">
+                                        <div className="flex justify-end items-center space-x-3">
                                             {part.tags && <TagPopover tags={part.tags} />}
                                             {hasPermission('parts:edit') && (
                                                 <>
-                                                    <button onClick={() => handleManageApps(part)} title="Manage Applications" className="text-green-600 hover:text-green-800"><Icon path={ICONS.link} className="h-5 w-5"/></button>
-                                                    <button onClick={() => handleManageNumbers(part)} title="Manage Part Numbers" className="text-gray-600 hover:text-gray-800"><Icon path={ICONS.numbers} className="h-5 w-5"/></button>
-                                                    <button onClick={() => handleEdit(part)} title="Edit Part" className="text-blue-600 hover:text-blue-800"><Icon path={ICONS.edit} className="h-5 w-5" /></button>
+                                                    <button onClick={() => handleManageApps(part)} title="Manage Applications" className="text-success-600 dark:text-success-400 hover:text-success-700 dark:hover:text-success-300 p-1"><Icon path={ICONS.link} className="h-5 w-5"/></button>
+                                                    <button onClick={() => handleManageNumbers(part)} title="Manage Part Numbers" className="text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 p-1"><Icon path={ICONS.numbers} className="h-5 w-5"/></button>
+                                                    <button onClick={() => handleEdit(part)} title="Edit Part" className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 p-1"><Icon path={ICONS.edit} className="h-5 w-5" /></button>
                                                 </>
                                             )}
-                                            {hasPermission('parts:delete') && <button onClick={() => handleDelete(part.part_id)} title="Delete Part" className="text-red-600 hover:text-red-800"><Icon path={ICONS.trash} className="h-5 w-5" /></button>}
+                                            {hasPermission('parts:delete') && <button onClick={() => handleDelete(part.part_id)} title="Delete Part" className="text-danger-600 dark:text-danger-400 hover:text-danger-700 dark:hover:text-danger-300 p-1"><Icon path={ICONS.trash} className="h-5 w-5" /></button>}
                                         </div>
                                     </td>
                                 </tr>
                             ))}
                             {parts.length === 0 && !loading && (
                                 <tr>
-                                    <td colSpan="6" className="p-4 text-center text-gray-500">No data to display.</td>
+                                    <td colSpan="6" className="p-8 text-center text-gray-500 dark:text-slate-400">No data to display.</td>
                                 </tr>
                             )}
                         </tbody>

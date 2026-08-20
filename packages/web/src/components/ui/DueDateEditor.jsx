@@ -127,11 +127,11 @@ const DueDateEditor = ({
         >
             <div className="space-y-6">
                 {/* Current Due Date Info */}
-                <div className="bg-gray-50 p-4 rounded-lg">
-                    <h3 className="text-sm font-medium text-gray-700 mb-2">Current Information</h3>
-                    <div className="text-sm text-gray-600">
-                        <div>Invoice: <span className="font-mono">{invoice.invoice_number}</span></div>
-                        <div>Current Due Date: <span className="font-medium">
+                <div className="bg-gray-50 dark:bg-slate-900/50 p-4 rounded-lg border border-gray-200 dark:border-slate-700">
+                    <h3 className="text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Current Information</h3>
+                    <div className="text-sm text-gray-600 dark:text-slate-400 space-y-1">
+                        <div>Invoice: <span className="font-mono text-gray-900 dark:text-slate-100">{invoice.invoice_number}</span></div>
+                        <div>Current Due Date: <span className="font-medium text-gray-900 dark:text-slate-100">
                             {originalDueDate ? originalDueDate.toLocaleDateString() : 'Not set'}
                         </span></div>
                     </div>
@@ -139,27 +139,27 @@ const DueDateEditor = ({
 
                 {/* Date Picker */}
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
                         New Due Date
                     </label>
                     <input
                         type="date"
                         value={newDueDate}
                         onChange={(e) => setNewDueDate(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
                     />
                     
                     {/* Days difference indicator */}
                     {daysDifference !== null && (
                         <div className="mt-2 text-sm">
                             {daysDifference === 0 ? (
-                                <span className="text-gray-600">No change</span>
+                                <span className="text-gray-600 dark:text-slate-400">No change</span>
                             ) : daysDifference > 0 ? (
-                                <span className="text-green-600">
+                                <span className="text-success-600 dark:text-success-400">
                                     +{daysDifference} day{daysDifference !== 1 ? 's' : ''} (extension)
                                 </span>
                             ) : (
-                                <span className="text-orange-600">
+                                <span className="text-warning-600 dark:text-warning-400">
                                     {daysDifference} day{daysDifference !== -1 ? 's' : ''} (reduction)
                                 </span>
                             )}
@@ -169,49 +169,49 @@ const DueDateEditor = ({
 
                 {/* Quick Adjustment Buttons */}
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-3">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-3">
                         Quick Adjustments
                     </label>
                     <div className="grid grid-cols-3 gap-2 mb-3">
                         <button
                             type="button"
                             onClick={() => adjustDateByDays(-30)}
-                            className="px-3 py-2 text-sm bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+                            className="px-3 py-2 text-sm bg-danger-50 dark:bg-danger-950/40 text-danger-700 dark:text-danger-300 border border-danger-200 dark:border-danger-800/60 rounded-lg hover:bg-danger-100 dark:hover:bg-danger-900/50 transition-colors"
                         >
                             -30 days
                         </button>
                         <button
                             type="button"
                             onClick={() => adjustDateByDays(-15)}
-                            className="px-3 py-2 text-sm bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+                            className="px-3 py-2 text-sm bg-danger-50 dark:bg-danger-950/40 text-danger-700 dark:text-danger-300 border border-danger-200 dark:border-danger-800/60 rounded-lg hover:bg-danger-100 dark:hover:bg-danger-900/50 transition-colors"
                         >
                             -15 days
                         </button>
                         <button
                             type="button"
                             onClick={() => adjustDateByDays(-7)}
-                            className="px-3 py-2 text-sm bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+                            className="px-3 py-2 text-sm bg-danger-50 dark:bg-danger-950/40 text-danger-700 dark:text-danger-300 border border-danger-200 dark:border-danger-800/60 rounded-lg hover:bg-danger-100 dark:hover:bg-danger-900/50 transition-colors"
                         >
                             -7 days
                         </button>
                         <button
                             type="button"
                             onClick={() => adjustDateByDays(7)}
-                            className="px-3 py-2 text-sm bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                            className="px-3 py-2 text-sm bg-success-50 dark:bg-success-950/40 text-success-700 dark:text-success-300 border border-success-200 dark:border-success-800/60 rounded-lg hover:bg-success-100 dark:hover:bg-success-900/50 transition-colors"
                         >
                             +7 days
                         </button>
                         <button
                             type="button"
                             onClick={() => adjustDateByDays(15)}
-                            className="px-3 py-2 text-sm bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                            className="px-3 py-2 text-sm bg-success-50 dark:bg-success-950/40 text-success-700 dark:text-success-300 border border-success-200 dark:border-success-800/60 rounded-lg hover:bg-success-100 dark:hover:bg-success-900/50 transition-colors"
                         >
                             +15 days
                         </button>
                         <button
                             type="button"
                             onClick={() => adjustDateByDays(30)}
-                            className="px-3 py-2 text-sm bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                            className="px-3 py-2 text-sm bg-success-50 dark:bg-success-950/40 text-success-700 dark:text-success-300 border border-success-200 dark:border-success-800/60 rounded-lg hover:bg-success-100 dark:hover:bg-success-900/50 transition-colors"
                         >
                             +30 days
                         </button>
@@ -224,13 +224,13 @@ const DueDateEditor = ({
                             placeholder="Custom days (+ or -)"
                             value={customDaysAdjustment}
                             onChange={(e) => setCustomDaysAdjustment(e.target.value)}
-                            className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
                         />
                         <button
                             type="button"
                             onClick={handleCustomDaysApply}
                             disabled={!customDaysAdjustment}
-                            className="px-4 py-2 text-sm bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="px-4 py-2 text-sm bg-primary-50 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-800/60 rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             Apply
                         </button>
@@ -239,28 +239,28 @@ const DueDateEditor = ({
 
                 {/* Reason Field */}
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Reason for Change <span className="text-red-600">*</span>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+                        Reason for Change <span className="text-danger-600">*</span>
                     </label>
                     <textarea
                         value={reason}
                         onChange={(e) => setReason(e.target.value)}
                         placeholder="Enter reason for due date change..."
                         rows={3}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none placeholder:text-gray-400 dark:placeholder:text-slate-500"
                     />
                     {!reason.trim() && (
-                        <p className="mt-1 text-xs text-red-600">Reason is required.</p>
+                        <p className="mt-1 text-xs text-danger-600 dark:text-danger-400">Reason is required.</p>
                     )}
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex gap-3 pt-4 border-t border-gray-200">
+                <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-slate-700">
                     <button
                         type="button"
                         onClick={handleCancel}
                         disabled={isLoading}
-                        className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 dark:text-slate-200 bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         Cancel
                     </button>
@@ -268,7 +268,7 @@ const DueDateEditor = ({
                         type="button"
                         onClick={handleSave}
                         disabled={isLoading || !newDueDate || !reason.trim()}
-                        className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                        className="flex-1 px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                     >
                         {isLoading ? (
                             <>

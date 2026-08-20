@@ -207,9 +207,9 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
     const hasEditPermission = hasPermission('goods_receipt:edit');
 
     return (
-        <div>
-            <h1 className="text-2xl font-semibold text-gray-800 mb-6">Goods Receipt History</h1>
-            <div className="bg-white p-6 rounded-xl border border-gray-200 space-y-6">
+        <div className="space-y-6">
+            <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100">Goods Receipt History</h1>
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 space-y-6 shadow-card">
                 <div className="flex items-center space-x-4">
                     <div className="flex-1 max-w-md">
                         <SearchBar
@@ -222,8 +222,8 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                 </div>
 
                 <div className="overflow-x-auto">
-                    <table className="w-full text-left border border-gray-200 rounded-lg">
-                        <thead className="bg-gray-50">
+                    <table className="w-full text-left border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                        <thead className="bg-gray-50 dark:bg-slate-700/40 border-b border-gray-200 dark:border-slate-700 text-gray-700 dark:text-slate-300">
                             <tr>
                                 <SortableHeader column="grn_number" sortConfig={sortConfig} onSort={handleSort}>
                                     GRN #
@@ -234,19 +234,19 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                 <SortableHeader column="supplier_name" sortConfig={sortConfig} onSort={handleSort}>
                                     Supplier
                                 </SortableHeader>
-                                <th className="p-3 text-sm font-semibold text-gray-600">Received By</th>
+                                <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Received By</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="divide-y divide-gray-100 dark:divide-slate-700/60">
                             {loading ? (
                                 <tr>
-                                    <td colSpan="4" className="p-4 text-center text-gray-500">
+                                    <td colSpan="4" className="p-8 text-center text-gray-500 dark:text-slate-400">
                                         Loading...
                                     </td>
                                 </tr>
                             ) : grns.length === 0 ? (
                                 <tr>
-                                    <td colSpan="4" className="p-4 text-center text-gray-500">
+                                    <td colSpan="4" className="p-8 text-center text-gray-500 dark:text-slate-400">
                                         No goods receipts found
                                     </td>
                                 </tr>
@@ -254,15 +254,15 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                 grns.map((grn) => (
                                     <tr
                                         key={grn.grn_id}
-                                        className="border-b hover:bg-gray-50 cursor-pointer"
+                                        className="hover:bg-gray-50 dark:hover:bg-slate-700/40 cursor-pointer text-gray-800 dark:text-slate-200 transition-colors"
                                         onClick={() => handleRowClick(grn)}
                                     >
-                                        <td className="p-3 text-sm font-medium text-gray-800">{grn.grn_number}</td>
-                                        <td className="p-3 text-sm text-gray-600">
+                                        <td className="p-3 text-sm font-mono font-medium text-gray-900 dark:text-slate-100">{grn.grn_number}</td>
+                                        <td className="p-3 text-sm text-gray-600 dark:text-slate-300">
                                             {new Date(grn.receipt_date).toLocaleDateString()}
                                         </td>
-                                        <td className="p-3 text-sm text-gray-600">{grn.supplier_name}</td>
-                                        <td className="p-3 text-sm text-gray-600">{grn.employee_name}</td>
+                                        <td className="p-3 text-sm text-gray-900 dark:text-slate-100 font-medium">{grn.supplier_name}</td>
+                                        <td className="p-3 text-sm text-gray-600 dark:text-slate-300">{grn.employee_name}</td>
                                     </tr>
                                 ))
                             )}
@@ -288,89 +288,89 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                 maxWidth="max-w-7xl"
             >
                 {modalLoading ? (
-                    <div className="p-4 text-center">Loading details...</div>
+                    <div className="p-6 text-center text-gray-500 dark:text-slate-400">Loading details...</div>
                 ) : (
                     <div className="space-y-4">
                         {selectedGrn && (
-                            <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div className="grid grid-cols-2 gap-4 text-sm bg-gray-50 dark:bg-slate-900/50 p-4 rounded-xl border border-gray-100 dark:border-slate-700 text-gray-900 dark:text-slate-100">
                                 <div>
-                                    <strong>Supplier:</strong> {selectedGrn.supplier_name}
+                                    <span className="text-gray-500 dark:text-slate-400">Supplier:</span> <span className="font-semibold">{selectedGrn.supplier_name}</span>
                                 </div>
-                                <div>
-                                    <strong>Received Date:</strong> {new Date(selectedGrn.receipt_date).toLocaleDateString()}
+                                <div className="flex items-center">
+                                    <div><span className="text-gray-500 dark:text-slate-400">Received Date:</span> <span className="font-semibold">{new Date(selectedGrn.receipt_date).toLocaleDateString()}</span></div>
                                     {hasEditPermission && (
                                         <button
                                             onClick={handleEditClick}
-                                            className={`ml-4 px-3 py-1 text-sm font-medium rounded-md ${
+                                            className={`ml-4 px-3 py-1 text-xs font-semibold rounded-lg shadow-xs transition-colors ${
                                                 isEditMode
-                                                    ? 'bg-green-600 text-white hover:bg-green-700'
-                                                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                                                    ? 'bg-success-600 text-white hover:bg-success-700'
+                                                    : 'bg-primary-600 text-white hover:bg-primary-700'
                                             }`}
                                         >
-                                            <Icon path={isEditMode ? ICONS.check : ICONS.edit} className="inline h-4 w-4 mr-1" />
+                                            <Icon path={isEditMode ? ICONS.check : ICONS.edit} className="inline h-3.5 w-3.5 mr-1" />
                                             {isEditMode ? 'Save' : 'Edit'}
                                         </button>
                                     )}
                                 </div>
                                 <div>
-                                    <strong>Received By:</strong> {selectedGrn.employee_name}
+                                    <span className="text-gray-500 dark:text-slate-400">Received By:</span> <span className="font-semibold">{selectedGrn.employee_name}</span>
                                 </div>
                             </div>
                         )}
 
                         <div className="overflow-x-auto">
-                            <table className="w-full text-left border border-gray-200 rounded-lg">
-                                <thead className="bg-gray-50">
+                            <table className="w-full text-left border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                                <thead className="bg-gray-50 dark:bg-slate-700/40 border-b border-gray-200 dark:border-slate-700 text-gray-700 dark:text-slate-300">
                                     <tr>
-                                        <th className="p-3 text-sm font-semibold text-gray-600">Part SKU</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-600">Part Name</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-600">Qty Received</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-600">Cost Price</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-600">Sale Price</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-600">Line Total</th>
+                                        <th className="p-3 text-sm font-semibold">Part SKU</th>
+                                        <th className="p-3 text-sm font-semibold">Part Name</th>
+                                        <th className="p-3 text-sm font-semibold text-center">Qty Received</th>
+                                        <th className="p-3 text-sm font-semibold text-right">Cost Price</th>
+                                        <th className="p-3 text-sm font-semibold text-right">Sale Price</th>
+                                        <th className="p-3 text-sm font-semibold text-right">Line Total</th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody className="divide-y divide-gray-100 dark:divide-slate-700/60">
                                     {(isEditMode ? editedLines : grnLines).map((line, index) => (
-                                        <tr key={index} className="border-b">
-                                            <td className="p-3 text-sm text-gray-800">{line.internal_sku}</td>
-                                            <td className="p-3 text-sm text-gray-800">{line.display_name}</td>
-                                            <td className="p-3 text-sm text-gray-600">
+                                        <tr key={index} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200">
+                                            <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100">{line.internal_sku}</td>
+                                            <td className="p-3 text-sm font-medium text-gray-900 dark:text-slate-100">{line.display_name}</td>
+                                            <td className="p-3 text-sm text-center font-mono">
                                                 {isEditMode ? (
                                                     <input
                                                         type="number"
                                                         value={line.quantity}
                                                         onChange={(e) => handleLineChange(index, 'quantity', e.target.value)}
                                                         onFocus={(e) => e.target.select()}
-                                                        className="w-full h-8 px-2 border rounded-md text-sm"
+                                                        className="w-24 h-8 px-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-md text-sm text-center font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
                                                         step="0.01"
                                                     />
                                                 ) : (
                                                     line.quantity
                                                 )}
                                             </td>
-                                            <td className="p-3 text-sm text-gray-600">
+                                            <td className="p-3 text-sm text-right font-mono text-gray-700 dark:text-slate-300">
                                                 {isEditMode ? (
                                                     <input
                                                         type="number"
                                                         value={line.cost_price}
                                                         onChange={(e) => handleLineChange(index, 'cost_price', e.target.value)}
                                                         onFocus={(e) => e.target.select()}
-                                                        className="w-full h-8 px-2 border rounded-md text-sm"
+                                                        className="w-24 h-8 px-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-md text-sm text-right font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
                                                         step="0.01"
                                                     />
                                                 ) : (
                                                     `₱${parseFloat(line.cost_price).toFixed(2)}`
                                                 )}
                                             </td>
-                                            <td className="p-3 text-sm text-gray-600">
+                                            <td className="p-3 text-sm text-right font-mono text-gray-700 dark:text-slate-300">
                                                 {isEditMode ? (
                                                     <input
                                                         type="number"
                                                         value={line.sale_price || ''}
                                                         onChange={(e) => handleLineChange(index, 'sale_price', e.target.value)}
                                                         onFocus={(e) => e.target.select()}
-                                                        className="w-full h-8 px-2 border rounded-md text-sm"
+                                                        className="w-24 h-8 px-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-md text-sm text-right font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
                                                         step="0.01"
                                                         placeholder="Optional"
                                                     />
@@ -378,7 +378,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                                     line.sale_price ? `₱${parseFloat(line.sale_price).toFixed(2)}` : '-'
                                                 )}
                                             </td>
-                                            <td className="p-3 text-sm text-gray-600">
+                                            <td className="p-3 text-sm text-right font-mono font-medium text-gray-900 dark:text-slate-100">
                                                 ₱{(parseFloat(line.quantity) * parseFloat(line.cost_price)).toFixed(2)}
                                             </td>
                                         </tr>

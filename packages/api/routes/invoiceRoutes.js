@@ -181,6 +181,25 @@ router.get('/invoices/:id/lines-with-refunds', protect, hasPermission('invoicing
     }
 });
 
+// GET /invoices/check-physical-receipt/:prn - live-check whether a physical receipt number is already taken
+// (the create-invoice flow below auto-increments on a collision rather than rejecting, so this is advisory only)
+router.get('/invoices/check-physical-receipt/:prn', protect, hasPermission('invoicing:create'), async (req, res) => {
+    const prn = formatPhysicalReceiptNumber(req.params.prn);
+    if (!prn) {
+        return res.json({ taken: false, normalized: null });
+    }
+    try {
+        const { rows } = await db.query(
+            `SELECT public.is_physical_receipt_no_taken($1) AS is_taken`,
+            [prn]
+        );
+        res.json({ taken: !!rows[0]?.is_taken, normalized: prn });
+    } catch (err) {
+        console.error('Check physical receipt no error:', err.message);
+        res.status(500).json({ message: 'Server error checking physical receipt number.' });
+    }
+});
+
 // POST /invoices - Create a new invoice
 router.post('/invoices', protect, hasPermission('invoicing:create'), async (req, res) => {
     const { customer_id, employee_id, lines, amount_paid, tendered_amount, payment_method, terms, payment_terms_days, physical_receipt_no, tax_rate_id, payments, staged_sale_id } = req.body;

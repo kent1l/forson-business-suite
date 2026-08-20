@@ -99,10 +99,10 @@ const SuppliersPage = () => {
     const handleDelete = (supplierId) => {
         toast((t) => (
             <div className="flex flex-col items-center">
-                <p className="font-semibold">Are you sure?</p>
+                <p className="font-semibold text-gray-900 dark:text-slate-100">Are you sure?</p>
                 <div className="flex space-x-2 mt-2">
-                    <button onClick={() => { toast.dismiss(t.id); confirmDelete(supplierId); }} className="px-3 py-1 bg-red-600 text-white text-sm rounded-md">Delete</button>
-                    <button onClick={() => toast.dismiss(t.id)} className="px-3 py-1 bg-gray-200 text-gray-800 text-sm rounded-md">Cancel</button>
+                    <button onClick={() => { toast.dismiss(t.id); confirmDelete(supplierId); }} className="px-3 py-1 bg-danger-600 text-white text-sm rounded-lg hover:bg-danger-700">Delete</button>
+                    <button onClick={() => toast.dismiss(t.id)} className="px-3 py-1 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 text-sm rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600">Cancel</button>
                 </div>
             </div>
         ));
@@ -143,24 +143,24 @@ const SuppliersPage = () => {
     };
 
     return (
-        <div>
-            <div className="flex justify-between items-center mb-6">
+        <div className="space-y-6">
+            <div className="flex justify-between items-center">
                 <div>
                     <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100">Suppliers</h1>
                     <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">Directory, payables balance, and payment status for every supplier.</p>
                 </div>
                 {hasPermission('suppliers:edit') && (
-                    <button onClick={handleAdd} className="bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition">
+                    <button onClick={handleAdd} className="bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition shadow-sm text-sm">
                         Add Supplier
                     </button>
                 )}
             </div>
 
-            <div className="border-b border-gray-200 dark:border-slate-700 mb-4">
+            <div className="border-b border-gray-200 dark:border-slate-700">
                 <SegmentedTabs tabs={filterTabs} active={statusFilter} onChange={setStatusFilter} />
             </div>
 
-            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700">
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-card">
                 {loading && <p className="text-gray-600 dark:text-slate-400">Loading suppliers...</p>}
                 {error && <p className="text-danger-500">{error}</p>}
                 {!loading && !error && (

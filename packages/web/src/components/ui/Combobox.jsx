@@ -131,7 +131,7 @@ const Combobox = ({ options, value, onChange, placeholder, allowCreate = false, 
             <input
                 ref={inputRef}
                 type="text"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
                 value={isOpen ? inputValue : selectedLabel}
                 onChange={handleInputChange}
                 onFocus={handleFocus}
@@ -146,16 +146,16 @@ const Combobox = ({ options, value, onChange, placeholder, allowCreate = false, 
             {isOpen && (
                 <ul 
                     ref={listRef}
-                    className="absolute z-10 w-full bg-white border rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto"
+                    className="absolute z-10 w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto"
                     role="listbox"
                 >
                     {filteredOptions.map((option, index) => (
                         <li
                             key={option.value}
-                            className={`px-4 py-2 cursor-pointer ${
+                            className={`px-4 py-2 cursor-pointer transition-colors ${
                                 index === highlightedIndex 
-                                    ? 'bg-blue-100 text-blue-900' 
-                                    : 'hover:bg-blue-50'
+                                    ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300' 
+                                    : 'hover:bg-gray-50 dark:hover:bg-slate-700/50 text-gray-800 dark:text-slate-200'
                             }`}
                             onMouseDown={() => handleSelect(option)}
                             onMouseEnter={() => setHighlightedIndex(index)}
@@ -166,17 +166,17 @@ const Combobox = ({ options, value, onChange, placeholder, allowCreate = false, 
                         </li>
                     ))}
                     {filteredOptions.length === 0 && (
-                        <li className="px-4 py-2 text-gray-500" role="option">
+                        <li className="px-4 py-2 text-gray-500 dark:text-slate-400" role="option">
                             No options found
                         </li>
                     )}
 
                     {allowCreate && inputValue.trim() !== '' && !exactMatch && (
                         <li
-                            className={`px-4 py-2 cursor-pointer ${
+                            className={`px-4 py-2 cursor-pointer transition-colors ${
                                 highlightedIndex === filteredOptions.length 
-                                    ? 'bg-green-100 text-green-800' 
-                                    : 'hover:bg-green-50 text-green-600'
+                                    ? 'bg-success-100 dark:bg-success-900/40 text-success-800 dark:text-success-300' 
+                                    : 'hover:bg-success-50 dark:hover:bg-success-900/20 text-success-600 dark:text-success-400'
                             }`}
                             onMouseDown={handleCreate}
                             onMouseEnter={() => setHighlightedIndex(filteredOptions.length)}

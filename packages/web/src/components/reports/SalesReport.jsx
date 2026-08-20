@@ -93,31 +93,31 @@ const SalesReport = () => {
 
     return (
         <>
-            <div className="bg-white p-6 rounded-xl border border-gray-200 mb-6">
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm mb-6">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-                        <input type="date" name="startDate" value={dates.startDate} onChange={handleDateChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Start Date</label>
+                        <input type="date" name="startDate" value={dates.startDate} onChange={handleDateChange} className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500" />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-                        <input type="date" name="endDate" value={dates.endDate} onChange={handleDateChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">End Date</label>
+                        <input type="date" name="endDate" value={dates.endDate} onChange={handleDateChange} className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500" />
                     </div>
                     <div className="flex space-x-2">
-                        <button onClick={() => fetchReport('json')} disabled={loading} className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition disabled:bg-blue-300">
+                        <button onClick={() => fetchReport('json')} disabled={loading} className="w-full bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition disabled:opacity-50 cursor-pointer">
                             {loading ? 'Loading...' : 'View Report'}
                         </button>
-                         <button onClick={() => fetchReport('csv')} disabled={loading} className="w-full bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition disabled:bg-green-300">
+                         <button onClick={() => fetchReport('csv')} disabled={loading} className="w-full bg-success-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-success-700 transition disabled:opacity-50 cursor-pointer">
                             Export CSV
                         </button>
                     </div>
                 </div>
             </div>
             
-            {loading ? <p>Loading report...</p> : summary && (
+            {loading ? <p className="text-sm text-gray-500 dark:text-slate-400">Loading report...</p> : summary && (
                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-                    <ReportCard title="Total Sales" value={summary.totalSales} icon={ICONS.invoice} color={{bg: 'bg-green-100', text: 'text-green-600'}} isCurrency={true} />
-                    <ReportCard title="Total Cost" value={summary.totalCost} icon={ICONS.receipt} color={{bg: 'bg-orange-100', text: 'text-orange-600'}} isCurrency={true} />
+                    <ReportCard title="Total Sales" value={summary.totalSales} icon={ICONS.invoice} color={{bg: 'bg-success-100 dark:bg-success-900/30', text: 'text-success-700 dark:text-success-400'}} isCurrency={true} />
+                    <ReportCard title="Total Cost" value={summary.totalCost} icon={ICONS.receipt} color={{bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-700 dark:text-amber-400'}} isCurrency={true} />
                     <ReportCard
                         title={
                             <span className="inline-flex items-center gap-1">
@@ -129,17 +129,17 @@ const SalesReport = () => {
                         }
                         value={summary.profit}
                         icon={ICONS.dashboard}
-                        color={{bg: 'bg-blue-100', text: 'text-blue-600'}}
+                        color={{bg: 'bg-primary-100 dark:bg-primary-900/30', text: 'text-primary-700 dark:text-primary-400'}}
                         isCurrency={true}
                     />
-                    <ReportCard title="Total Invoices" value={summary.totalInvoices} icon={ICONS.parts} color={{bg: 'bg-indigo-100', text: 'text-indigo-600'}} />
+                    <ReportCard title="Total Invoices" value={summary.totalInvoices} icon={ICONS.parts} color={{bg: 'bg-indigo-100 dark:bg-indigo-900/30', text: 'text-indigo-700 dark:text-indigo-400'}} />
                 </div>
             )}
 
-            <div className="bg-white p-6 rounded-xl border border-gray-200">
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
-                        <thead className="border-b">
+                        <thead className="border-b border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300">
                             <tr>
                                 <SortableHeader column="invoice_date" sortConfig={sortConfig} onSort={handleSort}>Date</SortableHeader>
                                 <SortableHeader column="invoice_number" sortConfig={sortConfig} onSort={handleSort}>Invoice #</SortableHeader>
@@ -147,18 +147,18 @@ const SalesReport = () => {
                                 <SortableHeader className="text-right" column="line_total" sortConfig={sortConfig} onSort={handleSort}>Total</SortableHeader>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
                             {reportData.map((row, index) => (
-                                <tr key={index} className="border-b hover:bg-gray-50">
+                                <tr key={index} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200 transition-colors">
                                     <td className="p-3 text-sm">{format(toZonedTime(parseISO(row.invoice_date), 'Asia/Manila'), 'MM/dd/yyyy')}</td>
-                                    <td className="p-3 text-sm font-mono">{row.invoice_number}</td>
-                                    <td className="p-3 text-sm">{row.display_name}</td>
-                                    <td className="p-3 text-sm text-right font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.line_total).toFixed(2)}</td>
+                                    <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100">{row.invoice_number}</td>
+                                    <td className="p-3 text-sm font-medium">{row.display_name}</td>
+                                    <td className="p-3 text-sm text-right font-mono text-gray-900 dark:text-slate-100">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.line_total).toFixed(2)}</td>
                                 </tr>
                             ))}
                              {reportData.length === 0 && !loading && (
                                 <tr>
-                                    <td colSpan="4" className="p-4 text-center text-gray-500">No sales data for the selected period.</td>
+                                    <td colSpan="4" className="p-4 text-center text-gray-500 dark:text-slate-400">No sales data for the selected period.</td>
                                 </tr>
                             )}
                         </tbody>

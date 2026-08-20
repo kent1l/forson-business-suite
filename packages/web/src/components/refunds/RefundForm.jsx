@@ -78,15 +78,15 @@ const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
     };
 
     return (
-        <div className="mt-4 pt-4 border-t">
+        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-700">
             <div className="mb-4">
-                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-1">
                     Refund Payout Method:
                 </label>
                 <select
                     value={refundMethod}
                     onChange={(e) => setRefundMethod(e.target.value)}
-                    className="w-full md:w-64 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
+                    className="w-full md:w-64 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
                 >
                     <option value="Cash">Cash Payout</option>
                     <option value="GCash">GCash Transfer</option>
@@ -95,27 +95,27 @@ const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
                     <option value="AR reduction">Accounts Receivable Reduction</option>
                 </select>
             </div>
-            <h4 className="font-semibold text-gray-800 mb-2">Select items to refund:</h4>
+            <h4 className="font-semibold text-gray-800 dark:text-slate-100 mb-2">Select items to refund:</h4>
             <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
                 {lines.map(line => (
-                    <div key={line.invoice_line_id} className="flex items-center space-x-3 bg-gray-50 p-2 rounded-lg">
+                    <div key={line.invoice_line_id} className="flex items-center space-x-3 bg-gray-50 dark:bg-slate-900/50 p-2 rounded-lg border border-gray-200/60 dark:border-slate-700/60">
                         <input
                             type="checkbox"
                             checked={!!refundLines[line.invoice_line_id]}
                             onChange={(e) => handleCheckboxChange(line.invoice_line_id, e.target.checked)}
-                            className="h-4 w-4 rounded"
+                            className="h-4 w-4 rounded text-primary-600 dark:bg-slate-800 dark:border-slate-600 focus:ring-primary-500"
                             disabled={(line.quantity - line.quantity_refunded) <= 0}
                         />
                         <div className="flex-grow">
-                            <p className={`text-sm font-medium ${ (line.quantity - line.quantity_refunded) <= 0 ? 'text-red-600' : '' }`}>{line.display_name}</p>
-                            <p className={`text-xs text-gray-500 ${ (line.quantity - line.quantity_refunded) <= 0 ? 'text-red-600' : '' }`}>Sold: {line.quantity}, Refunded: {line.quantity_refunded}, Available: {line.quantity - line.quantity_refunded}</p>
+                            <p className={`text-sm font-medium ${ (line.quantity - line.quantity_refunded) <= 0 ? 'text-danger-600 dark:text-danger-400' : 'text-gray-900 dark:text-slate-100' }`}>{line.display_name}</p>
+                            <p className={`text-xs ${ (line.quantity - line.quantity_refunded) <= 0 ? 'text-danger-500 dark:text-danger-400/80' : 'text-gray-500 dark:text-slate-400' }`}>Sold: {line.quantity}, Refunded: {line.quantity_refunded}, Available: {line.quantity - line.quantity_refunded}</p>
                         </div>
                         {refundLines[line.invoice_line_id] && (
                             <input
                                 type="number"
                                 value={refundLines[line.invoice_line_id].quantity}
                                 onChange={(e) => handleQuantityChange(line.invoice_line_id, e.target.value)}
-                                className="w-20 px-2 py-1 border rounded-md text-sm"
+                                className="w-20 px-2 py-1 border border-gray-300 dark:border-slate-600 rounded-md text-sm bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-primary-500"
                                 max={line.quantity - line.quantity_refunded}
                                 min="0"
                             />
@@ -123,13 +123,13 @@ const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
                     </div>
                 ))}
             </div>
-            <div className="mt-4 pt-4 border-t flex justify-between items-center">
-                <div className="text-lg font-bold">
-                    Total Refund: <span className="text-blue-600">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{totalRefundAmount.toFixed(2)}</span>
+            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-700 flex justify-between items-center">
+                <div className="text-lg font-bold text-gray-900 dark:text-slate-100">
+                    Total Refund: <span className="text-primary-600 dark:text-primary-400">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{totalRefundAmount.toFixed(2)}</span>
                 </div>
                 <button
                     onClick={handleSubmitRefund}
-                    className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-blue-700"
+                    className="bg-primary-600 hover:bg-primary-700 text-white font-semibold px-4 py-2 rounded-lg transition-colors"
                 >
                     Confirm Refund
                 </button>

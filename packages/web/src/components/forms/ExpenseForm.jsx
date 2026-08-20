@@ -268,21 +268,21 @@ export default function ExpenseForm({
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
-            <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                 {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
                     <div className="flex items-center space-x-2">
-                        <span className="p-2 bg-blue-100 text-blue-600 rounded-lg">
+                        <span className="p-2 bg-primary-100 dark:bg-primary-900/40 text-primary-600 dark:text-primary-400 rounded-lg">
                             <Icon path={ICONS.receipt} className="w-5 h-5" />
                         </span>
                         <div>
-                            <h3 className="text-lg font-bold text-slate-800">
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
                                 {isDuplicating
                                     ? 'Duplicate Expense'
                                     : initialData ? 'Edit Expense Record' : 'Record New Expense'}
                             </h3>
-                            <p className="text-xs text-slate-500">
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
                                 {isDuplicating
                                     ? 'Copied from a previous entry — review the date and amount before saving'
                                     : initialData ? `Expense #${initialData.expense_id}` : 'Fill in the structured expense details below'}
@@ -292,7 +292,7 @@ export default function ExpenseForm({
                     <button
                         onClick={onClose}
                         disabled={loading}
-                        className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/60 transition-colors"
+                        className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-lg hover:bg-slate-200/60 dark:hover:bg-slate-700 transition-colors"
                     >
                         <Icon path={ICONS.close} className="w-5 h-5" />
                     </button>
@@ -301,74 +301,74 @@ export default function ExpenseForm({
                 {/* Form */}
                 <form onSubmit={handleSubmit} className="p-6 space-y-4">
                     {aiMeta && (
-                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between text-xs text-blue-800">
+                        <div className="p-3 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-900/40 rounded-lg flex items-center justify-between text-xs text-primary-800 dark:text-primary-300">
                             <div className="flex items-center space-x-2">
-                                <Icon path={ICONS.star} className="w-4 h-4 text-blue-600" />
+                                <Icon path={ICONS.star} className="w-4 h-4 text-primary-600 dark:text-primary-400" />
                                 <span>Fields pre-filled by AI. Please review before saving.</span>
                             </div>
-                            <span className="font-semibold text-blue-700">Overall confidence: {Math.round((aiMeta.confidence.overall || 0.8) * 100)}%</span>
+                            <span className="font-semibold text-primary-700 dark:text-primary-400">Overall confidence: {Math.round((aiMeta.confidence.overall || 0.8) * 100)}%</span>
                         </div>
                     )}
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {/* Amount */}
                         <div>
-                            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                                Amount (₱) <span className="text-red-500">*</span>
-                                {isAiField('amount') && <span className="ml-1 text-[10px] text-blue-600 bg-blue-50 px-1 rounded">◆ AI</span>}
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                                Amount (₱) <span className="text-danger-500">*</span>
+                                {isAiField('amount') && <span className="ml-1 text-[10px] text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/30 px-1 rounded">◆ AI</span>}
                                 {getConfidenceWarning('amount')}
                             </label>
                             <div className="relative">
-                                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400 font-semibold text-sm">₱</span>
+                                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400 dark:text-slate-500 font-semibold text-sm">₱</span>
                                 <input
                                     type="text"
                                     inputMode="decimal"
                                     value={formatAmountDisplay(formData.amount)}
                                     onChange={(e) => handleAmountChange(e.target.value)}
                                     placeholder="0.00"
-                                    className={`w-full pl-8 pr-3 py-2 text-sm bg-white border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
-                                        errors.amount ? 'border-red-500 focus:ring-red-500' : isAiField('amount') ? 'border-blue-300 bg-blue-50/20' : 'border-slate-300'
+                                    className={`w-full pl-8 pr-3 py-2 text-sm bg-white dark:bg-slate-900 border rounded-lg text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors ${
+                                        errors.amount ? 'border-danger-500 focus:ring-danger-500' : isAiField('amount') ? 'border-primary-300 dark:border-primary-700 bg-primary-50/20 dark:bg-primary-900/10' : 'border-slate-300 dark:border-slate-600'
                                     }`}
                                 />
                             </div>
-                            {errors.amount && <p className="text-xs text-red-500 mt-1">{errors.amount}</p>}
+                            {errors.amount && <p className="text-xs text-danger-500 mt-1">{errors.amount}</p>}
                         </div>
 
                         {/* Date */}
                         <div>
-                            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                                Expense Date <span className="text-red-500">*</span>
-                                {isAiField('expense_date') && <span className="ml-1 text-[10px] text-blue-600 bg-blue-50 px-1 rounded">◆ AI</span>}
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                                Expense Date <span className="text-danger-500">*</span>
+                                {isAiField('expense_date') && <span className="ml-1 text-[10px] text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/30 px-1 rounded">◆ AI</span>}
                                 {getConfidenceWarning('date')}
                             </label>
                             <input
                                 type="date"
                                 value={formData.expense_date}
                                 onChange={(e) => handleChange('expense_date', e.target.value)}
-                                className={`w-full px-3 py-2 text-sm bg-white border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
-                                    errors.expense_date ? 'border-red-500 focus:ring-red-500' : isAiField('expense_date') ? 'border-blue-300 bg-blue-50/20' : 'border-slate-300'
+                                className={`w-full px-3 py-2 text-sm bg-white dark:bg-slate-900 border rounded-lg text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors ${
+                                    errors.expense_date ? 'border-danger-500 focus:ring-danger-500' : isAiField('expense_date') ? 'border-primary-300 dark:border-primary-700 bg-primary-50/20 dark:bg-primary-900/10' : 'border-slate-300 dark:border-slate-600'
                                 }`}
                             />
-                            {errors.expense_date && <p className="text-xs text-red-500 mt-1">{errors.expense_date}</p>}
+                            {errors.expense_date && <p className="text-xs text-danger-500 mt-1">{errors.expense_date}</p>}
                         </div>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {/* Category */}
                         <div>
-                            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 flex items-center gap-1">
-                                <span>Category <span className="text-red-500">*</span></span>
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                <span>Category <span className="text-danger-500">*</span></span>
                                 <InfoTip label="Category">
                                     The classification bucket this expense is filed under (e.g. Utilities, Rent). Only active categories appear here — manage the list on the Expense Categories page.
                                 </InfoTip>
-                                {isAiField('category_id') && <span className="ml-1 text-[10px] text-blue-600 bg-blue-50 px-1 rounded">◆ AI</span>}
+                                {isAiField('category_id') && <span className="ml-1 text-[10px] text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/30 px-1 rounded">◆ AI</span>}
                                 {getConfidenceWarning('category')}
                             </label>
                             <select
                                 value={formData.category_id}
                                 onChange={(e) => handleChange('category_id', e.target.value)}
-                                className={`w-full px-3 py-2 text-sm bg-white border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
-                                    errors.category_id ? 'border-red-500 focus:ring-red-500' : isAiField('category_id') ? 'border-blue-300 bg-blue-50/20' : 'border-slate-300'
+                                className={`w-full px-3 py-2 text-sm bg-white dark:bg-slate-900 border rounded-lg text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors ${
+                                    errors.category_id ? 'border-danger-500 focus:ring-danger-500' : isAiField('category_id') ? 'border-primary-300 dark:border-primary-700 bg-primary-50/20 dark:bg-primary-900/10' : 'border-slate-300 dark:border-slate-600'
                                 }`}
                             >
                                 <option value="">-- Select Expense Category --</option>
@@ -378,24 +378,24 @@ export default function ExpenseForm({
                                     </option>
                                 ))}
                             </select>
-                            {errors.category_id && <p className="text-xs text-red-500 mt-1">{errors.category_id}</p>}
+                            {errors.category_id && <p className="text-xs text-danger-500 mt-1">{errors.category_id}</p>}
                         </div>
 
                         {/* Payment Method */}
                         <div>
-                            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 flex items-center gap-1">
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1 flex items-center gap-1">
                                 <span>Payment Method</span>
                                 <InfoTip label="Payment Method">
                                     Optional. Pick a configured method, or leave it as Custom / Cash Default to simply record the expense as paid in cash.
                                 </InfoTip>
-                                {isAiField('payment_method_id') && <span className="ml-1 text-[10px] text-blue-600 bg-blue-50 px-1 rounded">◆ AI</span>}
+                                {isAiField('payment_method_id') && <span className="ml-1 text-[10px] text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/30 px-1 rounded">◆ AI</span>}
                                 {getConfidenceWarning('payment_method')}
                             </label>
                             <select
                                 value={formData.payment_method_id}
                                 onChange={handlePaymentMethodChange}
-                                className={`w-full px-3 py-2 text-sm bg-white border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
-                                    isAiField('payment_method_id') ? 'border-blue-300 bg-blue-50/20' : 'border-slate-300'
+                                className={`w-full px-3 py-2 text-sm bg-white dark:bg-slate-900 border rounded-lg text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors ${
+                                    isAiField('payment_method_id') ? 'border-primary-300 dark:border-primary-700 bg-primary-50/20 dark:bg-primary-900/10' : 'border-slate-300 dark:border-slate-600'
                                 }`}
                             >
                                 <option value="">Custom / Cash Default</option>
@@ -411,9 +411,9 @@ export default function ExpenseForm({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {/* Payee */}
                         <div className="relative" ref={payeeWrapRef}>
-                            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                                 Payee / Vendor
-                                {isAiField('payee') && <span className="ml-1 text-[10px] text-blue-600 bg-blue-50 px-1 rounded">◆ AI</span>}
+                                {isAiField('payee') && <span className="ml-1 text-[10px] text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/30 px-1 rounded">◆ AI</span>}
                             </label>
                             <input
                                 type="text"
@@ -422,12 +422,12 @@ export default function ExpenseForm({
                                 onFocus={() => setShowPayeeSuggestions(true)}
                                 autoComplete="off"
                                 placeholder="e.g. Meralco, Landlord, Shell"
-                                className={`w-full px-3 py-2 text-sm bg-white border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
-                                    isAiField('payee') ? 'border-blue-300 bg-blue-50/20' : 'border-slate-300'
+                                className={`w-full px-3 py-2 text-sm bg-white dark:bg-slate-900 border rounded-lg text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors ${
+                                    isAiField('payee') ? 'border-primary-300 dark:border-primary-700 bg-primary-50/20 dark:bg-primary-900/10' : 'border-slate-300 dark:border-slate-600'
                                 }`}
                             />
                             {showPayeeSuggestions && payeeSuggestions.length > 0 && (
-                                <ul className="absolute z-10 mt-1 w-full max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg py-1">
+                                <ul className="absolute z-10 mt-1 w-full max-h-48 overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg py-1">
                                     {payeeSuggestions.map((name) => (
                                         <li key={name}>
                                             <button
@@ -436,7 +436,7 @@ export default function ExpenseForm({
                                                     handleChange('payee', name);
                                                     setShowPayeeSuggestions(false);
                                                 }}
-                                                className="w-full text-left px-3 py-1.5 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 cursor-pointer transition-colors"
+                                                className="w-full text-left px-3 py-1.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-primary-50 dark:hover:bg-primary-900/30 hover:text-primary-700 dark:hover:text-primary-300 cursor-pointer transition-colors"
                                             >
                                                 {name}
                                             </button>
@@ -444,14 +444,14 @@ export default function ExpenseForm({
                                     ))}
                                 </ul>
                             )}
-                            <p className="text-[10px] text-slate-400 mt-1">
+                            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
                                 Pick an existing name when possible so reports group correctly.
                             </p>
                         </div>
 
                         {/* Reference No */}
                         <div>
-                            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 flex items-center gap-1">
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1 flex items-center gap-1">
                                 <span>Reference / OR / Receipt No.</span>
                                 <InfoTip label="Reference / OR / Receipt No.">
                                     The receipt or document number tied to this expense. Optional, but recommended for audit trail whenever a physical receipt exists.
@@ -462,14 +462,14 @@ export default function ExpenseForm({
                                 value={formData.reference_no}
                                 onChange={(e) => handleChange('reference_no', e.target.value)}
                                 placeholder="e.g. OR-2026-9941"
-                                className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                                className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors"
                             />
                         </div>
                     </div>
 
                     {/* Notes */}
                     <div>
-                        <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                             Notes / Remarks
                         </label>
                         <textarea
@@ -477,25 +477,25 @@ export default function ExpenseForm({
                             value={formData.notes}
                             onChange={(e) => handleChange('notes', e.target.value)}
                             placeholder="Additional details about this expense..."
-                            className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors resize-none"
+                            className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors resize-none"
                         ></textarea>
                     </div>
 
                     {/* Possible duplicate warning — advisory, never blocking */}
                     {duplicateMatches.length > 0 && !duplicateAcknowledged && (
-                        <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg space-y-2">
+                        <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-900/40 rounded-lg space-y-2">
                             <div className="flex items-start space-x-2">
-                                <Icon path={ICONS.warning} className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-                                <div className="text-xs text-amber-900">
+                                <Icon path={ICONS.warning} className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                                <div className="text-xs text-amber-900 dark:text-amber-200">
                                     <p className="font-semibold">This looks like it may already be recorded.</p>
-                                    <p className="text-amber-800 mt-0.5">
+                                    <p className="text-amber-800 dark:text-amber-300 mt-0.5">
                                         Found {duplicateMatches.length} existing expense{duplicateMatches.length > 1 ? 's' : ''} with the same date, amount, and payee:
                                     </p>
                                 </div>
                             </div>
                             <ul className="space-y-1 pl-6">
                                 {duplicateMatches.map((m) => (
-                                    <li key={m.expense_id} className="text-xs text-amber-900 bg-amber-100/60 rounded px-2 py-1">
+                                    <li key={m.expense_id} className="text-xs text-amber-900 dark:text-amber-200 bg-amber-100/60 dark:bg-amber-900/40 rounded px-2 py-1">
                                         <span className="font-semibold">#{m.expense_id}</span>
                                         {' · '}{m.category?.category_name || 'Uncategorized'}
                                         {' · ₱'}{parseFloat(m.amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -503,19 +503,19 @@ export default function ExpenseForm({
                                     </li>
                                 ))}
                             </ul>
-                            <p className="text-[11px] text-amber-700 pl-6">
+                            <p className="text-[11px] text-amber-700 dark:text-amber-400 pl-6">
                                 If this is a separate, genuine expense, choose “Save anyway”.
                             </p>
                         </div>
                     )}
 
                     {/* Footer Actions */}
-                    <div className="flex items-center justify-end space-x-3 pt-4 border-t border-slate-100">
+                    <div className="flex items-center justify-end space-x-3 pt-4 border-t border-slate-100 dark:border-slate-700">
                         <button
                             type="button"
                             onClick={onClose}
                             disabled={loading}
-                            className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+                            className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors cursor-pointer"
                         >
                             Cancel
                         </button>
@@ -528,8 +528,8 @@ export default function ExpenseForm({
                             }}
                             className={`px-5 py-2 text-sm font-medium text-white rounded-lg shadow-sm transition-colors cursor-pointer inline-flex items-center disabled:opacity-60 ${
                                 duplicateMatches.length > 0 && !duplicateAcknowledged
-                                    ? 'bg-amber-600 hover:bg-amber-500'
-                                    : 'bg-blue-600 hover:bg-blue-500'
+                                    ? 'bg-amber-600 hover:bg-amber-700'
+                                    : 'bg-primary-600 hover:bg-primary-700'
                             }`}
                         >
                             {loading || checkingDuplicate ? (

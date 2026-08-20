@@ -159,35 +159,35 @@ const CustomerInvoiceDetailsModal = ({
             >
                 <div className="space-y-4">
                     {refreshing && (
-                        <div className="flex items-center gap-2 text-sm text-gray-500">
-                            <div className="h-3 w-3 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin"></div>
+                        <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-slate-400">
+                            <div className="h-3 w-3 border-2 border-gray-300 dark:border-slate-600 border-t-gray-500 rounded-full animate-spin"></div>
                             Refreshing invoices...
                         </div>
                     )}
                     {loading ? (
                         <div className="flex items-center justify-center py-8">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                            <span className="ml-2 text-gray-600">Loading customer invoices...</span>
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
+                            <span className="ml-2 text-gray-600 dark:text-slate-400">Loading customer invoices...</span>
                         </div>
                     ) : invoiceData.length === 0 ? (
-                        <div className="text-center py-8 text-gray-500">
+                        <div className="text-center py-8 text-gray-500 dark:text-slate-400">
                             No payable invoices found for this customer.
                         </div>
                     ) : (
                         <div className="overflow-x-auto">
                             <table className="w-full text-left">
-                                <thead className="border-b border-gray-200">
+                                <thead className="border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-700/40 text-gray-600 dark:text-slate-300">
                                     <tr>
-                                        <th className="p-3 text-sm font-semibold text-gray-600">Invoice #</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-600">Physical Receipt #</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-600">Invoice Date</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-600">Due Date</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total Amount</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-600 text-right">Balance Due</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-600 text-center">Status</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Invoice #</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Physical Receipt #</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Invoice Date</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Due Date</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-right">Total Amount</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-right">Balance Due</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-center">Status</th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody className="divide-y divide-gray-100 dark:divide-slate-700/60">
                                     {invoiceData.map(invoice => {
                                         const dueDate = new Date(invoice.due_date);
                                         const now = new Date();
@@ -197,36 +197,36 @@ const CustomerInvoiceDetailsModal = ({
                                         let statusText, statusColor;
                                         if (daysDiff < 0) {
                                             statusText = `${Math.abs(daysDiff)} days overdue`;
-                                            statusColor = 'bg-red-100 text-red-800';
+                                            statusColor = 'bg-danger-100 dark:bg-danger-900/30 text-danger-800 dark:text-danger-400';
                                         } else if (daysDiff === 0) {
                                             statusText = 'Due today';
-                                            statusColor = 'bg-orange-100 text-orange-800';
+                                            statusColor = 'bg-warning-100 dark:bg-warning-900/30 text-warning-800 dark:text-warning-400';
                                         } else {
                                             statusText = `${daysDiff} days remaining`;
-                                            statusColor = 'bg-green-100 text-green-800';
+                                            statusColor = 'bg-success-100 dark:bg-success-900/30 text-success-800 dark:text-success-400';
                                         }
 
                                         return (
                                             <tr
                                                 key={invoice.invoice_id}
-                                                className="border-b border-gray-200 hover:bg-gray-50 transition-colors cursor-pointer"
+                                                className="hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors cursor-pointer text-gray-800 dark:text-slate-200"
                                                 onClick={() => handleInvoiceClick(invoice)}
                                             >
-                                                <td className="p-3 text-sm font-mono">{invoice.invoice_number}</td>
-                                                <td className="p-3 text-sm font-mono">{invoice.physical_receipt_no || 'N/A'}</td>
-                                                <td className="p-3 text-sm">{new Date(invoice.invoice_date).toLocaleDateString()}</td>
+                                                <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100">{invoice.invoice_number}</td>
+                                                <td className="p-3 text-sm font-mono text-gray-700 dark:text-slate-300">{invoice.physical_receipt_no || 'N/A'}</td>
+                                                <td className="p-3 text-sm text-gray-600 dark:text-slate-400">{new Date(invoice.invoice_date).toLocaleDateString()}</td>
                                                 <td className="p-3 text-sm">
                                                     <div className="flex items-center gap-2">
                                                         <button
                                                             onClick={(e) => handleDueDateClick(invoice, e)}
-                                                            className="inline-flex items-center px-2.5 py-1 text-sm font-medium bg-gray-100 text-gray-700 border border-gray-200 rounded-full hover:bg-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-offset-1"
+                                                            className="inline-flex items-center px-2.5 py-1 text-sm font-medium bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 border border-gray-200 dark:border-slate-600 rounded-full hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-400"
                                                             title="Click to edit due date"
                                                         >
                                                             {dueDate.toLocaleDateString()}
                                                         </button>
                                                         <button
                                                             onClick={(e) => handleHistoryClick(invoice, e)}
-                                                            className="inline-flex items-center justify-center w-6 h-6 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-offset-1"
+                                                            className="inline-flex items-center justify-center w-6 h-6 text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-slate-400"
                                                             title="View due date edit history"
                                                         >
                                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -235,8 +235,8 @@ const CustomerInvoiceDetailsModal = ({
                                                         </button>
                                                     </div>
                                                 </td>
-                                                <td className="p-3 text-sm text-right font-mono">{formatCurrency(invoice.total_amount)}</td>
-                                                <td className="p-3 text-sm text-right font-mono font-medium">{formatCurrency(invoice.balance_due)}</td>
+                                                <td className="p-3 text-sm text-right font-mono text-gray-900 dark:text-slate-100">{formatCurrency(invoice.total_amount)}</td>
+                                                <td className="p-3 text-sm text-right font-mono font-medium text-gray-900 dark:text-slate-100">{formatCurrency(invoice.balance_due)}</td>
                                                 <td className="p-3 text-sm text-center">
                                                     <div className="flex items-center justify-center gap-2">
                                                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor}`}>{statusText}</span>
@@ -271,40 +271,40 @@ const CustomerInvoiceDetailsModal = ({
             >
                 {linesLoading ? (
                     <div className="flex items-center justify-center py-8">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                        <span className="ml-2 text-gray-600">Loading invoice items...</span>
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
+                        <span className="ml-2 text-gray-600 dark:text-slate-400">Loading invoice items...</span>
                     </div>
                 ) : invoiceLines.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
+                    <div className="text-center py-8 text-gray-500 dark:text-slate-400">
                         No items found for this invoice.
                     </div>
                 ) : (
                     <div className="space-y-4">
                         <div className="overflow-x-auto">
                             <table className="w-full text-left">
-                                <thead className="border-b border-gray-200">
+                                <thead className="border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-700/40 text-gray-600 dark:text-slate-300">
                                     <tr>
-                                        <th className="p-3 text-sm font-semibold text-gray-600">Item</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-600 text-center">Quantity</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-600 text-right">Price</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-600 text-right">Total</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Item</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-center">Quantity</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-right">Price</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-right">Total</th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody className="divide-y divide-gray-100 dark:divide-slate-700/60">
                                     {invoiceLines.map((line, index) => (
-                                        <tr key={index} className="border-b border-gray-200">
-                                            <td className="p-3 text-sm">{line.display_name}</td>
-                                            <td className="p-3 text-sm text-center font-mono">{line.quantity}</td>
-                                            <td className="p-3 text-sm text-right font-mono">{formatCurrency(line.sale_price)}</td>
-                                            <td className="p-3 text-sm text-right font-mono">{formatCurrency(line.quantity * line.sale_price)}</td>
+                                        <tr key={index} className="text-gray-800 dark:text-slate-200">
+                                            <td className="p-3 text-sm text-gray-900 dark:text-slate-100">{line.display_name}</td>
+                                            <td className="p-3 text-sm text-center font-mono text-gray-700 dark:text-slate-300">{line.quantity}</td>
+                                            <td className="p-3 text-sm text-right font-mono text-gray-700 dark:text-slate-300">{formatCurrency(line.sale_price)}</td>
+                                            <td className="p-3 text-sm text-right font-mono font-medium text-gray-900 dark:text-slate-100">{formatCurrency(line.quantity * line.sale_price)}</td>
                                         </tr>
                                     ))}
                                 </tbody>
                                 <tfoot>
                                     <tr>
                                         <td className="p-3 text-sm" colSpan={2}></td>
-                                        <td className="p-3 text-sm text-right font-semibold text-gray-700 border-t border-gray-200">Grand Total</td>
-                                        <td className="p-3 text-sm text-right font-mono font-semibold border-t border-gray-200">
+                                        <td className="p-3 text-sm text-right font-semibold text-gray-700 dark:text-slate-300 border-t border-gray-200 dark:border-slate-700">Grand Total</td>
+                                        <td className="p-3 text-sm text-right font-mono font-semibold text-gray-900 dark:text-slate-100 border-t border-gray-200 dark:border-slate-700">
                                             {formatCurrency(linesTotal)}
                                         </td>
                                     </tr>

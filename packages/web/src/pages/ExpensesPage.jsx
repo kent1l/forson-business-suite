@@ -197,19 +197,19 @@ export default function ExpensesPage() {
     return (
         <div className="space-y-6">
             {/* Header Toolbar */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
                 <div>
-                    <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-                        <Icon path={ICONS.receipt} className="w-6 h-6 text-blue-600" />
+                    <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
+                        <Icon path={ICONS.receipt} className="w-6 h-6 text-primary-600 dark:text-primary-400" />
                         <span>Expense Ledger & Recording</span>
                     </h1>
-                    <p className="text-xs text-slate-500 mt-1">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                         Track, classify, and audit operating expenses across store operations.
                     </p>
                 </div>
                 <button
                     onClick={handleOpenCreateModal}
-                    className="inline-flex items-center px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors cursor-pointer whitespace-nowrap"
+                    className="inline-flex items-center px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors cursor-pointer whitespace-nowrap"
                 >
                     <Icon path={ICONS.plus} className="w-4 h-4 mr-1.5" />
                     <span>Record New Expense</span>

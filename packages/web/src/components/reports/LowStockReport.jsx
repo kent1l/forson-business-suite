@@ -50,18 +50,18 @@ const LowStockReport = () => {
     const sortedReportData = sortData(reportData, sortConfig);
     return (
         <>
-            <div className="bg-white p-6 rounded-xl border border-gray-200 mb-6 flex justify-between items-center">
-                <p className="text-lg">This report shows all items that are at or below their reorder point.</p>
-                <button onClick={() => fetchReport('csv')} disabled={loading} className="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition disabled:bg-green-300">
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <p className="text-sm sm:text-base text-gray-700 dark:text-slate-300">This report shows all items that are at or below their reorder point.</p>
+                <button onClick={() => fetchReport('csv')} disabled={loading} className="bg-success-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-success-700 transition disabled:opacity-50 cursor-pointer whitespace-nowrap">
                     Export CSV
                 </button>
             </div>
-            <div className="bg-white p-6 rounded-xl border border-gray-200">
-                {loading ? <p>Loading report...</p> : (
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
+                {loading ? <p className="text-sm text-gray-500 dark:text-slate-400">Loading report...</p> : (
                     <>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
-                            <thead className="border-b">
+                            <thead className="border-b border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300">
                                 <tr>
                                     <SortableHeader column="internal_sku" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>SKU</SortableHeader>
                                     <SortableHeader column="display_name" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Item Name</SortableHeader>
@@ -69,18 +69,18 @@ const LowStockReport = () => {
                                     <SortableHeader className="text-center" column="reorder_point" sortConfig={sortConfig} onSort={(key, direction) => setSortConfig({ key, direction })}>Reorder Point</SortableHeader>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
                                 {sortedReportData.map((row, index) => (
-                                    <tr key={index} className="border-b hover:bg-gray-50">
-                                        <td className="p-3 text-sm font-mono">{row.internal_sku}</td>
-                                        <td className="p-3 text-sm">{row.display_name}</td>
-                                        <td className="p-3 text-sm text-center font-semibold text-red-600">{Number(row.stock_on_hand).toLocaleString()}</td>
-                                        <td className="p-3 text-sm text-center">{Number(row.reorder_point).toLocaleString()}</td>
+                                    <tr key={index} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200 transition-colors">
+                                        <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100">{row.internal_sku}</td>
+                                        <td className="p-3 text-sm font-medium">{row.display_name}</td>
+                                        <td className="p-3 text-sm text-center font-semibold text-danger-600 dark:text-danger-400">{Number(row.stock_on_hand).toLocaleString()}</td>
+                                        <td className="p-3 text-sm text-center font-medium">{Number(row.reorder_point).toLocaleString()}</td>
                                     </tr>
                                 ))}
                                 {reportData.length === 0 && !loading && (
                                     <tr>
-                                        <td colSpan="4" className="p-4 text-center text-gray-500">No items are currently low on stock.</td>
+                                        <td colSpan="4" className="p-4 text-center text-gray-500 dark:text-slate-400">No items are currently low on stock.</td>
                                     </tr>
                                 )}
                             </tbody>

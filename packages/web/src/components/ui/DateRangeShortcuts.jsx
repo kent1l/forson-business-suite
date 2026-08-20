@@ -53,13 +53,13 @@ const DateRangeShortcuts = ({ onSelect }) => {
     ];
 
     return (
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 flex-wrap gap-y-2">
             {shortcuts.map(s => (
                 <button
                     key={s.label}
                     type="button"
                     onClick={() => onSelect(s.getRange())}
-                    className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+                    className="px-3 py-1.5 text-sm bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 rounded-md hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors"
                 >
                     {s.label}
                 </button>

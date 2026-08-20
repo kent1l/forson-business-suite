@@ -34,15 +34,15 @@ const PurchaseOrderLines = ({ poId }) => {
     }, [poId]);
 
     if (loading) {
-        return <div className="p-4 bg-gray-50 text-center">Loading lines...</div>;
+        return <div className="p-4 bg-slate-50 dark:bg-slate-900/50 text-gray-500 dark:text-slate-400 text-center">Loading lines...</div>;
     }
 
     return (
-        <div className="p-4 bg-gray-100">
-            <h4 className="font-semibold text-sm text-gray-700 mb-2">Order Lines</h4>
+        <div className="p-4 bg-gray-50 dark:bg-slate-900/70 rounded-lg border border-gray-200 dark:border-slate-700">
+            <h4 className="font-semibold text-sm text-gray-700 dark:text-slate-200 mb-2">Order Lines</h4>
             <table className="w-full text-sm">
                 <thead>
-                    <tr className="border-b">
+                    <tr className="border-b border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-400">
                         <th className="text-left font-medium p-2">SKU</th>
                         <th className="text-left font-medium p-2">Details</th>
                         <th className="text-right font-medium p-2">Qty</th>
@@ -50,14 +50,14 @@ const PurchaseOrderLines = ({ poId }) => {
                         <th className="text-right font-medium p-2">Subtotal</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
                     {lines.map(line => (
-                        <tr key={line.po_line_id} className="border-b border-gray-200">
-                            <td className="p-2 font-mono">{line.internal_sku}</td>
+                        <tr key={line.po_line_id} className="text-gray-800 dark:text-slate-200">
+                            <td className="p-2 font-mono text-gray-900 dark:text-slate-100">{line.internal_sku}</td>
                             <td className="p-2">{line.display_name}</td>
-                            <td className="p-2 text-right">{line.quantity}</td>
-                            <td className="p-2 text-right font-mono">₱{parseFloat(line.cost_price).toFixed(2)}</td>
-                            <td className="p-2 text-right font-mono">₱{(line.quantity * line.cost_price).toFixed(2)}</td>
+                            <td className="p-2 text-right font-mono">{line.quantity}</td>
+                            <td className="p-2 text-right font-mono text-gray-700 dark:text-slate-300">₱{parseFloat(line.cost_price).toFixed(2)}</td>
+                            <td className="p-2 text-right font-mono font-medium text-gray-900 dark:text-slate-100">₱{(line.quantity * line.cost_price).toFixed(2)}</td>
                         </tr>
                     ))}
                 </tbody>
@@ -142,11 +142,11 @@ const PurchaseOrderPage = () => {
     const handleDelete = (poId) => {
         toast((t) => (
             <div className="text-center">
-                <p className="font-semibold">Are you sure?</p>
-                <p className="text-sm my-2">This will permanently delete the PO.</p>
+                <p className="font-semibold text-gray-900 dark:text-slate-100">Are you sure?</p>
+                <p className="text-sm my-2 text-gray-600 dark:text-slate-400">This will permanently delete the PO.</p>
                 <div className="flex justify-center space-x-2 mt-4">
-                    <button onClick={() => { toast.dismiss(t.id); confirmDelete(poId); }} className="px-4 py-2 bg-red-600 text-white rounded-lg">Delete</button>
-                    <button onClick={() => toast.dismiss(t.id)} className="px-4 py-2 bg-gray-200 rounded-lg">Cancel</button>
+                    <button onClick={() => { toast.dismiss(t.id); confirmDelete(poId); }} className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 text-sm font-medium">Delete</button>
+                    <button onClick={() => toast.dismiss(t.id)} className="px-4 py-2 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 text-sm font-medium">Cancel</button>
                 </div>
             </div>
         ));
@@ -205,8 +205,8 @@ const PurchaseOrderPage = () => {
     if (!hasPermission('purchase_orders:view')) {
         return (
             <div className="text-center p-8">
-                <h1 className="text-2xl font-bold text-red-600">Access Denied</h1>
-                <p className="text-gray-600 mt-2">You do not have permission to view this page.</p>
+                <h1 className="text-2xl font-bold text-danger-600 dark:text-danger-400">Access Denied</h1>
+                <p className="text-gray-600 dark:text-slate-400 mt-2">You do not have permission to view this page.</p>
             </div>
         );
     }
@@ -222,11 +222,11 @@ const PurchaseOrderPage = () => {
     }
 
     return (
-        <div key="po-list">
-            <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-semibold text-gray-800">Purchase Orders</h1>
+        <div key="po-list" className="space-y-6">
+            <div className="flex justify-between items-center">
+                <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100">Purchase Orders</h1>
                 {hasPermission('purchase_orders:edit') && (
-                    <button onClick={handleAddNew} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
+                    <button onClick={handleAddNew} className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg font-semibold transition shadow-sm text-sm">
                         New Purchase Order
                     </button>
                 )}
@@ -238,63 +238,63 @@ const PurchaseOrderPage = () => {
                 onTabClick={setStatusFilter}
             />
 
-            <div className="bg-white p-6 rounded-xl border border-gray-200">
-                {loading ? <p>Loading...</p> : (
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-card">
+                {loading ? <p className="text-gray-500 dark:text-slate-400">Loading...</p> : (
                     <>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
-                            <thead className="border-b">
+                            <thead className="bg-gray-50 dark:bg-slate-700/40 border-b border-gray-200 dark:border-slate-700 text-gray-700 dark:text-slate-300">
                                 <tr>
                                     <SortableHeader column="po_number" sortConfig={sortConfig} onSort={handleSort}>PO Number</SortableHeader>
                                     <SortableHeader column="supplier_name" sortConfig={sortConfig} onSort={handleSort}>Supplier</SortableHeader>
                                     <SortableHeader column="status" sortConfig={sortConfig} onSort={handleSort}>Status</SortableHeader>
                                     <SortableHeader column="order_date" sortConfig={sortConfig} onSort={handleSort}>Order Date</SortableHeader>
                                     <SortableHeader column="total_amount" sortConfig={sortConfig} onSort={handleSort} className="text-right">Total</SortableHeader>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-center">Details</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-center">Details</th>
                                     {/* --- NEW: Download Column Header --- */}
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-center">Download</th>
-                                    {showActionsColumn && <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>}
+                                    <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-center">Download</th>
+                                    {showActionsColumn && <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-right">Actions</th>}
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody className="divide-y divide-gray-100 dark:divide-slate-700/60">
                                 {purchaseOrders.map(po => (
                                         <React.Fragment key={po.po_id}>
-                                        <tr className="border-b hover:bg-gray-50">
-                                            <td className="p-3 text-sm font-mono">{po.po_number}</td>
-                                            <td className="p-3 text-sm">{po.supplier_name}</td>
+                                        <tr className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200 transition-colors">
+                                            <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100">{po.po_number}</td>
+                                            <td className="p-3 text-sm font-medium text-gray-900 dark:text-slate-100">{po.supplier_name}</td>
                                             <td className="p-3 text-sm">
                                                 <span className={`px-2 py-1 text-xs font-semibold rounded-full 
-                                                    ${po.status === 'Received' ? 'bg-green-100 text-green-800' : ''}
-                                                    ${po.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' : ''}
-                                                    ${po.status === 'Ordered' ? 'bg-blue-100 text-blue-800' : ''}
-                                                    ${po.status === 'Partially Received' ? 'bg-purple-100 text-purple-800' : ''}
-                                                    ${po.status === 'Cancelled' ? 'bg-gray-100 text-gray-800' : ''}
+                                                    ${po.status === 'Received' ? 'bg-success-100 dark:bg-success-900/30 text-success-800 dark:text-success-400 border border-success-200 dark:border-success-800' : ''}
+                                                    ${po.status === 'Pending' ? 'bg-warning-100 dark:bg-warning-900/30 text-warning-800 dark:text-warning-400 border border-warning-200 dark:border-warning-800' : ''}
+                                                    ${po.status === 'Ordered' ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-800 dark:text-primary-400 border border-primary-200 dark:border-primary-800' : ''}
+                                                    ${po.status === 'Partially Received' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800' : ''}
+                                                    ${po.status === 'Cancelled' ? 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600' : ''}
                                                 `}>
                                                     {po.status}
                                                 </span>
                                             </td>
-                                            <td className="p-3 text-sm">{format(toZonedTime(parseISO(po.order_date), 'Asia/Manila'), 'MM/dd/yyyy')}</td>
-                                            <td className="p-3 text-sm text-right font-mono">₱{parseFloat(po.total_amount).toFixed(2)}</td>
+                                            <td className="p-3 text-sm text-gray-700 dark:text-slate-300">{format(toZonedTime(parseISO(po.order_date), 'Asia/Manila'), 'MM/dd/yyyy')}</td>
+                                            <td className="p-3 text-sm text-right font-mono font-medium text-gray-900 dark:text-slate-100">₱{parseFloat(po.total_amount).toFixed(2)}</td>
                                             <td className="p-3 text-sm text-center">
-                                                <button onClick={() => toggleRowExpansion(po.po_id)} className="text-gray-500 hover:text-gray-800">
+                                                <button onClick={() => toggleRowExpansion(po.po_id)} className="text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 p-1">
                                                     <Icon path={expandedRows.has(po.po_id) ? ICONS.chevronUp : ICONS.chevronDown} className="h-5 w-5" />
                                                 </button>
                                             </td>
                                             {/* --- NEW: Download Button Cell --- */}
                                             <td className="p-3 text-sm text-center">
-                                                <button onClick={() => handleDownloadPDF(po)} title="Download PDF" className="text-gray-500 hover:text-gray-800">
+                                                <button onClick={() => handleDownloadPDF(po)} title="Download PDF" className="text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 p-1">
                                                     <Icon path={ICONS.download} className="h-5 w-5" />
                                                 </button>
                                             </td>
                                             {showActionsColumn && (
                                                 <td className="p-3 text-sm text-right">
-                                                    <div className="flex justify-end items-center space-x-4 h-full">
+                                                    <div className="flex justify-end items-center space-x-3 h-full">
                                                         {po.status === 'Pending' ? (
                                                             <>
-                                                                <button onClick={() => handleUpdateStatus(po.po_id, 'Ordered')} title="Mark as Ordered" className="text-green-600 hover:text-green-800"><Icon path={ICONS.send} className="h-5 w-5" /></button>
-                                                                <button onClick={() => handleEdit(po)} title="Edit" className="text-blue-600 hover:text-blue-800"><Icon path={ICONS.edit} className="h-5 w-5" /></button>
-                                                                <button onClick={() => handleUpdateStatus(po.po_id, 'Cancelled')} title="Cancel PO" className="text-yellow-600 hover:text-yellow-800"><Icon path={ICONS.cancel} className="h-5 w-5" /></button>
-                                                                <button onClick={() => handleDelete(po.po_id)} title="Delete PO" className="text-red-600 hover:text-red-800"><Icon path={ICONS.trash} className="h-5 w-5" /></button>
+                                                                <button onClick={() => handleUpdateStatus(po.po_id, 'Ordered')} title="Mark as Ordered" className="text-success-600 dark:text-success-400 hover:text-success-800 dark:hover:text-success-300 p-1"><Icon path={ICONS.send} className="h-5 w-5" /></button>
+                                                                <button onClick={() => handleEdit(po)} title="Edit" className="text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 p-1"><Icon path={ICONS.edit} className="h-5 w-5" /></button>
+                                                                <button onClick={() => handleUpdateStatus(po.po_id, 'Cancelled')} title="Cancel PO" className="text-warning-600 dark:text-warning-400 hover:text-warning-800 dark:hover:text-warning-300 p-1"><Icon path={ICONS.cancel} className="h-5 w-5" /></button>
+                                                                <button onClick={() => handleDelete(po.po_id)} title="Delete PO" className="text-danger-600 dark:text-danger-400 hover:text-danger-800 dark:hover:text-danger-300 p-1"><Icon path={ICONS.trash} className="h-5 w-5" /></button>
                                                             </>
                                                         ) : (
                                                             <span>-</span> 
@@ -306,7 +306,7 @@ const PurchaseOrderPage = () => {
                     {expandedRows.has(po.po_id) && (
                                             <tr key={`${po.po_id}-details`}>
                         {/* --- UPDATE: ColSpan value to account for new column --- */}
-                        <td colSpan={showActionsColumn ? 9 : 8}>
+                        <td colSpan={showActionsColumn ? 9 : 8} className="p-3 bg-gray-50/50 dark:bg-slate-900/30">
                                                     <PurchaseOrderLines poId={po.po_id} />
                                                 </td>
                                             </tr>
@@ -329,7 +329,6 @@ const PurchaseOrderPage = () => {
                     </>
                 )}
             </div>
-
         </div>
     );
 };
