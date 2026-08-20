@@ -78,6 +78,44 @@ The scans raise **one summary notification per condition**, not one per record.
 A shop with forty overdue bills would otherwise bury every other alert, and the
 row-level detail already exists on the page the notification links to.
 
+## Deep linking
+
+Clicking a notification must land the reader where the alert can be acted on —
+not merely on the right page. `link_page` names the page (a key from
+MainLayout's `switch`) and `link_state` carries whatever that page needs to
+focus the right thing:
+
+| Notification | `link_page` | `link_state` |
+| --- | --- | --- |
+| A/P bills due / overdue | `ap` | `{ tab: 'overview' }` |
+| A/R invoices due / overdue | `ar` | `{ tab: 'overview' }` |
+| Inbound cheques maturing / stale | `cheques_treasury` | `{ section: 'treasury', tab: 'inbound', maturityFilter: … }` |
+| Outbound cheques maturing / stale | `cheques_treasury` | `{ section: 'treasury', tab: 'outbound', maturityFilter: … }` |
+| Cheques needing replacement | `cheques_treasury` | `{ section: 'treasury', tab: 'outbound', statusFilter: 'BOUNCED' }` |
+| Leave filed (to approvers) | `leave` | `{ tab: 'requests', statusFilter: 'Pending' }` |
+| Leave approved / declined (to requester) | `leave` | `{ tab: 'requests', statusFilter: '' }` |
+
+The filter is as important as the tab. "4 cheques mature today" landing on a desk
+that lists every open cheque leaves the reader to find the four themselves —
+exactly the work the notification was meant to save.
+
+Target pages consume the payload with `hooks/useDeepLink.js`:
+
+```js
+useDeepLink(pageState, ({ tab }) => { if (tab) setActiveTab(tab); });
+```
+
+It applies once per navigation, keyed on the payload object's identity. A lazy
+`useState` initialiser is not sufficient: MainLayout only swaps the rendered page
+when the page *key* changes, so clicking a second A/P notification while already
+on the A/P page leaves the component mounted and an initialiser would never run
+again. Keying on identity also leaves the user free to change tabs afterwards
+without the deep link snapping them back.
+
+To point a notification at a page that does not accept `pageState` yet, add the
+prop in `MainLayout.jsx` using the `currentPage === '<key>' ? pageState : null`
+idiom already used there, then call `useDeepLink` in the page.
+
 ## Adding a new notification
 
 ```js
@@ -90,6 +128,7 @@ await notifications.emitSafe({
     title: '3 fast-moving parts are out of stock',
     body: 'Brake pads, oil filters and 1 more.',
     linkPage: 'inventory',                // a page key from MainLayout's switch
+    linkState: { tab: 'stock', filter: 'out_of_stock' },  // see "Deep linking"
     requiredPermission: 'inventory:view',
     dedupeKey: `inventory.stock_out:${manilaDateString()}`,
 });

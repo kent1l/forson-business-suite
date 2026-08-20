@@ -9,6 +9,7 @@ import ErrorState from '../components/ui/ErrorState';
 import EmptyState from '../components/ui/EmptyState';
 import InfoTip from '../components/ui/InfoTip';
 import { useAuth } from '../contexts/AuthContext';
+import useDeepLink from '../hooks/useDeepLink';
 
 const INPUT_CLASS = 'w-full px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500';
 const FILTER_CLASS = 'px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100';
@@ -77,10 +78,19 @@ const LeaveRequestForm = ({ employees, leaveTypes, onSave, onCancel }) => {
     );
 };
 
-const LeavePage = () => {
+const LeavePage = ({ pageState }) => {
     const { hasPermission } = useAuth();
     const [tab, setTab] = useState('requests');
     const [statusFilter, setStatusFilter] = useState('Pending');
+
+    // An approver following "X filed a leave request" wants the pending queue;
+    // a requester following "your leave was approved" wants their decided one.
+    // The empty string is a real value here — it means "All statuses" — so this
+    // tests for undefined rather than falsiness.
+    useDeepLink(pageState, ({ tab: nextTab, statusFilter: nextStatus }) => {
+        if (nextTab) setTab(nextTab);
+        if (nextStatus !== undefined) setStatusFilter(nextStatus);
+    });
     const [requests, setRequests] = useState([]);
     const [leaveTypes, setLeaveTypes] = useState([]);
     const [employees, setEmployees] = useState([]);

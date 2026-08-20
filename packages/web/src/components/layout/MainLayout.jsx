@@ -61,9 +61,9 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'sales_history': return <SalesHistoryPage />; // <-- Add case for new page
             case 'documents': return <DocumentsPage />;
             case 'purchase_orders': return <PurchaseOrderPage />;
-            case 'ar': return <AccountsReceivablePage />;
-            case 'ap': return <AccountsPayablePage onNavigate={onNavigate} />;
-            case 'cheques_treasury': return <ChequesTreasuryPage />;
+            case 'ar': return <AccountsReceivablePage pageState={currentPage === 'ar' ? pageState : null} />;
+            case 'ap': return <AccountsPayablePage onNavigate={onNavigate} pageState={currentPage === 'ap' ? pageState : null} />;
+            case 'cheques_treasury': return <ChequesTreasuryPage pageState={currentPage === 'cheques_treasury' ? pageState : null} />;
             case 'soa_gen': return <SoaGenPage />;
             case 'staged_sales': return <CashierApprovalDesk onNavigate={onNavigate} />;
             case 'inventory': return <InventoryPage user={user} />;
@@ -76,7 +76,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'employees': return <EmployeesPage user={user} />;
             case 'departments': return <DepartmentsPage />;
             case 'dtr': return <DtrPage />;
-            case 'leave': return <LeavePage />;
+            case 'leave': return <LeavePage pageState={currentPage === 'leave' ? pageState : null} />;
             case 'payroll': return <PayrollPage />;
             case 'statutory_tables': return <StatutoryTablesPage />;
             case 'pay_components': return <PayComponentsPage />;

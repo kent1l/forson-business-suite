@@ -46,7 +46,7 @@ async function runPdcReminderScan() {
             severity: 'warning',
             title: n => `${n} customer cheque${n === 1 ? '' : 's'} mature today`,
             body: 'Ready for deposit on the Collections Clearance desk.',
-            linkPage: 'ar',
+            linkState: { section: 'treasury', tab: 'inbound', maturityFilter: 'DUE_TODAY' },
             permission: 'pdc:view',
             dedupeKey: `pdc.inbound_due_today:${today}`,
         });
@@ -57,7 +57,7 @@ async function runPdcReminderScan() {
             severity: 'critical',
             title: n => `${n} customer cheque${n === 1 ? ' has' : 's have'} gone stale`,
             body: `Undeposited for more than ${staleDays} days — these need to be chased or replaced.`,
-            linkPage: 'ar',
+            linkState: { section: 'treasury', tab: 'inbound', maturityFilter: 'STALE_CHEQUE' },
             permission: 'pdc:view',
             dedupeKey: `pdc.inbound_stale:${today}`,
         });
@@ -68,7 +68,7 @@ async function runPdcReminderScan() {
             severity: 'warning',
             title: n => `${n} issued cheque${n === 1 ? '' : 's'} mature today`,
             body: 'Make sure the funding account can cover them before they are presented.',
-            linkPage: 'cheques_treasury',
+            linkState: { section: 'treasury', tab: 'outbound', maturityFilter: 'DUE_TODAY' },
             permission: 'ap-pdc:view',
             dedupeKey: `ap-pdc.outbound_due_today:${today}`,
         });
@@ -79,7 +79,7 @@ async function runPdcReminderScan() {
             severity: 'warning',
             title: n => `${n} issued cheque${n === 1 ? ' has' : 's have'} gone stale`,
             body: `Uncleared for more than ${staleDays} days.`,
-            linkPage: 'cheques_treasury',
+            linkState: { section: 'treasury', tab: 'outbound', maturityFilter: 'STALE_CHEQUE' },
             permission: 'ap-pdc:view',
             dedupeKey: `ap-pdc.outbound_stale:${today}`,
         });
@@ -90,7 +90,9 @@ async function runPdcReminderScan() {
             severity: 'critical',
             title: n => `${n} cheque${n === 1 ? '' : 's'} need replacement`,
             body: `Bounced or gone stale at least ${maxBounceAttempts} time(s). Issue a replacement to keep the supplier settled.`,
-            linkPage: 'cheques_treasury',
+            // No maturity filter: these are already past maturity, and the thing
+            // that identifies them is the bounced status.
+            linkState: { section: 'treasury', tab: 'outbound', statusFilter: 'BOUNCED' },
             permission: 'ap-pdc:manage',
             dedupeKey: `ap-pdc.needs_replacement:${today}`,
         });
@@ -111,7 +113,7 @@ async function runPdcReminderScan() {
  * Emits one summary notification for a bucket of cheques, or nothing at all
  * when the bucket is empty — "0 cheques mature today" is noise, not news.
  */
-async function raise({ rows, type, severity, title, body, linkPage, permission, dedupeKey }) {
+async function raise({ rows, type, severity, title, body, linkState, permission, dedupeKey }) {
     if (!rows.length) return;
     await notifications.emitSafe({
         type,
@@ -119,7 +121,10 @@ async function raise({ rows, type, severity, title, body, linkPage, permission, 
         severity,
         title: title(rows.length),
         body,
-        linkPage,
+        // Both desks live under Cheques & Treasury; linkState picks the section
+        // and the tab within it.
+        linkPage: 'cheques_treasury',
+        linkState,
         requiredPermission: permission,
         dedupeKey,
     });

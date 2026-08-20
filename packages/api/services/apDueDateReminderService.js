@@ -44,6 +44,7 @@ async function runApDueDateReminderScan() {
                 title: `${dueTodayRows.length} supplier bill${dueTodayRows.length === 1 ? '' : 's'} due today`,
                 body: summariseBills(dueTodayRows),
                 linkPage: 'ap',
+                linkState: { tab: 'overview' },
                 requiredPermission: 'ap:view',
                 dedupeKey: `ap.bills_due_today:${today}`,
             });
@@ -58,6 +59,7 @@ async function runApDueDateReminderScan() {
                 title: `${overdueRows.length} supplier bill${overdueRows.length === 1 ? '' : 's'} overdue`,
                 body: `${formatAmount(total)} outstanding past due. ${summariseBills(overdueRows)}`,
                 linkPage: 'ap',
+                linkState: { tab: 'overview' },
                 requiredPermission: 'ap:view',
                 dedupeKey: `ap.bills_overdue:${today}`,
             });

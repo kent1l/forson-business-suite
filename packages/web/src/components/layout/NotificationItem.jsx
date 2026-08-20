@@ -1,5 +1,5 @@
 import React from 'react';
-import { Info, AlertTriangle, AlertCircle, X } from 'lucide-react';
+import { Info, AlertTriangle, AlertCircle, X, ArrowRight } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 
 // The -500 status tokens are re-tuned for dark surfaces in index.css's `.dark`
@@ -20,12 +20,15 @@ const NotificationItem = ({ notification, onMarkRead, onDismiss, onNavigate, onC
     const handleClick = () => {
         if (!is_read) onMarkRead(notification_id);
         onClose();
-        onNavigate(link_page, link_state);
+        // A fresh object every click: the target page applies a deep link once
+        // per payload identity, so reusing this row's object would make a second
+        // click on the same notification do nothing.
+        onNavigate(link_page, link_state ? { ...link_state } : null);
     };
 
     const bodyCls = [
         'flex items-start gap-3 w-full text-left pl-5 pr-10 py-3 transition-colors',
-        isClickable ? 'hover:bg-gray-50 dark:hover:bg-slate-800/60' : '',
+        isClickable ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-800/60' : '',
     ].join(' ');
 
     const content = (
@@ -41,11 +44,15 @@ const NotificationItem = ({ notification, onMarkRead, onDismiss, onNavigate, onC
                         {body}
                     </p>
                 )}
-                <span
-                    title={absTime}
-                    className="mt-1 block text-[10px] text-gray-400 dark:text-slate-500"
-                >
-                    {relativeTime}
+                <span className="mt-1 flex items-center gap-1 text-[10px] text-gray-400 dark:text-slate-500">
+                    <span title={absTime}>{relativeTime}</span>
+                    {isClickable && (
+                        // Tells the reader the row goes somewhere before they
+                        // click, which a bare hover tint does not.
+                        <span className="flex items-center gap-0.5 text-primary-600 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                            · Open <ArrowRight className="h-2.5 w-2.5" aria-hidden="true" />
+                        </span>
+                    )}
                 </span>
             </div>
         </>

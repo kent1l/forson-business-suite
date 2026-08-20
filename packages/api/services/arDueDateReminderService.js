@@ -70,6 +70,7 @@ async function runArDueDateReminderScan() {
                 title: `${dueTodayRows.length} customer invoice${dueTodayRows.length === 1 ? '' : 's'} due today`,
                 body: `${formatAmount(sumBalance(dueTodayRows))} falling due. ${summariseCustomers(dueTodayRows)}`,
                 linkPage: 'ar',
+                linkState: { tab: 'overview' },
                 requiredPermission: 'ar:view',
                 dedupeKey: `ar.invoices_due_today:${today}`,
             });
@@ -83,6 +84,7 @@ async function runArDueDateReminderScan() {
                 title: `${overdueRows.length} customer invoice${overdueRows.length === 1 ? '' : 's'} overdue`,
                 body: `${formatAmount(sumBalance(overdueRows))} past due. ${summariseCustomers(overdueRows)}`,
                 linkPage: 'ar',
+                linkState: { tab: 'overview' },
                 requiredPermission: 'ar:view',
                 dedupeKey: `ar.invoices_overdue:${today}`,
             });

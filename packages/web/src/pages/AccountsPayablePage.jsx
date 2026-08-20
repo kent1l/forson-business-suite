@@ -14,6 +14,7 @@ import AddPayableModal from '../components/accounts-payable/AddPayableModal';
 import RecordSupplierPaymentModal from '../components/accounts-payable/RecordSupplierPaymentModal';
 import PaymentsRegisterTable from '../components/accounts-payable/PaymentsRegisterTable';
 import useAPOverviewData from '../hooks/useAPOverviewData';
+import useDeepLink from '../hooks/useDeepLink';
 
 const OverviewTab = ({ overview, onOpenSupplier }) => {
     const kpi = overview.kpiData || {};
@@ -50,9 +51,11 @@ const OverviewTab = ({ overview, onOpenSupplier }) => {
     );
 };
 
-const AccountsPayablePage = ({ onNavigate }) => {
+const AccountsPayablePage = ({ onNavigate, pageState }) => {
     const { hasPermission } = useAuth();
     const [activeTab, setActiveTab] = useState('overview');
+    // Lets a notification land on the tab where the alert is actionable.
+    useDeepLink(pageState, ({ tab }) => { if (tab) setActiveTab(tab); });
     const [selectedSupplier, setSelectedSupplier] = useState(null);
     const [isAddPayableOpen, setIsAddPayableOpen] = useState(false);
     const [isRecordPaymentOpen, setIsRecordPaymentOpen] = useState(false);
