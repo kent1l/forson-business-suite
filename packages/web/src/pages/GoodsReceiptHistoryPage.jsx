@@ -8,6 +8,8 @@ import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import PaginationControls from '../components/ui/PaginationControls';
 import { useAuth } from '../contexts/AuthContext';
+import ChangeTransactionDateModal from '../components/common/ChangeTransactionDateModal';
+import TransactionDateHistory from '../components/common/TransactionDateHistory';
 
 const GoodsReceiptHistoryPage = ({ user: _user }) => {
     const { hasPermission } = useAuth();
@@ -25,6 +27,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
     const [total, setTotal] = useState(0);
+    const [showChangeDate, setShowChangeDate] = useState(false);
 
     const fetchGrns = useCallback(async () => {
         try {
@@ -74,6 +77,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
         setSelectedGrn(grn);
         setModalLoading(true);
         setIsEditMode(false);
+        setShowChangeDate(false);
         try {
             console.log('Fetching GRN lines for:', grn.grn_id);
             const response = await api.get(`/goods-receipts/${grn.grn_id}/lines`);
@@ -105,6 +109,12 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
         setGrnLines([]);
         setIsEditMode(false);
         setEditedLines([]);
+        setShowChangeDate(false);
+    };
+
+    const handleDateChanged = async (result) => {
+        setSelectedGrn((prev) => (prev ? { ...prev, receipt_date: result.new_date } : prev));
+        await fetchGrns();
     };
 
     const handleEditClick = async () => {
@@ -205,6 +215,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
     };
 
     const hasEditPermission = hasPermission('goods_receipt:edit');
+    const hasChangeDatePermission = hasPermission(['transaction:change_date', 'transaction:change_date_unrestricted']);
 
     return (
         <div className="space-y-6">
@@ -298,10 +309,18 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                 </div>
                                 <div className="flex items-center">
                                     <div><span className="text-gray-500 dark:text-slate-400">Received Date:</span> <span className="font-semibold">{new Date(selectedGrn.receipt_date).toLocaleDateString()}</span></div>
+                                    {hasChangeDatePermission && (
+                                        <button
+                                            onClick={() => setShowChangeDate(true)}
+                                            className="ml-4 px-3 py-1 text-xs font-semibold rounded-lg shadow-xs bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+                                        >
+                                            Change Date
+                                        </button>
+                                    )}
                                     {hasEditPermission && (
                                         <button
                                             onClick={handleEditClick}
-                                            className={`ml-4 px-3 py-1 text-xs font-semibold rounded-lg shadow-xs transition-colors ${
+                                            className={`ml-2 px-3 py-1 text-xs font-semibold rounded-lg shadow-xs transition-colors ${
                                                 isEditMode
                                                     ? 'bg-success-600 text-white hover:bg-success-700'
                                                     : 'bg-primary-600 text-white hover:bg-primary-700'
@@ -386,9 +405,23 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                 </tbody>
                             </table>
                         </div>
+
+                        {selectedGrn && <TransactionDateHistory kind="goods_receipt" id={selectedGrn.grn_id} />}
                     </div>
                 )}
             </Modal>
+
+            {selectedGrn && (
+                <ChangeTransactionDateModal
+                    isOpen={showChangeDate}
+                    onClose={() => setShowChangeDate(false)}
+                    kind="goods_receipt"
+                    id={selectedGrn.grn_id}
+                    currentDate={selectedGrn.receipt_date}
+                    transactionLabel={`GRN ${selectedGrn.grn_number}`}
+                    onApplied={handleDateChanged}
+                />
+            )}
         </div>
     );
 };

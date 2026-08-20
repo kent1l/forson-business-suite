@@ -151,22 +151,80 @@ const CompanyInfoSettings = ({ settings, handleChange }) => (
     </div>
 );
 
-const FinancialSettings = ({ settings, handleChange }) => (
-     <div className="space-y-4">
+// Picker for a payment-terms setting that stores a human-readable label
+// (e.g. "30 days", "Due on receipt") -- the same string is printed verbatim
+// on Statements of Account, so it can't be collapsed to a bare day count.
+// Falls back to free text for a label that doesn't match any configured
+// payment_term row, mirroring the select+custom pattern on InvoicingPage.
+const PaymentTermsPicker = ({ label, name, value, onChange, terms, infoTip }) => {
+    const termNames = terms.map(t => t.term_name);
+    const isKnown = termNames.includes(value);
+    return (
         <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Currency Symbol</label>
-            <input type="text" name="DEFAULT_CURRENCY_SYMBOL" value={settings.DEFAULT_CURRENCY_SYMBOL} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1 flex items-center gap-1">
+                {label}
+                {infoTip && <InfoTip label={label}>{infoTip}</InfoTip>}
+            </label>
+            <div className="flex items-center space-x-3">
+                <select
+                    value={isKnown ? value : 'custom'}
+                    onChange={e => e.target.value !== 'custom' && onChange({ target: { name, value: e.target.value } })}
+                    className="px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-slate-100 rounded-lg"
+                >
+                    {terms.map(t => <option key={t.payment_term_id} value={t.term_name}>{t.term_name}</option>)}
+                    <option value="custom">Custom...</option>
+                </select>
+                <input
+                    type="text"
+                    name={name}
+                    value={value || ''}
+                    onChange={onChange}
+                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg"
+                    placeholder="e.g., 30 days"
+                />
+            </div>
         </div>
-        <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Default Payment Terms</label>
-            <input type="text" name="DEFAULT_PAYMENT_TERMS" value={settings.DEFAULT_PAYMENT_TERMS} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
+    );
+};
+
+const FinancialSettings = ({ settings, handleChange }) => {
+    const [paymentTerms, setPaymentTerms] = useState([]);
+
+    useEffect(() => {
+        api.get('/payment-terms')
+            .then(res => setPaymentTerms(res.data || []))
+            .catch(err => console.error('Failed to fetch payment terms', err.message));
+    }, []);
+
+    return (
+        <div className="space-y-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Currency Symbol</label>
+                <input type="text" name="DEFAULT_CURRENCY_SYMBOL" value={settings.DEFAULT_CURRENCY_SYMBOL} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
+            </div>
+            <PaymentTermsPicker
+                label="Default Payment Terms"
+                name="DEFAULT_PAYMENT_TERMS"
+                value={settings.DEFAULT_PAYMENT_TERMS}
+                onChange={handleChange}
+                terms={paymentTerms}
+                infoTip="Pre-selected in the Payment Terms field when the Invoicing page loads a new sale."
+            />
+            <PaymentTermsPicker
+                label="Default On Account Payment Terms"
+                name="DEFAULT_ON_ACCOUNT_PAYMENT_TERMS"
+                value={settings.DEFAULT_ON_ACCOUNT_PAYMENT_TERMS}
+                onChange={handleChange}
+                terms={paymentTerms}
+                infoTip="Applied to the Payment Terms field when a sale is paid On Account instead of the general default above."
+            />
+            <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Invoice Footer Message</label>
+                <textarea name="INVOICE_FOOTER_MESSAGE" value={settings.INVOICE_FOOTER_MESSAGE} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" rows="3"></textarea>
+            </div>
         </div>
-        <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Invoice Footer Message</label>
-            <textarea name="INVOICE_FOOTER_MESSAGE" value={settings.INVOICE_FOOTER_MESSAGE} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" rows="3"></textarea>
-        </div>
-    </div>
-);
+    );
+};
 
 
 const CycleCountSettings = ({ settings, handleChange }) => (

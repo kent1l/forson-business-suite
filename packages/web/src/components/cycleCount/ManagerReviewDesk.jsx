@@ -20,12 +20,19 @@ export default function ManagerReviewDesk() {
     const [activeTab, setActiveTab] = useState('pending_reviews');
     const [lines, setLines] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [selectedIds, setSelectedIds] = useState([]);
+    const [bulkActionLoading, setBulkActionLoading] = useState(false);
 
     useEffect(() => {
         if (activeTab === 'pending_reviews') {
             fetchPendingReviews();
         }
     }, [activeTab]);
+
+    useEffect(() => {
+        // Drop any selected ids that are no longer in the list (e.g. after an action)
+        setSelectedIds(prev => prev.filter(id => lines.some(line => line.line_id === id)));
+    }, [lines]);
 
     const fetchPendingReviews = async () => {
         setLoading(true);
@@ -54,7 +61,7 @@ export default function ManagerReviewDesk() {
 
     const handleRecount = async (lineId) => {
         if (!window.confirm('Are you sure you want to request a recount for this part? It will be re-added to the counting queue.')) return;
-        
+
         try {
             await api.post(`/inventory/cycle-count/manager/recount/${lineId}`);
             toast.success('Recount requested. Part queued for next batch.');
@@ -63,6 +70,58 @@ export default function ManagerReviewDesk() {
             console.error('Error requesting recount', error);
             const errMsg = error.response?.data?.message || 'Failed to request recount';
             toast.error(errMsg);
+        }
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedIds.length === lines.length) {
+            setSelectedIds([]);
+        } else {
+            setSelectedIds(lines.map(line => line.line_id));
+        }
+    };
+
+    const toggleSelectOne = (lineId) => {
+        setSelectedIds(prev =>
+            prev.includes(lineId) ? prev.filter(id => id !== lineId) : [...prev, lineId]
+        );
+    };
+
+    const handleBulkApprove = async () => {
+        if (selectedIds.length === 0) return;
+        if (!window.confirm(`Approve ${selectedIds.length} selected adjustment(s)?`)) return;
+
+        setBulkActionLoading(true);
+        try {
+            const res = await api.post('/inventory/cycle-count/manager/bulk-approve', { line_ids: selectedIds });
+            toast.success(res.data?.message || 'Selected adjustments approved successfully.');
+            setLines(prev => prev.filter(line => !selectedIds.includes(line.line_id)));
+            setSelectedIds([]);
+        } catch (error) {
+            console.error('Error bulk approving adjustments', error);
+            const errMsg = error.response?.data?.message || 'Failed to approve selected adjustments';
+            toast.error(errMsg);
+        } finally {
+            setBulkActionLoading(false);
+        }
+    };
+
+    const handleBulkRecount = async () => {
+        if (selectedIds.length === 0) return;
+        if (!window.confirm(`Request a recount for ${selectedIds.length} selected part(s)? They will be re-added to the counting queue.`)) return;
+
+        setBulkActionLoading(true);
+        try {
+            const res = await api.post('/inventory/cycle-count/manager/bulk-recount', { line_ids: selectedIds });
+            toast.success(res.data?.message || 'Recount requested for selected items.');
+            setLines(prev => prev.filter(line => !selectedIds.includes(line.line_id)));
+            setSelectedIds([]);
+        } catch (error) {
+            console.error('Error bulk requesting recount', error);
+            const errMsg = error.response?.data?.message || 'Failed to request recount for selected items';
+            toast.error(errMsg);
+        } finally {
+            setBulkActionLoading(false);
         }
     };
 
@@ -100,57 +159,106 @@ export default function ManagerReviewDesk() {
                     ) : lines.length === 0 ? (
                         <p>No pending reviews.</p>
                     ) : (
-                        <table className="min-w-full bg-white border border-gray-200">
-                            <thead className="bg-gray-100">
-                                <tr>
-                                    <th className="py-2 px-4 border-b text-left">Part Name</th>
-                                    <th className="py-2 px-4 border-b text-left">SKU</th>
-                                    <th className="py-2 px-4 border-b">Snapshot Qty</th>
-                                    <th className="py-2 px-4 border-b">Physical Count</th>
-                                    <th className="py-2 px-4 border-b">Variance</th>
-                                    <th className="py-2 px-4 border-b">Financial Impact</th>
-                                    <th className="py-2 px-4 border-b">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {lines.map((line) => {
-                                    const varianceQty = parseFloat(line.variance_qty) || 0;
-                                    const financialImpact = parseFloat(line.financial_impact) || 0;
-                                    const isPositive = varianceQty > 0;
-                                    const isNegative = varianceQty < 0;
-                                    const colorClass = isNegative ? 'text-red-600' : isPositive ? 'text-green-600' : 'text-gray-900';
+                        <>
+                            {selectedIds.length > 0 && (
+                                <div className="mb-3 flex items-center justify-between bg-blue-50 border border-blue-200 rounded px-4 py-2">
+                                    <span className="text-sm font-medium text-blue-800">
+                                        {selectedIds.length} selected
+                                    </span>
+                                    <div className="flex space-x-2">
+                                        <button
+                                            onClick={handleBulkApprove}
+                                            disabled={bulkActionLoading}
+                                            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold py-1 px-3 rounded shadow-sm transition-colors"
+                                        >
+                                            Approve Selected
+                                        </button>
+                                        <button
+                                            onClick={handleBulkRecount}
+                                            disabled={bulkActionLoading}
+                                            className="bg-yellow-500 hover:bg-yellow-600 disabled:opacity-50 text-white font-semibold py-1 px-3 rounded shadow-sm transition-colors"
+                                        >
+                                            Recount Selected
+                                        </button>
+                                        <button
+                                            onClick={() => setSelectedIds([])}
+                                            disabled={bulkActionLoading}
+                                            className="text-blue-800 hover:underline text-sm px-2"
+                                        >
+                                            Clear
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                            <table className="min-w-full bg-white border border-gray-200">
+                                <thead className="bg-gray-100">
+                                    <tr>
+                                        <th className="py-2 px-4 border-b w-10">
+                                            <input
+                                                type="checkbox"
+                                                checked={lines.length > 0 && selectedIds.length === lines.length}
+                                                onChange={toggleSelectAll}
+                                                aria-label="Select all pending reviews"
+                                            />
+                                        </th>
+                                        <th className="py-2 px-4 border-b text-left">Part Name</th>
+                                        <th className="py-2 px-4 border-b text-left">SKU</th>
+                                        <th className="py-2 px-4 border-b">Snapshot Qty</th>
+                                        <th className="py-2 px-4 border-b">Physical Count</th>
+                                        <th className="py-2 px-4 border-b">Variance</th>
+                                        <th className="py-2 px-4 border-b">Financial Impact</th>
+                                        <th className="py-2 px-4 border-b">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {lines.map((line) => {
+                                        const varianceQty = parseFloat(line.variance_qty) || 0;
+                                        const financialImpact = parseFloat(line.financial_impact) || 0;
+                                        const isPositive = varianceQty > 0;
+                                        const isNegative = varianceQty < 0;
+                                        const colorClass = isNegative ? 'text-red-600' : isPositive ? 'text-green-600' : 'text-gray-900';
+                                        const isSelected = selectedIds.includes(line.line_id);
 
-                                    return (
-                                        <tr key={line.line_id} className="text-center hover:bg-gray-50">
-                                            <td className="py-2 px-4 border-b text-left whitespace-normal break-words">{line.display_name || line.detail}</td>
-                                            <td className="py-2 px-4 border-b text-left">{line.internal_sku}</td>
-                                            <td className="py-2 px-4 border-b">{line.system_qty_snapshot}</td>
-                                            <td className="py-2 px-4 border-b font-medium">{line.counted_qty}</td>
-                                            <td className={`py-2 px-4 border-b font-bold ${colorClass}`}>
-                                                {isPositive ? `+${varianceQty}` : varianceQty}
-                                            </td>
-                                            <td className={`py-2 px-4 border-b font-bold ${colorClass}`}>
-                                                {formatCurrency(financialImpact, currencySymbol)}
-                                            </td>
-                                            <td className="py-2 px-4 border-b flex justify-center space-x-2">
-                                                <button
-                                                    onClick={() => handleApprove(line.line_id)}
-                                                    className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1 px-3 rounded shadow-sm transition-colors"
-                                                >
-                                                    Approve
-                                                </button>
-                                                <button
-                                                    onClick={() => handleRecount(line.line_id)}
-                                                    className="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-1 px-3 rounded shadow-sm transition-colors"
-                                                >
-                                                    Recount
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
+                                        return (
+                                            <tr key={line.line_id} className={`text-center hover:bg-gray-50 ${isSelected ? 'bg-blue-50' : ''}`}>
+                                                <td className="py-2 px-4 border-b">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isSelected}
+                                                        onChange={() => toggleSelectOne(line.line_id)}
+                                                        aria-label={`Select ${line.display_name || line.detail}`}
+                                                    />
+                                                </td>
+                                                <td className="py-2 px-4 border-b text-left whitespace-normal break-words">{line.display_name || line.detail}</td>
+                                                <td className="py-2 px-4 border-b text-left">{line.internal_sku}</td>
+                                                <td className="py-2 px-4 border-b">{line.system_qty_snapshot}</td>
+                                                <td className="py-2 px-4 border-b font-medium">{line.counted_qty}</td>
+                                                <td className={`py-2 px-4 border-b font-bold ${colorClass}`}>
+                                                    {isPositive ? `+${varianceQty}` : varianceQty}
+                                                </td>
+                                                <td className={`py-2 px-4 border-b font-bold ${colorClass}`}>
+                                                    {formatCurrency(financialImpact, currencySymbol)}
+                                                </td>
+                                                <td className="py-2 px-4 border-b flex justify-center space-x-2">
+                                                    <button
+                                                        onClick={() => handleApprove(line.line_id)}
+                                                        className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1 px-3 rounded shadow-sm transition-colors"
+                                                    >
+                                                        Approve
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleRecount(line.line_id)}
+                                                        className="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-1 px-3 rounded shadow-sm transition-colors"
+                                                    >
+                                                        Recount
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </>
                     )}
                 </div>
             )}
