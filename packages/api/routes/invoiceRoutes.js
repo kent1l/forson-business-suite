@@ -611,54 +611,94 @@ router.put('/invoices/payments/:payment_id/settle', protect, hasPermission('invo
     }
 });
 
-// DELETE /api/invoices/:id - Permission-based delete with stock reversal
+// DELETE /api/invoices/:id - Void an invoice: reverses stock and AR ledger impact,
+// but never hard-deletes the row or its payment/ledger history. ar_ledger is an
+// append-only, immutable audit trail (see 20260802_03_create_ar_ledger.sql) — a true
+// delete would either violate its FKs or (if forced) erase financial history, so
+// correcting a mistaken invoice is done the accounting way: reverse it, keep the record.
 router.delete('/invoices/:id', protect, hasPermission('invoice:delete'), async (req, res) => {
     const { id } = req.params;
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
 
-        // Fetch invoice header & lines first
-        const { rows: invoiceRows } = await client.query('SELECT invoice_number FROM invoice WHERE invoice_id = $1', [id]);
+        const { rows: invoiceRows } = await client.query(
+            'SELECT invoice_number, customer_id, status FROM invoice WHERE invoice_id = $1 FOR UPDATE',
+            [id]
+        );
         if (invoiceRows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ message: 'Invoice not found' });
         }
-        const invoiceNumber = invoiceRows[0].invoice_number;
+        const { invoice_number: invoiceNumber, customer_id: customerId, status } = invoiceRows[0];
+        if (status === 'Cancelled') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: 'Invoice is already voided.' });
+        }
 
+        // Reverse stock for whatever quantity hasn't already been returned via a refund
+        // (credit_note), so a previously part-refunded invoice isn't double-restocked.
         const { rows: lines } = await client.query(`
-            SELECT il.invoice_line_id, il.part_id, il.quantity, il.cost_at_sale
+            SELECT il.invoice_line_id, il.part_id, il.quantity, il.cost_at_sale,
+                   COALESCE(rf.quantity_refunded, 0) AS quantity_refunded
             FROM invoice_line il
+            LEFT JOIN (
+                SELECT invoice_line_id, SUM(quantity) AS quantity_refunded
+                FROM credit_note_line
+                GROUP BY invoice_line_id
+            ) rf ON rf.invoice_line_id = il.invoice_line_id
             WHERE il.invoice_id = $1
         `, [id]);
 
-        // Reversal strategy: add back stock using StockIn so WAC recalculates using original cost_at_sale
         for (const line of lines) {
-            // quantity on invoice is negative stock movement, so we add back positive quantity
+            const qtyToReverse = line.quantity - line.quantity_refunded;
+            if (qtyToReverse <= 0) continue;
             await client.query(`
                 INSERT INTO inventory_transaction (part_id, trans_type, quantity, unit_cost, reference_no, employee_id, notes)
                 VALUES ($1, 'StockIn', $2, $3, $4, $5, $6);
-            `, [line.part_id, line.quantity, line.cost_at_sale, invoiceNumber, req.user.employee_id || null, 'SYSTEM REVERSAL: Invoice deleted']);
+            `, [line.part_id, qtyToReverse, line.cost_at_sale, invoiceNumber, req.user.employee_id || null, 'SYSTEM REVERSAL: Invoice voided']);
         }
 
-    // Delete allocations first (cascades would remove via invoice cascade but be explicit for clarity)
-        await client.query('DELETE FROM invoice_payment_allocation WHERE invoice_id = $1', [id]);
-    // Remove invoice-specific payments from invoice_payments table
-    await client.query('DELETE FROM invoice_payments WHERE invoice_id = $1', [id]);
-    // Also remove the auto-created payment that was generated when the invoice was posted (legacy single payments).
-    // We key it by reference_number = invoice_number which is only used for this purpose.
-    await client.query('DELETE FROM customer_payment WHERE reference_number = $1', [invoiceNumber]);
-    // Delete credit notes referencing this invoice (ON DELETE RESTRICT in schema, so must remove manually)
-        await client.query('DELETE FROM credit_note WHERE invoice_id = $1', [id]);
-        // Delete invoice (cascade removes invoice_line)
-        await client.query('DELETE FROM invoice WHERE invoice_id = $1', [id]);
+        // Void any non-voided payments so amount_paid/status recompute to reflect
+        // the voided invoice; the trigger on invoice_payments fires per-row.
+        await client.query(
+            `UPDATE invoice_payments SET payment_status = 'voided' WHERE invoice_id = $1 AND payment_status <> 'voided'`,
+            [id]
+        );
+
+        // Offset the invoice's net effect on the customer's AR ledger with a single
+        // adjustment entry rather than touching (immutable) historical rows.
+        const { rows: ledgerRows } = await client.query(
+            `SELECT COALESCE(SUM(amount), 0) AS net FROM ar_ledger WHERE invoice_id = $1`,
+            [id]
+        );
+        const net = parseFloat(ledgerRows[0].net);
+        if (net !== 0) {
+            const reversalAmount = -net;
+            await arLedger.appendEntry(client, {
+                customerId,
+                invoiceId: id,
+                entryType: reversalAmount >= 0 ? 'DEBIT_ADJUSTMENT' : 'CREDIT_ADJUSTMENT',
+                amount: reversalAmount,
+                referenceNo: invoiceNumber,
+                notes: 'SYSTEM REVERSAL: Invoice voided',
+                createdBy: req.user.employee_id || null,
+            });
+        }
+
+        // Free the physical receipt number for reuse and mark the invoice voided.
+        // invoice_number and all line/payment/ledger history are preserved intact.
+        await client.query(
+            `UPDATE invoice SET status = 'Cancelled', physical_receipt_no = NULL WHERE invoice_id = $1`,
+            [id]
+        );
 
         await client.query('COMMIT');
-        res.json({ message: 'Invoice deleted and stock reversed.' });
+        res.json({ message: 'Invoice voided and stock reversed.' });
     } catch (err) {
         await client.query('ROLLBACK');
-        console.error('Delete invoice error:', err.message);
-        res.status(500).json({ message: 'Server error deleting invoice', error: err.message });
+        console.error('Void invoice error:', err.message);
+        res.status(500).json({ message: 'Server error voiding invoice', error: err.message });
     } finally {
         client.release();
     }

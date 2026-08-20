@@ -29,6 +29,8 @@ const getStatusBadge = (status) => {
             return 'bg-gray-100 text-gray-800';
         case 'Partially Paid':
             return 'bg-blue-100 text-blue-800';
+        case 'Cancelled':
+            return 'bg-slate-200 text-slate-500 line-through';
         default:
             return 'bg-gray-100 text-gray-800';
     }
