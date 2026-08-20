@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { formatCurrency } from '../../utils/currency';
 import PaginationControls from '../ui/PaginationControls';
 import StatusBadge from '../ui/StatusBadge';
+import useHighlight from '../../hooks/useHighlight';
 
 const TableSkeleton = () => (
     <div className="animate-pulse space-y-4 p-6 bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700">
@@ -40,6 +41,7 @@ const MATURITY_TONE = {
 const PdcOutboundDeskTable = ({
     items = [],
     loading = false,
+    highlight = null,
     pdcStatusFilter = 'ALL',
     onStatusFilterChange,
     maturityFilter = 'ALL',
@@ -95,6 +97,11 @@ const PdcOutboundDeskTable = ({
         const start = (page - 1) * pageSize;
         return filteredItems.slice(start, start + pageSize);
     }, [filteredItems, page, pageSize]);
+
+    // Keyed on what is actually rendered: the deep link usually lands while the
+    // list is still loading, so the hook waits for the rows rather than firing
+    // once against an empty table.
+    const { getHighlightProps } = useHighlight(highlight, paginatedItems.length);
 
     const isFiltered = searchTerm || pdcStatusFilter !== 'ALL' || maturityFilter !== 'ALL';
 
@@ -207,7 +214,10 @@ const PdcOutboundDeskTable = ({
                         </thead>
                         <tbody className="divide-y divide-gray-200 dark:divide-slate-700">
                             {paginatedItems.map(item => (
-                                <tr key={item.cheque_record_id} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors">
+                                <tr
+                                    key={item.cheque_record_id}
+                                    {...getHighlightProps(item.cheque_record_id, 'hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors')}
+                                >
                                     <td className="px-4 py-4 text-xs text-gray-600 dark:text-slate-400">{item.bank_account_name || '—'}</td>
                                     <td className="px-4 py-4 font-mono font-medium text-gray-800 dark:text-slate-200">{item.cheque_number || `#${item.cheque_record_id}`}</td>
                                     <td className="px-4 py-4 font-semibold text-gray-900 dark:text-slate-100">{item.company_name || item.payee}</td>

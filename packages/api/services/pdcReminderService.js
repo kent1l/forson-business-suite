@@ -48,6 +48,7 @@ async function runPdcReminderScan() {
             body: 'Ready for deposit on the Collections Clearance desk.',
             linkState: { section: 'treasury', tab: 'inbound', maturityFilter: 'DUE_TODAY' },
             permission: 'pdc:view',
+            idKey: 'payment_id',
             dedupeKey: `pdc.inbound_due_today:${today}`,
         });
 
@@ -59,6 +60,7 @@ async function runPdcReminderScan() {
             body: `Undeposited for more than ${staleDays} days — these need to be chased or replaced.`,
             linkState: { section: 'treasury', tab: 'inbound', maturityFilter: 'STALE_CHEQUE' },
             permission: 'pdc:view',
+            idKey: 'payment_id',
             dedupeKey: `pdc.inbound_stale:${today}`,
         });
 
@@ -70,6 +72,7 @@ async function runPdcReminderScan() {
             body: 'Make sure the funding account can cover them before they are presented.',
             linkState: { section: 'treasury', tab: 'outbound', maturityFilter: 'DUE_TODAY' },
             permission: 'ap-pdc:view',
+            idKey: 'cheque_record_id',
             dedupeKey: `ap-pdc.outbound_due_today:${today}`,
         });
 
@@ -81,6 +84,7 @@ async function runPdcReminderScan() {
             body: `Uncleared for more than ${staleDays} days.`,
             linkState: { section: 'treasury', tab: 'outbound', maturityFilter: 'STALE_CHEQUE' },
             permission: 'ap-pdc:view',
+            idKey: 'cheque_record_id',
             dedupeKey: `ap-pdc.outbound_stale:${today}`,
         });
 
@@ -94,6 +98,7 @@ async function runPdcReminderScan() {
             // that identifies them is the bounced status.
             linkState: { section: 'treasury', tab: 'outbound', statusFilter: 'BOUNCED' },
             permission: 'ap-pdc:manage',
+            idKey: 'cheque_record_id',
             dedupeKey: `ap-pdc.needs_replacement:${today}`,
         });
 
@@ -113,7 +118,7 @@ async function runPdcReminderScan() {
  * Emits one summary notification for a bucket of cheques, or nothing at all
  * when the bucket is empty — "0 cheques mature today" is noise, not news.
  */
-async function raise({ rows, type, severity, title, body, linkState, permission, dedupeKey }) {
+async function raise({ rows, type, severity, title, body, linkState, idKey, permission, dedupeKey }) {
     if (!rows.length) return;
     await notifications.emitSafe({
         type,
@@ -122,12 +127,25 @@ async function raise({ rows, type, severity, title, body, linkState, permission,
         title: title(rows.length),
         body,
         // Both desks live under Cheques & Treasury; linkState picks the section
-        // and the tab within it.
+        // and the tab within it, and `highlight` names the exact rows to mark.
         linkPage: 'cheques_treasury',
-        linkState,
+        linkState: { ...linkState, highlight: highlightFor(rows, idKey) },
         requiredPermission: permission,
         dedupeKey,
     });
+}
+
+// Ids are capped because they ride along in the notification row and are only
+// used to mark what is already on screen — the deep link's own filter is what
+// narrows the list, so a long tail adds bytes without adding meaning.
+const MAX_HIGHLIGHT_IDS = 50;
+
+function highlightFor(rows, idKey) {
+    const ids = rows
+        .map((row) => row[idKey])
+        .filter((id) => id !== null && id !== undefined)
+        .slice(0, MAX_HIGHLIGHT_IDS);
+    return ids.length ? { type: idKey, ids } : undefined;
 }
 
 async function startPdcReminderEngine() {

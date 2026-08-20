@@ -275,7 +275,10 @@ router.post('/requests', protect, hasPermission('leave:request'), async (req, re
             linkPage: 'leave',
             // The approver wants the pending queue, which is where the approve
             // and reject buttons are.
-            linkState: { tab: 'requests', statusFilter: 'Pending' },
+            linkState: {
+                tab: 'requests', statusFilter: 'Pending',
+                highlight: { type: 'leave_id', ids: [rows[0].leave_id] },
+            },
             entityType: 'leave_request',
             entityId: rows[0].leave_id,
             requiredPermission: 'leave:approve',
@@ -352,7 +355,10 @@ router.post('/requests/:id/approve', protect, hasPermission('leave:approve'), as
             linkPage: 'leave',
             // The requester's own decided request: an empty statusFilter is the
             // page's "All statuses", since the row is no longer Pending.
-            linkState: { tab: 'requests', statusFilter: '' },
+            linkState: {
+                tab: 'requests', statusFilter: '',
+                highlight: { type: 'leave_id', ids: [Number(req.params.id)] },
+            },
             entityType: 'leave_request',
             entityId: req.params.id,
             targetEmployeeId: leave.employee_id,
@@ -403,7 +409,10 @@ router.post('/requests/:id/reject', protect, hasPermission('leave:approve'), asy
                 ? `${rejected.date_from} to ${rejected.date_to} — ${rejected.decision_note}`
                 : `${rejected.date_from} to ${rejected.date_to}.`,
             linkPage: 'leave',
-            linkState: { tab: 'requests', statusFilter: '' },
+            linkState: {
+                tab: 'requests', statusFilter: '',
+                highlight: { type: 'leave_id', ids: [rejected.leave_id] },
+            },
             entityType: 'leave_request',
             entityId: rejected.leave_id,
             targetEmployeeId: rejected.employee_id,

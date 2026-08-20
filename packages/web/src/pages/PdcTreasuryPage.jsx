@@ -64,7 +64,10 @@ const PdcTreasuryPage = ({ pageState }) => {
     // as the tab: "4 cheques mature today" against a desk showing every open
     // cheque leaves the reader to find the four themselves, which is the whole
     // problem the notification was supposed to solve.
-    useDeepLink(pageState, ({ tab, maturityFilter, statusFilter }) => {
+    const [inboundHighlight, setInboundHighlight] = useState(null);
+    const [outboundHighlight, setOutboundHighlight] = useState(null);
+
+    useDeepLink(pageState, ({ tab, maturityFilter, statusFilter, highlight }) => {
         const outbound = tab === 'outbound' && canViewOutbound;
         if (tab === 'inbound' || outbound) setActiveTab(outbound ? 'outbound' : 'inbound');
         if (maturityFilter) {
@@ -73,6 +76,8 @@ const PdcTreasuryPage = ({ pageState }) => {
         if (statusFilter) {
             (outbound ? setOutboundStatusFilter : setPdcStatusFilter)(statusFilter);
         }
+        // Filtering shows the right rows; this marks which ones the alert meant.
+        (outbound ? setOutboundHighlight : setInboundHighlight)(highlight || null);
     });
     const [issueModalOpen, setIssueModalOpen] = useState(false);
     const [chequeTemplates, setChequeTemplates] = useState([]);
@@ -467,6 +472,7 @@ const PdcTreasuryPage = ({ pageState }) => {
                 <PdcClearanceDeskTable
                     items={inboundItems}
                     loading={inboundLoading}
+                    highlight={inboundHighlight}
                     pdcStatusFilter={pdcStatusFilter}
                     onStatusFilterChange={setPdcStatusFilter}
                     maturityFilter={pdcMaturityFilter}
@@ -483,6 +489,7 @@ const PdcTreasuryPage = ({ pageState }) => {
                     <PdcOutboundDeskTable
                         items={outboundItems}
                         loading={outboundLoading}
+                        highlight={outboundHighlight}
                         pdcStatusFilter={outboundStatusFilter}
                         onStatusFilterChange={setOutboundStatusFilter}
                         maturityFilter={outboundMaturityFilter}

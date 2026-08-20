@@ -116,6 +116,66 @@ To point a notification at a page that does not accept `pageState` yet, add the
 prop in `MainLayout.jsx` using the `currentPage === '<key>' ? pageState : null`
 idiom already used there, then call `useDeepLink` in the page.
 
+## Highlighting the specific rows
+
+Filtering a list is not the same as showing someone which row to act on, and the
+gap grows with the size of the result set. Emitters therefore also carry the
+identifiers of the records the alert is about:
+
+```js
+linkState: {
+    section: 'treasury', tab: 'outbound', maturityFilter: 'DUE_TODAY',
+    highlight: { type: 'cheque_record_id', ids: [27, 24, 21, 17] },
+}
+```
+
+The table consumes it with `hooks/useHighlight.js`:
+
+```js
+const { getHighlightProps } = useHighlight(highlight, paginatedItems.length);
+...
+<tr key={item.id} {...getHighlightProps(item.id, 'hover:bg-gray-50 …')}>
+```
+
+`getHighlightProps` takes the row's own classes and returns them merged, so
+spreading the result cannot silently drop the row's styling. Ids are compared as
+strings — several of these keys are `BIGINT` and reach the browser as strings.
+
+What the hook does, and why each part is there:
+
+- **Waits for the rows.** The deep link almost always lands while the list is
+  still fetching, so the hook re-checks as the row count changes rather than
+  firing once against an empty table. The second argument is that signal.
+- **Scrolls the first match into view**, centred, and honours
+  `prefers-reduced-motion`.
+- **Moves focus to the row.** A purely visual flash is invisible to a screen
+  reader and leaves a keyboard user tabbing from the top of the page to reach the
+  row everyone else was just shown. The row gets `tabIndex={-1}` only while it is
+  the target, so it never joins the tab order permanently.
+- **Decays after four seconds.** Long enough to find with your eyes, short enough
+  that it is never mistaken for a status. A row that stays tinted looks like a
+  state flag.
+- **Gives up after ten seconds** if the row never appears — on another page of a
+  paginated list, say — instead of staying armed forever.
+
+The tint is `.row-highlight` in `index.css`, which animates `background-color`.
+Tailwind's preflight sets `border-collapse: collapse`, under which `box-shadow`
+and `border` on a `<tr>` render inconsistently across browsers; background-color
+is the one row-level property that is reliable there.
+
+Highlighting is applied where rows carry per-row actions — the two PDC desks
+(Clear / Bounce / Void) and the leave request queue (Approve / Reject). The A/P
+and A/R overview tabs are aggregate aging views with no per-row action, so they
+deep-link to the tab and stop there.
+
+### A caveat worth knowing
+
+If the target row sits on a later page of a paginated table, the highlight
+correctly gives up rather than pretending to have found it. Today the deep link's
+own filter keeps the target on the first page in every case that ships. A
+notification pointing at one record inside a large unfiltered list would need the
+table to seek to the page containing that id first.
+
 ## Adding a new notification
 
 ```js
