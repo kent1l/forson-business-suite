@@ -39,6 +39,7 @@ export default function ExpensesPage() {
     const [aiParsedData, setAiParsedData] = useState(null);
     const [aiRawInput, setAiRawInput] = useState('');
     const [formSubmitLoading, setFormSubmitLoading] = useState(false);
+    const [quickEntryResetKey, setQuickEntryResetKey] = useState(0);
 
     // Fetch dropdown options once on mount
     useEffect(() => {
@@ -176,6 +177,7 @@ export default function ExpensesPage() {
                 toast.success('Expense recorded successfully!');
             }
             setFormModalOpen(false);
+            setQuickEntryResetKey(prev => prev + 1);
             fetchExpensesData();
         } catch (error) {
             console.error('Form submission error:', error);
@@ -215,7 +217,7 @@ export default function ExpensesPage() {
             </div>
 
             {/* Natural Language Quick Entry Widget */}
-            <ExpenseQuickEntry onParsed={handleQuickEntryParsed} />
+            <ExpenseQuickEntry key={quickEntryResetKey} onParsed={handleQuickEntryParsed} />
 
             {/* Summary Cards & Monthly Chart */}
             <ExpenseSummaryCards
