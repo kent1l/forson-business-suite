@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import Combobox from '../ui/Combobox';
-import DateRangeShortcuts from '../ui/DateRangeShortcuts';
 import PaginationControls from '../ui/PaginationControls';
 import SortableHeader from '../ui/SortableHeader';
 import { getPaginatedPayload } from '../../utils/paginatedResponse';
@@ -38,11 +37,6 @@ const InventoryMovementReport = () => {
 
     const handleFilterChange = (name, value) => {
         setFilters(prev => ({ ...prev, [name]: value }));
-        setPage(1);
-    };
-
-    const handleDateRangeSelect = (range) => {
-        setFilters(prev => ({ ...prev, ...range }));
         setPage(1);
     };
 
@@ -97,15 +91,12 @@ const InventoryMovementReport = () => {
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Part</label>
-                        <Combobox
+                        <Combobox 
                             options={[{value: '', label: 'All Parts'}, ...partOptions]}
                             value={filters.partId}
                             onChange={(value) => handleFilterChange('partId', value)}
                             placeholder="Search parts..."
                         />
-                    </div>
-                    <div className="md:col-span-3">
-                        <DateRangeShortcuts onSelect={handleDateRangeSelect} />
                     </div>
                     <div className="flex space-x-2">
                         <button onClick={() => fetchReport('json')} disabled={loading} className="w-full bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition disabled:opacity-50 cursor-pointer">View Report</button>

@@ -2,6 +2,10 @@ import React from 'react';
 import { format, addDays, subDays, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
+// Anchor date for the "All Time" preset — earlier than any real business record, avoiding a
+// separate query just to discover the actual earliest date.
+const EARLIEST_DATE = '2000-01-01';
+
 const DateRangeShortcuts = ({ onSelect }) => {
     const now = new Date();
     const today = toZonedTime(now, 'Asia/Manila');
@@ -49,6 +53,12 @@ const DateRangeShortcuts = ({ onSelect }) => {
                 const lastDay = endOfMonth(lastMonth);
                 return { startDate: format(firstDay, 'yyyy-MM-dd'), endDate: format(lastDay, 'yyyy-MM-dd') };
             }
+        },
+        {
+            label: 'All Time',
+            // Backend date filters require a concrete BETWEEN range, so "all time" is expressed as
+            // a fixed anchor far earlier than any real business record rather than an open-ended query.
+            getRange: () => ({ startDate: EARLIEST_DATE, endDate: todayStr })
         }
     ];
 
