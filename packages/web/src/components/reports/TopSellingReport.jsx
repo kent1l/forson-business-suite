@@ -8,6 +8,7 @@ import { getPaginatedPayload } from '../../utils/paginatedResponse';
 import { sortData } from '../../utils/sortData';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
+import StatusMultiSelect, { ALL_STATUSES, DEFAULT_STATUSES } from '../ui/StatusMultiSelect';
 
 const TopSellingReport = () => {
     const { settings } = useSettings();
@@ -27,6 +28,7 @@ const TopSellingReport = () => {
         };
     });
     const [sortBy, setSortBy] = useState('revenue');
+    const [statusFilter, setStatusFilter] = useState(DEFAULT_STATUSES);
 
     const handleDateChange = (e) => {
         const { name, value } = e.target;
@@ -37,12 +39,16 @@ const TopSellingReport = () => {
         if (!dates.startDate || !dates.endDate) {
             return toast.error('Please select both a start and end date.');
         }
-        
+
         if (format === 'json') setLoading(true);
+
+        const statusParam = statusFilter.length > 0 && statusFilter.length < ALL_STATUSES.length
+            ? statusFilter.join(',')
+            : undefined;
 
         try {
             const response = await api.get('/reports/top-selling', {
-                params: { ...dates, sortBy, format, page, pageSize, paginated: 1 },
+                params: { ...dates, status: statusParam, sortBy, format, page, pageSize, paginated: 1 },
                 responseType: format === 'csv' ? 'blob' : 'json',
             });
 
@@ -70,7 +76,7 @@ const TopSellingReport = () => {
 
     useEffect(() => {
         setPage(1);
-    }, [dates.startDate, dates.endDate, sortBy]);
+    }, [dates.startDate, dates.endDate, sortBy, statusFilter]);
 
     useEffect(() => {
         if (hasLoaded) {
@@ -83,7 +89,7 @@ const TopSellingReport = () => {
     return (
         <>
             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm mb-6">
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+                <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Start Date</label>
                         <input type="date" name="startDate" value={dates.startDate} onChange={handleDateChange} className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500" />
@@ -98,6 +104,10 @@ const TopSellingReport = () => {
                             <option value="revenue">Revenue</option>
                             <option value="quantity">Quantity</option>
                         </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Status</label>
+                        <StatusMultiSelect selected={statusFilter} onChange={setStatusFilter} />
                     </div>
                     <div className="flex space-x-2">
                         <button onClick={() => fetchReport('json')} disabled={loading} className="w-full bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition disabled:opacity-50 cursor-pointer">
