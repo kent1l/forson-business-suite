@@ -8,8 +8,21 @@ const { validatePaymentTerms } = require('../helpers/paymentTermsHelper');
 const { calculateInvoiceTax, storeTaxBreakdown, validateTaxCalculation } = require('../services/taxCalculationService');
 const arLedger = require('../services/arLedgerService');
 const walletService = require('../services/customerWalletService');
-const { normalizeStatusFilter } = require('../helpers/invoiceStatusFilter');
 const router = express.Router();
+
+const KNOWN_INVOICE_STATUSES = ['Paid', 'Partially Paid', 'Unpaid', 'Partially Refunded', 'Fully Refunded', 'Cancelled'];
+
+// Parses the `status` query param into either 'active' (exclude Cancelled), an array of
+// known statuses to filter to (IN-list; supports multi-select), or null (no status filter).
+// Accepts a single string, a comma-separated string ("Paid,Unpaid"), or an array (repeated query params).
+function normalizeStatusFilter(status) {
+    if (!status) return null;
+    if (status === 'active') return 'active';
+    if (status === 'all') return null;
+    const list = Array.isArray(status) ? status : String(status).split(',');
+    const known = list.map(s => s.trim()).filter(s => KNOWN_INVOICE_STATUSES.includes(s));
+    return known.length > 0 ? known : null;
+}
 
 // Shared WHERE-clause builder for the invoice listing/export endpoints.
 // status: 'active' excludes Cancelled (the default for Sales History); an array of known
