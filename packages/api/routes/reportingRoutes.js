@@ -3,14 +3,15 @@ const db = require('../db');
 const { Parser } = require('json2csv');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
+const { buildStatusClause } = require('../helpers/invoiceStatusFilter');
 const router = express.Router();
 
 // GET /api/reports/sales-summary
 router.get('/reports/sales-summary', protect, hasPermission('reports:view'), async (req, res) => {
-    const { startDate, endDate, format = 'json', sortBy, sortOrder = 'ASC' } = req.query;
+    const { startDate, endDate, status, format = 'json', sortBy, sortOrder = 'ASC' } = req.query;
     const { paginated, page, pageSize, limit, offset } = parsePaginationQuery(req.query);
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
-    
+
     const client = await db.getClient();
     try {
         const dir = sortOrder.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
@@ -23,8 +24,11 @@ router.get('/reports/sales-summary', protect, hasPermission('reports:view'), asy
             orderByClause = '(il.quantity * il.sale_price)';
         }
 
+        const detailsParams = [startDate, endDate];
+        const detailsStatusClause = buildStatusClause(status, detailsParams, { defaultFilter: 'active', column: 'i.status' });
+
         const detailsBaseQuery = `
-            SELECT 
+            SELECT
                 i.invoice_date, i.invoice_number, p.detail,
                 g.group_name, b.brand_name,
                 (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
@@ -37,36 +41,42 @@ router.get('/reports/sales-summary', protect, hasPermission('reports:view'), asy
             JOIN part p ON il.part_id = p.part_id
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
-            WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
+            WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND ${detailsStatusClause}
             ORDER BY ${orderByClause} ${dir}
         `;
-        
+
+        const summaryParams = [startDate, endDate];
+        const summaryStatusClauseBare = buildStatusClause(status, summaryParams, { defaultFilter: 'active', column: 'status' });
+        const summaryStatusClauseAliased = 'i.' + summaryStatusClauseBare;
+
         const summaryQuery = `
             SELECT
-                (SELECT COALESCE(SUM(subtotal_ex_tax), 0) FROM invoice WHERE (invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND status != 'Cancelled') AS gross_sales,
+                (SELECT COALESCE(SUM(subtotal_ex_tax), 0) FROM invoice WHERE (invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND ${summaryStatusClauseBare}) AS gross_sales,
                 (SELECT COALESCE(SUM(subtotal_ex_tax), 0) FROM credit_note WHERE (refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2) AS total_refunds,
-                (SELECT COALESCE(SUM(tax_total), 0) FROM invoice WHERE (invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND status != 'Cancelled') AS gross_vat,
+                (SELECT COALESCE(SUM(tax_total), 0) FROM invoice WHERE (invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND ${summaryStatusClauseBare}) AS gross_vat,
                 (SELECT COALESCE(SUM(tax_total), 0) FROM credit_note WHERE (refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2) AS total_refund_vat,
-                (SELECT COALESCE(SUM(il.quantity * il.cost_at_sale), 0) FROM invoice_line il JOIN invoice i ON il.invoice_id = i.invoice_id WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND i.status != 'Cancelled') AS total_cost_of_goods_sold,
+                (SELECT COALESCE(SUM(il.quantity * il.cost_at_sale), 0) FROM invoice_line il JOIN invoice i ON il.invoice_id = i.invoice_id WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND ${summaryStatusClauseAliased}) AS total_cost_of_goods_sold,
                 (SELECT COALESCE(SUM(cnl.quantity * p.wac_cost), 0) FROM credit_note_line cnl JOIN part p ON cnl.part_id = p.part_id JOIN credit_note cn ON cnl.cn_id = cn.cn_id WHERE (cn.refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2) AS total_cost_of_goods_returned,
-                (SELECT COUNT(*) FROM invoice WHERE (invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND status != 'Cancelled') AS total_invoices
+                (SELECT COUNT(*) FROM invoice WHERE (invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND ${summaryStatusClauseBare}) AS total_invoices
         `;
 
-        const summaryPromise = client.query(summaryQuery, [startDate, endDate]);
+        const summaryPromise = client.query(summaryQuery, summaryParams);
         const detailsPromise = (() => {
             if (format === 'csv' || !paginated) {
-                return client.query(detailsBaseQuery, [startDate, endDate]);
+                return client.query(detailsBaseQuery, detailsParams);
             }
-            const paginatedQuery = `${detailsBaseQuery} LIMIT $3 OFFSET $4`;
-            return client.query(paginatedQuery, [startDate, endDate, limit, offset]);
+            const limitIdx = detailsParams.length + 1;
+            const offsetIdx = detailsParams.length + 2;
+            const paginatedQuery = `${detailsBaseQuery} LIMIT $${limitIdx} OFFSET $${offsetIdx}`;
+            return client.query(paginatedQuery, [...detailsParams, limit, offset]);
         })();
         const countPromise = (format === 'json' && paginated)
             ? client.query(`
                 SELECT COUNT(*)::int AS total
                 FROM invoice i
                 JOIN invoice_line il ON i.invoice_id = il.invoice_id
-                WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
-            `, [startDate, endDate])
+                WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND ${detailsStatusClause}
+            `, detailsParams)
             : Promise.resolve({ rows: [{ total: 0 }] });
 
         const [detailsRes, summaryRes, countRes] = await Promise.all([detailsPromise, summaryPromise, countPromise]);
@@ -112,14 +122,17 @@ router.get('/reports/sales-summary', protect, hasPermission('reports:view'), asy
     }
 });
 
-// GET /api/reports/top-selling - (No change needed here as it doesn't calculate profit)
+// GET /api/reports/top-selling
 router.get('/reports/top-selling', protect, hasPermission('reports:view'), async (req, res) => {
-    const { startDate, endDate, sortBy = 'revenue', format = 'json' } = req.query;
+    const { startDate, endDate, sortBy = 'revenue', status, format = 'json' } = req.query;
     const { paginated, page, pageSize, limit, offset } = parsePaginationQuery(req.query);
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
 
     const orderByClause = sortBy === 'quantity' ? 'total_quantity_sold DESC' : 'total_revenue DESC';
     try {
+        const baseParams = [startDate, endDate];
+        const statusClause = buildStatusClause(status, baseParams, { defaultFilter: 'active', column: 'i.status' });
+
         let query = `
             SELECT
                 p.part_id, p.internal_sku, p.detail,
@@ -133,13 +146,13 @@ router.get('/reports/top-selling', protect, hasPermission('reports:view'), async
             JOIN invoice i ON il.invoice_id = i.invoice_id
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
-            WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
+            WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND ${statusClause}
             GROUP BY p.part_id, b.brand_name, g.group_name
             ORDER BY ${orderByClause}
         `;
-        const params = [startDate, endDate];
+        const params = [...baseParams];
         if (format === 'json' && paginated) {
-            query += ` LIMIT $3 OFFSET $4`;
+            query += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
             params.push(limit, offset);
         } else {
             query += ` LIMIT 100`;
@@ -156,10 +169,10 @@ router.get('/reports/top-selling', protect, hasPermission('reports:view'), async
                     JOIN invoice i ON il.invoice_id = i.invoice_id
                     LEFT JOIN brand b ON p.brand_id = b.brand_id
                     LEFT JOIN "group" g ON p.group_id = g.group_id
-                    WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
+                    WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND ${statusClause}
                     GROUP BY p.part_id, b.brand_name, g.group_name
                 ) ranked_parts
-            `, [startDate, endDate]) : Promise.resolve({ rows: [{ total: 0 }] })
+            `, baseParams) : Promise.resolve({ rows: [{ total: 0 }] })
         ]);
         const { rows } = rowsRes;
         const data = rows;
@@ -324,9 +337,9 @@ router.get('/reports/low-stock', protect, hasPermission('reports:view'), async (
 });
 
 
-// GET /api/reports/sales-by-customer - (No change needed)
+// GET /api/reports/sales-by-customer
 router.get('/reports/sales-by-customer', protect, hasPermission('reports:view'), async (req, res) => {
-    const { startDate, endDate, customerId, format = 'json' } = req.query;
+    const { startDate, endDate, customerId, status, format = 'json' } = req.query;
     const { paginated, page, pageSize, limit, offset } = parsePaginationQuery(req.query);
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
 
@@ -337,6 +350,9 @@ router.get('/reports/sales-by-customer', protect, hasPermission('reports:view'),
         queryParams.push(customerId);
         whereClauses.push(`c.customer_id = $${queryParams.length}`);
     }
+
+    const statusClause = buildStatusClause(status, queryParams, { defaultFilter: 'active', column: 'i.status' });
+    if (statusClause) whereClauses.push(statusClause);
 
     try {
         let query = `
@@ -458,12 +474,13 @@ router.get('/reports/inventory-movement', protect, hasPermission('reports:view')
 
 // GET /api/reports/profitability-by-product
 router.get('/reports/profitability-by-product', protect, hasPermission('reports:view'), async (req, res) => {
-    const { startDate, endDate, brandId, groupId, format = 'json' } = req.query;
+    const { startDate, endDate, brandId, groupId, status, format = 'json' } = req.query;
     const { paginated, page, pageSize, limit, offset } = parsePaginationQuery(req.query);
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
-    
-    let whereClauses = ["(i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2", "i.status != 'Cancelled'"];
+
+    let whereClauses = ["(i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2"];
     let queryParams = [startDate, endDate];
+    whereClauses.push(buildStatusClause(status, queryParams, { defaultFilter: 'active', column: 'i.status' }));
 
     if (brandId) {
         queryParams.push(brandId);
