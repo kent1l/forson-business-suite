@@ -293,7 +293,8 @@ router.get('/parts/:id', protect, hasPermission('parts:view'), async (req, res) 
             SELECT
                 pv.*,
                 (SELECT ARRAY_AGG(pb.barcode) FROM part_barcode pb WHERE pb.part_id = pv.part_id) as barcodes,
-                (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = pv.part_id AND ${activeAliasCondition('pn')}) AS part_numbers
+                (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = pv.part_id AND ${activeAliasCondition('pn')}) AS part_numbers,
+                (SELECT COALESCE(SUM(it.quantity), 0) FROM inventory_transaction it WHERE it.part_id = pv.part_id) AS stock_on_hand
             FROM public.parts_view AS pv
             WHERE pv.part_id = $1;
         `;

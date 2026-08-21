@@ -458,9 +458,11 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
                                         <div className="flex items-center justify-between gap-2">
                                             <div className="min-w-0 flex-1">
                                                 <div className="truncate text-sm font-medium text-gray-800 dark:text-slate-100">{line.display_name}</div>
-                                                <div className={`text-xs font-medium ${Number(line.stock_on_hand) > 0 ? 'text-gray-500 dark:text-slate-400' : 'text-danger-600 dark:text-danger-400'}`}>
-                                                    {Number(line.stock_on_hand) || 0} in stock
-                                                </div>
+                                                {line.stock_on_hand !== undefined && line.stock_on_hand !== null && (
+                                                    <div className={`text-xs font-medium ${Number(line.stock_on_hand) > 0 ? 'text-gray-500 dark:text-slate-400' : 'text-danger-600 dark:text-danger-400'}`}>
+                                                        {Number(line.stock_on_hand) || 0} in stock
+                                                    </div>
+                                                )}
                                             </div>
                                             <div className="flex items-center gap-1">
                                                 <button
