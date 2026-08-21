@@ -16,6 +16,78 @@ void InfoTip;
 import { format, parseISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
+const ALL_STATUSES = ['Paid', 'Partially Paid', 'Unpaid', 'Partially Refunded', 'Fully Refunded', 'Cancelled'];
+const DEFAULT_STATUSES = ALL_STATUSES.filter(s => s !== 'Cancelled'); // hide voided by default
+
+// Dropdown with checkboxes for selecting multiple invoice statuses to filter by
+const StatusMultiSelect = ({ selected, onChange }) => {
+    const [open, setOpen] = useState(false);
+    const containerRef = useRef(null);
+
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (containerRef.current && !containerRef.current.contains(e.target)) {
+                setOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const toggleStatus = (status) => {
+        if (selected.includes(status)) {
+            onChange(selected.filter(s => s !== status));
+        } else {
+            onChange([...selected, status]);
+        }
+    };
+
+    const label = () => {
+        if (selected.length === 0) return 'No statuses selected';
+        if (selected.length === ALL_STATUSES.length) return 'All statuses';
+        if (selected.length === DEFAULT_STATUSES.length && DEFAULT_STATUSES.every(s => selected.includes(s))) return 'Active (hiding voided)';
+        if (selected.length <= 2) return selected.join(', ');
+        return `${selected.length} statuses selected`;
+    };
+
+    return (
+        <div className="relative" ref={containerRef}>
+            <button
+                type="button"
+                onClick={() => setOpen(o => !o)}
+                className="w-full flex items-center justify-between px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm truncate"
+            >
+                <span className="truncate">{label()}</span>
+                <svg className={`w-4 h-4 ml-2 flex-shrink-0 transform transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+            </button>
+            {open && (
+                <div className="absolute z-20 mt-1 w-64 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg shadow-lg p-2">
+                    <div className="flex items-center justify-between px-1 pb-2 mb-1 border-b border-gray-100 dark:border-slate-700">
+                        <button type="button" onClick={() => onChange(DEFAULT_STATUSES)} className="text-xs text-primary-600 dark:text-primary-400 hover:underline">Hide voided</button>
+                        <button type="button" onClick={() => onChange(ALL_STATUSES)} className="text-xs text-primary-600 dark:text-primary-400 hover:underline">Select all</button>
+                        <button type="button" onClick={() => onChange([])} className="text-xs text-gray-500 dark:text-slate-400 hover:underline">Clear</button>
+                    </div>
+                    {ALL_STATUSES.map(status => (
+                        <label key={status} className="flex items-center gap-2 px-1 py-1.5 rounded hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer text-sm text-gray-700 dark:text-slate-200">
+                            <input
+                                type="checkbox"
+                                checked={selected.includes(status)}
+                                onChange={() => toggleStatus(status)}
+                                className="rounded border-gray-300 dark:border-slate-600 text-primary-600 focus:ring-primary-500"
+                            />
+                            {status}
+                        </label>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+// See the import-void comment above; the JSX-usage analyzer here doesn't track locally defined components either.
+void StatusMultiSelect;
+
 // Helper function to get badge styles based on status
 const getStatusBadge = (status) => {
     switch (status) {
@@ -40,6 +112,7 @@ const getStatusBadge = (status) => {
 const SalesHistoryPage = () => {
     const { settings } = useSettings();
     const [invoices, setInvoices] = useState([]);
+    const [financialSummary, setFinancialSummary] = useState(null); // Backend-aggregated stats for the full filtered range
     const [payments, setPayments] = useState([]); // Phase 1 payments for cash metrics
     const [paymentMethods, setPaymentMethods] = useState([]); // Configurable payment methods
     const [refundsApprox, setRefundsApprox] = useState(0); // TEMP approximate refunds treated as cash out
@@ -56,7 +129,12 @@ const SalesHistoryPage = () => {
     const [query, setQuery] = useState('');
     const [debouncedQuery, setDebouncedQuery] = useState('');
     const debounceRef = useRef(null);
-    
+    const [statusFilter, setStatusFilter] = useState(DEFAULT_STATUSES);
+    const [page, setPage] = useState(1);
+    const [total, setTotal] = useState(0);
+    const [pageSize] = useState(100);
+    const [exporting, setExporting] = useState(false);
+
     const [selectedInvoice, setSelectedInvoice] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     // Persisted collapsed state (default: hidden)
@@ -71,90 +149,28 @@ const SalesHistoryPage = () => {
     const summaryRef = useRef(null);
     const [maxHeight, setMaxHeight] = useState('0px');
 
-    // Pure computation of enhanced stats leveraging refunded_amount, net_amount, balance_due + Phase 1 cash metrics
+    // Combines the backend-aggregated financial summary (accurate over the FULL filtered date range,
+    // independent of table pagination) with client-side cash/payment metrics computed from the
+    // (unpaginated) payments list for the same range.
     const stats = useMemo(() => {
-        if (!Array.isArray(invoices) || invoices.length === 0) {
-            return {
-                grossSales: 0,
-                refunds: 0,
-                netSales: 0,
-                vatCollected: 0,
-                arOutstanding: 0,
-                invoicesIssued: 0,
-                netActiveInvoices: 0,
-                avgNetInvoice: 0,
-                topCustomer: '-',
-                topCustomerNet: 0,
-                topCustomerShare: 0,
-                refundRate: 0,
-                cashCollectedNet: 0,
-                nonCashCollected: 0,
-                expectedNetCashDrawer: 0,
-                cashMix: 0,
-                cashInflow: 0,
-                changeReturned: 0,
-                refundsApprox: 0,
-                totalCollections: 0,
-                amountCollected: 0,
-                collectionRate: 0,
-                paymentMethodBreakdown: {}
-            };
-        }
-
         const currencySafeNumber = (v) => {
             const n = parseFloat(v);
             return Number.isFinite(n) ? n : 0;
         };
 
-        const active = invoices.filter(inv => inv.status !== 'Cancelled');
+        const grossSalesExclTax = currencySafeNumber(financialSummary?.gross_sales);
+        const taxTotal = currencySafeNumber(financialSummary?.vat_total);
+        const refundsExclTax = currencySafeNumber(financialSummary?.refunds);
+        const refundTaxTotal = currencySafeNumber(financialSummary?.refund_vat_total);
+        const arOutstanding = currencySafeNumber(financialSummary?.ar_outstanding);
+        const amountCollected = currencySafeNumber(financialSummary?.amount_collected);
+        const invoicesIssued = parseInt(financialSummary?.invoices_issued, 10) || 0;
+        const netActiveInvoices = parseInt(financialSummary?.net_active_invoices, 10) || 0;
+        const topCustomer = financialSummary?.top_customer || '-';
+        const topCustomerNet = currencySafeNumber(financialSummary?.top_customer_net);
 
-        let grossSalesExclTax = 0;
-        let taxTotal = 0;
-        let refundsExclTax = 0;
-        let refundTaxTotal = 0;
-        let arOutstanding = 0;
-        let amountCollected = 0;
-
-        const customerNetMap = {};
-        let netActiveInvoices = 0;
-
-        for (const inv of active) {
-            // Financials (Tax Exclusive)
-            const grossLine = currencySafeNumber(inv.subtotal_ex_tax !== undefined ? inv.subtotal_ex_tax : inv.total_amount);
-            const vatLine = currencySafeNumber(inv.tax_total || 0);
-            const refundLine = currencySafeNumber(inv.refunded_amount_ex_tax !== undefined ? inv.refunded_amount_ex_tax : inv.refunded_amount);
-            const refundVatLine = currencySafeNumber(inv.refunded_tax_total || 0);
-
-            const net = Math.max(grossLine - refundLine, 0);
-
-            grossSalesExclTax += grossLine;
-            taxTotal += vatLine;
-            refundsExclTax += refundLine;
-            refundTaxTotal += refundVatLine;
-
-            // Receivables (Tax Inclusive)
-            const netInclusive = currencySafeNumber(inv.net_amount !== undefined ? inv.net_amount : Math.max(currencySafeNumber(inv.total_amount) - currencySafeNumber(inv.refunded_amount), 0));
-            const collected = Math.min(currencySafeNumber(inv.amount_paid), netInclusive);
-            const balanceRaw = inv.balance_due !== undefined ? currencySafeNumber(inv.balance_due) : (netInclusive - collected);
-            
-            arOutstanding += Math.max(balanceRaw, 0);
-            amountCollected += collected;
-
-            if (net > 0) netActiveInvoices += 1;
-
-            const customerName = `${inv.customer_first_name || ''} ${inv.customer_last_name || ''}`.trim() || 'Unknown';
-            customerNetMap[customerName] = (customerNetMap[customerName] || 0) + net;
-        }
-
-        const invoicesIssued = active.length;
         const avgNetInvoice = netActiveInvoices > 0 ? (grossSalesExclTax - refundsExclTax) / netActiveInvoices : 0;
         const refundRate = grossSalesExclTax > 0 ? Math.min(refundsExclTax / grossSalesExclTax, 1) : 0;
-
-        let topCustomer = '-';
-        let topCustomerNet = 0;
-        for (const [cust, val] of Object.entries(customerNetMap)) {
-            if (val > topCustomerNet) { topCustomer = cust; topCustomerNet = val; }
-        }
         const topCustomerShare = (grossSalesExclTax - refundsExclTax) > 0 ? topCustomerNet / (grossSalesExclTax - refundsExclTax) : 0;
 
         const getCashMethodNames = () => {
@@ -168,7 +184,7 @@ const SalesHistoryPage = () => {
         };
 
         const cashMethodNames = getCashMethodNames();
-        const currentInvoiceNumbers = new Set(active.map(inv => inv.invoice_number));
+        const currentInvoiceNumbers = new Set(financialSummary?.active_invoice_numbers || []);
 
         let cashCollected = 0; let nonCashCollected = 0; let changeReturned = 0;
         for (const p of payments) {
@@ -247,7 +263,7 @@ const SalesHistoryPage = () => {
             collectionRate: (grossSalesExclTax - refundsExclTax) > 0 ? Math.min(amountCollected / (grossSalesExclTax - refundsExclTax + taxTotal - refundTaxTotal), 1) : 0,
             paymentMethodBreakdown
         };
-    }, [invoices, payments, refundsApprox, paymentMethods, settings?.ENABLE_SPLIT_PAYMENTS]);
+    }, [financialSummary, payments, refundsApprox, paymentMethods, settings?.ENABLE_SPLIT_PAYMENTS]);
 
     // Keep maxHeight in sync to animate expand/collapse
     useEffect(() => {
@@ -313,19 +329,73 @@ const SalesHistoryPage = () => {
     }, [summaryCollapsed]);
 
 
+    // undefined = no status filter (all); a comma-joined list = filter to that IN-set.
+    // An empty selection is handled separately (short-circuited before hitting the network).
+    const statusParam = statusFilter.length > 0 && statusFilter.length < ALL_STATUSES.length
+        ? statusFilter.join(',')
+        : undefined;
+
     const fetchInvoices = useMemo(() => {
         return async () => {
+            if (statusFilter.length === 0) {
+                setInvoices([]);
+                setTotal(0);
+                return;
+            }
             setLoading(true);
             try {
-                const response = await api.get('/invoices', { params: { ...dates, q: debouncedQuery || undefined } });
-                setInvoices(response.data);
+                const response = await api.get('/invoices', {
+                    params: { ...dates, q: debouncedQuery || undefined, status: statusParam, page, pageSize }
+                });
+                setInvoices(response.data.rows || []);
+                setTotal(response.data.total || 0);
             } catch {
                 toast.error('Failed to fetch sales history.');
             } finally {
                 setLoading(false);
             }
         };
+    }, [dates, debouncedQuery, statusFilter, statusParam, page, pageSize]);
+
+    const fetchSummary = useMemo(() => {
+        return async () => {
+            try {
+                const response = await api.get('/invoices/summary', {
+                    params: { ...dates, q: debouncedQuery || undefined }
+                });
+                setFinancialSummary(response.data);
+            } catch {
+                setFinancialSummary(null);
+            }
+        };
     }, [dates, debouncedQuery]);
+
+    const handleExport = async () => {
+        if (statusFilter.length === 0) {
+            toast.error('Select at least one status to export.');
+            return;
+        }
+        setExporting(true);
+        try {
+            const response = await api.get('/invoices/export', {
+                params: { ...dates, q: debouncedQuery || undefined, status: statusParam },
+                responseType: 'blob'
+            });
+            const blob = new Blob([response.data], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `sales-history-${dates.startDate}-to-${dates.endDate}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+        } catch {
+            toast.error('Failed to export sales history.');
+        } finally {
+            setExporting(false);
+        }
+    };
 
     const fetchPayments = useMemo(() => {
         return async () => {
@@ -369,9 +439,9 @@ const SalesHistoryPage = () => {
     const fullRefresh = useMemo(() => {
         return async () => {
             // run the refreshes in parallel where sensible
-            await Promise.allSettled([fetchInvoices(), fetchPayments(), fetchRefundsApprox(), fetchPaymentMethods()]);
+            await Promise.allSettled([fetchInvoices(), fetchSummary(), fetchPayments(), fetchRefundsApprox(), fetchPaymentMethods()]);
         };
-    }, [fetchInvoices, fetchPayments, fetchRefundsApprox, fetchPaymentMethods]);
+    }, [fetchInvoices, fetchSummary, fetchPayments, fetchRefundsApprox, fetchPaymentMethods]);
 
     // Listen for external invoice changes so this page can react (e.g., deletions from other pages)
     useEffect(() => {
@@ -384,8 +454,18 @@ const SalesHistoryPage = () => {
         return () => window.removeEventListener('invoices:changed', handler);
     }, [fullRefresh, loading]);
 
+    // Reset to page 1 whenever the filters (other than page itself) change
+    useEffect(() => {
+        setPage(1);
+    }, [dates, debouncedQuery, statusFilter]);
+
     useEffect(() => {
         fetchInvoices();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dates, debouncedQuery, statusFilter, page, pageSize]);
+
+    useEffect(() => {
+        fetchSummary();
         fetchPayments();
         fetchRefundsApprox();
         fetchPaymentMethods();
@@ -466,18 +546,32 @@ const SalesHistoryPage = () => {
                         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">End Date</label>
                         <input type="date" name="endDate" value={dates.endDate} onChange={handleDateChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500" />
                     </div>
-                    <div className="md:col-span-2">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Status</label>
+                        <StatusMultiSelect selected={statusFilter} onChange={setStatusFilter} />
+                    </div>
+                    <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Search</label>
                         <input
                             type="text"
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
-                            placeholder="Search invoice #, physical receipt no., customer, or item..."
+                            placeholder="Invoice #, receipt #, customer, or item..."
                             className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
                         />
                     </div>
                     <div className="md:col-span-3">
                        <DateRangeShortcuts onSelect={setDates} />
+                    </div>
+                    <div className="flex justify-end">
+                        <button
+                            type="button"
+                            onClick={handleExport}
+                            disabled={exporting}
+                            className="w-full md:w-auto px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 bg-white dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                            {exporting ? 'Exporting…' : 'Export CSV'}
+                        </button>
                     </div>
                 </div>
             </div>
@@ -806,9 +900,35 @@ const SalesHistoryPage = () => {
                         </table>
                     </div>
                 )}
+                {!loading && total > 0 && (
+                    <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100 dark:border-slate-700">
+                        <div className="text-sm text-gray-500 dark:text-slate-400">
+                            Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, total)} of {total}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setPage(p => Math.max(p - 1, 1))}
+                                disabled={page <= 1}
+                                className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 bg-white dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                Previous
+                            </button>
+                            <span className="text-sm text-gray-500 dark:text-slate-400">Page {page} of {Math.max(Math.ceil(total / pageSize), 1)}</span>
+                            <button
+                                type="button"
+                                onClick={() => setPage(p => (p * pageSize < total ? p + 1 : p))}
+                                disabled={page * pageSize >= total}
+                                className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 bg-white dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
-            
-            <InvoiceDetailsModal 
+
+            <InvoiceDetailsModal
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
                 invoice={selectedInvoice}
