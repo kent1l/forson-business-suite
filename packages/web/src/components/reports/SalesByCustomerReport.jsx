@@ -10,6 +10,7 @@ import { sortData } from '../../utils/sortData';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 import StatusMultiSelect, { ALL_STATUSES, DEFAULT_STATUSES } from '../ui/StatusMultiSelect';
+import DateRangeShortcuts from '../ui/DateRangeShortcuts';
 
 const asArray = (value) => (Array.isArray(value) ? value : []);
 
@@ -46,6 +47,11 @@ const SalesByCustomerReport = () => {
 
     const handleStatusChange = (statuses) => {
         setStatusFilter(statuses);
+        setPage(1);
+    };
+
+    const handleDateRangeSelect = (range) => {
+        setFilters(prev => ({ ...prev, ...range }));
         setPage(1);
     };
 
@@ -116,6 +122,9 @@ const SalesByCustomerReport = () => {
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Status</label>
                         <StatusMultiSelect selected={statusFilter} onChange={handleStatusChange} />
+                    </div>
+                    <div className="md:col-span-4">
+                        <DateRangeShortcuts onSelect={handleDateRangeSelect} />
                     </div>
                     <div className="flex space-x-2">
                         <button onClick={() => fetchReport('json')} disabled={loading} className="w-full bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition disabled:opacity-50 cursor-pointer">View Report</button>

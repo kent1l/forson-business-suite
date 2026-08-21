@@ -9,6 +9,7 @@ import { sortData } from '../../utils/sortData';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 import StatusMultiSelect, { ALL_STATUSES, DEFAULT_STATUSES } from '../ui/StatusMultiSelect';
+import DateRangeShortcuts from '../ui/DateRangeShortcuts';
 
 const TopSellingReport = () => {
     const { settings } = useSettings();
@@ -108,6 +109,9 @@ const TopSellingReport = () => {
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Status</label>
                         <StatusMultiSelect selected={statusFilter} onChange={setStatusFilter} />
+                    </div>
+                    <div className="md:col-span-3">
+                        <DateRangeShortcuts onSelect={setDates} />
                     </div>
                     <div className="flex space-x-2">
                         <button onClick={() => fetchReport('json')} disabled={loading} className="w-full bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition disabled:opacity-50 cursor-pointer">
