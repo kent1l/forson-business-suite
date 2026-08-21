@@ -16,6 +16,78 @@ void InfoTip;
 import { format, parseISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
+const ALL_STATUSES = ['Paid', 'Partially Paid', 'Unpaid', 'Partially Refunded', 'Fully Refunded', 'Cancelled'];
+const DEFAULT_STATUSES = ALL_STATUSES.filter(s => s !== 'Cancelled'); // hide voided by default
+
+// Dropdown with checkboxes for selecting multiple invoice statuses to filter by
+const StatusMultiSelect = ({ selected, onChange }) => {
+    const [open, setOpen] = useState(false);
+    const containerRef = useRef(null);
+
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (containerRef.current && !containerRef.current.contains(e.target)) {
+                setOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const toggleStatus = (status) => {
+        if (selected.includes(status)) {
+            onChange(selected.filter(s => s !== status));
+        } else {
+            onChange([...selected, status]);
+        }
+    };
+
+    const label = () => {
+        if (selected.length === 0) return 'No statuses selected';
+        if (selected.length === ALL_STATUSES.length) return 'All statuses';
+        if (selected.length === DEFAULT_STATUSES.length && DEFAULT_STATUSES.every(s => selected.includes(s))) return 'Active (hiding voided)';
+        if (selected.length <= 2) return selected.join(', ');
+        return `${selected.length} statuses selected`;
+    };
+
+    return (
+        <div className="relative" ref={containerRef}>
+            <button
+                type="button"
+                onClick={() => setOpen(o => !o)}
+                className="w-full flex items-center justify-between px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm truncate"
+            >
+                <span className="truncate">{label()}</span>
+                <svg className={`w-4 h-4 ml-2 flex-shrink-0 transform transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+            </button>
+            {open && (
+                <div className="absolute z-20 mt-1 w-64 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg shadow-lg p-2">
+                    <div className="flex items-center justify-between px-1 pb-2 mb-1 border-b border-gray-100 dark:border-slate-700">
+                        <button type="button" onClick={() => onChange(DEFAULT_STATUSES)} className="text-xs text-primary-600 dark:text-primary-400 hover:underline">Hide voided</button>
+                        <button type="button" onClick={() => onChange(ALL_STATUSES)} className="text-xs text-primary-600 dark:text-primary-400 hover:underline">Select all</button>
+                        <button type="button" onClick={() => onChange([])} className="text-xs text-gray-500 dark:text-slate-400 hover:underline">Clear</button>
+                    </div>
+                    {ALL_STATUSES.map(status => (
+                        <label key={status} className="flex items-center gap-2 px-1 py-1.5 rounded hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer text-sm text-gray-700 dark:text-slate-200">
+                            <input
+                                type="checkbox"
+                                checked={selected.includes(status)}
+                                onChange={() => toggleStatus(status)}
+                                className="rounded border-gray-300 dark:border-slate-600 text-primary-600 focus:ring-primary-500"
+                            />
+                            {status}
+                        </label>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+// See the import-void comment above; the JSX-usage analyzer here doesn't track locally defined components either.
+void StatusMultiSelect;
+
 // Helper function to get badge styles based on status
 const getStatusBadge = (status) => {
     switch (status) {
@@ -57,7 +129,7 @@ const SalesHistoryPage = () => {
     const [query, setQuery] = useState('');
     const [debouncedQuery, setDebouncedQuery] = useState('');
     const debounceRef = useRef(null);
-    const [statusFilter, setStatusFilter] = useState('active');
+    const [statusFilter, setStatusFilter] = useState(DEFAULT_STATUSES);
     const [page, setPage] = useState(1);
     const [total, setTotal] = useState(0);
     const [pageSize] = useState(100);
@@ -257,12 +329,23 @@ const SalesHistoryPage = () => {
     }, [summaryCollapsed]);
 
 
+    // undefined = no status filter (all); a comma-joined list = filter to that IN-set.
+    // An empty selection is handled separately (short-circuited before hitting the network).
+    const statusParam = statusFilter.length > 0 && statusFilter.length < ALL_STATUSES.length
+        ? statusFilter.join(',')
+        : undefined;
+
     const fetchInvoices = useMemo(() => {
         return async () => {
+            if (statusFilter.length === 0) {
+                setInvoices([]);
+                setTotal(0);
+                return;
+            }
             setLoading(true);
             try {
                 const response = await api.get('/invoices', {
-                    params: { ...dates, q: debouncedQuery || undefined, status: statusFilter, page, pageSize }
+                    params: { ...dates, q: debouncedQuery || undefined, status: statusParam, page, pageSize }
                 });
                 setInvoices(response.data.rows || []);
                 setTotal(response.data.total || 0);
@@ -272,7 +355,7 @@ const SalesHistoryPage = () => {
                 setLoading(false);
             }
         };
-    }, [dates, debouncedQuery, statusFilter, page, pageSize]);
+    }, [dates, debouncedQuery, statusFilter, statusParam, page, pageSize]);
 
     const fetchSummary = useMemo(() => {
         return async () => {
@@ -288,10 +371,14 @@ const SalesHistoryPage = () => {
     }, [dates, debouncedQuery]);
 
     const handleExport = async () => {
+        if (statusFilter.length === 0) {
+            toast.error('Select at least one status to export.');
+            return;
+        }
         setExporting(true);
         try {
             const response = await api.get('/invoices/export', {
-                params: { ...dates, q: debouncedQuery || undefined, status: statusFilter },
+                params: { ...dates, q: debouncedQuery || undefined, status: statusParam },
                 responseType: 'blob'
             });
             const blob = new Blob([response.data], { type: 'text/csv' });
@@ -461,20 +548,7 @@ const SalesHistoryPage = () => {
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Status</label>
-                        <select
-                            value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                        >
-                            <option value="active">Active (hide voided)</option>
-                            <option value="all">All statuses</option>
-                            <option value="Paid">Paid</option>
-                            <option value="Partially Paid">Partially Paid</option>
-                            <option value="Unpaid">Unpaid</option>
-                            <option value="Partially Refunded">Partially Refunded</option>
-                            <option value="Fully Refunded">Fully Refunded</option>
-                            <option value="Cancelled">Cancelled (voided)</option>
-                        </select>
+                        <StatusMultiSelect selected={statusFilter} onChange={setStatusFilter} />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Search</label>

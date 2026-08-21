@@ -12,19 +12,34 @@ const router = express.Router();
 
 const KNOWN_INVOICE_STATUSES = ['Paid', 'Partially Paid', 'Unpaid', 'Partially Refunded', 'Fully Refunded', 'Cancelled'];
 
+// Parses the `status` query param into either 'active' (exclude Cancelled), an array of
+// known statuses to filter to (IN-list; supports multi-select), or null (no status filter).
+// Accepts a single string, a comma-separated string ("Paid,Unpaid"), or an array (repeated query params).
+function normalizeStatusFilter(status) {
+    if (!status) return null;
+    if (status === 'active') return 'active';
+    if (status === 'all') return null;
+    const list = Array.isArray(status) ? status : String(status).split(',');
+    const known = list.map(s => s.trim()).filter(s => KNOWN_INVOICE_STATUSES.includes(s));
+    return known.length > 0 ? known : null;
+}
+
 // Shared WHERE-clause builder for the invoice listing/export endpoints.
-// status: 'active' excludes Cancelled (the default for Sales History); a known status filters to it exactly; anything else (e.g. 'all') applies no status filter.
+// status: 'active' excludes Cancelled (the default for Sales History); an array of known
+// statuses filters to that set (multi-select); anything else (e.g. 'all'/omitted) applies no status filter.
 function buildInvoiceFilters({ startDate, endDate, q, status }) {
     const params = [startDate, endDate];
     const whereClauses = [
         '(i.invoice_date AT TIME ZONE \'Asia/Manila\')::date BETWEEN $1 AND $2'
     ];
 
-    if (status === 'active') {
+    const statusFilter = normalizeStatusFilter(status);
+    if (statusFilter === 'active') {
         whereClauses.push(`i.status <> 'Cancelled'`);
-    } else if (KNOWN_INVOICE_STATUSES.includes(status)) {
-        params.push(status);
-        whereClauses.push(`i.status = $${params.length}`);
+    } else if (Array.isArray(statusFilter)) {
+        const placeholders = statusFilter.map((_, idx) => `$${params.length + idx + 1}`).join(', ');
+        params.push(...statusFilter);
+        whereClauses.push(`i.status IN (${placeholders})`);
     }
 
     if (typeof q === 'string' && q.trim().length > 0) {
