@@ -11,6 +11,8 @@ import { getPaginatedPayload } from '../../utils/paginatedResponse';
 import { sortData } from '../../utils/sortData';
 import { format, parseISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
+import StatusMultiSelect, { ALL_STATUSES, DEFAULT_STATUSES } from '../ui/StatusMultiSelect';
+import DateRangeShortcuts from '../ui/DateRangeShortcuts';
 
 const SalesReport = () => {
     const { settings } = useSettings();
@@ -29,6 +31,7 @@ const SalesReport = () => {
             endDate: dateStr,
         };
     });
+    const [statusFilter, setStatusFilter] = useState(DEFAULT_STATUSES);
 
     const handleDateChange = (e) => {
         const { name, value } = e.target;
@@ -39,13 +42,18 @@ const SalesReport = () => {
         if (!dates.startDate || !dates.endDate) {
             return toast.error('Please select both a start and end date.');
         }
-        
+
         if (format === 'json') setLoading(true);
+
+        const statusParam = statusFilter.length > 0 && statusFilter.length < ALL_STATUSES.length
+            ? statusFilter.join(',')
+            : undefined;
 
         try {
             const response = await api.get('/reports/sales-summary', {
                 params: {
                     ...dates,
+                    status: statusParam,
                     format,
                     page,
                     pageSize,
@@ -76,7 +84,7 @@ const SalesReport = () => {
         } finally {
             if (format === 'json') setLoading(false);
         }
-    }, [dates, page, pageSize, sortConfig]);
+    }, [dates, statusFilter, page, pageSize, sortConfig]);
 
     useEffect(() => {
         fetchReport();
@@ -84,7 +92,7 @@ const SalesReport = () => {
 
     useEffect(() => {
         setPage(1);
-    }, [dates.startDate, dates.endDate]);
+    }, [dates.startDate, dates.endDate, statusFilter]);
 
     const handleSort = (key, direction) => {
         setSortConfig({ key, direction });
@@ -94,7 +102,7 @@ const SalesReport = () => {
     return (
         <>
             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm mb-6">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Start Date</label>
                         <input type="date" name="startDate" value={dates.startDate} onChange={handleDateChange} className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500" />
@@ -102,6 +110,13 @@ const SalesReport = () => {
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">End Date</label>
                         <input type="date" name="endDate" value={dates.endDate} onChange={handleDateChange} className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Status</label>
+                        <StatusMultiSelect selected={statusFilter} onChange={setStatusFilter} />
+                    </div>
+                    <div className="md:col-span-3">
+                        <DateRangeShortcuts onSelect={setDates} />
                     </div>
                     <div className="flex space-x-2">
                         <button onClick={() => fetchReport('json')} disabled={loading} className="w-full bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition disabled:opacity-50 cursor-pointer">
