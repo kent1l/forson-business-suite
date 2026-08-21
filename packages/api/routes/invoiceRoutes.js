@@ -1,4 +1,5 @@
 const express = require('express');
+const { Parser } = require('json2csv');
 const db = require('../db');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatter');
@@ -9,80 +10,62 @@ const arLedger = require('../services/arLedgerService');
 const walletService = require('../services/customerWalletService');
 const router = express.Router();
 
-// GET /invoices - Get all invoices with date filtering and optional search
-router.get('/invoices', protect, hasPermission('invoicing:create'), async (req, res) => {
-    const { startDate, endDate, q } = req.query;
+const KNOWN_INVOICE_STATUSES = ['Paid', 'Partially Paid', 'Unpaid', 'Partially Refunded', 'Fully Refunded', 'Cancelled'];
 
-    if (!startDate || !endDate) {
-        return res.status(400).json({ message: 'Start date and end date are required.' });
+// Shared WHERE-clause builder for the invoice listing/export endpoints.
+// status: 'active' excludes Cancelled (the default for Sales History); a known status filters to it exactly; anything else (e.g. 'all') applies no status filter.
+function buildInvoiceFilters({ startDate, endDate, q, status }) {
+    const params = [startDate, endDate];
+    const whereClauses = [
+        '(i.invoice_date AT TIME ZONE \'Asia/Manila\')::date BETWEEN $1 AND $2'
+    ];
+
+    if (status === 'active') {
+        whereClauses.push(`i.status <> 'Cancelled'`);
+    } else if (KNOWN_INVOICE_STATUSES.includes(status)) {
+        params.push(status);
+        whereClauses.push(`i.status = $${params.length}`);
     }
 
-    try {
-        const params = [startDate, endDate];
-        const whereClauses = [
-            '(i.invoice_date AT TIME ZONE \'Asia/Manila\')::date BETWEEN $1 AND $2'
-        ];
-
-        // Optional q filter: match invoice number, physical receipt no, customer name, or line item display fields
-        let searchParamIndex = null;
-        if (typeof q === 'string' && q.trim().length > 0) {
-            searchParamIndex = params.length + 1; // next $ index
-            params.push(`%${q.trim()}%`);
-            whereClauses.push(`(
-                i.invoice_number ILIKE $${searchParamIndex}
-                OR i.physical_receipt_no ILIKE $${searchParamIndex}
-                OR c.first_name ILIKE $${searchParamIndex}
-                OR c.last_name ILIKE $${searchParamIndex}
-                OR (c.first_name || ' ' || c.last_name) ILIKE $${searchParamIndex}
-                OR EXISTS (
-                    SELECT 1
-                    FROM invoice_line il2
-                    JOIN part p2 ON il2.part_id = p2.part_id
-                    LEFT JOIN brand b2 ON p2.brand_id = b2.brand_id
-                    LEFT JOIN "group" g2 ON p2.group_id = g2.group_id
-                    WHERE il2.invoice_id = i.invoice_id
-                      AND (
-                        p2.detail ILIKE $${searchParamIndex}
-                        OR b2.brand_name ILIKE $${searchParamIndex}
-                        OR g2.group_name ILIKE $${searchParamIndex}
-                        OR EXISTS (
-                            SELECT 1 FROM part_number pn2
-                            WHERE pn2.part_id = p2.part_id AND pn2.part_number ILIKE $${searchParamIndex}
-                        )
-                      )
+    if (typeof q === 'string' && q.trim().length > 0) {
+        const searchParamIndex = params.length + 1; // next $ index
+        params.push(`%${q.trim()}%`);
+        whereClauses.push(`(
+            i.invoice_number ILIKE $${searchParamIndex}
+            OR i.physical_receipt_no ILIKE $${searchParamIndex}
+            OR c.first_name ILIKE $${searchParamIndex}
+            OR c.last_name ILIKE $${searchParamIndex}
+            OR (c.first_name || ' ' || c.last_name) ILIKE $${searchParamIndex}
+            OR EXISTS (
+                SELECT 1
+                FROM invoice_line il2
+                JOIN part p2 ON il2.part_id = p2.part_id
+                LEFT JOIN brand b2 ON p2.brand_id = b2.brand_id
+                LEFT JOIN "group" g2 ON p2.group_id = g2.group_id
+                WHERE il2.invoice_id = i.invoice_id
+                  AND (
+                    p2.detail ILIKE $${searchParamIndex}
+                    OR b2.brand_name ILIKE $${searchParamIndex}
+                    OR g2.group_name ILIKE $${searchParamIndex}
+                    OR EXISTS (
+                        SELECT 1 FROM part_number pn2
+                        WHERE pn2.part_id = p2.part_id AND pn2.part_number ILIKE $${searchParamIndex}
+                    )
+                  )
                 )
             )`);
-        }
+    }
 
-        const query = `
-            SELECT
-                i.*,
-                c.first_name as customer_first_name,
-                c.last_name as customer_last_name,
-                e.first_name as employee_first_name,
-                e.last_name as employee_last_name,
-                (appr.first_name || ' ' || appr.last_name) as approved_by_name,
-                r.refunded_amount,
-                r.refunded_amount_ex_tax,
-                r.refunded_tax_total,
-                GREATEST(i.total_amount - r.refunded_amount, 0) AS net_amount,
-                GREATEST((i.total_amount - r.refunded_amount) - i.amount_paid, 0) AS balance_due,
-                CASE 
-                    WHEN i.due_date IS NULL THEN NULL
-                    WHEN i.due_date < CURRENT_TIMESTAMP THEN 
-                        EXTRACT(days FROM CURRENT_TIMESTAMP - i.due_date)::integer
-                    ELSE 0
-                END AS days_overdue,
-                ps.settled_amount,
-                ps.pending_amount,
-                ps.on_account_amount,
-                tb.tax_breakdown
+    return { params, whereClauses };
+}
+
+const INVOICE_SELECT_FROM = `
             FROM invoice i
             JOIN customer c ON i.customer_id = c.customer_id
             JOIN employee e ON i.employee_id = e.employee_id
             LEFT JOIN employee appr ON i.approved_by = appr.employee_id
             LEFT JOIN LATERAL (
-                SELECT 
+                SELECT
                     COALESCE(SUM(cn.total_amount), 0) AS refunded_amount,
                     COALESCE(SUM(cn.subtotal_ex_tax), 0) AS refunded_amount_ex_tax,
                     COALESCE(SUM(cn.tax_total), 0) AS refunded_tax_total
@@ -90,7 +73,7 @@ router.get('/invoices', protect, hasPermission('invoicing:create'), async (req, 
                 WHERE cn.invoice_id = i.invoice_id
             ) r ON TRUE
             LEFT JOIN LATERAL (
-                SELECT 
+                SELECT
                     COALESCE(SUM(CASE WHEN ip.payment_status = 'settled' THEN ip.amount_paid ELSE 0 END), 0) AS settled_amount,
                     COALESCE(SUM(CASE WHEN ip.payment_status = 'pending' THEN ip.amount_paid ELSE 0 END), 0) AS pending_amount,
                     COALESCE(SUM(CASE WHEN ip.payment_status = 'on_account' THEN ip.amount_paid ELSE 0 END), 0) AS on_account_amount
@@ -109,11 +92,163 @@ router.get('/invoices', protect, hasPermission('invoicing:create'), async (req, 
                 FROM invoice_tax_breakdown itb
                 WHERE itb.invoice_id = i.invoice_id
             ) tb ON TRUE
+`;
+
+// GET /invoices - Get invoices with date filtering, optional search/status filter, and pagination
+router.get('/invoices', protect, hasPermission('invoicing:create'), async (req, res) => {
+    const { startDate, endDate, q, status } = req.query;
+
+    if (!startDate || !endDate) {
+        return res.status(400).json({ message: 'Start date and end date are required.' });
+    }
+
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 100, 1), 500);
+
+    try {
+        const { params, whereClauses } = buildInvoiceFilters({ startDate, endDate, q, status });
+
+        const countQuery = `SELECT COUNT(*)::int AS total ${INVOICE_SELECT_FROM} WHERE ${whereClauses.join(' AND ')};`;
+        const countResult = await db.query(countQuery, params);
+        const total = countResult.rows[0]?.total || 0;
+
+        const limitParamIndex = params.length + 1;
+        const offsetParamIndex = params.length + 2;
+        const pagedParams = [...params, pageSize, (page - 1) * pageSize];
+
+        const query = `
+            SELECT
+                i.*,
+                c.first_name as customer_first_name,
+                c.last_name as customer_last_name,
+                e.first_name as employee_first_name,
+                e.last_name as employee_last_name,
+                (appr.first_name || ' ' || appr.last_name) as approved_by_name,
+                r.refunded_amount,
+                r.refunded_amount_ex_tax,
+                r.refunded_tax_total,
+                GREATEST(i.total_amount - r.refunded_amount, 0) AS net_amount,
+                GREATEST((i.total_amount - r.refunded_amount) - i.amount_paid, 0) AS balance_due,
+                CASE
+                    WHEN i.due_date IS NULL THEN NULL
+                    WHEN i.due_date < CURRENT_TIMESTAMP THEN
+                        EXTRACT(days FROM CURRENT_TIMESTAMP - i.due_date)::integer
+                    ELSE 0
+                END AS days_overdue,
+                ps.settled_amount,
+                ps.pending_amount,
+                ps.on_account_amount,
+                tb.tax_breakdown
+            ${INVOICE_SELECT_FROM}
+            WHERE ${whereClauses.join(' AND ')}
+            ORDER BY i.invoice_date DESC
+            LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex};
+        `;
+        const { rows } = await db.query(query, pagedParams);
+        res.json({ rows, total, page, pageSize });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// GET /invoices/export - Export invoices matching the same filters as GET /invoices, as CSV (no pagination)
+router.get('/invoices/export', protect, hasPermission('invoicing:create'), async (req, res) => {
+    const { startDate, endDate, q, status } = req.query;
+
+    if (!startDate || !endDate) {
+        return res.status(400).json({ message: 'Start date and end date are required.' });
+    }
+
+    try {
+        const { params, whereClauses } = buildInvoiceFilters({ startDate, endDate, q, status });
+
+        const query = `
+            SELECT
+                i.invoice_number,
+                i.physical_receipt_no,
+                i.invoice_date,
+                e.first_name || ' ' || e.last_name AS issuer,
+                (appr.first_name || ' ' || appr.last_name) AS approved_by_name,
+                c.first_name || ' ' || c.last_name AS customer,
+                i.status,
+                i.total_amount,
+                r.refunded_amount,
+                GREATEST(i.total_amount - r.refunded_amount, 0) AS net_amount,
+                i.amount_paid,
+                GREATEST((i.total_amount - r.refunded_amount) - i.amount_paid, 0) AS balance_due
+            ${INVOICE_SELECT_FROM}
             WHERE ${whereClauses.join(' AND ')}
             ORDER BY i.invoice_date DESC;
         `;
         const { rows } = await db.query(query, params);
-        res.json(rows);
+        const parser = new Parser();
+        const csv = parser.parse(rows);
+        res.header('Content-Type', 'text/csv').attachment(`sales-history-${startDate}-to-${endDate}.csv`).send(csv);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// GET /invoices/summary - Aggregated financial stats for a date range/search, independent of table pagination.
+// Always excludes Cancelled invoices (status: 'active'), regardless of the caller's table status filter, matching
+// how the Sales History summary panel has always reported active (non-voided) figures.
+router.get('/invoices/summary', protect, hasPermission('invoicing:create'), async (req, res) => {
+    const { startDate, endDate, q } = req.query;
+
+    if (!startDate || !endDate) {
+        return res.status(400).json({ message: 'Start date and end date are required.' });
+    }
+
+    try {
+        const { params, whereClauses } = buildInvoiceFilters({ startDate, endDate, q, status: 'active' });
+
+        const query = `
+            WITH filtered AS (
+                SELECT
+                    i.invoice_number,
+                    COALESCE(i.subtotal_ex_tax, i.total_amount) AS gross_line,
+                    COALESCE(i.tax_total, 0) AS vat_line,
+                    COALESCE(r.refunded_amount_ex_tax, r.refunded_amount, 0) AS refund_line,
+                    COALESCE(r.refunded_tax_total, 0) AS refund_vat_line,
+                    GREATEST(i.total_amount - COALESCE(r.refunded_amount, 0), 0) AS net_inclusive,
+                    i.amount_paid,
+                    NULLIF(TRIM(c.first_name || ' ' || c.last_name), '') AS customer_name
+                ${INVOICE_SELECT_FROM}
+                WHERE ${whereClauses.join(' AND ')}
+            ),
+            per_invoice AS (
+                SELECT
+                    *,
+                    GREATEST(gross_line - refund_line, 0) AS net_excl_tax,
+                    LEAST(amount_paid, net_inclusive) AS collected,
+                    GREATEST(net_inclusive - LEAST(amount_paid, net_inclusive), 0) AS balance
+                FROM filtered
+            ),
+            by_customer AS (
+                SELECT customer_name, SUM(net_excl_tax) AS customer_net
+                FROM per_invoice
+                WHERE customer_name IS NOT NULL
+                GROUP BY customer_name
+                ORDER BY customer_net DESC
+                LIMIT 1
+            )
+            SELECT
+                (SELECT COUNT(*) FROM per_invoice)::int AS invoices_issued,
+                (SELECT COUNT(*) FROM per_invoice WHERE net_excl_tax > 0)::int AS net_active_invoices,
+                COALESCE((SELECT SUM(gross_line) FROM per_invoice), 0) AS gross_sales,
+                COALESCE((SELECT SUM(refund_line) FROM per_invoice), 0) AS refunds,
+                COALESCE((SELECT SUM(vat_line) FROM per_invoice), 0) AS vat_total,
+                COALESCE((SELECT SUM(refund_vat_line) FROM per_invoice), 0) AS refund_vat_total,
+                COALESCE((SELECT SUM(balance) FROM per_invoice), 0) AS ar_outstanding,
+                COALESCE((SELECT SUM(collected) FROM per_invoice), 0) AS amount_collected,
+                (SELECT customer_name FROM by_customer) AS top_customer,
+                COALESCE((SELECT customer_net FROM by_customer), 0) AS top_customer_net,
+                COALESCE((SELECT array_agg(invoice_number) FROM per_invoice), ARRAY[]::text[]) AS active_invoice_numbers;
+        `;
+        const { rows } = await db.query(query, params);
+        res.json(rows[0]);
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
