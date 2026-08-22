@@ -1,19 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
+import MathExpressionInput from './MathExpressionInput';
 
 const PriceQuantityModal = ({ item, onConfirm, onCancel }) => {
     const [price, setPrice] = useState(item.sale_price || 0);
     const [quantity, setQuantity] = useState(1);
-    const priceInputRef = useRef(null);
-
-    useEffect(() => {
-        if (priceInputRef.current) {
-            priceInputRef.current.select();
-        }
-    }, []);
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        onConfirm({ ...item, sale_price: parseFloat(price), quantity: parseInt(quantity, 10) });
+        const p = typeof price === 'number' ? price : (parseFloat(price) || 0);
+        const q = typeof quantity === 'number' ? quantity : (parseFloat(quantity) || 1);
+        onConfirm({ ...item, sale_price: p, quantity: q });
     };
 
     return (
@@ -21,23 +17,21 @@ const PriceQuantityModal = ({ item, onConfirm, onCancel }) => {
             <div className="space-y-4">
                 <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Sale Price</label>
-                    <input
-                        ref={priceInputRef}
-                        type="number"
-                        step="0.01"
+                    <MathExpressionInput
+                        precision={2}
                         value={price}
-                        onChange={(e) => setPrice(e.target.value)}
+                        onChange={(val) => setPrice(val)}
                         className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 text-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                     />
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Quantity</label>
-                    <input
-                        type="number"
+                    <MathExpressionInput
+                        precision={2}
                         value={quantity}
-                        onChange={(e) => setQuantity(e.target.value)}
+                        onChange={(val) => setQuantity(val)}
                         className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 text-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                        min="1"
+                        min={1}
                     />
                 </div>
             </div>

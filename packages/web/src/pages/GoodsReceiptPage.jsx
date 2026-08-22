@@ -11,6 +11,7 @@ import useDraft from '../hooks/useDraft';
 import { formatApplicationText } from '../helpers/applicationTextHelper';
 import { enrichPartsArray } from '../helpers/applicationCache';
 import GoodsReceiptModals from '../components/ui/GoodsReceiptModals';
+import MathExpressionInput from '../components/ui/MathExpressionInput';
 import { formatCurrency } from '../utils/currency';
 
 const GoodsReceiptPage = ({ user, onNavigate }) => {
@@ -247,7 +248,7 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
     };
 
     const handleLineChange = (partId, field, value) => {
-        const numericValue = parseFloat(value) || 0;
+        const numericValue = Number.isFinite(value) ? value : 0;
         setLines(lines.map(line =>
             line.part_id === partId ? { ...line, [field]: numericValue } : line
         ));
@@ -483,31 +484,23 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
                                         </div>
                                     </td>
                                     <td className="p-2 align-middle">
-                                        <input
-                                            type="number"
+                                        <MathExpressionInput
                                             value={line.quantity}
-                                            onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)}
-                                            onFocus={e => e.target.select()}
+                                            onChange={value => handleLineChange(line.part_id, 'quantity', value)}
                                             className={inputClass}
                                         />
                                     </td>
                                     <td className="p-2 align-middle">
-                                        <input
-                                            type="number"
-                                            step="0.01"
+                                        <MathExpressionInput
                                             value={line.cost_price}
-                                            onChange={e => handleLineChange(line.part_id, 'cost_price', e.target.value)}
-                                            onFocus={e => e.target.select()}
+                                            onChange={value => handleLineChange(line.part_id, 'cost_price', value)}
                                             className={inputClass}
                                         />
                                     </td>
                                     <td className="p-2 align-middle">
-                                        <input
-                                            type="number"
-                                            step="0.01"
+                                        <MathExpressionInput
                                             value={line.sale_price}
-                                            onChange={e => handleLineChange(line.part_id, 'sale_price', e.target.value)}
-                                            onFocus={e => e.target.select()}
+                                            onChange={value => handleLineChange(line.part_id, 'sale_price', value)}
                                             className={inputClass}
                                         />
                                     </td>

@@ -12,6 +12,7 @@ import Modal from '../components/ui/Modal';
 import SegmentedTabs from '../components/ui/SegmentedTabs';
 import StatusBadge from '../components/ui/StatusBadge';
 import InfoTip from '../components/ui/InfoTip';
+import MathExpressionInput from '../components/ui/MathExpressionInput';
 import useDeepLink from '../hooks/useDeepLink';
 
 const emptyStats = {
@@ -319,13 +320,13 @@ const PdcTreasuryPage = ({ pageState }) => {
         try {
             if (selectedItem.direction === 'outbound') {
                 await api.post(`/ap/outbound-clearance/${selectedItem.cheque_record_id}/fail`, {
-                    bounce_fee: parseFloat(bounceFeeInput) || 0,
+                    bounce_fee: typeof bounceFeeInput === 'number' ? bounceFeeInput : (parseFloat(bounceFeeInput) || 0),
                     reason: bounceReasonInput || 'NSF / Insufficient Funds',
                 });
             } else {
                 await api.post(`/ar/collections-clearance/${selectedItem.payment_id}/fail`, {
                     source_table: selectedItem.source_table || 'auto',
-                    bounce_fee: parseFloat(bounceFeeInput) || 0,
+                    bounce_fee: typeof bounceFeeInput === 'number' ? bounceFeeInput : (parseFloat(bounceFeeInput) || 0),
                     reason: bounceReasonInput || 'NSF / Insufficient Funds',
                 });
             }
@@ -573,8 +574,12 @@ const PdcTreasuryPage = ({ pageState }) => {
                                         Fee the bank charged for the bounce. Defaults to ₱250.00 for inbound cheques (a fee the business typically absorbs) and ₱0.00 for outbound.
                                     </InfoTip>
                                 </label>
-                                <input type="number" step="0.01" value={bounceFeeInput} onChange={(e) => setBounceFeeInput(e.target.value)}
-                                    className={`${TEXT_INPUT_CLASS} focus:ring-2 focus:ring-danger-500 font-mono`} />
+                                <MathExpressionInput
+                                    precision={2}
+                                    value={bounceFeeInput}
+                                    onChange={(val) => setBounceFeeInput(val)}
+                                    className={`${TEXT_INPUT_CLASS} focus:ring-2 focus:ring-danger-500 font-mono`}
+                                />
                             </div>
                         </div>
                         <div className="flex justify-end gap-3 pt-2">

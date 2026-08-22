@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSettings } from '../../contexts/SettingsContext';
 import InfoTip from './InfoTip';
+import MathExpressionInput from './MathExpressionInput';
 
 const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment, physicalReceipt = '', paymentMethods = [], initialMethod = '' }) => {
     const { settings } = useSettings();
@@ -38,7 +39,8 @@ const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment, physicalReceip
         }
     }, [isOpen, paymentMethods, settings?.PAYMENT_METHODS, initialMethod]);
 
-    const changeDue = (parseFloat(cashTendered) || 0) - total;
+    const tenderAmount = typeof cashTendered === 'number' ? cashTendered : (parseFloat(cashTendered) || 0);
+    const changeDue = tenderAmount - total;
 
     const requirePRN = String(settings?.REQUIRE_PHYSICAL_RECEIPT_NO || '').toLowerCase() === 'true';
 
@@ -55,7 +57,7 @@ const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment, physicalReceip
         
         // Treat empty or zero cash tender as exact cash when confirming
         if (selectedMethod.toLowerCase() === 'cash') {
-            const tender = parseFloat(cashTendered) || 0;
+            const tender = typeof cashTendered === 'number' ? cashTendered : (parseFloat(cashTendered) || 0);
             const amountPaid = tender <= 0 ? total : tender;
             
             const methodId = selectedMethodObj && typeof selectedMethodObj === 'object' ? selectedMethodObj.method_id : selectedMethod;
@@ -106,25 +108,10 @@ const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment, physicalReceip
                                     Leaving this blank or at 0 and confirming treats it as exact change — no change due will be shown.
                                 </InfoTip>
                             </label>
-                            <input
-                                ref={cashInputRef}
-                                type="number"
+                            <MathExpressionInput
+                                precision={2}
                                 value={cashTendered}
-                                onChange={(e) => setCashTendered(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                        e.preventDefault();
-                                        // If user pressed Enter with empty/zero tender, treat as exact cash
-                                        const tender = parseFloat(cashTendered) || 0;
-                                        const amountPaid = tender <= 0 ? total : tender;
-                                        const normalizedPRN = (physicalReceipt || '').trim();
-                                        if (requirePRN && normalizedPRN.length === 0) return;
-                                        
-                                        const methodId = selectedMethodObj && typeof selectedMethodObj === 'object' ? selectedMethodObj.method_id : selectedMethod;
-                                        
-                                        onConfirmPayment(methodId, amountPaid, tender, normalizedPRN, reference);
-                                    }
-                                }}
+                                onChange={(val) => setCashTendered(val)}
                                 className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 text-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                                 placeholder="0.00"
                             />

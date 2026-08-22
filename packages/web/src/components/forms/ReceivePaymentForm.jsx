@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { formatCurrency as currency } from '../../utils/currency';
 import Icon from '../ui/Icon';
 import InfoTip from '../ui/InfoTip';
+import MathExpressionInput from '../ui/MathExpressionInput';
 import { ICONS } from '../../constants';
 
 const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
@@ -73,8 +74,7 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
     }, [totalSplitAmount, autoAllocate]);
 
     const handleAllocationChange = (invoiceId, value) => {
-        const amt = parseFloat(value);
-        setAllocations(a => ({ ...a, [invoiceId]: Number.isFinite(amt) ? value : '' }));
+        setAllocations(a => ({ ...a, [invoiceId]: value }));
     };
 
     const addSplit = () => {
@@ -348,12 +348,11 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                                                 <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-1">Amount</label>
                                                 <div className="relative">
                                                     <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-xs font-bold text-slate-400">₱</span>
-                                                    <input
-                                                        type="number"
-                                                        step="0.01"
+                                                    <MathExpressionInput
+                                                        precision={2}
                                                         className="w-full pl-7 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-xs transition-all"
                                                         value={s.amount}
-                                                        onChange={(e) => updateSplit(s.id, { amount: e.target.value })}
+                                                        onChange={(val) => updateSplit(s.id, { amount: val })}
                                                         placeholder="0.00"
                                                     />
                                                 </div>
@@ -460,16 +459,15 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                                             <div className="col-span-12 md:col-span-3">
                                                 <div className="relative">
                                                     <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-xs font-bold text-slate-400">₱</span>
-                                                    <input
-                                                        type="number"
-                                                        step="0.01"
+                                                    <MathExpressionInput
+                                                        precision={2}
                                                         className={`w-full pl-6 pr-2.5 py-1.5 border rounded-lg text-sm font-mono font-bold transition-all ${
                                                             over
                                                                 ? 'border-red-300 bg-red-50 text-red-900 focus:ring-red-400'
                                                                 : 'border-slate-300 bg-white text-slate-900 focus:ring-indigo-500 focus:border-indigo-500'
                                                         }`}
                                                         value={allocations[inv.invoice_id] || ''}
-                                                        onChange={(e) => handleAllocationChange(inv.invoice_id, e.target.value)}
+                                                        onChange={(val) => handleAllocationChange(inv.invoice_id, val)}
                                                         placeholder="0.00"
                                                     />
                                                 </div>

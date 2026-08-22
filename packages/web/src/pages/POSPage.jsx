@@ -20,6 +20,7 @@ import Combobox from '../components/ui/Combobox';
 import PaymentModal from '../components/ui/PaymentModal';
 import SplitPaymentModal from '../components/ui/SplitPaymentModal';
 import PriceQuantityModal from '../components/ui/PriceQuantityModal';
+import MathExpressionInput from '../components/ui/MathExpressionInput';
 import Receipt from '../components/ui/Receipt';
 import SavedSalesPanel from '../components/pos/SavedSalesPanel';
 
@@ -436,7 +437,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
     };
 
     const handleLineChange = (partId, field, value) => {
-        const numericValue = parseFloat(value);
+        const numericValue = typeof value === 'number' ? value : parseFloat(value);
         setLines(lines.map(line =>
             line.part_id === partId ? { ...line, [field]: isNaN(numericValue) ? '' : numericValue } : line
         ));
@@ -1109,9 +1110,19 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                                     <div className="flex-grow">
                                         <p className="text-sm font-medium text-gray-900 dark:text-slate-100">{line.display_name}</p>
                                         <div className="flex items-center mt-1">
-                                            <input type="number" value={line.quantity} onChange={(e) => handleLineChange(line.part_id, 'quantity', e.target.value)} className="w-16 px-2 py-1 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500" />
+                                            <MathExpressionInput
+                                                precision={2}
+                                                value={line.quantity}
+                                                onChange={(val) => handleLineChange(line.part_id, 'quantity', val)}
+                                                className="w-16 px-2 py-1 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
+                                            />
                                             <span className="mx-2 text-sm text-gray-500 dark:text-slate-400">x</span>
-                                            <input type="number" step="0.01" value={line.sale_price} onChange={(e) => handleLineChange(line.part_id, 'sale_price', e.target.value)} className="w-24 px-2 py-1 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500" />
+                                            <MathExpressionInput
+                                                precision={2}
+                                                value={line.sale_price}
+                                                onChange={(val) => handleLineChange(line.part_id, 'sale_price', val)}
+                                                className="w-24 px-2 py-1 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
+                                            />
                                         </div>
                                     </div>
                                     <p className="text-sm font-semibold pt-1 text-gray-900 dark:text-slate-100">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{(line.quantity * line.sale_price).toFixed(2)}</p>

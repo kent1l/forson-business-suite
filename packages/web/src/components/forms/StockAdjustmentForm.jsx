@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import InfoTip from '../ui/InfoTip';
+import MathExpressionInput from '../ui/MathExpressionInput';
 
 const StockAdjustmentForm = ({ part, user, onSave, onCancel }) => {
     const [quantity, setQuantity] = useState('');
@@ -23,7 +24,7 @@ const StockAdjustmentForm = ({ part, user, onSave, onCancel }) => {
 
     const handleSubmit = useCallback((e) => {
         if (e) e.preventDefault();
-        const numericQuantity = parseFloat(quantity);
+        const numericQuantity = typeof quantity === 'number' ? quantity : parseFloat(quantity);
         if (isNaN(numericQuantity) || numericQuantity === 0) {
             return toast.error('Please enter a valid, non-zero quantity.');
         }
@@ -96,18 +97,16 @@ const StockAdjustmentForm = ({ part, user, onSave, onCancel }) => {
                     </InfoTip>
                 </label>
                 <p className="text-xs text-gray-500 dark:text-slate-400 mb-2">Enter a positive number to add stock (e.g., 5) or a negative number to remove stock (e.g., -2).</p>
-                <input 
-                    ref={quantityInputRef}
-                    type="number"
-                    step="any"
+                <MathExpressionInput 
+                    precision={2}
                     value={quantity} 
-                    onChange={(e) => setQuantity(e.target.value)} 
+                    onChange={(val) => setQuantity(val)} 
                     className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500 font-mono" 
                     required 
                 />
-                {quantity && !isNaN(parseFloat(quantity)) && (
+                {quantity !== '' && !isNaN(parseFloat(quantity)) && (
                     <p className="text-xs text-gray-600 dark:text-slate-400 mt-1">
-                        New stock will be: <span className="font-semibold font-mono text-gray-900 dark:text-slate-100">{Number((part?.stock_on_hand || 0) + parseFloat(quantity)).toLocaleString()}</span>
+                        New stock will be: <span className="font-semibold font-mono text-gray-900 dark:text-slate-100">{Number((part?.stock_on_hand || 0) + (typeof quantity === 'number' ? quantity : parseFloat(quantity))).toLocaleString()}</span>
                     </p>
                 )}
             </div>

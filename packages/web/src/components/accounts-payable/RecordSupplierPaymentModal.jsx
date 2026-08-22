@@ -4,6 +4,7 @@ import api from '../../api';
 import Modal from '../ui/Modal';
 import Combobox from '../ui/Combobox';
 import InfoTip from '../ui/InfoTip';
+import MathExpressionInput from '../ui/MathExpressionInput';
 import { formatCurrency } from '../../utils/currency';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -109,7 +110,7 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        const amount = parseFloat(form.amount);
+        const amount = typeof form.amount === 'number' ? form.amount : parseFloat(form.amount);
         if (!form.supplier_id) { toast.error('Select a supplier'); return; }
         if (!form.method_id) { toast.error('Select a payment method'); return; }
         if (!amount || amount <= 0) { toast.error('Enter a valid payment amount'); return; }
@@ -188,8 +189,14 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                         <label className={labelClass}>Amount</label>
-                        <input type="number" step="0.01" min="0" required value={form.amount}
-                            onChange={(e) => handleChange('amount', e.target.value)} className={inputClass} />
+                        <MathExpressionInput
+                            precision={2}
+                            min={0}
+                            required
+                            value={form.amount}
+                            onChange={(val) => handleChange('amount', val)}
+                            className={inputClass}
+                        />
                         {supplierId && (
                             <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                                 Outstanding: {formatCurrency(totalOutstanding)}
@@ -262,11 +269,15 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
                                                     {bill.due_date ? ` · due ${new Date(bill.due_date).toLocaleDateString()}` : ''}
                                                 </p>
                                             </div>
-                                            <input type="number" step="0.01" min="0" max={outstandingOf(bill)}
+                                            <MathExpressionInput
+                                                precision={2}
+                                                min={0}
+                                                max={outstandingOf(bill)}
                                                 value={allocations[bill.bill_id] || ''}
-                                                onChange={(e) => setAllocations(prev => ({ ...prev, [bill.bill_id]: e.target.value }))}
+                                                onChange={(val) => setAllocations(prev => ({ ...prev, [bill.bill_id]: val }))}
                                                 placeholder="0.00"
-                                                className="w-32 px-2 py-1 text-sm text-right border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-md" />
+                                                className="w-32 px-2 py-1 text-sm text-right border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-md"
+                                            />
                                         </div>
                                     ))}
                                 </div>
