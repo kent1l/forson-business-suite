@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { useSettings } from '../../contexts/SettingsContext';
 import Icon from '../ui/Icon';
 import InfoTip from '../ui/InfoTip';
+import MathExpressionInput from './MathExpressionInput';
 import { ICONS } from '../../constants';
 
 const SplitPaymentModal = ({
@@ -527,14 +528,12 @@ const SplitPaymentModal = ({
                                                 Amount <span className="text-danger-600">*</span>
                                             </label>
                                             <div className="relative">
-                                                <input
-                                                    type="number"
+                                                <MathExpressionInput
+                                                    precision={2}
                                                     value={payment.amount_paid}
-                                                    onChange={(e) => updatePayment(payment.id, 'amount_paid', e.target.value)}
-                                                    onFocus={(e) => e.target.select()}
+                                                    onChange={(val) => updatePayment(payment.id, 'amount_paid', val)}
                                                     className="w-full pr-16 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 shadow-sm focus:ring-primary-500 focus:border-primary-500"
-                                                    min="0"
-                                                    step="0.01"
+                                                    min={0}
                                                     required
                                                 />
                                                 {remaining > 0 && (
@@ -556,14 +555,12 @@ const SplitPaymentModal = ({
                                                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">
                                                     Tendered
                                                 </label>
-                                                <input
-                                                    type="number"
+                                                <MathExpressionInput
+                                                    precision={2}
                                                     value={payment.tendered_amount}
-                                                    onChange={(e) => updatePayment(payment.id, 'tendered_amount', e.target.value)}
-                                                    onFocus={(e) => e.target.select()}
+                                                    onChange={(val) => updatePayment(payment.id, 'tendered_amount', val)}
                                                     className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 shadow-sm focus:ring-primary-500 focus:border-primary-500"
-                                                    min="0"
-                                                    step="0.01"
+                                                    min={0}
                                                     placeholder="Optional for exact amount"
                                                 />
                                             </div>

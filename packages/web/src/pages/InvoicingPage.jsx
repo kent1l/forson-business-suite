@@ -12,6 +12,7 @@ import Combobox from '../components/ui/Combobox';
 import CustomerForm from '../components/forms/CustomerForm';
 import PartForm from '../components/forms/PartForm';
 import SplitPaymentModal from '../components/ui/SplitPaymentModal';
+import MathExpressionInput from '../components/ui/MathExpressionInput';
 import SavedSalesPanel from '../components/pos/SavedSalesPanel';
 import { useSettings } from '../contexts/SettingsContext';
 import { formatApplicationText } from '../helpers/applicationTextHelper';
@@ -283,7 +284,8 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
     });
 
     const handleLineChange = (partId, field, value) => {
-        const numericValue = Math.max(0, parseFloat(value) || 0);
+        const raw = typeof value === 'number' ? value : parseFloat(value);
+        const numericValue = Math.max(0, isNaN(raw) ? 0 : raw);
         setLines(lines.map(line =>
             line.part_id === partId ? { ...line, [field]: numericValue } : line
         ));
@@ -832,9 +834,9 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                             {lines.length > 0 ? lines.map(line => (
                                 <tr key={line.part_id} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200 transition-colors">
                                     <td className="p-4 text-sm font-medium text-gray-900 dark:text-slate-100">{line.display_name}</td>
-                                    <td className="p-4"><input type="number" min="0" value={line.quantity} onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)} onFocus={e => e.target.select()} aria-label={`Quantity for ${line.display_name}`} className="w-full p-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-center font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" /></td>
-                                    <td className="p-4"><input type="number" min="0" step="0.01" value={line.sale_price} onChange={e => handleLineChange(line.part_id, 'sale_price', e.target.value)} onFocus={e => e.target.select()} aria-label={`Sale price for ${line.display_name}`} className="w-full p-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-right font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" /></td>
-                                    <td className="p-4"><input type="number" min="0" step="0.01" value={line.discount_amount || 0} onChange={e => handleLineChange(line.part_id, 'discount_amount', e.target.value)} onFocus={e => e.target.select()} aria-label={`Discount for ${line.display_name}`} className="w-full p-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-right font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" /></td>
+                                    <td className="p-4"><MathExpressionInput precision={2} min={0} value={line.quantity} onChange={val => handleLineChange(line.part_id, 'quantity', val)} aria-label={`Quantity for ${line.display_name}`} className="w-full p-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-center font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" /></td>
+                                    <td className="p-4"><MathExpressionInput precision={2} min={0} value={line.sale_price} onChange={val => handleLineChange(line.part_id, 'sale_price', val)} aria-label={`Sale price for ${line.display_name}`} className="w-full p-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-right font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" /></td>
+                                    <td className="p-4"><MathExpressionInput precision={2} min={0} value={line.discount_amount || 0} onChange={val => handleLineChange(line.part_id, 'discount_amount', val)} aria-label={`Discount for ${line.display_name}`} className="w-full p-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-right font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" /></td>
                                     <td className="p-4">
                                         <select
                                             value={line.tax_rate_id || ''}

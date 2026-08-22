@@ -22,6 +22,7 @@ const MathExpressionInput = ({
     min,
     max,
     onFocus,
+    ...rest
 }) => {
     const [draft, setDraft] = useState(String(value ?? ''));
 
@@ -72,6 +73,7 @@ const MathExpressionInput = ({
             className={className}
             placeholder={placeholder}
             disabled={disabled}
+            {...rest}
         />
     );
 };

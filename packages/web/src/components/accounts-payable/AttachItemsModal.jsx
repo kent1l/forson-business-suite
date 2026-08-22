@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import api from '../../api';
 import Modal from '../ui/Modal';
 import Icon from '../ui/Icon';
+import MathExpressionInput from '../ui/MathExpressionInput';
 import { ICONS } from '../../constants';
 import { formatCurrency } from '../../utils/currency';
 import { enrichPartsArray } from '../../helpers/applicationCache';
@@ -58,7 +59,7 @@ const AttachItemsModal = ({ isOpen, onClose, supplierId, supplierName, bill, onA
     };
 
     const updateLine = (partId, field, value) => {
-        const numeric = parseFloat(value) || 0;
+        const numeric = typeof value === 'number' ? value : (parseFloat(value) || 0);
         setLines(lines.map(l => l.part_id === partId ? { ...l, [field]: numeric } : l));
     };
 
@@ -131,14 +132,20 @@ const AttachItemsModal = ({ isOpen, onClose, supplierId, supplierName, bill, onA
                                 <tr key={line.part_id} className="border-b border-gray-100 dark:border-slate-700">
                                     <td className="p-2 text-gray-800 dark:text-slate-100 truncate max-w-[10rem]">{line.display_name}</td>
                                     <td className="p-2">
-                                        <input type="number" value={line.quantity} onFocus={(e) => e.target.select()}
-                                            onChange={(e) => updateLine(line.part_id, 'quantity', e.target.value)}
-                                            className="w-full h-8 px-1 text-center border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded" />
+                                        <MathExpressionInput
+                                            precision={2}
+                                            value={line.quantity}
+                                            onChange={(val) => updateLine(line.part_id, 'quantity', val)}
+                                            className="w-full h-8 px-1 text-center border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded"
+                                        />
                                     </td>
                                     <td className="p-2">
-                                        <input type="number" step="0.01" value={line.cost_price} onFocus={(e) => e.target.select()}
-                                            onChange={(e) => updateLine(line.part_id, 'cost_price', e.target.value)}
-                                            className="w-full h-8 px-1 text-center border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded" />
+                                        <MathExpressionInput
+                                            precision={2}
+                                            value={line.cost_price}
+                                            onChange={(val) => updateLine(line.part_id, 'cost_price', val)}
+                                            className="w-full h-8 px-1 text-center border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded"
+                                        />
                                     </td>
                                     <td className="p-2 text-right font-mono text-gray-900 dark:text-slate-100">
                                         {formatCurrency((parseFloat(line.quantity) || 0) * (parseFloat(line.cost_price) || 0))}
