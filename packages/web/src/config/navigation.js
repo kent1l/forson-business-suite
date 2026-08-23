@@ -66,6 +66,7 @@ export const CATEGORIES = [
             { name: 'Expenses',           icon: ICONS.receipt, page: 'expenses',           permission: 'expenses:view', keywords: ['spending', 'costs'] },
             { name: 'Expense Categories', icon: ICONS.tag,     page: 'expense_categories', permission: 'expenses:manage_categories', keywords: ['expense types'] },
             { name: 'Learned Terms',      icon: ICONS.star,    page: 'expense_lexicon',    permission: 'expenses:manage_lexicon', keywords: ['expense lexicon', 'ocr terms'] },
+            { name: 'Period Locks',       icon: ICONS.lock,    page: 'expense_period_locks', permission: 'expenses:manage_periods', keywords: ['close period', 'lock month', 'reopen period'] },
             { name: 'Paperless Receipts', icon: ICONS.documents, page: 'paperless_receipts', permission: 'documents:view', keywords: ['ocr', 'scan receipt', 'digital receipts'] },
         ],
     },
