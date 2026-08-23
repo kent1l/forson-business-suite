@@ -24,6 +24,7 @@ const LABEL_CLASS = 'block text-xs font-medium text-gray-600 dark:text-slate-400
 
 const EMPLOYMENT_TYPES = ['Regular', 'Probationary', 'Contractual', 'Project-based', 'Part-time', 'Casual'];
 const EMPLOYMENT_STATUSES = ['Active', 'On Leave', 'Suspended', 'Resigned', 'Terminated', 'Retired'];
+const SEPARATED_STATUSES = ['Resigned', 'Terminated', 'Retired'];
 const CIVIL_STATUSES = ['Single', 'Married', 'Widowed', 'Separated'];
 
 const Field = ({ label, required, error, hint, children, className = '' }) => (
@@ -56,6 +57,7 @@ const EMPTY_FORM = {
     position_title: '', department_id: '', manager_employee_id: '',
     worker_class: 'EMPLOYEE', employment_type: 'Regular', employment_status: 'Active',
     date_hired: '', birth_date: '', gender: '', civil_status: '',
+    date_separated: '', separation_reason: '',
     mobile_no: '', personal_email: '',
     address_line: '', barangay: '', city: '', province: '', postal_code: '',
     emergency_contact_name: '', emergency_contact_relation: '', emergency_contact_phone: '',
@@ -67,6 +69,7 @@ const EMPTY_FORM = {
 // place instead of just refusing to save.
 const FIELD_TAB = {
     first_name: 'personal', last_name: 'personal',
+    date_separated: 'employment',
     username: 'access', password: 'access', permission_level_id: 'access',
 };
 
@@ -121,6 +124,9 @@ const EmployeeForm = ({ employee, onSave, onCancel, roles = [], departments = []
         const found = {};
         if (!formData.first_name.trim()) found.first_name = 'Required';
         if (!formData.last_name.trim()) found.last_name = 'Required';
+        if (SEPARATED_STATUSES.includes(formData.employment_status) && !formData.date_separated) {
+            found.date_separated = 'Required when status is Resigned, Terminated, or Retired';
+        }
         if (!employee && formData.has_system_access) {
             if (!formData.username.trim()) found.username = 'Required to create a login';
             if (!formData.password) found.password = 'Required to create a login';
@@ -331,6 +337,20 @@ const EmployeeForm = ({ employee, onSave, onCancel, roles = [], departments = []
                             <Field label="Date hired">
                                 <input type="date" name="date_hired" value={formData.date_hired} onChange={handleChange} className={INPUT_CLASS} />
                             </Field>
+                            {/* Resigned/Terminated/Retired require a separation date — the
+                                database rejects the status change without one, since payroll
+                                can't tell which days of a cutoff were still employment. */}
+                            {SEPARATED_STATUSES.includes(formData.employment_status) && (
+                                <>
+                                    <Field label="Date separated" required error={err('date_separated')}>
+                                        <input type="date" name="date_separated" value={formData.date_separated}
+                                            onChange={handleChange} className={cls('date_separated')} />
+                                    </Field>
+                                    <Field label="Separation reason">
+                                        <input type="text" name="separation_reason" value={formData.separation_reason} onChange={handleChange} className={INPUT_CLASS} />
+                                    </Field>
+                                </>
+                            )}
                             <Field label="Reports to">
                                 <select name="manager_employee_id" value={formData.manager_employee_id} onChange={handleChange} className={INPUT_CLASS}>
                                     <option value="">No one</option>

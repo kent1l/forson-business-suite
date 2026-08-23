@@ -115,6 +115,16 @@ const EMPLOYEE_PROFILE_COLUMNS = [
     'work_schedule_id',
 ];
 
+// Maps a CHECK constraint name (Postgres error 23514) to a message that tells
+// the caller what to fix, instead of a blanket "invalid" that leaves them
+// guessing which field is wrong.
+const CHECK_CONSTRAINT_MESSAGES = {
+    employee_separation_date_required_chk: 'A separation date is required when status is Resigned, Terminated, or Retired.',
+    employee_separation_after_hire_chk: 'The separation date cannot be earlier than the hire date.',
+};
+const checkConstraintMessage = (err) =>
+    CHECK_CONSTRAINT_MESSAGES[err.constraint] || 'Invalid employment type or status.';
+
 // Narrows a request body to the writable profile columns it actually mentions,
 // normalising empty strings to NULL so blank form fields clear rather than
 // storing ''. Returns a plain { column: value } map.
@@ -546,7 +556,7 @@ router.put('/employees/bulk', protect, hasPermission(['employees:edit', 'hr:mana
         res.json({ updated: updatedEmployees.rowCount });
     } catch (err) {
         if (err.code === '23514') {
-            return res.status(400).json({ message: 'Invalid employment type or status.' });
+            return res.status(400).json({ message: checkConstraintMessage(err) });
         }
         console.error(err.message);
         res.status(500).send('Server Error');
@@ -586,7 +596,7 @@ router.put('/employees/:id', protect, hasPermission(['employees:edit', 'hr:manag
         res.json(updatedEmployee.rows[0]);
     } catch (err) {
         if (err.code === '23514') {
-            return res.status(400).json({ message: 'Invalid employment type or status.' });
+            return res.status(400).json({ message: checkConstraintMessage(err) });
         }
         console.error(err.message);
         res.status(500).send('Server Error');
