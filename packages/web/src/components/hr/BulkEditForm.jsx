@@ -5,22 +5,31 @@ const LABEL_CLASS = 'block text-xs font-medium text-gray-600 dark:text-slate-400
 
 const EMPLOYMENT_TYPES = ['Regular', 'Probationary', 'Contractual', 'Project-based', 'Part-time', 'Casual'];
 const EMPLOYMENT_STATUSES = ['Active', 'On Leave', 'Suspended', 'Resigned', 'Terminated', 'Retired'];
+const SEPARATED_STATUSES = ['Resigned', 'Terminated', 'Retired'];
 
 const BulkEditForm = ({ selectedCount, onSave, onCancel, departments = [], managers = [] }) => {
     const [formData, setFormData] = useState({
         department_id: '',
         employment_type: '',
         employment_status: '',
+        date_separated: '',
+        separation_reason: '',
         manager_employee_id: ''
     });
+    const [error, setError] = useState('');
 
     const handleChange = (e) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
+        if (error) setError('');
     };
 
     const handleSubmit = (e) => {
         e.preventDefault();
+        if (SEPARATED_STATUSES.includes(formData.employment_status) && !formData.date_separated) {
+            setError('Date separated is required when setting status to Resigned, Terminated, or Retired.');
+            return;
+        }
         const payload = {};
         for (const [key, value] of Object.entries(formData)) {
             if (value !== '') {
@@ -60,6 +69,20 @@ const BulkEditForm = ({ selectedCount, onSave, onCancel, departments = [], manag
                         {EMPLOYMENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                 </div>
+                {SEPARATED_STATUSES.includes(formData.employment_status) && (
+                    <>
+                        <div>
+                            <label className={LABEL_CLASS}>Date separated<span className="text-danger-600 ml-0.5" aria-hidden="true">*</span></label>
+                            <input type="date" name="date_separated" value={formData.date_separated} onChange={handleChange} className={INPUT_CLASS} />
+                            <p className="mt-1 text-xs text-gray-400 dark:text-slate-500">Applied to all {selectedCount} selected employees.</p>
+                        </div>
+                        <div>
+                            <label className={LABEL_CLASS}>Separation reason</label>
+                            <input type="text" name="separation_reason" value={formData.separation_reason} onChange={handleChange} className={INPUT_CLASS} />
+                        </div>
+                    </>
+                )}
+                {error && <p className="text-xs text-danger-600">{error}</p>}
                 <div>
                     <label className={LABEL_CLASS}>Reports to</label>
                     <select name="manager_employee_id" value={formData.manager_employee_id} onChange={handleChange} className={INPUT_CLASS}>
