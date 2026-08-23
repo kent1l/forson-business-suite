@@ -5,6 +5,7 @@ import Icon from '../components/ui/Icon';
 import InfoTip from '../components/ui/InfoTip';
 import { ICONS } from '../constants';
 import Modal from '../components/ui/Modal';
+import MathExpressionInput from '../components/ui/MathExpressionInput';
 import { formatPhysicalReceiptNumber } from '../utils/receiptNumberFormatter';
 
 export default function CashierApprovalDesk({ onNavigate }) {
@@ -88,7 +89,7 @@ export default function CashierApprovalDesk({ onNavigate }) {
         try {
             await api.post(`/sales/staging/${selectedSale.id}/approve-post`, {
                 physical_receipt_no: formattedPrn,
-                tendered_amount: editableTendered ? Number(editableTendered) : null,
+                tendered_amount: editableTendered !== '' && editableTendered !== null ? (typeof editableTendered === 'number' ? editableTendered : Number(editableTendered)) : null,
                 customer_id: selectedCustomerId
             });
             toast.success(`Transaction #${selectedSale.id} approved & posted!`);
@@ -153,7 +154,7 @@ export default function CashierApprovalDesk({ onNavigate }) {
     const computedChange = () => {
         if (!selectedSale) return 0;
         const total = parseFloat(selectedSale.total_amount) || 0;
-        const tendered = parseFloat(editableTendered) || 0;
+        const tendered = typeof editableTendered === 'number' ? editableTendered : (parseFloat(editableTendered) || 0);
         return tendered > total ? tendered - total : 0;
     };
 
@@ -359,11 +360,10 @@ export default function CashierApprovalDesk({ onNavigate }) {
                                             Change is calculated automatically as Tendered Amount minus the Grand Total, and only shown when positive.
                                         </InfoTip>
                                     </label>
-                                    <input
-                                        type="number"
-                                        step="0.01"
+                                    <MathExpressionInput
+                                        precision={2}
                                         value={editableTendered}
-                                        onChange={(e) => setEditableTendered(e.target.value)}
+                                        onChange={(val) => setEditableTendered(val)}
                                         className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-mono focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                                         placeholder="0.00"
                                     />

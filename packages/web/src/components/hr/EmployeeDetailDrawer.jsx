@@ -5,6 +5,7 @@ import Drawer from '../ui/Drawer';
 import SegmentedTabs from '../ui/SegmentedTabs';
 import StatusBadge from '../ui/StatusBadge';
 import LoadingState from '../ui/LoadingState';
+import MathExpressionInput from '../ui/MathExpressionInput';
 import { useAuth } from '../../contexts/AuthContext';
 
 /**
@@ -286,8 +287,14 @@ const CompensationTab = ({ employee }) => {
                             <label className="block text-xs text-gray-500 dark:text-slate-400 mb-1">
                                 {isMonthly ? 'Monthly Salary' : 'Daily Rate'}
                             </label>
-                            <input type="number" step="0.01" min="0" required className={INPUT_CLASS} value={form.base_rate}
-                                onChange={(e) => setForm({ ...form, base_rate: e.target.value })} />
+                            <MathExpressionInput
+                                precision={2}
+                                min={0}
+                                required
+                                className={INPUT_CLASS}
+                                value={form.base_rate}
+                                onChange={(val) => setForm({ ...form, base_rate: val })}
+                            />
                         </div>
                         {isMonthly && (
                             <div>
@@ -534,8 +541,15 @@ const PayComponentsTab = ({ employee, canOverride }) => {
                             </optgroup>
                         </select>
                         <div className="grid grid-cols-2 gap-2">
-                            <input type="number" step="0.01" min="0" required placeholder="Amount" className={INPUT_CLASS}
-                                value={cForm.amount} onChange={(e) => setCForm({ ...cForm, amount: e.target.value })} />
+                            <MathExpressionInput
+                                precision={2}
+                                min={0}
+                                required
+                                placeholder="Amount"
+                                className={INPUT_CLASS}
+                                value={cForm.amount}
+                                onChange={(val) => setCForm({ ...cForm, amount: val })}
+                            />
                             <select className={INPUT_CLASS} value={cForm.frequency}
                                 onChange={(e) => setCForm({ ...cForm, frequency: e.target.value })}>
                                 {Object.entries(FREQUENCY_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -606,9 +620,15 @@ const PayComponentsTab = ({ employee, canOverride }) => {
                                     onChange={(e) => setOForm({ ...oForm, component_code: e.target.value })}>
                                     {OVERRIDABLE.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
                                 </select>
-                                <input type="number" step="0.01" min="0" required placeholder="Monthly amount"
-                                    className={INPUT_CLASS} value={oForm.override_amount}
-                                    onChange={(e) => setOForm({ ...oForm, override_amount: e.target.value })} />
+                                <MathExpressionInput
+                                    precision={2}
+                                    min={0}
+                                    required
+                                    placeholder="Monthly amount"
+                                    className={INPUT_CLASS}
+                                    value={oForm.override_amount}
+                                    onChange={(val) => setOForm({ ...oForm, override_amount: val })}
+                                />
                             </div>
                             <input type="date" required className={INPUT_CLASS} value={oForm.effective_from}
                                 onChange={(e) => setOForm({ ...oForm, effective_from: e.target.value })} />

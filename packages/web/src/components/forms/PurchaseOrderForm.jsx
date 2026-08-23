@@ -8,6 +8,7 @@ import Combobox from '../ui/Combobox';
 import SearchBar from '../SearchBar';
 import Modal from '../ui/Modal';
 import PartForm from './PartForm';
+import MathExpressionInput from '../ui/MathExpressionInput';
 import useDraft from '../../hooks/useDraft';
 import { formatApplicationText } from '../../helpers/applicationTextHelper';
 import { enrichPartsArray } from '../../helpers/applicationCache';
@@ -158,7 +159,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
     };
 
     const handleLineChange = (partId, field, value) => {
-        const numericValue = parseFloat(value) || 0;
+        const numericValue = typeof value === 'number' ? value : (parseFloat(value) || 0);
         const newLines = formData.lines.map(line =>
             line.part_id === partId ? { ...line, [field]: numericValue } : line
         );
@@ -335,12 +336,10 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                             <tr key={line.part_id} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200">
                                 <td className="p-2 text-gray-900 dark:text-slate-100">{line.display_name}</td>
                                 <td className="p-2 w-20">
-                                    <input
-                                        type="number"
+                                    <MathExpressionInput
+                                        precision={2}
                                         value={line.quantity}
-                                        onChange={e => handleLineChange(line.part_id, 'quantity', e.target.value)}
-                                        onFocus={e => e.target.select()}
-                                        onMouseUp={e => e.preventDefault()}
+                                        onChange={val => handleLineChange(line.part_id, 'quantity', val)}
                                         className="w-full p-1 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-md text-center font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                                     />
                                 </td>

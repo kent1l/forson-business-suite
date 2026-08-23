@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import { formatCurrency } from '../../utils/currency';
+import MathExpressionInput from '../ui/MathExpressionInput';
 
 const CustomerWalletModal = ({ customerId: propCustomerId, customerName: propCustomerName, customer, isOpen, onClose, onWalletUpdated, onUpdated }) => {
   const customerId = propCustomerId || customer?.customer_id;
@@ -39,7 +40,7 @@ const CustomerWalletModal = ({ customerId: propCustomerId, customerName: propCus
 
   const handleAdjustSubmit = async (e) => {
     e.preventDefault();
-    const amountNum = parseFloat(adjustAmount);
+    const amountNum = typeof adjustAmount === 'number' ? adjustAmount : parseFloat(adjustAmount);
     if (!amountNum || isNaN(amountNum)) {
       toast.error('Please enter a valid non-zero adjustment amount');
       return;
@@ -121,12 +122,11 @@ const CustomerWalletModal = ({ customerId: propCustomerId, customerName: propCus
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Adjustment Amount (₱)</label>
-                      <input
-                        type="number"
-                        step="0.01"
+                      <MathExpressionInput
+                        precision={2}
                         placeholder="e.g. +100.00 or -50.00"
                         value={adjustAmount}
-                        onChange={(e) => setAdjustAmount(e.target.value)}
+                        onChange={(val) => setAdjustAmount(val)}
                         className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         required
                       />

@@ -5,6 +5,7 @@ import Modal from '../ui/Modal';
 import Combobox from '../ui/Combobox';
 import { useSettings } from '../../contexts/SettingsContext';
 import TagInput from '../ui/TagInput'; // <-- Import TagInput
+import MathExpressionInput from '../ui/MathExpressionInput';
 import ApplicationSearchCombobox from '../applications/ApplicationSearchCombobox';
 import PartApplicationManager from '../../pages/PartApplicationManager';
 
@@ -392,36 +393,22 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                 <div className="grid grid-cols-2 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Last Cost</label>
-                        <input
-                            type="text"
+                        <MathExpressionInput
+                            precision={2}
                             name="last_cost"
                             value={formData.last_cost}
-                            onChange={(e) => {
-                                const value = e.target.value;
-                                // Allow empty string, numbers, and decimal numbers
-                                if (value === '' || /^\d*\.?\d*$/.test(value)) {
-                                    handleChange(e);
-                                }
-                            }}
-                            onFocus={(e) => e.target.select()}
+                            onChange={(val) => setFormData(prev => ({ ...prev, last_cost: val }))}
                             placeholder={isBulkEdit ? 'No Change' : '0.00'}
                             className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                         />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Last Sale Price</label>
-                        <input
-                            type="text"
+                        <MathExpressionInput
+                            precision={2}
                             name="last_sale_price"
                             value={formData.last_sale_price}
-                            onChange={(e) => {
-                                const value = e.target.value;
-                                // Allow empty string, numbers, and decimal numbers
-                                if (value === '' || /^\d*\.?\d*$/.test(value)) {
-                                    handleChange(e);
-                                }
-                            }}
-                            onFocus={(e) => e.target.select()}
+                            onChange={(val) => setFormData(prev => ({ ...prev, last_sale_price: val }))}
                             placeholder={isBulkEdit ? 'No Change' : '0.00'}
                             className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                         />
@@ -447,11 +434,11 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Reorder Point</label>
-                                    <input type="number" name="reorder_point" value={formData.reorder_point} onChange={handleChange} onFocus={(e) => e.target.select()} placeholder={isBulkEdit ? 'No Change' : '1'} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                                    <MathExpressionInput precision={2} name="reorder_point" value={formData.reorder_point} onChange={(val) => setFormData(prev => ({ ...prev, reorder_point: val }))} placeholder={isBulkEdit ? 'No Change' : '1'} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500" />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Warning Qty</label>
-                                    <input type="number" name="warning_quantity" value={formData.warning_quantity} onChange={handleChange} onFocus={(e) => e.target.select()} placeholder={isBulkEdit ? 'No Change' : '1'} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                                    <MathExpressionInput precision={2} name="warning_quantity" value={formData.warning_quantity} onChange={(val) => setFormData(prev => ({ ...prev, warning_quantity: val }))} placeholder={isBulkEdit ? 'No Change' : '1'} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500" />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Tax Rate</label>

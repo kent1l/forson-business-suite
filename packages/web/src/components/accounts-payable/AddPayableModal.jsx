@@ -4,6 +4,7 @@ import api from '../../api';
 import Modal from '../ui/Modal';
 import Combobox from '../ui/Combobox';
 import InfoTip from '../ui/InfoTip';
+import MathExpressionInput from '../ui/MathExpressionInput';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -35,7 +36,7 @@ const AddPayableModal = ({ isOpen, onClose, onCreated, presetSupplier = null }) 
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        const amount = parseFloat(form.total_amount);
+        const amount = typeof form.total_amount === 'number' ? form.total_amount : parseFloat(form.total_amount);
         if (!form.supplier_id) { toast.error('Select a supplier'); return; }
         if (!amount || amount <= 0) { toast.error('Enter a valid total amount'); return; }
 
@@ -111,8 +112,14 @@ const AddPayableModal = ({ isOpen, onClose, onCreated, presetSupplier = null }) 
                                 The full amount owed on this bill. Required, and must be greater than zero.
                             </InfoTip>
                         </label>
-                        <input type="number" step="0.01" min="0" required value={form.total_amount}
-                            onChange={(e) => handleChange('total_amount', e.target.value)} className={inputClass} />
+                        <MathExpressionInput
+                            precision={2}
+                            min={0}
+                            required
+                            value={form.total_amount}
+                            onChange={(val) => handleChange('total_amount', val)}
+                            className={inputClass}
+                        />
                     </div>
                 </div>
 

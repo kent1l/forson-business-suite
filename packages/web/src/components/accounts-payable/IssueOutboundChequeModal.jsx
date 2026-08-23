@@ -3,6 +3,7 @@ import api from '../../api';
 import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
 import InfoTip from '../ui/InfoTip';
+import MathExpressionInput from '../ui/MathExpressionInput';
 
 const PURPOSE_OPTIONS = [
     { value: 'SUPPLIER_PAYMENT', label: 'Supplier Bill Payment' },
@@ -133,7 +134,7 @@ const IssueOutboundChequeModal = ({ isOpen, onClose, onIssued }) => {
                 cheque_number: form.cheque_number,
                 cheque_date: form.cheque_date,
                 purpose_type: form.purpose_type,
-                amount: parseFloat(form.amount),
+                amount: typeof form.amount === 'number' ? form.amount : parseFloat(form.amount),
                 payee,
                 memo: form.memo,
                 reference_number: form.reference_number,
@@ -202,8 +203,12 @@ const IssueOutboundChequeModal = ({ isOpen, onClose, onIssued }) => {
                     </div>
                     <div>
                         <label className={LABEL_CLASS}>Amount (₱)</label>
-                        <input type="number" step="0.01" value={form.amount} onChange={(e) => handleChange('amount', e.target.value)}
-                            className={`${INPUT_CLASS} font-mono`} />
+                        <MathExpressionInput
+                            precision={2}
+                            value={form.amount}
+                            onChange={(val) => handleChange('amount', val)}
+                            className={`${INPUT_CLASS} font-mono`}
+                        />
                     </div>
                 </div>
 

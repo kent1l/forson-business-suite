@@ -3,6 +3,7 @@ import api from '../../api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
+import MathExpressionInput from '../ui/MathExpressionInput';
 
 const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
     const { user } = useAuth();
@@ -31,7 +32,8 @@ const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
     const handleQuantityChange = (lineId, quantity) => {
         const originalLine = lines.find(l => l.invoice_line_id === lineId);
         const maxRefundable = originalLine.quantity - originalLine.quantity_refunded;
-        const newQuantity = Math.max(0, Math.min(maxRefundable, Number(quantity)));
+        const num = typeof quantity === 'number' ? quantity : Number(quantity);
+        const newQuantity = Math.max(0, Math.min(maxRefundable, isNaN(num) ? 0 : num));
 
         setRefundLines(prev => ({
             ...prev,
@@ -111,13 +113,13 @@ const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
                             <p className={`text-xs ${ (line.quantity - line.quantity_refunded) <= 0 ? 'text-danger-500 dark:text-danger-400/80' : 'text-gray-500 dark:text-slate-400' }`}>Sold: {line.quantity}, Refunded: {line.quantity_refunded}, Available: {line.quantity - line.quantity_refunded}</p>
                         </div>
                         {refundLines[line.invoice_line_id] && (
-                            <input
-                                type="number"
+                            <MathExpressionInput
+                                precision={2}
                                 value={refundLines[line.invoice_line_id].quantity}
-                                onChange={(e) => handleQuantityChange(line.invoice_line_id, e.target.value)}
+                                onChange={(val) => handleQuantityChange(line.invoice_line_id, val)}
                                 className="w-20 px-2 py-1 border border-gray-300 dark:border-slate-600 rounded-md text-sm bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-primary-500"
                                 max={line.quantity - line.quantity_refunded}
-                                min="0"
+                                min={0}
                             />
                         )}
                     </div>
