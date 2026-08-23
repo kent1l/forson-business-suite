@@ -34,7 +34,12 @@ export default function ExpenseQuickEntry({ onParsed }) {
             }
 
             if (parsed.clarifying_question && !clarifying) {
-                setPending({ question: parsed.clarifying_question, parsed, text: sourceText });
+                setPending({
+                    question: parsed.clarifying_question,
+                    options: Array.isArray(parsed.clarifying_options) ? parsed.clarifying_options : [],
+                    parsed,
+                    text: sourceText
+                });
                 setAnswer('');
                 return;
             }
@@ -60,10 +65,14 @@ export default function ExpenseQuickEntry({ onParsed }) {
         runParse(text.trim(), null);
     };
 
+    const submitAnswer = (value) => {
+        if (!value || !value.trim() || !pending) return;
+        runParse(pending.text, { question: pending.question, answer: value.trim() });
+    };
+
     const handleAnswer = (e) => {
         e?.preventDefault();
-        if (!answer.trim() || !pending) return;
-        runParse(pending.text, { question: pending.question, answer: answer.trim() });
+        submitAnswer(answer);
     };
 
     // Skipping keeps the draft the AI already produced — the question is advisory,
@@ -147,12 +156,28 @@ export default function ExpenseQuickEntry({ onParsed }) {
                             <p className="text-xs font-semibold text-amber-200">One quick question before filling the form</p>
                             <p className="text-sm text-amber-100 mt-1">{pending.question}</p>
 
+                            {pending.options.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mt-2">
+                                    {pending.options.map((opt) => (
+                                        <button
+                                            key={opt}
+                                            type="button"
+                                            onClick={() => submitAnswer(opt)}
+                                            disabled={loading}
+                                            className="px-3 py-1.5 text-xs font-medium text-amber-100 bg-amber-500/20 hover:bg-amber-500/35 border border-amber-500/40 hover:border-amber-400 rounded-full transition-colors cursor-pointer disabled:opacity-50"
+                                        >
+                                            {opt}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
                             <form onSubmit={handleAnswer} className="flex flex-col sm:flex-row items-stretch gap-2 mt-2">
                                 <input
                                     type="text"
                                     value={answer}
                                     onChange={(e) => setAnswer(e.target.value)}
-                                    placeholder="Type your answer..."
+                                    placeholder={pending.options.length > 0 ? 'Or type your own answer...' : 'Type your answer...'}
                                     disabled={loading}
                                     autoFocus
                                     className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-colors"

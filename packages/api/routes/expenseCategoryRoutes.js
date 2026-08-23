@@ -66,6 +66,9 @@ router.post('/expense-categories', protect, hasPermission('expenses:manage_categ
             RETURNING category_id, category_name, description, sort_order, is_active, created_at, updated_at
         `;
         const result = await db.query(insertQuery, [trimmedName, description || null, parseInt(sort_order, 10) || 0, employeeId]);
+        // A category with no vector cannot be matched by meaning, so give the new one
+        // its embedding immediately. Best-effort — the refresh script can backfill it.
+        refreshCategoryVectors('create');
         res.status(201).json(result.rows[0]);
     } catch (error) {
         console.error('Error creating expense category:', error);
