@@ -9,22 +9,39 @@ export default function ExpenseQuickEntry({ onParsed }) {
     const [text, setText] = useState('');
     const [loading, setLoading] = useState(false);
 
-    const handleParse = async (e) => {
-        e?.preventDefault();
-        if (!text || text.trim().length < 3) {
-            toast.error('Please enter a natural language expense description (min 3 characters).');
-            return;
-        }
+    // A pending question means the AI could not tell whether this is an operating
+    // expense at all. The draft is held here until the user answers or skips it.
+    const [pending, setPending] = useState(null); // { question, parsed, text }
+    const [answer, setAnswer] = useState('');
 
+    const clearPending = () => {
+        setPending(null);
+        setAnswer('');
+    };
+
+    const runParse = async (sourceText, clarifying) => {
         setLoading(true);
         try {
-            const response = await api.post('/expenses/parse', { text: text.trim() });
-            if (response.data && response.data.parsed) {
-                toast.success('AI successfully extracted expense details!');
-                onParsed(response.data.parsed, text.trim());
-            } else {
+            const response = await api.post('/expenses/parse', {
+                text: sourceText,
+                ...(clarifying ? { clarifying_question: clarifying.question, clarifying_answer: clarifying.answer } : {})
+            });
+
+            const parsed = response.data?.parsed;
+            if (!parsed) {
                 toast.error('Could not extract expense details. Falling back to manual entry.');
+                return;
             }
+
+            if (parsed.clarifying_question && !clarifying) {
+                setPending({ question: parsed.clarifying_question, parsed, text: sourceText });
+                setAnswer('');
+                return;
+            }
+
+            clearPending();
+            toast.success('AI successfully extracted expense details!');
+            onParsed(parsed, sourceText, clarifying || null);
         } catch (error) {
             console.error('AI Quick Entry error:', error);
             const msg = error.response?.data?.error || error.response?.data?.message || 'AI service unavailable';
@@ -32,6 +49,30 @@ export default function ExpenseQuickEntry({ onParsed }) {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleParse = (e) => {
+        e?.preventDefault();
+        if (!text || text.trim().length < 3) {
+            toast.error('Please enter a natural language expense description (min 3 characters).');
+            return;
+        }
+        runParse(text.trim(), null);
+    };
+
+    const handleAnswer = (e) => {
+        e?.preventDefault();
+        if (!answer.trim() || !pending) return;
+        runParse(pending.text, { question: pending.question, answer: answer.trim() });
+    };
+
+    // Skipping keeps the draft the AI already produced — the question is advisory,
+    // so it must never be the thing standing between the user and their entry.
+    const handleSkip = () => {
+        if (!pending) return;
+        const { parsed, text: sourceText } = pending;
+        clearPending();
+        onParsed(parsed, sourceText, null);
     };
 
     return (
@@ -97,6 +138,46 @@ export default function ExpenseQuickEntry({ onParsed }) {
                     )}
                 </button>
             </form>
+
+            {pending && (
+                <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/40 rounded-lg">
+                    <div className="flex items-start gap-2">
+                        <Icon path={ICONS.warning} className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
+                        <div className="flex-1">
+                            <p className="text-xs font-semibold text-amber-200">One quick question before filling the form</p>
+                            <p className="text-sm text-amber-100 mt-1">{pending.question}</p>
+
+                            <form onSubmit={handleAnswer} className="flex flex-col sm:flex-row items-stretch gap-2 mt-2">
+                                <input
+                                    type="text"
+                                    value={answer}
+                                    onChange={(e) => setAnswer(e.target.value)}
+                                    placeholder="Type your answer..."
+                                    disabled={loading}
+                                    autoFocus
+                                    className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-colors"
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={loading || !answer.trim()}
+                                    className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+                                >
+                                    {loading ? 'Re-checking...' : 'Answer & Re-parse'}
+                                </button>
+                            </form>
+
+                            <button
+                                type="button"
+                                onClick={handleSkip}
+                                disabled={loading}
+                                className="mt-2 text-xs text-amber-300/80 hover:text-amber-200 underline underline-offset-2 cursor-pointer disabled:opacity-50"
+                            >
+                                Skip — I'll classify it myself
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

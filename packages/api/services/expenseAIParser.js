@@ -4,8 +4,8 @@
  */
 const { expenseParserAI } = require('./ai');
 
-async function parseExpenseText(text) {
-    return expenseParserAI.parseExpenseText(text);
+async function parseExpenseText(text, clarifyingContext = null) {
+    return expenseParserAI.parseExpenseText(text, clarifyingContext);
 }
 
 module.exports = { parseExpenseText };

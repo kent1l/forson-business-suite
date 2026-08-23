@@ -58,9 +58,12 @@ const EXPENSE_JOIN_TABLES = `
 
 // POST /api/expenses/parse - AI natural language parsing
 router.post('/expenses/parse', protect, hasPermission('expenses:create'), async (req, res) => {
-    const { text } = req.body;
+    const { text, clarifying_question, clarifying_answer } = req.body;
     try {
-        const result = await parseExpenseText(text);
+        const clarifyingContext = clarifying_question && clarifying_answer
+            ? { question: clarifying_question, answer: clarifying_answer }
+            : null;
+        const result = await parseExpenseText(text, clarifyingContext);
         res.json(result);
     } catch (error) {
         if (error.statusCode === 400) {
@@ -366,7 +369,11 @@ router.post('/expenses', protect, hasPermission('expenses:create'), async (req, 
         notes,
         ai_corrections,
         raw_input,
-        ai_parsed
+        ai_parsed,
+        nature_flag,
+        clarifying_question,
+        clarifying_answer,
+        nature_override
     } = req.body;
 
     const employeeId = req.user.employee_id;
@@ -495,7 +502,11 @@ router.post('/expenses', protect, hasPermission('expenses:create'), async (req, 
                     final: finalValues,
                     expenseId: newExpenseId,
                     provider: ai_parsed?.provider || null,
-                    employeeId
+                    employeeId,
+                    natureFlag: nature_flag || ai_parsed?.nature_flag || null,
+                    clarifyingQuestion: clarifying_question || null,
+                    clarifyingAnswer: clarifying_answer || null,
+                    natureOverride: nature_override === true
                 });
             } catch (logErr) {
                 console.error('[ExpenseRoutes] Failed to log parse outcome:', logErr.message);
