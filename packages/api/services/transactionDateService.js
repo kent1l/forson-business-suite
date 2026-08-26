@@ -980,4 +980,5 @@ module.exports = {
     preview,
     apply,
     history,
+    recomputeWacForParts,
 };

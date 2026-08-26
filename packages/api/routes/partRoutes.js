@@ -402,7 +402,15 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
             }
         }
         
-        await manageTags(client, tags, newPartData.part_id);
+        // Parts quick-added mid-sale are routinely saved with no cost, which leaves them
+        // with no WAC and no way to report margin. Flag them at creation so the cost
+        // cleanup queue can find them instead of relying on someone noticing later.
+        const needsCosting = !partData.is_service && !(Number(partData.last_cost) > 0);
+        const tagsToApply = needsCosting
+            ? [...new Set([...(Array.isArray(tags) ? tags : []), 'pending_costing'])]
+            : tags;
+
+        await manageTags(client, tagsToApply, newPartData.part_id);
         await manageBarcodes(client, barcodes, newPartData.part_id);
         await client.query('COMMIT');
         
@@ -472,7 +480,14 @@ router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) 
             return res.status(404).json({ message: 'Part not found' });
         }
         
-        await manageTags(client, tags, id);
+        const stillNeedsCosting = !partData.is_service && !(Number(partData.last_cost) > 0);
+        const tagsToApply = Array.isArray(tags)
+            ? (stillNeedsCosting
+                ? [...new Set([...tags, 'pending_costing'])]
+                : tags.filter(t => String(t).trim().toLowerCase() !== 'pending_costing'))
+            : tags;
+
+        await manageTags(client, tagsToApply, id);
         await manageBarcodes(client, barcodes, id);
         await client.query('COMMIT');
 

@@ -63,6 +63,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     const [openPOs, setOpenPOs] = useState([]);
     const [selectedPO, setSelectedPO] = useState('');
     const [posting, setPosting] = useState(false);
+    const [receiptDate, setReceiptDate] = useState('');
+    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
 
     // Reusable draft hook
     const draftData = useMemo(() => ({ selectedSupplier, lines, selectedPO }), [selectedSupplier, lines, selectedPO]);
@@ -293,6 +295,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 sale_price: line.sale_price,
             })),
             po_id: selectedPO ? selectedPO.po_id : null,
+            receipt_date: receiptDate || null,
         };
 
         setPosting(true);
@@ -304,14 +307,15 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 setLines([]);
                 setSelectedSupplier('');
                 setSelectedPO('');
+                setReceiptDate('');
                 fetchInitialData(); // Refresh PO list
                 clearDraft();
                 setPosting(false);
                 return 'Goods receipt created successfully!';
             },
-            error: () => {
+            error: (err) => {
                 setPosting(false);
-                return 'Failed to create goods receipt.';
+                return err?.response?.data?.message || 'Failed to create goods receipt.';
             },
         });
     };
@@ -415,6 +419,23 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                             </div>
                             <button onClick={() => setIsSupplierModalOpen(true)} className="px-3 py-2 bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-100 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-600 text-sm disabled:opacity-60 disabled:cursor-not-allowed" disabled={!!selectedPO}>New</button>
                         </div>
+                    </div>
+                    <div>
+                        <label className={`${labelClass} flex items-center gap-1`}>
+                            Date Received (Optional)
+                            <InfoTip label="Date Received">
+                                Leave blank if the goods arrived today. If you are entering older paperwork, set the
+                                date the goods actually arrived — otherwise the receipt is recorded after sales that
+                                already used the stock, which inflates the item&apos;s weighted average cost.
+                            </InfoTip>
+                        </label>
+                        <input
+                            type="date"
+                            value={receiptDate}
+                            max={todayStr}
+                            onChange={e => setReceiptDate(e.target.value)}
+                            className={selectClass}
+                        />
                     </div>
                 </div>
 

@@ -4,6 +4,8 @@ const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { hasPermission, protect } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const apLedgerService = require('../services/apLedgerService');
+const periodLockService = require('../services/periodLockService');
+const { recomputeWacForParts } = require('../services/transactionDateService');
 const router = express.Router();
 
 // GET /goods-receipts - Fetch list of posted GRNs with search and sorting
@@ -148,10 +150,32 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
   // NEW: Added po_id to destructuring
   // bill_id: optional — attaches this receipt's stock-in to a pre-existing manually
   // created supplier_bill (see AddPayableModal) instead of auto-generating a new bill.
-  const { supplier_id, received_by, lines, po_id, bill_id } = req.body;
+  // receipt_date: optional true date the goods physically arrived. Paperwork is often
+  // entered days late, and stamping those receipts "now" puts the StockIn *after* sales
+  // that already consumed the stock — which corrupts the chronological replay that
+  // recompute_wac_for_part() uses to derive WAC. Letting the receipt carry its real date
+  // keeps the ledger in physical order. Defaults to now when omitted.
+  const { supplier_id, received_by, lines, po_id, bill_id, receipt_date } = req.body;
 
   if (!supplier_id || !received_by || !lines || !Array.isArray(lines) || lines.length === 0) {
     return res.status(400).json({ message: 'Missing required fields.' });
+  }
+
+  let receiptDate = null;
+  if (receipt_date) {
+    const parsed = new Date(receipt_date);
+    if (Number.isNaN(parsed.getTime())) {
+      return res.status(400).json({ message: 'receipt_date is not a valid date.' });
+    }
+    if (parsed.getTime() > Date.now()) {
+      return res.status(400).json({ message: 'receipt_date cannot be in the future.' });
+    }
+    try {
+      await periodLockService.assertPeriodOpen(parsed, { module: 'goods_receipt' });
+    } catch (err) {
+      return res.status(err.statusCode || 500).json({ message: err.message });
+    }
+    receiptDate = parsed.toISOString();
   }
 
   const client = await db.getClient();
@@ -172,17 +196,30 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
     const grn_number = await getNextDocumentNumber(client, 'GRN');
 
     const goodsReceiptQuery = `
-      INSERT INTO goods_receipt (grn_number, supplier_id, received_by, bill_id, po_id)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO goods_receipt (grn_number, supplier_id, received_by, bill_id, po_id, receipt_date)
+      VALUES ($1, $2, $3, $4, $5, COALESCE($6::timestamptz, CURRENT_TIMESTAMP))
       RETURNING grn_id;
     `;
-    const receiptResult = await client.query(goodsReceiptQuery, [grn_number, supplier_id, received_by, bill_id || null, po_id || null]);
+    const receiptResult = await client.query(goodsReceiptQuery, [grn_number, supplier_id, received_by, bill_id || null, po_id || null, receiptDate]);
     const newGrnId = receiptResult.rows[0].grn_id;
 
     for (const line of lines) {
       const { part_id, quantity, cost_price, sale_price } = line;
       if (!part_id || !quantity || !cost_price) {
         throw new Error('Each line item must have part_id, quantity, and cost_price.');
+      }
+      // Numeric validation matching the PUT handler below. The falsy checks above let
+      // negatives through, and a negative unit_cost feeds straight into the WAC average.
+      const qty = Number(quantity);
+      const cost = Number(cost_price);
+      if (!Number.isFinite(qty) || qty <= 0) {
+        throw new Error('Each line item must have a quantity greater than zero.');
+      }
+      if (!Number.isFinite(cost) || cost <= 0) {
+        throw new Error('Each line item must have a cost_price greater than zero.');
+      }
+      if (sale_price != null && (!Number.isFinite(Number(sale_price)) || Number(sale_price) < 0)) {
+        throw new Error('sale_price cannot be negative.');
       }
 
       const lineQuery = `
@@ -192,11 +229,11 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
       await client.query(lineQuery, [newGrnId, part_id, quantity, cost_price, sale_price ?? null]);
 
       const transactionQuery = `
-        INSERT INTO inventory_transaction (part_id, trans_type, quantity, unit_cost, reference_no, employee_id)
-        VALUES ($1, 'StockIn', $2, $3, $4, $5);
+        INSERT INTO inventory_transaction (part_id, trans_type, quantity, unit_cost, reference_no, employee_id, transaction_date)
+        VALUES ($1, 'StockIn', $2, $3, $4, $5, COALESCE($6::timestamptz, CURRENT_TIMESTAMP));
       `;
       // Note: sale_price is not used in inventory valuation; keep it separate from unit_cost
-      await client.query(transactionQuery, [part_id, quantity, cost_price, grn_number, received_by]);
+      await client.query(transactionQuery, [part_id, quantity, cost_price, grn_number, received_by, receiptDate]);
       
       // --- NEW: Update PO if linked ---
       if (po_id) {
@@ -243,10 +280,12 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
 
       const { rows: [bill] } = await client.query(
         `INSERT INTO supplier_bill (supplier_id, po_id, grn_id, bill_number, bill_date, due_date, total_amount, created_by)
-         VALUES ($1, $2, $3, $4, CURRENT_DATE, CASE WHEN $5::int IS NOT NULL THEN CURRENT_DATE + ($5::int || ' days')::interval ELSE NULL END, $6, $7)
+         VALUES ($1, $2, $3, $4, COALESCE($8::date, CURRENT_DATE),
+                 CASE WHEN $5::int IS NOT NULL THEN COALESCE($8::date, CURRENT_DATE) + ($5::int || ' days')::interval ELSE NULL END,
+                 $6, $7)
          ON CONFLICT (grn_id) WHERE grn_id IS NOT NULL DO NOTHING
          RETURNING bill_id`,
-        [supplier_id, po_id || null, newGrnId, billNumber, termsDays, totalAmount, received_by]
+        [supplier_id, po_id || null, newGrnId, billNumber, termsDays, totalAmount, received_by, receiptDate]
       );
 
       if (bill) {
@@ -266,6 +305,23 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
           createdBy: received_by,
         });
       }
+    }
+
+    // Receiving stock at a real cost is what resolves a quick-added part's missing
+    // cost, so clear the flag that put it in the costing queue.
+    await client.query(
+      `DELETE FROM part_tag
+        WHERE part_id = ANY($1::int[])
+          AND tag_id = (SELECT tag_id FROM tag WHERE tag_name = 'pending_costing')`,
+      [[...new Set(lines.map((l) => l.part_id))]]
+    );
+
+    // The trg_update_wac trigger derives prev_stock from the SUM of all other rows
+    // regardless of their dates, so it only produces the right average when the new
+    // StockIn is the latest one. A backdated receipt lands mid-history and needs the
+    // full chronological replay instead.
+    if (receiptDate) {
+      await recomputeWacForParts(client, [...new Set(lines.map((l) => l.part_id))]);
     }
 
     await client.query('COMMIT');

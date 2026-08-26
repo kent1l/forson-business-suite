@@ -266,6 +266,130 @@ router.get('/reports/inventory-valuation', protect, hasPermission('reports:view'
     }
 });
 
+// GET /api/reports/data-integrity/inventory
+// Audit report for the WAC cleanup effort: surfaces parts whose cost data cannot
+// be trusted, bucketed by the reason. `bucket` filters to one issue; default returns all.
+router.get('/reports/data-integrity/inventory', protect, hasPermission('reports:view'), async (req, res) => {
+    const { format = 'json', bucket = 'all', sortBy = 'impact' } = req.query;
+    const { paginated, page, pageSize, limit, offset } = parsePaginationQuery(req.query);
+
+    // How much reported inventory value this part can distort. wac_cost is the wrong
+    // yardstick here (these are precisely the parts whose cost is missing or wrong), so
+    // fall back to last_cost, then to sale price, to get a usable magnitude either way.
+    const IMPACT_ESTIMATE = `
+        (ABS(COALESCE(s.stock_on_hand, 0)) * GREATEST(
+            COALESCE(NULLIF(p.wac_cost, 0), 0),
+            COALESCE(NULLIF(p.last_cost, 0), 0),
+            COALESCE(NULLIF(p.last_sale_price, 0), 0)
+        ))::numeric(14,2)`;
+
+    const SORT_EXPRESSIONS = {
+        impact: `${IMPACT_ESTIMATE} DESC NULLS LAST, p.detail ASC`,
+        negative_stock: `COALESCE(s.stock_on_hand, 0) ASC, p.detail ASC`,
+        name: `p.detail ASC`,
+    };
+    if (!SORT_EXPRESSIONS[sortBy]) {
+        return res.status(400).json({ message: `Invalid sortBy. Expected one of: ${Object.keys(SORT_EXPRESSIONS).join(', ')}.` });
+    }
+    const sortExpr = SORT_EXPRESSIONS[sortBy];
+
+    const BUCKET_CONDITIONS = {
+        missing_wac: `(p.wac_cost IS NULL OR p.wac_cost = 0) AND COALESCE(s.stock_on_hand, 0) <> 0`,
+        negative_stock: `COALESCE(s.stock_on_hand, 0) < 0`,
+        missing_cost: `COALESCE(p.last_cost, 0) = 0`,
+    };
+    if (bucket !== 'all' && !BUCKET_CONDITIONS[bucket]) {
+        return res.status(400).json({ message: `Invalid bucket. Expected one of: all, ${Object.keys(BUCKET_CONDITIONS).join(', ')}.` });
+    }
+    const whereClause = bucket === 'all'
+        ? Object.values(BUCKET_CONDITIONS).map((c) => `(${c})`).join(' OR ')
+        : BUCKET_CONDITIONS[bucket];
+
+    try {
+        const baseQuery = `
+            WITH stock AS (
+                SELECT part_id, COALESCE(SUM(quantity), 0) AS stock_on_hand
+                FROM inventory_transaction
+                GROUP BY part_id
+            )
+            SELECT
+                p.part_id,
+                p.internal_sku,
+                p.detail,
+                b.brand_name,
+                g.group_name,
+                (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
+                (
+                    SELECT STRING_AGG(t.tag_name, '; ' ORDER BY t.tag_name)
+                    FROM part_tag pt
+                    JOIN tag t ON t.tag_id = pt.tag_id
+                    WHERE pt.part_id = p.part_id
+                ) AS tags,
+                COALESCE(p.wac_cost, 0) AS wac_cost,
+                COALESCE(p.last_cost, 0) AS last_cost,
+                COALESCE(p.last_sale_price, 0) AS last_sale_price,
+                COALESCE(s.stock_on_hand, 0) AS stock_on_hand,
+                ((p.wac_cost IS NULL OR p.wac_cost = 0) AND COALESCE(s.stock_on_hand, 0) <> 0) AS is_missing_wac,
+                (COALESCE(s.stock_on_hand, 0) < 0) AS is_negative_stock,
+                (COALESCE(p.last_cost, 0) = 0) AS is_missing_cost,
+                ${IMPACT_ESTIMATE} AS impact_estimate
+            FROM part p
+            LEFT JOIN stock s ON s.part_id = p.part_id
+            LEFT JOIN brand b ON p.brand_id = b.brand_id
+            LEFT JOIN "group" g ON p.group_id = g.group_id
+            WHERE p.is_service = FALSE AND p.is_active = TRUE AND (${whereClause})
+            ORDER BY ${sortExpr}
+        `;
+
+        const params = [];
+        let query = baseQuery;
+        if (format === 'json' && paginated) {
+            query += ` LIMIT $1 OFFSET $2`;
+            params.push(limit, offset);
+        }
+
+        const countQuery = `
+            WITH stock AS (
+                SELECT part_id, COALESCE(SUM(quantity), 0) AS stock_on_hand
+                FROM inventory_transaction
+                GROUP BY part_id
+            )
+            SELECT
+                COUNT(*) FILTER (WHERE (p.wac_cost IS NULL OR p.wac_cost = 0) AND COALESCE(s.stock_on_hand, 0) <> 0)::int AS missing_wac,
+                COUNT(*) FILTER (WHERE COALESCE(s.stock_on_hand, 0) < 0)::int AS negative_stock,
+                COUNT(*) FILTER (WHERE COALESCE(p.last_cost, 0) = 0)::int AS missing_cost,
+                COUNT(*) FILTER (WHERE ${whereClause})::int AS total,
+                COALESCE(SUM(${IMPACT_ESTIMATE}) FILTER (WHERE ${whereClause}), 0)::numeric(16,2) AS total_impact_estimate
+            FROM part p
+            LEFT JOIN stock s ON s.part_id = p.part_id
+            WHERE p.is_service = FALSE AND p.is_active = TRUE
+        `;
+
+        const [rowsRes, countRes] = await Promise.all([
+            db.query(query, params),
+            db.query(countQuery),
+        ]);
+        const { rows } = rowsRes;
+        const summary = countRes.rows[0] || { missing_wac: 0, negative_stock: 0, missing_cost: 0, total: 0 };
+
+        if (format === 'csv') {
+            const json2csvParser = new Parser();
+            const csv = json2csvParser.parse(rows);
+            res.header('Content-Type', 'text/csv');
+            res.attachment('inventory-data-integrity-report.csv');
+            return res.send(csv);
+        }
+
+        if (paginated) {
+            return res.json({ ...paginatedResponse({ data: rows, page, pageSize, total: summary.total }), summary });
+        }
+        res.json({ data: rows, summary });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
 // GET /api/reports/low-stock - (No change needed)
 router.get('/reports/low-stock', protect, hasPermission('reports:view'), async (req, res) => {
     const { format = 'json' } = req.query;
