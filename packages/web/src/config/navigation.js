@@ -27,7 +27,7 @@ export const CATEGORIES = [
             { name: 'Cycle Count',     icon: ICONS.dashboard,      page: 'cycle_count',     permission: 'cycle_count:execute', keywords: ['stock count', 'inventory audit'] },
             { name: 'Manager Audit',   icon: ICONS.reporting,      page: 'manager_audit',   permission: 'cycle_count:manage', keywords: ['cycle count review', 'audit approval'] },
             { name: 'Cost Data Health', icon: ICONS.reporting,     page: 'cost_data_health', permission: 'reports:view', keywords: ['wac', 'weighted average cost', 'negative stock', 'cost cleanup', 'data integrity'] },
-            { name: 'Cost Correction', icon: ICONS.receipt,       page: 'cost_correction', permission: ['wac_correction:propose', 'wac_correction:approve'], keywords: ['wac fix', 'cost fix', 'reconstruct receipts', 'costing'] },
+            { name: 'Cost Correction', icon: ICONS.receipt,       page: 'cost_correction', permission: 'wac_correction:manage', keywords: ['wac fix', 'cost fix', 'undocumented stock', 'costing'] },
         ],
     },
     {
