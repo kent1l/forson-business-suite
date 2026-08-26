@@ -315,7 +315,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
 
         toast.promise(promise, {
             loading: 'Posting transaction...',
-            success: () => {
+            success: (res) => {
+                const recon = res?.data?.reconciliations || [];
                 setLines([]);
                 setSelectedSupplier('');
                 setSelectedPO('');
@@ -324,6 +325,14 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 fetchInitialData(); // Refresh PO list
                 clearDraft();
                 setPosting(false);
+                // The quantity deliberately did not move for these lines. Say so here —
+                // discovering it later on the stock report would look like a bug.
+                if (recon.length > 0) {
+                    toast(
+                        `${recon.length} item${recon.length > 1 ? 's were' : ' was'} already counted after this receipt date, so the cost was applied but the quantity was not added again. Review under Stock Reconciliation.`,
+                        { icon: 'ℹ️', duration: 8000 }
+                    );
+                }
                 return 'Goods receipt created successfully!';
             },
             error: (err) => {

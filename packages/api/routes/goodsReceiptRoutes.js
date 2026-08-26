@@ -5,6 +5,7 @@ const { hasPermission, protect } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const apLedgerService = require('../services/apLedgerService');
 const periodLockService = require('../services/periodLockService');
+const stockReconciliation = require('../services/stockReconciliationService');
 const { recomputeWacForParts } = require('../services/transactionDateService');
 const router = express.Router();
 
@@ -335,6 +336,26 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
       }
     }
 
+    // A backfilled receipt dated before an approved cycle count describes stock that
+    // count already recorded. Give it its cost effect but cancel its quantity, so the
+    // same units are not counted twice. Logged, never silent — see
+    // stockReconciliationService.
+    const reconciliations = [];
+    if (isBackfill) {
+      for (const line of lines) {
+        const recon = await stockReconciliation.reconcileBackfillLine(client, {
+          partId: line.part_id,
+          quantity: line.quantity,
+          receiptDate: receiptDate,
+          grnId: newGrnId,
+          grnNumber: grn_number,
+          supplierInvoiceNo: invoiceNo,
+          employeeId: received_by,
+        });
+        if (recon) reconciliations.push(recon);
+      }
+    }
+
     // Receiving stock at a real cost is what resolves a quick-added part's missing
     // cost, so clear the flag that put it in the costing queue.
     await client.query(
@@ -349,11 +370,27 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
     // StockIn is the latest one. A backdated receipt lands mid-history and needs the
     // full chronological replay instead.
     if (receiptDate) {
-      await recomputeWacForParts(client, [...new Set(lines.map((l) => l.part_id))]);
+      const impacts = await recomputeWacForParts(client, [...new Set(lines.map((l) => l.part_id))]);
+      if (reconciliations.length > 0) {
+        const wacByPart = new Map(impacts.map((i) => [i.part_id, i.new_wac_cost]));
+        await stockReconciliation.recordWacAfter(client, reconciliations, wacByPart);
+      }
     }
 
     await client.query('COMMIT');
-    res.status(201).json({ message: 'Goods receipt created successfully', grn_id: newGrnId });
+    res.status(201).json({
+      message: 'Goods receipt created successfully',
+      grn_id: newGrnId,
+      // Surfaced so the encoder is told what happened rather than discovering the
+      // quantity did not move the way they expected.
+      reconciliations: reconciliations.map((r) => ({
+        part_id: r.part_id,
+        backfill_qty: r.backfill_qty,
+        reconcile_qty: r.reconcile_qty,
+        counted_at: r.counted_at,
+        unexplained_shortfall: r.unexplained_shortfall,
+      })),
+    });
 
   } catch (err) {
     await client.query('ROLLBACK');
