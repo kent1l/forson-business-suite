@@ -34,6 +34,7 @@ import DocumentsPage from '../../pages/DocumentsPage';
 import CycleCountExecutionPage from '../../pages/CycleCountExecutionPage';
 import ManagerReviewDesk from '../cycleCount/ManagerReviewDesk';
 import CostDataHealthPage from '../../pages/CostDataHealthPage';
+import CostCorrectionPage from '../../pages/CostCorrectionPage';
 import CashierApprovalDesk from '../../pages/CashierApprovalDesk';
 import ExpensesPage from '../../pages/ExpensesPage';
 import ExpenseCategoriesPage from '../../pages/ExpenseCategoriesPage';
@@ -72,6 +73,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'cycle_count': return <CycleCountExecutionPage />;
             case 'manager_audit': return <ManagerReviewDesk />;
             case 'cost_data_health': return <CostDataHealthPage />;
+            case 'cost_correction': return <CostCorrectionPage />;
             case 'expenses': return <ExpensesPage onNavigate={onNavigate} />;
             case 'expense_categories': return <ExpenseCategoriesPage />;
             case 'expense_lexicon': return <ExpenseLexiconPage />;
