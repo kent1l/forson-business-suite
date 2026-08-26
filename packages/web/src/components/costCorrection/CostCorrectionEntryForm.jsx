@@ -35,7 +35,17 @@ const CostCorrectionEntryForm = ({ detail, currency = '₱', onSaved }) => {
         [entries]
     );
     const projectedQty = detail.currentQty + proposedQty;
-    const gapQty = detail.countedQty == null ? null : Number((detail.countedQty - projectedQty).toFixed(4));
+
+    // A counted quantity is only a valid target when the count actually saw these
+    // receipts. The server decides that (it compares the count date against every entry
+    // date); mirroring the flag here keeps the form from demanding an estimate for a gap
+    // that will never be closed.
+    const latestEntryDate = entries.map(e => e.date_received).filter(Boolean).sort().pop();
+    const countCoversEntries = detail.willReconcile
+        || (detail.countedAt && latestEntryDate && new Date(latestEntryDate) <= new Date(detail.countedAt));
+    const gapQty = (!countCoversEntries || detail.countedQty == null)
+        ? null
+        : Number((detail.countedQty - projectedQty).toFixed(4));
     const needsEstimate = gapQty != null && gapQty > 0;
 
     const update = (i, field, value) => {
@@ -79,9 +89,17 @@ const CostCorrectionEntryForm = ({ detail, currency = '₱', onSaved }) => {
         <form onSubmit={submit} className="space-y-4">
             <div className="grid grid-cols-3 gap-2 text-xs text-gray-600 dark:text-slate-400">
                 <div>System qty: <strong className="text-gray-900 dark:text-slate-100">{detail.currentQty}</strong></div>
-                <div>Counted qty: <strong className="text-gray-900 dark:text-slate-100">{detail.countedQty ?? '—'}</strong></div>
+                <div>Counted qty: <strong className="text-gray-900 dark:text-slate-100">{detail.countedQty ?? 'Not counted'}</strong></div>
                 <div>After these receipts: <strong className="text-gray-900 dark:text-slate-100">{projectedQty}</strong></div>
             </div>
+
+            {!countCoversEntries && (
+                <p className="text-xs text-gray-600 dark:text-slate-400 rounded-lg bg-gray-50 dark:bg-slate-800 p-2">
+                    {detail.countedQty == null
+                        ? 'This part has not been counted yet. Enter what the supplier documents show — the receipts fix the cost basis now, and a cycle count will settle the quantity later.'
+                        : 'The last count is older than these receipts, so it cannot be used to settle the quantity. The receipts still fix the cost basis; the next count will reconcile the stock.'}
+                </p>
+            )}
 
             <div className="space-y-2">
                 {entries.map((e, i) => (

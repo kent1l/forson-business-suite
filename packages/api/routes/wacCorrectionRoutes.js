@@ -16,7 +16,8 @@ function sendError(res, err, context) {
 
 // ── Encoder side ────────────────────────────────────────────────
 
-// Parts assigned to the signed-in encoder that still need cost research.
+// The encoder's open work: parts assigned to them by a manager, plus any part they
+// opened themselves from a supplier document.
 router.get(`${BASE}/my-tasks`, protect, hasPermission('wac_correction:propose'), async (req, res) => {
     try {
         const { rows } = await db.query(
@@ -25,19 +26,44 @@ router.get(`${BASE}/my-tasks`, protect, hasPermission('wac_correction:propose'),
                     p.internal_sku, p.detail, b.brand_name, g.group_name,
                     (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
                     s.supplier_name,
+                    (wcl.batch_id IS NULL) AS self_opened,
                     (SELECT COUNT(*)::int FROM wac_correction_entry e WHERE e.line_id = wcl.line_id) AS entry_count
                FROM wac_correction_line wcl
-               JOIN wac_correction_batch wcb ON wcb.batch_id = wcl.batch_id
+               LEFT JOIN wac_correction_batch wcb ON wcb.batch_id = wcl.batch_id
                JOIN part p ON p.part_id = wcl.part_id
                LEFT JOIN brand b ON b.brand_id = p.brand_id
                LEFT JOIN "group" g ON g.group_id = p.group_id
                LEFT JOIN supplier s ON s.supplier_id = wcb.supplier_id
-              WHERE wcb.employee_id = $1 AND wcl.status IN ('PENDING', 'PROPOSED')
-              ORDER BY wcl.impact_estimate DESC NULLS LAST`,
+              WHERE wcl.status IN ('PENDING', 'PROPOSED')
+                AND (wcb.employee_id = $1
+                     OR (wcl.batch_id IS NULL AND (wcl.proposed_by = $1 OR wcl.proposed_by IS NULL)))
+              ORDER BY wcl.batch_id IS NULL DESC, wcl.impact_estimate DESC NULLS LAST`,
             [req.user.employee_id]
         );
         res.json(rows);
     } catch (err) { sendError(res, err, 'cost-correction my-tasks'); }
+});
+
+// Invoice-driven entry point: the encoder has a supplier document and looks the part up,
+// rather than waiting for it to be assigned. Returns the existing open line if there is
+// one, so two people working the same part converge instead of duplicating receipts.
+router.post(`${BASE}/lines/for-part`, protect, hasPermission('wac_correction:propose'), async (req, res) => {
+    const partId = Number(req.body?.part_id);
+    if (!Number.isInteger(partId) || partId <= 0) {
+        return res.status(400).json({ message: 'A valid part_id is required.' });
+    }
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        const result = await wacCorrection.createLineForPart(client, partId, {
+            employeeId: req.user.employee_id,
+        });
+        await client.query('COMMIT');
+        res.json(result);
+    } catch (err) {
+        await client.query('ROLLBACK');
+        sendError(res, err, 'cost-correction open part');
+    } finally { client.release(); }
 });
 
 // Everything the encoder needs to research one part: the queued line, the entries

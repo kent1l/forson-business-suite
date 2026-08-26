@@ -1,20 +1,30 @@
 /**
  * Cost / WAC correction workflow.
  *
- * Weighted average cost is a property of the StockIn history, not a field: part.wac_cost
- * is written only by trg_update_wac and recompute_wac_for_part(), so a value poked into
- * it by hand survives exactly until the next recompute. Correcting a part whose receipts
- * were never entered therefore means reconstructing those receipts as real
- * inventory_transaction rows — which is what approving a correction does.
+ * Weighted average cost is a property of the StockIn history, not a stored figure:
+ * part.wac_cost is written only by trg_update_wac and recompute_wac_for_part(), so a
+ * value poked into it by hand survives exactly until the next recompute. Correcting a
+ * part whose receipts were never entered therefore means reconstructing those receipts
+ * as real inventory_transaction rows — which is what approving a correction does.
  *
- * The proposal step deliberately writes nothing to the ledger. An approved correction is
- * load-bearing (every later sale snapshots its cost from the resulting WAC), so the
- * person who researches a cost is not the person who commits it.
+ * The workflow is driven by paperwork, not by parts. Supplier files are organised by
+ * invoice, so an encoder pulls an invoice and enters whatever is on it; they do not wait
+ * for a part to be assigned to them. Two consequences shape the design:
  *
- * Quantity is out of scope here — cycle count owns it. Because the WAC formula's
- * prev_stock term sums every transaction type, cost correction only yields a trustworthy
- * average once quantity is already right, so a line cannot be approved until it is
- * linked to an approved cycle count.
+ *   - Entering a *documented* receipt is an unconditional statement about the past. It is
+ *     safe to post at any time and needs no physical count first, because the chronological
+ *     replay only cares about the true receipt history.
+ *   - Closing an *undocumented* remainder with an estimated cost is not. That figure is
+ *     derived from a counted quantity, so it requires a validated cycle count.
+ *
+ * Only the second half is gated. Posting documented receipts ahead of a count is in fact
+ * useful: it moves system stock toward reality before anyone counts, so the eventual
+ * count starts cleaner and leaves a smaller genuinely-undocumented gap.
+ *
+ * Reconciling to a counted quantity is applied only when the count actually observed the
+ * receipts being posted (count date at or after every entry date). A count that predates
+ * a receipt never saw that stock, and its adjustment may already have absorbed the
+ * shortfall — reconciling against it would double-count.
  */
 const periodLockService = require('./periodLockService');
 const { recomputeWacForParts } = require('./transactionDateService');
@@ -36,13 +46,89 @@ function badRequest(message) {
     return err;
 }
 
+/** Most recent manager-approved cycle count for a part, if any. */
+async function latestApprovedCount(client, partId) {
+    const { rows } = await client.query(
+        `SELECT line_id, counted_qty, counted_at
+           FROM cycle_count_line
+          WHERE part_id = $1 AND status = ANY($2) AND counted_qty IS NOT NULL
+          ORDER BY counted_at DESC
+          LIMIT 1`,
+        [partId, APPROVED_COUNT_STATUSES]
+    );
+    return rows[0] || null;
+}
+
 /**
- * Queue the highest-impact parts that still need cost research.
+ * Whether a counted quantity may be used to close the remainder.
  *
- * Only parts with an approved cycle count are eligible: correcting cost on top of a
- * wrong quantity produces a confidently wrong average, since prev_stock feeds the
- * weighting. Parts still awaiting a count are simply not returned — the cycle count
- * generator already prioritises negative stock, so they arrive here on the next pass.
+ * The count has to have seen the stock in question. If any documented receipt is dated
+ * after the count, the count is stale with respect to this correction and its quantity
+ * is not a valid target.
+ */
+function countCoversEntries(count, entryDates) {
+    if (!count || count.counted_at == null) return false;
+    const countedAt = new Date(count.counted_at).getTime();
+    return entryDates.every(d => new Date(d).getTime() <= countedAt);
+}
+
+async function attachPartSnapshot(client, partId) {
+    const { rows: [snap] } = await client.query(
+        `WITH stock AS (
+            SELECT part_id, COALESCE(SUM(quantity), 0) AS stock_on_hand
+            FROM inventory_transaction WHERE part_id = $1 GROUP BY part_id
+        )
+        SELECT COALESCE(s.stock_on_hand, 0) AS system_qty,
+               COALESCE(p.wac_cost, 0)      AS wac_before,
+               ${IMPACT_ESTIMATE_SQL}       AS impact_estimate
+          FROM part p LEFT JOIN stock s ON s.part_id = p.part_id
+         WHERE p.part_id = $1`,
+        [partId]
+    );
+    if (!snap) throw badRequest('Part not found.');
+    return snap;
+}
+
+/**
+ * Start a correction for a specific part, on demand.
+ *
+ * This is the invoice-driven entry point: the encoder has a supplier document in hand and
+ * looks the part up, rather than waiting for it to appear in an assigned batch.
+ */
+async function createLineForPart(client, partId, { employeeId }) {
+    const { rows: [open] } = await client.query(
+        `SELECT line_id, status FROM wac_correction_line
+          WHERE part_id = $1 AND status = ANY($2) LIMIT 1`,
+        [partId, OPEN_STATUSES]
+    );
+    if (open) return { line_id: open.line_id, existing: true };
+
+    const snap = await attachPartSnapshot(client, partId);
+    const count = await latestApprovedCount(client, partId);
+
+    const { rows: [line] } = await client.query(
+        `INSERT INTO wac_correction_line
+            (batch_id, part_id, system_qty_snapshot, wac_before, impact_estimate,
+             cycle_count_line_id, counted_qty)
+         VALUES (NULL, $1, $2, $3, $4, $5, $6)
+         RETURNING line_id`,
+        [partId, snap.system_qty, snap.wac_before, snap.impact_estimate,
+         count?.line_id || null, count?.counted_qty ?? null]
+    );
+
+    await client.query(
+        `INSERT INTO wac_correction_audit_log (line_id, part_id, action, wac_before, actioned_by, notes)
+         VALUES ($1, $2, 'OPENED', $3, $4, 'Opened from supplier document')`,
+        [line.line_id, partId, snap.wac_before, employeeId || null]
+    );
+
+    return { line_id: line.line_id, existing: false };
+}
+
+/**
+ * Queue high-impact parts for a manager who would rather push work than wait for
+ * encoders to happen upon the right invoices. No cycle count is required — a part with
+ * missing cost is worth researching whether or not it has been counted.
  */
 async function generateBatch(client, { employeeId, supplierId = null, limit = 50, createdBy }) {
     const { rows: candidates } = await client.query(
@@ -51,8 +137,7 @@ async function generateBatch(client, { employeeId, supplierId = null, limit = 50
             FROM inventory_transaction GROUP BY part_id
         ),
         latest_count AS (
-            SELECT DISTINCT ON (ccl.part_id)
-                   ccl.part_id, ccl.line_id, ccl.counted_qty, ccl.counted_at
+            SELECT DISTINCT ON (ccl.part_id) ccl.part_id, ccl.line_id, ccl.counted_qty
             FROM cycle_count_line ccl
             WHERE ccl.status = ANY($1) AND ccl.counted_qty IS NOT NULL
             ORDER BY ccl.part_id, ccl.counted_at DESC
@@ -64,8 +149,8 @@ async function generateBatch(client, { employeeId, supplierId = null, limit = 50
                lc.line_id                   AS cycle_count_line_id,
                lc.counted_qty
         FROM part p
-        LEFT JOIN stock s        ON s.part_id = p.part_id
-        JOIN latest_count lc     ON lc.part_id = p.part_id
+        LEFT JOIN stock s    ON s.part_id = p.part_id
+        LEFT JOIN latest_count lc ON lc.part_id = p.part_id
         WHERE p.is_service = FALSE AND p.is_active = TRUE
           AND (
                 ((p.wac_cost IS NULL OR p.wac_cost = 0) AND COALESCE(s.stock_on_hand, 0) <> 0)
@@ -110,30 +195,43 @@ async function generateBatch(client, { employeeId, supplierId = null, limit = 50
 }
 
 /**
- * What the ledger will look like if this line's entries are posted.
- *
- * The gap is intentionally derived *after* the documented receipts rather than assumed
- * up front — that is what stops the undocumented remainder from double-counting against
- * a quantity the cycle count already reconciled.
+ * What the ledger will look like if this line's entries are posted, and whether a
+ * counted quantity is usable as a reconciliation target.
  */
 async function projectLine(client, lineId) {
     const { rows: [line] } = await client.query(
         `SELECT wcl.*,
+                p.internal_sku, p.detail,
+                (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = wcl.part_id) AS display_name,
                 (SELECT COALESCE(SUM(quantity), 0) FROM inventory_transaction WHERE part_id = wcl.part_id) AS current_qty,
                 (SELECT COALESCE(SUM(quantity), 0) FROM wac_correction_entry WHERE line_id = wcl.line_id) AS proposed_qty
            FROM wac_correction_line wcl
+           JOIN part p ON p.part_id = wcl.part_id
           WHERE wcl.line_id = $1`,
         [lineId]
     );
     if (!line) throw badRequest('Correction line not found.');
 
+    const { rows: entryDates } = await client.query(
+        `SELECT date_received FROM wac_correction_entry WHERE line_id = $1`, [lineId]
+    );
+
+    // Re-read the count rather than trusting the snapshot: a cycle count may have been
+    // approved since this line was opened.
+    const count = await latestApprovedCount(client, line.part_id);
+    const willReconcile = countCoversEntries(count, entryDates.map(r => r.date_received));
+
     const currentQty = Number(line.current_qty);
     const proposedQty = Number(line.proposed_qty);
     const projectedQty = currentQty + proposedQty;
-    const countedQty = line.counted_qty == null ? null : Number(line.counted_qty);
-    const gapQty = countedQty == null ? null : Number((countedQty - projectedQty).toFixed(4));
+    const countedQty = count ? Number(count.counted_qty) : null;
+    const gapQty = willReconcile ? Number((countedQty - projectedQty).toFixed(4)) : null;
 
-    return { line, currentQty, proposedQty, projectedQty, countedQty, gapQty };
+    return {
+        line, currentQty, proposedQty, projectedQty,
+        countedQty, gapQty, willReconcile,
+        countedAt: count?.counted_at || null,
+    };
 }
 
 /** Save the encoder's reconstructed receipts. Writes nothing to the ledger. */
@@ -158,9 +256,8 @@ async function proposeCorrection(client, lineId, { entries, gapUnitCost, notes, 
         if (!Number.isFinite(cost) || cost <= 0) throw badRequest('Each entry needs a unit cost greater than zero.');
         if (Number.isNaN(when.getTime())) throw badRequest('Each entry needs a valid date received.');
         if (when.getTime() > Date.now()) throw badRequest('An entry cannot be dated in the future.');
-        // Posting will insert a dated StockIn, so the same period rules apply as to a
-        // backdated goods receipt. Failing here keeps the encoder from doing the work
-        // twice when the period turns out to be closed.
+        // Posting inserts a dated StockIn, so the same period rules apply as to a
+        // backdated goods receipt. Failing here saves the encoder redoing the work.
         await periodLockService.assertPeriodOpen(when, { module: 'goods_receipt' });
     }
 
@@ -176,9 +273,12 @@ async function proposeCorrection(client, lineId, { entries, gapUnitCost, notes, 
     }
 
     const projection = await projectLine(client, lineId);
-    if (projection.gapQty != null && projection.gapQty > 0 && !(Number(gapUnitCost) > 0)) {
+    // An estimate is only ever needed when a count that saw these receipts still shows
+    // more stock than they account for. Without such a count there is no gap to close —
+    // a later cycle count will reconcile the quantity.
+    if (projection.willReconcile && projection.gapQty > 0 && !(Number(gapUnitCost) > 0)) {
         throw badRequest(
-            `The documented receipts leave ${projection.gapQty} units unaccounted for against the counted quantity. ` +
+            `The counted quantity is ${projection.gapQty} units higher than these receipts account for. ` +
             `Provide an estimated unit cost for the remainder, or add the missing receipts.`
         );
     }
@@ -203,10 +303,13 @@ async function proposeCorrection(client, lineId, { entries, gapUnitCost, notes, 
 /**
  * Post an approved correction to the ledger, atomically.
  *
- * Order matters: documented receipts first, then the gap measured against what those
- * receipts actually produced, then a single chronological replay. The replay is not
- * optional — trg_update_wac derives prev_stock from the sum of all other rows regardless
- * of date, so it computes the wrong average for any receipt inserted mid-history.
+ * Documented receipts always post. The remainder is closed only when a count that
+ * observed those receipts exists; otherwise the quantity is deliberately left for cycle
+ * count to reconcile, and only the cost basis is corrected here.
+ *
+ * The chronological replay at the end is not optional: trg_update_wac derives prev_stock
+ * from the sum of all other rows regardless of date, so it computes the wrong average for
+ * any receipt inserted mid-history.
  */
 async function approveCorrection(client, lineId, { employeeId, notes }) {
     const { rows: [line] } = await client.query(
@@ -215,9 +318,6 @@ async function approveCorrection(client, lineId, { employeeId, notes }) {
     if (!line) throw badRequest('Correction line not found.');
     if (line.status !== 'PENDING_MANAGER_REVIEW') {
         throw badRequest('Only a proposed correction awaiting review can be approved.');
-    }
-    if (!line.cycle_count_line_id || line.counted_qty == null) {
-        throw badRequest('This part has no approved cycle count. Correct its quantity before correcting its cost.');
     }
 
     const { rows: entries } = await client.query(
@@ -242,35 +342,41 @@ async function approveCorrection(client, lineId, { employeeId, notes }) {
             [tx.inv_trans_id, e.entry_id]);
     }
 
-    // Measure the shortfall only after the documented receipts are in.
-    const { rows: [{ qty_now }] } = await client.query(
-        `SELECT COALESCE(SUM(quantity), 0) AS qty_now FROM inventory_transaction WHERE part_id = $1`,
-        [line.part_id]
-    );
-    const gapQty = Number((Number(line.counted_qty) - Number(qty_now)).toFixed(4));
+    // Re-check the count now, against the entries actually posted.
+    const count = await latestApprovedCount(client, line.part_id);
+    const willReconcile = countCoversEntries(count, entries.map(e => e.date_received));
 
-    if (gapQty > 0) {
-        // Physical stock beyond what could be documented: value it at the declared
-        // estimate. This is the only place an estimated cost enters the average, and it
-        // is scoped to the remainder rather than the whole quantity.
-        if (!(Number(line.gap_unit_cost) > 0)) {
-            throw badRequest('An estimated unit cost is required for the undocumented remainder.');
+    let gapQty = null;
+    if (willReconcile) {
+        const { rows: [{ qty_now }] } = await client.query(
+            `SELECT COALESCE(SUM(quantity), 0) AS qty_now FROM inventory_transaction WHERE part_id = $1`,
+            [line.part_id]
+        );
+        gapQty = Number((Number(count.counted_qty) - Number(qty_now)).toFixed(4));
+
+        if (gapQty > 0) {
+            // Physical stock beyond what could be documented, valued at the declared
+            // estimate. The only place an estimate enters the average, and scoped to the
+            // remainder rather than the whole quantity.
+            if (!(Number(line.gap_unit_cost) > 0)) {
+                throw badRequest('An estimated unit cost is required for the undocumented remainder.');
+            }
+            await client.query(
+                `INSERT INTO inventory_transaction
+                    (part_id, trans_type, quantity, unit_cost, reference_no, employee_id, notes)
+                 VALUES ($1, 'StockIn', $2, $3, $4, $5, 'Cost correction — undocumented opening balance')`,
+                [line.part_id, gapQty, line.gap_unit_cost, reference, employeeId || null]
+            );
+        } else if (gapQty < 0) {
+            // Documented receipts exceed the physical count — shrinkage. Quantity-only:
+            // carrying a unit_cost here would drag the average.
+            await client.query(
+                `INSERT INTO inventory_transaction
+                    (part_id, trans_type, quantity, reference_no, employee_id, notes)
+                 VALUES ($1, 'Adjustment', $2, $3, $4, 'Cost correction — variance to counted quantity')`,
+                [line.part_id, gapQty, reference, employeeId || null]
+            );
         }
-        await client.query(
-            `INSERT INTO inventory_transaction
-                (part_id, trans_type, quantity, unit_cost, reference_no, employee_id, notes)
-             VALUES ($1, 'StockIn', $2, $3, $4, $5, 'Cost correction — undocumented opening balance')`,
-            [line.part_id, gapQty, line.gap_unit_cost, reference, employeeId || null]
-        );
-    } else if (gapQty < 0) {
-        // Documented receipts exceed the physical count — shrinkage. Quantity-only, so
-        // it must not carry a unit_cost or it would drag the average.
-        await client.query(
-            `INSERT INTO inventory_transaction
-                (part_id, trans_type, quantity, reference_no, employee_id, notes)
-             VALUES ($1, 'Adjustment', $2, $3, $4, 'Cost correction — variance to counted quantity')`,
-            [line.part_id, gapQty, reference, employeeId || null]
-        );
     }
 
     const [impact] = await recomputeWacForParts(client, [line.part_id]);
@@ -291,7 +397,7 @@ async function approveCorrection(client, lineId, { employeeId, notes }) {
          entries.length, gapQty, employeeId || null, notes || null]
     );
 
-    // The part now has a real cost basis, so it no longer belongs in the costing queue.
+    // The part now has a real cost basis, so it leaves the costing queue.
     await client.query(
         `DELETE FROM part_tag
           WHERE part_id = $1
@@ -303,6 +409,7 @@ async function approveCorrection(client, lineId, { employeeId, notes }) {
         line_id: lineId,
         part_id: line.part_id,
         gap_qty: gapQty,
+        reconciled_to_count: willReconcile,
         old_wac_cost: impact?.old_wac_cost ?? null,
         new_wac_cost: impact?.new_wac_cost ?? null,
         entries_posted: entries.length,
@@ -340,11 +447,14 @@ async function rejectCorrection(client, lineId, { employeeId, notes }) {
 }
 
 module.exports = {
+    createLineForPart,
     generateBatch,
     projectLine,
     proposeCorrection,
     approveCorrection,
     rejectCorrection,
+    latestApprovedCount,
+    countCoversEntries,
     IMPACT_ESTIMATE_SQL,
     OPEN_STATUSES,
 };

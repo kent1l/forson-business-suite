@@ -30,6 +30,9 @@ const CostCorrectionPage = () => {
     const [loading, setLoading] = useState(false);
     const [activeLine, setActiveLine] = useState(null);
     const [reviewLine, setReviewLine] = useState(null);
+    const [lookupOpen, setLookupOpen] = useState(false);
+    const [lookupTerm, setLookupTerm] = useState('');
+    const [lookupResults, setLookupResults] = useState([]);
 
     const money = (v) => `${currency}${Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -90,6 +93,35 @@ const CostCorrectionPage = () => {
         }
     };
 
+    // Invoice-driven start: the encoder has a supplier document and finds the part,
+    // instead of waiting for it to be assigned to them.
+    useEffect(() => {
+        if (!lookupOpen || lookupTerm.trim() === '') { setLookupResults([]); return; }
+        const timer = setTimeout(async () => {
+            try {
+                const res = await api.get('/power-search/parts', { params: { keyword: lookupTerm } });
+                setLookupResults(res.data || []);
+            } catch {
+                toast.error('Search failed.');
+            }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [lookupTerm, lookupOpen]);
+
+    const startFromPart = async (partId) => {
+        try {
+            const res = await api.post(`${BASE}/lines/for-part`, { part_id: partId });
+            if (res.data.existing) toast('This part already has an open correction — opening it.', { icon: 'ℹ️' });
+            setLookupOpen(false);
+            setLookupTerm('');
+            setLookupResults([]);
+            await openLine(res.data.line_id);
+            refresh();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Could not open this part.');
+        }
+    };
+
     const generateBatch = async () => {
         try {
             const res = await api.post(`${BASE}/generate-batch`, { limit: 50 });
@@ -124,11 +156,18 @@ const CostCorrectionPage = () => {
                         Research and approve cost corrections for parts whose quantity has already been counted.
                     </p>
                 </div>
-                {canApprove && (
-                    <button onClick={generateBatch} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm">
-                        Queue next 50 by impact
-                    </button>
-                )}
+                <div className="flex gap-2">
+                    {canPropose && (
+                        <button onClick={() => setLookupOpen(true)} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm">
+                            Start from a supplier document
+                        </button>
+                    )}
+                    {canApprove && (
+                        <button onClick={generateBatch} className="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 text-sm">
+                            Queue next 50 by impact
+                        </button>
+                    )}
+                </div>
             </div>
 
             <div className="border-b border-gray-200 dark:border-slate-700">
@@ -256,6 +295,37 @@ const CostCorrectionPage = () => {
                     </table>
                 </div>
             )}
+
+            <Modal isOpen={lookupOpen} onClose={() => setLookupOpen(false)} title="Find the part on your document">
+                <div className="space-y-3">
+                    <p className="text-sm text-gray-600 dark:text-slate-400">
+                        Search for the item shown on the supplier invoice or delivery receipt.
+                    </p>
+                    <input
+                        autoFocus
+                        value={lookupTerm}
+                        onChange={e => setLookupTerm(e.target.value)}
+                        placeholder="Part name, SKU or part number…"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 text-sm"
+                    />
+                    <div className="max-h-72 overflow-y-auto divide-y divide-gray-200 dark:divide-slate-700 rounded-lg border border-gray-200 dark:border-slate-700">
+                        {lookupResults.length === 0 ? (
+                            <p className="px-3 py-4 text-sm text-gray-500 dark:text-slate-400">
+                                {lookupTerm ? 'No matching parts.' : 'Start typing to search.'}
+                            </p>
+                        ) : lookupResults.map(p => (
+                            <button
+                                key={p.part_id}
+                                onClick={() => startFromPart(p.part_id)}
+                                className="w-full text-left px-3 py-2 hover:bg-gray-50 dark:hover:bg-slate-800"
+                            >
+                                <div className="text-sm text-gray-900 dark:text-slate-100">{p.display_name || p.detail}</div>
+                                <div className="text-xs font-mono text-gray-500 dark:text-slate-400">{p.internal_sku}</div>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            </Modal>
 
             <Modal isOpen={!!activeLine} onClose={() => setActiveLine(null)} title="Reconstruct Goods Receipts">
                 {activeLine && (
