@@ -32,6 +32,8 @@ router.get('/goods-receipts', protect, async (req, res) => {
         gr.status,
         gr.voided_at,
         gr.void_reason,
+        gr.is_backfill,
+        gr.supplier_invoice_no,
         s.supplier_name,
         CONCAT(e.first_name, ' ', e.last_name) AS employee_name,
         CASE WHEN gr.voided_by IS NOT NULL THEN CONCAT(ve.first_name, ' ', ve.last_name) END AS voided_by_name
@@ -155,10 +157,33 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
   // that already consumed the stock — which corrupts the chronological replay that
   // recompute_wac_for_part() uses to derive WAC. Letting the receipt carry its real date
   // keeps the ledger in physical order. Defaults to now when omitted.
-  const { supplier_id, received_by, lines, po_id, bill_id, receipt_date } = req.body;
+  // is_backfill: this document records a delivery that already happened and was never
+  // entered. It posts stock and cost exactly like a receipt — that is the point, since
+  // WAC is replayed from the StockIn history — but creates no payable and touches no
+  // purchase order, because the goods were paid for long ago and no open PO is waiting
+  // on them.
+  const { supplier_id, received_by, lines, po_id, bill_id, receipt_date,
+          is_backfill, supplier_invoice_no } = req.body;
 
   if (!supplier_id || !received_by || !lines || !Array.isArray(lines) || lines.length === 0) {
     return res.status(400).json({ message: 'Missing required fields.' });
+  }
+
+  const isBackfill = !!is_backfill;
+  const invoiceNo = supplier_invoice_no ? String(supplier_invoice_no).trim() : null;
+
+  if (isBackfill) {
+    if (!receipt_date) {
+      return res.status(400).json({ message: 'A historical receipt needs the date the goods actually arrived.' });
+    }
+    // The supplier's own document number is what makes re-entering the same invoice
+    // detectable. Without it there is nothing to match a duplicate against.
+    if (!invoiceNo) {
+      return res.status(400).json({ message: "Enter the supplier's invoice or delivery receipt number so the same document cannot be recorded twice." });
+    }
+    if (po_id) {
+      return res.status(400).json({ message: 'A historical receipt cannot be received against a purchase order.' });
+    }
   }
 
   let receiptDate = null;
@@ -196,11 +221,12 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
     const grn_number = await getNextDocumentNumber(client, 'GRN');
 
     const goodsReceiptQuery = `
-      INSERT INTO goods_receipt (grn_number, supplier_id, received_by, bill_id, po_id, receipt_date)
-      VALUES ($1, $2, $3, $4, $5, COALESCE($6::timestamptz, CURRENT_TIMESTAMP))
+      INSERT INTO goods_receipt (grn_number, supplier_id, received_by, bill_id, po_id, receipt_date, is_backfill, supplier_invoice_no)
+      VALUES ($1, $2, $3, $4, $5, COALESCE($6::timestamptz, CURRENT_TIMESTAMP), $7, $8)
       RETURNING grn_id;
     `;
-    const receiptResult = await client.query(goodsReceiptQuery, [grn_number, supplier_id, received_by, bill_id || null, po_id || null, receiptDate]);
+    const receiptResult = await client.query(goodsReceiptQuery, [grn_number, supplier_id, received_by,
+      isBackfill ? null : (bill_id || null), isBackfill ? null : (po_id || null), receiptDate, isBackfill, invoiceNo]);
     const newGrnId = receiptResult.rows[0].grn_id;
 
     for (const line of lines) {
@@ -236,7 +262,7 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
       await client.query(transactionQuery, [part_id, quantity, cost_price, grn_number, received_by, receiptDate]);
       
       // --- NEW: Update PO if linked ---
-      if (po_id) {
+      if (po_id && !isBackfill) {
         await client.query(
             `UPDATE purchase_order_line SET quantity_received = quantity_received + $1 WHERE po_id = $2 AND part_id = $3`,
             [quantity, po_id, part_id]
@@ -245,7 +271,7 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
     }
 
     // --- NEW: Update PO status after all lines are processed ---
-    if (po_id) {
+    if (po_id && !isBackfill) {
         const poStatusQuery = `
             SELECT 
                 SUM(quantity) as total_ordered,
@@ -270,8 +296,10 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
     // makes this idempotent if the request is ever retried. Skipped entirely when
     // bill_id was provided — the receipt is attaching items to an existing payable,
     // not creating a new one.
+    // A backfill never posts a payable: the goods it records were paid for long ago,
+    // so auto-creating a bill would overstate what is owed to the supplier.
     const totalAmount = lines.reduce((sum, l) => sum + (parseFloat(l.quantity) * parseFloat(l.cost_price)), 0);
-    if (totalAmount > 0 && !bill_id) {
+    if (totalAmount > 0 && !bill_id && !isBackfill) {
       const { rows: [supplier] } = await client.query(
         'SELECT payment_terms_days FROM supplier WHERE supplier_id = $1', [supplier_id]
       );
@@ -329,6 +357,16 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
 
   } catch (err) {
     await client.query('ROLLBACK');
+    // The whole point of recording the supplier's document number is to make a repeat
+    // entry impossible, so say plainly what happened rather than surfacing a 500.
+    if (err.code === '23505' && err.constraint === 'uq_goods_receipt_supplier_invoice') {
+      return res.status(409).json({
+        message: `Invoice ${invoiceNo} has already been recorded for this supplier. Check the receipt history before entering it again.`,
+      });
+    }
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ message: err.message });
+    }
     console.error('Transaction Error:', err.message);
     res.status(500).json({ message: 'Server error during transaction.', error: err.message });
   } finally {

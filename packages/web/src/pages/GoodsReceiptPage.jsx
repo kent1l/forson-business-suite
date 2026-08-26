@@ -64,6 +64,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     const [selectedPO, setSelectedPO] = useState('');
     const [posting, setPosting] = useState(false);
     const [receiptDate, setReceiptDate] = useState('');
+    const [isBackfill, setIsBackfill] = useState(false);
+    const [supplierInvoiceNo, setSupplierInvoiceNo] = useState('');
     const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
 
     // Reusable draft hook
@@ -284,6 +286,14 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             toast.error('Please select a supplier and add at least one item.');
             return;
         }
+        if (isBackfill && !supplierInvoiceNo.trim()) {
+            toast.error("Enter the supplier's invoice or DR number so this document can't be entered twice.");
+            return;
+        }
+        if (isBackfill && !receiptDate) {
+            toast.error('Enter the date the goods actually arrived.');
+            return;
+        }
 
         const payload = {
             supplier_id: selectedSupplier,
@@ -296,6 +306,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             })),
             po_id: selectedPO ? selectedPO.po_id : null,
             receipt_date: receiptDate || null,
+            is_backfill: isBackfill,
+            supplier_invoice_no: isBackfill ? supplierInvoiceNo : null,
         };
 
         setPosting(true);
@@ -308,6 +320,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 setSelectedSupplier('');
                 setSelectedPO('');
                 setReceiptDate('');
+                setSupplierInvoiceNo('');
                 fetchInitialData(); // Refresh PO list
                 clearDraft();
                 setPosting(false);
@@ -390,6 +403,64 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                             </button>
                         )}
                 </div>
+                <div className={`mb-4 rounded-xl border p-3 ${isBackfill
+                    ? 'border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-900/20'
+                    : 'border-gray-200 dark:border-slate-700'}`}>
+                    <label className="flex items-start gap-3 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={isBackfill}
+                            onChange={e => {
+                                setIsBackfill(e.target.checked);
+                                if (e.target.checked) setSelectedPO('');
+                            }}
+                            className="mt-0.5 h-4 w-4 rounded border-gray-300 dark:border-slate-600"
+                        />
+                        <span>
+                            <span className="block text-sm font-medium text-gray-900 dark:text-slate-100">
+                                Backfill a past delivery
+                            </span>
+                            <span className="block text-xs text-gray-600 dark:text-slate-400 mt-0.5">
+                                For deliveries that already arrived but were never recorded. Posts the stock and
+                                cost at the real date, so the item&apos;s average cost is rebuilt correctly — but
+                                creates no payable and does not touch any purchase order, since the goods were
+                                paid for long ago.
+                            </span>
+                        </span>
+                    </label>
+
+                    {isBackfill && (
+                        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <label className={labelClass}>Supplier Invoice / DR No.</label>
+                                <input
+                                    type="text"
+                                    value={supplierInvoiceNo}
+                                    onChange={e => setSupplierInvoiceNo(e.target.value)}
+                                    placeholder="As printed on the document"
+                                    className={selectClass}
+                                />
+                                <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                                    Required. Blocks the same document from being entered twice.
+                                </p>
+                            </div>
+                            <div>
+                                <label className={labelClass}>Date Received</label>
+                                <input
+                                    type="date"
+                                    value={receiptDate}
+                                    max={todayStr}
+                                    onChange={e => setReceiptDate(e.target.value)}
+                                    className={selectClass}
+                                />
+                                <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                                    Required. The date on the supplier&apos;s document.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label className={`${labelClass} flex items-center gap-1`}>
@@ -400,8 +471,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                 quantity in one pass where possible.
                             </InfoTip>
                         </label>
-                        <select value={selectedPO ? selectedPO.po_id : ''} onChange={e => handleSelectPO(e.target.value)} className={selectClass}>
-                            <option value="">-- Select a PO --</option>
+                        <select value={selectedPO ? selectedPO.po_id : ''} onChange={e => handleSelectPO(e.target.value)} className={selectClass} disabled={isBackfill}>
+                            <option value="">{isBackfill ? '-- Not applicable when backfilling --' : '-- Select a PO --'}</option>
                             {openPOs.map(po => <option key={po.po_id} value={po.po_id}>{po.po_number} - {po.supplier_name}</option>)}
                         </select>
                     </div>
@@ -420,23 +491,25 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                             <button onClick={() => setIsSupplierModalOpen(true)} className="px-3 py-2 bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-100 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-600 text-sm disabled:opacity-60 disabled:cursor-not-allowed" disabled={!!selectedPO}>New</button>
                         </div>
                     </div>
-                    <div>
-                        <label className={`${labelClass} flex items-center gap-1`}>
-                            Date Received (Optional)
-                            <InfoTip label="Date Received">
-                                Leave blank if the goods arrived today. If you are entering older paperwork, set the
-                                date the goods actually arrived — otherwise the receipt is recorded after sales that
-                                already used the stock, which inflates the item&apos;s weighted average cost.
-                            </InfoTip>
-                        </label>
-                        <input
-                            type="date"
-                            value={receiptDate}
-                            max={todayStr}
-                            onChange={e => setReceiptDate(e.target.value)}
-                            className={selectClass}
-                        />
-                    </div>
+                    {!isBackfill && (
+                        <div>
+                            <label className={`${labelClass} flex items-center gap-1`}>
+                                Date Received (Optional)
+                                <InfoTip label="Date Received">
+                                    Leave blank if the goods arrived today. If you are entering older paperwork, set the
+                                    date the goods actually arrived — otherwise the receipt is recorded after sales that
+                                    already used the stock, which inflates the item&apos;s weighted average cost.
+                                </InfoTip>
+                            </label>
+                            <input
+                                type="date"
+                                value={receiptDate}
+                                max={todayStr}
+                                onChange={e => setReceiptDate(e.target.value)}
+                                className={selectClass}
+                            />
+                        </div>
+                    )}
                 </div>
 
                 <div>
