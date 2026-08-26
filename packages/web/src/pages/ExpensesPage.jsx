@@ -22,7 +22,7 @@ const defaultFilters = () => ({
     page: 1
 });
 
-export default function ExpensesPage() {
+export default function ExpensesPage({ onNavigate }) {
     const [expenses, setExpenses] = useState([]);
     const [categories, setCategories] = useState([]);
     const [paymentMethods, setPaymentMethods] = useState([]);
@@ -38,6 +38,7 @@ export default function ExpensesPage() {
     const [prefillExpense, setPrefillExpense] = useState(null); // "duplicate entry" source
     const [aiParsedData, setAiParsedData] = useState(null);
     const [aiRawInput, setAiRawInput] = useState('');
+    const [aiClarifying, setAiClarifying] = useState(null);
     const [formSubmitLoading, setFormSubmitLoading] = useState(false);
     const [quickEntryResetKey, setQuickEntryResetKey] = useState(0);
 
@@ -126,11 +127,12 @@ export default function ExpensesPage() {
     // rawText is what the user literally typed (often Cebuano or local shorthand).
     // It must survive all the way to POST /expenses — it is the only text the
     // learning loop can use to pick up local vocabulary.
-    const handleQuickEntryParsed = (parsed, rawText) => {
+    const handleQuickEntryParsed = (parsed, rawText, clarifying) => {
         setEditingExpense(null);
         setPrefillExpense(null);
         setAiParsedData(parsed);
         setAiRawInput(rawText || '');
+        setAiClarifying(clarifying || null);
         setFormModalOpen(true);
     };
 
@@ -139,6 +141,7 @@ export default function ExpensesPage() {
         setPrefillExpense(null);
         setAiParsedData(null);
         setAiRawInput('');
+        setAiClarifying(null);
         setFormModalOpen(true);
     };
 
@@ -147,6 +150,7 @@ export default function ExpensesPage() {
         setPrefillExpense(null);
         setAiParsedData(null);
         setAiRawInput('');
+        setAiClarifying(null);
         setFormModalOpen(true);
     };
 
@@ -157,6 +161,7 @@ export default function ExpensesPage() {
         setEditingExpense(null);
         setAiParsedData(null);
         setAiRawInput('');
+        setAiClarifying(null);
         setPrefillExpense({
             ...expense,
             expense_id: undefined,
@@ -164,6 +169,32 @@ export default function ExpensesPage() {
             reference_no: '' // reference numbers are unique per document, never copy them
         });
         setFormModalOpen(true);
+    };
+
+    // The guardrail decided this cash-out belongs in another module. Nothing is
+    // saved here — the entry is handed to the module that owns that kind of
+    // transaction, where the user completes and confirms it.
+    const closeFormForRouting = () => {
+        setFormModalOpen(false);
+        setAiParsedData(null);
+        setAiRawInput('');
+        setAiClarifying(null);
+        setQuickEntryResetKey(prev => prev + 1);
+    };
+
+    const handleRouteToApPayment = ({ bill }) => {
+        closeFormForRouting();
+        toast('Continue in Accounts Payable to settle this bill.', { icon: 'ℹ️' });
+        onNavigate?.('ap', {
+            tab: 'overview',
+            recordPaymentFor: { supplier_id: bill.supplier_id, supplier_name: bill.supplier_name }
+        });
+    };
+
+    const handleRouteToGoodsReceipt = ({ payee, amount, description }) => {
+        closeFormForRouting();
+        toast('Add the parts received to record this as stock.', { icon: 'ℹ️' });
+        onNavigate?.('goods_receipt', { expensePrefill: { payee, amount, description } });
     };
 
     const handleFormSubmit = async (payload) => {
@@ -252,6 +283,9 @@ export default function ExpensesPage() {
                     isDuplicating={!editingExpense && !!prefillExpense}
                     aiParsedData={aiParsedData}
                     aiRawInput={aiRawInput}
+                    aiClarifying={aiClarifying}
+                    onRouteToApPayment={handleRouteToApPayment}
+                    onRouteToGoodsReceipt={handleRouteToGoodsReceipt}
                     onSubmit={handleFormSubmit}
                     onClose={() => setFormModalOpen(false)}
                     loading={formSubmitLoading}

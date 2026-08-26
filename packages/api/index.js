@@ -88,6 +88,7 @@ registerRoute('/api', './routes/taxReportRoutes');
 registerRoute('/api', './routes/expenseCategoryRoutes');
 registerRoute('/api', './routes/expenseRoutes');
 registerRoute('/api', './routes/expenseLexiconRoutes');
+registerRoute('/api', './routes/periodLockRoutes');
 registerRoute('/api', './routes/apPdcRoutes');
 registerRoute('/api', './routes/apRoutes');
 

@@ -1,7 +1,22 @@
 const express = require('express');
 const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
+const categoryVectors = require('../services/expenseCategoryVectorService');
 const router = express.Router();
+
+/**
+ * Brings category definition vectors back in line after the category list changes.
+ *
+ * Fire-and-forget on purpose: embedding calls hit an external provider, and a
+ * category edit must not fail — or wait — because that provider is slow or down.
+ * `refreshDefinitionEmbeddings` compares the stored `embedding_source`, so this is
+ * a no-op for untouched categories and the refresh script can always backfill.
+ */
+function refreshCategoryVectors(reason) {
+    categoryVectors.refreshDefinitionEmbeddings().catch((err) => {
+        console.warn(`[ExpenseCategories] Vector refresh after ${reason} failed:`, err.message);
+    });
+}
 
 // GET /api/expense-categories - List active categories
 router.get('/expense-categories', protect, hasPermission('expenses:view'), async (req, res) => {
@@ -66,6 +81,9 @@ router.post('/expense-categories', protect, hasPermission('expenses:manage_categ
             RETURNING category_id, category_name, description, sort_order, is_active, created_at, updated_at
         `;
         const result = await db.query(insertQuery, [trimmedName, description || null, parseInt(sort_order, 10) || 0, employeeId]);
+        // A category with no vector cannot be matched by meaning, so give the new one
+        // its embedding immediately. Best-effort — the refresh script can backfill it.
+        refreshCategoryVectors('create');
         res.status(201).json(result.rows[0]);
     } catch (error) {
         console.error('Error creating expense category:', error);
@@ -144,6 +162,9 @@ router.put('/expense-categories/:id', protect, hasPermission('expenses:manage_ca
             return res.status(404).json({ message: 'Category not found' });
         }
 
+        // A renamed or re-described category means something different now, so its
+        // vector has to follow or matching keeps using the old meaning.
+        refreshCategoryVectors('update');
         res.json(result.rows[0]);
     } catch (error) {
         console.error('Error updating expense category:', error);

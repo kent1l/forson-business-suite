@@ -8,13 +8,14 @@ import InfoTip from '../components/ui/InfoTip';
 import Combobox from '../components/ui/Combobox';
 import { ICONS } from '../constants';
 import useDraft from '../hooks/useDraft';
+import useDeepLink from '../hooks/useDeepLink';
 import { formatApplicationText } from '../helpers/applicationTextHelper';
 import { enrichPartsArray } from '../helpers/applicationCache';
 import GoodsReceiptModals from '../components/ui/GoodsReceiptModals';
 import MathExpressionInput from '../components/ui/MathExpressionInput';
 import { formatCurrency } from '../utils/currency';
 
-const GoodsReceiptPage = ({ user, onNavigate }) => {
+const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     const [suppliers, setSuppliers] = useState([]);
     const [brands, setBrands] = useState([]);
     const [groups, setGroups] = useState([]);
@@ -129,6 +130,24 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
     useEffect(() => {
         fetchInitialData();
     }, []);
+
+    // Arrives when the expense guardrail decides an entry was really a stock
+    // purchase. Only the vendor and the wording carry over — the parts, quantities
+    // and unit costs were never in the original sentence, so the user supplies them.
+    const [expensePrefill, setExpensePrefill] = useState(null);
+    useDeepLink(pageState, ({ expensePrefill: incoming }) => {
+        if (!incoming) return;
+        setExpensePrefill(incoming);
+        if (incoming.description) setSearchTerm('');
+    });
+
+    useEffect(() => {
+        if (!expensePrefill?.payee || suppliers.length === 0 || selectedSupplier) return;
+        const wanted = expensePrefill.payee.trim().toLowerCase();
+        const hit = suppliers.find(s => (s.supplier_name || '').trim().toLowerCase() === wanted)
+            || suppliers.find(s => (s.supplier_name || '').toLowerCase().includes(wanted));
+        if (hit) setSelectedSupplier(String(hit.supplier_id));
+    }, [expensePrefill, suppliers, selectedSupplier]);
 
     // When draft loads, hydrate local state once
     useEffect(() => {
@@ -317,6 +336,31 @@ const GoodsReceiptPage = ({ user, onNavigate }) => {
                     <Icon path={ICONS.history} className="h-4 w-4" /> View History
                 </button>
             </div>
+
+            {expensePrefill && (
+                <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-900/40 rounded-lg flex items-start gap-2">
+                    <Icon path={ICONS.warning} className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                    <div className="text-xs text-amber-900 dark:text-amber-200">
+                        <p className="font-semibold">Carried over from an expense entry</p>
+                        {expensePrefill.description && (
+                            <p className="mt-0.5 italic text-amber-800 dark:text-amber-300">“{expensePrefill.description}”</p>
+                        )}
+                        <p className="mt-1 text-amber-800 dark:text-amber-300">
+                            {expensePrefill.amount
+                                ? `Amount mentioned: ${formatCurrency(expensePrefill.amount)} — add the parts received below and spread this across their unit costs.`
+                                : 'Add the parts received below to record this as stock.'}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setExpensePrefill(null)}
+                        aria-label="Dismiss"
+                        className="ml-auto text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-200 shrink-0"
+                    >
+                        <Icon path={ICONS.close} className="w-4 h-4" />
+                    </button>
+                </div>
+            )}
 
             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 space-y-6 shadow-xs">
                 {/* Draft saved indicator */}

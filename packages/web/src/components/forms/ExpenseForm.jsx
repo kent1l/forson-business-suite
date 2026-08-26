@@ -4,6 +4,16 @@ import Icon from '../ui/Icon';
 import InfoTip from '../ui/InfoTip';
 import { ICONS } from '../../constants';
 
+// Why each flagged type does not belong in Expenses, in the terms a cashier would
+// use. Fixed assets and owner's drawings have no module to move to, so they read
+// as guidance rather than a redirect.
+const NATURE_LABELS = {
+    inventory_purchase: 'This looks like stock bought to resell. Inventory is recorded through Goods Receipt so it counts as stock on hand, not as a running cost.',
+    fixed_asset: 'This looks like equipment or a tool that will last more than a year. It is an asset purchase rather than an operating cost for this month.',
+    liability_payment: 'This looks like settling a supplier bill that was already recorded when the goods arrived. Recording it here as well would count the same money twice.',
+    owner_drawing: 'This looks like cash taken for personal use. That is a withdrawal against the owner, not a business expense.'
+};
+
 export default function ExpenseForm({
     categories = [],
     paymentMethods = [],
@@ -11,6 +21,9 @@ export default function ExpenseForm({
     isDuplicating = false,
     aiParsedData = null,
     aiRawInput = '',
+    aiClarifying = null,
+    onRouteToApPayment,
+    onRouteToGoodsReceipt,
     onSubmit,
     onClose,
     loading = false
@@ -40,6 +53,9 @@ export default function ExpenseForm({
     const [duplicateMatches, setDuplicateMatches] = useState([]);
     const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false);
     const [checkingDuplicate, setCheckingDuplicate] = useState(false);
+
+    // Non-blocking warning that this cash-out may not be an operating expense.
+    const [natureOverride, setNatureOverride] = useState(false);
 
     const cleanDateStr = (val) => {
         if (!val) return today;
@@ -94,8 +110,10 @@ export default function ExpenseForm({
             });
             setAiMeta({
                 original: { ...aiParsedData },
-                confidence: aiParsedData.confidence || {}
+                confidence: aiParsedData.confidence || {},
+                natureFlag: aiParsedData.nature_flag || null
             });
+            setNatureOverride(false);
         }
     }, [initialData, aiParsedData]);
 
@@ -178,6 +196,13 @@ export default function ExpenseForm({
         e.preventDefault();
         if (!validate()) return;
 
+        // First submit while the non-opex warning is up only acknowledges it, the
+        // same two-press confirmation the duplicate warning uses.
+        if (aiMeta?.natureFlag?.likely_non_opex && !natureOverride) {
+            setNatureOverride(true);
+            return;
+        }
+
         // Warn (never block) if an identical expense is already on file for this date.
         // Existing matches mean the user has already been shown the warning for this exact
         // date/amount/payee combination, so a second submit is their confirmation to proceed.
@@ -243,7 +268,11 @@ export default function ExpenseForm({
             // Carries the user's original wording (and the AI's proposal) to the
             // server so the lexicon can learn local terms from real entries.
             raw_input: aiRawInput || null,
-            ai_parsed: aiMeta?.original || null
+            ai_parsed: aiMeta?.original || null,
+            nature_flag: aiMeta?.natureFlag || null,
+            nature_override: natureOverride,
+            clarifying_question: aiClarifying?.question || null,
+            clarifying_answer: aiClarifying?.answer || null
         };
 
         onSubmit(payload);
@@ -253,6 +282,9 @@ export default function ExpenseForm({
         if (!aiMeta || !aiMeta.original) return false;
         return aiMeta.original[fieldName] !== undefined && aiMeta.original[fieldName] !== null;
     };
+
+    const natureFlag = aiMeta?.natureFlag || null;
+    const showNatureWarning = Boolean(natureFlag?.likely_non_opex) && !natureOverride;
 
     const getConfidenceWarning = (fieldName) => {
         if (!aiMeta || !aiMeta.confidence) return null;
@@ -509,6 +541,68 @@ export default function ExpenseForm({
                         </div>
                     )}
 
+                    {/* Possible non-operating-expense warning — advisory, never blocking */}
+                    {showNatureWarning && (
+                        <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-900/40 rounded-lg space-y-2">
+                            <div className="flex items-start space-x-2">
+                                <Icon path={ICONS.warning} className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                                <div className="text-xs text-amber-900 dark:text-amber-200">
+                                    <p className="font-semibold">This may not be an operating expense.</p>
+                                    <p className="text-amber-800 dark:text-amber-300 mt-0.5">
+                                        {NATURE_LABELS[natureFlag.non_opex_type] || 'This may belong somewhere other than Expenses.'}
+                                    </p>
+                                    {natureFlag.reasoning && (
+                                        <p className="text-amber-700 dark:text-amber-400 mt-1 italic">{natureFlag.reasoning}</p>
+                                    )}
+                                </div>
+                            </div>
+
+                            {natureFlag.non_opex_type === 'liability_payment' && natureFlag.matched_bill && (
+                                <div className="pl-6 space-y-1.5">
+                                    <p className="text-xs text-amber-900 dark:text-amber-200 bg-amber-100/60 dark:bg-amber-900/40 rounded px-2 py-1">
+                                        Matches <span className="font-semibold">{natureFlag.matched_bill.bill_number}</span>
+                                        {' · '}{natureFlag.matched_bill.supplier_name}
+                                        {' · outstanding ₱'}
+                                        {parseFloat(natureFlag.matched_bill.outstanding_amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => onRouteToApPayment?.({
+                                            bill: natureFlag.matched_bill,
+                                            amount: parseFloat(formData.amount) || natureFlag.matched_bill.outstanding_amount,
+                                            payment_method_id: formData.payment_method_id || null,
+                                            settlement_date: formData.expense_date,
+                                            reference_no: formData.reference_no?.trim() || null
+                                        })}
+                                        className="px-3 py-1.5 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors cursor-pointer"
+                                    >
+                                        Record as payment on {natureFlag.matched_bill.bill_number} instead
+                                    </button>
+                                </div>
+                            )}
+
+                            {natureFlag.non_opex_type === 'inventory_purchase' && (
+                                <div className="pl-6">
+                                    <button
+                                        type="button"
+                                        onClick={() => onRouteToGoodsReceipt?.({
+                                            payee: formData.payee?.trim() || null,
+                                            amount: parseFloat(formData.amount) || null,
+                                            description: aiRawInput || formData.notes || ''
+                                        })}
+                                        className="px-3 py-1.5 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors cursor-pointer"
+                                    >
+                                        Fill in a Goods Receipt instead
+                                    </button>
+                                </div>
+                            )}
+
+                            <p className="text-[11px] text-amber-700 dark:text-amber-400 pl-6">
+                                If this really is an operating expense, choose “Save anyway”.
+                            </p>
+                        </div>
+                    )}
+
                     {/* Footer Actions */}
                     <div className="flex items-center justify-end space-x-3 pt-4 border-t border-slate-100 dark:border-slate-700">
                         <button
@@ -527,7 +621,7 @@ export default function ExpenseForm({
                                 if (duplicateMatches.length > 0) setDuplicateAcknowledged(true);
                             }}
                             className={`px-5 py-2 text-sm font-medium text-white rounded-lg shadow-sm transition-colors cursor-pointer inline-flex items-center disabled:opacity-60 ${
-                                duplicateMatches.length > 0 && !duplicateAcknowledged
+                                (duplicateMatches.length > 0 && !duplicateAcknowledged) || showNatureWarning
                                     ? 'bg-amber-600 hover:bg-amber-700'
                                     : 'bg-primary-600 hover:bg-primary-700'
                             }`}
@@ -540,7 +634,7 @@ export default function ExpenseForm({
                                     </svg>
                                     <span>{checkingDuplicate ? 'Checking...' : 'Saving...'}</span>
                                 </>
-                            ) : duplicateMatches.length > 0 && !duplicateAcknowledged ? (
+                            ) : (duplicateMatches.length > 0 && !duplicateAcknowledged) || showNatureWarning ? (
                                 <span>Save anyway</span>
                             ) : (
                                 <span>{initialData && !isDuplicating ? 'Update Expense' : 'Save Expense Record'}</span>

@@ -37,6 +37,7 @@ import CashierApprovalDesk from '../../pages/CashierApprovalDesk';
 import ExpensesPage from '../../pages/ExpensesPage';
 import ExpenseCategoriesPage from '../../pages/ExpenseCategoriesPage';
 import ExpenseLexiconPage from '../../pages/ExpenseLexiconPage';
+import ExpensePeriodLocksPage from '../../pages/ExpensePeriodLocksPage';
 import PaperlessReceiptsPage from '../../pages/PaperlessReceiptsPage';
 import SoaGenPage from '../../pages/SoaGenPage';
 
@@ -55,7 +56,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'parts_cleanup': return <PartsCleanupPage user={user} onNavigate={onNavigate} />;
             case 'applications': return <ApplicationsPage user={user} />;
             case 'customers': return <CustomersPage user={user} />;
-            case 'goods_receipt': return <GoodsReceiptPage user={user} onNavigate={onNavigate} />;
+            case 'goods_receipt': return <GoodsReceiptPage user={user} onNavigate={onNavigate} pageState={currentPage === 'goods_receipt' ? pageState : null} />;
             case 'goods_receipt_history': return <GoodsReceiptHistoryPage user={user} />;
             case 'invoicing': return <InvoicingPage user={user} onNavigate={onNavigate} pageState={currentPage === 'invoicing' ? pageState : null} />;
             case 'sales_history': return <SalesHistoryPage />; // <-- Add case for new page
@@ -69,9 +70,10 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'inventory': return <InventoryPage user={user} />;
             case 'cycle_count': return <CycleCountExecutionPage />;
             case 'manager_audit': return <ManagerReviewDesk />;
-            case 'expenses': return <ExpensesPage />;
+            case 'expenses': return <ExpensesPage onNavigate={onNavigate} />;
             case 'expense_categories': return <ExpenseCategoriesPage />;
             case 'expense_lexicon': return <ExpenseLexiconPage />;
+            case 'expense_period_locks': return <ExpensePeriodLocksPage />;
             case 'paperless_receipts': return <PaperlessReceiptsPage />;
             case 'employees': return <EmployeesPage user={user} />;
             case 'departments': return <DepartmentsPage />;

@@ -54,8 +54,17 @@ const OverviewTab = ({ overview, onOpenSupplier }) => {
 const AccountsPayablePage = ({ onNavigate, pageState }) => {
     const { hasPermission } = useAuth();
     const [activeTab, setActiveTab] = useState('overview');
-    // Lets a notification land on the tab where the alert is actionable.
-    useDeepLink(pageState, ({ tab }) => { if (tab) setActiveTab(tab); });
+    const [presetPaymentSupplier, setPresetPaymentSupplier] = useState(null);
+    // Lets a notification land on the tab where the alert is actionable, and lets
+    // the expense guardrail hand a misfiled bill payment straight to the AP flow
+    // that knows how to allocate it.
+    useDeepLink(pageState, ({ tab, recordPaymentFor }) => {
+        if (tab) setActiveTab(tab);
+        if (recordPaymentFor?.supplier_id) {
+            setPresetPaymentSupplier(recordPaymentFor);
+            setIsRecordPaymentOpen(true);
+        }
+    });
     const [selectedSupplier, setSelectedSupplier] = useState(null);
     const [isAddPayableOpen, setIsAddPayableOpen] = useState(false);
     const [isRecordPaymentOpen, setIsRecordPaymentOpen] = useState(false);
@@ -170,8 +179,9 @@ const AccountsPayablePage = ({ onNavigate, pageState }) => {
 
             <RecordSupplierPaymentModal
                 isOpen={isRecordPaymentOpen}
-                onClose={() => setIsRecordPaymentOpen(false)}
+                onClose={() => { setIsRecordPaymentOpen(false); setPresetPaymentSupplier(null); }}
                 onRecorded={handlePaymentRecorded}
+                presetSupplier={presetPaymentSupplier}
             />
         </div>
     );

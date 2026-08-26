@@ -23,6 +23,14 @@ jest.mock('../middleware/authMiddleware', () => ({
     isAdmin: (req, res, next) => next()
 }));
 
+// Mock category vector service — the routes fire this off in the background
+// (not awaited) after a category create/update; left unmocked it runs its real
+// implementation against the same mocked `db.query`, consuming mock values meant
+// for unrelated tests at unpredictable times.
+jest.mock('../services/expenseCategoryVectorService', () => ({
+    refreshDefinitionEmbeddings: jest.fn().mockResolvedValue(0)
+}));
+
 // Mock AI Parser service
 jest.mock('../services/expenseAIParser', () => ({
     parseExpenseText: jest.fn().mockImplementation(async (text) => {
@@ -128,6 +136,7 @@ describe('Expense Recording Module Routes', () => {
 
     describe('POST /api/expenses', () => {
         test('should create a new expense record', async () => {
+            db.query.mockResolvedValueOnce({ rows: [] }); // period lock check (open)
             db.query.mockResolvedValueOnce({ rows: [{ category_id: 2 }] }); // check category
             db.query.mockResolvedValueOnce({ rows: [{ method_id: 1, name: 'Cash' }] }); // check payment method
             db.query.mockResolvedValueOnce({ rows: [{ expense_id: 100 }] }); // insert
@@ -171,7 +180,8 @@ describe('Expense Recording Module Routes', () => {
 
     describe('PUT /api/expenses/:id/void', () => {
         test('should void active expense record with reason', async () => {
-            db.query.mockResolvedValueOnce({ rows: [{ is_void: false }] }); // check existing
+            db.query.mockResolvedValueOnce({ rows: [{ is_void: false, expense_date: '2026-07-23' }] }); // check existing
+            db.query.mockResolvedValueOnce({ rows: [] }); // period lock check (open)
             db.query.mockResolvedValueOnce({ rows: [] }); // update void
             db.query.mockResolvedValueOnce({
                 rows: [{ expense_id: 1, is_void: true, void_reason: 'Entered in error' }]
@@ -261,7 +271,8 @@ describe('Expense Recording Module Routes', () => {
         });
 
         test('should reject an inactive or invalid category', async () => {
-            db.query.mockResolvedValueOnce({ rows: [{ is_void: false }] }); // existing lookup
+            db.query.mockResolvedValueOnce({ rows: [{ is_void: false, expense_date: validBody.expense_date }] }); // existing lookup
+            db.query.mockResolvedValueOnce({ rows: [] });                   // period lock check (open)
             db.query.mockResolvedValueOnce({ rows: [] });                   // category lookup misses
 
             const res = await request(app).put('/api/expenses/1').send(validBody);
@@ -273,6 +284,7 @@ describe('Expense Recording Module Routes', () => {
 
     describe('Payment method validation', () => {
         test('POST should reject a disabled or unknown payment method instead of silently using Cash', async () => {
+            db.query.mockResolvedValueOnce({ rows: [] }); // period lock check (open)
             db.query.mockResolvedValueOnce({ rows: [{ category_id: 2 }] }); // category ok
             db.query.mockResolvedValueOnce({ rows: [] });                   // payment method misses
 
@@ -285,7 +297,8 @@ describe('Expense Recording Module Routes', () => {
         });
 
         test('PUT should reject switching to a disabled payment method', async () => {
-            db.query.mockResolvedValueOnce({ rows: [{ is_void: false, payment_method_id: 1 }] });
+            db.query.mockResolvedValueOnce({ rows: [{ is_void: false, payment_method_id: 1, expense_date: '2026-07-23' }] });
+            db.query.mockResolvedValueOnce({ rows: [] }); // period lock check (open)
             db.query.mockResolvedValueOnce({ rows: [{ category_id: 2 }] }); // category ok
             db.query.mockResolvedValueOnce({ rows: [] });                   // payment method misses
 
@@ -298,7 +311,8 @@ describe('Expense Recording Module Routes', () => {
         });
 
         test('PUT should still allow editing a record whose original method was later disabled', async () => {
-            db.query.mockResolvedValueOnce({ rows: [{ is_void: false, payment_method_id: 7 }] });
+            db.query.mockResolvedValueOnce({ rows: [{ is_void: false, payment_method_id: 7, expense_date: '2026-07-23' }] });
+            db.query.mockResolvedValueOnce({ rows: [] }); // period lock check (open)
             db.query.mockResolvedValueOnce({ rows: [{ category_id: 2 }] });          // category ok
             db.query.mockResolvedValueOnce({ rows: [{ method_id: 7, name: 'Cheque' }] }); // grandfathered
             db.query.mockResolvedValueOnce({ rows: [] });                            // update

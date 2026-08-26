@@ -5,6 +5,7 @@ const { parsePaginationQuery, paginatedResponse } = require('../helpers/paginati
 const { parseExpenseText } = require('../services/expenseAIParser');
 const { expenseParserAI } = require('../services/ai');
 const expenseLexicon = require('../services/expenseLexiconService');
+const periodLockService = require('../services/periodLockService');
 
 const router = express.Router();
 
@@ -58,9 +59,12 @@ const EXPENSE_JOIN_TABLES = `
 
 // POST /api/expenses/parse - AI natural language parsing
 router.post('/expenses/parse', protect, hasPermission('expenses:create'), async (req, res) => {
-    const { text } = req.body;
+    const { text, clarifying_question, clarifying_answer } = req.body;
     try {
-        const result = await parseExpenseText(text);
+        const clarifyingContext = clarifying_question && clarifying_answer
+            ? { question: clarifying_question, answer: clarifying_answer }
+            : null;
+        const result = await parseExpenseText(text, clarifyingContext);
         res.json(result);
     } catch (error) {
         if (error.statusCode === 400) {
@@ -366,7 +370,11 @@ router.post('/expenses', protect, hasPermission('expenses:create'), async (req, 
         notes,
         ai_corrections,
         raw_input,
-        ai_parsed
+        ai_parsed,
+        nature_flag,
+        clarifying_question,
+        clarifying_answer,
+        nature_override
     } = req.body;
 
     const employeeId = req.user.employee_id;
@@ -395,6 +403,9 @@ router.post('/expenses', protect, hasPermission('expenses:create'), async (req, 
     }
 
     try {
+        // A closed period cannot receive new entries — reopen it first.
+        await periodLockService.assertPeriodOpen(expense_date);
+
         // Validate category exists and is active
         const categoryRes = await db.query(
             'SELECT category_id, category_name FROM expense_category WHERE category_id = $1 AND is_active = true',
@@ -495,7 +506,11 @@ router.post('/expenses', protect, hasPermission('expenses:create'), async (req, 
                     final: finalValues,
                     expenseId: newExpenseId,
                     provider: ai_parsed?.provider || null,
-                    employeeId
+                    employeeId,
+                    natureFlag: nature_flag || ai_parsed?.nature_flag || null,
+                    clarifyingQuestion: clarifying_question || null,
+                    clarifyingAnswer: clarifying_answer || null,
+                    natureOverride: nature_override === true
                 });
             } catch (logErr) {
                 console.error('[ExpenseRoutes] Failed to log parse outcome:', logErr.message);
@@ -522,6 +537,9 @@ router.post('/expenses', protect, hasPermission('expenses:create'), async (req, 
         const result = await db.query(getQuery, [newExpenseId]);
         res.status(201).json(result.rows[0]);
     } catch (error) {
+        if (error.statusCode === 423) {
+            return res.status(423).json({ message: error.message });
+        }
         console.error('Error recording expense:', error);
         res.status(500).json({ message: 'Failed to record expense' });
     }
@@ -549,7 +567,10 @@ router.put('/expenses/:id', protect, hasPermission('expenses:edit'), async (req,
 
     try {
         // Check if expense exists and is not voided
-        const existing = await db.query('SELECT is_void, payment_method_id FROM expense WHERE expense_id = $1', [expenseId]);
+        const existing = await db.query(
+            "SELECT is_void, payment_method_id, TO_CHAR(expense_date, 'YYYY-MM-DD') AS expense_date FROM expense WHERE expense_id = $1",
+            [expenseId]
+        );
         if (existing.rows.length === 0) {
             return res.status(404).json({ message: 'Expense record not found' });
         }
@@ -578,6 +599,14 @@ router.put('/expenses/:id', protect, hasPermission('expenses:edit'), async (req,
         }
         if (numericAmount > 99999999.99) {
             return res.status(400).json({ message: 'Amount exceeds maximum limit (99,999,999.99)' });
+        }
+
+        // A locked period is closed to writes in both directions — editing an
+        // entry already dated into it, and moving a different entry into it —
+        // so both the record's current date and its requested date are checked.
+        await periodLockService.assertPeriodOpen(existing.rows[0].expense_date);
+        if (existing.rows[0].expense_date !== expense_date) {
+            await periodLockService.assertPeriodOpen(expense_date);
         }
 
         // Validate category exists and is active
@@ -651,6 +680,9 @@ router.put('/expenses/:id', protect, hasPermission('expenses:edit'), async (req,
         const result = await db.query(getQuery, [expenseId]);
         res.json(result.rows[0]);
     } catch (error) {
+        if (error.statusCode === 423) {
+            return res.status(423).json({ message: error.message });
+        }
         console.error('Error updating expense:', error);
         res.status(500).json({ message: 'Failed to update expense' });
     }
@@ -671,13 +703,20 @@ router.put('/expenses/:id/void', protect, hasPermission('expenses:void'), async 
     }
 
     try {
-        const existing = await db.query('SELECT is_void FROM expense WHERE expense_id = $1', [expenseId]);
+        const existing = await db.query(
+            "SELECT is_void, TO_CHAR(expense_date, 'YYYY-MM-DD') AS expense_date FROM expense WHERE expense_id = $1",
+            [expenseId]
+        );
         if (existing.rows.length === 0) {
             return res.status(404).json({ message: 'Expense record not found' });
         }
         if (existing.rows[0].is_void) {
             return res.status(409).json({ message: 'Expense record is already voided' });
         }
+
+        // Voiding retroactively changes a closed period's totals just as much as
+        // editing does.
+        await periodLockService.assertPeriodOpen(existing.rows[0].expense_date);
 
         const updateQuery = `
             UPDATE expense
@@ -700,6 +739,9 @@ router.put('/expenses/:id/void', protect, hasPermission('expenses:void'), async 
         const result = await db.query(getQuery, [expenseId]);
         res.json(result.rows[0]);
     } catch (error) {
+        if (error.statusCode === 423) {
+            return res.status(423).json({ message: error.message });
+        }
         console.error('Error voiding expense:', error);
         res.status(500).json({ message: 'Failed to void expense' });
     }
