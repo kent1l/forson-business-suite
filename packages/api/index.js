@@ -51,6 +51,8 @@ registerRoute('/api', './routes/catalogSyncRoutes');
 registerRoute('/api', './routes/partMergeRoutes');
 registerRoute('/api', './routes/inventoryRoutes');
 registerRoute('/api', './routes/cycleCountRoutes');
+registerRoute('/api', './routes/wacCorrectionRoutes');
+registerRoute('/api', './routes/stockReconciliationRoutes');
 registerRoute('/api', './routes/purchaseOrderRoutes');
 registerRoute('/api', './routes/goodsReceiptRoutes');
 

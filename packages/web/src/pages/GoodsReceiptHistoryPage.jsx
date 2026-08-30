@@ -309,6 +309,14 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                             }`}>
                                                 {grn.status === 'Voided' ? 'Voided' : 'Active'}
                                             </span>
+                                            {grn.is_backfill && (
+                                                <span
+                                                    className="ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400"
+                                                    title={grn.supplier_invoice_no ? `Supplier invoice ${grn.supplier_invoice_no}` : undefined}
+                                                >
+                                                    Backfill
+                                                </span>
+                                            )}
                                         </td>
                                     </tr>
                                 ))

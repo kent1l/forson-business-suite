@@ -1,9 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import MathExpressionInput from './MathExpressionInput';
+import api from '../../api';
 
 const PriceQuantityModal = ({ item, onConfirm, onCancel }) => {
     const [price, setPrice] = useState(item.sale_price || 0);
     const [quantity, setQuantity] = useState(1);
+    const [stockOnHand, setStockOnHand] = useState(
+        item.stock_on_hand != null ? Number(item.stock_on_hand) : null
+    );
+
+    // Selling below zero stays allowed — it is how walk-in sales of not-yet-received
+    // stock get recorded — but the cashier should see it, since unexplained negative
+    // stock is what makes an item's cost untrustworthy later.
+    useEffect(() => {
+        if (item.stock_on_hand != null || !item.part_id) return;
+        let cancelled = false;
+        api.get(`/parts/${item.part_id}`)
+            .then(res => { if (!cancelled) setStockOnHand(Number(res.data?.stock_on_hand ?? 0)); })
+            .catch(() => { /* the warning is advisory; never block adding an item on it */ });
+        return () => { cancelled = true; };
+    }, [item.part_id, item.stock_on_hand]);
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -15,6 +31,12 @@ const PriceQuantityModal = ({ item, onConfirm, onCancel }) => {
     return (
         <form onSubmit={handleSubmit}>
             <div className="space-y-4">
+                {stockOnHand != null && stockOnHand - quantity < 0 && (
+                    <div className="rounded-lg border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+                        Stock on hand is {stockOnHand}. This sale will leave it at {stockOnHand - quantity}.
+                        You can still proceed — post the goods receipt afterwards so the item&apos;s cost stays accurate.
+                    </div>
+                )}
                 <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Sale Price</label>
                     <MathExpressionInput
