@@ -1,4 +1,4 @@
-const { calculateInvoiceTax, calculateLineTax, validateTaxCalculation } = require('../services/taxCalculationService');
+const { calculateInvoiceTax, calculateLineTax, computeTaxForBase, validateTaxCalculation } = require('../services/taxCalculationService');
 
 // Mock database module
 jest.mock('../db', () => ({
@@ -15,6 +15,29 @@ describe('Tax Calculation Service', () => {
 
     afterEach(() => {
         console.error.mockRestore();
+    });
+
+    describe('computeTaxForBase', () => {
+        test('should add tax on top of a tax-exclusive total', () => {
+            expect(computeTaxForBase(200, 0.12, false)).toEqual({ tax_base: 200, tax_amount: 24 });
+        });
+
+        test('should extract tax out of a tax-inclusive total', () => {
+            expect(computeTaxForBase(112, 0.12, true)).toEqual({ tax_base: 100, tax_amount: 12 });
+        });
+
+        test('should derive the base from the rounded tax so the two always recompose', () => {
+            const { tax_base, tax_amount } = computeTaxForBase(10.33, 0.12, true);
+            expect(Math.round((tax_base + tax_amount) * 100) / 100).toBe(10.33);
+        });
+
+        test('should handle a zero rate', () => {
+            expect(computeTaxForBase(100, 0, false)).toEqual({ tax_base: 100, tax_amount: 0 });
+        });
+
+        test('should refuse a negative line total rather than emit negative tax', () => {
+            expect(() => computeTaxForBase(-5, 0.12, false)).toThrow(/negative/i);
+        });
     });
 
     describe('calculateLineTax', () => {
@@ -67,10 +90,17 @@ describe('Tax Calculation Service', () => {
         test('should round tax amount to 2 decimal places', () => {
             const line = { quantity: 1, sale_price: 10.33, discount_amount: 0 };
             const part = { part_id: 1, tax_rate_id: 1, is_tax_inclusive_price: false };
-            
+
             const result = calculateLineTax(line, part, taxRates, defaultTaxRate);
-            
+
             expect(result.tax_amount).toBe(1.24); // 10.33 * 0.12 = 1.2396, rounded to 1.24
+        });
+
+        test('should reject a discount larger than the line subtotal', () => {
+            const line = { quantity: 1, sale_price: 100, discount_amount: 150 };
+            const part = { part_id: 1, tax_rate_id: 1, is_tax_inclusive_price: false };
+
+            expect(() => calculateLineTax(line, part, taxRates, defaultTaxRate)).toThrow(/negative/i);
         });
     });
 
@@ -169,9 +199,39 @@ describe('Tax Calculation Service', () => {
     });
 });
 
+describe('Stored rate range handling', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        console.error.mockRestore();
+    });
+
+    test('should clamp and report a stored rate outside the 0-1 fraction range', async () => {
+        // 12 where 0.12 belongs. An earlier version silently divided by 100 and
+        // carried on; that guess misreads a rate of 1 ("1%") as 100%, so an
+        // out-of-range value is now surfaced instead.
+        db.query
+            .mockResolvedValueOnce({ rows: [{ rate_percentage: 12 }] })
+            .mockResolvedValueOnce({ rows: [{ tax_rate_id: 1, rate_percentage: 12 }] })
+            .mockResolvedValueOnce({ rows: [{ tax_rate_id: 1, rate_name: 'VAT' }] });
+
+        const lines = [{ part_id: 1, quantity: 1, sale_price: 100, discount_amount: 0 }];
+        const parts = [{ part_id: 1, tax_rate_id: 1, is_tax_inclusive_price: false }];
+
+        const result = await calculateInvoiceTax(lines, parts);
+
+        expect(result.tax_total).toBe(100); // clamped to 100%, not re-read as 12%
+        expect(console.error).toHaveBeenCalled();
+    });
+});
+
 // Integration test for database interactions
 describe('Tax Calculation Integration', () => {
     beforeEach(() => {
+        jest.clearAllMocks();
         jest.spyOn(console, 'error').mockImplementation(() => {});
     });
 

@@ -345,6 +345,18 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
         return res.status(400).json({ message: 'Missing required fields.' });
     }
 
+    // A discount larger than the line it sits on would produce a negative tax
+    // base, which nothing downstream checks the sign of.
+    for (const line of lines) {
+        const lineSubtotal = Number(line.quantity) * Number(line.sale_price);
+        const discount = Number(line.discount_amount || 0);
+        if (discount > lineSubtotal + 0.01) {
+            return res.status(400).json({
+                message: `Discount for part_id ${line.part_id} (${discount.toFixed(2)}) exceeds the line subtotal (${lineSubtotal.toFixed(2)}).`
+            });
+        }
+    }
+
     const client = await db.getClient();
     try {
         await client.query('BEGIN');

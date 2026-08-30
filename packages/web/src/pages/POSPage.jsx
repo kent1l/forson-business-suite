@@ -7,6 +7,7 @@ import { formatApplicationText } from '../helpers/applicationTextHelper';
 import { enrichPartsArray } from '../helpers/applicationCache';
 import useSavedSales from '../hooks/useSavedSales';
 import useTypeahead from '../hooks/useTypeahead';
+import { computeTaxPreview } from '../utils/taxPreview';
 import api from '../api';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
@@ -447,96 +448,9 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
         setLines(lines.filter(line => line.part_id !== partId));
     };
 
+    // Preview totals only -- the server recomputes these authoritatively on save.
     const { subtotal, tax, total, grossSubtotal, hasInclusive, anomaly } = useMemo(() => {
-        // Calculate totals using backend-aligned logic but also retain the raw (gross) entered line totals
-        // so we can present clearer labels and debug anomalies (e.g. unexpectedly huge tax share).
-        const normalizeRate = (r) => {
-            if (r === null || r === undefined || r === '') return 0;
-            const num = parseFloat(r);
-            if (isNaN(num) || num < 0) return 0;
-            // Extend normalization: treat anything > 1 and <= 100 as a percent (e.g. 12 -> 0.12, 9 -> 0.09)
-            if (num > 1 && num <= 100) return num / 100;
-            return num; // already decimal (0 - 1)
-        };
-        const taxRatesMap = new Map(taxRates.map(rate => [rate.tax_rate_id, normalizeRate(rate.rate_percentage)]));
-        const defaultTaxRate = normalizeRate(taxRates.find(r => r.is_default)?.rate_percentage ?? 0);
-        const selectedTaxRatePercentage = normalizeRate(selectedTaxRate?.rate_percentage ?? defaultTaxRate);
-
-        let netSubtotal = 0;      // Sum of tax bases (exclusive of tax)
-        let grossSubtotal = 0;    // Sum of visible/entered line totals (quantity * price - discount)
-        let calculatedTax = 0;
-        let hasInclusive = false;
-
-        lines.forEach(line => {
-            const lineTotal = (line.quantity * line.sale_price) - (line.discount_amount || 0);
-            grossSubtotal += lineTotal;
-            const partTaxRateId = line.tax_rate_id;
-            let ratePercentage = taxRatesMap.get(partTaxRateId);
-            if (ratePercentage === undefined || ratePercentage === null) ratePercentage = selectedTaxRatePercentage;
-            // Final defensive clamp: if somehow ratePercentage > 1 after normalization, scale it (prevents 900% accidents)
-            if (ratePercentage > 1) {
-                console.warn('[POS][TAX] Abnormal rate >1 encountered after normalization, clamping', ratePercentage);
-                ratePercentage = ratePercentage / 100;
-            }
-
-            let taxBase, taxAmount;
-            if (line.is_tax_inclusive_price) {
-                hasInclusive = true;
-                taxBase = lineTotal / (1 + ratePercentage);
-                taxAmount = lineTotal - taxBase;
-                taxAmount = Math.round(taxAmount * 100) / 100; // per-line rounding
-                taxBase = lineTotal - taxAmount;
-            } else {
-                taxBase = lineTotal;
-                taxAmount = lineTotal * ratePercentage;
-                taxAmount = Math.round(taxAmount * 100) / 100; // per-line rounding
-            }
-
-            netSubtotal += taxBase;
-            calculatedTax += taxAmount;
-        });
-
-        const roundedNetSubtotal = Math.round(netSubtotal * 100) / 100;
-        const roundedGrossSubtotal = Math.round(grossSubtotal * 100) / 100;
-        const total = Math.round((roundedNetSubtotal + calculatedTax) * 100) / 100;
-
-        // Detect anomaly: effective tax rate extremely high or mismatch between reconstructed total and gross subtotal
-        let anomaly = null;
-        if (roundedNetSubtotal > 0) {
-            const effectiveRate = calculatedTax / roundedNetSubtotal; // e.g. 0.12 expected
-            if (effectiveRate > 1) { // >100%
-                anomaly = {
-                    type: 'HIGH_EFFECTIVE_RATE',
-                    effectiveRate,
-                    netSubtotal: roundedNetSubtotal,
-                    tax: calculatedTax,
-                    grossSubtotal: roundedGrossSubtotal
-                };
-            }
-        }
-        // Mismatch check (allow 1c rounding tolerance)
-        const recomposedFromNet = Math.round((roundedNetSubtotal + calculatedTax) * 100) / 100;
-        if (!anomaly && Math.abs(recomposedFromNet - roundedGrossSubtotal) > 0.05) {
-            anomaly = {
-                type: 'RECOMPOSE_MISMATCH',
-                netSubtotal: roundedNetSubtotal,
-                tax: calculatedTax,
-                recomposed: recomposedFromNet,
-                grossSubtotal: roundedGrossSubtotal
-            };
-        }
-        if (anomaly) {
-            console.warn('[POS][TAX][ANOMALY]', anomaly);
-        }
-
-        return {
-            subtotal: roundedNetSubtotal, // keep existing variable name for backwards references (represents NET ex-tax)
-            tax: Math.round(calculatedTax * 100) / 100,
-            total,
-            grossSubtotal: roundedGrossSubtotal,
-            hasInclusive,
-            anomaly
-        };
+        return computeTaxPreview(lines, taxRates, selectedTaxRate, 'POS');
     }, [lines, taxRates, selectedTaxRate]);
 
     const handleCheckout = useCallback(() => {

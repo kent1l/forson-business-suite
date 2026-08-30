@@ -37,6 +37,18 @@ router.post('/sales/staging', protect, hasPermission('pos:use'), async (req, res
         return res.status(400).json({ message: 'client_ref must be a UUID' });
     }
 
+    // A discount larger than the line it sits on would produce a negative tax
+    // base once this sale is approved into an invoice.
+    for (const line of lines) {
+        const lineSubtotal = Number(line.quantity) * Number(line.sale_price);
+        const discount = Number(line.discount_amount || 0);
+        if (discount > lineSubtotal + 0.01) {
+            return res.status(400).json({
+                message: `Discount for part_id ${line.part_id} (${discount.toFixed(2)}) exceeds the line subtotal (${lineSubtotal.toFixed(2)}).`
+            });
+        }
+    }
+
     // Checked before opening a transaction: a sale too stale to accept should
     // cost nothing. Rejecting does not lose it -- the phone's queue parks a 400
     // as needs-attention, so it stays visible until someone deals with it.

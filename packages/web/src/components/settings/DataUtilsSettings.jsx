@@ -214,7 +214,7 @@ const DataUtilsSettings = () => {
                 <h3 className="text-lg font-medium text-gray-900 dark:text-slate-100">Export Data</h3>
                 <p className="text-sm text-gray-500 dark:text-slate-500 mt-1">Download your existing data as a CSV file or get a blank template for importing.</p>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-                    <ExportCard entity="parts" title="Parts" fields={['internal_sku', 'detail', 'brand_name', 'group_name', 'part_numbers', 'barcode', 'is_active', 'last_cost', 'last_sale_price', 'reorder_point', 'warning_quantity', 'measurement_unit', 'is_tax_inclusive_price', 'is_price_change_allowed', 'is_using_default_quantity', 'is_service', 'low_stock_warning']} />
+                    <ExportCard entity="parts" title="Parts" fields={['internal_sku', 'detail', 'brand_name', 'group_name', 'part_numbers', 'barcode', 'is_active', 'last_cost', 'last_sale_price', 'reorder_point', 'warning_quantity', 'measurement_unit', 'tax_rate_id', 'is_tax_inclusive_price', 'is_price_change_allowed', 'is_using_default_quantity', 'is_service', 'low_stock_warning']} />
                     <ExportCard entity="customers" title="Customers" fields={['first_name', 'last_name', 'company_name', 'phone', 'email', 'address', 'is_active']} />
                     <ExportCard entity="suppliers" title="Suppliers" fields={['supplier_name', 'contact_person', 'phone', 'email', 'address', 'is_active']} />
                 </div>

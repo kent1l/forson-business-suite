@@ -43,8 +43,8 @@ const ENTITY_CONFIG = {
     parts: {
         table: 'part',
         upsertConflictKey: 'internal_sku',
-        csvFields: ['internal_sku', 'detail', 'brand_name', 'group_name', 'part_numbers', 'barcodes', 'is_active', 'last_cost', 'last_sale_price', 'reorder_point', 'warning_quantity', 'measurement_unit', 'is_tax_inclusive_price', 'is_price_change_allowed', 'is_using_default_quantity', 'is_service', 'low_stock_warning'],
-        dbFields: ['internal_sku', 'detail', 'is_active', 'last_cost', 'last_sale_price', 'reorder_point', 'warning_quantity', 'measurement_unit', 'is_tax_inclusive_price', 'is_price_change_allowed', 'is_using_default_quantity', 'is_service', 'low_stock_warning', 'brand_id', 'group_id']
+        csvFields: ['internal_sku', 'detail', 'brand_name', 'group_name', 'part_numbers', 'barcodes', 'is_active', 'last_cost', 'last_sale_price', 'reorder_point', 'warning_quantity', 'measurement_unit', 'tax_rate_id', 'is_tax_inclusive_price', 'is_price_change_allowed', 'is_using_default_quantity', 'is_service', 'low_stock_warning'],
+        dbFields: ['internal_sku', 'detail', 'is_active', 'last_cost', 'last_sale_price', 'reorder_point', 'warning_quantity', 'measurement_unit', 'tax_rate_id', 'is_tax_inclusive_price', 'is_price_change_allowed', 'is_using_default_quantity', 'is_service', 'low_stock_warning', 'brand_id', 'group_id']
     },
     customers: {
         table: 'customer',
@@ -84,6 +84,7 @@ router.get('/export/:entity', protect, hasPermission('data-utils:export'), async
                     (SELECT p2.reorder_point FROM part p2 WHERE p2.part_id = pv.part_id) AS reorder_point,
                     (SELECT p2.warning_quantity FROM part p2 WHERE p2.part_id = pv.part_id) AS warning_quantity,
                     (SELECT p2.measurement_unit FROM part p2 WHERE p2.part_id = pv.part_id) AS measurement_unit,
+                    (SELECT p2.tax_rate_id FROM part p2 WHERE p2.part_id = pv.part_id) AS tax_rate_id,
                     (SELECT p2.is_tax_inclusive_price FROM part p2 WHERE p2.part_id = pv.part_id) AS is_tax_inclusive_price,
                     (SELECT p2.is_price_change_allowed FROM part p2 WHERE p2.part_id = pv.part_id) AS is_price_change_allowed,
                     (SELECT p2.is_using_default_quantity FROM part p2 WHERE p2.part_id = pv.part_id) AS is_using_default_quantity,
@@ -127,6 +128,33 @@ router.post('/import/:entity', protect, hasPermission('data-utils:import'), uplo
         await client.query('BEGIN');
         const parsed = Papa.parse(csvData, { header: true, skipEmptyLines: true });
 
+        // Only write the columns the file actually carries. Listing every known
+        // column unconditionally meant a partial CSV blanked the ones it left
+        // out -- which for tax_rate_id would silently drop a part's tax rate and
+        // send it to the fallback rate at the next sale.
+        const csvHeader = new Set(parsed.meta?.fields || []);
+        const derivedFields = new Set(['brand_id', 'group_id', 'internal_sku']);
+        const allFields = config.dbFields || config.fields;
+        const presentFields = allFields.filter(f => csvHeader.has(f) || derivedFields.has(f));
+        if (!presentFields.includes(config.upsertConflictKey)) {
+            throw new Error(`CSV is missing the '${config.upsertConflictKey}' column, which is required to match existing records.`);
+        }
+
+        // A new part with no is_tax_inclusive_price column follows the shop's
+        // configured default, matching what the part form does, rather than the
+        // column default of false. Existing parts keep whatever they have, so
+        // this field is inserted but never overwritten on conflict.
+        const insertOnlyFields = new Set();
+        let defaultIsTaxInclusive = null;
+        if (entity === 'parts' && !csvHeader.has('is_tax_inclusive_price')) {
+            const { rows: settingRows } = await client.query(
+                "SELECT setting_value FROM settings WHERE setting_key = 'DEFAULT_IS_TAX_INCLUSIVE'"
+            );
+            defaultIsTaxInclusive = settingRows[0]?.setting_value !== 'false';
+            presentFields.push('is_tax_inclusive_price');
+            insertOnlyFields.add('is_tax_inclusive_price');
+        }
+
         const partsToSync = [];
 
         for (const [index, row] of parsed.data.entries()) {
@@ -167,23 +195,31 @@ router.post('/import/:entity', protect, hasPermission('data-utils:import'), uplo
                 }
             }
 
-            const fieldsToProcess = config.dbFields || config.fields;
-            const values = fieldsToProcess.map(field => row[field] === '' ? null : row[field]);
+            if (defaultIsTaxInclusive !== null) {
+                row.is_tax_inclusive_price = defaultIsTaxInclusive;
+            }
+
+            const fieldsToProcess = presentFields;
+            const values = fieldsToProcess.map(field => row[field] === '' || row[field] === undefined ? null : row[field]);
             const conflictUpdateClauses = fieldsToProcess
-                .filter(field => field !== config.upsertConflictKey)
+                .filter(field => field !== config.upsertConflictKey && !insertOnlyFields.has(field))
                 .map(field => `${field} = EXCLUDED.${field}`)
                 .join(', ');
 
             const query = `
                 INSERT INTO ${config.table} (${fieldsToProcess.join(', ')})
                 VALUES (${fieldsToProcess.map((_, i) => `$${i + 1}`).join(', ')})
-                ON CONFLICT (${config.upsertConflictKey}) DO UPDATE
-                SET ${conflictUpdateClauses}
+                ON CONFLICT (${config.upsertConflictKey}) ${conflictUpdateClauses
+                    ? `DO UPDATE SET ${conflictUpdateClauses}`
+                    : 'DO NOTHING'}
                 RETURNING *, xmax;
             `;
             
             const result = await client.query(query, values);
             const newOrUpdatedRow = result.rows[0];
+            // DO NOTHING on an existing row returns nothing: the file carried no
+            // column worth writing, so there is nothing to do for this row.
+            if (!newOrUpdatedRow) continue;
 
             if (entity === 'parts' && row.part_numbers) {
                 const partNumbers = row.part_numbers.split(';').map(pn => normalizePartNumber(pn)).filter(Boolean);
