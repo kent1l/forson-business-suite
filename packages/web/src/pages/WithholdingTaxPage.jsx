@@ -53,6 +53,7 @@ export default function WithholdingTaxPage() {
 
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [formCustomer, setFormCustomer] = useState(null);
+    const [previewCert, setPreviewCert] = useState(null);
 
     const loadOutstanding = useCallback(async () => {
         setLoading(true);
@@ -185,7 +186,7 @@ export default function WithholdingTaxPage() {
             )}
 
             {!loading && tab === 'certificates' && (
-                <CertificatesTable rows={certificates} onChanged={loadCertificates} />
+                <CertificatesTable rows={certificates} onChanged={loadCertificates} onPreview={setPreviewCert} />
             )}
 
             {!loading && tab === 'register' && (
@@ -196,6 +197,8 @@ export default function WithholdingTaxPage() {
                     onExport={exportRegister}
                 />
             )}
+
+            <AttachmentViewer certificate={previewCert} onClose={() => setPreviewCert(null)} />
 
             <CertificateForm
                 isOpen={isFormOpen}
@@ -281,7 +284,7 @@ function AgeBadge({ days }) {
     return <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium tabular-nums ${tone}`}>{n}d</span>;
 }
 
-function CertificatesTable({ rows, onChanged }) {
+function CertificatesTable({ rows, onChanged, onPreview }) {
     const cancel = async (row) => {
         if (!confirm(`Cancel certificate ${row.certificate_no || `#${row.certificate_id}`}? The withholding it covers will go back on the chase list.`)) return;
         try {
@@ -324,13 +327,13 @@ function CertificatesTable({ rows, onChanged }) {
                                     </div>
                                     <span className="text-xs text-gray-500 dark:text-slate-400">Form {row.certificate_type}</span>
                                     {row.has_attachment && (
-                                        <a
-                                            href={`/api/withholding/certificates/${row.certificate_id}/attachment`}
-                                            target="_blank" rel="noreferrer"
+                                        <button
+                                            type="button"
+                                            onClick={() => onPreview(row)}
                                             className="ml-2 text-xs text-primary-700 dark:text-primary-400 hover:underline"
                                         >
-                                            scan
-                                        </a>
+                                            view scan
+                                        </button>
                                     )}
                                 </td>
                                 <td className="px-4 py-3 text-gray-900 dark:text-slate-100">{row.customer_name}</td>
@@ -455,6 +458,114 @@ function RegisterView({ register, dateFrom, dateTo, onFromChange, onToChange, on
     );
 }
 
+/**
+ * On-screen viewer for a stored certificate scan.
+ *
+ * The file is fetched through the api client rather than linked to directly. A plain
+ * <a href="/api/..."> is a browser navigation, and browser navigations do not run the
+ * axios interceptor that attaches the bearer token -- the request arrives
+ * unauthenticated and the route answers "Not authorized, no token". Pulling the bytes
+ * as a blob keeps the request inside the authenticated client, and the object URL it
+ * produces is what the viewer renders.
+ *
+ * Worth previewing rather than downloading: checking a 2307 means reading the payor,
+ * period and amounts against the figures already on screen. Making that a trip through
+ * the downloads folder turns a ten-second check into a chore, and chores get skipped.
+ */
+function AttachmentViewer({ certificate, onClose }) {
+    const [state, setState] = useState({ status: 'idle', url: null, mime: null });
+
+    useEffect(() => {
+        if (!certificate) {
+            setState({ status: 'idle', url: null, mime: null });
+            return;
+        }
+        let objectUrl = null;
+        let cancelled = false;
+        setState({ status: 'loading', url: null, mime: null });
+
+        api.get(`/withholding/certificates/${certificate.certificate_id}/attachment`, { responseType: 'blob' })
+            .then(res => {
+                if (cancelled) return;
+                objectUrl = URL.createObjectURL(res.data);
+                setState({ status: 'ready', url: objectUrl, mime: res.data.type || certificate.attachment_mime });
+            })
+            .catch(() => { if (!cancelled) setState({ status: 'error', url: null, mime: null }); });
+
+        // Object URLs pin the blob in memory until revoked, and a bookkeeper opens
+        // dozens of these in a filing session.
+        return () => {
+            cancelled = true;
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
+        };
+    }, [certificate]);
+
+    if (!certificate) return null;
+
+    const isPdf = (state.mime || '').includes('pdf');
+
+    return (
+        <Modal
+            isOpen={!!certificate}
+            onClose={onClose}
+            maxWidth="max-w-4xl"
+            bodyClassName="p-0"
+            header={
+                <div className="min-w-0">
+                    <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100 truncate">
+                        {certificate.certificate_no || `Certificate #${certificate.certificate_id}`}
+                    </h2>
+                    <p className="text-xs text-gray-500 dark:text-slate-400 truncate">
+                        Form {certificate.certificate_type} · {certificate.customer_name}
+                        {certificate.attachment_filename ? ` · ${certificate.attachment_filename}` : ''}
+                    </p>
+                </div>
+            }
+        >
+            <div className="flex flex-col h-[70vh]">
+                <div className="flex-1 min-h-0 bg-gray-100 dark:bg-slate-900">
+                    {state.status === 'loading' && (
+                        <div className="h-full flex items-center justify-center text-sm text-gray-500 dark:text-slate-400">
+                            Loading scan&hellip;
+                        </div>
+                    )}
+                    {state.status === 'error' && (
+                        <div className="h-full flex items-center justify-center text-sm text-danger-600 dark:text-danger-400 px-6 text-center">
+                            The scan could not be loaded.
+                        </div>
+                    )}
+                    {state.status === 'ready' && (
+                        isPdf
+                            ? <iframe src={state.url} title="Certificate scan" className="w-full h-full border-0" />
+                            : <div className="h-full overflow-auto flex items-start justify-center p-4">
+                                  <img src={state.url} alt="Certificate scan" className="max-w-full" />
+                              </div>
+                    )}
+                </div>
+                {state.status === 'ready' && (
+                    <div className="p-3 border-t border-gray-200 dark:border-slate-700 flex justify-end gap-3">
+                        <a
+                            href={state.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-4 py-2 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 text-sm font-medium transition-colors"
+                        >
+                            Open full size
+                        </a>
+                        <a
+                            href={state.url}
+                            download={certificate.attachment_filename || `certificate-${certificate.certificate_id}`}
+                            className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors shadow-xs"
+                        >
+                            Download
+                        </a>
+                    </div>
+                )}
+            </div>
+        </Modal>
+    );
+}
+
 function SummaryTile({ label, value, tone = 'neutral' }) {
     const toneCls = tone === 'warn'
         ? 'border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30'
@@ -479,6 +590,7 @@ function CertificateForm({ isOpen, onClose, presetCustomer, onSaved }) {
     const [lines, setLines] = useState([]);
     const [selectedLineIds, setSelectedLineIds] = useState([]);
     const [file, setFile] = useState(null);
+    const [filePreviewUrl, setFilePreviewUrl] = useState(null);
     const [saving, setSaving] = useState(false);
     const [form, setForm] = useState({
         customer_id: '', certificate_type: '2307', certificate_no: '',
@@ -502,6 +614,13 @@ function CertificateForm({ isOpen, onClose, presetCustomer, onSaved }) {
             certificate_type: presetCustomer?.customer_type === 'GOVERNMENT' ? '2307' : '2307',
         }));
     }, [isOpen, presetCustomer]);
+
+    useEffect(() => {
+        if (!file) { setFilePreviewUrl(null); return; }
+        const url = URL.createObjectURL(file);
+        setFilePreviewUrl(url);
+        return () => URL.revokeObjectURL(url);
+    }, [file]);
 
     // Load the unclaimed lines for whichever customer is selected, so the certificate
     // can be matched to the withholding it actually covers.
@@ -674,6 +793,15 @@ function CertificateForm({ isOpen, onClose, presetCustomer, onSaved }) {
                         onChange={e => setFile(e.target.files?.[0] || null)}
                         className="mt-1 w-full text-sm text-gray-600 dark:text-slate-400 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-gray-100 dark:file:bg-slate-700 file:text-gray-700 dark:file:text-slate-200"
                     />
+                    {/* Shown before saving so an unreadable photo or the wrong page is
+                        caught now, rather than years later when the credit is queried. */}
+                    {filePreviewUrl && (
+                        <div className="mt-2 border border-gray-200 dark:border-slate-700 rounded-lg overflow-hidden bg-gray-50 dark:bg-slate-900">
+                            {file?.type?.includes('pdf')
+                                ? <iframe src={filePreviewUrl} title="Selected scan" className="w-full h-64 border-0" />
+                                : <img src={filePreviewUrl} alt="Selected scan" className="max-h-64 mx-auto" />}
+                        </div>
+                    )}
                 </div>
 
                 <div>

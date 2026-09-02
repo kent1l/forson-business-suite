@@ -38,6 +38,9 @@ const SplitPaymentModal = ({
     const appliedOnAccountDefaultRef = useRef(false);
     const [withholdingPreview, setWithholdingPreview] = useState(null);
     const appliedWithholdingRef = useRef(false);
+    // Read by updatePayment, which is declared above the preview state it needs.
+    const withholdingMethodIdRef = useRef(null);
+    const withholdingExpectedRef = useRef(0);
 
     // Check if split payments feature is enabled (memoized to prevent unnecessary re-renders)
     const splitPaymentsEnabled = useMemo(() => 
@@ -164,9 +167,26 @@ const SplitPaymentModal = ({
     };
 
     const updatePayment = (id, field, value) => {
-        setPayments(prev => prev.map(payment =>
-            payment.id === id ? { ...payment, [field]: value } : payment
-        ));
+        setPayments(prev => prev.map(payment => {
+            if (payment.id !== id) return payment;
+            const next = { ...payment, [field]: value };
+
+            // Picking the withholding method fills in what the customer is expected
+            // to deduct. The cashier is confirming a figure computed from the
+            // VAT-exclusive base, not working it out at the counter -- that
+            // calculation is the single thing most often got wrong, and a blank box
+            // invites exactly the mistake the base exists to prevent.
+            //
+            // Still editable afterwards: what the customer actually withheld is
+            // whatever their voucher says, and the certificate has to reconcile
+            // against that, not against what we think it should have been.
+            if (field === 'method_id' && withholdingMethodIdRef.current
+                && String(value) === String(withholdingMethodIdRef.current)
+                && !parseFloat(payment.amount_paid)) {
+                next.amount_paid = withholdingExpectedRef.current || 0;
+            }
+            return next;
+        }));
     };
 
     const hasOnAccountLine = useMemo(() => payments.some(payment => {
@@ -222,6 +242,11 @@ const SplitPaymentModal = ({
     // Tax withheld at source settles a receivable with no cash received, so it is not
     // a method anyone should be able to reach for on an ordinary sale. It is offered
     // only where it is legally possible: to a customer BIR has designated.
+    useEffect(() => {
+        withholdingMethodIdRef.current = withholdingMethod?.method_id ?? null;
+        withholdingExpectedRef.current = withholdingPreview?.total_withheld ?? 0;
+    }, [withholdingMethod, withholdingPreview]);
+
     const selectableMethods = useMemo(
         () => paymentMethods.filter(m => m.code !== 'withholding_tax' || customer?.is_withholding_agent),
         [paymentMethods, customer?.is_withholding_agent]
