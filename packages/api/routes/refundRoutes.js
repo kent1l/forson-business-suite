@@ -3,6 +3,7 @@ const db = require('../db');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const arLedger = require('../services/arLedgerService');
+const { computeTaxForBase } = require('../services/taxCalculationService');
 const router = express.Router();
 
 // POST /api/refunds - Process a new refund
@@ -37,6 +38,7 @@ router.post('/refunds', protect, hasPermission('invoicing:create'), async (req, 
                     il.part_id,
                     il.quantity AS original_quantity,
                     il.sale_price,
+                    il.discount_amount,
                     il.cost_at_sale,
                     il.tax_rate_id,
                     il.tax_rate_snapshot,
@@ -65,29 +67,28 @@ router.post('/refunds', protect, hasPermission('invoicing:create'), async (req, 
                 });
             }
 
-            // Tax Calculation
+            // Tax Calculation. The rate is the one frozen on the original sale
+            // (tax_rate_snapshot), never the current live rate — a refund must
+            // reverse the tax that was actually charged.
             const taxRateSnapshot = Number(lineData.tax_rate_snapshot) || 0;
             const isTaxInclusive = lineData.is_tax_inclusive || false;
             const taxRateId = lineData.tax_rate_id;
             const salePrice = Number(lineData.sale_price);
-            
-            const lineTotal = quantity * salePrice;
-            let taxBase, taxAmount;
-            
-            if (isTaxInclusive) {
-                taxBase = lineTotal / (1 + taxRateSnapshot);
-                taxAmount = lineTotal - taxBase;
-                taxAmount = Math.round(taxAmount * 100) / 100;
-                taxBase = lineTotal - taxAmount;
-            } else {
-                taxBase = lineTotal;
-                taxAmount = lineTotal * taxRateSnapshot;
-                taxAmount = Math.round(taxAmount * 100) / 100;
-            }
-            
+
+            // The discount was applied to the whole original line, so a partial
+            // refund gets back its proportional share of it. Refunding the gross
+            // price would credit the customer more than they ever paid.
+            const originalQuantity = Number(lineData.original_quantity);
+            const originalDiscount = Number(lineData.discount_amount || 0);
+            const unitDiscount = originalQuantity > 0 ? originalDiscount / originalQuantity : 0;
+            const lineTotal = (quantity * salePrice) - (unitDiscount * quantity);
+
+            const { tax_base: taxBase, tax_amount: taxAmount } =
+                computeTaxForBase(lineTotal, taxRateSnapshot, isTaxInclusive);
+
             cnSubtotalExTax += taxBase;
             cnTaxTotal += taxAmount;
-            
+
             refundLinesWithTax.push({
                 invoice_line_id,
                 part_id: lineData.part_id,
@@ -96,7 +97,7 @@ router.post('/refunds', protect, hasPermission('invoicing:create'), async (req, 
                 cost_at_sale: Number(lineData.cost_at_sale || 0),
                 tax_rate_id: taxRateId,
                 tax_rate_snapshot: taxRateSnapshot,
-                tax_base: parseFloat(taxBase.toFixed(4)),
+                tax_base: taxBase,
                 tax_amount: taxAmount,
                 is_tax_inclusive: isTaxInclusive
             });

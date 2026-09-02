@@ -8,23 +8,52 @@ const db = require('../db');
 const TAX_CALCULATION_VERSION = 'v1.0';
 
 /**
- * Calculate tax for a single invoice line
- * @param {Object} line - Line item with quantity, sale_price, discount_amount
- * @param {Object} part - Part details with tax_rate_id, is_tax_inclusive_price
- * @param {Object} taxRates - Map of tax_rate_id to rate_percentage
- * @param {number} defaultTaxRate - Default tax rate percentage
- * @returns {Object} Tax calculation result
+ * Read a rate_percentage out of the database as a decimal fraction.
+ *
+ * Rates are stored as fractions (0.12 = 12%) and the tax_rate table now has a
+ * CHECK constraint enforcing that, so a value outside [0, 1] means legacy data
+ * written before the constraint or a write that bypassed it. That is a data
+ * problem worth surfacing, not a unit to guess at: an earlier version silently
+ * divided anything > 1 by 100, which would read a rate of 1 (intended as 1%) as
+ * 100% without a word.
  */
-function calculateLineTax(line, part, taxRates, defaultTaxRate) {
-    const lineTotal = (line.quantity * line.sale_price) - (line.discount_amount || 0);
-    const taxRateId = part.tax_rate_id;
-    // Normalize: allow stored values like 12 meaning 12% or 0.12 meaning 12%
-    const rawRate = taxRates.get(taxRateId) ?? defaultTaxRate;
-    const taxRatePercentage = rawRate > 1 ? rawRate / 100 : rawRate;
-    const isTaxInclusive = part.is_tax_inclusive_price || false;
-    
+function normalizeStoredRate(rawValue, label) {
+    const rate = parseFloat(rawValue);
+    if (!Number.isFinite(rate)) {
+        console.error(`Tax rate for ${label} is not a number (${rawValue}); treating as 0%.`);
+        return 0;
+    }
+    if (rate < 0 || rate > 1) {
+        const clamped = Math.min(Math.max(rate, 0), 1);
+        console.error(`Tax rate for ${label} is ${rate}, outside the expected 0-1 fraction range. Clamping to ${clamped}. Fix the stored rate_percentage.`);
+        return clamped;
+    }
+    return rate;
+}
+
+/**
+ * Split an already-discounted line total into tax base and tax amount.
+ *
+ * This is the single source of truth for the inclusive/exclusive tax formula.
+ * Both the live-rate path (calculateLineTax, for new sales) and the frozen-
+ * snapshot path (refunds, which must reuse the rate recorded at time of sale)
+ * call this, so the two can never drift apart again.
+ *
+ * @param {number} lineTotal - Line total AFTER any discount is applied
+ * @param {number} taxRatePercentage - Rate as a decimal fraction (0.12 = 12%)
+ * @param {boolean} isTaxInclusive - Whether lineTotal already contains the tax
+ * @returns {{tax_base: number, tax_amount: number}}
+ */
+function computeTaxForBase(lineTotal, taxRatePercentage, isTaxInclusive) {
+    // A negative line total means a discount exceeded the line's own value.
+    // Refusing here stops a negative-tax line from reaching the ledger and the
+    // VAT return, where nothing downstream checks the sign.
+    if (!(lineTotal >= 0)) {
+        throw new Error(`Line total is negative or invalid (${lineTotal}); refusing to compute tax. Check that the discount does not exceed the line subtotal.`);
+    }
+
     let taxBase, taxAmount;
-    
+
     if (isTaxInclusive) {
         // Tax inclusive: extract tax from total
         taxBase = lineTotal / (1 + taxRatePercentage);
@@ -37,13 +66,34 @@ function calculateLineTax(line, part, taxRates, defaultTaxRate) {
         taxAmount = lineTotal * taxRatePercentage;
         taxAmount = Math.round(taxAmount * 100) / 100;
     }
-    
-    
+
+    return {
+        tax_base: parseFloat(taxBase.toFixed(4)), // Higher precision for internal calc
+        tax_amount: taxAmount
+    };
+}
+
+/**
+ * Calculate tax for a single invoice line
+ * @param {Object} line - Line item with quantity, sale_price, discount_amount
+ * @param {Object} part - Part details with tax_rate_id, is_tax_inclusive_price
+ * @param {Object} taxRates - Map of tax_rate_id to rate_percentage
+ * @param {number} defaultTaxRate - Default tax rate percentage
+ * @returns {Object} Tax calculation result
+ */
+function calculateLineTax(line, part, taxRates, defaultTaxRate) {
+    const lineTotal = (line.quantity * line.sale_price) - (line.discount_amount || 0);
+    const taxRateId = part.tax_rate_id;
+    const taxRatePercentage = taxRates.get(taxRateId) ?? defaultTaxRate;
+    const isTaxInclusive = part.is_tax_inclusive_price || false;
+
+    const { tax_base, tax_amount } = computeTaxForBase(lineTotal, taxRatePercentage, isTaxInclusive);
+
     return {
         tax_rate_id: taxRateId,
         tax_rate_snapshot: taxRatePercentage,
-        tax_base: parseFloat(taxBase.toFixed(4)), // Higher precision for internal calc
-        tax_amount: taxAmount,
+        tax_base,
+        tax_amount,
         is_tax_inclusive: isTaxInclusive,
         line_total: lineTotal
     };
@@ -60,7 +110,7 @@ async function calculateInvoiceTax(lines, parts, selectedTaxRateId = null) {
     try {
         // Get default tax rate if not provided
         let defaultTaxRate = null;
-        
+
         if (selectedTaxRateId) {
             // Use the selected tax rate as default
             const { rows: selectedRateRows } = await db.query(
@@ -68,28 +118,26 @@ async function calculateInvoiceTax(lines, parts, selectedTaxRateId = null) {
                 [selectedTaxRateId]
             );
             if (selectedRateRows.length > 0) {
-                const raw = parseFloat(selectedRateRows[0].rate_percentage);
-                defaultTaxRate = raw > 1 ? raw / 100 : raw;
+                defaultTaxRate = normalizeStoredRate(selectedRateRows[0].rate_percentage, `tax_rate_id=${selectedTaxRateId}`);
             }
         }
-        
+
         if (defaultTaxRate === null) {
             // Fall back to database default
             const { rows } = await db.query('SELECT rate_percentage FROM tax_rate WHERE is_default = true LIMIT 1');
             if (rows.length > 0) {
-                const raw = parseFloat(rows[0].rate_percentage);
-                defaultTaxRate = raw > 1 ? raw / 100 : raw;
+                defaultTaxRate = normalizeStoredRate(rows[0].rate_percentage, 'default tax rate');
             } else {
                 defaultTaxRate = 0.12; // 12% fallback
             }
         }
-        
+
         // Get all tax rates for efficient lookup
         const { rows: taxRateRows } = await db.query('SELECT tax_rate_id, rate_percentage FROM tax_rate');
-        const taxRates = new Map(taxRateRows.map(r => {
-            const raw = parseFloat(r.rate_percentage);
-            return [r.tax_rate_id, raw > 1 ? raw / 100 : raw];
-        }));
+        const taxRates = new Map(taxRateRows.map(r => [
+            r.tax_rate_id,
+            normalizeStoredRate(r.rate_percentage, `tax_rate_id=${r.tax_rate_id}`)
+        ]));
         
         // Create parts lookup map
         const partsMap = new Map(parts.map(p => [p.part_id, p]));
@@ -233,6 +281,7 @@ function validateTaxCalculation(calculation) {
 module.exports = {
     calculateInvoiceTax,
     calculateLineTax,
+    computeTaxForBase,
     storeTaxBreakdown,
     validateTaxCalculation,
     TAX_CALCULATION_VERSION

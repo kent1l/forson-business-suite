@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import api from '../api';
 import { parsePaymentTermsDays } from '../utils/terms';
 import { formatPhysicalReceiptNumber } from '../utils/receiptNumberFormatter';
+import { computeTaxPreview } from '../utils/taxPreview';
+import useWithholdingPreview from '../hooks/useWithholdingPreview';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import InfoTip from '../components/ui/InfoTip';
@@ -308,98 +310,23 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
         setLines(lines.filter(line => line.part_id !== partId));
     };
 
-    // Calculate totals using backend-aligned logic, including tax calculations
-    const { subtotal, tax, total, grossSubtotal, hasInclusive, anomaly } = useMemo(() => {
-        // Calculate totals using backend-aligned logic but also retain the raw (gross) entered line totals
-        // so we can present clearer labels and debug anomalies (e.g. unexpectedly huge tax share).
-        const normalizeRate = (r) => {
-            if (r === null || r === undefined || r === '') return 0;
-            const num = parseFloat(r);
-            if (isNaN(num) || num < 0) return 0;
-            // Extend normalization: treat anything > 1 and <= 100 as a percent (e.g. 12 -> 0.12, 9 -> 0.09)
-            if (num > 1 && num <= 100) return num / 100;
-            return num; // already decimal (0 - 1)
-        };
-        const taxRatesMap = new Map(taxRates.map(rate => [rate.tax_rate_id, normalizeRate(rate.rate_percentage)]));
-        const defaultTaxRate = normalizeRate(taxRates.find(r => r.is_default)?.rate_percentage ?? 0);
-        const selectedTaxRatePercentage = normalizeRate(selectedTaxRate?.rate_percentage ?? defaultTaxRate);
+    // Preview totals only -- the server recomputes these authoritatively on save.
+    const { subtotal, tax, total, grossSubtotal, hasInclusive, anomaly } = useMemo(
+        () => computeTaxPreview(lines, taxRates, selectedTaxRate, 'INVOICING'),
+        [lines, taxRates, selectedTaxRate]
+    );
 
-        let netSubtotal = 0;      // Sum of tax bases (exclusive of tax)
-        let grossSubtotal = 0;    // Sum of visible/entered line totals (quantity * price - discount)
-        let calculatedTax = 0;
-        let hasInclusive = false;
-
-        lines.forEach(line => {
-            const lineTotal = (line.quantity * line.sale_price) - (line.discount_amount || 0);
-            grossSubtotal += lineTotal;
-            const partTaxRateId = line.tax_rate_id;
-            let ratePercentage = taxRatesMap.get(partTaxRateId);
-            if (ratePercentage === undefined || ratePercentage === null) ratePercentage = selectedTaxRatePercentage;
-            // Final defensive clamp: if somehow ratePercentage > 1 after normalization, scale it (prevents 900% accidents)
-            if (ratePercentage > 1) {
-                console.warn('[INVOICING][TAX] Abnormal rate >1 encountered after normalization, clamping', ratePercentage);
-                ratePercentage = ratePercentage / 100;
-            }
-
-            let taxBase, taxAmount;
-            if (line.is_tax_inclusive_price) {
-                hasInclusive = true;
-                taxBase = lineTotal / (1 + ratePercentage);
-                taxAmount = lineTotal - taxBase;
-                taxAmount = Math.round(taxAmount * 100) / 100; // per-line rounding
-                taxBase = lineTotal - taxAmount;
-            } else {
-                taxBase = lineTotal;
-                taxAmount = lineTotal * ratePercentage;
-                taxAmount = Math.round(taxAmount * 100) / 100; // per-line rounding
-            }
-
-            netSubtotal += taxBase;
-            calculatedTax += taxAmount;
-        });
-
-        const roundedNetSubtotal = Math.round(netSubtotal * 100) / 100;
-        const roundedGrossSubtotal = Math.round(grossSubtotal * 100) / 100;
-        const total = Math.round((roundedNetSubtotal + calculatedTax) * 100) / 100;
-
-        // Detect anomaly: effective tax rate extremely high or mismatch between reconstructed total and gross subtotal
-        let anomaly = null;
-        if (roundedNetSubtotal > 0) {
-            const effectiveRate = calculatedTax / roundedNetSubtotal; // e.g. 0.12 expected
-            if (effectiveRate > 1) { // >100%
-                anomaly = {
-                    type: 'HIGH_EFFECTIVE_RATE',
-                    effectiveRate,
-                    netSubtotal: roundedNetSubtotal,
-                    tax: calculatedTax,
-                    grossSubtotal: roundedGrossSubtotal
-                };
-            }
-        }
-        // Mismatch check (allow 1c rounding tolerance)
-        const recomposedFromNet = Math.round((roundedNetSubtotal + calculatedTax) * 100) / 100;
-        if (!anomaly && Math.abs(recomposedFromNet - roundedGrossSubtotal) > 0.05) {
-            anomaly = {
-                type: 'RECOMPOSE_MISMATCH',
-                netSubtotal: roundedNetSubtotal,
-                tax: calculatedTax,
-                recomposed: recomposedFromNet,
-                grossSubtotal: roundedGrossSubtotal
-            };
-        }
-        if (anomaly) {
-            console.warn('[INVOICING][TAX][ANOMALY]', anomaly);
-        }
-
-        return {
-            subtotal: roundedNetSubtotal, // keep existing variable name for backwards references (represents NET ex-tax)
-            tax: Math.round(calculatedTax * 100) / 100,
-            total,
-            grossSubtotal: roundedGrossSubtotal,
-            hasInclusive,
-            anomaly
-        };
-    }, [lines, taxRates, selectedTaxRate]);
+    // Surfaced as soon as a withholding customer is chosen, not at payment time --
+    // the invoice will collect less than it totals, and that has to be visible while
+    // the invoice is being built.
+    const withholdingCustomer = useMemo(
+        () => customers.find(c => String(c.customer_id) === String(selectedCustomer)) || null,
+        [customers, selectedCustomer]
+    );
+    // selectedTaxRate is the rate OBJECT on this page (POS holds the same shape).
+    // Passing it straight through sent an object where the API expects an id, which
+    // failed server-side and was swallowed by the hook's catch -- no error, no panel.
+    const withholdingPreview = useWithholdingPreview(withholdingCustomer, lines, selectedTaxRate?.tax_rate_id || null);
 
     // Stable signature of the in-progress invoice, used to avoid saving an identical draft twice in a row.
     const draftSignature = useMemo(() => {
@@ -836,7 +763,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                                     <td className="p-4 text-sm font-medium text-gray-900 dark:text-slate-100">{line.display_name}</td>
                                     <td className="p-4"><MathExpressionInput precision={2} min={0} value={line.quantity} onChange={val => handleLineChange(line.part_id, 'quantity', val)} aria-label={`Quantity for ${line.display_name}`} className="w-full p-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-center font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" /></td>
                                     <td className="p-4"><MathExpressionInput precision={2} min={0} value={line.sale_price} onChange={val => handleLineChange(line.part_id, 'sale_price', val)} aria-label={`Sale price for ${line.display_name}`} className="w-full p-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-right font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" /></td>
-                                    <td className="p-4"><MathExpressionInput precision={2} min={0} value={line.discount_amount || 0} onChange={val => handleLineChange(line.part_id, 'discount_amount', val)} aria-label={`Discount for ${line.display_name}`} className="w-full p-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-right font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" /></td>
+                                    <td className="p-4"><MathExpressionInput precision={2} min={0} max={(Number(line.quantity) || 0) * (Number(line.sale_price) || 0)} value={line.discount_amount || 0} onChange={val => handleLineChange(line.part_id, 'discount_amount', val)} aria-label={`Discount for ${line.display_name}`} className="w-full p-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-right font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" /></td>
                                     <td className="p-4">
                                         <select
                                             value={line.tax_rate_id || ''}
@@ -925,6 +852,24 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                                     <span className="text-xl font-bold text-gray-900 dark:text-slate-100 font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{total.toFixed(2)}</span>
                                 </div>
                             </div>
+                            {/* Below the total, never netted into it: the invoice is the
+                                full amount and that is what gets reported. Only the
+                                settlement differs -- part cash, part tax certificate. */}
+                            {withholdingPreview && (
+                                <div className="mt-2 p-2 rounded bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800/60 space-y-1">
+                                    <div className="flex justify-between text-xs text-sky-900 dark:text-sky-200">
+                                        <span>Less: tax withheld at source</span>
+                                        <span className="font-mono">({Number(withholdingPreview.total_withheld).toFixed(2)})</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm font-semibold text-sky-900 dark:text-sky-100">
+                                        <span>Net cash due</span>
+                                        <span className="font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{Number(withholdingPreview.net_due).toFixed(2)}</span>
+                                    </div>
+                                    <p className="text-[11px] text-sky-800 dark:text-sky-300 leading-snug">
+                                        {withholdingPreview.components.map(c => `${c.atc_code} ${(c.rate_snapshot * 100).toFixed(0)}%`).join(' + ')} on {Number(withholdingPreview.base_goods + withholdingPreview.base_services).toFixed(2)} &mdash; customer issues BIR Form {withholdingPreview.components.some(c => c.certificate_type === '2306') ? '2307 & 2306' : '2307'}.
+                                    </p>
+                                </div>
+                            )}
                             {hasInclusive && (
                                 <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">* Some items have tax-inclusive pricing</p>
                             )}
@@ -970,6 +915,8 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                         const customer = customers.find(c => String(c.customer_id) === String(selectedCustomer));
                         return customer ? `${customer.first_name} ${customer.last_name || ''}`.trim() : '';
                     })()}
+                    customer={withholdingCustomer}
+                    withholdingPreview={withholdingPreview}
                 />
             )}
         </div>

@@ -21,7 +21,12 @@ const SplitPaymentModal = ({
     onTermsChange = () => {},
     commonTerms = ['0', '7', '15', '30'],
     generalDefaultTermsDays = '',
-    onAccountDefaultTermsDays = null
+    onAccountDefaultTermsDays = null,
+    // Withholding context. The expected deduction is computed once at the cart (see
+    // useWithholdingPreview) and passed down, so the figure the cashier confirms here
+    // is the same one already shown on the order summary.
+    customer = null,
+    withholdingPreview = null
 }) => {
     const { settings } = useSettings();
     const [paymentMethods, setPaymentMethods] = useState([]);
@@ -30,6 +35,10 @@ const SplitPaymentModal = ({
     const [showOnAccountConfirmation, setShowOnAccountConfirmation] = useState(false);
     const initializedRef = useRef(false);
     const appliedOnAccountDefaultRef = useRef(false);
+    const appliedWithholdingRef = useRef(false);
+    // Read by updatePayment, which is declared above the preview state it needs.
+    const withholdingMethodIdRef = useRef(null);
+    const withholdingExpectedRef = useRef(0);
 
     // Check if split payments feature is enabled (memoized to prevent unnecessary re-renders)
     const splitPaymentsEnabled = useMemo(() => 
@@ -122,6 +131,7 @@ const SplitPaymentModal = ({
             // Reset when modal closes
             initializedRef.current = false;
             appliedOnAccountDefaultRef.current = false;
+            appliedWithholdingRef.current = false;
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, existingPaymentsKey, fetchPaymentMethods]); // Use stable key
@@ -155,9 +165,26 @@ const SplitPaymentModal = ({
     };
 
     const updatePayment = (id, field, value) => {
-        setPayments(prev => prev.map(payment =>
-            payment.id === id ? { ...payment, [field]: value } : payment
-        ));
+        setPayments(prev => prev.map(payment => {
+            if (payment.id !== id) return payment;
+            const next = { ...payment, [field]: value };
+
+            // Picking the withholding method fills in what the customer is expected
+            // to deduct. The cashier is confirming a figure computed from the
+            // VAT-exclusive base, not working it out at the counter -- that
+            // calculation is the single thing most often got wrong, and a blank box
+            // invites exactly the mistake the base exists to prevent.
+            //
+            // Still editable afterwards: what the customer actually withheld is
+            // whatever their voucher says, and the certificate has to reconcile
+            // against that, not against what we think it should have been.
+            if (field === 'method_id' && withholdingMethodIdRef.current
+                && String(value) === String(withholdingMethodIdRef.current)
+                && !parseFloat(payment.amount_paid)) {
+                next.amount_paid = withholdingExpectedRef.current || 0;
+            }
+            return next;
+        }));
     };
 
     const hasOnAccountLine = useMemo(() => payments.some(payment => {
@@ -178,6 +205,51 @@ const SplitPaymentModal = ({
             }
         }
     }, [hasOnAccountLine, onAccountDefaultTermsDays, terms, generalDefaultTermsDays, onTermsChange]);
+
+    const withholdingMethod = useMemo(
+        () => paymentMethods.find(m => m.code === 'withholding_tax'),
+        [paymentMethods]
+    );
+
+    // Tax withheld at source settles a receivable with no cash received, so it is not
+    // a method anyone should be able to reach for on an ordinary sale. It is offered
+    // only where it is legally possible: to a customer BIR has designated.
+    useEffect(() => {
+        withholdingMethodIdRef.current = withholdingMethod?.method_id ?? null;
+        withholdingExpectedRef.current = withholdingPreview?.total_withheld ?? 0;
+    }, [withholdingMethod, withholdingPreview]);
+
+    const selectableMethods = useMemo(
+        () => paymentMethods.filter(m => m.code !== 'withholding_tax' || customer?.is_withholding_agent),
+        [paymentMethods, customer?.is_withholding_agent]
+    );
+
+    // Pre-fill the deduction once the preview lands, so the cashier confirms a figure
+    // rather than computing one. Only once per opening: after that the line is theirs
+    // to correct, because what the customer actually withheld is often not what they
+    // should have withheld.
+    useEffect(() => {
+        if (!withholdingPreview || !withholdingMethod || appliedWithholdingRef.current) return;
+        appliedWithholdingRef.current = true;
+        setPayments(prev => {
+            if (prev.some(p => String(p.method_id) === String(withholdingMethod.method_id))) return prev;
+            const withholdingLine = {
+                id: Date.now() + 1,
+                method_id: withholdingMethod.method_id,
+                amount_paid: withholdingPreview.total_withheld,
+                tendered_amount: '',
+                reference: '',
+                metadata: {},
+            };
+            // An untouched blank line is replaced rather than added to, so the cashier
+            // sees the net cash due on the first line instead of a stray empty row.
+            const blank = prev.filter(p => !p.method_id && !parseFloat(p.amount_paid));
+            const kept = prev.filter(p => p.method_id || parseFloat(p.amount_paid));
+            return blank.length > 0 && kept.length === 0
+                ? [withholdingLine, { ...blank[0], amount_paid: withholdingPreview.net_due }]
+                : [...prev, withholdingLine];
+        });
+    }, [withholdingPreview, withholdingMethod]);
 
     // Calculate totals and validation
     const { totalPayments, totalChange, remaining, canConfirm, validationErrors, onAccountSum, requiresOnAccountConfirmation } = useMemo(() => {
@@ -252,6 +324,19 @@ const SplitPaymentModal = ({
     // Compute remaining at click time to avoid stale closure values.
     const autoAllocateRemaining = (paymentId) => {
         setPayments(prev => {
+            const target = prev.find(p => p.id === paymentId);
+
+            // On a withholding line, "the rest of the bill" is the wrong number by
+            // definition -- that line can only ever hold the tax the customer deducts,
+            // computed from the VAT-exclusive base. Filling it with the outstanding
+            // balance would book the entire sale as tax withheld and collect nothing.
+            const isWithholdingLine = withholdingMethodIdRef.current
+                && String(target?.method_id) === String(withholdingMethodIdRef.current);
+            if (isWithholdingLine) {
+                const expected = withholdingExpectedRef.current || 0;
+                return prev.map(p => p.id === paymentId ? { ...p, amount_paid: expected.toFixed(2) } : p);
+            }
+
             // Sum amounts excluding the target payment and pending payments
             const totalPaidExcluding = prev.reduce((sum, p) => {
                 if (p.id === paymentId || (p.payment_status && p.payment_status !== 'settled')) return sum;
@@ -396,6 +481,49 @@ const SplitPaymentModal = ({
                         </div>
                     </div>
 
+                    {/* Withholding disclosure. Shown as a breakdown rather than a single
+                        number because the cashier has to reconcile it line by line against
+                        the customer's own computation when the certificate arrives. */}
+                    {withholdingPreview && (
+                        <div className="mb-6 p-4 bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800/60 rounded-lg">
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <h4 className="text-sm font-semibold text-sky-900 dark:text-sky-200 flex items-center gap-1">
+                                        Tax withheld at source
+                                        <InfoTip label="Tax withheld at source">
+                                            This customer is a withholding agent, so they pay the invoice net of tax and remit the difference to BIR under our TIN. The invoice total does not change &mdash; the balance is settled by the BIR certificate they issue instead of by cash. Adjust the amount if they withheld something different; the certificate is what has to reconcile.
+                                        </InfoTip>
+                                    </h4>
+                                    <p className="text-xs text-sky-800 dark:text-sky-300 mt-0.5">
+                                        Computed on the VAT-exclusive base of {settings?.DEFAULT_CURRENCY_SYMBOL || '\u20B1'}
+                                        {(withholdingPreview.base_goods + withholdingPreview.base_services).toFixed(2)}
+                                        {', not on the invoice total.'}
+                                    </p>
+                                </div>
+                                <div className="text-right shrink-0">
+                                    <div className="text-xs text-sky-700 dark:text-sky-400">Net cash due</div>
+                                    <div className="text-lg font-bold text-sky-900 dark:text-sky-100 font-mono">
+                                        {settings?.DEFAULT_CURRENCY_SYMBOL || '\u20B1'}{Number(withholdingPreview.net_due).toFixed(2)}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="mt-3 space-y-1">
+                                {withholdingPreview.components.map(c => (
+                                    <div key={c.withholding_type} className="flex justify-between text-xs text-sky-900 dark:text-sky-200">
+                                        <span>
+                                            {c.withholding_type === 'EWT_GOODS' && 'Expanded withholding tax, goods'}
+                                            {c.withholding_type === 'EWT_SERVICES' && 'Expanded withholding tax, services'}
+                                            {c.withholding_type === 'VAT_GOV' && 'Withholding VAT, government'}
+                                            {' \u00B7 '}{c.atc_code}{' \u00B7 '}{(c.rate_snapshot * 100).toFixed(0)}% of {Number(c.tax_base).toFixed(2)}
+                                            {' \u00B7 Form '}{c.certificate_type}
+                                        </span>
+                                        <span className="font-mono">{Number(c.expected_withheld).toFixed(2)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Physical Receipt Input */}
                     {requiresPhysicalReceipt && (
                         <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-lg">
@@ -453,6 +581,7 @@ const SplitPaymentModal = ({
                             const method = paymentMethods.find(m => String(m.method_id) === String(payment.method_id));
                             const showTendered = method && method.config.change_allowed;
                             const showReference = method && method.config.requires_reference;
+                            const isWithholdingLine = method?.code === 'withholding_tax';
 
                             return (
                                 <div key={payment.id} className="p-4 border border-gray-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 shadow-sm">
@@ -505,7 +634,7 @@ const SplitPaymentModal = ({
                                                 required
                                             >
                                                 <option value="">Select method...</option>
-                                                {paymentMethods.map(method => (
+                                                {selectableMethods.map(method => (
                                                     <option key={method.method_id} value={method.method_id}>
                                                         {method.name} 
                                                         {method.settlement_type === 'instant' && ' (instant)'}
@@ -536,13 +665,20 @@ const SplitPaymentModal = ({
                                                     min={0}
                                                     required
                                                 />
-                                                {remaining > 0 && (
+                                                {/* On a withholding line the button offers the computed
+                                                    deduction, so it stays useful even once the balance is
+                                                    covered -- that line is never about the remaining balance. */}
+                                                {(remaining > 0 || isWithholdingLine) && (
                                                     <button
                                                         type="button"
                                                         onClick={() => autoAllocateRemaining(payment.id)}
-                                                        className="absolute inset-y-0 right-0 px-3 bg-primary-600 text-white rounded-r-lg hover:bg-primary-700 text-xs font-semibold transition-colors cursor-pointer select-none"
-                                                        title="Allocate remaining amount"
-                                                        aria-label="Fill remaining amount"
+                                                        className={`absolute inset-y-0 right-0 px-3 text-white rounded-r-lg text-xs font-semibold transition-colors cursor-pointer select-none ${
+                                                            isWithholdingLine ? 'bg-sky-600 hover:bg-sky-700' : 'bg-primary-600 hover:bg-primary-700'
+                                                        }`}
+                                                        title={isWithholdingLine
+                                                            ? `Fill the computed tax withheld (${(withholdingPreview?.total_withheld ?? 0).toFixed(2)})`
+                                                            : 'Allocate remaining amount'}
+                                                        aria-label={isWithholdingLine ? 'Fill computed tax withheld' : 'Fill remaining amount'}
                                                     >
                                                         FILL
                                                     </button>

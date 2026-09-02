@@ -3,7 +3,7 @@ const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
-const { normalizeText, normalizeName, normalizeEmail, normalizePhone } = require('../helpers/normalizeEntity');
+const { normalizeText, normalizeName, normalizeEmail, normalizePhone, normalizeTin } = require('../helpers/normalizeEntity');
 const router = express.Router();
 
 // Applies the shared normalization rules to the customer fields that accept
@@ -15,6 +15,27 @@ const normalizeCustomerFields = (customerData) => {
     customerData.company_name = normalizeText(customerData.company_name);
     customerData.phone = normalizePhone(customerData.phone);
     customerData.address = normalizeText(customerData.address);
+    customerData.tin = normalizeTin(customerData.tin);
+    customerData.registered_name = normalizeText(customerData.registered_name);
+};
+
+// Coerces the withholding fields to storable values and rejects an unknown
+// customer_type here rather than letting chk_customer_type turn it into an
+// opaque 500. Absent fields fall back to the non-withholding default, so an
+// older client that doesn't send them leaves a customer ordinary rather than
+// silently flipping them.
+const VALID_CUSTOMER_TYPES = ['PRIVATE', 'GOVERNMENT'];
+
+const resolveWithholdingFields = (customerData) => {
+    const customerType = customerData.customer_type ? String(customerData.customer_type).toUpperCase() : 'PRIVATE';
+    if (!VALID_CUSTOMER_TYPES.includes(customerType)) {
+        return { error: `customer_type must be one of ${VALID_CUSTOMER_TYPES.join(', ')}.` };
+    }
+    // Government buyers withhold by law -- there is no such thing as a government
+    // customer that doesn't -- so the flag is forced on rather than left to the
+    // encoder to remember.
+    const isWithholdingAgent = customerType === 'GOVERNMENT' ? true : customerData.is_withholding_agent === true;
+    return { customerType, isWithholdingAgent };
 };
 
 // Helper function to handle tag logic
@@ -208,13 +229,18 @@ router.post('/customers', protect, hasPermission('customers:edit'), async (req, 
     const { tags, ...customerData } = req.body;
     normalizeCustomerFields(customerData);
     const emailOrNull = normalizeEmail(customerData.email);
+    const withholding = resolveWithholdingFields(customerData);
+    if (withholding.error) return res.status(400).json({ message: withholding.error });
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
         const customer_code = await getNextDocumentNumber(client, 'CUST');
         const { rows } = await client.query(
-            'INSERT INTO customer (customer_code, first_name, last_name, company_name, phone, email, address, is_active, credit_limit) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
-            [customer_code, customerData.first_name, customerData.last_name, customerData.company_name, customerData.phone, emailOrNull, customerData.address, customerData.is_active, customerData.credit_limit !== undefined ? customerData.credit_limit : 5000.00]
+            `INSERT INTO customer (customer_code, first_name, last_name, company_name, phone, email, address, is_active, credit_limit,
+                                   tin, registered_name, is_withholding_agent, customer_type)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
+            [customer_code, customerData.first_name, customerData.last_name, customerData.company_name, customerData.phone, emailOrNull, customerData.address, customerData.is_active, customerData.credit_limit !== undefined ? customerData.credit_limit : 5000.00,
+             customerData.tin, customerData.registered_name, withholding.isWithholdingAgent, withholding.customerType]
         );
         const newCustomer = rows[0];
         await manageTags(client, tags, newCustomer.customer_id);
@@ -235,12 +261,18 @@ router.put('/customers/:id', protect, hasPermission('customers:edit'), async (re
     const { tags, ...customerData } = req.body;
     normalizeCustomerFields(customerData);
     const emailOrNull = normalizeEmail(customerData.email);
+    const withholding = resolveWithholdingFields(customerData);
+    if (withholding.error) return res.status(400).json({ message: withholding.error });
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
         const { rows } = await client.query(
-            'UPDATE customer SET first_name = $1, last_name = $2, company_name = $3, phone = $4, email = $5, address = $6, is_active = $7, credit_limit = $8 WHERE customer_id = $9 RETURNING *',
-            [customerData.first_name, customerData.last_name, customerData.company_name, customerData.phone, emailOrNull, customerData.address, customerData.is_active, customerData.credit_limit !== undefined ? customerData.credit_limit : 5000.00, id]
+            `UPDATE customer SET first_name = $1, last_name = $2, company_name = $3, phone = $4, email = $5, address = $6,
+                                is_active = $7, credit_limit = $8, tin = $9, registered_name = $10,
+                                is_withholding_agent = $11, customer_type = $12
+             WHERE customer_id = $13 RETURNING *`,
+            [customerData.first_name, customerData.last_name, customerData.company_name, customerData.phone, emailOrNull, customerData.address, customerData.is_active, customerData.credit_limit !== undefined ? customerData.credit_limit : 5000.00,
+             customerData.tin, customerData.registered_name, withholding.isWithholdingAgent, withholding.customerType, id]
         );
         const updatedCustomer = rows[0];
         await manageTags(client, tags, updatedCustomer.customer_id);

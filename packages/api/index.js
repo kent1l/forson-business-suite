@@ -85,6 +85,7 @@ registerRoute('/api', './routes/groupRoutes');
 registerRoute('/api', './routes/tagRoutes');
 registerRoute('/api', './routes/taxRateRoutes');
 registerRoute('/api', './routes/taxReportRoutes');
+registerRoute('/api', './routes/withholdingRoutes');
 
 // Finance & Expense Modules
 registerRoute('/api', './routes/expenseCategoryRoutes');

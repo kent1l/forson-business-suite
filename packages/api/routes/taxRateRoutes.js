@@ -130,6 +130,14 @@ router.put('/tax-rates/:id/set-default', protect, hasPermission('settings:edit')
 
     } catch (err) {
         await client.query('ROLLBACK');
+        // A partial unique index allows only one default rate. Two cashiers
+        // switching the default at once will collide here rather than leaving
+        // the table with zero or two defaults.
+        if (err.code === '23505') {
+            return res.status(409).json({
+                message: 'Another request changed the default tax rate at the same time. Please retry.'
+            });
+        }
         console.error(err.message);
         res.status(500).send('Server Error');
     } finally {

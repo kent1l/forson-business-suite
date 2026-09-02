@@ -66,6 +66,7 @@ export const CATEGORIES = [
             { name: 'A/P',                 icon: ICONS.truck,   page: 'ap',                 permission: 'ap:view', keywords: ['accounts payable', 'payables', 'supplier balance', 'ap', 'supplier bill', 'bill'] },
             { name: 'Cheques & Treasury', icon: ICONS.bank,    page: 'cheques_treasury',   permission: ['cheques:view', 'pdc:view', 'ar:view', 'ap-pdc:view'], keywords: ['pdc', 'post-dated cheques', 'bank', 'check', 'checks', 'cheque', 'cheques'] },
             { name: 'Bulk SOA Generator', icon: ICONS.documents, page: 'soa_gen',          permission: 'ar:view', keywords: ['statement of account', 'soa'] },
+            { name: 'Withholding Tax',    icon: ICONS.receipt,  page: 'withholding_tax',   permission: ['withholding_tax:manage', 'ar:view'], keywords: ['2307', '2306', 'ewt', 'cwt', 'creditable withholding', 'sawt', 'certificate', 'withheld', 'expanded withholding tax'] },
             { name: 'Expenses',           icon: ICONS.receipt, page: 'expenses',           permission: 'expenses:view', keywords: ['spending', 'costs'] },
             { name: 'Expense Categories', icon: ICONS.tag,     page: 'expense_categories', permission: 'expenses:manage_categories', keywords: ['expense types'] },
             { name: 'Learned Terms',      icon: ICONS.star,    page: 'expense_lexicon',    permission: 'expenses:manage_lexicon', keywords: ['expense lexicon', 'ocr terms'] },

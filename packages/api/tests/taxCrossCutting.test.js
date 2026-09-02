@@ -1,7 +1,9 @@
-// Mock db module before requiring taxCalculationService
+// Mock db module before requiring taxCalculationService.
+// rate_percentage is stored as a decimal fraction (0.12 = 12%), which the
+// tax_rate table now constrains to [0, 1].
 jest.mock('../db', () => ({
     query: jest.fn().mockResolvedValue({
-        rows: [{ rate_percentage: '12.00', tax_rate_id: 1 }]
+        rows: [{ rate_percentage: '0.12', tax_rate_id: 1 }]
     })
 }));
 
