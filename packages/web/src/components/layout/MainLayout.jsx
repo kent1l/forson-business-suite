@@ -8,6 +8,7 @@ import PartsPage from '../../pages/PartsPage';
 import PartsCleanupPage from '../../pages/PartsCleanupPage';
 import GoodsReceiptPage from '../../pages/GoodsReceiptPage';
 import GoodsReceiptHistoryPage from '../../pages/GoodsReceiptHistoryPage';
+import GoodsReceiptDraftsPage from '../../pages/GoodsReceiptDraftsPage';
 import InvoicingPage from '../../pages/InvoicingPage';
 import ApplicationsPage from '../../pages/ApplicationsPage';
 import CustomersPage from '../../pages/CustomersPage';
@@ -62,6 +63,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'customers': return <CustomersPage user={user} />;
             case 'goods_receipt': return <GoodsReceiptPage user={user} onNavigate={onNavigate} pageState={currentPage === 'goods_receipt' ? pageState : null} />;
             case 'goods_receipt_history': return <GoodsReceiptHistoryPage user={user} />;
+            case 'goods_receipt_drafts': return <GoodsReceiptDraftsPage onNavigate={onNavigate} />;
             case 'invoicing': return <InvoicingPage user={user} onNavigate={onNavigate} pageState={currentPage === 'invoicing' ? pageState : null} />;
             case 'sales_history': return <SalesHistoryPage />; // <-- Add case for new page
             case 'documents': return <DocumentsPage />;
