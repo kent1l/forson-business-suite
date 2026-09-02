@@ -8,6 +8,7 @@ import { enrichPartsArray } from '../helpers/applicationCache';
 import useSavedSales from '../hooks/useSavedSales';
 import useTypeahead from '../hooks/useTypeahead';
 import { computeTaxPreview } from '../utils/taxPreview';
+import useWithholdingPreview from '../hooks/useWithholdingPreview';
 import api from '../api';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
@@ -453,6 +454,11 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
         return computeTaxPreview(lines, taxRates, selectedTaxRate, 'POS');
     }, [lines, taxRates, selectedTaxRate]);
 
+    // Surfaced as soon as a withholding customer is chosen, not at payment time --
+    // the cashier needs to know the sale collects less than it totals before they
+    // start counting cash.
+    const withholdingPreview = useWithholdingPreview(selectedCustomer, lines, selectedTaxRate?.tax_rate_id || null);
+
     const handleCheckout = useCallback(() => {
         if (lines.length === 0) return toast.error("Please add items to the cart.");
         if (!selectedCustomer) return toast.error("Please select a customer.");
@@ -471,6 +477,14 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
         if (!selectedCustomer) return toast.error("Please select a customer.");
 
         if (type === 'cash' || type === 'card') {
+            // The quick-pay dialog records a single settlement line. A withholding sale
+            // needs two -- cash and certificate -- so it goes to the split dialog
+            // instead, rather than quietly booking the whole total as cash received.
+            if (selectedCustomer?.is_withholding_agent) {
+                toast('Tax is withheld on this customer\u2019s sales \u2014 opening split payment.');
+                setIsSplitPaymentModalOpen(true);
+                return;
+            }
             setInitialPaymentMethod(type);
             setIsPaymentModalOpen(true);
         } else if (type === 'split') {
@@ -1059,6 +1073,24 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                             </div>
                             <div className="flex justify-between text-sm text-gray-700 dark:text-slate-300"><span>Tax</span><span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{tax.toFixed(2)}</span></div>
                             <div className="flex justify-between font-bold text-lg text-gray-900 dark:text-slate-50"><span>Total</span><span>{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{total.toFixed(2)}</span></div>
+                            {/* Below the total, never netted into it: the sale is the full
+                                amount and that is what gets reported. Only the settlement
+                                differs -- part cash, part tax certificate. */}
+                            {withholdingPreview && (
+                                <div className="mt-2 p-2 rounded bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800/60 space-y-1">
+                                    <div className="flex justify-between text-xs text-sky-900 dark:text-sky-200">
+                                        <span>Less: tax withheld at source</span>
+                                        <span className="font-mono">({Number(withholdingPreview.total_withheld).toFixed(2)})</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm font-semibold text-sky-900 dark:text-sky-100">
+                                        <span>Net cash due</span>
+                                        <span className="font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{Number(withholdingPreview.net_due).toFixed(2)}</span>
+                                    </div>
+                                    <p className="text-[11px] text-sky-800 dark:text-sky-300 leading-snug">
+                                        {withholdingPreview.components.map(c => `${c.atc_code} ${(c.rate_snapshot * 100).toFixed(0)}%`).join(' + ')} on {Number(withholdingPreview.base_goods + withholdingPreview.base_services).toFixed(2)} &mdash; customer issues BIR Form {withholdingPreview.components.some(c => c.certificate_type === '2306') ? '2307 & 2306' : '2307'}.
+                                    </p>
+                                </div>
+                            )}
                             {anomaly && (
                                 <div className="mt-2 p-2 rounded bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-[11px] text-amber-800 dark:text-amber-300 leading-snug">
                                     <strong>Tax Anomaly:</strong> {anomaly.type === 'HIGH_EFFECTIVE_RATE' && `Effective tax rate ${(anomaly.effectiveRate * 100).toFixed(2)}%`} {anomaly.type === 'RECOMPOSE_MISMATCH' && 'Mismatch between entered and recomposed totals.'}
@@ -1132,8 +1164,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                     employeeId={user?.employee_id}
                     customerName={selectedCustomer ? `${selectedCustomer.first_name} ${selectedCustomer.last_name || ''}`.trim() : ''}
                     customer={selectedCustomer}
-                    lines={lines}
-                    taxRateId={selectedTaxRate?.tax_rate_id || null}
+                    withholdingPreview={withholdingPreview}
                 />
             )}
             {/* Void confirmation modal (centered, styled like system) */}

@@ -22,12 +22,11 @@ const SplitPaymentModal = ({
     commonTerms = ['0', '7', '15', '30'],
     generalDefaultTermsDays = '',
     onAccountDefaultTermsDays = null,
-    // Withholding context. `customer` carries is_withholding_agent/customer_type;
-    // `lines` and `taxRateId` are what the server needs to compute the expected
-    // deduction from authoritative part and rate data.
+    // Withholding context. The expected deduction is computed once at the cart (see
+    // useWithholdingPreview) and passed down, so the figure the cashier confirms here
+    // is the same one already shown on the order summary.
     customer = null,
-    lines = [],
-    taxRateId = null
+    withholdingPreview = null
 }) => {
     const { settings } = useSettings();
     const [paymentMethods, setPaymentMethods] = useState([]);
@@ -36,7 +35,6 @@ const SplitPaymentModal = ({
     const [showOnAccountConfirmation, setShowOnAccountConfirmation] = useState(false);
     const initializedRef = useRef(false);
     const appliedOnAccountDefaultRef = useRef(false);
-    const [withholdingPreview, setWithholdingPreview] = useState(null);
     const appliedWithholdingRef = useRef(false);
     // Read by updatePayment, which is declared above the preview state it needs.
     const withholdingMethodIdRef = useRef(null);
@@ -207,32 +205,6 @@ const SplitPaymentModal = ({
             }
         }
     }, [hasOnAccountLine, onAccountDefaultTermsDays, terms, generalDefaultTermsDays, onTermsChange]);
-
-    // Ask the server what this customer is expected to withhold. The figure is not
-    // computed here: it derives from the VAT-exclusive base, and a base assembled in
-    // the browser is a base the browser can change -- this one reduces a receivable.
-    useEffect(() => {
-        if (!isOpen || !customer?.is_withholding_agent || !customer?.customer_id || lines.length === 0) {
-            setWithholdingPreview(null);
-            return;
-        }
-        let cancelled = false;
-        api.post('/withholding/preview', {
-            customer_id: customer.customer_id,
-            tax_rate_id: taxRateId,
-            lines: lines.map(l => ({
-                part_id: l.part_id,
-                quantity: l.quantity,
-                sale_price: l.sale_price,
-                discount_amount: l.discount_amount || 0,
-                tax_rate_id: l.tax_rate_id,
-            })),
-        })
-            .then(res => { if (!cancelled) setWithholdingPreview(res.data?.applicable ? res.data : null); })
-            .catch(() => { if (!cancelled) setWithholdingPreview(null); });
-        return () => { cancelled = true; };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen, customer?.customer_id, customer?.is_withholding_agent, taxRateId, JSON.stringify(lines)]);
 
     const withholdingMethod = useMemo(
         () => paymentMethods.find(m => m.code === 'withholding_tax'),

@@ -3,6 +3,7 @@ import api from '../api';
 import { parsePaymentTermsDays } from '../utils/terms';
 import { formatPhysicalReceiptNumber } from '../utils/receiptNumberFormatter';
 import { computeTaxPreview } from '../utils/taxPreview';
+import useWithholdingPreview from '../hooks/useWithholdingPreview';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
 import InfoTip from '../components/ui/InfoTip';
@@ -314,6 +315,15 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
         () => computeTaxPreview(lines, taxRates, selectedTaxRate, 'INVOICING'),
         [lines, taxRates, selectedTaxRate]
     );
+
+    // Surfaced as soon as a withholding customer is chosen, not at payment time --
+    // the invoice will collect less than it totals, and that has to be visible while
+    // the invoice is being built.
+    const withholdingCustomer = useMemo(
+        () => customers.find(c => String(c.customer_id) === String(selectedCustomer)) || null,
+        [customers, selectedCustomer]
+    );
+    const withholdingPreview = useWithholdingPreview(withholdingCustomer, lines, selectedTaxRate);
 
     // Stable signature of the in-progress invoice, used to avoid saving an identical draft twice in a row.
     const draftSignature = useMemo(() => {
@@ -839,6 +849,24 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                                     <span className="text-xl font-bold text-gray-900 dark:text-slate-100 font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{total.toFixed(2)}</span>
                                 </div>
                             </div>
+                            {/* Below the total, never netted into it: the invoice is the
+                                full amount and that is what gets reported. Only the
+                                settlement differs -- part cash, part tax certificate. */}
+                            {withholdingPreview && (
+                                <div className="mt-2 p-2 rounded bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800/60 space-y-1">
+                                    <div className="flex justify-between text-xs text-sky-900 dark:text-sky-200">
+                                        <span>Less: tax withheld at source</span>
+                                        <span className="font-mono">({Number(withholdingPreview.total_withheld).toFixed(2)})</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm font-semibold text-sky-900 dark:text-sky-100">
+                                        <span>Net cash due</span>
+                                        <span className="font-mono">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{Number(withholdingPreview.net_due).toFixed(2)}</span>
+                                    </div>
+                                    <p className="text-[11px] text-sky-800 dark:text-sky-300 leading-snug">
+                                        {withholdingPreview.components.map(c => `${c.atc_code} ${(c.rate_snapshot * 100).toFixed(0)}%`).join(' + ')} on {Number(withholdingPreview.base_goods + withholdingPreview.base_services).toFixed(2)} &mdash; customer issues BIR Form {withholdingPreview.components.some(c => c.certificate_type === '2306') ? '2307 & 2306' : '2307'}.
+                                    </p>
+                                </div>
+                            )}
                             {hasInclusive && (
                                 <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">* Some items have tax-inclusive pricing</p>
                             )}
@@ -884,9 +912,8 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                         const customer = customers.find(c => String(c.customer_id) === String(selectedCustomer));
                         return customer ? `${customer.first_name} ${customer.last_name || ''}`.trim() : '';
                     })()}
-                    customer={customers.find(c => String(c.customer_id) === String(selectedCustomer)) || null}
-                    lines={lines}
-                    taxRateId={selectedTaxRate}
+                    customer={withholdingCustomer}
+                    withholdingPreview={withholdingPreview}
                 />
             )}
         </div>
