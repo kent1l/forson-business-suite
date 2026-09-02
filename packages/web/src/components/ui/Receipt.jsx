@@ -5,7 +5,7 @@ import { toZonedTime } from 'date-fns-tz';
 const Receipt = React.forwardRef(({ saleData, settings }, ref) => {
     if (!saleData) return null;
 
-    const { lines, total, subtotal, tax, tax_breakdown, invoice_number, physical_receipt_no } = saleData;
+    const { lines, total, subtotal, tax, tax_breakdown, withholding_breakdown, invoice_number, physical_receipt_no } = saleData;
 
     return (
         <div ref={ref} className="p-4 font-mono text-xs text-black bg-white">
@@ -58,6 +58,30 @@ const Receipt = React.forwardRef(({ saleData, settings }, ref) => {
                     <div className="flex justify-between"><span>Tax:</span><span>{tax.toFixed(2)}</span></div>
                 )}
                 <div className="flex justify-between font-bold"><span>TOTAL:</span><span>{total.toFixed(2)}</span></div>
+                {/* Withholding is disclosed BELOW the total, never netted into it.
+                    The sale is the full amount and that is what gets reported; the
+                    deduction only changes how the balance was settled. Netting it
+                    into the total would understate revenue and misstate VAT. */}
+                {withholding_breakdown && withholding_breakdown.length > 0 && (
+                    <>
+                        {withholding_breakdown.map((w, index) => (
+                            <div key={index} className="flex justify-between">
+                                <span>
+                                    Less: {w.withholding_type === 'VAT_GOV' ? 'Withholding VAT' : 'Tax withheld'}
+                                    {w.atc_code ? ` (${w.atc_code})` : ''}:
+                                </span>
+                                <span>({Number(w.actual_withheld).toFixed(2)})</span>
+                            </div>
+                        ))}
+                        <div className="flex justify-between font-bold">
+                            <span>NET DUE:</span>
+                            <span>
+                                {(total - withholding_breakdown.reduce((sum, w) => sum + Number(w.actual_withheld), 0)).toFixed(2)}
+                            </span>
+                        </div>
+                        <p className="text-center mt-2">Please issue BIR Form 2307 for the tax withheld.</p>
+                    </>
+                )}
             </div>
             <div className="my-4 border-t border-dashed border-black"></div>
             <div className="text-center">

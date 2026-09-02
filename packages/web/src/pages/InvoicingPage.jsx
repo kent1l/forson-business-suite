@@ -884,6 +884,9 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                         const customer = customers.find(c => String(c.customer_id) === String(selectedCustomer));
                         return customer ? `${customer.first_name} ${customer.last_name || ''}`.trim() : '';
                     })()}
+                    customer={customers.find(c => String(c.customer_id) === String(selectedCustomer)) || null}
+                    lines={lines}
+                    taxRateId={selectedTaxRate}
                 />
             )}
         </div>

@@ -209,6 +209,113 @@ async function computeWithholdingForInvoice({ lines, parts, customer }, client =
 }
 
 /**
+ * The largest deduction that could be an honest mistake rather than an error.
+ *
+ * `actual_withheld` has to be free to differ from expected -- it routinely does --
+ * but "free to differ" cannot mean unbounded, or the withholding channel becomes a
+ * way to write off any amount of a receivable with no approval and no audit trail.
+ *
+ * The ceiling comes from the known failure mode rather than an invented tolerance:
+ * customers who get this wrong almost always apply the rate to the VAT-INCLUSIVE
+ * invoice total instead of the VAT-exclusive base. That overstates the deduction by
+ * exactly the VAT fraction, and it is the largest plausible overstatement there is.
+ * Scaling the correct figure by total/base reproduces it precisely, whatever the
+ * rate mix.
+ *
+ * Anything above this line is not a rounding difference or a rate disagreement --
+ * it is a keying error or an unauthorised write-off, and it should be rejected so a
+ * human looks at it.
+ */
+function computeWithholdingCeiling(result, invoiceTotal) {
+    const baseTotal = round2(Number(result.base_goods || 0) + Number(result.base_services || 0));
+    const total = Number(invoiceTotal) || 0;
+    if (baseTotal <= 0 || total <= 0) return 0;
+    if (total <= baseTotal) return result.total_withheld;
+    return round2(result.total_withheld * (total / baseTotal));
+}
+
+/**
+ * Spread the amount actually withheld across the expected ATC components.
+ *
+ * The customer hands over one number. The certificate, and the BIR alphalist behind
+ * it, need that number broken out by ATC line. Splitting it in proportion to the
+ * expected figures preserves the goods/services/VAT mix we computed while making the
+ * parts add up to what was really deducted.
+ *
+ * The final component absorbs the rounding remainder so the components sum to the
+ * actual total exactly. Without that the parts can miss the whole by a centavo, and
+ * a register that is off by a centavo is a register the bookkeeper cannot file.
+ */
+function allocateActualAcrossComponents(components, actualTotal) {
+    const actual = round2(Number(actualTotal) || 0);
+    const expectedTotal = round2(components.reduce((sum, c) => sum + Number(c.expected_withheld), 0));
+
+    if (components.length === 0) return [];
+    if (expectedTotal <= 0) {
+        return components.map((c, i) => ({ ...c, actual_withheld: i === 0 ? actual : 0 }));
+    }
+
+    let running = 0;
+    return components.map((c, i) => {
+        const isLast = i === components.length - 1;
+        const share = isLast
+            ? round2(actual - running)
+            : round2(actual * (Number(c.expected_withheld) / expectedTotal));
+        running = round2(running + share);
+        return { ...c, actual_withheld: share };
+    });
+}
+
+/**
+ * Assemble everything needed to compute withholding for an invoice that already
+ * exists -- used when tax is withheld on a later AR collection rather than at the
+ * counter.
+ *
+ * Reads tax_base off invoice_line rather than recomputing it. The base was frozen
+ * when the invoice was raised; recomputing it now against current part or rate
+ * settings could produce a different figure than the invoice the customer is
+ * holding, and it is their copy that the certificate will be reconciled against.
+ */
+async function loadInvoiceWithholdingContext(client, invoiceId) {
+    const { rows: invoiceRows } = await client.query(`
+        SELECT i.invoice_id, i.invoice_number, i.total_amount, i.customer_id,
+               c.is_withholding_agent, c.customer_type, c.tin, c.registered_name
+        FROM invoice i
+        JOIN customer c ON c.customer_id = i.customer_id
+        WHERE i.invoice_id = $1
+    `, [invoiceId]);
+    if (invoiceRows.length === 0) return null;
+
+    const { rows: lines } = await client.query(`
+        SELECT il.part_id, il.tax_base, COALESCE(p.is_service, false) AS is_service
+        FROM invoice_line il
+        LEFT JOIN part p ON p.part_id = il.part_id
+        WHERE il.invoice_id = $1
+    `, [invoiceId]);
+
+    return {
+        invoice: invoiceRows[0],
+        customer: invoiceRows[0],
+        lines,
+        // is_service already travels on each line, so the parts lookup is built
+        // from the same rows rather than fetched a second time.
+        parts: lines.map(l => ({ part_id: l.part_id, is_service: l.is_service })),
+    };
+}
+
+/**
+ * Total already withheld against an invoice, so a second collection cannot withhold
+ * against the same base twice.
+ */
+async function sumWithheldForInvoice(client, invoiceId) {
+    const { rows } = await client.query(
+        'SELECT COALESCE(SUM(actual_withheld), 0) AS total FROM withholding_tax_line WHERE invoice_id = $1',
+        [invoiceId]
+    );
+    return round2(Number(rows[0].total));
+}
+
+/**
  * Persist the withholding actually deducted, against the payment that settled it.
  *
  * `actual_withheld` defaults to the expected figure but is passed separately
@@ -216,7 +323,7 @@ async function computeWithholdingForInvoice({ lines, parts, customer }, client =
  * on the VAT-inclusive total. The receivable must settle on what the customer
  * actually deducted, so the caller supplies the real amount.
  */
-async function recordWithholdingLines(client, { invoiceId, customerId, paymentId, components, employeeId }) {
+async function recordWithholdingLines(client, { invoiceId, customerId, paymentId = null, customerPaymentId = null, components, employeeId, notes = null }) {
     const inserted = [];
     for (const c of components) {
         const actual = c.actual_withheld !== undefined && c.actual_withheld !== null
@@ -225,13 +332,13 @@ async function recordWithholdingLines(client, { invoiceId, customerId, paymentId
 
         const { rows } = await client.query(`
             INSERT INTO withholding_tax_line (
-                invoice_id, customer_id, payment_id, withholding_type, treatment,
-                atc_code, rate_snapshot, tax_base, expected_withheld, actual_withheld, created_by
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                invoice_id, customer_id, payment_id, customer_payment_id, withholding_type, treatment,
+                atc_code, rate_snapshot, tax_base, expected_withheld, actual_withheld, created_by, notes
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
             RETURNING wt_line_id
         `, [
-            invoiceId, customerId, paymentId, c.withholding_type, c.treatment,
-            c.atc_code, c.rate_snapshot, c.tax_base, c.expected_withheld, actual, employeeId || null,
+            invoiceId, customerId, paymentId, customerPaymentId, c.withholding_type, c.treatment,
+            c.atc_code, c.rate_snapshot, c.tax_base, c.expected_withheld, actual, employeeId || null, notes,
         ]);
         inserted.push(rows[0].wt_line_id);
     }
@@ -240,6 +347,10 @@ async function recordWithholdingLines(client, { invoiceId, customerId, paymentId
 
 module.exports = {
     computeWithholding,
+    computeWithholdingCeiling,
+    allocateActualAcrossComponents,
+    loadInvoiceWithholdingContext,
+    sumWithheldForInvoice,
     computeWithholdingForInvoice,
     loadWithholdingConfig,
     recordWithholdingLines,

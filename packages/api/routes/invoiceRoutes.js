@@ -6,6 +6,7 @@ const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatt
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { validatePaymentTerms } = require('../helpers/paymentTermsHelper');
 const { calculateInvoiceTax, storeTaxBreakdown, validateTaxCalculation } = require('../services/taxCalculationService');
+const withholdingTax = require('../services/withholdingTaxService');
 const arLedger = require('../services/arLedgerService');
 const walletService = require('../services/customerWalletService');
 const { normalizeStatusFilter } = require('../helpers/invoiceStatusFilter');
@@ -94,6 +95,20 @@ const INVOICE_SELECT_FROM = `
                 FROM invoice_tax_breakdown itb
                 WHERE itb.invoice_id = i.invoice_id
             ) tb ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT COALESCE(SUM(wtl.actual_withheld), 0) AS withheld_amount,
+                       json_agg(json_build_object(
+                           'withholding_type', wtl.withholding_type,
+                           'treatment', wtl.treatment,
+                           'atc_code', wtl.atc_code,
+                           'rate_snapshot', wtl.rate_snapshot,
+                           'tax_base', wtl.tax_base,
+                           'actual_withheld', wtl.actual_withheld,
+                           'certificate_id', wtl.certificate_id
+                       )) AS withholding_breakdown
+                FROM withholding_tax_line wtl
+                WHERE wtl.invoice_id = i.invoice_id
+            ) wt ON TRUE
 `;
 
 // GET /invoices - Get invoices with date filtering, optional search/status filter, and pagination
@@ -140,7 +155,9 @@ router.get('/invoices', protect, hasPermission('invoicing:create'), async (req, 
                 ps.settled_amount,
                 ps.pending_amount,
                 ps.on_account_amount,
-                tb.tax_breakdown
+                tb.tax_breakdown,
+                wt.withheld_amount,
+                wt.withholding_breakdown
             ${INVOICE_SELECT_FROM}
             WHERE ${whereClauses.join(' AND ')}
             ORDER BY i.invoice_date DESC
@@ -366,7 +383,7 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
         // Get part details for tax calculation
         const partIds = lines.map(line => line.part_id);
         const { rows: parts } = await client.query(
-            'SELECT part_id, tax_rate_id, is_tax_inclusive_price FROM part WHERE part_id = ANY($1)',
+            'SELECT part_id, tax_rate_id, is_tax_inclusive_price, is_service FROM part WHERE part_id = ANY($1)',
             [partIds]
         );
 
@@ -410,7 +427,7 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
         const normalizedTerms = termsValidation.normalizedTerms;
 
         // Fetch customer details
-        const customerResult = await client.query('SELECT first_name, last_name, credit_hold, credit_hold_reason FROM customer WHERE customer_id = $1', [customer_id]);
+        const customerResult = await client.query('SELECT first_name, last_name, credit_hold, credit_hold_reason, is_withholding_agent, customer_type FROM customer WHERE customer_id = $1', [customer_id]);
         if (customerResult.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(400).json({ message: 'Invalid customer_id.' });
@@ -563,6 +580,17 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
             await client.query(transactionQuery, [part_id, -quantity, cost_at_sale, invoice_number, employee_id]);
         }
 
+        // Tax the customer is expected to withhold at source. Computed once, from the
+        // frozen line bases this invoice was just written with, so the figure the
+        // payment is validated against is the same one the invoice discloses.
+        const expectedWithholding = withholdingTax.computeWithholding({
+            lines: taxCalculation.lines,
+            parts,
+            customer: customerRow,
+            config: await withholdingTax.loadWithholdingConfig(client),
+        });
+        const withholdingCeiling = withholdingTax.computeWithholdingCeiling(expectedWithholding, total_amount);
+
         if (payments && Array.isArray(payments) && payments.length > 0) {
             const totalPayments = payments.reduce((sum, p) => sum + parseFloat(p.amount_paid), 0);
             if (totalPayments > total_amount + 0.01) {
@@ -584,6 +612,30 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
                     return res.status(400).json({ message: `Invalid payment method: ${method_id}` });
                 }
                 const methodConfig = typeof method.rows[0].config === 'string' ? JSON.parse(method.rows[0].config) : method.rows[0].config;
+
+                // Tax withheld at source settles part of the receivable without cash
+                // changing hands, so it is the one method that can reduce a balance
+                // with nothing received. It is gated accordingly: only for customers
+                // BIR has actually designated, and never above what the deduction
+                // could plausibly be (see computeWithholdingCeiling).
+                if (method.rows[0].code === 'withholding_tax') {
+                    if (!expectedWithholding.applicable) {
+                        await client.query('ROLLBACK');
+                        return res.status(400).json({
+                            message: customerRow.is_withholding_agent
+                                ? 'This sale has no VATable base for tax to be withheld from.'
+                                : 'Tax withheld at source can only be recorded for customers marked as withholding agents.'
+                        });
+                    }
+                    const claimed = parseFloat(p_amount_paid);
+                    if (claimed > withholdingCeiling + 0.01) {
+                        await client.query('ROLLBACK');
+                        return res.status(400).json({
+                            message: `Tax withheld (₱${claimed.toFixed(2)}) exceeds the most that could plausibly be withheld on this sale (₱${withholdingCeiling.toFixed(2)}). Expected ₱${expectedWithholding.total_withheld.toFixed(2)} on a VAT-exclusive base of ₱${(expectedWithholding.base_goods + expectedWithholding.base_services).toFixed(2)}.`
+                        });
+                    }
+                }
+
                 if (methodConfig.requires_reference && (!reference || reference.trim() === '')) {
                     await client.query('ROLLBACK');
                     return res.status(400).json({ message: `Reference is required for ${method.rows[0].name}` });
@@ -629,7 +681,28 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::varchar, CASE WHEN $9::varchar = 'settled' THEN CURRENT_TIMESTAMP ELSE NULL END)
                     RETURNING payment_id
                 `, [newInvoiceId, method.rows[0].method_id, pAmt, tAmt, changeAmt, reference, JSON.stringify(metadata), employee_id, paymentStatus]);
-                if (paymentStatus === 'settled') {
+                if (method.rows[0].code === 'withholding_tax') {
+                    // Recorded as its own ledger entry type rather than PAYMENT_SETTLED:
+                    // it settles the receivable, but no cash was received, and every
+                    // cash-basis report keys off that distinction.
+                    await arLedger.appendEntry(client, {
+                        customerId: customer_id, invoiceId: newInvoiceId,
+                        paymentId: ipRes.rows[0].payment_id,
+                        entryType: 'WITHHOLDING_TAX_CREDIT', amount: -pAmt,
+                        paymentChannel: method.rows[0].code,
+                        referenceNo: reference || invoice_number,
+                        notes: `Tax withheld at source, pending BIR Form ${expectedWithholding.components.some(c => c.certificate_type === '2306') ? '2307/2306' : '2307'}`,
+                        createdBy: employee_id,
+                        paymentSource: 'invoice_payments',
+                    });
+                    await withholdingTax.recordWithholdingLines(client, {
+                        invoiceId: newInvoiceId,
+                        customerId: customer_id,
+                        paymentId: ipRes.rows[0].payment_id,
+                        components: withholdingTax.allocateActualAcrossComponents(expectedWithholding.components, pAmt),
+                        employeeId: employee_id,
+                    });
+                } else if (paymentStatus === 'settled') {
                     await arLedger.appendEntry(client, {
                         customerId: customer_id, invoiceId: newInvoiceId,
                         paymentId: ipRes.rows[0].payment_id,

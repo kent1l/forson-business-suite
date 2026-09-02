@@ -1131,6 +1131,9 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                     onPhysicalReceiptChange={setPhysicalReceiptInput}
                     employeeId={user?.employee_id}
                     customerName={selectedCustomer ? `${selectedCustomer.first_name} ${selectedCustomer.last_name || ''}`.trim() : ''}
+                    customer={selectedCustomer}
+                    lines={lines}
+                    taxRateId={selectedTaxRate?.tax_rate_id || null}
                 />
             )}
             {/* Void confirmation modal (centered, styled like system) */}

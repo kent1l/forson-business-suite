@@ -3,6 +3,8 @@ jest.mock('../db', () => ({ query: jest.fn() }));
 const {
     computeWithholding,
     computeWithholdingForInvoice,
+    computeWithholdingCeiling,
+    allocateActualAcrossComponents,
     loadWithholdingConfig,
     splitBaseByClass,
     DEFAULTS,
@@ -219,6 +221,100 @@ describe('withholding tax', () => {
             const cash = Math.round((T - result.total_withheld) * 100) / 100;
             expect(cash).toBe(10600.00);
             expect(Math.round((cash + result.total_withheld) * 100) / 100).toBe(T);
+        });
+    });
+
+    describe('the plausibility ceiling', () => {
+        // The ceiling exists so the withholding channel cannot be used to write off an
+        // arbitrary slice of a receivable. It is set at the largest honest mistake:
+        // applying the rate to the VAT-inclusive total instead of the base.
+        test('allows exactly the amount an over-withholding customer would deduct', () => {
+            const result = computeWithholding({
+                lines: [{ part_id: 1, tax_base: 10000 }],
+                parts: [goodsPart],
+                customer: privateAgent,
+                config,
+            });
+
+            expect(result.total_withheld).toBe(100.00);          // 1% of the base
+            expect(computeWithholdingCeiling(result, 11200)).toBe(112.00); // 1% of the total
+        });
+
+        test('scales with the rate mix rather than assuming a single rate', () => {
+            const result = computeWithholding({
+                lines: [
+                    { part_id: 1, tax_base: 5000 },   // goods at 1%  =  50
+                    { part_id: 2, tax_base: 5000 },   // services at 2% = 100
+                ],
+                parts: [goodsPart, servicePart],
+                customer: privateAgent,
+                config,
+            });
+
+            expect(result.total_withheld).toBe(150.00);
+            // Base 10,000 -> total 11,200 is a factor of 1.12 on the blended figure.
+            expect(computeWithholdingCeiling(result, 11200)).toBe(168.00);
+        });
+
+        test('does not fall below the expected amount when there is no VAT', () => {
+            const result = computeWithholding({
+                lines: [{ part_id: 1, tax_base: 10000 }],
+                parts: [goodsPart],
+                customer: privateAgent,
+                config,
+            });
+
+            // A zero-rated or exempt sale has total == base; the ceiling must not
+            // land under the correct figure and reject a valid deduction.
+            expect(computeWithholdingCeiling(result, 10000)).toBe(100.00);
+        });
+
+        test('is zero when there is nothing to withhold from', () => {
+            const empty = computeWithholding({ lines: [], parts: [], customer: privateAgent, config });
+            expect(computeWithholdingCeiling(empty, 11200)).toBe(0);
+        });
+    });
+
+    describe('allocating what was actually withheld', () => {
+        const twoComponents = () => computeWithholding({
+            lines: [
+                { part_id: 1, tax_base: 5000 },   // goods    1% =  50
+                { part_id: 2, tax_base: 5000 },   // services 2% = 100
+            ],
+            parts: [goodsPart, servicePart],
+            customer: privateAgent,
+            config,
+        }).components;
+
+        test('splits in proportion to the expected figures', () => {
+            const allocated = allocateActualAcrossComponents(twoComponents(), 150);
+            expect(allocated.map(c => c.actual_withheld)).toEqual([50.00, 100.00]);
+        });
+
+        test('parts always sum to the actual total, even when it does not divide evenly', () => {
+            // The customer withheld on the VAT-inclusive total: 168.00 instead of 150.
+            const allocated = allocateActualAcrossComponents(twoComponents(), 168);
+            const sum = allocated.reduce((t, c) => t + c.actual_withheld, 0);
+            expect(Math.round(sum * 100) / 100).toBe(168.00);
+        });
+
+        test('absorbs the rounding remainder rather than losing a centavo', () => {
+            // 100.01 across a 1:2 split gives 33.336... and 66.673...; naive rounding
+            // of both would sum to 100.01 or 100.02 depending on the values, so the
+            // last component is derived from the remainder instead.
+            const allocated = allocateActualAcrossComponents(twoComponents(), 100.01);
+            const sum = allocated.reduce((t, c) => t + c.actual_withheld, 0);
+            expect(Math.round(sum * 100) / 100).toBe(100.01);
+        });
+
+        test('preserves the ATC identity of each component', () => {
+            const allocated = allocateActualAcrossComponents(twoComponents(), 168);
+            expect(allocated.map(c => c.atc_code)).toEqual(['WC158', 'WC160']);
+            expect(allocated[0].expected_withheld).toBe(50.00); // expected is not overwritten
+        });
+
+        test('handles an empty component list', () => {
+            expect(allocateActualAcrossComponents([], 100)).toEqual([]);
         });
     });
 

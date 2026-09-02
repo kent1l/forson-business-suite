@@ -5,6 +5,10 @@ const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const arLedger = require('../services/arLedgerService');
 const walletService = require('../services/customerWalletService');
+const withholdingTax = require('../services/withholdingTaxService');
+
+const round2 = (n) => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100;
+
 const router = express.Router();
 
 const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatter');
@@ -28,7 +32,8 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
         physical_receipt_no, // physical receipt number for the payment
         cheque_date,     // ISO date string for PDC cheques
         notes,
-        allocations      // [{invoice_id, amount_allocated}]
+        allocations,     // [{invoice_id, amount_allocated}] -- the cash being applied
+        withholding      // [{invoice_id, amount_withheld}] -- tax the customer deducted
     } = req.body;
 
     const referenceValue = reference || reference_number || null;
@@ -126,10 +131,79 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
              referenceValue, physicalReceiptNoValue, notes || null, pdcStatusValue, chequeDateValue]
         );
 
+        // ── Step 1b: Resolve tax withheld at source ────────────────────────────
+        // A withholding customer pays the invoice net of tax and hands over a BIR
+        // certificate for the rest. The deducted amount still settles the receivable,
+        // so it is merged into the allocation for the invoice it belongs to -- but it
+        // is tracked separately, because no cash was received for it and the ledger
+        // has to say so.
+        const withholdingEntries = Array.isArray(withholding) ? withholding : [];
+        const withholdingByInvoice = new Map();
+        let totalWithheld = 0;
+
+        for (const entry of withholdingEntries) {
+            const invoiceId = Number(entry.invoice_id);
+            const amountWithheld = round2(parseFloat(entry.amount_withheld) || 0);
+            if (!invoiceId || amountWithheld <= 0) continue;
+
+            const context = await withholdingTax.loadInvoiceWithholdingContext(client, invoiceId);
+            if (!context) throw new Error(`Invoice #${invoiceId} not found.`);
+            if (Number(context.invoice.customer_id) !== Number(customer_id)) {
+                throw new Error(`Invoice #${invoiceId} does not belong to this customer.`);
+            }
+
+            const expected = await withholdingTax.computeWithholdingForInvoice({
+                lines: context.lines,
+                parts: context.parts,
+                customer: context.customer,
+            }, client);
+
+            if (!expected.applicable) {
+                throw new Error(
+                    context.customer.is_withholding_agent
+                        ? `Invoice #${context.invoice.invoice_number} has no VATable base for tax to be withheld from.`
+                        : `Tax withheld at source can only be recorded for customers marked as withholding agents.`
+                );
+            }
+
+            // Guard against withholding twice against the same base -- e.g. a partial
+            // collection followed by a second one that repeats the full deduction.
+            const alreadyWithheld = await withholdingTax.sumWithheldForInvoice(client, invoiceId);
+            const ceiling = withholdingTax.computeWithholdingCeiling(expected, context.invoice.total_amount);
+            if (alreadyWithheld + amountWithheld > ceiling + 0.01) {
+                throw new Error(
+                    `Tax withheld on invoice #${context.invoice.invoice_number} (₱${amountWithheld.toFixed(2)}` +
+                    (alreadyWithheld > 0 ? `, on top of ₱${alreadyWithheld.toFixed(2)} already recorded` : '') +
+                    `) exceeds the most that could plausibly be withheld (₱${ceiling.toFixed(2)}). ` +
+                    `Expected ₱${expected.total_withheld.toFixed(2)} on a VAT-exclusive base of ₱${(expected.base_goods + expected.base_services).toFixed(2)}.`
+                );
+            }
+
+            withholdingByInvoice.set(invoiceId, {
+                amount: amountWithheld,
+                components: withholdingTax.allocateActualAcrossComponents(expected.components, amountWithheld),
+            });
+            totalWithheld = round2(totalWithheld + amountWithheld);
+        }
+
+        // Fold the withheld amounts into the allocations so each invoice is settled by
+        // the full amount it was actually cleared for, cash plus certificate.
+        const allocationByInvoice = new Map();
+        for (const alloc of allocations) {
+            const invoiceId = Number(alloc.invoice_id);
+            const amount = parseFloat(alloc.amount_allocated) || 0;
+            if (!invoiceId || amount <= 0) continue;
+            allocationByInvoice.set(invoiceId, round2((allocationByInvoice.get(invoiceId) || 0) + amount));
+        }
+        for (const [invoiceId, wh] of withholdingByInvoice) {
+            allocationByInvoice.set(invoiceId, round2((allocationByInvoice.get(invoiceId) || 0) + wh.amount));
+        }
+        const mergedAllocations = Array.from(allocationByInvoice, ([invoice_id, amount_allocated]) => ({ invoice_id, amount_allocated }));
+
         // ── Step 2: Allocate to invoices ────────────────────────────────────────
         let totalAllocated = 0;
 
-        for (const alloc of allocations) {
+        for (const alloc of mergedAllocations) {
             const allocAmt = parseFloat(alloc.amount_allocated) || 0;
             if (allocAmt <= 0) continue;
 
@@ -185,12 +259,16 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
         // ── Step 4: AR ledger — only for instant / already-cleared payments ────
         // Cheques are credited to the AR ledger when the PDC desk marks them CLEARED,
         // ensuring the customer's balance reflects cleared cash, not just committed amounts.
-        if (!isCheque && totalAllocated > 0) {
+        // The cash actually received is what settled minus what was withheld; the two
+        // are posted as separate entries so a cash-basis report never counts a tax
+        // certificate as collections.
+        const cashSettled = round2(totalAllocated - totalWithheld);
+        if (!isCheque && cashSettled > 0) {
             await arLedger.appendEntry(client, {
                 customerId: customer_id,
                 paymentId: newPaymentId,
                 entryType: 'PAYMENT_SETTLED',
-                amount: -totalAllocated,
+                amount: -cashSettled,
                 paymentChannel: methodCode,
                 referenceNo: referenceValue,
                 notes: notes || `Payment settled via ${methodCode}`,
@@ -199,8 +277,35 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
             });
         }
 
+        if (totalWithheld > 0) {
+            // Posted even for a cheque collection: the withholding is not contingent on
+            // the cheque clearing. The customer has already remitted that tax to BIR
+            // under our TIN, and the certificate proving it is owed to us either way.
+            await arLedger.appendEntry(client, {
+                customerId: customer_id,
+                paymentId: newPaymentId,
+                entryType: 'WITHHOLDING_TAX_CREDIT',
+                amount: -totalWithheld,
+                paymentChannel: 'withholding_tax',
+                referenceNo: referenceValue,
+                notes: 'Tax withheld at source, pending BIR certificate',
+                createdBy: employee_id,
+                paymentSource: 'customer_payment',
+            });
+
+            for (const [invoiceId, wh] of withholdingByInvoice) {
+                await withholdingTax.recordWithholdingLines(client, {
+                    invoiceId,
+                    customerId: customer_id,
+                    customerPaymentId: newPaymentId,
+                    components: wh.components,
+                    employeeId: employee_id,
+                });
+            }
+        }
+
         // ── Step 5: Overpayment → store wallet ─────────────────────────────────
-        const excessAmount = numAmount - totalAllocated;
+        const excessAmount = round2(numAmount - (totalAllocated - totalWithheld));
         let overpaymentCredited = 0;
         if (excessAmount > 0.005) {
             await walletService.appendWalletTransaction(client, {
@@ -220,6 +325,7 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
             message: 'Payment received successfully',
             payment_id: newPaymentId,
             allocated_amount: totalAllocated,
+            withheld_amount: totalWithheld,
             overpayment_credited: overpaymentCredited,
             pdc_status: pdcStatusValue,
         });

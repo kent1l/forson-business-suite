@@ -69,6 +69,29 @@ const normalizePhone = (value) => {
     return stripped === '' ? null : stripped;
 };
 
+// BIR Taxpayer Identification Number. Entry is wildly inconsistent -- staff copy
+// it off a 2307 as "123 456 789 0000", "123-456-789", or a bare digit run -- but
+// it has to match exactly when a certificate is reconciled against the customer
+// on file, so it is stored in one canonical dashed layout.
+//
+// A TIN is a 9-digit base plus a branch code (000 for head office, 3 digits in
+// current issuances, 5 in older ones). Anything that doesn't fit one of those
+// shapes is left as typed rather than reformatted: an unrecognized length means
+// the number is probably wrong, and silently regrouping the digits would hide
+// that from whoever has to reconcile it later.
+const normalizeTin = (value) => {
+    const cleaned = normalizeText(value);
+    if (!cleaned) return cleaned;
+    const digits = cleaned.replace(/\D/g, '');
+    const base = digits.slice(0, 9);
+    const branch = digits.slice(9);
+    if (digits.length === 9) return base.replace(/(\d{3})(\d{3})(\d{3})/, '$1-$2-$3');
+    if (digits.length === 12 || digits.length === 14) {
+        return `${base.replace(/(\d{3})(\d{3})(\d{3})/, '$1-$2-$3')}-${branch}`;
+    }
+    return cleaned;
+};
+
 // Stored part number display value (separate from normalizeSku.js's
 // search-index normalization): uppercased on entry to match the auto-parts
 // catalog convention this business already follows for the vast majority of
@@ -85,4 +108,5 @@ module.exports = {
     normalizeEmail,
     normalizePhone,
     normalizePartNumber,
+    normalizeTin,
 };
