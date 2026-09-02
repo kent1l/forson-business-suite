@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import { formatCurrency as currency } from '../../utils/currency';
@@ -96,32 +96,18 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
 
     // The cash a withholding customer is expected to send: every open invoice
     // settled, less the tax they will deduct.
+    //
+    // Shown as guidance only -- deliberately NOT written into the amount field. The
+    // amount received is an observation of the cheque in the clerk's hand, not
+    // something the system is entitled to assert. Prefilling it invites the figure to
+    // be accepted unread, and a wrong amount accepted unread is a receivable settled
+    // against money that never arrived.
     const expectedNetCash = useMemo(
         () => Math.round(unpaidInvoices.reduce(
             (sum, inv) => sum + computeCashCap(inv, withholdingByInvoice[String(inv.invoice_id)]), 0
         ) * 100) / 100,
         [unpaidInvoices, withholdingByInvoice]
     );
-
-    /**
-     * Propose the net cash rather than making the clerk work it out.
-     *
-     * This is the whole point of knowing the customer withholds. Left to type the
-     * figure themselves, a clerk reaches for the invoice total out of habit -- and
-     * that number is indistinguishable from "they paid in full and withheld nothing",
-     * so the deduction silently disappears. Proposing the net means the common case
-     * needs no arithmetic and no decision, and typing over it becomes a deliberate act.
-     *
-     * Fires once, only into an untouched first line, so it can never overwrite a
-     * figure someone has entered.
-     */
-    const prefilledRef = useRef(false);
-    useEffect(() => {
-        if (prefilledRef.current || expectedNetCash <= 0) return;
-        if (splits.length !== 1 || String(splits[0].amount || '').trim() !== '') return;
-        prefilledRef.current = true;
-        setSplits(prev => prev.map((sp, i) => i === 0 ? { ...sp, amount: expectedNetCash.toFixed(2) } : sp));
-    }, [expectedNetCash, splits]);
 
     const handleAllocationChange = (invoiceId, value) => {
         setAllocations(a => ({ ...a, [invoiceId]: value }));
@@ -521,7 +507,10 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                                             </InfoTip>
                                         </div>
                                         <p className="text-[11px] text-sky-700 mt-0.5 leading-snug">
-                                            Prefilled with the net cash this customer is expected to send. Change it to what you actually received &mdash; the deduction follows.
+                                            Enter the cash you actually received; the deduction below follows from it.
+                                            {expectedNetCash > 0 && (
+                                                <> If they withhold in full, expect <span className="font-mono font-semibold">{currency(expectedNetCash)}</span>.</>
+                                            )}
                                         </p>
                                     </div>
                                     <div className="text-right">
