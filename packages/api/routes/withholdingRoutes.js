@@ -142,6 +142,89 @@ router.get('/withholding/invoices/:invoiceId/preview', protect, hasPermission(['
     }
 });
 
+/**
+ * GET /api/withholding/customers/:customerId/expected
+ *
+ * Expected withholding for every invoice the customer still owes on, in one call.
+ *
+ * The A/R desk settles several invoices from a single cheque, and the deduction is
+ * per-invoice -- each has its own VAT-exclusive base, and the certificate reports it
+ * per invoice per ATC. Fetching these one at a time would put a request behind every
+ * row of the allocation table; this is the same computation, batched.
+ *
+ * Returns an empty array for a customer who is not a withholding agent, so the caller
+ * can key off the payload rather than re-checking the flag.
+ */
+router.get('/withholding/customers/:customerId/expected', protect, hasPermission(['ar:receive_payment', 'ar:view']), async (req, res) => {
+    const { customerId } = req.params;
+    const client = await db.getClient();
+    try {
+        const { rows: customerRows } = await client.query(
+            'SELECT customer_id, is_withholding_agent, customer_type FROM customer WHERE customer_id = $1',
+            [customerId]
+        );
+        if (customerRows.length === 0) return res.status(404).json({ message: 'Customer not found.' });
+        if (!customerRows[0].is_withholding_agent) return res.json([]);
+
+        // Outstanding is measured against allocations, matching how POST /payments
+        // validates them -- so the figure shown can never exceed what the payment
+        // route will accept.
+        const { rows: invoices } = await client.query(`
+            SELECT i.invoice_id, i.invoice_number, i.invoice_date, i.total_amount,
+                   COALESCE(SUM(ipa.amount_allocated), 0) AS allocated
+            FROM invoice i
+            LEFT JOIN invoice_payment_allocation ipa ON ipa.invoice_id = i.invoice_id
+            WHERE i.customer_id = $1 AND i.status NOT IN ('Cancelled', 'Fully Refunded')
+            GROUP BY i.invoice_id
+            HAVING i.total_amount - COALESCE(SUM(ipa.amount_allocated), 0) > 0.005
+            ORDER BY i.invoice_date ASC
+        `, [customerId]);
+
+        const config = await withholdingTax.loadWithholdingConfig(client);
+
+        const results = [];
+        for (const invoice of invoices) {
+            const context = await withholdingTax.loadInvoiceWithholdingContext(client, invoice.invoice_id);
+            if (!context) continue;
+
+            const expected = withholdingTax.computeWithholding({
+                lines: context.lines,
+                parts: context.parts,
+                customer: context.customer,
+                config,
+            });
+            if (!expected.applicable) continue;
+
+            const alreadyWithheld = await withholdingTax.sumWithheldForInvoice(client, invoice.invoice_id);
+            const outstanding = round2(Number(invoice.total_amount) - Number(invoice.allocated));
+
+            results.push({
+                invoice_id: invoice.invoice_id,
+                invoice_number: invoice.invoice_number,
+                total_amount: Number(invoice.total_amount),
+                outstanding,
+                components: expected.components,
+                expected_withheld: expected.total_withheld,
+                already_withheld: alreadyWithheld,
+                // What is still expected to be deducted. A partial collection may have
+                // taken some already, and the rest comes off the next one.
+                remaining_expected: round2(Math.max(expected.total_withheld - alreadyWithheld, 0)),
+                ceiling: round2(Math.max(
+                    withholdingTax.computeWithholdingCeiling(expected, invoice.total_amount) - alreadyWithheld, 0
+                )),
+                base: round2(expected.base_goods + expected.base_services),
+            });
+        }
+
+        res.json(results);
+    } catch (err) {
+        console.error('Withholding expected-by-customer error:', err.message);
+        res.status(500).json({ message: 'Server error computing expected withholding.', error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Outstanding certificates (the chase list)
 // ─────────────────────────────────────────────────────────────────────────────

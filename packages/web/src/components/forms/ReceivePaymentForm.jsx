@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import { formatCurrency as currency } from '../../utils/currency';
@@ -6,6 +6,7 @@ import Icon from '../ui/Icon';
 import InfoTip from '../ui/InfoTip';
 import MathExpressionInput from '../ui/MathExpressionInput';
 import { ICONS } from '../../constants';
+import { allocateCash, withheldFor as computeWithheld, cashCapFor as computeCashCap } from '../../utils/withholdingSettlement';
 
 const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
     const [unpaidInvoices, setUnpaidInvoices] = useState([]);
@@ -17,6 +18,11 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
     const [physicalReceiptNo, setPhysicalReceiptNo] = useState('');
     const [notes, setNotes] = useState('');
     const [allocations, setAllocations] = useState({});
+    // Expected withholding per invoice, from the server. Keyed by invoice_id.
+    const [withholdingByInvoice, setWithholdingByInvoice] = useState({});
+    // Only the amounts the clerk has typed over. Everything else stays derived, so a
+    // change to the allocation keeps flowing through to the deduction.
+    const [withheldOverrides, setWithheldOverrides] = useState({});
 
     // Derived totals
     const totalSplitAmount = useMemo(() => splits.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0), [splits]);
@@ -44,6 +50,13 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
         if (!customer?.customer_id) return;
         api.get(`/customers/${customer.customer_id}/unpaid-invoices`).then(res => setUnpaidInvoices(res.data || [])).catch(() => setUnpaidInvoices([]));
         api.get(`/customers/${customer.customer_id}/wallet`).then(res => setWalletBalance(res.data?.balance || 0)).catch(() => setWalletBalance(0));
+        // Empty for an ordinary customer, so the whole withholding UI keys off the
+        // payload rather than re-checking the flag in half a dozen places.
+        api.get(`/withholding/customers/${customer.customer_id}/expected`)
+            .then(res => setWithholdingByInvoice(
+                Object.fromEntries((res.data || []).map(w => [String(w.invoice_id), w]))
+            ))
+            .catch(() => setWithholdingByInvoice({}));
     }, [customer]);
 
     // Load enabled payment methods
@@ -55,27 +68,87 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
         }).catch(() => setEnabledMethods([]));
     }, []);
 
-    // Auto allocate
+    const hasWithholding = useMemo(() => Object.keys(withholdingByInvoice).length > 0, [withholdingByInvoice]);
+
+    /**
+     * Tax deducted for one invoice, given the cash applied to it.
+     *
+     * Delegates to the shared rules in utils/withholdingSettlement.js so the form and
+     * its tests can never drift apart. Only the manual override lives here, because
+     * that is UI state rather than arithmetic.
+     */
+    const withheldFor = useCallback((inv) => {
+        const key = String(inv.invoice_id);
+        if (withheldOverrides[key] !== undefined) return parseFloat(withheldOverrides[key]) || 0;
+        return computeWithheld(inv, withholdingByInvoice[key], parseFloat(allocations[inv.invoice_id]) || 0);
+    }, [withholdingByInvoice, withheldOverrides, allocations]);
+
     const autoAllocate = useCallback((amount) => {
-        let remaining = amount;
-        const next = {};
-        for (const inv of unpaidInvoices) {
-            if (remaining <= 0) break;
-            const due = parseFloat(inv.balance_due) || 0;
-            const add = Math.min(remaining, due);
-            if (add > 0) next[inv.invoice_id] = add.toFixed(2);
-            remaining -= add;
-        }
-        setAllocations(next);
-    }, [unpaidInvoices]);
+        const next = allocateCash(unpaidInvoices, amount, withholdingByInvoice);
+        setAllocations(Object.fromEntries(
+            Object.entries(next).map(([id, val]) => [id, val.toFixed(2)])
+        ));
+    }, [unpaidInvoices, withholdingByInvoice]);
 
     useEffect(() => {
         autoAllocate(totalSplitAmount);
     }, [totalSplitAmount, autoAllocate]);
 
+    // The cash a withholding customer is expected to send: every open invoice
+    // settled, less the tax they will deduct.
+    const expectedNetCash = useMemo(
+        () => Math.round(unpaidInvoices.reduce(
+            (sum, inv) => sum + computeCashCap(inv, withholdingByInvoice[String(inv.invoice_id)]), 0
+        ) * 100) / 100,
+        [unpaidInvoices, withholdingByInvoice]
+    );
+
+    /**
+     * Propose the net cash rather than making the clerk work it out.
+     *
+     * This is the whole point of knowing the customer withholds. Left to type the
+     * figure themselves, a clerk reaches for the invoice total out of habit -- and
+     * that number is indistinguishable from "they paid in full and withheld nothing",
+     * so the deduction silently disappears. Proposing the net means the common case
+     * needs no arithmetic and no decision, and typing over it becomes a deliberate act.
+     *
+     * Fires once, only into an untouched first line, so it can never overwrite a
+     * figure someone has entered.
+     */
+    const prefilledRef = useRef(false);
+    useEffect(() => {
+        if (prefilledRef.current || expectedNetCash <= 0) return;
+        if (splits.length !== 1 || String(splits[0].amount || '').trim() !== '') return;
+        prefilledRef.current = true;
+        setSplits(prev => prev.map((sp, i) => i === 0 ? { ...sp, amount: expectedNetCash.toFixed(2) } : sp));
+    }, [expectedNetCash, splits]);
+
     const handleAllocationChange = (invoiceId, value) => {
         setAllocations(a => ({ ...a, [invoiceId]: value }));
     };
+
+    const handleWithheldChange = (invoiceId, value) => {
+        setWithheldOverrides(w => ({ ...w, [String(invoiceId)]: value }));
+    };
+
+    // Only invoices actually being settled carry a deduction.
+    const withholdingRows = useMemo(
+        () => unpaidInvoices
+            .filter(inv => withholdingByInvoice[String(inv.invoice_id)])
+            .map(inv => ({ inv, withheld: withheldFor(inv) }))
+            .filter(r => r.withheld > 0),
+        [unpaidInvoices, withholdingByInvoice, withheldFor]
+    );
+
+    const totalWithheld = useMemo(
+        () => Math.round(withholdingRows.reduce((sum, r) => sum + r.withheld, 0) * 100) / 100,
+        [withholdingRows]
+    );
+
+    const withholdingPayload = useMemo(
+        () => withholdingRows.map(r => ({ invoice_id: r.inv.invoice_id, amount_withheld: r.withheld })),
+        [withholdingRows]
+    );
 
     const addSplit = () => {
         const nextId = (splits[splits.length - 1]?.id || 0) + 1;
@@ -131,6 +204,8 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
             }))
             .filter(inv => inv.allocated > 0);
 
+        let withholdingSent = false;
+
         for (const s of splits) {
             const lineAmount = parseFloat(s.amount) || 0;
             if (lineAmount <= 0) continue;
@@ -157,9 +232,14 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                 notes: notes || null,
                 physical_receipt_no: physicalReceiptNo || null,
                 allocations: lineAllocations,
+                // Attached to the first instrument only. The deduction belongs to the
+                // collection as a whole, not to any one cheque, and repeating it on
+                // each split line would record the same withheld peso several times.
+                withholding: withholdingSent ? [] : withholdingPayload,
             });
+            withholdingSent = true;
         }
-    }, [unpaidInvoices, allocations, splits, physicalReceiptNo, notes, customer?.customer_id]);
+    }, [unpaidInvoices, allocations, splits, physicalReceiptNo, notes, customer?.customer_id, withholdingPayload]);
 
     const handleSubmit = useCallback(async (e) => {
         if (e) e.preventDefault();
@@ -430,33 +510,109 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                             </div>
                         </div>
 
+                        {hasWithholding && (
+                            <div className="mx-5 mt-4 p-3 rounded-xl bg-sky-50 border border-sky-200">
+                                <div className="flex items-start justify-between gap-4 flex-wrap">
+                                    <div>
+                                        <div className="text-xs font-bold uppercase tracking-wider text-sky-800 flex items-center gap-1">
+                                            Tax withheld at source
+                                            <InfoTip label="Tax withheld at source">
+                                                This customer deducts tax from what they pay and remits it to BIR under our TIN. The invoice is still settled in full &mdash; partly by cash, partly by the BIR certificate they will issue. Each amount is prefilled from that invoice&rsquo;s VAT-exclusive base, and prorated if you are only settling part of the balance; adjust it to match what they actually deducted.
+                                            </InfoTip>
+                                        </div>
+                                        <p className="text-[11px] text-sky-700 mt-0.5 leading-snug">
+                                            Prefilled with the net cash this customer is expected to send. Change it to what you actually received &mdash; the deduction follows.
+                                        </p>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-[11px] text-sky-700">Invoices settled</div>
+                                        <div className="text-lg font-bold text-sky-900 font-mono">
+                                            {currency(totalAllocated + totalWithheld)}
+                                        </div>
+                                        <div className="text-[11px] text-sky-700 font-mono">
+                                            {currency(totalAllocated)} cash + {currency(totalWithheld)} withheld
+                                        </div>
+                                    </div>
+                                </div>
+                                {/* Recording no deduction for a withholding customer is a
+                                    real outcome, not an empty state -- it means they paid
+                                    gross this time. Said out loud, because the alternative
+                                    is a clerk who typed the invoice total by habit and
+                                    never notices the certificate has gone missing. */}
+                                {totalAllocated > 0 && totalWithheld === 0 && (
+                                    <div className="mt-2 pt-2 border-t border-sky-200 text-[11px] text-amber-800">
+                                        <strong>No tax withheld on this payment.</strong> The cash entered covers the
+                                        balance in full, so no BIR certificate will be expected. Expected net cash if
+                                        they do withhold: <span className="font-mono">{currency(expectedNetCash)}</span>.
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         <div className="p-0">
                             <div className="hidden md:grid grid-cols-12 gap-3 px-5 py-2.5 bg-slate-100/70 text-[11px] font-bold uppercase tracking-wider text-slate-600 border-b border-slate-200">
-                                <div className="col-span-6">Invoice #</div>
-                                <div className="col-span-3 text-right">Balance Due</div>
-                                <div className="col-span-3">Applied Amount</div>
+                                <div className={hasWithholding ? 'col-span-4' : 'col-span-6'}>Invoice #</div>
+                                <div className="col-span-2 text-right">Balance Due</div>
+                                {hasWithholding && <div className="col-span-3">Tax Withheld</div>}
+                                <div className={hasWithholding ? 'col-span-3' : 'col-span-4'}>Cash Applied</div>
                             </div>
 
                             <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
                                 {unpaidInvoices.map(inv => {
                                     const balance = parseFloat(inv.balance_due) || 0;
                                     const allocVal = parseFloat(allocations[inv.invoice_id]) || 0;
-                                    const over = allocVal > balance + 0.01;
+                                    const wt = withholdingByInvoice[String(inv.invoice_id)];
+                                    const withheldValue = withheldFor(inv);
+                                    // Cash plus tax cannot settle more than is owed, and the
+                                    // deduction itself cannot exceed what could plausibly be
+                                    // withheld -- the server rejects both.
+                                    const over = allocVal + withheldValue > balance + 0.01;
+                                    const overWithheld = !!wt && withheldValue > Number(wt.ceiling) + 0.01;
 
                                     return (
                                         <div key={inv.invoice_id} className="grid grid-cols-12 gap-3 items-center px-5 py-3.5 hover:bg-slate-50/70 transition-all">
-                                            <div className="col-span-12 md:col-span-6">
+                                            <div className={`col-span-12 ${hasWithholding ? 'md:col-span-4' : 'md:col-span-6'}`}>
                                                 <div className="text-sm font-bold text-slate-900">{inv.invoice_number}</div>
                                                 <div className="text-xs text-slate-500">
                                                     Date: {inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString() : 'N/A'}
                                                 </div>
+                                                {wt && (
+                                                    <div className="text-[11px] text-sky-700 mt-0.5">
+                                                        {wt.components.map(c => `${c.atc_code} ${(c.rate_snapshot * 100).toFixed(0)}%`).join(' + ')} on {currency(wt.base)}
+                                                    </div>
+                                                )}
                                             </div>
 
-                                            <div className="hidden md:block md:col-span-3 text-right text-sm font-mono font-bold text-slate-800">
+                                            <div className="hidden md:block md:col-span-2 text-right text-sm font-mono font-bold text-slate-800">
                                                 {currency(balance)}
                                             </div>
 
-                                            <div className="col-span-12 md:col-span-3">
+                                            {hasWithholding && (
+                                                <div className="col-span-12 md:col-span-3">
+                                                    {wt ? (
+                                                        <div className="relative">
+                                                            <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-xs font-bold text-sky-500">₱</span>
+                                                            <MathExpressionInput
+                                                                precision={2}
+                                                                className={`w-full pl-6 pr-2.5 py-1.5 border rounded-lg text-sm font-mono font-bold transition-all ${
+                                                                    overWithheld
+                                                                        ? 'border-red-300 bg-red-50 text-red-900 focus:ring-red-400'
+                                                                        : 'border-sky-300 bg-sky-50 text-sky-900 focus:ring-sky-500 focus:border-sky-500'
+                                                                }`}
+                                                                value={withheldOverrides[String(inv.invoice_id)] !== undefined
+                                                                    ? withheldOverrides[String(inv.invoice_id)]
+                                                                    : (withheldValue ? withheldValue.toFixed(2) : '')}
+                                                                onChange={(val) => handleWithheldChange(inv.invoice_id, val)}
+                                                                placeholder="0.00"
+                                                            />
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-xs text-slate-400">&mdash;</span>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            <div className={`col-span-12 ${hasWithholding ? 'md:col-span-3' : 'md:col-span-4'}`}>
                                                 <div className="relative">
                                                     <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-xs font-bold text-slate-400">₱</span>
                                                     <MathExpressionInput
