@@ -33,17 +33,32 @@ export default function useWithholdingPreview(customer, lines, taxRateId) {
             return;
         }
 
+        // Callers hold the selected tax rate as an object on some pages and as a bare
+        // id on others. Sending the object made the server reject the request, and the
+        // catch below turned that into "no withholding applies" -- a wrong answer that
+        // looked exactly like a correct one. Accept either shape rather than depend on
+        // every call site getting it right.
+        const rateId = (taxRateId && typeof taxRateId === 'object')
+            ? (taxRateId.tax_rate_id ?? null)
+            : (taxRateId ?? null);
+
         let cancelled = false;
         api.post('/withholding/preview', {
             customer_id: customer.customer_id,
-            tax_rate_id: taxRateId,
+            tax_rate_id: rateId,
             lines: parsed.map(([part_id, quantity, sale_price, discount_amount, tax_rate_id]) =>
                 ({ part_id, quantity, sale_price, discount_amount, tax_rate_id })),
         })
             .then(res => { if (!cancelled) setPreview(res.data?.applicable ? res.data : null); })
-            // Silent: this is advisory display. The authoritative computation happens
-            // on submit, which rejects loudly if anything is wrong.
-            .catch(() => { if (!cancelled) setPreview(null); });
+            // Advisory display only -- the authoritative computation happens on submit,
+            // which rejects loudly if anything is wrong. But a failure here is not the
+            // same as "no withholding applies", and silently conflating the two hid a
+            // real bug for days, so it is logged.
+            .catch((err) => {
+                if (cancelled) return;
+                console.error('Withholding preview failed; the deduction will not be shown.', err);
+                setPreview(null);
+            });
 
         return () => { cancelled = true; };
     }, [customer?.customer_id, customer?.is_withholding_agent, taxRateId, linesKey]);

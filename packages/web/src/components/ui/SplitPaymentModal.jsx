@@ -324,6 +324,19 @@ const SplitPaymentModal = ({
     // Compute remaining at click time to avoid stale closure values.
     const autoAllocateRemaining = (paymentId) => {
         setPayments(prev => {
+            const target = prev.find(p => p.id === paymentId);
+
+            // On a withholding line, "the rest of the bill" is the wrong number by
+            // definition -- that line can only ever hold the tax the customer deducts,
+            // computed from the VAT-exclusive base. Filling it with the outstanding
+            // balance would book the entire sale as tax withheld and collect nothing.
+            const isWithholdingLine = withholdingMethodIdRef.current
+                && String(target?.method_id) === String(withholdingMethodIdRef.current);
+            if (isWithholdingLine) {
+                const expected = withholdingExpectedRef.current || 0;
+                return prev.map(p => p.id === paymentId ? { ...p, amount_paid: expected.toFixed(2) } : p);
+            }
+
             // Sum amounts excluding the target payment and pending payments
             const totalPaidExcluding = prev.reduce((sum, p) => {
                 if (p.id === paymentId || (p.payment_status && p.payment_status !== 'settled')) return sum;
@@ -568,6 +581,7 @@ const SplitPaymentModal = ({
                             const method = paymentMethods.find(m => String(m.method_id) === String(payment.method_id));
                             const showTendered = method && method.config.change_allowed;
                             const showReference = method && method.config.requires_reference;
+                            const isWithholdingLine = method?.code === 'withholding_tax';
 
                             return (
                                 <div key={payment.id} className="p-4 border border-gray-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 shadow-sm">
@@ -651,13 +665,20 @@ const SplitPaymentModal = ({
                                                     min={0}
                                                     required
                                                 />
-                                                {remaining > 0 && (
+                                                {/* On a withholding line the button offers the computed
+                                                    deduction, so it stays useful even once the balance is
+                                                    covered -- that line is never about the remaining balance. */}
+                                                {(remaining > 0 || isWithholdingLine) && (
                                                     <button
                                                         type="button"
                                                         onClick={() => autoAllocateRemaining(payment.id)}
-                                                        className="absolute inset-y-0 right-0 px-3 bg-primary-600 text-white rounded-r-lg hover:bg-primary-700 text-xs font-semibold transition-colors cursor-pointer select-none"
-                                                        title="Allocate remaining amount"
-                                                        aria-label="Fill remaining amount"
+                                                        className={`absolute inset-y-0 right-0 px-3 text-white rounded-r-lg text-xs font-semibold transition-colors cursor-pointer select-none ${
+                                                            isWithholdingLine ? 'bg-sky-600 hover:bg-sky-700' : 'bg-primary-600 hover:bg-primary-700'
+                                                        }`}
+                                                        title={isWithholdingLine
+                                                            ? `Fill the computed tax withheld (${(withholdingPreview?.total_withheld ?? 0).toFixed(2)})`
+                                                            : 'Allocate remaining amount'}
+                                                        aria-label={isWithholdingLine ? 'Fill computed tax withheld' : 'Fill remaining amount'}
                                                     >
                                                         FILL
                                                     </button>

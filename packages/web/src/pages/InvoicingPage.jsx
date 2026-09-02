@@ -323,7 +323,10 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
         () => customers.find(c => String(c.customer_id) === String(selectedCustomer)) || null,
         [customers, selectedCustomer]
     );
-    const withholdingPreview = useWithholdingPreview(withholdingCustomer, lines, selectedTaxRate);
+    // selectedTaxRate is the rate OBJECT on this page (POS holds the same shape).
+    // Passing it straight through sent an object where the API expects an id, which
+    // failed server-side and was swallowed by the hook's catch -- no error, no panel.
+    const withholdingPreview = useWithholdingPreview(withholdingCustomer, lines, selectedTaxRate?.tax_rate_id || null);
 
     // Stable signature of the in-progress invoice, used to avoid saving an identical draft twice in a row.
     const draftSignature = useMemo(() => {
