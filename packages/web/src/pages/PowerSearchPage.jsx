@@ -7,6 +7,20 @@ import { ICONS } from '../constants'; // Import the icon paths
 import SearchBar from '../components/SearchBar';
 import Modal from '../components/ui/Modal';
 import { formatApplicationText } from '../helpers/applicationTextHelper';
+import PartCostLadder from '../components/parts/PartCostLadder';
+import { formatCurrency } from '../utils/currency';
+
+/** A money cell that distinguishes "no value recorded" from a genuine zero. The cost
+ *  columns default to 0.00 for every part imported before costing existed, so showing
+ *  a bare 0 there would read as a real price. */
+const MoneyCell = ({ value, className = '' }) => {
+    const recorded = value !== null && value !== undefined && Number(value) !== 0;
+    return (
+        <td className={`p-3 text-sm align-top font-mono text-right whitespace-nowrap ${className}`}>
+            {recorded ? formatCurrency(value) : <span className="text-gray-400 dark:text-slate-500">—</span>}
+        </td>
+    );
+};
 
 const PowerSearchPage = () => {
     const [results, setResults] = useState([]);
@@ -21,11 +35,14 @@ const PowerSearchPage = () => {
     // The backend now handles MeiliSearch ordering. Use the results array directly.
     const sortedResults = results;
 
-    const openPartDetail = async (partId) => {
+    const openPartDetail = async (searchRow) => {
         try {
             setDetailLoading(true);
-            const res = await api.get(`/parts/${partId}`);
-            setSelectedPartDetail(res.data);
+            const res = await api.get(`/parts/${searchRow.part_id}`);
+            // parts_view carries the cost columns but neither their dates nor the
+            // originating receipt, so the search row is kept underneath the detail
+            // rather than replaced by it.
+            setSelectedPartDetail({ ...searchRow, ...res.data });
             setIsDetailOpen(true);
         } catch (err) {
             console.error('Failed to load part detail', err);
@@ -101,13 +118,40 @@ const PowerSearchPage = () => {
                                     <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">SKU</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Display Name</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Applications</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Stock</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Sale Price</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-right">Stock</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-right whitespace-nowrap">
+                                        <span className="inline-flex items-center gap-1 justify-end">
+                                            Unit Cost
+                                            <InfoTip label="Unit Cost" align="right">
+                                                Supplier's invoiced price per unit on the most recent posted receipt,
+                                                before freight and discounts.
+                                            </InfoTip>
+                                        </span>
+                                    </th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-right whitespace-nowrap">
+                                        <span className="inline-flex items-center gap-1 justify-end">
+                                            Landed Cost
+                                            <InfoTip label="Landed Cost" align="right">
+                                                Unit cost plus this part's share of freight, less line and overall
+                                                discounts. This is what posts to inventory and drives WAC.
+                                            </InfoTip>
+                                        </span>
+                                    </th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-right whitespace-nowrap">
+                                        <span className="inline-flex items-center gap-1 justify-end">
+                                            WAC
+                                            <InfoTip label="WAC" align="right">
+                                                Weighted Average Cost — the average landed cost of the units on hand,
+                                                recalculated as stock arrives at different prices.
+                                            </InfoTip>
+                                        </span>
+                                    </th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-right">Sale Price</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 dark:divide-slate-700/60">
                                 {sortedResults.map(part => (
-                                    <tr key={part.part_id} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 cursor-pointer text-gray-800 dark:text-slate-200 transition-colors" onClick={() => openPartDetail(part.part_id)}>
+                                    <tr key={part.part_id} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 cursor-pointer text-gray-800 dark:text-slate-200 transition-colors" onClick={() => openPartDetail(part)}>
                                         <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100 align-top">{part.internal_sku}</td>
                                         <td className="p-3 text-sm font-medium text-gray-900 dark:text-slate-100 align-top">{part.display_name}</td>
                                         <td className="p-3 text-sm text-gray-600 dark:text-slate-400 align-top">
@@ -117,18 +161,21 @@ const PowerSearchPage = () => {
                                                 </div>
                                             ) : ''}
                                         </td>
-                                        <td className="p-3 text-sm text-gray-700 dark:text-slate-300 align-top font-mono">{typeof part.stock_on_hand !== 'undefined' ? Number(part.stock_on_hand).toFixed(2) : '-'}</td>
-                                        <td className="p-3 text-sm text-gray-900 dark:text-slate-100 font-semibold align-top font-mono">{part.last_sale_price ? (Number(part.last_sale_price).toFixed(2)) : '-'}</td>
+                                        <td className="p-3 text-sm text-gray-700 dark:text-slate-300 align-top font-mono text-right">{typeof part.stock_on_hand !== 'undefined' ? Number(part.stock_on_hand).toFixed(2) : '-'}</td>
+                                        <MoneyCell value={part.last_receipt_unit_cost} className="text-gray-600 dark:text-slate-400" />
+                                        <MoneyCell value={part.last_receipt_landed_cost ?? part.last_cost} className="text-gray-700 dark:text-slate-300" />
+                                        <MoneyCell value={part.wac_cost} className="text-gray-700 dark:text-slate-300" />
+                                        <MoneyCell value={part.last_sale_price} className="text-gray-900 dark:text-slate-100 font-semibold" />
                                     </tr>
                                 ))}
                                 {hasSearched && sortedResults.length === 0 && (
                                     <tr>
-                                        <td colSpan="5" className="p-6 text-center text-gray-500 dark:text-slate-400">No results found for your query.</td>
+                                        <td colSpan="9" className="p-6 text-center text-gray-500 dark:text-slate-400">No results found for your query.</td>
                                     </tr>
                                 )}
                                 {!hasSearched && (
                                     <tr>
-                                        <td colSpan="5" className="p-6 text-center text-gray-500 dark:text-slate-400">Type in the search box to begin.</td>
+                                        <td colSpan="9" className="p-6 text-center text-gray-500 dark:text-slate-400">Type in the search box to begin.</td>
                                     </tr>
                                 )}
                             </tbody>
@@ -141,7 +188,7 @@ const PowerSearchPage = () => {
                 {detailLoading && <p className="text-gray-500 dark:text-slate-400">Loading...</p>}
                 {!detailLoading && selectedPartDetail && (
                     <div className="space-y-4">
-                        <div className="flex flex-wrap gap-6 justify-between bg-gray-50 dark:bg-slate-900/50 p-4 rounded-xl border border-gray-100 dark:border-slate-700">
+                        <div className="flex flex-wrap gap-6 bg-gray-50 dark:bg-slate-900/50 p-4 rounded-xl border border-gray-100 dark:border-slate-700">
                             <div>
                                 <div className="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">SKU</div>
                                 <div className="font-mono font-semibold text-gray-900 dark:text-slate-100 mt-0.5">{selectedPartDetail.internal_sku}</div>
@@ -150,25 +197,8 @@ const PowerSearchPage = () => {
                                 <div className="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">Stock</div>
                                 <div className="font-semibold text-gray-900 dark:text-slate-100 font-mono mt-0.5">{typeof selectedPartDetail.stock_on_hand !== 'undefined' ? Number(selectedPartDetail.stock_on_hand).toFixed(2) : '-'}</div>
                             </div>
-                            <div>
-                                <div className="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">Sale Price</div>
-                                <div className="font-semibold text-gray-900 dark:text-slate-100 font-mono mt-0.5">{selectedPartDetail.last_sale_price ? Number(selectedPartDetail.last_sale_price).toFixed(2) : '-'}</div>
-                            </div>
-                            <div>
-                                <div className="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">Last Cost</div>
-                                <div className="font-semibold text-gray-900 dark:text-slate-100 font-mono mt-0.5">{selectedPartDetail.last_cost ? Number(selectedPartDetail.last_cost).toFixed(2) : '-'}</div>
-                            </div>
-                            <div>
-                                <div className="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase flex items-center gap-1">
-                                    WAC
-                                    <InfoTip label="WAC" align="right">
-                                        Weighted Average Cost — the part's average cost across all units currently in
-                                        stock, recalculated as new stock comes in at different prices.
-                                    </InfoTip>
-                                </div>
-                                <div className="font-semibold text-gray-900 dark:text-slate-100 font-mono mt-0.5">{selectedPartDetail.wac_cost ? Number(selectedPartDetail.wac_cost).toFixed(2) : '-'}</div>
-                            </div>
                         </div>
+                        <PartCostLadder part={selectedPartDetail} />
                         <div>
                             <div className="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase mb-1">Part Numbers</div>
                             <div className="text-sm text-gray-800 dark:text-slate-200 font-mono bg-gray-50 dark:bg-slate-900/50 p-2.5 rounded-lg border border-gray-100 dark:border-slate-700">{selectedPartDetail.part_numbers || 'None'}</div>

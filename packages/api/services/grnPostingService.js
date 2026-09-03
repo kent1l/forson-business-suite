@@ -119,7 +119,10 @@ async function postReceipt(client, {
     await client.query(
       `INSERT INTO inventory_transaction (part_id, trans_type, quantity, unit_cost, reference_no, employee_id, transaction_date)
        VALUES ($1, 'StockIn', $2, $3, $4, $5, COALESCE($6::timestamptz, CURRENT_TIMESTAMP))`,
-      [line.part_id, acceptedQty, line.landed_unit_cost ?? line.cost_price, grnNumber, employeeId, receiptDate],
+      // landed_unit_cost is authoritative, null included: a line whose cost was never
+      // recorded posts NULL so recompute_wac_for_part() skips it rather than averaging
+      // it in as zero. Falling back to cost_price here would reintroduce that exact bug.
+      [line.part_id, acceptedQty, line.landed_unit_cost ?? null, grnNumber, employeeId, receiptDate],
     );
 
     if (poId && !isBackfill) {

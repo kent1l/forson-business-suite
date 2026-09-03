@@ -55,8 +55,22 @@ router.get('/power-search/parts', protect, hasPermission(['parts:view', 'pos:use
                 p.internal_sku,
                 p.detail,
                 p.last_sale_price,
+                p.last_sale_price_date,
                 p.last_cost,
+                p.last_cost_date,
                 COALESCE(p.wac_cost, 0) AS wac_cost,
+                -- The last posted receipt is the authoritative record of what this part
+                -- was actually bought for. part.last_cost is *usually* the same figure,
+                -- but the WAC trigger also fires on non-purchase StockIn rows (an
+                -- invoice void reverses stock at cost_at_sale, a cost estimate posts a
+                -- synthetic StockIn), so it can drift away from a real supplier price.
+                -- Reading the receipt directly lets the UI show the supplier's unit cost
+                -- and the landed cost side by side, and say which document they came from.
+                lr.grn_number       AS last_receipt_grn_number,
+                lr.receipt_date     AS last_receipt_date,
+                lr.cost_price       AS last_receipt_unit_cost,
+                lr.landed_unit_cost AS last_receipt_landed_cost,
+                lr.sale_price       AS last_receipt_sale_price,
                 p.tax_rate_id,
                 p.is_tax_inclusive_price,
                 b.brand_name,
@@ -76,6 +90,21 @@ router.get('/power-search/parts', protect, hasPermission(['parts:view', 'pos:use
             FROM part p
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
+            LEFT JOIN LATERAL (
+                SELECT gr.grn_number, gr.receipt_date, grl.cost_price,
+                       grl.landed_unit_cost, grl.sale_price
+                FROM goods_receipt_line grl
+                JOIN goods_receipt gr ON gr.grn_id = grl.grn_id
+                WHERE grl.part_id = p.part_id
+                  AND gr.status = 'Active'
+                  AND gr.workflow_status = 'Posted'
+                  -- A line returned in full delivered nothing and costs nothing: its
+                  -- landed cost is legitimately 0, which is not a price anyone should
+                  -- be shown. Skip past it to the last receipt that actually stocked.
+                  AND (grl.quantity - grl.return_quantity) > 0
+                ORDER BY gr.receipt_date DESC, gr.grn_id DESC
+                LIMIT 1
+            ) lr ON TRUE
             WHERE p.part_id = ANY($1::int[])
             ORDER BY array_position($1::int[], p.part_id);
         `;

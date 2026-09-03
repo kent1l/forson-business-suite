@@ -25,6 +25,14 @@
  * negotiated reduction of the supplier's own invoice, and the supplier's invoice does
  * not include the carrier's charge. Discounting freight would credit the buyer for
  * money the supplier never charged.
+ *
+ * A cost of zero means one of two different things, and they must not be conflated.
+ * A line marked `is_free_goods` really did arrive at no charge, so zero is its cost and
+ * it belongs in the average -- it still carries freight, because a free part is not free
+ * to ship. A zero on an unmarked line is a cost nobody recorded: it gets a
+ * `landed_unit_cost` of null, which posts NULL to the ledger and is skipped by the
+ * weighted average rather than dragging it toward zero. See migration
+ * 20260903_05_free_goods_and_unknown_cost.sql.
  */
 
 /** Default retail markup applied to landed cost when a line does not override it. */
@@ -210,6 +218,18 @@ function computeCosting({
     const returnQuantity = Math.min(Math.max(0, num(line.return_quantity)), quantity);
     const acceptedQty = round4(quantity - returnQuantity);
     const unitCost = num(line.cost_price);
+    const isFreeGoods = line.is_free_goods === true;
+    // Unknown, as distinct from free: there is no cost on this line and nobody said it
+    // was a giveaway. It still delivers stock; it just cannot price it.
+    const isUncosted = !isFreeGoods && unitCost <= 0;
+
+    if (isFreeGoods && unitCost > 0) {
+      errors.push({
+        code: 'FREE_GOODS_WITH_COST',
+        index,
+        message: `Line ${index + 1} is marked as free goods but carries a cost of ${unitCost.toFixed(2)}.`,
+      });
+    }
 
     if (line.line_discount_percent != null && line.line_discount_amount != null) {
       errors.push({
@@ -237,6 +257,8 @@ function computeCosting({
       returnQuantity,
       acceptedQty,
       unitCost,
+      isFreeGoods,
+      isUncosted,
       grossAsDelivered,
       grossAccepted,
       lineDiscount,
@@ -310,7 +332,21 @@ function computeCosting({
   const outLines = rows.map((r, i) => {
     const headerDiscountShare = headerShares[i] ?? 0;
     const landedLineTotal = round2(r.netLine + r.allocatedFreight - headerDiscountShare);
-    const landedUnitCost = r.acceptedQty > 0 ? round4(landedLineTotal / r.acceptedQty) : 0;
+
+    // null, not 0, when the cost is unknown. Zero is a claim about price and this line
+    // makes none; carrying null all the way to inventory_transaction.unit_cost is what
+    // lets the weighted average skip it instead of averaging against nothing.
+    const landedUnitCost = r.isUncosted
+      ? null
+      : (r.acceptedQty > 0 ? round4(landedLineTotal / r.acceptedQty) : 0);
+
+    if (r.isUncosted) {
+      warnings.push({
+        code: 'UNCOSTED_LINE',
+        index: r.index,
+        message: `Line ${r.index + 1} has no cost. It will add stock but will not affect this part's average cost. Mark it as free goods if the supplier really did give it away.`,
+      });
+    }
 
     // A price someone deliberately typed is authoritative and is never silently
     // overwritten — the markup column follows it instead. A line that has not been
@@ -318,7 +354,11 @@ function computeCosting({
     // not leave it at zero.
     let markupPercent = r.markupPercent;
     let salePrice;
-    if (!recomputeSalePrice && r.salePrice != null) {
+    if (r.isUncosted) {
+      // No cost to mark up, so there is no price to suggest. Whatever the user typed
+      // stands; deriving from a cost of zero would silently wipe it.
+      salePrice = r.salePrice == null ? 0 : round2(r.salePrice);
+    } else if (!recomputeSalePrice && r.salePrice != null) {
       salePrice = round2(r.salePrice);
     } else {
       salePrice = priceFromMarkup(landedUnitCost, markupPercent);
@@ -331,7 +371,7 @@ function computeCosting({
     const derived = markupFromPrice(salePrice, landedUnitCost);
     if (derived != null) markupPercent = derived;
 
-    if (landedUnitCost > 0 && markupPercent < MIN_MARKUP_PERCENT) {
+    if (landedUnitCost != null && landedUnitCost > 0 && markupPercent < MIN_MARKUP_PERCENT) {
       warnings.push({
         code: 'BELOW_MIN_MARKUP',
         index: r.index,
@@ -345,6 +385,8 @@ function computeCosting({
       return_quantity: r.returnQuantity,
       accepted_quantity: r.acceptedQty,
       cost_price: r.unitCost,
+      is_free_goods: r.isFreeGoods,
+      is_uncosted: r.isUncosted,
       gross_as_delivered: r.grossAsDelivered,
       gross_accepted: r.grossAccepted,
       line_discount_value: r.lineDiscount,

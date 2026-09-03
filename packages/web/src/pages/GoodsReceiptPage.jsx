@@ -231,6 +231,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 override_freight_amount: l.override_freight_amount != null ? Number(l.override_freight_amount) : null,
                 effective_markup_percent: l.effective_markup_percent != null ? Number(l.effective_markup_percent) : DEFAULT_MARKUP_PERCENT,
                 return_quantity: Number(l.return_quantity) || 0,
+                is_free_goods: l.is_free_goods === true,
             })));
         } catch (err) {
             toast.error(err?.response?.data?.message || 'Could not open that receipt.');
@@ -398,6 +399,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 override_freight_amount: null,
                 return_quantity: 0,
                 rejection_reason: null,
+                is_free_goods: false,
             }]);
         }
         setSearchTerm('');
@@ -494,6 +496,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             effective_markup_percent: line.effective_markup_percent ?? DEFAULT_MARKUP_PERCENT,
             return_quantity: line.return_quantity || 0,
             rejection_reason: line.rejection_reason || null,
+            is_free_goods: line.is_free_goods === true,
         })),
         po_id: selectedPO ? selectedPO.po_id : null,
         receipt_date: receiptDate || null,
@@ -1053,6 +1056,10 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                               const belowMinMarkup = (computed?.landed_unit_cost || 0) > 0
                                   && (computed?.effective_markup_percent ?? DEFAULT_MARKUP_PERCENT) < MIN_MARKUP_PERCENT;
                               const returned = Number(line.return_quantity) || 0;
+                              const isFree = line.is_free_goods === true;
+                              // A cost of zero that nobody has claimed as a giveaway. The line
+                              // still delivers stock; it just will not move the average cost.
+                              const isUncosted = computed?.is_uncosted === true;
                               return (
                                 <tr key={line.part_id} className="border-b border-gray-100 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors">
                                     <td className="p-2 align-middle">
@@ -1101,7 +1108,29 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                             value={line.cost_price}
                                             onChange={value => handleLineChange(line.part_id, 'cost_price', value)}
                                             className={inputClass}
+                                            disabled={isFree}
                                         />
+                                        <label className="mt-1 flex items-center justify-center gap-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 cursor-pointer select-none">
+                                            <input
+                                                type="checkbox"
+                                                checked={isFree}
+                                                onChange={e => setLineFields(line.part_id, {
+                                                    is_free_goods: e.target.checked,
+                                                    // Marking a line free is a claim that it cost nothing, so the
+                                                    // cost has to actually go to zero — the database rejects a
+                                                    // free line that still carries a price.
+                                                    ...(e.target.checked ? { cost_price: 0 } : {}),
+                                                })}
+                                                className="h-3 w-3 rounded border-gray-300 dark:border-slate-600"
+                                                aria-label={`Free goods: ${line.display_name || line.part_id}`}
+                                            />
+                                            Free
+                                        </label>
+                                        {isUncosted && (
+                                            <span className="block mt-0.5 text-[10px] text-amber-700 dark:text-amber-400 text-center leading-tight">
+                                                no cost — won't affect WAC
+                                            </span>
+                                        )}
                                     </td>
                                     <td className="p-2 align-middle">
                                         <DiscountInput
@@ -1123,7 +1152,9 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                         )}
                                     </td>
                                     <td className="p-2 align-middle text-right font-mono text-sm font-semibold text-gray-900 dark:text-slate-100">
-                                        {formatCurrency(computed?.landed_unit_cost || 0)}
+                                        {computed?.landed_unit_cost == null
+                                            ? <span className="text-gray-400 dark:text-slate-500">—</span>
+                                            : formatCurrency(computed.landed_unit_cost)}
                                     </td>
                                     <td className="p-2 align-middle">
                                         <MathExpressionInput

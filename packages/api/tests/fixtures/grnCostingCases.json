@@ -275,6 +275,91 @@
           "total_inventory_value": 5150
         }
       }
+    },
+    {
+      "name": "Free goods land at zero cost and enter the average",
+      "input": {
+        "lines": [
+          { "quantity": 10, "cost_price": 100 },
+          { "quantity": 10, "cost_price": 0, "is_free_goods": true }
+        ]
+      },
+      "expect": {
+        "landed_unit_cost": [100, 0],
+        "is_free_goods": [false, true],
+        "is_uncosted": [false, false],
+        "totals": {
+          "supplier_invoice_total": 1000,
+          "net_goods_value": 1000,
+          "total_inventory_value": 1000
+        }
+      }
+    },
+    {
+      "name": "A free part is not free to ship: a freight override gives it a landed cost",
+      "input": {
+        "lines": [
+          { "quantity": 10, "cost_price": 100 },
+          { "quantity": 5, "cost_price": 0, "is_free_goods": true, "override_freight_amount": 250 }
+        ],
+        "freightAmount": 250
+      },
+      "expect": {
+        "allocated_freight_amount": [0, 250],
+        "landed_unit_cost": [100, 50],
+        "sale_price": [170, 85],
+        "totals": {
+          "freight_allocated": 250,
+          "total_inventory_value": 1250
+        }
+      }
+    },
+    {
+      "name": "An uncosted line yields a null landed cost, warns, and keeps its typed price",
+      "input": {
+        "lines": [
+          { "quantity": 10, "cost_price": 100 },
+          { "quantity": 5, "cost_price": 0, "sale_price": 250 }
+        ],
+        "recomputeSalePrice": false
+      },
+      "expectWarning": "UNCOSTED_LINE",
+      "expect": {
+        "landed_unit_cost": [100, null],
+        "is_uncosted": [false, true],
+        "sale_price": [170, 250]
+      }
+    },
+    {
+      "name": "A receipt mixing priced, free and uncosted lines allocates freight by value only",
+      "input": {
+        "lines": [
+          { "quantity": 10, "cost_price": 100 },
+          { "quantity": 5, "cost_price": 0, "is_free_goods": true },
+          { "quantity": 2, "cost_price": 0 }
+        ],
+        "freightAmount": 300
+      },
+      "expectWarning": "UNCOSTED_LINE",
+      "expect": {
+        "allocated_freight_amount": [300, 0, 0],
+        "landed_unit_cost": [130, 0, null],
+        "is_free_goods": [false, true, false],
+        "is_uncosted": [false, false, true],
+        "totals": {
+          "freight_allocated": 300,
+          "total_inventory_value": 1300
+        }
+      }
+    },
+    {
+      "name": "Free goods carrying a cost is a contradiction and is rejected",
+      "input": {
+        "lines": [
+          { "quantity": 5, "cost_price": 50, "is_free_goods": true }
+        ]
+      },
+      "expectError": "FREE_GOODS_WITH_COST"
     }
   ]
 }
