@@ -599,7 +599,7 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
             }
 
             for (const payment of payments) {
-                const { method_id, amount_paid: p_amount_paid, tendered_amount: p_tendered_amount, reference, metadata = {} } = payment;
+                const { method_id, amount_paid: p_amount_paid, tendered_amount: p_tendered_amount, reference, cheque_date, metadata = {} } = payment;
                 let lookupParam = method_id;
                 try {
                     if (typeof method_id === 'string' && /^\d+$/.test(method_id)) {
@@ -675,12 +675,32 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
                 }
 
                 const paymentStatus = settlementType === 'instant' ? 'settled' : settlementType === 'on_account' ? 'on_account' : 'pending';
+
+                // A cheque taken at the counter is an instrument in hand, not cleared
+                // funds: it belongs in the PDC & Clearance Desk as RECEIVED until
+                // someone banks it. The pdc_status column defaults to 'CLEARED', so
+                // it has to be set explicitly here or the cheque is recorded as
+                // already cleared the moment the sale is rung up.
+                // Detection mirrors paymentRoutes (the AR receipt path) so both
+                // routes treat the same methods as cheques.
+                const isChequeMethod = method.rows[0].code === 'cheque' || method.rows[0].code === 'pdc' ||
+                    method.rows[0].type === 'cheque' ||
+                    (method.rows[0].name || '').toLowerCase().includes('cheque');
+                const pdcStatusValue = isChequeMethod && paymentStatus === 'pending' ? 'RECEIVED' : 'CLEARED';
+
+                // The maturity date lives in metadata for invoice-sourced cheques —
+                // that is where pdcService reads it back from (ip.metadata->>'cheque_date').
+                const chequeDateValue = isChequeMethod && cheque_date ? cheque_date : null;
+                const paymentMetadata = chequeDateValue
+                    ? { ...metadata, cheque_date: chequeDateValue }
+                    : metadata;
+
                 const ipRes = await client.query(`
                     INSERT INTO invoice_payments 
-                    (invoice_id, method_id, amount_paid, tendered_amount, change_amount, reference, metadata, created_by, payment_status, settled_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::varchar, CASE WHEN $9::varchar = 'settled' THEN CURRENT_TIMESTAMP ELSE NULL END)
+                    (invoice_id, method_id, amount_paid, tendered_amount, change_amount, reference, metadata, created_by, payment_status, settled_at, pdc_status)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::varchar, CASE WHEN $9::varchar = 'settled' THEN CURRENT_TIMESTAMP ELSE NULL END, $10)
                     RETURNING payment_id
-                `, [newInvoiceId, method.rows[0].method_id, pAmt, tAmt, changeAmt, reference, JSON.stringify(metadata), employee_id, paymentStatus]);
+                `, [newInvoiceId, method.rows[0].method_id, pAmt, tAmt, changeAmt, reference, JSON.stringify(paymentMetadata), employee_id, paymentStatus, pdcStatusValue]);
                 if (method.rows[0].code === 'withholding_tax') {
                     // Recorded as its own ledger entry type rather than PAYMENT_SETTLED:
                     // it settles the receivable, but no cash was received, and every

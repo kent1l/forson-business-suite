@@ -5,6 +5,7 @@ import { useSettings } from '../../contexts/SettingsContext';
 import Icon from '../ui/Icon';
 import InfoTip from '../ui/InfoTip';
 import MathExpressionInput from './MathExpressionInput';
+import { isChequeMethod } from '../../utils/chequeMethod';
 import { ICONS } from '../../constants';
 
 const SplitPaymentModal = ({
@@ -124,6 +125,7 @@ const SplitPaymentModal = ({
                     amount_paid: 0,
                     tendered_amount: '',
                     reference: '',
+                    cheque_date: '',
                     metadata: {}
                 }]);
             }
@@ -153,6 +155,7 @@ const SplitPaymentModal = ({
             amount_paid: 0,
             tendered_amount: '',
             reference: '',
+            cheque_date: '',
             metadata: {}
         };
         setPayments(prev => [...prev, newPayment]);
@@ -239,6 +242,7 @@ const SplitPaymentModal = ({
                 amount_paid: withholdingPreview.total_withheld,
                 tendered_amount: '',
                 reference: '',
+                cheque_date: '',
                 metadata: {},
             };
             // An untouched blank line is replaced rather than added to, so the cashier
@@ -294,6 +298,12 @@ const SplitPaymentModal = ({
                 }
                 if (method.config.requires_reference && !payment.reference.trim()) {
                     errors.push(`${method.config.reference_label || 'Reference'} is required for ${method.name}`);
+                }
+                // A cheque without its maturity date lands in the PDC desk with no
+                // idea when it can be banked, so it is required here rather than
+                // chased up afterwards.
+                if (isChequeMethod(method) && !payment.cheque_date) {
+                    errors.push(`Date on cheque (maturity) is required for ${method.name}`);
                 }
                 if (method.config.requires_receipt_no && !physicalReceiptNo.trim()) {
                     errors.push(`Physical receipt number is required for ${method.name}`);
@@ -387,14 +397,21 @@ const SplitPaymentModal = ({
                 const amountPaid = parseFloat(payment.amount_paid);
                 const tenderedAmount = parseFloat(payment.tendered_amount) || null;
 
+                const chequeDate = isChequeMethod(method) ? (payment.cheque_date || null) : null;
+
                 return {
                     method_id: payment.method_id,
                     amount_paid: amountPaid,
                     tendered_amount: tenderedAmount,
                     reference: payment.reference.trim() || null,
+                    // Sent both ways on purpose: the API reads cheque_date to set the
+                    // PDC lifecycle, and the Clearance Desk reads the maturity date
+                    // back out of metadata for invoice-sourced cheques.
+                    cheque_date: chequeDate,
                     metadata: {
                         ...payment.metadata,
-                        method_name: method?.name || 'Unknown'
+                        method_name: method?.name || 'Unknown',
+                        ...(chequeDate ? { cheque_date: chequeDate } : {})
                     }
                 };
             });
@@ -582,6 +599,7 @@ const SplitPaymentModal = ({
                             const showTendered = method && method.config.change_allowed;
                             const showReference = method && method.config.requires_reference;
                             const isWithholdingLine = method?.code === 'withholding_tax';
+                            const isCheque = isChequeMethod(method);
 
                             return (
                                 <div key={payment.id} className="p-4 border border-gray-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 shadow-sm">
@@ -698,6 +716,24 @@ const SplitPaymentModal = ({
                                                     className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 shadow-sm focus:ring-primary-500 focus:border-primary-500"
                                                     min={0}
                                                     placeholder="Optional for exact amount"
+                                                />
+                                            </div>
+                                        ) : isCheque ? (
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1 flex items-center gap-1">
+                                                    Date on Cheque <span className="text-danger-600">*</span>
+                                                    <InfoTip label="Date on Cheque (Maturity)">
+                                                        The date written on the cheque, not today's date. A post-dated cheque
+                                                        cannot be banked until then — the PDC &amp; Clearance Desk uses this
+                                                        date to work out when the cheque matures.
+                                                    </InfoTip>
+                                                </label>
+                                                <input
+                                                    type="date"
+                                                    value={payment.cheque_date || ''}
+                                                    onChange={(e) => updatePayment(payment.id, 'cheque_date', e.target.value)}
+                                                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 shadow-sm focus:ring-primary-500 focus:border-primary-500"
+                                                    required
                                                 />
                                             </div>
                                         ) : (

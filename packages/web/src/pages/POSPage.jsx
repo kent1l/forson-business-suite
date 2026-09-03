@@ -635,7 +635,10 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                 })),
                 payments: payments.map(p => ({
                     ...p,
-                    reference: normalizedPRN || p.reference
+                    // The line's own reference wins: a cheque number is the
+                    // instrument's identity and must not be overwritten with the
+                    // physical receipt number, which is already sent separately.
+                    reference: p.reference || normalizedPRN
                 }))
             };
 
