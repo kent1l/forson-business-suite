@@ -18,6 +18,7 @@ function costingInputFromLines(lines) {
   return lines.map((l) => ({
     quantity: l.quantity,
     cost_price: l.cost_price,
+    is_free_goods: l.is_free_goods === true,
     return_quantity: l.return_quantity || 0,
     line_discount_percent: l.line_discount_percent ?? null,
     line_discount_amount: l.line_discount_amount ?? null,
@@ -179,6 +180,7 @@ router.get('/goods-receipts/:id/lines', protect, hasPermission('goods_receipt:cr
         grl.override_freight_amount,
         grl.allocated_freight_amount,
         grl.landed_unit_cost,
+        grl.is_free_goods,
         grl.effective_markup_percent,
         grl.return_quantity,
         grl.rejection_reason,
@@ -360,8 +362,13 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
       if (!Number.isFinite(qty) || qty <= 0) {
         throw new Error('Each line item must have a quantity greater than zero.');
       }
-      if (!Number.isFinite(cost) || cost <= 0) {
-        throw new Error('Each line item must have a cost_price greater than zero.');
+      // Zero is permitted: it is either free goods, or a cost nobody has to hand yet.
+      // Both are real situations, and refusing them only pushes the encoder into
+      // inventing a number. The costing service warns on the latter, and neither one
+      // reaches the weighted average as a false zero. Negatives remain fatal — a
+      // negative unit_cost feeds straight into the average.
+      if (!Number.isFinite(cost) || cost < 0) {
+        throw new Error('Each line item must have a cost_price of zero or more.');
       }
       if (sale_price != null && (!Number.isFinite(Number(sale_price)) || Number(sale_price) < 0)) {
         throw new Error('sale_price cannot be negative.');
@@ -372,13 +379,13 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
         INSERT INTO goods_receipt_line (grn_id, part_id, quantity, cost_price, sale_price,
                                         line_discount_percent, line_discount_amount, override_freight_amount,
                                         allocated_freight_amount, landed_unit_cost, effective_markup_percent,
-                                        return_quantity, rejection_reason)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);
+                                        return_quantity, rejection_reason, is_free_goods)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14);
       `;
       await client.query(lineQuery, [newGrnId, part_id, quantity, cost_price, computed.sale_price,
         line.line_discount_percent ?? null, line.line_discount_amount ?? null, line.override_freight_amount ?? null,
         computed.allocated_freight_amount, computed.landed_unit_cost, computed.effective_markup_percent,
-        computed.return_quantity, line.rejection_reason || null]);
+        computed.return_quantity, line.rejection_reason || null, computed.is_free_goods]);
 
       postedLines.push({
         part_id,
@@ -386,6 +393,7 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
         return_quantity: computed.return_quantity,
         cost_price,
         landed_unit_cost: computed.landed_unit_cost,
+        is_free_goods: computed.is_free_goods,
       });
     }
 
@@ -549,12 +557,12 @@ router.put('/goods-receipts/:id', protect, hasPermission('goods_receipt:edit'), 
           `INSERT INTO goods_receipt_line (grn_id, part_id, quantity, cost_price, sale_price,
                                            line_discount_percent, line_discount_amount, override_freight_amount,
                                            allocated_freight_amount, landed_unit_cost, effective_markup_percent,
-                                           return_quantity, rejection_reason)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+                                           return_quantity, rejection_reason, is_free_goods)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
           [id, part_id, quantity, cost_price, sale_price ?? computed.sale_price,
            line.line_discount_percent ?? null, line.line_discount_amount ?? null, line.override_freight_amount ?? null,
            computed.allocated_freight_amount, computed.landed_unit_cost, computed.effective_markup_percent,
-           computed.return_quantity, line.rejection_reason ?? null]
+           computed.return_quantity, line.rejection_reason ?? null, computed.is_free_goods]
         );
 
         const acceptedQty = computed.accepted_quantity;
@@ -857,12 +865,12 @@ async function writeDraftLines(client, grnId, lines, costing) {
       `INSERT INTO goods_receipt_line (grn_id, part_id, quantity, cost_price, sale_price,
                                        line_discount_percent, line_discount_amount, override_freight_amount,
                                        allocated_freight_amount, landed_unit_cost, effective_markup_percent,
-                                       return_quantity, rejection_reason)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+                                       return_quantity, rejection_reason, is_free_goods)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
       [grnId, line.part_id, line.quantity, line.cost_price, computed.sale_price,
        line.line_discount_percent ?? null, line.line_discount_amount ?? null, line.override_freight_amount ?? null,
        computed.allocated_freight_amount, computed.landed_unit_cost, computed.effective_markup_percent,
-       computed.return_quantity, line.rejection_reason || null],
+       computed.return_quantity, line.rejection_reason || null, computed.is_free_goods],
     );
   }
 }

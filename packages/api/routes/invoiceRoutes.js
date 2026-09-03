@@ -894,10 +894,17 @@ router.delete('/invoices/:id', protect, hasPermission('invoice:delete'), async (
         for (const line of lines) {
             const qtyToReverse = line.quantity - line.quantity_refunded;
             if (qtyToReverse <= 0) continue;
+            // 'Reversal', not 'StockIn'. Selling stock never changed the weighted
+            // average, so putting it back must not either — but a StockIn row fires
+            // trg_update_wac, which rewrote part.last_cost with cost_at_sale and moved
+            // the average with it. 426 parts were corrupted this way before
+            // 20260903_05_free_goods_and_unknown_cost.sql retyped the history. The cost
+            // is left off the row entirely: this is a correction of a sale, not a
+            // purchase, and it carries no information about what the stock cost.
             await client.query(`
-                INSERT INTO inventory_transaction (part_id, trans_type, quantity, unit_cost, reference_no, employee_id, notes)
-                VALUES ($1, 'StockIn', $2, $3, $4, $5, $6);
-            `, [line.part_id, qtyToReverse, line.cost_at_sale, invoiceNumber, req.user.employee_id || null, 'SYSTEM REVERSAL: Invoice voided']);
+                INSERT INTO inventory_transaction (part_id, trans_type, quantity, reference_no, employee_id, notes)
+                VALUES ($1, 'Reversal', $2, $3, $4, $5);
+            `, [line.part_id, qtyToReverse, invoiceNumber, req.user.employee_id || null, 'SYSTEM REVERSAL: Invoice voided']);
         }
 
         // Void any non-voided payments so amount_paid/status recompute to reflect
