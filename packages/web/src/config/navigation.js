@@ -24,6 +24,7 @@ export const CATEGORIES = [
             { name: 'Inventory',       icon: ICONS.inventory,      page: 'inventory',       permission: 'inventory:view', keywords: ['stock', 'warehouse'] },
             { name: 'Goods Receipt',   icon: ICONS.receipt,        page: 'goods_receipt',   permission: 'goods_receipt:create', keywords: ['receive stock', 'grn'] },
             { name: 'Receipts to Review', icon: ICONS.clipboard || ICONS.receipt, page: 'goods_receipt_drafts', permission: 'goods_receipt:create', keywords: ['grn draft', 'pending receipts', 'approve receipt'] },
+            { name: 'Receipt History',  icon: ICONS.history,        page: 'goods_receipt_history', permission: 'goods_receipt:create', keywords: ['grn history', 'posted receipts', 'return to supplier', 'damaged goods', 'void receipt', 'past deliveries'] },
             { name: 'Purchase Orders', icon: ICONS.purchase_order, page: 'purchase_orders', permission: 'purchase_orders:view', keywords: ['po', 'purchasing', 'order stock'] },
             { name: 'Cycle Count',     icon: ICONS.dashboard,      page: 'cycle_count',     permission: 'cycle_count:execute', keywords: ['stock count', 'inventory audit'] },
             { name: 'Manager Audit',   icon: ICONS.reporting,      page: 'manager_audit',   permission: 'cycle_count:manage', keywords: ['cycle count review', 'audit approval'] },
