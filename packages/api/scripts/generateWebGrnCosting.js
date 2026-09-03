@@ -57,19 +57,21 @@ function generate() {
   return `${HEADER}${body}\n\nexport {\n${names.map((n) => `  ${n},`).join('\n')}\n};\n`;
 }
 
-const generated = generate();
+if (require.main === module) {
+  const generated = generate();
 
-if (process.argv.includes('--check')) {
-  const existing = fs.existsSync(TARGET) ? fs.readFileSync(TARGET, 'utf8') : '';
-  if (existing !== generated) {
-    console.error(`${TARGET} is out of date. Run: node packages/api/scripts/generateWebGrnCosting.js`);
-    process.exit(1);
+  if (process.argv.includes('--check')) {
+    const existing = fs.existsSync(TARGET) ? fs.readFileSync(TARGET, 'utf8') : '';
+    if (existing !== generated) {
+      console.error(`${TARGET} is out of date. Run: node packages/api/scripts/generateWebGrnCosting.js`);
+      process.exit(1);
+    }
+    console.log('web grnCosting mirror is up to date.');
+  } else {
+    fs.mkdirSync(path.dirname(TARGET), { recursive: true });
+    fs.writeFileSync(TARGET, generated);
+    console.log(`Wrote ${TARGET}`);
   }
-  console.log('web grnCosting mirror is up to date.');
-} else {
-  fs.mkdirSync(path.dirname(TARGET), { recursive: true });
-  fs.writeFileSync(TARGET, generated);
-  console.log(`Wrote ${TARGET}`);
 }
 
 module.exports = { generate, TARGET };
