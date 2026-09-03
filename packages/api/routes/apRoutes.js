@@ -1,8 +1,9 @@
 const express = require('express');
 const db = require('../db');
-const { protect, hasPermission } = require('../middleware/authMiddleware');
+const { protect, hasPermission, userHasPermission } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const apPaymentService = require('../services/apPaymentService');
+const grnCosting = require('../services/grnCostingService');
 const router = express.Router();
 
 // GET /ap/aging-summary - Open supplier_bill balances bucketed by age (mirrors /ar/aging-summary)
@@ -407,12 +408,158 @@ router.get('/ap/supplier-bills/:billId/items', protect, hasPermission('ap:view')
     }
 });
 
-// GET /ap/payment-methods - Methods that may be used to settle a payable directly
-// (cash, bank transfer, e-wallet). Cheques are excluded here on purpose; they are
-// issued from the Treasury desk so the instrument lifecycle is tracked.
+// GET /ap/supplier-bills/:billId/goods-receipts - The goods receipt(s) behind a payable.
+//
+// A bill can reach a receipt three ways, and all three are real:
+//   goods_receipt.bill_id         — the receipt whose stock-in created this bill, and
+//                                   also every receipt later attached to a manually
+//                                   created payable via AttachItemsModal (so a bill may
+//                                   legitimately have several)
+//   goods_receipt.freight_bill_id — the receipt whose freight charge created this bill,
+//                                   billed to the carrier rather than the goods supplier
+//   supplier_bill.grn_id          — the pointer written at bill creation, kept as a
+//                                   fallback for rows that predate the back-link
+//
+// Lines are returned with the receipt so the AP clerk can check the delivery against
+// the supplier's invoice without needing goods_receipt permissions — reading a payable's
+// own supporting document is squarely an ap:view concern.
+router.get('/ap/supplier-bills/:billId/goods-receipts', protect, hasPermission('ap:view'), async (req, res) => {
+    const billId = parseInt(req.params.billId, 10);
+    if (!billId) return res.status(400).json({ message: 'Invalid bill ID' });
+    try {
+        const { rows: [bill] } = await db.query(
+            'SELECT bill_id, bill_number, total_amount FROM supplier_bill WHERE bill_id = $1', [billId]
+        );
+        if (!bill) return res.status(404).json({ message: 'Bill not found' });
+
+        const { rows: receipts } = await db.query(`
+            SELECT
+                gr.grn_id, gr.grn_number, gr.receipt_date, gr.status, gr.workflow_status,
+                gr.is_backfill, gr.supplier_invoice_no, gr.po_id, gr.freight_amount,
+                gr.freight_allocation_method, gr.overall_discount_percent, gr.overall_discount_amount,
+                gr.voided_at, gr.void_reason,
+                s.supplier_name,
+                fs.supplier_name AS freight_supplier_name,
+                po.po_number,
+                TRIM(BOTH ' ' FROM e.first_name || ' ' || COALESCE(e.last_name, '')) AS received_by_name,
+                TRIM(BOTH ' ' FROM ve.first_name || ' ' || COALESCE(ve.last_name, '')) AS voided_by_name,
+                CASE WHEN gr.freight_bill_id = $1 THEN 'freight' ELSE 'goods' END AS link_type
+            FROM goods_receipt gr
+            JOIN supplier s ON s.supplier_id = gr.supplier_id
+            LEFT JOIN supplier fs ON fs.supplier_id = gr.freight_supplier_id
+            LEFT JOIN purchase_order po ON po.po_id = gr.po_id
+            LEFT JOIN employee e ON e.employee_id = gr.received_by
+            LEFT JOIN employee ve ON ve.employee_id = gr.voided_by
+            WHERE gr.bill_id = $1
+               OR gr.freight_bill_id = $1
+               OR gr.grn_id = (SELECT grn_id FROM supplier_bill WHERE bill_id = $1)
+            ORDER BY gr.receipt_date, gr.grn_id
+        `, [billId]);
+
+        if (receipts.length === 0) {
+            return res.json({ success: true, data: [], bill });
+        }
+
+        const grnIds = receipts.map((r) => r.grn_id);
+        const { rows: lines } = await db.query(`
+            SELECT
+                grl.grn_line_id, grl.grn_id, grl.part_id, grl.quantity, grl.return_quantity,
+                grl.cost_price, grl.landed_unit_cost, grl.allocated_freight_amount,
+                grl.line_discount_percent, grl.line_discount_amount, grl.override_freight_amount,
+                grl.effective_markup_percent, grl.sale_price, grl.rejection_reason,
+                p.internal_sku,
+                CASE
+                    WHEN pn.part_number IS NOT NULL THEN
+                        CASE
+                            WHEN g.group_name IS NOT NULL AND b.brand_name IS NOT NULL THEN CONCAT(g.group_name, ' (', b.brand_name, ') | ', pn.part_number)
+                            WHEN g.group_name IS NOT NULL THEN CONCAT(g.group_name, ' | ', pn.part_number)
+                            WHEN b.brand_name IS NOT NULL THEN CONCAT(b.brand_name, ' | ', pn.part_number)
+                            ELSE pn.part_number
+                        END
+                    ELSE
+                        CASE
+                            WHEN g.group_name IS NOT NULL AND b.brand_name IS NOT NULL THEN CONCAT(g.group_name, ' (', b.brand_name, ') | ', p.internal_sku)
+                            WHEN g.group_name IS NOT NULL THEN CONCAT(g.group_name, ' | ', p.internal_sku)
+                            WHEN b.brand_name IS NOT NULL THEN CONCAT(b.brand_name, ' | ', p.internal_sku)
+                            ELSE p.internal_sku
+                        END
+                END ||
+                CASE WHEN p.detail IS NOT NULL AND p.detail != '' THEN ' | ' || p.detail ELSE '' END AS display_name
+            FROM goods_receipt_line grl
+            JOIN part p ON p.part_id = grl.part_id
+            LEFT JOIN brand b ON p.brand_id = b.brand_id
+            LEFT JOIN "group" g ON p.group_id = g.group_id
+            LEFT JOIN part_number pn ON pn.part_id = p.part_id AND pn.display_order = (
+                SELECT MIN(pn2.display_order) FROM part_number pn2 WHERE pn2.part_id = p.part_id
+            )
+            WHERE grl.grn_id = ANY($1::int[])
+            ORDER BY grl.grn_id, grl.grn_line_id
+        `, [grnIds]);
+
+        const linesByGrn = lines.reduce((acc, line) => {
+            (acc[line.grn_id] = acc[line.grn_id] || []).push(line);
+            return acc;
+        }, {});
+
+        const data = receipts.map((receipt) => {
+            const grnLines = linesByGrn[receipt.grn_id] || [];
+            // The figure to check the supplier's invoice against is what the receipt
+            // actually made us owe — accepted quantity only, after line and overall
+            // discounts. That is exactly grnCostingService's net_goods_value, and it is
+            // the same number grnPostingService billed, so reusing the service keeps the
+            // two from drifting rather than re-deriving the arithmetic here.
+            const costing = grnCosting.computeCosting({
+                lines: grnLines.map((l) => ({
+                    quantity: l.quantity,
+                    cost_price: l.cost_price,
+                    return_quantity: l.return_quantity || 0,
+                    line_discount_percent: l.line_discount_percent ?? null,
+                    line_discount_amount: l.line_discount_amount ?? null,
+                    override_freight_amount: l.override_freight_amount ?? null,
+                    effective_markup_percent: l.effective_markup_percent ?? null,
+                    sale_price: l.sale_price ?? null,
+                })),
+                freightAmount: Number(receipt.freight_amount) || 0,
+                freightMethod: receipt.freight_allocation_method || grnCosting.METHOD_A,
+                overallDiscountPercent: receipt.overall_discount_percent ?? null,
+                overallDiscountAmount: receipt.overall_discount_amount ?? null,
+                recomputeSalePrice: false,
+            });
+            // The whole computation goes to the client, not just the bottom line: an AP
+            // clerk checking a supplier's invoice has to be able to see how each figure
+            // was arrived at — the discount taken on a line, the freight allocated to it,
+            // the landed cost that came out — exactly as the receipt itself shows it.
+            // Each stored line is merged with its computed counterpart, positionally,
+            // because computeCosting preserves input order and reports it as `index`.
+            const computedByIndex = costing.lines.reduce((acc, l) => {
+                acc[l.index] = l;
+                return acc;
+            }, {});
+            const billingLines = grnLines.map((line, index) => ({ ...line, ...computedByIndex[index] }));
+            return {
+                ...receipt,
+                lines: billingLines,
+                totals: costing.totals,
+                goods_value: costing.totals.net_goods_value,
+            };
+        });
+
+        res.json({ success: true, data, bill });
+    } catch (err) {
+        console.error('AP Bill Goods Receipts Error:', err.message);
+        res.status(500).json({ message: 'Failed to fetch goods receipts for this bill' });
+    }
+});
+
+// GET /ap/payment-methods - Methods that may be used to settle a payable.
+// Cash, bank transfer and e-wallet settle immediately; cheque methods are flagged
+// `requires_cheque_instrument` and are settled by issuing an outbound cheque, so
+// they only appear for callers who hold the permission that endpoint requires.
 router.get('/ap/payment-methods', protect, hasPermission('ap:view'), async (req, res) => {
     try {
-        const methods = await apPaymentService.getApPaymentMethods(db);
+        const methods = await apPaymentService.getApPaymentMethods(db, {
+            canIssueCheques: userHasPermission(req, 'ap-pdc:manage'),
+        });
         res.json({ success: true, data: methods });
     } catch (err) {
         console.error('AP Payment Methods Error:', err.message);

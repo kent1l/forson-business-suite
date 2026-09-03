@@ -10,18 +10,42 @@ function badRequest(message, code) {
 }
 
 /**
- * Methods usable for an outbound AP disbursement. Distinct from the POS/AR
- * `enabled` flag — see 20260820_02_ap_direct_payment_methods.sql for why cheque
- * is excluded (it must go through the Treasury desk to get a cheque_records row).
+ * A cheque is not settled by handing it over — it still has to be deposited and
+ * can clear, bounce, go stale, or be replaced. Payments made with one therefore
+ * take the outbound cheque issuance path (apPdcService.issueOutboundCheque), so
+ * a cheque_records row exists as the physical instrument of record.
+ *
+ * The predicate matches the one issueOutboundCheque uses to find the cheque
+ * payment method, so the two can never disagree about what counts as a cheque.
  */
-async function getApPaymentMethods(db) {
+function isChequeMethod(method) {
+  if (!method) return false;
+  return method.type === 'cheque' || ['cheque', 'pdc'].includes(method.code);
+}
+
+/**
+ * Methods usable for an outbound AP disbursement. Distinct from the POS/AR
+ * `enabled` flag — see 20260820_02_ap_direct_payment_methods.sql.
+ *
+ * `requires_cheque_instrument` tells the caller which rows settle through the
+ * cheque lifecycle rather than immediately, so the payment form can ask for the
+ * bank account, cheque number and cheque date those need.
+ *
+ * Cheque rows are withheld from callers who cannot issue an outbound cheque:
+ * issuing one is an `ap-pdc:manage` action, deliberately kept separate from
+ * `ap:manage` (see 20260813_03_seed_ap_monitoring_permissions_and_settings.sql),
+ * so offering the option to someone the issue endpoint will reject is a dead end.
+ */
+async function getApPaymentMethods(db, { canIssueCheques = true } = {}) {
   const { rows } = await db.query(
     `SELECT method_id, code, name, type, config
        FROM payment_methods
       WHERE ap_enabled = true AND enabled = true
       ORDER BY sort_order, name`
   );
-  return rows;
+  return rows
+    .filter((m) => canIssueCheques || !isChequeMethod(m))
+    .map((m) => ({ ...m, requires_cheque_instrument: isChequeMethod(m) }));
 }
 
 /**
@@ -57,12 +81,21 @@ async function recordDirectPayment(client, {
   }
 
   const { rows: [method] } = await client.query(
-    `SELECT method_id, code, name, config FROM payment_methods
+    `SELECT method_id, code, name, type, config FROM payment_methods
       WHERE method_id = $1 AND ap_enabled = true AND enabled = true`,
     [methodId]
   );
   if (!method) {
     throw badRequest('That payment method is not available for supplier payments');
+  }
+  // A cheque handed to a supplier has not settled anything yet. Recording it
+  // here would create a CLEARED payment with no instrument to deposit, clear or
+  // bounce, so it must go through apPdcService.issueOutboundCheque instead.
+  if (isChequeMethod(method)) {
+    throw badRequest(
+      'Cheque payments must be issued as an outbound cheque so the instrument can be cleared or bounced later.',
+      'CHEQUE_REQUIRES_ISSUANCE'
+    );
   }
 
   const config = method.config || {};
@@ -183,10 +216,13 @@ async function resolveAllocations(client, { supplierId, amount, allocations, set
 
   // A payment cannot settle a liability that did not exist yet on the day the
   // money moved — that would produce a negative running balance in the ledger.
+  // `settledOn` must be a Date, not a date string: bill_date comes back from pg as
+  // a Date, and a Date-vs-string comparison is silently always false. Callers get
+  // one by casting through the database (see recordDirectPayment).
   const premature = bills.filter((b) => b.bill_date > settledOn);
   if (premature.length) {
     const refs = premature.map((b) => b.bill_number || `#${b.bill_id}`).join(', ');
-    throw badRequest(`Settlement date is before the bill date of: ${refs}`);
+    throw badRequest(`This payment is dated before the bill date of: ${refs}`);
   }
 
   const outstandingOf = (bill) => Number(bill.total_amount) - Number(bill.amount_paid);
@@ -285,6 +321,8 @@ async function listPayments(db, { supplierId = null, channel = 'all', limit = 10
 
 module.exports = {
   getApPaymentMethods,
+  isChequeMethod,
   recordDirectPayment,
+  resolveAllocations,
   listPayments,
 };

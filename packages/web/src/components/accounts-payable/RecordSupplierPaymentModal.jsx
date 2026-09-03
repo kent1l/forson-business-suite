@@ -17,6 +17,8 @@ const BLANK_FORM = {
     reference_number: '',
     bank_account_id: '',
     notes: '',
+    cheque_number: '',
+    cheque_date: today(),
 };
 
 const inputClass = "w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500";
@@ -25,15 +27,24 @@ const labelClass = "block text-sm font-medium text-gray-700 dark:text-slate-300 
 const outstandingOf = (bill) => Number(bill.total_amount) - Number(bill.amount_paid);
 
 /**
- * Settles supplier bills with a payment that has no instrument lifecycle —
- * cash, bank transfer, e-wallet. Cheques are deliberately absent from the
- * method list (the API filters them out) because they must be issued from the
- * Treasury desk so a cheque record exists to clear or bounce later.
+ * Settles supplier bills, whatever the payment was made with.
+ *
+ * Cash, bank transfer and e-wallet are recorded as already settled: the money
+ * has left and there is no instrument left to track. A cheque has not settled
+ * anything yet — it still has to be deposited and can clear, bounce, go stale or
+ * be replaced — so choosing a cheque method here posts to the same outbound
+ * issuance endpoint the Treasury desk's Issue Outbound Cheque form uses. That
+ * creates the cheque_records row the Treasury desk needs, puts the cheque in the
+ * print queue, and leaves the bill's balance untouched until the cheque clears.
+ * The API decides which methods are cheque methods and flags them
+ * `requires_cheque_instrument`; it also withholds them from anyone who cannot
+ * issue a cheque, so nothing here needs its own permission check.
  *
  * The settlement date is the day the money actually left, which is often before
  * today — the usual case is a payment nobody got around to recording. Once
  * saved, correcting it requires the transaction:change_date permission and a
- * written reason, via ChangeTransactionDateModal.
+ * written reason, via ChangeTransactionDateModal. A cheque has no settlement
+ * date to record; it has a cheque date, which may be in the future (a PDC).
  */
 const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplier = null }) => {
     const [suppliers, setSuppliers] = useState([]);
@@ -79,11 +90,40 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
         [methods, form.method_id]
     );
     const methodConfig = selectedMethod?.config || {};
-    const referenceLabel = methodConfig.reference_label || 'Reference Number';
-    const referenceRequired = Boolean(methodConfig.requires_reference);
+    const isCheque = Boolean(selectedMethod?.requires_cheque_instrument);
+    const referenceLabel = isCheque ? 'Reference Number' : (methodConfig.reference_label || 'Reference Number');
+    // The cheque's own number is captured in its dedicated field below, so the
+    // method's "Cheque Number" reference requirement is already satisfied.
+    const referenceRequired = !isCheque && Boolean(methodConfig.requires_reference);
     // A bank-type method moved money out of one of our accounts, so knowing
-    // which one is what makes the payment reconcilable against a statement.
-    const showBankAccount = selectedMethod?.type === 'bank' || selectedMethod?.type === 'mobile';
+    // which one is what makes the payment reconcilable against a statement. For a
+    // cheque it is not optional: it is the account the cheque is drawn on, and it
+    // determines both the cheque-number sequence and the print template.
+    const showBankAccount = isCheque || selectedMethod?.type === 'bank' || selectedMethod?.type === 'mobile';
+
+    const supplierName = presetSupplier?.supplier_name
+        || suppliers.find(s => String(s.supplier_id) === String(supplierId))?.supplier_name
+        || '';
+
+    // Suggest the next physical cheque number for the chosen account — freely
+    // editable, since the paper cheque book is the real sequence. Mirrors
+    // IssueOutboundChequeModal so both entry points suggest the same number.
+    const chequeBankAccountId = isCheque ? form.bank_account_id : '';
+    useEffect(() => {
+        if (!chequeBankAccountId) return;
+        let cancelled = false;
+        api.get('/ap/cheque-register/next-number', { params: { bank_account_id: chequeBankAccountId } })
+            .then(res => {
+                const next = res.data?.data?.next_cheque_number;
+                if (!cancelled) setForm(prev => ({ ...prev, cheque_number: next || '' }));
+            })
+            .catch(() => { /* only a suggestion — the field stays typeable */ });
+        return () => { cancelled = true; };
+    }, [chequeBankAccountId]);
+
+    const selectedBankAccount = bankAccounts.find(
+        a => String(a.bank_account_id) === String(form.bank_account_id)
+    );
 
     const totalOutstanding = useMemo(
         () => bills.reduce((sum, b) => sum + outstandingOf(b), 0),
@@ -108,6 +148,52 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
         setAllocations(next);
     }, [bills, form.amount]);
 
+    const explicitAllocations = () => Object.entries(allocations)
+        .map(([bill_id, value]) => ({ bill_id: Number(bill_id), amount: parseFloat(value) }))
+        .filter(a => a.amount > 0);
+
+    const submitCheque = async (amount) => {
+        const res = await api.post('/ap/outbound-clearance/issue', {
+            bank_account_id: form.bank_account_id,
+            cheque_number: form.cheque_number.trim(),
+            cheque_date: form.cheque_date,
+            purpose_type: 'SUPPLIER_PAYMENT',
+            amount,
+            payee: supplierName,
+            memo: form.notes.trim() || undefined,
+            reference_number: form.reference_number.trim() || undefined,
+            supplier_id: form.supplier_id,
+            method_id: form.method_id,
+            auto_allocate: autoAllocate,
+            allocations: autoAllocate ? undefined : explicitAllocations(),
+        });
+        const { templateId } = res.data || {};
+        if (templateId) {
+            toast.success('Cheque issued and added to the Print Cheques queue.', { icon: '🖨️' });
+        } else {
+            toast.success('Cheque issued.', { icon: '✓' });
+            toast('No print template is linked to this bank account yet — link one in Bank Accounts before printing.', { icon: 'ℹ️' });
+        }
+        toast('The bill balance updates when the cheque clears, from Outbound Cheques & Treasury.', { icon: 'ℹ️' });
+    };
+
+    const submitDirect = async (amount) => {
+        const payload = {
+            supplier_id: form.supplier_id,
+            method_id: form.method_id,
+            amount,
+            settlement_date: form.settlement_date || undefined,
+            reference_number: form.reference_number.trim() || undefined,
+            bank_account_id: showBankAccount ? (form.bank_account_id || undefined) : undefined,
+            notes: form.notes.trim() || undefined,
+        };
+        if (!autoAllocate) payload.allocations = explicitAllocations();
+
+        const res = await api.post('/ap/payments', payload);
+        const applied = res.data?.data?.allocations?.length || 0;
+        toast.success(`Payment recorded against ${applied} bill${applied === 1 ? '' : 's'}`);
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         const amount = typeof form.amount === 'number' ? form.amount : parseFloat(form.amount);
@@ -118,32 +204,24 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
             toast.error(`${referenceLabel} is required for ${selectedMethod.name} payments`);
             return;
         }
-        if (form.settlement_date > today()) { toast.error('Settlement date cannot be in the future'); return; }
+        if (isCheque) {
+            if (!form.bank_account_id) { toast.error('Select the bank account the cheque is drawn on'); return; }
+            if (!form.cheque_number.trim()) { toast.error('Enter the cheque number'); return; }
+            if (!form.cheque_date) { toast.error('Enter the cheque date'); return; }
+            if (!supplierName) { toast.error('The supplier name is needed as the payee'); return; }
+        } else if (form.settlement_date > today()) {
+            toast.error('Settlement date cannot be in the future');
+            return;
+        }
         if (!autoAllocate && Math.abs(allocatedTotal - amount) > 0.005) {
             toast.error('Allocations must add up to the payment amount');
             return;
         }
 
-        const payload = {
-            supplier_id: form.supplier_id,
-            method_id: form.method_id,
-            amount,
-            settlement_date: form.settlement_date || undefined,
-            reference_number: form.reference_number.trim() || undefined,
-            bank_account_id: showBankAccount ? (form.bank_account_id || undefined) : undefined,
-            notes: form.notes.trim() || undefined,
-        };
-        if (!autoAllocate) {
-            payload.allocations = Object.entries(allocations)
-                .map(([bill_id, value]) => ({ bill_id: Number(bill_id), amount: parseFloat(value) }))
-                .filter(a => a.amount > 0);
-        }
-
         setSaving(true);
         try {
-            const res = await api.post('/ap/payments', payload);
-            const applied = res.data?.data?.allocations?.length || 0;
-            toast.success(`Payment recorded against ${applied} bill${applied === 1 ? '' : 's'}`);
+            if (isCheque) await submitCheque(amount);
+            else await submitDirect(amount);
             onRecorded && onRecorded();
             onClose();
         } catch (err) {
@@ -176,7 +254,7 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
                         <label className={labelClass + ' flex items-center gap-1'}>
                             Payment Method
                             <InfoTip label="Payment Method">
-                                Cash, bank transfer and e-wallet payments are recorded here as already settled. Cheques are not listed — issue those from Outbound Cheques &amp; Treasury so the cheque can be cleared or bounced later.
+                                Cash, bank transfer and e-wallet payments are recorded as already settled. A cheque is issued instead: it goes on the Outbound Cheques &amp; Treasury desk with its own lifecycle, so it can be cleared, bounced or replaced later.
                             </InfoTip>
                         </label>
                         <select value={form.method_id} onChange={(e) => handleChange('method_id', e.target.value)} className={inputClass} required>
@@ -203,17 +281,74 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
                             </p>
                         )}
                     </div>
-                    <div>
-                        <label className={labelClass + ' flex items-center gap-1'}>
-                            Settlement Date
-                            <InfoTip label="Settlement Date">
-                                The day the money actually left, not the day you're recording it. Defaults to today and can be backdated for a payment made earlier. It cannot be in the future, or earlier than the bills it settles. Changing it after saving needs a permission and a written reason.
-                            </InfoTip>
-                        </label>
-                        <input type="date" max={today()} value={form.settlement_date}
-                            onChange={(e) => handleChange('settlement_date', e.target.value)} className={inputClass} />
-                    </div>
+                    {isCheque ? (
+                        <div>
+                            <label className={labelClass + ' flex items-center gap-1'}>
+                                Cheque Date
+                                <InfoTip label="Cheque Date">
+                                    The date written on the cheque. A future date makes it a post-dated cheque — it stays on the Treasury desk until it matures, and the bill balance only moves when it clears.
+                                </InfoTip>
+                            </label>
+                            <input type="date" value={form.cheque_date}
+                                onChange={(e) => handleChange('cheque_date', e.target.value)} className={inputClass} />
+                        </div>
+                    ) : (
+                        <div>
+                            <label className={labelClass + ' flex items-center gap-1'}>
+                                Settlement Date
+                                <InfoTip label="Settlement Date">
+                                    The day the money actually left, not the day you're recording it. Defaults to today and can be backdated for a payment made earlier. It cannot be in the future, or earlier than the bills it settles. Changing it after saving needs a permission and a written reason.
+                                </InfoTip>
+                            </label>
+                            <input type="date" max={today()} value={form.settlement_date}
+                                onChange={(e) => handleChange('settlement_date', e.target.value)} className={inputClass} />
+                        </div>
+                    )}
                 </div>
+
+                {isCheque && (
+                    <div className="border border-primary-200 dark:border-primary-900/50 bg-primary-50/50 dark:bg-primary-900/10 rounded-lg p-3 space-y-3">
+                        <p className="text-xs text-gray-600 dark:text-slate-400">
+                            This cheque is issued to <span className="font-medium text-gray-800 dark:text-slate-200">{supplierName || 'the selected supplier'}</span> and
+                            tracked on the Outbound Cheques &amp; Treasury desk. The bill balance does not change until the cheque clears.
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label className={labelClass}>
+                                    Bank Account<span className="text-danger-600"> *</span>
+                                </label>
+                                <select value={form.bank_account_id} onChange={(e) => handleChange('bank_account_id', e.target.value)}
+                                    className={inputClass} required>
+                                    <option value="">Select account…</option>
+                                    {bankAccounts.map(a => (
+                                        <option key={a.bank_account_id} value={a.bank_account_id}>
+                                            {a.account_name} — {a.bank_name}
+                                        </option>
+                                    ))}
+                                </select>
+                                {selectedBankAccount && (
+                                    <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                                        {selectedBankAccount.default_cheque_template_id
+                                            ? '✓ Has a print template — ready to print from Print Cheques'
+                                            : 'No print template linked — set one in Bank Accounts before printing'}
+                                    </p>
+                                )}
+                            </div>
+                            <div>
+                                <label className={labelClass + ' flex items-center gap-1'}>
+                                    Cheque Number<span className="text-danger-600"> *</span>
+                                    <InfoTip label="Cheque Number">
+                                        Suggested automatically from the bank account's sequence, but always freely editable — the physical cheque book is the real source of truth.
+                                    </InfoTip>
+                                </label>
+                                <input type="text" value={form.cheque_number} required
+                                    onChange={(e) => handleChange('cheque_number', e.target.value)}
+                                    placeholder="e.g. 0001234"
+                                    className={`${inputClass} font-mono`} />
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {selectedMethod && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -226,7 +361,7 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
                                 placeholder={referenceRequired ? `Required for ${selectedMethod.name}` : 'Optional'}
                                 className={inputClass} />
                         </div>
-                        {showBankAccount && (
+                        {showBankAccount && !isCheque && (
                             <div>
                                 <label className={labelClass}>Paid From Account</label>
                                 <select value={form.bank_account_id} onChange={(e) => handleChange('bank_account_id', e.target.value)} className={inputClass}>
@@ -255,7 +390,9 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
 
                         {autoAllocate ? (
                             <p className="text-xs text-gray-500 dark:text-slate-400">
-                                The payment will be applied to the {bills.length} open bill{bills.length === 1 ? '' : 's'} in due-date order.
+                                {isCheque ? 'The cheque will be applied to the' : 'The payment will be applied to the'} {bills.length} open
+                                bill{bills.length === 1 ? '' : 's'} in due-date order
+                                {isCheque ? ', taking effect when it clears.' : '.'}
                             </p>
                         ) : (
                             <>
@@ -267,6 +404,9 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
                                                 <p className="text-xs text-gray-500 dark:text-slate-400">
                                                     Outstanding {formatCurrency(outstandingOf(bill))}
                                                     {bill.due_date ? ` · due ${new Date(bill.due_date).toLocaleDateString()}` : ''}
+                                                    {(bill.related_grns || []).length > 0
+                                                        ? ` · ${bill.related_grns.map(g => g.grn_number).join(', ')}`
+                                                        : ''}
                                                 </p>
                                             </div>
                                             <MathExpressionInput
@@ -301,14 +441,14 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
                 )}
 
                 <div>
-                    <label className={labelClass}>Notes</label>
+                    <label className={labelClass}>{isCheque ? 'Memo' : 'Notes'}</label>
                     <textarea value={form.notes} onChange={(e) => handleChange('notes', e.target.value)} rows={2} className={inputClass} />
                 </div>
 
                 <div className="flex justify-end gap-3 pt-2">
                     <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-100 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-600">Cancel</button>
                     <button type="submit" disabled={saving || bills.length === 0} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50">
-                        {saving ? 'Recording...' : 'Record Payment'}
+                        {saving ? (isCheque ? 'Issuing…' : 'Recording...') : (isCheque ? 'Issue Cheque' : 'Record Payment')}
                     </button>
                 </div>
             </form>

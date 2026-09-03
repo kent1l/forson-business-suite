@@ -1,0 +1,365 @@
+{
+  "_comment": "Shared truth table for goods receipt landed-cost arithmetic. Read by the API's jest suite (tests/grnCosting.test.js) and by the web package's node:test mirror (packages/web/tests/grnCosting.test.js), so the two implementations of the same maths cannot drift apart. Expected values are stated explicitly rather than recomputed, so a change in the algorithm fails the test instead of silently redefining the answer.",
+  "cases": [
+    {
+      "name": "Method A: freight pro-rated by net invoice value",
+      "input": {
+        "lines": [
+          { "quantity": 10, "cost_price": 100 },
+          { "quantity": 5, "cost_price": 200 }
+        ],
+        "freightAmount": 300
+      },
+      "expect": {
+        "allocated_freight_amount": [150, 150],
+        "landed_unit_cost": [115, 230],
+        "sale_price": [200, 395],
+        "totals": {
+          "supplier_invoice_total": 2000,
+          "net_goods_value": 2000,
+          "freight_allocated": 300,
+          "total_inventory_value": 2300
+        }
+      }
+    },
+    {
+      "name": "Heavy item override is reserved before anything is pro-rated",
+      "input": {
+        "lines": [
+          { "quantity": 10, "cost_price": 100 },
+          { "quantity": 2, "cost_price": 500, "override_freight_amount": 400 },
+          { "quantity": 10, "cost_price": 100 }
+        ],
+        "freightAmount": 1000
+      },
+      "expect": {
+        "allocated_freight_amount": [300, 400, 300],
+        "landed_unit_cost": [130, 700, 130],
+        "totals": { "freight_reserved_by_overrides": 400, "freight_pro_rated": 600, "freight_allocated": 1000 }
+      }
+    },
+    {
+      "name": "Overrides exceeding the shipment freight are rejected",
+      "input": {
+        "lines": [{ "quantity": 1, "cost_price": 100, "override_freight_amount": 500 }],
+        "freightAmount": 200
+      },
+      "expectError": "FREIGHT_OVERRIDE_EXCEEDS_TOTAL"
+    },
+    {
+      "name": "Every line overridden: the remainder still spreads across all of them",
+      "input": {
+        "lines": [
+          { "quantity": 1, "cost_price": 100, "override_freight_amount": 100 },
+          { "quantity": 1, "cost_price": 100, "override_freight_amount": 100 }
+        ],
+        "freightAmount": 250
+      },
+      "expect": {
+        "allocated_freight_amount": [125, 125],
+        "totals": { "freight_allocated": 250 }
+      }
+    },
+    {
+      "name": "Zero-value lines fall back to a quantity share",
+      "input": {
+        "lines": [
+          { "quantity": 3, "cost_price": 0 },
+          { "quantity": 1, "cost_price": 0 }
+        ],
+        "freightAmount": 400
+      },
+      "expect": {
+        "allocated_freight_amount": [300, 100],
+        "totals": { "freight_allocated": 400 }
+      }
+    },
+    {
+      "name": "Line discount as a percentage",
+      "input": {
+        "lines": [{ "quantity": 10, "cost_price": 100, "line_discount_percent": 10 }],
+        "freightAmount": 0
+      },
+      "expect": {
+        "landed_unit_cost": [90],
+        "totals": { "line_discount_total": 100, "supplier_invoice_total": 900, "net_goods_value": 900 }
+      }
+    },
+    {
+      "name": "Line discount as a flat amount",
+      "input": {
+        "lines": [{ "quantity": 10, "cost_price": 100, "line_discount_amount": 250 }],
+        "freightAmount": 0
+      },
+      "expect": {
+        "landed_unit_cost": [75],
+        "totals": { "line_discount_total": 250, "supplier_invoice_total": 750 }
+      }
+    },
+    {
+      "name": "Header discount is pro-rated by net line value and applied after freight",
+      "input": {
+        "lines": [
+          { "quantity": 10, "cost_price": 100 },
+          { "quantity": 10, "cost_price": 300 }
+        ],
+        "freightAmount": 400,
+        "overallDiscountPercent": 10
+      },
+      "expect": {
+        "header_discount_share": [100, 300],
+        "allocated_freight_amount": [100, 300],
+        "landed_unit_cost": [100, 300],
+        "totals": {
+          "header_discount_total": 400,
+          "supplier_invoice_total": 3600,
+          "net_goods_value": 3600,
+          "total_inventory_value": 4000
+        }
+      }
+    },
+    {
+      "name": "Rounding residual: freight that does not divide evenly still sums exactly",
+      "input": {
+        "lines": [
+          { "quantity": 1, "cost_price": 1 },
+          { "quantity": 1, "cost_price": 1 },
+          { "quantity": 1, "cost_price": 1 }
+        ],
+        "freightAmount": 10
+      },
+      "expect": {
+        "allocated_freight_amount": [3.34, 3.33, 3.33],
+        "totals": { "freight_allocated": 10 }
+      }
+    },
+    {
+      "name": "A return reduces accepted quantity and re-spreads the freight",
+      "input": {
+        "lines": [
+          { "quantity": 10, "cost_price": 100, "return_quantity": 5 },
+          { "quantity": 10, "cost_price": 100 }
+        ],
+        "freightAmount": 300
+      },
+      "expect": {
+        "accepted_quantity": [5, 10],
+        "allocated_freight_amount": [100, 200],
+        "landed_unit_cost": [120, 120],
+        "totals": {
+          "gross_as_delivered": 2000,
+          "supplier_invoice_total": 2000,
+          "returned_value": 500,
+          "net_goods_value": 1500
+        }
+      }
+    },
+    {
+      "name": "Default markup of 70% applied forward",
+      "input": {
+        "lines": [{ "quantity": 1, "cost_price": 100 }],
+        "freightAmount": 0
+      },
+      "expect": {
+        "sale_price": [170],
+        "effective_markup_percent": [70]
+      }
+    },
+    {
+      "name": "A per-line markup override",
+      "input": {
+        "lines": [{ "quantity": 1, "cost_price": 100, "effective_markup_percent": 45 }],
+        "freightAmount": 0
+      },
+      "expect": { "sale_price": [145], "effective_markup_percent": [45] }
+    },
+    {
+      "name": "A suggested price is rounded up to the next multiple of 5",
+      "input": {
+        "lines": [{ "quantity": 1, "cost_price": 123.45 }],
+        "freightAmount": 0
+      },
+      "expect": { "sale_price": [210], "effective_markup_percent": [70.11] }
+    },
+    {
+      "name": "A suggested price already on a multiple of 5 is left alone",
+      "input": {
+        "lines": [{ "quantity": 1, "cost_price": 100 }],
+        "freightAmount": 0
+      },
+      "expect": { "sale_price": [170], "effective_markup_percent": [70] }
+    },
+    {
+      "name": "A typed price is never rounded — only suggestions are",
+      "input": {
+        "lines": [{ "quantity": 1, "cost_price": 100, "sale_price": 249.99 }],
+        "freightAmount": 0,
+        "recomputeSalePrice": false
+      },
+      "expect": { "sale_price": [249.99] }
+    },
+    {
+      "name": "Backward calculation: a typed price derives the markup it implies",
+      "input": {
+        "lines": [{ "quantity": 1, "cost_price": 100, "sale_price": 250 }],
+        "freightAmount": 0,
+        "recomputeSalePrice": false
+      },
+      "expect": { "sale_price": [250], "effective_markup_percent": [150] }
+    },
+    {
+      "name": "A price below the 30% floor is flagged, not silently accepted",
+      "input": {
+        "lines": [{ "quantity": 1, "cost_price": 100, "sale_price": 110 }],
+        "freightAmount": 0,
+        "recomputeSalePrice": false
+      },
+      "expectWarning": "BELOW_MIN_MARKUP"
+    },
+    {
+      "name": "Both discount kinds on one line is a data error",
+      "input": {
+        "lines": [{ "quantity": 1, "cost_price": 100, "line_discount_percent": 10, "line_discount_amount": 10 }],
+        "freightAmount": 0
+      },
+      "expectError": "LINE_DISCOUNT_BOTH"
+    },
+    {
+      "name": "Both discount kinds on the header is a data error",
+      "input": {
+        "lines": [{ "quantity": 1, "cost_price": 100 }],
+        "freightAmount": 0,
+        "overallDiscountPercent": 5,
+        "overallDiscountAmount": 5
+      },
+      "expectError": "HEADER_DISCOUNT_BOTH"
+    },
+    {
+      "name": "Method B falls back to value allocation and says so",
+      "input": {
+        "lines": [
+          { "quantity": 1, "cost_price": 100 },
+          { "quantity": 1, "cost_price": 300 }
+        ],
+        "freightAmount": 400,
+        "freightMethod": "METHOD_B"
+      },
+      "expect": { "allocated_freight_amount": [100, 300] },
+      "expectWarning": "METHOD_B_UNAVAILABLE"
+    },
+    {
+      "name": "Everything at once: overrides, both discount levels, a return and freight",
+      "_note": "The 900 of freight left after the 600 override is split over the NON-override lines only, by their net value (900 and 1000), not over the whole document. Line 2 is already paid for.",
+      "input": {
+        "lines": [
+          { "quantity": 20, "cost_price": 50, "line_discount_percent": 10 },
+          { "quantity": 4, "cost_price": 750, "override_freight_amount": 600, "return_quantity": 1 },
+          { "quantity": 10, "cost_price": 120, "line_discount_amount": 200 }
+        ],
+        "freightAmount": 1500,
+        "overallDiscountAmount": 500
+      },
+      "expect": {
+        "accepted_quantity": [20, 3, 10],
+        "allocated_freight_amount": [426.32, 600, 473.68],
+        "totals": {
+          "gross_as_delivered": 5200,
+          "line_discount_total": 300,
+          "header_discount_total": 500,
+          "supplier_invoice_total": 4400,
+          "returned_value": 750,
+          "net_goods_value": 3650,
+          "freight_reserved_by_overrides": 600,
+          "freight_pro_rated": 900,
+          "freight_allocated": 1500,
+          "total_inventory_value": 5150
+        }
+      }
+    },
+    {
+      "name": "Free goods land at zero cost and enter the average",
+      "input": {
+        "lines": [
+          { "quantity": 10, "cost_price": 100 },
+          { "quantity": 10, "cost_price": 0, "is_free_goods": true }
+        ]
+      },
+      "expect": {
+        "landed_unit_cost": [100, 0],
+        "is_free_goods": [false, true],
+        "is_uncosted": [false, false],
+        "totals": {
+          "supplier_invoice_total": 1000,
+          "net_goods_value": 1000,
+          "total_inventory_value": 1000
+        }
+      }
+    },
+    {
+      "name": "A free part is not free to ship: a freight override gives it a landed cost",
+      "input": {
+        "lines": [
+          { "quantity": 10, "cost_price": 100 },
+          { "quantity": 5, "cost_price": 0, "is_free_goods": true, "override_freight_amount": 250 }
+        ],
+        "freightAmount": 250
+      },
+      "expect": {
+        "allocated_freight_amount": [0, 250],
+        "landed_unit_cost": [100, 50],
+        "sale_price": [170, 85],
+        "totals": {
+          "freight_allocated": 250,
+          "total_inventory_value": 1250
+        }
+      }
+    },
+    {
+      "name": "An uncosted line yields a null landed cost, warns, and keeps its typed price",
+      "input": {
+        "lines": [
+          { "quantity": 10, "cost_price": 100 },
+          { "quantity": 5, "cost_price": 0, "sale_price": 250 }
+        ],
+        "recomputeSalePrice": false
+      },
+      "expectWarning": "UNCOSTED_LINE",
+      "expect": {
+        "landed_unit_cost": [100, null],
+        "is_uncosted": [false, true],
+        "sale_price": [170, 250]
+      }
+    },
+    {
+      "name": "A receipt mixing priced, free and uncosted lines allocates freight by value only",
+      "input": {
+        "lines": [
+          { "quantity": 10, "cost_price": 100 },
+          { "quantity": 5, "cost_price": 0, "is_free_goods": true },
+          { "quantity": 2, "cost_price": 0 }
+        ],
+        "freightAmount": 300
+      },
+      "expectWarning": "UNCOSTED_LINE",
+      "expect": {
+        "allocated_freight_amount": [300, 0, 0],
+        "landed_unit_cost": [130, 0, null],
+        "is_free_goods": [false, true, false],
+        "is_uncosted": [false, false, true],
+        "totals": {
+          "freight_allocated": 300,
+          "total_inventory_value": 1300
+        }
+      }
+    },
+    {
+      "name": "Free goods carrying a cost is a contradiction and is rejected",
+      "input": {
+        "lines": [
+          { "quantity": 5, "cost_price": 50, "is_free_goods": true }
+        ]
+      },
+      "expectError": "FREE_GOODS_WITH_COST"
+    }
+  ]
+}
