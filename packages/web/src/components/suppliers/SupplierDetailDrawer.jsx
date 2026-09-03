@@ -10,6 +10,7 @@ import { formatCurrency } from '../../utils/currency';
 import { useAuth } from '../../contexts/AuthContext';
 import AddPayableModal from '../accounts-payable/AddPayableModal';
 import AttachItemsModal from '../accounts-payable/AttachItemsModal';
+import BillGoodsReceiptsModal from '../accounts-payable/BillGoodsReceiptsModal';
 
 const BILL_STATUS_TONE = { 'Unpaid': 'danger', 'Partially Paid': 'warning', 'Paid': 'success' };
 
@@ -141,6 +142,7 @@ const BillsTab = ({ supplier, canManage }) => {
     const [reason, setReason] = useState('');
     const [isAddPayableOpen, setIsAddPayableOpen] = useState(false);
     const [attachItemsBill, setAttachItemsBill] = useState(null);
+    const [grnBill, setGrnBill] = useState(null);
     const [expandedBillId, setExpandedBillId] = useState(null);
 
     const fetchBills = useCallback(async () => {
@@ -199,6 +201,28 @@ const BillsTab = ({ supplier, canManage }) => {
                         <span>Total: {formatCurrency(bill.total_amount)}</span>
                         <span>Paid: {formatCurrency(bill.amount_paid)}</span>
                     </div>
+                    {/* The receipt behind the payable, named right on the row: before paying,
+                        the question is which delivery this bill is charging for, and a bill
+                        number alone cannot answer it. */}
+                    {(bill.related_grns || []).length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            <span className="text-xs text-gray-500 dark:text-slate-400">From:</span>
+                            {bill.related_grns.map((grn) => (
+                                <button
+                                    key={grn.grn_id}
+                                    onClick={() => setGrnBill(bill)}
+                                    title={`View ${grn.grn_number} — received ${new Date(grn.receipt_date).toLocaleDateString()}`}
+                                    className={`text-xs font-mono px-1.5 py-0.5 rounded border transition-colors ${
+                                        grn.status === 'Voided'
+                                            ? 'border-gray-200 dark:border-slate-700 text-gray-400 dark:text-slate-500 line-through'
+                                            : 'border-primary-200 dark:border-primary-800 text-primary-700 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20'
+                                    }`}
+                                >
+                                    {grn.grn_number}{grn.link_type === 'freight' ? ' (freight)' : ''}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                     <div className="mt-1 flex items-center justify-between text-sm">
                         <span className="text-gray-500 dark:text-slate-400">
                             Due: {bill.due_date ? new Date(bill.due_date).toLocaleDateString() : 'Not set'}
@@ -230,6 +254,14 @@ const BillsTab = ({ supplier, canManage }) => {
                         >
                             {expandedBillId === bill.bill_id ? 'Hide Items' : 'View Items'}
                         </button>
+                        {(bill.related_grns || []).length > 0 && (
+                            <button
+                                onClick={() => setGrnBill(bill)}
+                                className="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline"
+                            >
+                                View Goods Receipt{bill.related_grns.length > 1 ? 's' : ''}
+                            </button>
+                        )}
                         {canManage && bill.status !== 'Paid' && (
                             <button
                                 onClick={() => setAttachItemsBill(bill)}
@@ -256,6 +288,11 @@ const BillsTab = ({ supplier, canManage }) => {
                 supplierName={supplier.supplier_name}
                 bill={attachItemsBill}
                 onAttached={fetchBills}
+            />
+            <BillGoodsReceiptsModal
+                isOpen={!!grnBill}
+                onClose={() => setGrnBill(null)}
+                bill={grnBill}
             />
         </div>
     );

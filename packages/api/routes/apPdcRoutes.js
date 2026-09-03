@@ -33,8 +33,8 @@ router.get('/ap/outbound-clearance', protect, hasPermission(['ap-pdc:view']), as
 router.post('/ap/outbound-clearance/issue', protect, hasPermission(['ap-pdc:manage']), async (req, res) => {
     const {
         bank_account_id, cheque_number, cheque_date, purpose_type, amount, payee, memo,
-        template_id, supplier_id, bill_ids, expense_category_id, reference_number,
-        override_payment_hold,
+        template_id, supplier_id, bill_ids, allocations, auto_allocate, method_id,
+        expense_category_id, reference_number, override_payment_hold,
     } = req.body;
 
     if (!bank_account_id || !cheque_number || !cheque_date || !purpose_type || !amount || !payee) {
@@ -73,6 +73,9 @@ router.post('/ap/outbound-clearance/issue', protect, hasPermission(['ap-pdc:mana
             templateId: resolvedTemplateId,
             supplierId: supplier_id,
             billIds: bill_ids || [],
+            allocations: Array.isArray(allocations) ? allocations : null,
+            autoAllocate: Boolean(auto_allocate),
+            methodId: method_id,
             expenseCategoryId: expense_category_id,
             referenceNumber: reference_number,
             employeeId: req.user?.employee_id,
@@ -89,6 +92,11 @@ router.post('/ap/outbound-clearance/issue', protect, hasPermission(['ap-pdc:mana
         }
         if (err.code === '23505') {
             return res.status(409).json({ message: 'This cheque number has already been recorded for this bank account' });
+        }
+        // Allocation problems (over-applying a bill, a total that doesn't match the
+        // cheque) are the caller's to fix, so say so with a 400 rather than a 500.
+        if (err.status) {
+            return res.status(err.status).json({ message: err.message, code: err.code });
         }
         res.status(500).json({ message: err.message || 'Failed to issue outbound cheque' });
     } finally {
@@ -295,11 +303,29 @@ router.get('/ap/supplier-bills', protect, hasPermission(['ap-pdc:view', 'ap:view
         if (supplier_id) { params.push(supplier_id); where += ` AND sb.supplier_id = $${params.length}`; }
         if (status && status !== 'all') { params.push(status); where += ` AND sb.status = $${params.length}`; }
         else if (!status) { where += ` AND sb.status != 'Paid'`; }
+        // related_grns: the goods receipt(s) this payable came from, so the bill can
+        // be traced back to the delivery it is charging for. Three links are possible
+        // and a bill may have more than one receipt behind it — see
+        // GET /ap/supplier-bills/:billId/goods-receipts for the shape and the reasoning.
         const { rows } = await db.query(
             `SELECT sb.*, s.supplier_name,
-                    GREATEST(CURRENT_DATE - COALESCE(sb.due_date, sb.bill_date), 0) AS days_overdue
+                    GREATEST(CURRENT_DATE - COALESCE(sb.due_date, sb.bill_date), 0) AS days_overdue,
+                    grn.related_grns
              FROM supplier_bill sb
              JOIN supplier s ON s.supplier_id = sb.supplier_id
+             LEFT JOIN LATERAL (
+                SELECT COALESCE(json_agg(json_build_object(
+                            'grn_id', gr.grn_id,
+                            'grn_number', gr.grn_number,
+                            'receipt_date', gr.receipt_date,
+                            'status', gr.status,
+                            'link_type', CASE WHEN gr.freight_bill_id = sb.bill_id THEN 'freight' ELSE 'goods' END
+                        ) ORDER BY gr.receipt_date, gr.grn_id), '[]'::json) AS related_grns
+                FROM goods_receipt gr
+                WHERE gr.bill_id = sb.bill_id
+                   OR gr.freight_bill_id = sb.bill_id
+                   OR (sb.grn_id IS NOT NULL AND gr.grn_id = sb.grn_id)
+             ) grn ON true
              ${where} ORDER BY sb.due_date NULLS LAST, sb.bill_date`,
             params
         );
