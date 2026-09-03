@@ -4,8 +4,10 @@ const {
   distributeByWeight,
   priceFromMarkup,
   markupFromPrice,
+  roundUpTo,
   DEFAULT_MARKUP_PERCENT,
   MIN_MARKUP_PERCENT,
+  PRICE_ROUNDING_INCREMENT,
 } = require('../services/grnCostingService');
 
 // The shared truth table. packages/web/tests/grnCosting.test.js runs the same file
@@ -79,10 +81,24 @@ describe('markup arithmetic', () => {
     expect(MIN_MARKUP_PERCENT).toBe(30);
   });
 
-  test('price and markup are inverses of each other', () => {
+  test('price and markup are inverses of each other, up to the rounding step', () => {
+    // 123.45 x 1.70 = 209.865, which rounds up to the next multiple of 5.
     const price = priceFromMarkup(123.45, 70);
-    expect(price).toBe(209.87);
-    expect(markupFromPrice(price, 123.45)).toBeCloseTo(70, 1);
+    expect(price).toBe(210);
+    // The realised markup is therefore a shade above the requested one, never below.
+    expect(markupFromPrice(price, 123.45)).toBeGreaterThanOrEqual(70);
+    expect(markupFromPrice(price, 123.45)).toBeCloseTo(70, 0);
+  });
+
+  test('suggested prices are rounded up to the next multiple of 5', () => {
+    expect(PRICE_ROUNDING_INCREMENT).toBe(5);
+    expect(roundUpTo(0)).toBe(0);        // a free line stays free
+    expect(roundUpTo(0.01)).toBe(5);
+    expect(roundUpTo(170)).toBe(170);    // already on a multiple: left alone
+    expect(roundUpTo(170.01)).toBe(175);
+    expect(roundUpTo(195.5)).toBe(200);
+    // Rounding can only ever raise the price, so the markup floor stays a floor.
+    expect(priceFromMarkup(100, 30)).toBeGreaterThanOrEqual(130);
   });
 
   test('markup is undefined when landed cost is zero, not Infinity', () => {

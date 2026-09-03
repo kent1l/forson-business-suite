@@ -5,12 +5,17 @@
  * A rich header (identity block, badges) cannot live in `title` because that
  * renders inside an <h2>, where block elements are invalid HTML. Both props are
  * optional, so every existing caller is unaffected.
+ *
+ * `zIndexClass` exists for the one case where a modal is opened from inside another
+ * one — adding a carrier without abandoning a half-filled freight wizard, say. The
+ * inner modal has to sit above the outer one's backdrop, and relying on DOM order to
+ * settle it at equal z-index is too fragile to leave to chance.
  */
-const Modal = ({ isOpen, onClose, title, header, children, maxWidth = 'max-w-md', bodyClassName = 'p-6' }) => {
+const Modal = ({ isOpen, onClose, title, header, children, maxWidth = 'max-w-md', bodyClassName = 'p-6', zIndexClass = 'z-40' }) => {
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-neutral-800/50 z-40 flex items-center justify-center p-4">
+        <div className={`fixed inset-0 bg-neutral-800/50 ${zIndexClass} flex items-center justify-center p-4`}>
             {/* The change is on this line: using the new maxWidth prop and constraining height */}
             <div className={`bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full ${maxWidth} max-h-[calc(100vh-2rem)] flex flex-col`}>
                 <div className="p-4 border-b border-gray-200 dark:border-slate-700 flex justify-between items-start gap-4">

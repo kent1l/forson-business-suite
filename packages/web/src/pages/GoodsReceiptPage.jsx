@@ -6,6 +6,7 @@ import SearchBar from '../components/SearchBar';
 import Icon from '../components/ui/Icon';
 import InfoTip from '../components/ui/InfoTip';
 import Combobox from '../components/ui/Combobox';
+import Modal from '../components/ui/Modal';
 import { ICONS } from '../constants';
 import useDraft from '../hooks/useDraft';
 import useDeepLink from '../hooks/useDeepLink';
@@ -17,7 +18,7 @@ import DiscountInput from '../components/ui/DiscountInput';
 import FreightAllocationWizard from '../components/goods-receipt/FreightAllocationWizard';
 import ReturnLineModal from '../components/goods-receipt/ReturnLineModal';
 import { formatCurrency } from '../utils/currency';
-import { computeCosting, markupFromPrice, DEFAULT_MARKUP_PERCENT, MIN_MARKUP_PERCENT, METHOD_A } from '../utils/grnCosting';
+import { computeCosting, markupFromPrice, roundUpTo, DEFAULT_MARKUP_PERCENT, MIN_MARKUP_PERCENT, PRICE_ROUNDING_INCREMENT, METHOD_A } from '../utils/grnCosting';
 import { useAuth } from '../contexts/AuthContext';
 
 const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
@@ -89,6 +90,11 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
 
     const canSubmit = hasPermission('goods_receipt:submit');
     const canPost = hasPermission('goods_receipt:post');
+    const canEditSuppliers = hasPermission('suppliers:edit');
+
+    // Set when a typed markup lands on a price that is not a whole PRICE_ROUNDING_INCREMENT,
+    // and the receiver has to say which of the two they meant. Null the rest of the time.
+    const [markupRounding, setMarkupRounding] = useState(null);
 
     // Reusable draft hook
     const draftData = useMemo(() => (stagedGrn ? {} : {
@@ -300,14 +306,20 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         });
     };
 
-    // Create a carrier from just the name typed into the freight picker. Shares the
-    // supplier table with the parts suppliers — a carrier is simply another party the
-    // business owes money to — so it goes through the same endpoint and shows up
-    // everywhere suppliers do.
-    const handleCreateCarrier = async (name) => {
+    // Add a carrier without leaving a half-filled receipt. Carriers share the supplier
+    // table with the parts suppliers — a carrier is simply another party the business
+    // owes money to — so this goes through the same endpoint and the new record shows up
+    // everywhere suppliers do. Takes whatever the caller has: the picker sends only a
+    // name, the New button sends a full supplier form.
+    const handleCreateCarrier = async (payload) => {
+        const name = payload?.supplier_name?.trim();
+        if (!name) {
+            toast.error('The carrier needs a name.');
+            return null;
+        }
         try {
             const { data } = await toast.promise(
-                api.post('/suppliers', { supplier_name: name, is_active: true }),
+                api.post('/suppliers', { is_active: true, ...payload, supplier_name: name }),
                 {
                     loading: 'Adding carrier…',
                     success: `${name} added.`,
@@ -406,14 +418,50 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
 
     // Price and markup are two views of the same decision, so editing either updates the
     // other. Typing a markup recomputes the price from the landed cost; typing a price
-    // recomputes the markup it implies. Whichever the user touched last is the one kept.
+    // recomputes the markup it implies. Whichever the user touched last is the one kept,
+    // and both columns always show the pair that actually holds — never a requested
+    // markup sitting beside a price that no longer realises it.
+    const applyMarkup = (partId, markup, price) => {
+        setLineFields(partId, { effective_markup_percent: markup, sale_price: price });
+    };
+
     const handleMarkupChange = (partId, markup) => {
         const landed = costingByPart.get(partId)?.landed_unit_cost || 0;
         const nextMarkup = Number.isFinite(markup) ? markup : 0;
-        setLineFields(partId, {
-            effective_markup_percent: nextMarkup,
-            sale_price: landed > 0 ? Math.round(landed * (1 + nextMarkup / 100) * 100) / 100 : null,
+        if (landed <= 0) {
+            applyMarkup(partId, nextMarkup, null);
+            return;
+        }
+        const exact = Math.round(landed * (1 + nextMarkup / 100) * 100) / 100;
+        const rounded = roundUpTo(exact);
+        if (rounded === exact) {
+            applyMarkup(partId, nextMarkup, exact);
+            return;
+        }
+        // A markup someone typed deliberately is a different thing from one the system
+        // assumed, so this is the one place the rounding is put to them rather than
+        // applied silently. Rounding up stays the default; keeping the exact percentage
+        // is there for the lines where the margin is the number that was negotiated.
+        const line = lines.find(l => l.part_id === partId);
+        setMarkupRounding({
+            partId,
+            name: line?.display_name || line?.internal_sku || `Line ${partId}`,
+            markup: nextMarkup,
+            landed,
+            exact,
+            rounded,
         });
+    };
+
+    const resolveMarkupRounding = (useRounded) => {
+        if (!markupRounding) return;
+        const { partId, markup, landed, exact, rounded } = markupRounding;
+        if (useRounded) {
+            applyMarkup(partId, markupFromPrice(rounded, landed) ?? markup, rounded);
+        } else {
+            applyMarkup(partId, markup, exact);
+        }
+        setMarkupRounding(null);
     };
 
     const handleSalePriceChange = (partId, price) => {
@@ -1079,7 +1127,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                     </td>
                                     <td className="p-2 align-middle">
                                         <MathExpressionInput
-                                            value={line.effective_markup_percent ?? DEFAULT_MARKUP_PERCENT}
+                                            value={computed?.effective_markup_percent ?? line.effective_markup_percent ?? DEFAULT_MARKUP_PERCENT}
                                             onChange={value => handleMarkupChange(line.part_id, value)}
                                             className={`${inputClass} ${belowMinMarkup ? 'border-danger-400 dark:border-danger-600' : ''}`}
                                             aria-label={`Markup for ${line.display_name || line.part_id}`}
@@ -1246,7 +1294,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 initialFreightAmount={freightAmount}
                 initialFreightSupplierId={freightSupplierId}
                 initialMethod={freightMethod}
-                onCreateCarrier={handleCreateCarrier}
+                onCreateCarrier={canEditSuppliers ? handleCreateCarrier : null}
                 overallDiscountPercent={overallDiscount.percent}
                 overallDiscountAmount={overallDiscount.amount}
                 onApply={({ freight_amount, freight_supplier_id, freight_allocation_method, overrides }) => {
@@ -1267,6 +1315,45 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 isPosted={stagedGrn?.workflow_status === 'Posted'}
                 onConfirm={handleReturnLine}
             />
+
+            <Modal
+                isOpen={!!markupRounding}
+                onClose={() => setMarkupRounding(null)}
+                title="Round this price up?"
+                maxWidth="max-w-md"
+            >
+                {markupRounding && (
+                    <div className="space-y-4">
+                        <p className="text-sm text-gray-600 dark:text-slate-400">
+                            {markupRounding.markup}% on <span className="font-medium text-gray-900 dark:text-slate-100">{markupRounding.name}</span>
+                            {' '}comes to {formatCurrency(markupRounding.exact)}, which is not a multiple of {PRICE_ROUNDING_INCREMENT}.
+                        </p>
+                        <div className="grid grid-cols-1 gap-2">
+                            <button
+                                type="button"
+                                autoFocus
+                                onClick={() => resolveMarkupRounding(true)}
+                                className="w-full text-left px-4 py-3 rounded-lg bg-primary-600 text-white hover:bg-primary-700"
+                            >
+                                <span className="block text-sm font-semibold">Round up to {formatCurrency(markupRounding.rounded)}</span>
+                                <span className="block text-xs opacity-90">
+                                    Markup becomes {markupFromPrice(markupRounding.rounded, markupRounding.landed)?.toFixed(2)}%
+                                </span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => resolveMarkupRounding(false)}
+                                className="w-full text-left px-4 py-3 rounded-lg border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800"
+                            >
+                                <span className="block text-sm font-semibold">Keep {markupRounding.markup}% exactly</span>
+                                <span className="block text-xs text-gray-500 dark:text-slate-400">
+                                    Price stays {formatCurrency(markupRounding.exact)}
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </Modal>
 
             <GoodsReceiptModals
                 // Modal states

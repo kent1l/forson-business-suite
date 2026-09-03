@@ -40,6 +40,17 @@ const DEFAULT_MARKUP_PERCENT = 70;
 /** Below this, a suggested price is flagged; posting refuses it. */
 const MIN_MARKUP_PERCENT = 30;
 
+/**
+ * Suggested retail prices are rounded up to a multiple of this.
+ *
+ * A counter that deals in cash wants prices it can make change for, and a shelf label
+ * reading 195.50 is worse than one reading 200 for no gain. Rounding *up* rather than
+ * to the nearest multiple is deliberate: it can only ever widen the margin, so the
+ * markup floor stays a floor and no line is quietly priced below the cost the
+ * receiver was working to.
+ */
+const PRICE_ROUNDING_INCREMENT = 5;
+
 /** Pro-rata by net invoice value. The only method implemented. */
 const METHOD_A = 'METHOD_A';
 
@@ -130,11 +141,28 @@ function resolveDiscount(base, percent, amount) {
 }
 
 /**
- * Suggested retail price from a landed cost and a markup.
+ * Round up to the next multiple of `increment`, in cents so the ceiling is not thrown
+ * off by a float landing a hair above an exact multiple. A price already on a multiple
+ * is left alone, and zero stays zero.
+ * @returns {number}
+ */
+function roundUpTo(value, increment = PRICE_ROUNDING_INCREMENT) {
+  const step = Math.round(num(increment) * CENTS);
+  if (step <= 0) return round2(value);
+  const cents = Math.round(num(value) * CENTS);
+  if (cents <= 0) return 0;
+  return (Math.ceil(cents / step) * step) / CENTS;
+}
+
+/**
+ * Suggested retail price from a landed cost and a markup, rounded up to the next whole
+ * PRICE_ROUNDING_INCREMENT. Only prices the system suggests are rounded — a price the
+ * user types is theirs and is left exactly as entered.
  * @returns {number}
  */
 function priceFromMarkup(landedUnitCost, markupPercent) {
-  return round2(num(landedUnitCost) * (1 + num(markupPercent, DEFAULT_MARKUP_PERCENT) / 100));
+  const raw = round2(num(landedUnitCost) * (1 + num(markupPercent, DEFAULT_MARKUP_PERCENT) / 100));
+  return roundUpTo(raw);
 }
 
 /**
@@ -299,11 +327,16 @@ function computeCosting({
     let salePrice;
     if (!recomputeSalePrice && r.salePrice != null) {
       salePrice = round2(r.salePrice);
-      const derived = markupFromPrice(salePrice, landedUnitCost);
-      if (derived != null) markupPercent = derived;
     } else {
       salePrice = priceFromMarkup(landedUnitCost, markupPercent);
     }
+
+    // The markup reported is always the one the returned price actually realises, never
+    // the one that was asked for. Those differ whenever a suggested price is rounded up
+    // to the next PRICE_ROUNDING_INCREMENT, and a screen showing 70% beside a price that
+    // is really 70.11% is a screen nobody can reconcile against the shelf label.
+    const derived = markupFromPrice(salePrice, landedUnitCost);
+    if (derived != null) markupPercent = derived;
 
     if (landedUnitCost > 0 && markupPercent < MIN_MARKUP_PERCENT) {
       warnings.push({
@@ -371,9 +404,11 @@ export {
   distributeByWeight,
   priceFromMarkup,
   markupFromPrice,
+  roundUpTo,
   resolveDiscount,
   DEFAULT_MARKUP_PERCENT,
   MIN_MARKUP_PERCENT,
+  PRICE_ROUNDING_INCREMENT,
   METHOD_A,
   METHOD_B,
   REJECTION_REASONS,

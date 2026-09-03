@@ -13,7 +13,7 @@
       "expect": {
         "allocated_freight_amount": [150, 150],
         "landed_unit_cost": [115, 230],
-        "sale_price": [195.5, 391],
+        "sale_price": [200, 395],
         "totals": {
           "supplier_invoice_total": 2000,
           "net_goods_value": 2000,
@@ -172,6 +172,31 @@
         "freightAmount": 0
       },
       "expect": { "sale_price": [145], "effective_markup_percent": [45] }
+    },
+    {
+      "name": "A suggested price is rounded up to the next multiple of 5",
+      "input": {
+        "lines": [{ "quantity": 1, "cost_price": 123.45 }],
+        "freightAmount": 0
+      },
+      "expect": { "sale_price": [210], "effective_markup_percent": [70.11] }
+    },
+    {
+      "name": "A suggested price already on a multiple of 5 is left alone",
+      "input": {
+        "lines": [{ "quantity": 1, "cost_price": 100 }],
+        "freightAmount": 0
+      },
+      "expect": { "sale_price": [170], "effective_markup_percent": [70] }
+    },
+    {
+      "name": "A typed price is never rounded — only suggestions are",
+      "input": {
+        "lines": [{ "quantity": 1, "cost_price": 100, "sale_price": 249.99 }],
+        "freightAmount": 0,
+        "recomputeSalePrice": false
+      },
+      "expect": { "sale_price": [249.99] }
     },
     {
       "name": "Backward calculation: a typed price derives the markup it implies",

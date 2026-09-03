@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import Modal from '../ui/Modal';
 import Combobox from '../ui/Combobox';
+import SupplierForm from '../forms/SupplierForm';
 import InfoTip from '../ui/InfoTip';
 import MathExpressionInput from '../ui/MathExpressionInput';
 import { formatCurrency } from '../../utils/currency';
@@ -39,6 +40,7 @@ const FreightAllocationWizard = ({
   overallDiscountAmount = null,
 }) => {
   const [step, setStep] = useState(0);
+  const [isCarrierModalOpen, setIsCarrierModalOpen] = useState(false);
   const [freightAmount, setFreightAmount] = useState(initialFreightAmount || 0);
   const [freightSupplierId, setFreightSupplierId] = useState(initialFreightSupplierId || '');
   const [method, setMethod] = useState(initialMethod || METHOD_A);
@@ -51,6 +53,18 @@ const FreightAllocationWizard = ({
     });
     return seed;
   });
+
+  // Freight often arrives from a hauler nobody has set up yet, and leaving the wizard to
+  // go and create one would strand a half-filled receipt. Typing a name into the picker
+  // registers the carrier with just that name — enough to raise their bill — while the
+  // New button opens the full supplier form for when the terms and contact are to hand.
+  const saveCarrier = async (payload) => {
+    const created = await onCreateCarrier(payload);
+    if (created) {
+      setFreightSupplierId(String(created.supplier_id));
+      setIsCarrierModalOpen(false);
+    }
+  };
 
   const workingLines = useMemo(() => lines.map((l) => ({
     ...l,
@@ -129,20 +143,27 @@ const FreightAllocationWizard = ({
               Carrier to bill
               <InfoTip text="Freight is billed separately from the goods, so it posts its own payable against the carrier. The parts supplier's bill only covers what they charged for the parts." />
             </label>
-            <Combobox
-              options={suppliers.map((s) => ({ value: String(s.supplier_id), label: s.supplier_name }))}
-              value={freightSupplierId ? String(freightSupplierId) : ''}
-              onChange={setFreightSupplierId}
-              placeholder="Who is charging for the delivery?"
-              allowCreate={!!onCreateCarrier}
-              onCreate={async (name) => {
-                // Freight often arrives from a hauler nobody has set up yet, and stopping
-                // to go and create one would strand a half-typed receipt. Only the name is
-                // needed to raise their bill; the rest can be filled in under Suppliers.
-                const created = await onCreateCarrier(name);
-                if (created) setFreightSupplierId(String(created.supplier_id));
-              }}
-            />
+            <div className="flex items-center space-x-2">
+              <div className="flex-grow">
+                <Combobox
+                  options={suppliers.map((s) => ({ value: String(s.supplier_id), label: s.supplier_name }))}
+                  value={freightSupplierId ? String(freightSupplierId) : ''}
+                  onChange={setFreightSupplierId}
+                  placeholder="Who is charging for the delivery?"
+                  allowCreate={!!onCreateCarrier}
+                  onCreate={(name) => saveCarrier({ supplier_name: name, is_active: true })}
+                />
+              </div>
+              {onCreateCarrier && (
+                <button
+                  type="button"
+                  onClick={() => setIsCarrierModalOpen(true)}
+                  className="flex-shrink-0 px-3 py-2 bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-100 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-600 text-sm"
+                >
+                  New
+                </button>
+              )}
+            </div>
             {Number(freightAmount) > 0 && !freightSupplierId && (
               <p className="mt-1 text-xs text-danger-600 dark:text-danger-400">
                 Name the carrier so the delivery charge can be billed.
@@ -300,6 +321,16 @@ const FreightAllocationWizard = ({
           {step === STEPS.length - 1 ? 'Apply to receipt' : 'Next'}
         </button>
       </div>
+
+      <Modal
+        isOpen={isCarrierModalOpen}
+        onClose={() => setIsCarrierModalOpen(false)}
+        title="Add New Carrier"
+        maxWidth="max-w-lg"
+        zIndexClass="z-50"
+      >
+        <SupplierForm onSave={saveCarrier} onCancel={() => setIsCarrierModalOpen(false)} />
+      </Modal>
     </Modal>
   );
 };
