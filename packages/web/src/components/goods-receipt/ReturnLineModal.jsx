@@ -36,6 +36,9 @@ const ReturnLineModal = ({ isOpen, onClose, onConfirm, line, isPosted, currencyS
       await onConfirm({ return_quantity: Number(quantity), rejection_reason: reason, notes: notes.trim() || null });
       setQuantity(1); setReason(''); setNotes('');
       onClose();
+    } catch {
+      // The caller has already surfaced the reason. Stay open with the figures intact so
+      // it can be corrected and retried, rather than making the user start again.
     } finally {
       setSaving(false);
     }

@@ -10,7 +10,15 @@ import PaginationControls from '../components/ui/PaginationControls';
 import { useAuth } from '../contexts/AuthContext';
 import ChangeTransactionDateModal from '../components/common/ChangeTransactionDateModal';
 import TransactionDateHistory from '../components/common/TransactionDateHistory';
+import ReturnLineModal from '../components/goods-receipt/ReturnLineModal';
 import { formatCurrency } from '../utils/currency';
+
+const num = (value) => parseFloat(value) || 0;
+const returnedQty = (line) => Math.max(0, num(line.return_quantity));
+// What the receipt actually kept. Every figure on this page is derived from this rather
+// than from the delivered quantity, because a line that went back is no longer stock
+// and is no longer owed for.
+const acceptedQty = (line) => Math.max(0, num(line.quantity) - returnedQty(line));
 
 const GoodsReceiptHistoryPage = ({ user: _user }) => {
     const { hasPermission } = useAuth();
@@ -29,6 +37,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
     const [pageSize, setPageSize] = useState(25);
     const [total, setTotal] = useState(0);
     const [showChangeDate, setShowChangeDate] = useState(false);
+    const [returnTargetLine, setReturnTargetLine] = useState(null);
 
     const fetchGrns = useCallback(async () => {
         try {
@@ -79,6 +88,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
         setModalLoading(true);
         setIsEditMode(false);
         setShowChangeDate(false);
+        setReturnTargetLine(null);
         try {
             console.log('Fetching GRN lines for:', grn.grn_id);
             const response = await api.get(`/goods-receipts/${grn.grn_id}/lines`);
@@ -111,6 +121,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
         setIsEditMode(false);
         setEditedLines([]);
         setShowChangeDate(false);
+        setReturnTargetLine(null);
     };
 
     const handleDateChanged = async (result) => {
@@ -120,8 +131,14 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
 
     const handleVoid = async () => {
         if (!selectedGrn) return;
+        // Units already sent back were reversed when the return was recorded, so the void
+        // only unwinds what is still accepted. Say so, or the reversal looks short.
+        const alreadyReturned = grnLines.reduce((sum, line) => sum + returnedQty(line), 0);
+        const returnNote = alreadyReturned > 0
+            ? `\n\nNote: ${alreadyReturned} unit(s) on this receipt were already returned to the supplier and reversed at that time. Voiding will only reverse the ${grnLines.reduce((sum, line) => sum + acceptedQty(line), 0)} unit(s) still accepted.`
+            : '';
         const reason = window.prompt(
-            `Void GRN ${selectedGrn.grn_number}? This will reverse the stock it received, roll back any linked purchase order's received quantities, and reverse its effect on accounts payable. The record is kept for audit history and marked Voided.\n\nOptional: enter a reason for voiding.`
+            `Void GRN ${selectedGrn.grn_number}? This will reverse the stock it received, roll back any linked purchase order's received quantities, and reverse its effect on accounts payable. The record is kept for audit history and marked Voided.${returnNote}\n\nOptional: enter a reason for voiding.`
         );
         if (reason === null) return; // user cancelled the prompt
         try {
@@ -179,6 +196,16 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                         }
                     }
                     
+                    // Editing the received quantity below what has already gone back to the
+                    // supplier would leave the line with a negative accepted quantity, and the
+                    // stock and payable reversals for those units have already happened.
+                    const returned = returnedQty(line);
+                    if (returned > 0 && parseFloat(line.quantity) < returned - 0.0001) {
+                        throw new Error(
+                            `${line.internal_sku || `Line ${index + 1}`}: the received quantity cannot be less than the ${returned} already returned to the supplier.`
+                        );
+                    }
+
                     const processedLine = {
                         part_id: line.part_id,
                         quantity: parseFloat(line.quantity),
@@ -203,8 +230,32 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
             setIsEditMode(false);
         } catch (error) {
             console.error('Error saving changes:', error);
-            toast.error('Failed to save changes');
+            toast.error(error?.response?.data?.message || error?.message || 'Failed to save changes');
         }
+    };
+
+    // Recording a return against a posted receipt reverses stock at the original landed
+    // cost, replays the weighted average, rolls back the purchase order and credits the
+    // supplier's bill — all server-side, in one transaction. Freight and the header
+    // discount are shared across lines, so every line's landed cost moves: reload the
+    // whole document rather than patching the one row.
+    const handleReturnLine = async ({ return_quantity, rejection_reason, notes }) => {
+        if (!selectedGrn || !returnTargetLine) return;
+        await toast.promise(
+            api.post(
+                `/goods-receipts/${selectedGrn.grn_id}/lines/${returnTargetLine.grn_line_id}/return`,
+                { return_quantity, rejection_reason, notes },
+            ),
+            {
+                loading: 'Recording return...',
+                success: (res) => res.data.message,
+                error: (err) => err?.response?.data?.message || 'Could not record the return.',
+            },
+        );
+        const response = await api.get(`/goods-receipts/${selectedGrn.grn_id}/lines`);
+        setGrnLines(response.data);
+        setEditedLines(response.data.map((line) => ({ ...line })));
+        await fetchGrns();
     };
 
     const handleLineChange = (index, field, value) => {
@@ -233,11 +284,17 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
 
     const hasEditPermission = hasPermission('goods_receipt:edit');
     const hasVoidPermission = hasPermission('goods_receipt:void');
+    const hasReturnPermission = hasPermission('goods_receipt:return');
     const hasChangeDatePermission = hasPermission(['transaction:change_date', 'transaction:change_date_unrestricted']);
     const isVoided = selectedGrn?.status === 'Voided';
     const displayLines = isEditMode ? editedLines : grnLines;
-    const totalQuantity = displayLines.reduce((sum, line) => sum + (parseFloat(line.quantity) || 0), 0);
-    const totalAmount = displayLines.reduce((sum, line) => sum + ((parseFloat(line.quantity) || 0) * (parseFloat(line.cost_price) || 0)), 0);
+    const totalQuantity = displayLines.reduce((sum, line) => sum + num(line.quantity), 0);
+    const totalReturned = displayLines.reduce((sum, line) => sum + returnedQty(line), 0);
+    const totalAccepted = displayLines.reduce((sum, line) => sum + acceptedQty(line), 0);
+    const totalAmount = displayLines.reduce((sum, line) => sum + (acceptedQty(line) * num(line.cost_price)), 0);
+    // A cancelled receipt is frozen; the return endpoint refuses it, so do not offer it.
+    const canReturn = hasReturnPermission && !isVoided && !isEditMode
+        && selectedGrn?.workflow_status !== 'Cancelled';
 
     return (
         <div className="space-y-6">
@@ -417,14 +474,21 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                         <th className="p-3 text-sm font-semibold">Part SKU</th>
                                         <th className="p-3 text-sm font-semibold">Part Name</th>
                                         <th className="p-3 text-sm font-semibold text-center">Qty Received</th>
+                                        <th className="p-3 text-sm font-semibold text-center">Returned</th>
+                                        <th className="p-3 text-sm font-semibold text-center">Accepted</th>
                                         <th className="p-3 text-sm font-semibold text-right">Cost Price</th>
                                         <th className="p-3 text-sm font-semibold text-right">Sale Price</th>
                                         <th className="p-3 text-sm font-semibold text-right">Line Total</th>
+                                        {canReturn && <th className="p-3 text-sm font-semibold text-right"><span className="sr-only">Actions</span></th>}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100 dark:divide-slate-700/60">
-                                    {displayLines.map((line, index) => (
-                                        <tr key={index} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200">
+                                    {displayLines.map((line, index) => {
+                                      const returned = returnedQty(line);
+                                      const accepted = acceptedQty(line);
+                                      const fullyReturned = returned > 0 && accepted <= 0;
+                                      return (
+                                        <tr key={index} className={`hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200 ${fullyReturned ? 'opacity-60' : ''}`}>
                                             <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100">{line.internal_sku}</td>
                                             <td className="p-3 text-sm font-medium text-gray-900 dark:text-slate-100">{line.display_name}</td>
                                             <td className="p-3 text-sm text-center font-mono">
@@ -440,6 +504,21 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                                 ) : (
                                                     line.quantity
                                                 )}
+                                            </td>
+                                            <td className="p-3 text-sm text-center font-mono">
+                                                {returned > 0 ? (
+                                                    <>
+                                                        <span className="text-danger-600 dark:text-danger-400 font-medium">{returned}</span>
+                                                        {line.rejection_reason && (
+                                                            <span className="block text-xs text-gray-500 dark:text-slate-400">{line.rejection_reason}</span>
+                                                        )}
+                                                    </>
+                                                ) : (
+                                                    <span className="text-gray-400 dark:text-slate-500">-</span>
+                                                )}
+                                            </td>
+                                            <td className={`p-3 text-sm text-center font-mono ${fullyReturned ? 'line-through text-gray-400 dark:text-slate-500' : 'font-medium text-gray-900 dark:text-slate-100'}`}>
+                                                {accepted}
                                             </td>
                                             <td className="p-3 text-sm text-right font-mono text-gray-700 dark:text-slate-300">
                                                 {isEditMode ? (
@@ -471,10 +550,23 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                                 )}
                                             </td>
                                             <td className="p-3 text-sm text-right font-mono font-medium text-gray-900 dark:text-slate-100">
-                                                {formatCurrency((parseFloat(line.quantity) || 0) * (parseFloat(line.cost_price) || 0))}
+                                                {formatCurrency(accepted * num(line.cost_price))}
                                             </td>
+                                            {canReturn && (
+                                                <td className="p-3 text-sm text-right">
+                                                    <button
+                                                        onClick={() => setReturnTargetLine(line)}
+                                                        disabled={accepted <= 0}
+                                                        title={accepted <= 0 ? 'Every unit on this line has already gone back.' : 'Return these units to the supplier'}
+                                                        className="px-3 py-1 text-xs font-semibold rounded-lg shadow-xs bg-white dark:bg-slate-800 border border-danger-300 dark:border-danger-700 text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-950/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                                    >
+                                                        Return
+                                                    </button>
+                                                </td>
+                                            )}
                                         </tr>
-                                    ))}
+                                      );
+                                    })}
                                 </tbody>
                                 {displayLines.length > 0 && (
                                     <tfoot className="bg-gray-50 dark:bg-slate-700/40 border-t border-gray-200 dark:border-slate-700 font-semibold text-gray-900 dark:text-slate-100">
@@ -485,10 +577,17 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                             <td className="p-3 text-sm text-center font-mono">
                                                 {totalQuantity}
                                             </td>
+                                            <td className="p-3 text-sm text-center font-mono text-danger-600 dark:text-danger-400">
+                                                {totalReturned > 0 ? totalReturned : '-'}
+                                            </td>
+                                            <td className="p-3 text-sm text-center font-mono">
+                                                {totalAccepted}
+                                            </td>
                                             <td colSpan="2"></td>
                                             <td className="p-3 text-sm text-right font-mono font-bold text-gray-900 dark:text-slate-100">
                                                 {formatCurrency(totalAmount)}
                                             </td>
+                                            {canReturn && <td></td>}
                                         </tr>
                                     </tfoot>
                                 )}
@@ -499,6 +598,14 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                     </div>
                 )}
             </Modal>
+
+            <ReturnLineModal
+                isOpen={!!returnTargetLine}
+                onClose={() => setReturnTargetLine(null)}
+                line={returnTargetLine}
+                isPosted
+                onConfirm={handleReturnLine}
+            />
 
             {selectedGrn && (
                 <ChangeTransactionDateModal
