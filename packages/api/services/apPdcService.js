@@ -1,6 +1,7 @@
 'use strict';
 
 const apLedgerService = require('./apLedgerService');
+const apPaymentService = require('./apPaymentService');
 const { computePdcMaturity } = require('./pdcService');
 
 /**
@@ -53,6 +54,14 @@ async function logOutboundClearanceEvent(client, {
  * with a unique (bank_account_id, cheque_number) so the same number can never be
  * recorded twice against one account.
  *
+ * Bill application has two modes. The Treasury desk's Issue form passes `billIds`
+ * and lets the cheque spill across them in id order — a cheque is written for a
+ * lump sum and the desk just wants it applied. Record Supplier Payment passes
+ * `allocations` (or `autoAllocate`) instead, which routes through
+ * apPaymentService.resolveAllocations for the same per-bill validation a cash or
+ * bank-transfer payment gets: bills locked FOR UPDATE, no over-application, and
+ * every peso accounted for.
+ *
  * @param {import('pg').PoolClient} client
  */
 async function issueOutboundCheque(client, {
@@ -66,6 +75,9 @@ async function issueOutboundCheque(client, {
   templateId = null,
   supplierId = null,
   billIds = [],
+  allocations = null,
+  autoAllocate = false,
+  methodId = null,
   expenseCategoryId = null,
   referenceNumber = null,
   employeeId = null,
@@ -95,21 +107,55 @@ async function issueOutboundCheque(client, {
       throw err;
     }
 
+    // `$9` lets a caller name the exact cheque method the user picked (Record
+    // Supplier Payment does, since the method dropdown is where the cheque was
+    // chosen); the Treasury desk passes none and takes whichever cheque method is
+    // configured. Either way the row must be a cheque method — this function is
+    // writing a cheque_records row and an 'ISSUED' payment, so labelling it "Cash"
+    // would put an instrument-backed payment in the register under a method that
+    // has no instrument.
     const { rows: [payment] } = await client.query(
       `INSERT INTO ap_payment
          (supplier_id, employee_id, amount, method_id, reference_number, notes,
           pdc_status, cheque_date, bank_account_id, created_by)
        SELECT $1, $2, $3, pm.method_id, $4, $5, 'ISSUED', $6, $7, $8
        FROM payment_methods pm
-       WHERE pm.type = 'cheque' OR pm.code IN ('cheque', 'pdc')
+       WHERE (pm.type = 'cheque' OR pm.code IN ('cheque', 'pdc'))
+         AND ($9::int IS NULL OR pm.method_id = $9::int)
        LIMIT 1
        RETURNING payment_id`,
-      [supplierId, employeeId, amount, referenceNumber, memo, chequeDate, bankAccountId, userId]
+      [supplierId, employeeId, amount, referenceNumber, memo, chequeDate, bankAccountId, userId,
+       methodId || null]
     );
-    if (!payment) throw new Error('No cheque-type payment method configured');
+    if (!payment) {
+      throw new Error(methodId
+        ? 'That payment method is not a cheque method, so it cannot be used to issue a cheque'
+        : 'No cheque-type payment method configured');
+    }
     apPaymentId = payment.payment_id;
 
-    if (billIds.length > 0) {
+    if (autoAllocate || Array.isArray(allocations)) {
+      // A cheque dated before a bill existed could not have paid it, so the
+      // cheque date — not today — is the date the allocations are checked against.
+      // It has to be cast by the database first: resolveAllocations compares it
+      // against bill_date, which pg hands back as a Date, and a Date-vs-string
+      // comparison is silently always false.
+      const { rows: [{ dated_on: datedOn }] } = await client.query(
+        `SELECT COALESCE($1::date, CURRENT_DATE) AS dated_on`, [chequeDate || null]
+      );
+      const resolved = await apPaymentService.resolveAllocations(client, {
+        supplierId,
+        amount: Number(amount),
+        allocations,
+        settledOn: datedOn,
+      });
+      for (const alloc of resolved) {
+        await client.query(
+          `INSERT INTO ap_payment_allocation (payment_id, bill_id, amount_allocated) VALUES ($1, $2, $3)`,
+          [apPaymentId, alloc.billId, alloc.amount]
+        );
+      }
+    } else if (billIds.length > 0) {
       const { rows: bills } = await client.query(
         `SELECT bill_id, total_amount, amount_paid FROM supplier_bill WHERE bill_id = ANY($1::int[]) FOR UPDATE`,
         [billIds]

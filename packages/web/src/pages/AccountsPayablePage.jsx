@@ -121,7 +121,7 @@ const AccountsPayablePage = ({ onNavigate, pageState }) => {
                             Outbound Cheques &amp; Treasury <Icon path={ICONS.chevronDown} className="w-3.5 h-3.5 -rotate-90" />
                         </button>
                         <InfoTip label="Outbound Cheques & Treasury">
-                            Cheque payments live here, because a cheque has a lifecycle after it's written — it still has to be deposited, and it can clear, bounce, go stale, or be replaced. Cash, bank transfer and e-wallet payments settle immediately and are recorded with <span className="font-medium">Record Payment</span> instead.
+                            Where a cheque lives after it's written, because it still has to be deposited and can clear, bounce, go stale, or be replaced. You can write one from <span className="font-medium">Record Payment</span> — picking Cheque there issues it onto this desk — and this is where you come back to clear or bounce it. A bill's balance only moves once the cheque clears.
                         </InfoTip>
                     </span>
                     {hasPermission('ap:manage') && (
