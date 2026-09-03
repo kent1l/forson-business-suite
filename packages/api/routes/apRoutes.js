@@ -437,14 +437,19 @@ router.get('/ap/supplier-bills/:billId/goods-receipts', protect, hasPermission('
                 gr.grn_id, gr.grn_number, gr.receipt_date, gr.status, gr.workflow_status,
                 gr.is_backfill, gr.supplier_invoice_no, gr.po_id, gr.freight_amount,
                 gr.freight_allocation_method, gr.overall_discount_percent, gr.overall_discount_amount,
+                gr.voided_at, gr.void_reason,
                 s.supplier_name,
+                fs.supplier_name AS freight_supplier_name,
                 po.po_number,
                 TRIM(BOTH ' ' FROM e.first_name || ' ' || COALESCE(e.last_name, '')) AS received_by_name,
+                TRIM(BOTH ' ' FROM ve.first_name || ' ' || COALESCE(ve.last_name, '')) AS voided_by_name,
                 CASE WHEN gr.freight_bill_id = $1 THEN 'freight' ELSE 'goods' END AS link_type
             FROM goods_receipt gr
             JOIN supplier s ON s.supplier_id = gr.supplier_id
+            LEFT JOIN supplier fs ON fs.supplier_id = gr.freight_supplier_id
             LEFT JOIN purchase_order po ON po.po_id = gr.po_id
             LEFT JOIN employee e ON e.employee_id = gr.received_by
+            LEFT JOIN employee ve ON ve.employee_id = gr.voided_by
             WHERE gr.bill_id = $1
                OR gr.freight_bill_id = $1
                OR gr.grn_id = (SELECT grn_id FROM supplier_bill WHERE bill_id = $1)
@@ -520,11 +525,23 @@ router.get('/ap/supplier-bills/:billId/goods-receipts', protect, hasPermission('
                 overallDiscountAmount: receipt.overall_discount_amount ?? null,
                 recomputeSalePrice: false,
             });
-            // sale_price and effective_markup_percent are retail pricing, needed to run
-            // the costing but no business of an AP screen — they are read above and
-            // dropped here rather than shipped to a client that only checks cost.
-            const billingLines = grnLines.map(({ sale_price, effective_markup_percent, ...line }) => line);
-            return { ...receipt, lines: billingLines, goods_value: costing.totals.net_goods_value };
+            // The whole computation goes to the client, not just the bottom line: an AP
+            // clerk checking a supplier's invoice has to be able to see how each figure
+            // was arrived at — the discount taken on a line, the freight allocated to it,
+            // the landed cost that came out — exactly as the receipt itself shows it.
+            // Each stored line is merged with its computed counterpart, positionally,
+            // because computeCosting preserves input order and reports it as `index`.
+            const computedByIndex = costing.lines.reduce((acc, l) => {
+                acc[l.index] = l;
+                return acc;
+            }, {});
+            const billingLines = grnLines.map((line, index) => ({ ...line, ...computedByIndex[index] }));
+            return {
+                ...receipt,
+                lines: billingLines,
+                totals: costing.totals,
+                goods_value: costing.totals.net_goods_value,
+            };
         });
 
         res.json({ success: true, data, bill });
