@@ -1057,6 +1057,12 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                   && (computed?.effective_markup_percent ?? DEFAULT_MARKUP_PERCENT) < MIN_MARKUP_PERCENT;
                               const returned = Number(line.return_quantity) || 0;
                               const isFree = line.is_free_goods === true;
+                              // The giveaway claim only makes sense against a zero cost, so the
+                              // checkbox stays out of the way until the line actually has no
+                              // price on it (and stays visible on a free line so it can be
+                              // un-marked). A cost still being typed as an expression is not
+                              // zero, so it hides the box too.
+                              const costIsZero = (Number(line.cost_price) || 0) === 0;
                               // A cost of zero that nobody has claimed as a giveaway. The line
                               // still delivers stock; it just will not move the average cost.
                               const isUncosted = computed?.is_uncosted === true;
@@ -1110,22 +1116,24 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                             className={inputClass}
                                             disabled={isFree}
                                         />
-                                        <label className="mt-1 flex items-center justify-center gap-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 cursor-pointer select-none">
-                                            <input
-                                                type="checkbox"
-                                                checked={isFree}
-                                                onChange={e => setLineFields(line.part_id, {
-                                                    is_free_goods: e.target.checked,
-                                                    // Marking a line free is a claim that it cost nothing, so the
-                                                    // cost has to actually go to zero — the database rejects a
-                                                    // free line that still carries a price.
-                                                    ...(e.target.checked ? { cost_price: 0 } : {}),
-                                                })}
-                                                className="h-3 w-3 rounded border-gray-300 dark:border-slate-600"
-                                                aria-label={`Free goods: ${line.display_name || line.part_id}`}
-                                            />
-                                            Free
-                                        </label>
+                                        {(isFree || costIsZero) && (
+                                            <label className="mt-1 flex items-center justify-center gap-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 cursor-pointer select-none">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isFree}
+                                                    onChange={e => setLineFields(line.part_id, {
+                                                        is_free_goods: e.target.checked,
+                                                        // Marking a line free is a claim that it cost nothing, so the
+                                                        // cost has to actually go to zero — the database rejects a
+                                                        // free line that still carries a price.
+                                                        ...(e.target.checked ? { cost_price: 0 } : {}),
+                                                    })}
+                                                    className="h-3 w-3 rounded border-gray-300 dark:border-slate-600"
+                                                    aria-label={`Free goods: ${line.display_name || line.part_id}`}
+                                                />
+                                                Free
+                                            </label>
+                                        )}
                                         {isUncosted && (
                                             <span className="block mt-0.5 text-[10px] text-amber-700 dark:text-amber-400 text-center leading-tight">
                                                 no cost — won't affect WAC
