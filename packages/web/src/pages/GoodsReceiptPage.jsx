@@ -300,6 +300,27 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         });
     };
 
+    // Create a carrier from just the name typed into the freight picker. Shares the
+    // supplier table with the parts suppliers — a carrier is simply another party the
+    // business owes money to — so it goes through the same endpoint and shows up
+    // everywhere suppliers do.
+    const handleCreateCarrier = async (name) => {
+        try {
+            const { data } = await toast.promise(
+                api.post('/suppliers', { supplier_name: name, is_active: true }),
+                {
+                    loading: 'Adding carrier…',
+                    success: `${name} added.`,
+                    error: (err) => err?.response?.data?.message || 'Could not add that carrier.',
+                },
+            );
+            await fetchSuppliers();
+            return data;
+        } catch {
+            return null;
+        }
+    };
+
     const handleSaveNewPart = (partData) => {
         const payload = { ...partData, created_by: user.employee_id };
         const promise = api.post('/parts', payload);
@@ -1225,6 +1246,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 initialFreightAmount={freightAmount}
                 initialFreightSupplierId={freightSupplierId}
                 initialMethod={freightMethod}
+                onCreateCarrier={handleCreateCarrier}
                 overallDiscountPercent={overallDiscount.percent}
                 overallDiscountAmount={overallDiscount.amount}
                 onApply={({ freight_amount, freight_supplier_id, freight_allocation_method, overrides }) => {

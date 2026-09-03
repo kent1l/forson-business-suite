@@ -29,6 +29,7 @@ const FreightAllocationWizard = ({
   isOpen,
   onClose,
   onApply,
+  onCreateCarrier,
   lines,
   suppliers = [],
   initialFreightAmount = 0,
@@ -133,6 +134,14 @@ const FreightAllocationWizard = ({
               value={freightSupplierId ? String(freightSupplierId) : ''}
               onChange={setFreightSupplierId}
               placeholder="Who is charging for the delivery?"
+              allowCreate={!!onCreateCarrier}
+              onCreate={async (name) => {
+                // Freight often arrives from a hauler nobody has set up yet, and stopping
+                // to go and create one would strand a half-typed receipt. Only the name is
+                // needed to raise their bill; the rest can be filled in under Suppliers.
+                const created = await onCreateCarrier(name);
+                if (created) setFreightSupplierId(String(created.supplier_id));
+              }}
             />
             {Number(freightAmount) > 0 && !freightSupplierId && (
               <p className="mt-1 text-xs text-danger-600 dark:text-danger-400">

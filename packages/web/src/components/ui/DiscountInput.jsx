@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import MathExpressionInput from './MathExpressionInput';
 
 /**
@@ -28,12 +29,27 @@ const DiscountInput = ({
   compact = false,
   'aria-label': ariaLabel = 'Discount',
 }) => {
-  const mode = amount != null && amount !== '' ? 'amount' : 'percent';
+  // Which unit is selected has to be state of its own, not something derived from
+  // whichever field happens to hold a value. Switching units clears both fields — a
+  // percentage and an amount are different claims about what the supplier gave, and
+  // silently converting one into the other would put a number on screen that nobody
+  // agreed to. That leaves an instant where both are empty, and a derived mode would
+  // snap straight back to percent, making the peso button impossible to select.
+  const [mode, setMode] = useState(() => (amount != null && amount !== '' ? 'amount' : 'percent'));
+
+  // Follow the parent when it hands down a value that settles the question — reopening a
+  // saved draft, or loading a receipt whose discount was entered as an amount.
+  useEffect(() => {
+    if (amount != null && amount !== '') setMode('amount');
+    else if (percent != null && percent !== '') setMode('percent');
+  }, [percent, amount]);
+
   const value = mode === 'amount' ? amount : percent;
 
-  const setMode = (nextMode) => {
+  const switchMode = (nextMode) => {
     if (nextMode === mode) return;
-    onChange(nextMode === 'amount' ? { percent: null, amount: null } : { percent: null, amount: null });
+    setMode(nextMode);
+    onChange({ percent: null, amount: null });
   };
 
   const setValue = (next) => {
@@ -58,7 +74,7 @@ const DiscountInput = ({
         <button
           type="button"
           disabled={disabled}
-          onClick={() => setMode('percent')}
+          onClick={() => switchMode('percent')}
           className={`${buttonBase} rounded-l-md ${mode === 'percent' ? active : inactive}`}
           aria-pressed={mode === 'percent'}
           title="Discount as a percentage"
@@ -68,7 +84,7 @@ const DiscountInput = ({
         <button
           type="button"
           disabled={disabled}
-          onClick={() => setMode('amount')}
+          onClick={() => switchMode('amount')}
           className={`${buttonBase} -ml-px ${mode === 'amount' ? active : inactive}`}
           aria-pressed={mode === 'amount'}
           title="Discount as a flat amount"
