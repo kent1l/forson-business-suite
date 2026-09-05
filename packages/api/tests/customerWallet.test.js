@@ -159,10 +159,9 @@ describe('Customer Wallet System & Endpoints', () => {
             client.query.mockResolvedValueOnce({ rows: [{ total_amount: '500.00', already_allocated: '0.00' }] });
             // invoice_payment_allocation INSERT
             client.query.mockResolvedValueOnce({});
-            // postInv check
-            client.query.mockResolvedValueOnce({ rows: [{ total_amount: '500.00', already_allocated: '500.00' }] });
-            // invoice status UPDATE
-            client.query.mockResolvedValueOnce({});
+            // recompute_invoice_settlement() -- one call replaces the old
+            // read-then-UPDATE pair (20260906_01)
+            client.query.mockResolvedValueOnce({ rows: [] });
             // arLedger.appendEntry (calls PostgreSQL function append_ar_ledger_entry)
             client.query.mockResolvedValueOnce({ rows: [{ ledger_id: 1 }] });
             // walletService.appendWalletTransaction (calls PostgreSQL function append_wallet_transaction)

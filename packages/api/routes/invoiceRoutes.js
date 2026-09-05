@@ -769,6 +769,13 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
         }
 
 
+        // The status seeded on the INSERT above was a guess from the client's
+        // amount_paid. Now that every tender exists, settle it from the source
+        // rows instead -- one definition, shared with the A/R receipt path
+        // (20260906_01). Cheap and idempotent: the invoice_payments trigger has
+        // already run for each tender, and this simply agrees with it.
+        await client.query('SELECT recompute_invoice_settlement($1)', [newInvoiceId]);
+
         // If a staged sale was converted, resolve it as APPROVED
         if (staged_sale_id) {
             await client.query(`

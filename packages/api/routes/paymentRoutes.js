@@ -234,26 +234,13 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
             totalAllocated += allocAmt;
 
             // ── Step 3: Recompute invoice balance & status ──────────────────────
-            // Uses total allocations regardless of PDC status so the invoice reflects
-            // committed payments. The AR ledger (cash basis) is updated separately.
-            const { rows: [bal] } = await client.query(
-                `SELECT i.total_amount,
-                        COALESCE(SUM(ipa.amount_allocated), 0) AS total_allocated
-                 FROM invoice i
-                 LEFT JOIN invoice_payment_allocation ipa ON ipa.invoice_id = i.invoice_id
-                 WHERE i.invoice_id = $1
-                 GROUP BY i.invoice_id, i.total_amount`,
-                [alloc.invoice_id]
-            );
-            const allocatedForInvoice = parseFloat(bal.total_allocated);
-            const invoiceTotal = parseFloat(bal.total_amount);
-            const newStatus = allocatedForInvoice >= invoiceTotal ? 'Paid'
-                : allocatedForInvoice > 0 ? 'Partially Paid'
-                : 'Unpaid';
-            await client.query(
-                'UPDATE invoice SET status = $1, amount_paid = $2 WHERE invoice_id = $3',
-                [newStatus, allocatedForInvoice, alloc.invoice_id]
-            );
+            // recompute_invoice_settlement() is the only definition of amount_paid
+            // and status (20260906_01). It counts this allocation *and* any tender
+            // taken at the POS -- computing from allocations alone here used to
+            // erase a credit sale's down payment. Committed allocations count
+            // regardless of pdc_status, except a bounced one; the cash-basis AR
+            // ledger is what waits for a cheque to clear.
+            await client.query('SELECT recompute_invoice_settlement($1)', [alloc.invoice_id]);
         }
 
         // ── Step 4: AR ledger — only for instant / already-cleared payments ────
