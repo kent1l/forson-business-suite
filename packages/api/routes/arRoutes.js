@@ -850,6 +850,13 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
             CREDIT_ADJUSTMENT:     'Credit Adjustment',
             PDC_BOUNCED_REVERSAL:  'Cheque Bounced (Reversal)',
             BOUNCE_FEE_PENALTY:    'Bounced Cheque Penalty',
+            // A customer reading their statement is entitled to see what was
+            // collected apart from what was conceded, so these are never folded
+            // into the payment line above.
+            WITHHOLDING_TAX_CREDIT:'Tax Withheld at Source',
+            SETTLEMENT_DISCOUNT:   'Settlement Discount Granted',
+            BALANCE_WRITE_DOWN:    'Balance Written Down',
+            ADJUSTMENT_REVERSAL:   'Adjustment Reversed',
         };
 
         let openingBalance = 0;
@@ -1018,6 +1025,13 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
             CREDIT_ADJUSTMENT:     'Credit Adjustment',
             PDC_BOUNCED_REVERSAL:  'Cheque Bounced — Reversal',
             BOUNCE_FEE_PENALTY:    'Bounced Cheque Penalty',
+            // A customer reading their statement is entitled to see what was
+            // collected apart from what was conceded, so these are never folded
+            // into the payment line above.
+            WITHHOLDING_TAX_CREDIT:'Tax Withheld at Source',
+            SETTLEMENT_DISCOUNT:   'Settlement Discount Granted',
+            BALANCE_WRITE_DOWN:    'Balance Written Down',
+            ADJUSTMENT_REVERSAL:   'Adjustment Reversed',
         };
 
         const ledgerRes = await db.query(`
