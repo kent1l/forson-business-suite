@@ -7,7 +7,11 @@ import test from 'node:test';
 const invoice = { invoice_id: 991, invoice_number: 'INV-202608-0142', balance_due: 12800.00 };
 
 const PROMPT = { reason_code: 'PROMPT_SETTLEMENT', label: 'Prompt Settlement Discount', max_amount: null, requires_note: false };
-const ROUNDING = { reason_code: 'ROUNDING', label: 'Rounding / Centavo Adjustment', max_amount: 1.00, requires_note: false };
+const ROUNDING = { reason_code: 'ROUNDING', label: 'Rounding / Centavo Adjustment', max_amount: null, requires_note: false };
+// No seeded reason carries a cap any more (20260906_09 lifted the last one), but
+// max_amount is still an editable column the owner can set from Settings, so the
+// ceiling it imposes is still live code and still worth pinning.
+const CAPPED = { reason_code: 'CAPPED_EXAMPLE', label: 'Capped Reason', max_amount: 1.00, requires_note: false };
 const DISPUTE = { reason_code: 'DISPUTE_CONCESSION', label: 'Dispute Concession', max_amount: null, requires_note: true };
 
 test('the settle shortcut fills exactly what the cash leaves owing', () => {
@@ -58,22 +62,34 @@ test('a concession with no reason is refused', () => {
     assert.deepStrictEqual(problems, ['Choose a reason for the concession.']);
 });
 
-test('the rounding bucket cannot absorb a real concession', () => {
+test('a reason carrying a cap refuses more than the cap', () => {
     const { problems } = validateDiscounts([invoice], { 991: 800 }, {
         cashByInvoice: { 991: 12000 },
-        reason: ROUNDING,
+        reason: CAPPED,
     });
     assert.strictEqual(problems.length, 1);
     assert.match(problems[0], /capped/);
 });
 
-test('a rounding residue under the cap is fine', () => {
+test('an amount under the cap is fine', () => {
     const centavo = { invoice_id: 7, invoice_number: 'INV-7', balance_due: 1500.45 };
     const { total, problems } = validateDiscounts([centavo], { 7: 0.45 }, {
         cashByInvoice: { 7: 1500.00 },
-        reason: ROUNDING,
+        reason: CAPPED,
     });
     assert.strictEqual(total, 0.45);
+    assert.deepStrictEqual(problems, []);
+});
+
+test('rounding a settlement down to a whole peso is not blocked', () => {
+    // The case the old 1.00 cap on ROUNDING refused: closing 12,847.35 at
+    // 12,845.00 is ordinary counter practice, not a concealed concession.
+    const odd = { invoice_id: 8, invoice_number: 'INV-8', balance_due: 12847.35 };
+    const { total, problems } = validateDiscounts([odd], { 8: 2.35 }, {
+        cashByInvoice: { 8: 12845.00 },
+        reason: ROUNDING,
+    });
+    assert.strictEqual(total, 2.35);
     assert.deepStrictEqual(problems, []);
 });
 

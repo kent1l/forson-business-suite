@@ -176,10 +176,30 @@ async function run() {
       notes: 'short', grantedBy: employeeId,
     }), 'requires a note');
 
+    // No seeded reason carries a cap since 20260906_09 lifted the 1.00 ceiling on
+    // ROUNDING -- it refused the everyday case it was meant to serve, closing an
+    // odd balance at a whole peso. max_amount is still an editable column the
+    // owner can set from Settings, so the ceiling it imposes is still live code:
+    // one is set here, inside the transaction this test rolls back, so the rule
+    // stays pinned without any reason shipping capped.
+    await client.query(`UPDATE ar_adjustment_reason SET max_amount = 1.00 WHERE reason_code = 'ROUNDING'`);
     await expectRejection(arAdjustment.createAdjustment(client, {
       customerId, adjustmentType: 'BALANCE_WRITE_DOWN', reasonCode: 'ROUNDING',
       allocations: [{ invoice_id: guardInvoice, amount: 50.00 }], grantedBy: employeeId,
     }), 'capped at');
+    await client.query(`UPDATE ar_adjustment_reason SET max_amount = NULL WHERE reason_code = 'ROUNDING'`);
+
+    // And uncapped, the ordinary rounding-down case goes through: an odd balance
+    // of 12,847.35 closed at 12,845.00. Given its own invoice so it does not
+    // disturb the guard invoice's balance, which later assertions read.
+    const oddInvoice = await mkInvoice(12847.35);
+    const roundingDoc = await arAdjustment.createAdjustment(client, {
+      customerId, adjustmentType: 'BALANCE_WRITE_DOWN', reasonCode: 'ROUNDING',
+      allocations: [{ invoice_id: oddInvoice, amount: 2.35 }], grantedBy: employeeId,
+    });
+    assert(roundingDoc.status === 'POSTED', 'an uncapped rounding concession should post');
+    assert(Number(roundingDoc.total_amount) === 2.35,
+      `expected a 2.35 rounding concession, got ${roundingDoc.total_amount}`);
 
     await expectRejection(arAdjustment.createAdjustment(client, {
       customerId, adjustmentType: 'SETTLEMENT_DISCOUNT', reasonCode: 'BAD_DEBT_WRITE_OFF',
