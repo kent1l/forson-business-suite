@@ -45,6 +45,7 @@ import ExpensePeriodLocksPage from '../../pages/ExpensePeriodLocksPage';
 import PaperlessReceiptsPage from '../../pages/PaperlessReceiptsPage';
 import SoaGenPage from '../../pages/SoaGenPage';
 import WithholdingTaxPage from '../../pages/WithholdingTaxPage';
+import ARConcessionsPage from '../../pages/ARConcessionsPage';
 
 const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLines, setPosLines }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -73,6 +74,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'cheques_treasury': return <ChequesTreasuryPage pageState={currentPage === 'cheques_treasury' ? pageState : null} />;
             case 'soa_gen': return <SoaGenPage />;
             case 'withholding_tax': return <WithholdingTaxPage />;
+            case 'ar_concessions': return <ARConcessionsPage />;
             case 'staged_sales': return <CashierApprovalDesk onNavigate={onNavigate} />;
             case 'inventory': return <InventoryPage user={user} />;
             case 'cycle_count': return <CycleCountExecutionPage />;

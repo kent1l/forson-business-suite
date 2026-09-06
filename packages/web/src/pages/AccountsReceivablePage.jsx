@@ -37,7 +37,7 @@ const AccountsReceivablePage = ({ pageState }) => {
         setDateRange({ startDate: new Date(range.startDate), endDate: new Date(range.endDate) });
     }, []);
 
-    const overview = useAROverviewData({ dateRange, hasPermission, activeTab, setCustomers });
+    const overview = useAROverviewData({ dateRange, hasPermission, activeTab });
     const ledgerSoa = useARLedgerSoa({ dateRange, customers, setCustomers, activeTab });
     const wallet = useARWallet({ hasPermission, activeTab });
 
@@ -187,6 +187,8 @@ const AccountsReceivablePage = ({ pageState }) => {
                     onSearchChange={(val) => { overview.setCustomerSummarySearchTerm(val); overview.setCustomerSummaryPage(1); }}
                     statusFilter={overview.customerSummaryStatusFilter}
                     onStatusFilterChange={(val) => { overview.setCustomerSummaryStatusFilter(val); overview.setCustomerSummaryPage(1); }}
+                    balanceScope={overview.customerSummaryBalanceScope}
+                    onBalanceScopeChange={(val) => { overview.setCustomerSummaryBalanceScope(val); overview.setCustomerSummaryPage(1); }}
                     sortConfig={overview.customerSummarySortConfig}
                     onSortChange={(cfg) => { overview.setCustomerSummarySortConfig(cfg); overview.setCustomerSummaryPage(1); }}
                     customerSummaryPage={overview.customerSummaryPage}

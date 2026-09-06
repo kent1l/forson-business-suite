@@ -45,6 +45,8 @@ const CustomerSummaryTable = ({
     onSearchChange,
     statusFilter = 'ALL',
     onStatusFilterChange,
+    balanceScope = 'open',
+    onBalanceScopeChange,
     sortConfig = { key: 'invoice_count', direction: 'DESC' },
     onSortChange
 }) => {
@@ -109,6 +111,22 @@ const CustomerSummaryTable = ({
                             </button>
                         )}
                     </div>
+
+                    {/* Balance scope: which accounts appear at all. Defaults to open
+                        balances (the collections worklist), but settled and in-credit
+                        accounts must stay reachable -- a paid account still has history,
+                        and a credit balance is money owed back to the customer. */}
+                    <select
+                        value={balanceScope}
+                        onChange={(e) => onBalanceScopeChange && onBalanceScopeChange(e.target.value)}
+                        className="px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100"
+                        title="Which accounts to list"
+                    >
+                        <option value="open">Open Balances</option>
+                        <option value="all">All Accounts</option>
+                        <option value="settled">Settled (Zero Balance)</option>
+                        <option value="credit">In Credit (Overpaid)</option>
+                    </select>
 
                     {/* Risk Status Filter */}
                     <select

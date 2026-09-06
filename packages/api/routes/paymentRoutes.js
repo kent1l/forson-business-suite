@@ -2,10 +2,12 @@
 
 const express = require('express');
 const db = require('../db');
-const { protect, hasPermission } = require('../middleware/authMiddleware');
+const { protect, hasPermission, userHasPermission } = require('../middleware/authMiddleware');
 const arLedger = require('../services/arLedgerService');
 const walletService = require('../services/customerWalletService');
 const withholdingTax = require('../services/withholdingTaxService');
+const arAdjustment = require('../services/arAdjustmentService');
+const arAdjustmentAuth = require('../services/arAdjustmentAuthService');
 
 const round2 = (n) => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100;
 
@@ -33,7 +35,9 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
         cheque_date,     // ISO date string for PDC cheques
         notes,
         allocations,     // [{invoice_id, amount_allocated}] -- the cash being applied
-        withholding      // [{invoice_id, amount_withheld}] -- tax the customer deducted
+        withholding,     // [{invoice_id, amount_withheld}] -- tax the customer deducted
+        discounts,       // [{invoice_id, amount}] -- balance forgiven to close the invoice
+        discount         // { reason_code, notes, client_ref, authorization_token }
     } = req.body;
 
     const referenceValue = reference || reference_number || null;
@@ -46,6 +50,43 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
     const numAmount = parseFloat(amount);
     if (isNaN(numAmount) || numAmount <= 0) {
         return res.status(400).json({ message: 'Payment amount must be greater than zero.' });
+    }
+
+    // ── Settlement discount, if one was granted alongside this collection ──────
+    // A concession is not money. It never becomes a tender, never lands in
+    // invoice_payment_allocation, and never counts towards the cash the customer
+    // handed over -- it relieves the receivable through its own document so a
+    // cash-basis report can still say what was collected.
+    // Normalized through the same function the service uses, so the amount the
+    // manager's authorization is checked against and the amount actually forgiven
+    // cannot come apart. It rejects a malformed line rather than dropping it.
+    // A row the clerk never typed into is dropped here; anything they DID type is
+    // handed to the normalizer, which refuses a zero or a negative rather than
+    // quietly discarding it. That distinction is the fix for the bypass: a
+    // negative is always something someone entered on purpose.
+    const rawDiscounts = (Array.isArray(discounts) ? discounts : [])
+        .filter(d => d && d.invoice_id != null && d.amount !== null && d.amount !== undefined && d.amount !== '');
+    let discountEntries = [];
+    let totalDiscount = 0;
+    if (rawDiscounts.length > 0) {
+        try {
+            ({ allocations: discountEntries, total: totalDiscount } = arAdjustment.normalizeAllocations(rawDiscounts));
+        } catch (err) {
+            return res.status(err.statusCode || 400).json({ message: err.message });
+        }
+    }
+
+    if (totalDiscount > 0) {
+        if (!discount?.reason_code) {
+            return res.status(400).json({
+                message: 'A concession granted during a collection needs a reason code.',
+            });
+        }
+        if (!userHasPermission(req, 'ar:discount_grant') && !discount?.authorization_token) {
+            return res.status(403).json({
+                message: 'Granting a discount needs authorization from someone who holds the discount permission.',
+            });
+        }
     }
 
     const client = await db.getClient();
@@ -234,26 +275,13 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
             totalAllocated += allocAmt;
 
             // ── Step 3: Recompute invoice balance & status ──────────────────────
-            // Uses total allocations regardless of PDC status so the invoice reflects
-            // committed payments. The AR ledger (cash basis) is updated separately.
-            const { rows: [bal] } = await client.query(
-                `SELECT i.total_amount,
-                        COALESCE(SUM(ipa.amount_allocated), 0) AS total_allocated
-                 FROM invoice i
-                 LEFT JOIN invoice_payment_allocation ipa ON ipa.invoice_id = i.invoice_id
-                 WHERE i.invoice_id = $1
-                 GROUP BY i.invoice_id, i.total_amount`,
-                [alloc.invoice_id]
-            );
-            const allocatedForInvoice = parseFloat(bal.total_allocated);
-            const invoiceTotal = parseFloat(bal.total_amount);
-            const newStatus = allocatedForInvoice >= invoiceTotal ? 'Paid'
-                : allocatedForInvoice > 0 ? 'Partially Paid'
-                : 'Unpaid';
-            await client.query(
-                'UPDATE invoice SET status = $1, amount_paid = $2 WHERE invoice_id = $3',
-                [newStatus, allocatedForInvoice, alloc.invoice_id]
-            );
+            // recompute_invoice_settlement() is the only definition of amount_paid
+            // and status (20260906_01). It counts this allocation *and* any tender
+            // taken at the POS -- computing from allocations alone here used to
+            // erase a credit sale's down payment. Committed allocations count
+            // regardless of pdc_status, except a bounced one; the cash-basis AR
+            // ledger is what waits for a cheque to clear.
+            await client.query('SELECT recompute_invoice_settlement($1)', [alloc.invoice_id]);
         }
 
         // ── Step 4: AR ledger — only for instant / already-cleared payments ────
@@ -304,7 +332,68 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
             }
         }
 
+        // ── Step 4b: The concession ────────────────────────────────────────────
+        // Written last, and that ordering is doing two jobs.
+        //
+        // After the allocations, because createAdjustment measures each invoice's
+        // outstanding balance the same way recompute_invoice_settlement() does --
+        // so with the cash already applied, the rule "cash + withheld + discount
+        // <= balance" needs no separate check here; an over-reaching concession is
+        // refused by the service.
+        //
+        // After the PAYMENT_SETTLED entry, so the concession's ledger row sorts
+        // immediately AFTER the payment it was granted alongside. A collector
+        // reading the statement has to be able to point at the cash on one line
+        // and the forgiven balance on the next.
+        //
+        // Withholding was resolved before this point for the same reason it must
+        // be: the deduction is a function of the invoice's VAT-exclusive base,
+        // which a concession does not change, so the discount can only take what
+        // is left after the tax, never eat into it.
+        let adjustmentDoc = null;
+        if (totalDiscount > 0) {
+            let authorizedBy = null;
+            if (!userHasPermission(req, 'ar:discount_grant')) {
+                authorizedBy = await arAdjustmentAuth.consumeAuthorization(client, {
+                    token: discount.authorization_token,
+                    requestedBy: employee_id,
+                    customerId: customer_id,
+                    totalAmount: totalDiscount,
+                    purpose: 'SETTLEMENT_DISCOUNT',
+                });
+            }
+
+            adjustmentDoc = await arAdjustment.createAdjustment(client, {
+                customerId: customer_id,
+                adjustmentType: 'SETTLEMENT_DISCOUNT',
+                reasonCode: discount.reason_code,
+                allocations: discountEntries,
+                notes: discount.notes || null,
+                grantedBy: employee_id,
+                authorizedBy,
+                clientRef: discount.client_ref || null,
+                customerPaymentId: newPaymentId,
+                // A cheque cannot carry a concession that posts today. If it did,
+                // a bounce would leave the invoice closed by a discount that was
+                // never earned -- so the document is created at PENDING_CLEARANCE,
+                // with no ledger entry and no settlement weight, and pdcService
+                // posts or voids it when the cheque clears or bounces.
+                pendingClearance: isCheque,
+            });
+
+            if (authorizedBy) {
+                await arAdjustmentAuth.linkAuthorizationToAdjustment(client, {
+                    token: discount.authorization_token,
+                    adjustmentId: adjustmentDoc.adjustment_id,
+                });
+            }
+        }
+
         // ── Step 5: Overpayment → store wallet ─────────────────────────────────
+        // The discount is absent from this arithmetic on purpose. Concessions are
+        // not folded into invoice_payment_allocation, so totalAllocated does not
+        // contain one, and a forgiven peso must never come back as store-wallet
+        // credit the customer can spend.
         const excessAmount = round2(numAmount - (totalAllocated - totalWithheld));
         let overpaymentCredited = 0;
         if (excessAmount > 0.005) {
@@ -326,6 +415,9 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
             payment_id: newPaymentId,
             allocated_amount: totalAllocated,
             withheld_amount: totalWithheld,
+            discount_amount: totalDiscount,
+            adjustment_no: adjustmentDoc?.adjustment_no || null,
+            adjustment_status: adjustmentDoc?.status || null,
             overpayment_credited: overpaymentCredited,
             pdc_status: pdcStatusValue,
         });
@@ -333,7 +425,12 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('POST /payments error:', err.message);
-        res.status(500).json({ message: err.message || 'Server error during payment transaction.' });
+        // A concession refused for a business reason (over the balance, a capped
+        // reason, a spent authorization, a closed period) carries its own status.
+        // Reporting those as 500 would tell the clerk the system broke when in
+        // fact it declined, and the message explains exactly what to change.
+        const status = err.statusCode && err.statusCode < 500 ? err.statusCode : 500;
+        res.status(status).json({ message: err.message || 'Server error during payment transaction.' });
     } finally {
         client.release();
     }

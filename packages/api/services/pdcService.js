@@ -1,6 +1,7 @@
 'use strict';
 
 const arLedgerService = require('./arLedgerService');
+const arAdjustmentService = require('./arAdjustmentService');
 
 /**
  * Calculate dynamic maturity details for PDC cheques based on cheque_date vs current date.
@@ -298,27 +299,25 @@ async function verifyPayment(client, { paymentId, sourceTable = 'auto', userId =
       paymentSource: 'customer_payment',
     });
 
-    // Also mark all associated invoices as settled (update amount_paid / status)
-    // using the invoice_payment_allocation totals
+    // A concession granted alongside this cheque has been waiting for exactly
+    // this moment. It posts in the same transaction as the cash: the discount
+    // was earned by the customer settling, and until the cheque cleared there
+    // was no settlement to have earned it.
+    const postedAdjustments = await arAdjustmentService.postPendingForPayment(client, {
+      customerPaymentId: cp.payment_id,
+      employeeId: userId,
+    });
+
+    // Refresh every invoice this cheque was allocated to. The single settlement
+    // definition (20260906_01) is used rather than a local status calculation,
+    // which could only see this payment's own allocations.
     const allocRes = await client.query(
-      `SELECT ipa.invoice_id,
-              SUM(ipa.amount_allocated) AS allocated,
-              i.total_amount
-       FROM invoice_payment_allocation ipa
-       JOIN invoice i ON i.invoice_id = ipa.invoice_id
-       WHERE ipa.payment_id = $1
-       GROUP BY ipa.invoice_id, i.total_amount`,
+      `SELECT DISTINCT invoice_id FROM invoice_payment_allocation WHERE payment_id = $1`,
       [paymentId]
     );
     const allocations = allocRes?.rows || [];
     for (const alloc of allocations) {
-      const totalAllocated = parseFloat(alloc.allocated);
-      const invoiceTotal = parseFloat(alloc.total_amount);
-      const newStatus = totalAllocated >= invoiceTotal ? 'Paid' : 'Partially Paid';
-      await client.query(
-        'UPDATE invoice SET status = $1 WHERE invoice_id = $2',
-        [newStatus, alloc.invoice_id]
-      );
+      await client.query('SELECT recompute_invoice_settlement($1)', [alloc.invoice_id]);
     }
 
     await logChequeClearanceEvent(client, {
@@ -337,6 +336,7 @@ async function verifyPayment(client, { paymentId, sourceTable = 'auto', userId =
       amount: cp.amount,
       pdc_status: 'CLEARED',
       invoice_count: allocations.length,
+      posted_adjustments: postedAdjustments,
     };
 
   } else {
@@ -358,6 +358,13 @@ async function verifyPayment(client, { paymentId, sourceTable = 'auto', userId =
       [paymentId]
     );
 
+    // A POS-time concession hangs off the tender row rather than a
+    // customer_payment, so the same lifecycle applies on this path too.
+    const postedAdjustments = await arAdjustmentService.postPendingForPayment(client, {
+      invoicePaymentId: payment.payment_id,
+      employeeId: userId,
+    });
+
     await logChequeClearanceEvent(client, {
       chequeType: 'INBOUND_CUSTOMER',
       paymentId: payment.payment_id,
@@ -367,7 +374,7 @@ async function verifyPayment(client, { paymentId, sourceTable = 'auto', userId =
       createdBy: userId
     });
 
-    return { ...updated, source_table: 'invoice_payments' };
+    return { ...updated, source_table: 'invoice_payments', posted_adjustments: postedAdjustments };
   }
 }
 
@@ -421,31 +428,29 @@ async function processBouncedCheque(client, { paymentId, sourceTable = 'auto', b
       [paymentId]
     );
 
-    // 2. Reverse invoice statuses — revert back to Unpaid / Partially Paid
+    // 2. Reverse invoice statuses — revert back to Unpaid / Partially Paid.
+    // The bounced allocation row is deliberately left in place as the audit
+    // record; recompute_invoice_settlement() excludes it by joining through
+    // customer_payment.pdc_status (20260906_03), so the exclusion no longer has
+    // to be restated as an "other allocations" subquery here.
     const allocRes = await client.query(
-      `SELECT ipa.invoice_id, ipa.amount_allocated, i.total_amount,
-              COALESCE(other_alloc.total_other, 0) AS other_allocated
-       FROM invoice_payment_allocation ipa
-       JOIN invoice i ON i.invoice_id = ipa.invoice_id
-       LEFT JOIN (
-         SELECT ia2.invoice_id, SUM(ia2.amount_allocated) AS total_other
-         FROM invoice_payment_allocation ia2
-         WHERE ia2.payment_id != $1
-         GROUP BY ia2.invoice_id
-       ) other_alloc ON other_alloc.invoice_id = ipa.invoice_id
-       WHERE ipa.payment_id = $1`,
+      `SELECT DISTINCT invoice_id FROM invoice_payment_allocation WHERE payment_id = $1`,
       [paymentId]
     );
-    const allocations = allocRes?.rows || [];
-    for (const alloc of allocations) {
-      const otherPaid = parseFloat(alloc.other_allocated);
-      const invoiceTotal = parseFloat(alloc.total_amount);
-      const newStatus = otherPaid >= invoiceTotal ? 'Paid' : otherPaid > 0 ? 'Partially Paid' : 'Unpaid';
-      await client.query(
-        'UPDATE invoice SET status = $1, amount_paid = $2 WHERE invoice_id = $3',
-        [newStatus, otherPaid, alloc.invoice_id]
-      );
+    for (const alloc of allocRes?.rows || []) {
+      await client.query('SELECT recompute_invoice_settlement($1)', [alloc.invoice_id]);
     }
+
+    // 2b. Any concession granted alongside this cheque was never earned. It is
+    // still PENDING_CLEARANCE, so it has no ledger entry to unwind and its
+    // allocations never counted towards settlement — voiding it simply leaves
+    // the customer's full balance standing, which is the correct outcome.
+    const voidedAdjustments = await arAdjustmentService.voidPendingForPayment(client, {
+      customerPaymentId: cp.payment_id,
+      reason: reason
+        ? `Cheque ${refNo} bounced: ${reason}`
+        : `Cheque ${refNo} bounced — the concession granted alongside it was never earned.`,
+    });
 
     // 3. AR ledger reversal (+amount to reinstate the receivable)
     await arLedgerService.appendEntry(client, {
@@ -502,6 +507,7 @@ async function processBouncedCheque(client, { paymentId, sourceTable = 'auto', b
       bounceAttempt: attemptNumber,
       creditHold: true,
       creditHoldReason: holdReason,
+      voidedAdjustments,
     };
 
   } else {
@@ -529,6 +535,14 @@ async function processBouncedCheque(client, { paymentId, sourceTable = 'auto', b
       `UPDATE invoice_payments SET payment_status = 'failed', pdc_status = 'BOUNCED' WHERE payment_id = $1`,
       [paymentId]
     );
+
+    // Same rule for a concession granted at the POS against this tender.
+    const voidedAdjustments = await arAdjustmentService.voidPendingForPayment(client, {
+      invoicePaymentId: payment.payment_id,
+      reason: reason
+        ? `Cheque ${refNo} bounced: ${reason}`
+        : `Cheque ${refNo} bounced — the concession granted alongside it was never earned.`,
+    });
 
     await arLedgerService.appendEntry(client, {
       customerId: payment.customer_id,
@@ -583,6 +597,7 @@ async function processBouncedCheque(client, { paymentId, sourceTable = 'auto', b
       bounceAttempt: attemptNumber,
       creditHold: true,
       creditHoldReason: holdReason,
+      voidedAdjustments,
     };
   }
 }

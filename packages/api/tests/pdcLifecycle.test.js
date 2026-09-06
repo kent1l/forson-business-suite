@@ -69,14 +69,19 @@ describe('PDC & Bounced Cheque Lifecycle Engine', () => {
                 query: jest.fn()
                     .mockResolvedValueOnce({ rows: [{ payment_id: 10, customer_id: 5, amount: '5000.00', pdc_status: 'RECEIVED' }] }) // SELECT FOR UPDATE customer_payment
                     .mockResolvedValueOnce({ rows: [] }) // UPDATE customer_payment pdc_status = CLEARED
+                    .mockResolvedValueOnce({ rows: [] }) // SELECT ar_adjustment PENDING_CLEARANCE — none granted with this cheque
                     .mockResolvedValueOnce({ rows: [{ invoice_id: 100, allocated: '5000.00', total_amount: '5000.00' }] }) // SELECT invoice_payment_allocation
                     .mockResolvedValueOnce({ rows: [] }) // UPDATE invoice status = Paid
                     .mockResolvedValueOnce({ rows: [] }) // logChequeClearanceEvent
+                    // Anything further returns an empty result rather than undefined,
+                    // so a query added to the service later fails an assertion about
+                    // behaviour instead of crashing on a destructure.
+                    .mockResolvedValue({ rows: [] })
             };
 
             const result = await pdcService.verifyPayment(mockClient, { paymentId: 10, sourceTable: 'customer_payment', userId: 1 });
 
-            expect(mockClient.query).toHaveBeenCalledTimes(5);
+            expect(mockClient.query).toHaveBeenCalledTimes(6);
             expect(mockClient.query.mock.calls[1][0]).toContain("pdc_status = 'CLEARED'");
             expect(result.pdc_status).toBe('CLEARED');
         });
@@ -102,8 +107,10 @@ describe('PDC & Bounced Cheque Lifecycle Engine', () => {
                     .mockResolvedValueOnce({ rows: [] }) // UPDATE customer_payment pdc_status = BOUNCED
                     .mockResolvedValueOnce({ rows: [{ invoice_id: 100, amount_allocated: '5000.00', total_amount: '5000.00', other_allocated: '0' }] }) // SELECT allocations
                     .mockResolvedValueOnce({ rows: [] }) // UPDATE invoice status & amount_paid
+                    .mockResolvedValueOnce({ rows: [] }) // SELECT ar_adjustment PENDING_CLEARANCE — none to void
                     .mockResolvedValueOnce({ rows: [] }) // UPDATE customer credit_hold = true
                     .mockResolvedValueOnce({ rows: [] }) // logChequeClearanceEvent
+                    .mockResolvedValue({ rows: [] })
             };
 
             const result = await pdcService.processBouncedCheque(mockClient, {
@@ -144,6 +151,9 @@ describe('PDC & Bounced Cheque Lifecycle Engine', () => {
                 bounceAttempt: 1,
                 creditHold: true,
                 creditHoldReason: 'Bounced Cheque CHQ-8899 (Attempt #1): Insufficient Funds',
+                // A concession granted alongside the cheque would be voided here.
+                // This cheque carried none.
+                voidedAdjustments: [],
             });
         });
     });
@@ -169,7 +179,7 @@ describe('PDC & Bounced Cheque Lifecycle Engine', () => {
                     .mockResolvedValueOnce({ rows: [] }) // BEGIN
                     .mockResolvedValueOnce({ rows: [{ payment_id: 10, amount: '5000.00' }] }) // SELECT
                     .mockResolvedValueOnce({ rows: [{ payment_id: 10, payment_status: 'settled', pdc_status: 'CLEARED' }] }) // UPDATE
-                    .mockResolvedValueOnce({ rows: [] }), // COMMIT
+                    .mockResolvedValue({ rows: [] }), // everything else, including COMMIT
                 release: jest.fn()
             };
             db.getClient.mockResolvedValueOnce(mockClient);
@@ -189,7 +199,7 @@ describe('PDC & Bounced Cheque Lifecycle Engine', () => {
                     .mockResolvedValueOnce({ rows: [{ payment_id: 10, invoice_id: 100, amount: '5000.00', customer_id: 5, reference_number: 'CHQ-100' }] }) // SELECT
                     .mockResolvedValueOnce({ rows: [] }) // UPDATE payment
                     .mockResolvedValueOnce({ rows: [] }) // UPDATE customer hold
-                    .mockResolvedValueOnce({ rows: [] }), // COMMIT
+                    .mockResolvedValue({ rows: [] }), // everything else, including COMMIT
                 release: jest.fn()
             };
             db.getClient.mockResolvedValueOnce(mockClient);

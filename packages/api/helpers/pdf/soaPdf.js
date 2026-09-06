@@ -157,6 +157,14 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
 
 
 
+        // A concession keeps its own row, immediately after the payment it belongs
+        // to and never merged into it -- but it is not tinted or tagged. A
+        // statement gets photocopied, faxed and printed on a mono laser, and a
+        // background colour survives none of that: it comes out a grey band that
+        // reads as a smudge or an alteration. What carries the distinction instead
+        // is what survives monochrome -- the ADJ- document number, the row's own
+        // type label, and the summary block, where Payments Received and
+        // Concessions Granted are separate totals that are never added together.
         return `
         <tr>
             <td>${formatDate(row.date)}</td>
@@ -255,6 +263,14 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
         '{{summary.opening_balance}}':   fmt(options.openingBalance || 0),
         '{{summary.total_invoiced}}':    fmt(options.totalInvoiced || 0),
         '{{summary.total_settled}}':     fmt(options.totalSettled || 0),
+        // Split apart deliberately. Summed into one figure, a customer reading
+        // their statement would see money they never paid.
+        '{{summary.total_payments_received}}': fmt(
+            options.totalPaymentsReceived != null
+                ? options.totalPaymentsReceived
+                : (options.totalSettled || 0) - (options.totalConcessions || 0)
+        ),
+        '{{summary.total_concessions}}': fmt(options.totalConcessions || 0),
         '{{summary.net_balance}}':       fmt(options.closingBalance || 0),
         '{{ledger_rows}}':               rowsHtml,
         '{{pending_cheque_note}}':       pendingChequeSection,

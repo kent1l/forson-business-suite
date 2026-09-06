@@ -7,8 +7,22 @@ import InfoTip from '../ui/InfoTip';
 import MathExpressionInput from '../ui/MathExpressionInput';
 import { ICONS } from '../../constants';
 import { allocateCash, withheldFor as computeWithheld, cashCapFor as computeCashCap } from '../../utils/withholdingSettlement';
+import { isChequeMethod } from '../../utils/chequeMethod';
+import { maxDiscountFor, validateDiscounts, discountsPayload } from '../../utils/settlementDiscount';
+import ManagerAuthorizationModal from '../ui/ManagerAuthorizationModal';
+import { useAuth } from '../../contexts/AuthContext';
+import { useSettings } from '../../contexts/SettingsContext';
+
+const MIN_NOTE_LENGTH = 10;
 
 const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
+    const { hasPermission } = useAuth();
+    const { settings } = useSettings();
+    // A holder grants freely: no modal, no extra keystroke. A control that slows
+    // every settlement down gets worked around instead of followed.
+    const canGrantDiscount = hasPermission('ar:discount_grant');
+    const discountsEnabled = String(settings?.ENABLE_AR_ADJUSTMENTS ?? 'true') !== 'false';
+    const confirmPercent = Number(settings?.AR_ADJUSTMENT_CONFIRM_PERCENT ?? 10);
     const [unpaidInvoices, setUnpaidInvoices] = useState([]);
     const [enabledMethods, setEnabledMethods] = useState([]);
     const [walletBalance, setWalletBalance] = useState(0);
@@ -23,6 +37,28 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
     // Only the amounts the clerk has typed over. Everything else stays derived, so a
     // change to the allocation keeps flowing through to the deduction.
     const [withheldOverrides, setWithheldOverrides] = useState({});
+
+    // ── Settlement concessions ────────────────────────────────────────────────
+    // A discount is not a tender. It never enters `splits`, never adds to the cash
+    // received, and never reaches invoice_payment_allocation — it relieves the
+    // receivable through its own document so the day's collections still say what
+    // was actually collected.
+    const [discounts, setDiscounts] = useState({});          // invoice_id -> string
+    const [discountReasons, setDiscountReasons] = useState([]);
+    const [discountReasonCode, setDiscountReasonCode] = useState('');
+    const [discountNotes, setDiscountNotes] = useState('');
+    const [confirmingDiscount, setConfirmingDiscount] = useState(false);
+    // Held in component state only, never localStorage: a shared counter PC must
+    // not carry a manager's approval across a refresh or to the next person.
+    const [authToken, setAuthToken] = useState(null);
+    const [showAuthModal, setShowAuthModal] = useState(false);
+    const [resumeAfterAuth, setResumeAfterAuth] = useState(false);
+    // One idempotency key per opening of the form. A retry after a dropped
+    // connection then returns the concession the first attempt created rather
+    // than forgiving the balance twice.
+    const [discountClientRef] = useState(
+        () => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : null)
+    );
 
     // Derived totals
     const totalSplitAmount = useMemo(() => splits.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0), [splits]);
@@ -58,6 +94,18 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
             ))
             .catch(() => setWithholdingByInvoice({}));
     }, [customer]);
+
+    // Reasons a concession granted during a collection may carry. Write-down-only
+    // reasons (bad debt) are filtered out server-side by applies_to.
+    useEffect(() => {
+        if (!discountsEnabled) return;
+        api.get('/ar/adjustment-reasons', { params: { applies_to: 'SETTLEMENT' } })
+            .then(res => {
+                setDiscountReasons(res.data || []);
+                setDiscountReasonCode(prev => prev || (res.data || [])[0]?.reason_code || '');
+            })
+            .catch(() => setDiscountReasons([]));
+    }, [discountsEnabled]);
 
     // Load enabled payment methods
     useEffect(() => {
@@ -136,6 +184,74 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
         [withholdingRows]
     );
 
+    // ── Concession arithmetic ─────────────────────────────────────────────────
+    // All of it delegated to utils/settlementDiscount.js, so the POS modal and
+    // this form cannot disagree about what a peso of concession means.
+    const cashByInvoice = useMemo(
+        () => Object.fromEntries(unpaidInvoices.map(inv => [String(inv.invoice_id), parseFloat(allocations[inv.invoice_id]) || 0])),
+        [unpaidInvoices, allocations]
+    );
+    const withheldByInvoice = useMemo(
+        () => Object.fromEntries(unpaidInvoices.map(inv => [String(inv.invoice_id), withheldFor(inv)])),
+        [unpaidInvoices, withheldFor]
+    );
+
+    const selectedDiscountReason = useMemo(
+        () => discountReasons.find(r => r.reason_code === discountReasonCode) || null,
+        [discountReasons, discountReasonCode]
+    );
+
+    const discountCheck = useMemo(
+        () => validateDiscounts(unpaidInvoices, discounts, {
+            cashByInvoice,
+            withheldByInvoice,
+            reason: selectedDiscountReason,
+            notes: discountNotes,
+            minNoteLength: MIN_NOTE_LENGTH,
+            formatCurrency: currency,
+        }),
+        [unpaidInvoices, discounts, cashByInvoice, withheldByInvoice, selectedDiscountReason, discountNotes]
+    );
+
+    const totalDiscount = discountCheck.total;
+    const hasDiscount = totalDiscount > 0;
+    const discountPayload = useMemo(() => discountsPayload(discountCheck.byInvoice), [discountCheck.byInvoice]);
+
+    // A concession worth a large share of an invoice's balance is worth a second
+    // look. A speed bump against a mis-keyed amount, not an approval gate — the
+    // approval question is settled by the permission, above.
+    const discountNeedsConfirm = useMemo(() => {
+        if (!confirmPercent || !hasDiscount) return false;
+        return unpaidInvoices.some(inv => {
+            const amt = parseFloat(discounts[inv.invoice_id]) || 0;
+            const balance = parseFloat(inv.balance_due) || 0;
+            return amt > 0 && balance > 0 && (amt / balance) * 100 > confirmPercent;
+        });
+    }, [confirmPercent, hasDiscount, unpaidInvoices, discounts]);
+
+    const setDiscount = (invoiceId, value) => {
+        setDiscounts(d => ({ ...d, [invoiceId]: value }));
+        setConfirmingDiscount(false);
+    };
+
+    // Cash is typed, the concession is derived. The clerk enters the money they
+    // physically counted; this fills in exactly what closing the invoice would
+    // take. Never the other way round — a pre-filled cash figure accepted unread
+    // settles a receivable against money that never arrived.
+    const settleWithDiscount = (inv) => {
+        const key = String(inv.invoice_id);
+        setDiscount(
+            inv.invoice_id,
+            maxDiscountFor(inv, cashByInvoice[key] || 0, withheldByInvoice[key] || 0).toFixed(2)
+        );
+    };
+
+    const clearDiscounts = () => {
+        setDiscounts({});
+        setDiscountNotes('');
+        setConfirmingDiscount(false);
+    };
+
     const addSplit = () => {
         const nextId = (splits[splits.length - 1]?.id || 0) + 1;
         const defaultMethod = enabledMethods[0]?.method_id ?? null;
@@ -176,8 +292,12 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                 return false;
             }
         }
+        if (discountCheck.problems.length > 0) {
+            toast.error(discountCheck.problems[0]);
+            return false;
+        }
         return true;
-    }, [customer?.customer_id, splits, enabledMethods, walletBalance]);
+    }, [customer?.customer_id, splits, enabledMethods, walletBalance, discountCheck.problems]);
 
     // Submit: one POST /payments call per split line (payment instrument).
     // A single cheque → one customer_payment row → one PDC desk entry (not one per invoice).
@@ -191,6 +311,22 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
             .filter(inv => inv.allocated > 0);
 
         let withholdingSent = false;
+
+        // Like `withholding`, the concession belongs to the collection as a whole
+        // rather than to any one instrument, and repeating it on each split line
+        // would forgive the same peso several times; client_ref is the backstop if
+        // a retry ever manages to send it twice anyway.
+        //
+        // Which instrument carries it is not arbitrary. A concession granted
+        // alongside a cheque cannot post until the cheque clears — if it did, a
+        // bounce would leave the invoice closed by a discount that was never
+        // earned. So it rides the cheque when there is one, and only otherwise the
+        // first line. Attaching it to whichever line happened to be first would
+        // post it immediately on a cash-plus-cheque settlement that has not
+        // actually completed.
+        const payable = splits.filter(s => (parseFloat(s.amount) || 0) > 0);
+        const discountCarrier = payable.find(s => isChequeMethod(methodById(s.method_id))) || payable[0] || null;
+        let discountSent = false;
 
         for (const s of splits) {
             const lineAmount = parseFloat(s.amount) || 0;
@@ -222,15 +358,40 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                 // collection as a whole, not to any one cheque, and repeating it on
                 // each split line would record the same withheld peso several times.
                 withholding: withholdingSent ? [] : withholdingPayload,
+                discounts: discountSent || s !== discountCarrier ? [] : discountPayload,
+                discount: discountSent || s !== discountCarrier || discountPayload.length === 0 ? undefined : {
+                    reason_code: discountReasonCode,
+                    notes: discountNotes.trim() || null,
+                    client_ref: discountClientRef,
+                    // Omitted entirely when the clerk holds the permission — the
+                    // server decides which path applies, and sending a token it
+                    // does not need would be one more thing to get wrong.
+                    authorization_token: canGrantDiscount ? undefined : authToken,
+                },
             });
             withholdingSent = true;
+            if (s === discountCarrier) discountSent = true;
         }
-    }, [unpaidInvoices, allocations, splits, physicalReceiptNo, notes, customer?.customer_id, withholdingPayload]);
+    }, [unpaidInvoices, allocations, splits, physicalReceiptNo, notes, customer?.customer_id,
+        withholdingPayload, discountPayload, discountReasonCode, discountNotes, discountClientRef,
+        canGrantDiscount, authToken]);
 
     const handleSubmit = useCallback(async (e) => {
         if (e) e.preventDefault();
         try {
             if (!validateBeforeSubmit()) return;
+
+            // The authorization modal opens on submit, never on typing, so it
+            // cannot interrupt data entry. A permission holder never sees it.
+            if (hasDiscount && !canGrantDiscount && !authToken) {
+                setShowAuthModal(true);
+                return;
+            }
+            if (discountNeedsConfirm && !confirmingDiscount) {
+                setConfirmingDiscount(true);
+                return;
+            }
+
             await toast.promise(
                 submitPayments(),
                 {
@@ -242,8 +403,22 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
             onSave();
         } catch (err) {
             console.error('AR receive payment submit error:', err);
+            // A rejected token has been spent or has expired; asking again is the
+            // only way forward, and keeping the stale one would just fail twice.
+            setAuthToken(null);
+            setConfirmingDiscount(false);
         }
-    }, [validateBeforeSubmit, submitPayments, onSave]);
+    }, [validateBeforeSubmit, submitPayments, onSave, hasDiscount, canGrantDiscount,
+        authToken, discountNeedsConfirm, confirmingDiscount]);
+
+    // The clerk already pressed Process; being asked to press it again after the
+    // manager walks away would be one more chance to lose the token.
+    useEffect(() => {
+        if (resumeAfterAuth && authToken) {
+            setResumeAfterAuth(false);
+            handleSubmit();
+        }
+    }, [resumeAfterAuth, authToken, handleSubmit]);
 
     // Keyboard shortcuts
     useEffect(() => {
@@ -263,6 +438,26 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
     }, [handleSubmit, onCancel, isFormDirty]);
 
     const customerDisplayName = customer?.company_name || `${customer?.first_name || ''} ${customer?.last_name || ''}`;
+
+    // Four column layouts rather than one: an ordinary customer should not see a
+    // Tax Withheld column that will always read a dash, and the concession column
+    // disappears entirely when the feature is switched off in Settings.
+    //
+    // Every class is written out in full. Tailwind reads the source as text, so a
+    // width assembled at runtime would be a class it never generates, and the
+    // column would silently collapse.
+    const showDiscountColumn = discountsEnabled;
+    const cols = hasWithholding
+        ? (showDiscountColumn
+            ? { invoice: 'col-span-3', withheld: 'col-span-2', cash: 'col-span-3', discount: 'col-span-2',
+                mdInvoice: 'md:col-span-3', mdWithheld: 'md:col-span-2', mdCash: 'md:col-span-3', mdDiscount: 'md:col-span-2' }
+            : { invoice: 'col-span-4', withheld: 'col-span-3', cash: 'col-span-3', discount: '',
+                mdInvoice: 'md:col-span-4', mdWithheld: 'md:col-span-3', mdCash: 'md:col-span-3', mdDiscount: '' })
+        : (showDiscountColumn
+            ? { invoice: 'col-span-4', withheld: '', cash: 'col-span-3', discount: 'col-span-3',
+                mdInvoice: 'md:col-span-4', mdWithheld: '', mdCash: 'md:col-span-3', mdDiscount: 'md:col-span-3' }
+            : { invoice: 'col-span-6', withheld: '', cash: 'col-span-4', discount: '',
+                mdInvoice: 'md:col-span-6', mdWithheld: '', mdCash: 'md:col-span-4', mdDiscount: '' });
 
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -520,6 +715,7 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                                         </div>
                                         <div className="text-[11px] text-sky-700 font-mono">
                                             {currency(totalAllocated)} cash + {currency(totalWithheld)} withheld
+                                            {hasDiscount && <> + {currency(totalDiscount)} discount</>}
                                         </div>
                                     </div>
                                 </div>
@@ -538,12 +734,127 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                             </div>
                         )}
 
+                        {/* The concession block. It sits below the tender summary and
+                            above the invoice table, and appears only once something has
+                            actually been forgiven — a reason picker on screen for every
+                            routine collection is a reason picker nobody reads. */}
+                        {showDiscountColumn && hasDiscount && (
+                            <div className="mx-5 mt-4 p-3 rounded-xl bg-amber-50 border border-amber-200 space-y-3">
+                                <div className="flex items-start justify-between gap-4 flex-wrap">
+                                    <div>
+                                        <div className="text-xs font-bold uppercase tracking-wider text-amber-900 flex items-center gap-1">
+                                            Concession granted
+                                            <InfoTip label="Concession granted">
+                                                Part of the balance forgiven so the invoice can close. It is <strong>not money received</strong>:
+                                                it never appears in the day&rsquo;s collections, never becomes store-wallet credit, and is
+                                                printed on the statement as its own line beside the payment. The BIR official receipt still
+                                                shows only the cash actually handed over.
+                                            </InfoTip>
+                                        </div>
+                                        <p className="text-[11px] text-amber-800 mt-0.5">
+                                            Recorded against {customerDisplayName} as a numbered adjustment, with your name on it.
+                                        </p>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-[11px] text-amber-800">Settled by this receipt</div>
+                                        <div className="text-lg font-bold text-amber-900 font-mono">
+                                            {currency(totalAllocated + totalWithheld + totalDiscount)}
+                                        </div>
+                                        <div className="text-[11px] text-amber-800 font-mono">
+                                            {currency(totalAllocated)} cash
+                                            {totalWithheld > 0 && <> + {currency(totalWithheld)} withheld</>}
+                                            {' '}+ <span className="font-bold">{currency(totalDiscount)} discount</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-[11px] font-bold text-amber-900 uppercase tracking-wider mb-1">
+                                            Reason *
+                                        </label>
+                                        <select
+                                            value={discountReasonCode}
+                                            onChange={(e) => { setDiscountReasonCode(e.target.value); setConfirmingDiscount(false); }}
+                                            className="w-full px-3 py-2 bg-white border border-amber-300 rounded-lg text-sm font-medium text-amber-950 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                        >
+                                            {discountReasons.length === 0 && <option value="">No reasons configured</option>}
+                                            {discountReasons.map(r => (
+                                                <option key={r.reason_code} value={r.reason_code}>{r.label}</option>
+                                            ))}
+                                        </select>
+                                        {selectedDiscountReason?.description && (
+                                            <p className="text-[11px] text-amber-800 mt-1">{selectedDiscountReason.description}</p>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="block text-[11px] font-bold text-amber-900 uppercase tracking-wider mb-1">
+                                            Note {selectedDiscountReason?.requires_note && <span className="text-red-600">*</span>}
+                                        </label>
+                                        <textarea
+                                            value={discountNotes}
+                                            onChange={(e) => { setDiscountNotes(e.target.value); setConfirmingDiscount(false); }}
+                                            rows={2}
+                                            placeholder={selectedDiscountReason?.requires_note
+                                                ? 'Why is this being forgiven? (required)'
+                                                : 'Optional — what was agreed, and with whom'}
+                                            className="w-full px-3 py-2 bg-white border border-amber-300 rounded-lg text-sm text-amber-950 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Shown while typing, but it does not interrupt: the
+                                    authorization prompt opens on submit, not on the
+                                    keystroke that first enters an amount. */}
+                                {!canGrantDiscount && (
+                                    <div className="flex items-center gap-2 text-[11px] text-amber-900 bg-amber-100/70 border border-amber-300 rounded-lg px-3 py-2">
+                                        <Icon path={ICONS.warning} className="w-4 h-4 shrink-0 text-amber-700" />
+                                        <span>
+                                            {authToken
+                                                ? 'Authorized. Submitting will record the manager who approved it alongside your name.'
+                                                : 'Manager authorization required — you will be asked for it when you submit.'}
+                                        </span>
+                                    </div>
+                                )}
+
+                                {discountCheck.problems.length > 0 && (
+                                    <ul className="text-[11px] text-red-700 space-y-1 list-disc list-inside">
+                                        {discountCheck.problems.map((prob, i) => <li key={i}>{prob}</li>)}
+                                    </ul>
+                                )}
+
+                                {confirmingDiscount && discountCheck.problems.length === 0 && (
+                                    <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2">
+                                        <p className="text-sm font-semibold text-red-900">
+                                            Forgive {currency(totalDiscount)}?
+                                        </p>
+                                        <p className="text-[11px] text-red-800 mt-0.5">
+                                            That is more than {confirmPercent}% of an invoice&rsquo;s balance. It can be reversed
+                                            afterwards, but the concession and its reversal both stay on the customer&rsquo;s statement.
+                                            Press Process &amp; Save again to confirm.
+                                        </p>
+                                    </div>
+                                )}
+
+                                <div className="flex justify-end">
+                                    <button
+                                        type="button"
+                                        onClick={clearDiscounts}
+                                        className="text-[11px] font-semibold text-amber-800 hover:text-amber-950 hover:underline"
+                                    >
+                                        Clear concession
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
                         <div className="p-0">
                             <div className="hidden md:grid grid-cols-12 gap-3 px-5 py-2.5 bg-slate-100/70 text-[11px] font-bold uppercase tracking-wider text-slate-600 border-b border-slate-200">
-                                <div className={hasWithholding ? 'col-span-4' : 'col-span-6'}>Invoice #</div>
+                                <div className={cols.invoice}>Invoice #</div>
                                 <div className="col-span-2 text-right">Balance Due</div>
-                                {hasWithholding && <div className="col-span-3">Tax Withheld</div>}
-                                <div className={hasWithholding ? 'col-span-3' : 'col-span-4'}>Cash Applied</div>
+                                {hasWithholding && <div className={cols.withheld}>Tax Withheld</div>}
+                                <div className={cols.cash}>Cash Applied</div>
+                                {showDiscountColumn && <div className={cols.discount}>Discount</div>}
                             </div>
 
                             <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
@@ -555,12 +866,17 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                                     // Cash plus tax cannot settle more than is owed, and the
                                     // deduction itself cannot exceed what could plausibly be
                                     // withheld -- the server rejects both.
-                                    const over = allocVal + withheldValue > balance + 0.01;
+                                    const discountVal = parseFloat(discounts[inv.invoice_id]) || 0;
+                                    const over = allocVal + withheldValue + discountVal > balance + 0.01;
                                     const overWithheld = !!wt && withheldValue > Number(wt.ceiling) + 0.01;
+                                    // What closing this invoice out would take, once the
+                                    // cash counted and the tax withheld are applied.
+                                    const settleRoom = maxDiscountFor(inv, allocVal, withheldValue);
+                                    const overDiscount = discountVal > settleRoom + 0.005;
 
                                     return (
                                         <div key={inv.invoice_id} className="grid grid-cols-12 gap-3 items-center px-5 py-3.5 hover:bg-slate-50/70 transition-all">
-                                            <div className={`col-span-12 ${hasWithholding ? 'md:col-span-4' : 'md:col-span-6'}`}>
+                                            <div className={`col-span-12 ${cols.mdInvoice}`}>
                                                 <div className="text-sm font-bold text-slate-900">{inv.invoice_number}</div>
                                                 <div className="text-xs text-slate-500">
                                                     Date: {inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString() : 'N/A'}
@@ -577,7 +893,7 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                                             </div>
 
                                             {hasWithholding && (
-                                                <div className="col-span-12 md:col-span-3">
+                                                <div className={`col-span-12 ${cols.mdWithheld}`}>
                                                     {wt ? (
                                                         <div className="relative">
                                                             <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-xs font-bold text-sky-500">₱</span>
@@ -601,7 +917,7 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                                                 </div>
                                             )}
 
-                                            <div className={`col-span-12 ${hasWithholding ? 'md:col-span-3' : 'md:col-span-4'}`}>
+                                            <div className={`col-span-12 ${cols.mdCash}`}>
                                                 <div className="relative">
                                                     <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-xs font-bold text-slate-400">₱</span>
                                                     <MathExpressionInput
@@ -617,6 +933,39 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                                                     />
                                                 </div>
                                             </div>
+
+                                            {/* The concession. Styled apart from the cash
+                                                columns on purpose — amber rather than the
+                                                tender palette — because nothing in this
+                                                column is money the customer handed over. */}
+                                            {showDiscountColumn && (
+                                                <div className={`col-span-12 ${cols.mdDiscount}`}>
+                                                    <div className="relative">
+                                                        <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-xs font-bold text-amber-500">₱</span>
+                                                        <MathExpressionInput
+                                                            precision={2}
+                                                            className={`w-full pl-6 pr-2.5 py-1.5 border rounded-lg text-sm font-mono font-bold transition-all ${
+                                                                overDiscount
+                                                                    ? 'border-red-300 bg-red-50 text-red-900 focus:ring-red-400'
+                                                                    : 'border-amber-300 bg-amber-50/70 text-amber-900 focus:ring-amber-500 focus:border-amber-500'
+                                                            }`}
+                                                            value={discounts[inv.invoice_id] || ''}
+                                                            onChange={(val) => setDiscount(inv.invoice_id, val)}
+                                                            placeholder="0.00"
+                                                        />
+                                                    </div>
+                                                    {settleRoom > 0.005 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => settleWithDiscount(inv)}
+                                                            className="mt-1 text-[11px] font-semibold text-amber-700 hover:text-amber-900 hover:underline"
+                                                            title={`Forgive the remaining ${currency(settleRoom)} and close this invoice`}
+                                                        >
+                                                            Settle &mdash; {currency(settleRoom)}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                     );
                                 })}
@@ -664,10 +1013,23 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                         type="submit"
                         className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition-all"
                     >
-                        Process & Save Payment
+                        {confirmingDiscount ? `Confirm ${currency(totalDiscount)} concession` : 'Process & Save Payment'}
                     </button>
                 </div>
             </div>
+
+            <ManagerAuthorizationModal
+                isOpen={showAuthModal}
+                onClose={() => setShowAuthModal(false)}
+                permissionLabel="the discount permission"
+                actionLabel={`a ${currency(totalDiscount)} concession for ${customerDisplayName}`}
+                amount={totalDiscount}
+                // The authorization is bound to the kind of concession it approves, so
+                // one given for a discount on money being collected cannot later be
+                // spent on a write-off where none is.
+                context={{ customer_id: customer?.customer_id, total_amount: totalDiscount, purpose: 'SETTLEMENT_DISCOUNT' }}
+                onAuthorized={(token) => { setAuthToken(token); setResumeAfterAuth(true); }}
+            />
         </form>
     );
 };

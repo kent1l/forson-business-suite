@@ -113,7 +113,10 @@
 
         .summary-grid {
             display: grid;
-            grid-template-columns: repeat(5, 1fr);
+            /* Six, not five: "Total Paid / Credited" was split into Payments
+               Received and Concessions Granted, because a concession is not a
+               payment and the two must never appear as one number. */
+            grid-template-columns: repeat(6, 1fr);
             gap: 8px;
             margin-bottom: 16px;
         }
@@ -375,8 +378,16 @@
                 <div class="value">{{summary.total_invoiced}}</div>
             </div>
             <div class="summary-card">
-                <div class="label">Total Paid / Credited (-)</div>
-                <div class="value">{{summary.total_settled}}</div>
+                <div class="label">Payments Received (-)</div>
+                <div class="value">{{summary.total_payments_received}}</div>
+            </div>
+            <!-- Never added to the figure above. A concession relieves the balance
+                 without any money changing hands, and a statement that showed the
+                 two as one total would tell the customer they paid more than they
+                 did. -->
+            <div class="summary-card">
+                <div class="label">Concessions Granted (-)</div>
+                <div class="value">{{summary.total_concessions}}</div>
             </div>
             <div class="summary-card highlight">
                 <div class="label">Net Balance Due</div>

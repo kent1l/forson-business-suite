@@ -616,7 +616,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
         }
     };
 
-    const handleConfirmSplitPayment = async (payments, physicalReceiptNo, { employeeId } = {}) => {
+    const handleConfirmSplitPayment = async (payments, physicalReceiptNo, { employeeId, discount } = {}) => {
         try {
             const normalizedPRN = normalizePhysicalReceipt(physicalReceiptInput || physicalReceiptNo || '');
 
@@ -639,7 +639,12 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                     // instrument's identity and must not be overwritten with the
                     // physical receipt number, which is already sent separately.
                     reference: p.reference || normalizedPRN
-                }))
+                })),
+                // Sent as its own field rather than inside `payments`: a concession
+                // is not a tender. The API records it as an ar_adjustment against
+                // the new invoice, so the sale keeps its full value for VAT and for
+                // revenue and only its collectability changes.
+                ...(discount ? { discount } : {})
             };
 
             const invoiceResponse = await api.post('/invoices', invoicePayload);

@@ -1,11 +1,12 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 
 // Owns all state/data-fetching for the AR "Customer Ledger & SOA" tab: the
 // customer search combobox, ledger fetch, and SOA PDF export.
-// `customers`/`setCustomers` is lifted to the page since the Overview tab also
-// populates it, and this tab lazily loads it if Overview hasn't run yet.
+// The combobox searches server-side: a statement can be issued for any customer,
+// including fully settled ones, so the picker must not be limited to whatever page
+// of customers happened to be preloaded.
 export default function useARLedgerSoa({ dateRange, customers, setCustomers, activeTab }) {
     const [soaCustomerId, setSoaCustomerId] = useState('');
     const [soaLedger, setSoaLedger] = useState(null);
@@ -27,15 +28,9 @@ export default function useARLedgerSoa({ dateRange, customers, setCustomers, act
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    const filteredSoaCustomers = useMemo(() => {
-        if (!soaSearchQuery.trim()) return customers;
-        const q = soaSearchQuery.toLowerCase();
-        return customers.filter(c => {
-            const name = (c.company_name || `${c.first_name || ''} ${c.last_name || ''}`).toLowerCase();
-            const phone = (c.phone || '').toLowerCase();
-            return name.includes(q) || phone.includes(q);
-        });
-    }, [customers, soaSearchQuery]);
+    // The server returns the matching page for the current query; filtering again on
+    // the client would only re-hide customers the server deliberately included.
+    const filteredSoaCustomers = customers;
 
     useEffect(() => {
         setSoaHighlightedIndex(filteredSoaCustomers.length > 0 ? 0 : -1);
@@ -140,15 +135,20 @@ export default function useARLedgerSoa({ dateRange, customers, setCustomers, act
         }
     }, [soaCustomerId, dateRange, soaLedger, attachReceiptImages]);
 
-    // Lazily load the shared customer list if the Overview tab hasn't populated it yet.
+    // Debounced server-side customer search. `search` is empty on first open, which
+    // returns the first page of all customers regardless of balance.
     useEffect(() => {
-        if (activeTab === 'ledger_soa' && customers.length === 0) {
-            api.get('/customers/with-balances', { params: { paginated: 1, page: 1, pageSize: 500 } })
+        if (activeTab !== 'ledger_soa') return;
+        const timer = setTimeout(() => {
+            api.get('/customers/with-balances', {
+                params: { paginated: 1, page: 1, pageSize: 50, search: soaSearchQuery.trim() }
+            })
                 .then(res => setCustomers(res.data?.data || res.data || []))
                 .catch(err => console.error('Failed to load customers for SOA:', err));
-        }
+        }, 250);
+        return () => clearTimeout(timer);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeTab, customers.length]);
+    }, [activeTab, soaSearchQuery]);
 
     useEffect(() => {
         if (soaCustomerId) {

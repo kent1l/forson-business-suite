@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import toast from 'react-hot-toast';
+import api from '../../../api';
 import Icon from '../../ui/Icon';
 import InfoTip from '../../ui/InfoTip';
 import { ICONS } from '../../../constants';
@@ -6,7 +8,10 @@ import { formatCurrency } from '../../../utils/currency';
 import LoadingState from '../../ui/LoadingState';
 import EmptyState from '../../ui/EmptyState';
 import ChangeTransactionDateModal from '../../common/ChangeTransactionDateModal';
+import RecordAdjustmentModal from '../RecordAdjustmentModal';
+import ReverseAdjustmentModal from '../ReverseAdjustmentModal';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useSettings } from '../../../contexts/SettingsContext';
 
 // Maps an ar_ledger row's entry_type (plus payment_source, which
 // disambiguates the two payment tables sharing the "PAYMENT_SETTLED" type —
@@ -25,6 +30,30 @@ function resolveDateChangeTarget(row) {
             return row.cn_id ? { kind: 'credit_note', id: row.cn_id } : null;
         default:
             return null;
+    }
+}
+
+// Ledger rows an ar_adjustment document produced. A reversal is itself one of
+// these, but reversing a reversal is not a thing — correcting that means posting
+// a fresh adjustment — so ADJUSTMENT_REVERSAL is deliberately absent.
+const REVERSIBLE_ADJUSTMENT_TYPES = new Set(['SETTLEMENT_DISCOUNT', 'BALANCE_WRITE_DOWN']);
+
+/**
+ * Opens the Collection Acknowledgement for one A/R receipt in a new tab.
+ *
+ * Fetched as a blob through the api client rather than linked to directly: the
+ * endpoint sits behind the same Bearer token as everything else, which a plain
+ * anchor cannot carry.
+ */
+async function openCollectionReceipt(paymentId) {
+    try {
+        const response = await api.get(`/ar/payments/${paymentId}/receipt/pdf`, { responseType: 'blob' });
+        const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+        window.open(url, '_blank', 'noopener');
+        // Revoked late: the new tab has to have finished reading it first.
+        setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+    } catch {
+        toast.error('Could not generate the collection acknowledgement.');
     }
 }
 
@@ -53,8 +82,14 @@ const ARLedgerSoaTab = ({
     onAfterDateChange,
 }) => {
     const { hasPermission } = useAuth();
+    const { settings } = useSettings();
     const canChangeDate = hasPermission(['transaction:change_date', 'transaction:change_date_unrestricted']);
+    const adjustmentsEnabled = settings?.ENABLE_AR_ADJUSTMENTS !== 'false';
+    const canGrantAdjustment = adjustmentsEnabled && hasPermission('ar:discount_grant');
+    const canReverseAdjustment = adjustmentsEnabled && hasPermission('ar:adjustment_reverse');
     const [dateChangeTarget, setDateChangeTarget] = useState(null); // { kind, id, currentDate, label } | null
+    const [adjustmentModalOpen, setAdjustmentModalOpen] = useState(false);
+    const [reversalTarget, setReversalTarget] = useState(null); // ledger row | null
 
     return (
         <div className="space-y-6">
@@ -189,6 +224,17 @@ const ARLedgerSoaTab = ({
                                     Account ID: <span className="font-mono font-semibold">CUST-{soaLedger.customer.customer_id}</span> | {soaLedger.customer.email || 'No email'} | {soaLedger.customer.phone || 'No phone'}
                                 </p>
                             </div>
+                            <div className="flex items-center gap-4">
+                            {canGrantAdjustment && (
+                                <button
+                                    type="button"
+                                    onClick={() => setAdjustmentModalOpen(true)}
+                                    className="px-3 py-2 rounded-lg text-sm font-semibold text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-800/60 hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-colors whitespace-nowrap"
+                                    title="Write down part of this balance without receiving payment"
+                                >
+                                    Record Adjustment
+                                </button>
+                            )}
                             <div className="text-right">
                                 <div className="text-xs uppercase font-semibold text-gray-500 dark:text-slate-400 flex items-center justify-end gap-1">
                                     Net Account Balance
@@ -197,6 +243,7 @@ const ARLedgerSoaTab = ({
                                     </InfoTip>
                                 </div>
                                 <div className="text-2xl font-bold font-mono text-primary-600 dark:text-primary-400">{formatCurrency(soaLedger.closing_balance)}</div>
+                            </div>
                             </div>
                         </div>
 
@@ -260,7 +307,34 @@ const ARLedgerSoaTab = ({
                                                 )}
                                             </td>
                                             <td className="px-5 py-3.5">
-                                                <div className="font-semibold text-gray-800 dark:text-slate-100">{row.type_label || row.event_type}</div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-semibold text-gray-800 dark:text-slate-100">{row.type_label || row.event_type}</span>
+                                                    {canReverseAdjustment && REVERSIBLE_ADJUSTMENT_TYPES.has(row.event_type) && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setReversalTarget(row)}
+                                                            className="text-[11px] font-semibold text-red-600 dark:text-red-400 hover:underline"
+                                                        >
+                                                            Reverse
+                                                        </button>
+                                                    )}
+                                                    {/* Not the BIR Official Receipt — that comes off a
+                                                        pre-printed book. This sheet shows how the
+                                                        collection was applied, with the cash received
+                                                        and any balance forgiven as separate figures. */}
+                                                    {row.event_type === 'PAYMENT_SETTLED'
+                                                        && row.payment_id
+                                                        && row.payment_source !== 'invoice_payments' && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => openCollectionReceipt(row.payment_id)}
+                                                            className="text-[11px] font-semibold text-primary-600 dark:text-primary-400 hover:underline"
+                                                            title="Collection acknowledgement — how this payment was applied"
+                                                        >
+                                                            Acknowledgement
+                                                        </button>
+                                                    )}
+                                                </div>
                                                 {row.description && <div className="text-xs text-gray-500 dark:text-slate-400">{row.description}</div>}
                                             </td>
                                             <td className="px-5 py-3.5 text-right font-mono text-gray-900 dark:text-slate-100 font-medium">{row.debit_amount ? formatCurrency(row.debit_amount) : '—'}</td>
@@ -326,6 +400,27 @@ const ARLedgerSoaTab = ({
                         </div>
                     )}
                 </div>
+            )}
+
+            {adjustmentModalOpen && soaLedger?.customer && (
+                <RecordAdjustmentModal
+                    isOpen={adjustmentModalOpen}
+                    onClose={() => setAdjustmentModalOpen(false)}
+                    customer={soaLedger.customer}
+                    onSaved={() => onAfterDateChange && onAfterDateChange()}
+                />
+            )}
+
+            {reversalTarget && (
+                <ReverseAdjustmentModal
+                    isOpen={!!reversalTarget}
+                    onClose={() => setReversalTarget(null)}
+                    ledgerRow={reversalTarget}
+                    onReversed={() => {
+                        setReversalTarget(null);
+                        onAfterDateChange && onAfterDateChange();
+                    }}
+                />
             )}
 
             {dateChangeTarget && (
