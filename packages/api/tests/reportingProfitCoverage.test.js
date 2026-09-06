@@ -149,6 +149,17 @@ describe('GET /api/reports/sales-summary', () => {
         expect(res.body.summary.profitBasis).toBe('costed_lines');
     });
 
+    test('leaves per-line cost blank rather than 0 in the exported detail rows', async () => {
+        const client = mockClient(SUMMARY_ROW);
+        await request(app).get('/api/reports/sales-summary')
+            .query({ startDate: '2026-01-01', endDate: '2026-01-31' });
+
+        const detailSql = client.query.mock.calls.map((c) => c[0]).find((t) => /AS line_cost/.test(t));
+        // A 0.00 in a cost column of the CSV invites Total - Cost to be summed as profit,
+        // which is the very calculation this fix removes from the report itself.
+        expect(detailSql).toMatch(/CASE WHEN .*cost_at_sale > 0.* THEN .* END AS line_cost/s);
+    });
+
     test('still reports total sales across every line', async () => {
         mockClient(SUMMARY_ROW);
         const res = await request(app).get('/api/reports/sales-summary')

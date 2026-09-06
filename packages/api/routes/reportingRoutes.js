@@ -36,7 +36,10 @@ router.get('/reports/sales-summary', protect, hasPermission('reports:view'), asy
                 (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers,
                 il.quantity, il.sale_price,
                 (il.quantity * il.sale_price) AS line_total,
-                (il.quantity * il.cost_at_sale) AS line_cost
+                -- Left blank rather than 0 where no cost was recorded. This column reaches the
+                -- user through the CSV export, and a 0.00 in a cost column invites exactly the
+                -- calculation this fix removes from the report: Total - Cost as "profit".
+                CASE WHEN ${costedLineCondition('il')} THEN (il.quantity * il.cost_at_sale) END AS line_cost
             FROM invoice i
             JOIN invoice_line il ON i.invoice_id = il.invoice_id
             JOIN part p ON il.part_id = p.part_id
