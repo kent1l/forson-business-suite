@@ -7,6 +7,7 @@ import ReportCard from './ReportCard';
 import PaginationControls from '../ui/PaginationControls';
 import SortableHeader from '../ui/SortableHeader';
 import InfoTip from '../ui/InfoTip';
+import CostCoverageNotice from '../ui/CostCoverageNotice';
 import { getPaginatedPayload } from '../../utils/paginatedResponse';
 import { sortData } from '../../utils/sortData';
 import { format, parseISO } from 'date-fns';
@@ -132,20 +133,41 @@ const SalesReport = () => {
             {loading ? <p className="text-sm text-gray-500 dark:text-slate-400">Loading report...</p> : summary && (
                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
                     <ReportCard title="Total Sales" value={summary.totalSales} icon={ICONS.invoice} color={{bg: 'bg-success-100 dark:bg-success-900/30', text: 'text-success-700 dark:text-success-400'}} isCurrency={true} />
-                    <ReportCard title="Total Cost" value={summary.totalCost} icon={ICONS.receipt} color={{bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-700 dark:text-amber-400'}} isCurrency={true} />
                     <ReportCard
                         title={
                             <span className="inline-flex items-center gap-1">
-                                Profit
-                                <InfoTip label="Profit">
-                                    Profit = Total Sales − Total Cost for the selected period.
+                                Cost of Sales
+                                <InfoTip label="Cost of Sales">
+                                    The cost of the items sold, counted only where a cost was actually
+                                    recorded against the sale. Items sold without a recorded cost are
+                                    left out, so this is the cost of the measured portion of sales —
+                                    not of every sale in the period.
+                                </InfoTip>
+                            </span>
+                        }
+                        value={summary.totalCost}
+                        icon={ICONS.receipt}
+                        color={{bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-700 dark:text-amber-400'}}
+                        isCurrency={true}
+                    />
+                    <ReportCard
+                        title={
+                            <span className="inline-flex items-center gap-1">
+                                Profit (measured)
+                                <InfoTip label="Profit (measured)">
+                                    Profit = Sales − Cost of Sales, counted only over items whose cost
+                                    was recorded. Items with no recorded cost are excluded from both
+                                    sides rather than treated as costing nothing, so this figure covers
+                                    part of the period&apos;s sales. The note underneath says how much.
                                 </InfoTip>
                             </span>
                         }
                         value={summary.profit}
+                        emptyLabel="No cost data"
                         icon={ICONS.dashboard}
                         color={{bg: 'bg-primary-100 dark:bg-primary-900/30', text: 'text-primary-700 dark:text-primary-400'}}
                         isCurrency={true}
+                        footer={<CostCoverageNotice coverage={summary.coverage} />}
                     />
                     <ReportCard title="Total Invoices" value={summary.totalInvoices} icon={ICONS.parts} color={{bg: 'bg-indigo-100 dark:bg-indigo-900/30', text: 'text-indigo-700 dark:text-indigo-400'}} />
                 </div>

@@ -47,12 +47,24 @@ of tabs — pick a tab, set your filters, and view the results on screen or expo
 
 ### Key Calculations
 
-**Profit (Sales Summary) = Total Sales − Total Cost.** Example: if Total Sales for the day is
-₱45,000.00 and Total Cost is ₱31,500.00, Profit shown on the summary card is ₱13,500.00.
+**Profit (measured) = Costed Sales − Cost of Sales.** Profit is calculated only over the items
+whose cost was actually recorded at the time of sale. Items sold without a recorded cost are left
+out of *both* sides rather than being treated as costing nothing, so the Profit card describes a
+portion of the period's sales. The note under the card says which portion — for example
+"Profit measured on 20.5% of sales". Example: if the period's Costed Sales are ₱2,297,769.23 and
+Cost of Sales is ₱1,539,693.04, the card shows ₱758,076.19 with a coverage note beneath it.
 
-**Total Profit (Profitability by Product) = Total Revenue − Total Cost**, calculated per item, then
-listed line by line. Example: item ITM-00214 with Total Revenue ₱8,000.00 and Total Cost ₱5,200.00
-shows Total Profit ₱2,800.00 on its row.
+> ⚠️ Important — this is why the Profit card can look far smaller than Total Sales would suggest.
+> Most items in the catalogue have no cost on file, so most sales cannot be costed. Raising the
+> coverage percentage is a matter of recording costs, not of changing the report: use
+> **Cost Data Health** to find items with no cost basis. Before this was corrected, uncosted
+> sales were counted as pure profit, which overstated profit substantially.
+
+**Total Profit (Profitability by Product) = Revenue − Cost**, calculated per item over that item's
+costed sales only. An item whose sales were never costed shows **No cost data** rather than a
+number, and an amber dot next to the item name marks rows whose cost coverage is incomplete.
+Example: item ITM-00214 with ₱8,000.00 of costed revenue and ₱5,200.00 of cost shows Total Profit
+₱2,800.00 on its row.
 
 **Total Value (Inventory Valuation) = Stock on Hand × WAC.** WAC ("Weighted Average Cost") is the
 item's blended average cost across all purchases, not the price of the most recent purchase.
@@ -69,15 +81,19 @@ free to explore filters freely.
 
 1. Open **Reports** and make sure the **Sales Summary (Net)** tab is selected (it's the default tab).
 2. Set **Start Date** and **End Date**.
-3. Click **View Report**. The summary cards — **Total Sales**, **Total Cost**, **Profit**, **Total
-   Invoices** — update, and the table below lists every line item sold in the period with its Date,
-   Invoice #, Item, and Total.
-4. Click any column header (Date, Invoice #, Item, Total) to sort by that column.
-5. To download the results instead, click **Export CSV**.
+3. Click **View Report**. The summary cards — **Total Sales**, **Cost of Sales**,
+   **Profit (measured)**, **Total Invoices** — update, and the table below lists every line item
+   sold in the period with its Date, Invoice #, Item, and Total.
+4. Read the coverage note under **Profit (measured)**. It tells you what share of the period's
+   sales could actually be costed. If it says "No cost data for this period", nothing sold in that
+   range had a cost on file and no profit figure is shown at all.
+5. Click any column header (Date, Invoice #, Item, Total) to sort by that column.
+6. To download the results instead, click **Export CSV**.
 
 **Example:** Set Start Date `2026-08-01` and End Date `2026-08-17`, click **View Report**. The
-summary shows Total Sales ₱312,400.00, Total Cost ₱219,600.00, Profit ₱92,800.00, Total Invoices 148.
-Scrolling the table shows invoice `INV-2026-000842` with item "Brake Pad Set – Front" at ₱1,120.00.
+summary shows Total Sales ₱312,400.00, Cost of Sales ₱62,100.00, Profit (measured) ₱30,600.00 with
+the note "Profit measured on 29.7% of sales", and Total Invoices 148. Scrolling the table shows
+invoice `INV-2026-000842` with item "Brake Pad Set – Front" at ₱1,120.00.
 
 ## How To — Run the Profitability by Product Report
 
