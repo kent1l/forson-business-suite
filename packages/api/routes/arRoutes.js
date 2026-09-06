@@ -865,7 +865,11 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
             // collected apart from what was conceded, so these are never folded
             // into the payment line above.
             WITHHOLDING_TAX_CREDIT:'Tax Withheld at Source',
-            SETTLEMENT_DISCOUNT:   'Settlement Discount Granted',
+            // Terse, like every other label in this column. A statement's
+            // particulars column is a document type, not a sentence -- the reason
+            // and the note behind a concession are internal, and live in
+            // GET /ar/adjustments/summary rather than on the customer's copy.
+            SETTLEMENT_DISCOUNT:   'Discount',
             BALANCE_WRITE_DOWN:    'Balance Written Down',
             ADJUSTMENT_REVERSAL:   'Adjustment Reversed',
         };
@@ -904,7 +908,7 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
 
             // DOC/REF #: Primary reference is strictly physical receipt provided by user (or '-' if none).
             // Sub-reference below primary is system generated code: invoice number (INV-xxxx), CN number (CN-xxxx), or payment tracking number (PMT-YYYYMM-XXXX).
-            const primaryRef = physReceipt || '-';
+            let primaryRef = physReceipt || '-';
             let subRef = null;
             if (entry.payment_id) {
                 const d = entry.entry_date ? new Date(entry.entry_date) : new Date();
@@ -918,6 +922,18 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
                 subRef = entry.cn_number;
             } else if (entry.reference_no && entry.reference_no !== physReceipt) {
                 subRef = entry.reference_no;
+            }
+
+            // Never print a dash where the row has a document number. The primary
+            // slot is filled from the physical receipt, and a concession has none
+            // -- there is no OR for money that was not received -- so its ADJ-
+            // number, the only identifier the row carries, would otherwise sit in
+            // grey 8.5pt beneath an empty slot. On a statement the document number
+            // IS the row's identity, and it is the one distinguishing mark that
+            // survives a photocopy.
+            if (primaryRef === '-' && subRef) {
+                primaryRef = subRef;
+                subRef = null;
             }
 
             const intRef = (entry.payment_ref_no || entry.reference_no || '').trim();
@@ -949,10 +965,14 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
                 credit_amount:       amt < 0 ? Math.abs(amt) : null,
                 amount:              amt,
                 running_balance:     currentRunning,
-                // Lets the ledger table mark the row as something other than
-                // money without re-deriving the rule from the entry type in the
-                // browser. The concession keeps its own line, directly after the
-                // payment it belongs to; the two are never merged.
+                // Whether this credit is money or a balance forgiven. Reported as
+                // a fact about the row, not as a styling instruction -- nothing
+                // renders it differently today, and a statement deliberately
+                // carries the distinction in its document numbers and its summary
+                // totals rather than in a colour. It stays because it is the same
+                // rule the Concessions Granted total is computed from, and a
+                // consumer that needs to tell the two apart should not have to
+                // re-derive it from the entry type.
                 is_concession:       amt < 0 && CONCESSION_ENTRY_TYPES.has(entry.entry_type),
                 invoice_id:          entry.invoice_id  || null,
                 payment_id:          entry.payment_id  || null,
@@ -1057,7 +1077,11 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
             // collected apart from what was conceded, so these are never folded
             // into the payment line above.
             WITHHOLDING_TAX_CREDIT:'Tax Withheld at Source',
-            SETTLEMENT_DISCOUNT:   'Settlement Discount Granted',
+            // Terse, like every other label in this column. A statement's
+            // particulars column is a document type, not a sentence -- the reason
+            // and the note behind a concession are internal, and live in
+            // GET /ar/adjustments/summary rather than on the customer's copy.
+            SETTLEMENT_DISCOUNT:   'Discount',
             BALANCE_WRITE_DOWN:    'Balance Written Down',
             ADJUSTMENT_REVERSAL:   'Adjustment Reversed',
         };
@@ -1141,7 +1165,7 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
             const physReceipt = rawPhysReceipt ? rawPhysReceipt.trim() : null;
             const invNum = entry.invoice_number ? entry.invoice_number.trim() : null;
 
-            const primaryRef = physReceipt || '-';
+            let primaryRef = physReceipt || '-';
             let subRef = null;
             if (entry.payment_id) {
                 const d = entry.entry_date ? new Date(entry.entry_date) : new Date();
@@ -1155,6 +1179,18 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
                 subRef = entry.cn_number;
             } else if (entry.reference_no && entry.reference_no !== physReceipt) {
                 subRef = entry.reference_no;
+            }
+
+            // Never print a dash where the row has a document number. The primary
+            // slot is filled from the physical receipt, and a concession has none
+            // -- there is no OR for money that was not received -- so its ADJ-
+            // number, the only identifier the row carries, would otherwise sit in
+            // grey 8.5pt beneath an empty slot. On a statement the document number
+            // IS the row's identity, and it is the one distinguishing mark that
+            // survives a photocopy.
+            if (primaryRef === '-' && subRef) {
+                primaryRef = subRef;
+                subRef = null;
             }
 
             const intRef = (entry.payment_ref_no || entry.reference_no || '').trim();
@@ -1183,9 +1219,9 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
                 debit_amount:        amt > 0 ? amt  : null,
                 credit_amount:       amt < 0 ? Math.abs(amt) : null,
                 running_balance:     currentRunning,
-                // Lets the renderer mark the row as something other than money.
-                // The concession prints immediately after the payment it belongs
-                // to, as its own line -- never merged into it.
+                // As above: a fact about the row, not a styling instruction. The
+                // concession prints as its own line immediately after the payment
+                // it belongs to -- never merged into it -- but it is not tinted.
                 is_concession:       amt < 0 && CONCESSION_ENTRY_TYPES.has(entry.entry_type),
             });
         }

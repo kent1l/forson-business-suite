@@ -273,7 +273,7 @@ const ARLedgerSoaTab = ({
                                     {soaLedger.ledger_rows.map((row, idx) => {
                                         const dateChangeTargetForRow = resolveDateChangeTarget(row);
                                         return (
-                                        <tr key={row.ledger_id || idx} className={`text-gray-800 dark:text-slate-200 transition-colors ${row.is_concession ? 'bg-amber-50/60 dark:bg-amber-900/10 hover:bg-amber-50 dark:hover:bg-amber-900/20' : 'hover:bg-gray-50 dark:hover:bg-slate-700/40'}`}>
+                                        <tr key={row.ledger_id || idx} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200 transition-colors">
                                             <td className="px-5 py-3.5 whitespace-nowrap">
                                                 <div className="flex items-center gap-1.5">
                                                     <span>{new Date(row.date).toLocaleDateString()}</span>
@@ -336,22 +336,9 @@ const ARLedgerSoaTab = ({
                                                     )}
                                                 </div>
                                                 {row.description && <div className="text-xs text-gray-500 dark:text-slate-400">{row.description}</div>}
-                                                {row.is_concession && (
-                                                    <div className="text-[10px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
-                                                        Not a payment — balance forgiven
-                                                    </div>
-                                                )}
                                             </td>
                                             <td className="px-5 py-3.5 text-right font-mono text-gray-900 dark:text-slate-100 font-medium">{row.debit_amount ? formatCurrency(row.debit_amount) : '—'}</td>
-                                            {/* Amber, not the green used for cash. A concession
-                                                relieves the balance without any money arriving,
-                                                and the credit column is the one place that could
-                                                be read as saying otherwise. */}
-                                            <td className={`px-5 py-3.5 text-right font-mono font-medium ${
-                                                row.is_concession
-                                                    ? 'text-amber-600 dark:text-amber-400'
-                                                    : 'text-emerald-600 dark:text-emerald-400'
-                                            }`}>{row.credit_amount ? formatCurrency(row.credit_amount) : '—'}</td>
+                                            <td className="px-5 py-3.5 text-right font-mono text-emerald-600 dark:text-emerald-400 font-medium">{row.credit_amount ? formatCurrency(row.credit_amount) : '—'}</td>
                                             <td className="px-5 py-3.5 text-right font-mono font-bold text-gray-900 dark:text-slate-100">{formatCurrency(row.running_balance)}</td>
                                         </tr>
                                         );

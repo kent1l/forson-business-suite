@@ -157,25 +157,22 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
 
 
 
-        // A concession is a credit, but it is not money, and the statement has to
-        // say so at a glance. It keeps its own row immediately after the payment it
-        // belongs to -- never merged into it -- tinted amber rather than the green
-        // used for cash, and labelled so a customer cannot read forgiven balance as
-        // an amount they paid.
-        const concessionRowStyle = row.is_concession ? ' style="background-color:#FFFBEB;"' : '';
-        const creditCellStyle = row.is_concession ? ' color:#B45309;' : creditColor;
-        const concessionTag = row.is_concession
-            ? `<div style="font-size:8px;font-weight:700;color:#B45309;letter-spacing:0.04em;margin-top:1px;">NOT A PAYMENT — BALANCE FORGIVEN</div>`
-            : '';
-
+        // A concession keeps its own row, immediately after the payment it belongs
+        // to and never merged into it -- but it is not tinted or tagged. A
+        // statement gets photocopied, faxed and printed on a mono laser, and a
+        // background colour survives none of that: it comes out a grey band that
+        // reads as a smudge or an alteration. What carries the distinction instead
+        // is what survives monochrome -- the ADJ- document number, the row's own
+        // type label, and the summary block, where Payments Received and
+        // Concessions Granted are separate totals that are never added together.
         return `
-        <tr${concessionRowStyle}>
+        <tr>
             <td>${formatDate(row.date)}</td>
             <td>${formatDate(row.due_date)}</td>
             <td>${docCellHtml}</td>
-            <td>${descHtml}${concessionTag}</td>
+            <td>${descHtml}</td>
             <td class="text-right font-mono${debitBold}">${row.debit_amount ? fmt(row.debit_amount) : '—'}</td>
-            <td class="text-right font-mono" style="${creditCellStyle}">${row.credit_amount ? fmt(row.credit_amount) : '—'}</td>
+            <td class="text-right font-mono" style="${creditColor}">${row.credit_amount ? fmt(row.credit_amount) : '—'}</td>
             <td class="text-right font-mono font-bold">${fmt(row.running_balance)}</td>
         </tr>`;
     });
