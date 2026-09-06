@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import toast from 'react-hot-toast';
+import api from '../../../api';
 import Icon from '../../ui/Icon';
 import InfoTip from '../../ui/InfoTip';
 import { ICONS } from '../../../constants';
@@ -35,6 +37,25 @@ function resolveDateChangeTarget(row) {
 // these, but reversing a reversal is not a thing — correcting that means posting
 // a fresh adjustment — so ADJUSTMENT_REVERSAL is deliberately absent.
 const REVERSIBLE_ADJUSTMENT_TYPES = new Set(['SETTLEMENT_DISCOUNT', 'BALANCE_WRITE_DOWN']);
+
+/**
+ * Opens the Collection Acknowledgement for one A/R receipt in a new tab.
+ *
+ * Fetched as a blob through the api client rather than linked to directly: the
+ * endpoint sits behind the same Bearer token as everything else, which a plain
+ * anchor cannot carry.
+ */
+async function openCollectionReceipt(paymentId) {
+    try {
+        const response = await api.get(`/ar/payments/${paymentId}/receipt/pdf`, { responseType: 'blob' });
+        const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+        window.open(url, '_blank', 'noopener');
+        // Revoked late: the new tab has to have finished reading it first.
+        setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+    } catch {
+        toast.error('Could not generate the collection acknowledgement.');
+    }
+}
 
 // Customer Ledger & Statement of Account tab: customer search combobox,
 // running-balance ledger table, and PDC/floating-collections breakdown.
@@ -252,7 +273,7 @@ const ARLedgerSoaTab = ({
                                     {soaLedger.ledger_rows.map((row, idx) => {
                                         const dateChangeTargetForRow = resolveDateChangeTarget(row);
                                         return (
-                                        <tr key={row.ledger_id || idx} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200 transition-colors">
+                                        <tr key={row.ledger_id || idx} className={`text-gray-800 dark:text-slate-200 transition-colors ${row.is_concession ? 'bg-amber-50/60 dark:bg-amber-900/10 hover:bg-amber-50 dark:hover:bg-amber-900/20' : 'hover:bg-gray-50 dark:hover:bg-slate-700/40'}`}>
                                             <td className="px-5 py-3.5 whitespace-nowrap">
                                                 <div className="flex items-center gap-1.5">
                                                     <span>{new Date(row.date).toLocaleDateString()}</span>
@@ -297,11 +318,40 @@ const ARLedgerSoaTab = ({
                                                             Reverse
                                                         </button>
                                                     )}
+                                                    {/* Not the BIR Official Receipt — that comes off a
+                                                        pre-printed book. This sheet shows how the
+                                                        collection was applied, with the cash received
+                                                        and any balance forgiven as separate figures. */}
+                                                    {row.event_type === 'PAYMENT_SETTLED'
+                                                        && row.payment_id
+                                                        && row.payment_source !== 'invoice_payments' && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => openCollectionReceipt(row.payment_id)}
+                                                            className="text-[11px] font-semibold text-primary-600 dark:text-primary-400 hover:underline"
+                                                            title="Collection acknowledgement — how this payment was applied"
+                                                        >
+                                                            Acknowledgement
+                                                        </button>
+                                                    )}
                                                 </div>
                                                 {row.description && <div className="text-xs text-gray-500 dark:text-slate-400">{row.description}</div>}
+                                                {row.is_concession && (
+                                                    <div className="text-[10px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                                                        Not a payment — balance forgiven
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="px-5 py-3.5 text-right font-mono text-gray-900 dark:text-slate-100 font-medium">{row.debit_amount ? formatCurrency(row.debit_amount) : '—'}</td>
-                                            <td className="px-5 py-3.5 text-right font-mono text-emerald-600 dark:text-emerald-400 font-medium">{row.credit_amount ? formatCurrency(row.credit_amount) : '—'}</td>
+                                            {/* Amber, not the green used for cash. A concession
+                                                relieves the balance without any money arriving,
+                                                and the credit column is the one place that could
+                                                be read as saying otherwise. */}
+                                            <td className={`px-5 py-3.5 text-right font-mono font-medium ${
+                                                row.is_concession
+                                                    ? 'text-amber-600 dark:text-amber-400'
+                                                    : 'text-emerald-600 dark:text-emerald-400'
+                                            }`}>{row.credit_amount ? formatCurrency(row.credit_amount) : '—'}</td>
                                             <td className="px-5 py-3.5 text-right font-mono font-bold text-gray-900 dark:text-slate-100">{formatCurrency(row.running_balance)}</td>
                                         </tr>
                                         );

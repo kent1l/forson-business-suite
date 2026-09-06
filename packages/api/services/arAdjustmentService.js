@@ -128,7 +128,8 @@ async function outstandingForInvoice(client, invoiceId) {
                             AND cp.pdc_status IS DISTINCT FROM 'BOUNCED'), 0)
               + COALESCE((SELECT SUM(aa.amount) FROM ar_adjustment_allocation aa
                            JOIN ar_adjustment adj ON adj.adjustment_id = aa.adjustment_id
-                          WHERE aa.invoice_id = i.invoice_id AND adj.status = 'POSTED'), 0) AS settled,
+                          WHERE aa.invoice_id = i.invoice_id AND adj.status = 'POSTED'
+                            AND adj.reverses_adjustment_id IS NULL), 0) AS settled,
                 COALESCE((SELECT SUM(total_amount) FROM credit_note WHERE invoice_id = i.invoice_id), 0) AS refunded
            FROM invoice i
           WHERE i.invoice_id = $1`,
@@ -152,6 +153,55 @@ async function outstandingForInvoice(client, invoiceId) {
 // ────────────────────────────────────────────────────────────────
 // Creating a concession
 // ────────────────────────────────────────────────────────────────
+
+/**
+ * Turn a caller's allocation list into exactly the set the document will carry,
+ * and refuse anything that is not one.
+ *
+ * This REJECTS rather than filters, and that distinction is load-bearing. A
+ * route that has to authorize a concession must be able to compute the amount
+ * being authorized from the same input the document will be written from. When
+ * the service silently discarded non-positive entries, the two disagreed: a
+ * caller could send [{inv 900, +50000}, {inv 900, -49999.99}], have the
+ * authorization checked against the signed sum of 0.01, and have the document
+ * written for 50000. Every caller now normalizes once, up front, and works from
+ * the result -- so the amount approved and the amount forgiven are the same
+ * number by construction.
+ *
+ * @returns {{ allocations: Array<{invoice_id: number, amount: number}>, total: number }}
+ */
+function normalizeAllocations(allocations) {
+    const list = Array.isArray(allocations) ? allocations : [];
+    const clean = [];
+    const seen = new Set();
+
+    for (const entry of list) {
+        const invoiceId = Number(entry?.invoice_id);
+        const amount = round2(entry?.amount);
+
+        if (!Number.isInteger(invoiceId) || invoiceId <= 0) {
+            throw new AdjustmentError('Every line of a concession must name the invoice it forgives.');
+        }
+        if (!Number.isFinite(amount) || amount <= 0) {
+            throw new AdjustmentError(
+                `The amount forgiven on invoice #${invoiceId} must be greater than zero.`
+            );
+        }
+        if (seen.has(invoiceId)) {
+            throw new AdjustmentError(`Invoice #${invoiceId} is listed twice in the same adjustment.`);
+        }
+        seen.add(invoiceId);
+        clean.push({ invoice_id: invoiceId, amount });
+    }
+
+    if (clean.length === 0) {
+        throw new AdjustmentError(
+            'A concession must name the invoices it forgives. An unallocated credit moves the customer balance but leaves the invoice open forever.'
+        );
+    }
+
+    return { allocations: clean, total: round2(clean.reduce((s, a) => s + a.amount, 0)) };
+}
 
 /**
  * @param {import('pg').PoolClient} client   open transaction
@@ -200,26 +250,7 @@ async function createAdjustment(client, {
         if (existing) return getAdjustment(client, existing.adjustment_id);
     }
 
-    const cleanAllocations = (allocations || [])
-        .map(a => ({ invoice_id: Number(a.invoice_id), amount: round2(a.amount) }))
-        .filter(a => a.invoice_id && a.amount > 0);
-
-    if (cleanAllocations.length === 0) {
-        throw new AdjustmentError(
-            'A concession must name the invoices it forgives. An unallocated credit moves the customer balance but leaves the invoice open forever.'
-        );
-    }
-
-    const seen = new Set();
-    for (const a of cleanAllocations) {
-        if (seen.has(a.invoice_id)) {
-            throw new AdjustmentError(`Invoice #${a.invoice_id} is listed twice in the same adjustment.`);
-        }
-        seen.add(a.invoice_id);
-    }
-
-    const totalAmount = round2(cleanAllocations.reduce((s, a) => s + a.amount, 0));
-    if (totalAmount <= 0) throw new AdjustmentError('The adjustment amount must be greater than zero.');
+    const { allocations: cleanAllocations, total: totalAmount } = normalizeAllocations(allocations);
 
     const reason = await resolveReason(client, { reasonCode, adjustmentType, amount: totalAmount, notes });
 
@@ -260,17 +291,22 @@ async function createAdjustment(client, {
          authorizedBy ? 'ELEVATED' : 'SELF', clientRef, businessDate]
     );
 
-    // A cheque-backed concession stops here: no allocations, no ledger entry, so
-    // the invoice and the customer balance are untouched until the cheque clears.
-    // Posting it now would leave the invoice closed by a discount that was never
-    // earned if the cheque bounces.
+    // The allocations are written whatever the status: they are what the document
+    // SAYS it forgives, and a cheque-backed concession that had forgotten which
+    // invoices it was for could never be posted when the cheque cleared. They
+    // carry no settlement weight yet -- recompute_invoice_settlement() counts
+    // only POSTED adjustments, so a PENDING_CLEARANCE one moves neither the
+    // invoice nor the customer balance. What waits for the cheque is the ledger
+    // entry and the status, because posting those now would leave the invoice
+    // closed by a discount that was never earned if the cheque bounced.
+    await insertAllocations(client, doc.adjustment_id, cleanAllocations);
+
     if (status === 'POSTED') {
-        await applyAllocationsAndLedger(client, {
+        await appendAdjustmentLedgerEntry(client, {
             adjustmentId: doc.adjustment_id,
             adjustmentNo: doc.adjustment_no,
             adjustmentType,
             customerId,
-            allocations: cleanAllocations,
             totalAmount,
             reason,
             notes,
@@ -282,21 +318,24 @@ async function createAdjustment(client, {
     return getAdjustment(client, doc.adjustment_id);
 }
 
-/**
- * Writes the allocation rows and the single ledger entry, then links the two.
- * Split out because a cheque-backed concession runs it later, on clearance.
- */
-async function applyAllocationsAndLedger(client, {
-    adjustmentId, adjustmentNo, adjustmentType, customerId, allocations,
-    totalAmount, reason, notes, createdBy, entryDate,
-}) {
+async function insertAllocations(client, adjustmentId, allocations) {
     for (const alloc of allocations) {
         await client.query(
             `INSERT INTO ar_adjustment_allocation (adjustment_id, invoice_id, amount) VALUES ($1,$2,$3)`,
             [adjustmentId, alloc.invoice_id, alloc.amount]
         );
     }
+}
 
+/**
+ * Posts the single ledger entry a concession produces, and links it back to the
+ * document. Split out because a cheque-backed concession runs it later, on
+ * clearance, rather than when it was keyed in.
+ */
+async function appendAdjustmentLedgerEntry(client, {
+    adjustmentId, adjustmentNo, adjustmentType, customerId,
+    totalAmount, reason, notes, createdBy, entryDate,
+}) {
     const ledgerId = await arLedger.appendEntry(client, {
         customerId,
         entryType: LEDGER_ENTRY_TYPE[adjustmentType],
@@ -316,6 +355,104 @@ async function applyAllocationsAndLedger(client, {
     );
 
     return ledgerId;
+}
+
+// ────────────────────────────────────────────────────────────────
+// Cheque clearance
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * Everything still waiting on one collection instrument.
+ *
+ * A concession granted alongside a post-dated cheque cannot post when it is
+ * keyed: if it did, a bounce would leave the invoice closed by a discount the
+ * customer never earned. It sits at PENDING_CLEARANCE until the PDC desk says
+ * what became of the cheque.
+ */
+async function listPendingForPayment(executor, { customerPaymentId = null, invoicePaymentId = null }) {
+    const column = customerPaymentId ? 'customer_payment_id' : 'invoice_payment_id';
+    const value = customerPaymentId || invoicePaymentId;
+    if (!value) return [];
+    const { rows } = await executor.query(
+        `SELECT a.*
+           FROM ar_adjustment a
+          WHERE a.${column} = $1 AND a.status = 'PENDING_CLEARANCE'
+          FOR UPDATE`,
+        [value]
+    );
+    return rows;
+}
+
+/**
+ * The cheque cleared, so the concession was earned. Posts its ledger entry, flips
+ * it to POSTED and refreshes the invoices it names — in the same transaction as
+ * the PAYMENT_SETTLED entry the clearance itself writes, so the cash and the
+ * concession become real together or not at all.
+ *
+ * @returns {Array<string>} the adjustment numbers that were posted
+ */
+async function postPendingForPayment(client, { customerPaymentId = null, invoicePaymentId = null, employeeId = null }) {
+    const pending = await listPendingForPayment(client, { customerPaymentId, invoicePaymentId });
+    const posted = [];
+
+    for (const doc of pending) {
+        const { rows: [reason] } = await client.query(
+            `SELECT * FROM ar_adjustment_reason WHERE reason_code = $1`, [doc.reason_code]
+        );
+
+        await appendAdjustmentLedgerEntry(client, {
+            adjustmentId: doc.adjustment_id,
+            adjustmentNo: doc.adjustment_no,
+            adjustmentType: doc.adjustment_type,
+            customerId: doc.customer_id,
+            totalAmount: Number(doc.total_amount),
+            reason,
+            notes: doc.notes,
+            createdBy: employeeId || doc.granted_by,
+            // Dated the day the cheque cleared, not the day the concession was
+            // keyed. The A/R ledger is cash-basis; the discount became real at
+            // the same moment the money did.
+            entryDate: new Date(),
+        });
+
+        // trg_ar_adjustment_status_recompute refreshes every invoice this document
+        // names, so the concession lands on them the moment the status changes —
+        // the same mechanism a reversal relies on.
+        await client.query(
+            `UPDATE ar_adjustment SET status = 'POSTED' WHERE adjustment_id = $1`,
+            [doc.adjustment_id]
+        );
+
+        posted.push(doc.adjustment_no);
+    }
+
+    return posted;
+}
+
+/**
+ * The cheque bounced, so the concession was never earned and the customer's full
+ * balance stands. The document is voided rather than deleted — it was granted,
+ * and the record of that is exactly the point.
+ *
+ * Nothing needs unwinding: a PENDING_CLEARANCE document never had a ledger entry,
+ * and its allocations never counted towards settlement, so voiding it leaves the
+ * invoice precisely as the bounce found it.
+ *
+ * @returns {Array<string>} the adjustment numbers that were voided
+ */
+async function voidPendingForPayment(client, { customerPaymentId = null, invoicePaymentId = null, reason = null }) {
+    const pending = await listPendingForPayment(client, { customerPaymentId, invoicePaymentId });
+    const voided = [];
+
+    for (const doc of pending) {
+        await client.query(
+            `UPDATE ar_adjustment SET status = 'VOIDED', reversal_reason = $2 WHERE adjustment_id = $1`,
+            [doc.adjustment_id, reason || 'Cheque bounced — the concession granted alongside it was never earned.']
+        );
+        voided.push(doc.adjustment_no);
+    }
+
+    return voided;
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -369,12 +506,7 @@ async function reverseAdjustment(client, { adjustmentId, reason, employeeId }) {
     // settlement weight -- recompute_invoice_settlement() counts only POSTED
     // adjustments that are not themselves reversals (20260906_07). What reopens
     // the balance is the original dropping out of the sum when it goes REVERSED.
-    for (const alloc of allocations) {
-        await client.query(
-            `INSERT INTO ar_adjustment_allocation (adjustment_id, invoice_id, amount) VALUES ($1,$2,$3)`,
-            [reversal.adjustment_id, alloc.invoice_id, alloc.amount]
-        );
-    }
+    await insertAllocations(client, reversal.adjustment_id, allocations);
 
     const ledgerId = await arLedger.appendEntry(client, {
         customerId: original.customer_id,
@@ -452,8 +584,13 @@ module.exports = {
     listReasons,
     resolveReason,
     outstandingForInvoice,
+    normalizeAllocations,
     createAdjustment,
-    applyAllocationsAndLedger,
+    insertAllocations,
+    appendAdjustmentLedgerEntry,
+    listPendingForPayment,
+    postPendingForPayment,
+    voidPendingForPayment,
     reverseAdjustment,
     getAdjustment,
 };

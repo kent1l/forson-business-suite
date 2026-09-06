@@ -157,14 +157,25 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
 
 
 
+        // A concession is a credit, but it is not money, and the statement has to
+        // say so at a glance. It keeps its own row immediately after the payment it
+        // belongs to -- never merged into it -- tinted amber rather than the green
+        // used for cash, and labelled so a customer cannot read forgiven balance as
+        // an amount they paid.
+        const concessionRowStyle = row.is_concession ? ' style="background-color:#FFFBEB;"' : '';
+        const creditCellStyle = row.is_concession ? ' color:#B45309;' : creditColor;
+        const concessionTag = row.is_concession
+            ? `<div style="font-size:8px;font-weight:700;color:#B45309;letter-spacing:0.04em;margin-top:1px;">NOT A PAYMENT — BALANCE FORGIVEN</div>`
+            : '';
+
         return `
-        <tr>
+        <tr${concessionRowStyle}>
             <td>${formatDate(row.date)}</td>
             <td>${formatDate(row.due_date)}</td>
             <td>${docCellHtml}</td>
-            <td>${descHtml}</td>
+            <td>${descHtml}${concessionTag}</td>
             <td class="text-right font-mono${debitBold}">${row.debit_amount ? fmt(row.debit_amount) : '—'}</td>
-            <td class="text-right font-mono" style="${creditColor}">${row.credit_amount ? fmt(row.credit_amount) : '—'}</td>
+            <td class="text-right font-mono" style="${creditCellStyle}">${row.credit_amount ? fmt(row.credit_amount) : '—'}</td>
             <td class="text-right font-mono font-bold">${fmt(row.running_balance)}</td>
         </tr>`;
     });
@@ -255,6 +266,14 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
         '{{summary.opening_balance}}':   fmt(options.openingBalance || 0),
         '{{summary.total_invoiced}}':    fmt(options.totalInvoiced || 0),
         '{{summary.total_settled}}':     fmt(options.totalSettled || 0),
+        // Split apart deliberately. Summed into one figure, a customer reading
+        // their statement would see money they never paid.
+        '{{summary.total_payments_received}}': fmt(
+            options.totalPaymentsReceived != null
+                ? options.totalPaymentsReceived
+                : (options.totalSettled || 0) - (options.totalConcessions || 0)
+        ),
+        '{{summary.total_concessions}}': fmt(options.totalConcessions || 0),
         '{{summary.net_balance}}':       fmt(options.closingBalance || 0),
         '{{ledger_rows}}':               rowsHtml,
         '{{pending_cheque_note}}':       pendingChequeSection,

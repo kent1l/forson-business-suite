@@ -3,12 +3,14 @@ const { Parser } = require('json2csv');
 const db = require('../db');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatter');
-const { protect, hasPermission } = require('../middleware/authMiddleware');
+const { protect, hasPermission, userHasPermission } = require('../middleware/authMiddleware');
 const { validatePaymentTerms } = require('../helpers/paymentTermsHelper');
 const { calculateInvoiceTax, storeTaxBreakdown, validateTaxCalculation } = require('../services/taxCalculationService');
 const withholdingTax = require('../services/withholdingTaxService');
 const arLedger = require('../services/arLedgerService');
 const walletService = require('../services/customerWalletService');
+const arAdjustment = require('../services/arAdjustmentService');
+const arAdjustmentAuth = require('../services/arAdjustmentAuthService');
 const { normalizeStatusFilter } = require('../helpers/invoiceStatusFilter');
 const router = express.Router();
 
@@ -356,10 +358,26 @@ router.get('/invoices/check-physical-receipt/:prn', protect, hasPermission('invo
 
 // POST /invoices - Create a new invoice
 router.post('/invoices', protect, hasPermission('invoicing:create'), async (req, res) => {
-    const { customer_id, employee_id, lines, amount_paid, tendered_amount, payment_method, terms, payment_terms_days, physical_receipt_no, tax_rate_id, payments, staged_sale_id } = req.body;
+    const { customer_id, employee_id, lines, amount_paid, tendered_amount, payment_method, terms, payment_terms_days, physical_receipt_no, tax_rate_id, payments, staged_sale_id,
+        // A concession granted at the counter: part of the sale forgiven so the
+        // customer can settle now. Never a tender — see the block near the end of
+        // this handler, after the invoice and its tenders exist.
+        discount } = req.body;
 
     if (!customer_id || !employee_id || !lines || !Array.isArray(lines) || lines.length === 0) {
         return res.status(400).json({ message: 'Missing required fields.' });
+    }
+
+    const discountAmount = Math.round(((Number(discount?.amount) || 0) + Number.EPSILON) * 100) / 100;
+    if (discountAmount > 0) {
+        if (!discount?.reason_code) {
+            return res.status(400).json({ message: 'A concession granted at the counter needs a reason code.' });
+        }
+        if (!userHasPermission(req, 'ar:discount_grant') && !discount?.authorization_token) {
+            return res.status(403).json({
+                message: 'Granting a discount needs authorization from someone who holds the discount permission.',
+            });
+        }
     }
 
     // A discount larger than the line it sits on would produce a negative tax
@@ -591,6 +609,12 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
         });
         const withholdingCeiling = withholdingTax.computeWithholdingCeiling(expectedWithholding, total_amount);
 
+        // Which invoice_payments rows this sale created, and what kind. A POS-time
+        // concession hangs off one of them (ar_adjustment.invoice_payment_id)
+        // rather than off a customer_payment, because at the counter the tender IS
+        // the collection.
+        const createdTenders = [];
+
         if (payments && Array.isArray(payments) && payments.length > 0) {
             const totalPayments = payments.reduce((sum, p) => sum + parseFloat(p.amount_paid), 0);
             if (totalPayments > total_amount + 0.01) {
@@ -701,6 +725,13 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::varchar, CASE WHEN $9::varchar = 'settled' THEN CURRENT_TIMESTAMP ELSE NULL END, $10)
                     RETURNING payment_id
                 `, [newInvoiceId, method.rows[0].method_id, pAmt, tAmt, changeAmt, reference, JSON.stringify(paymentMetadata), employee_id, paymentStatus, pdcStatusValue]);
+                createdTenders.push({
+                    payment_id: ipRes.rows[0].payment_id,
+                    is_cheque: isChequeMethod,
+                    payment_status: paymentStatus,
+                    amount: pAmt,
+                });
+
                 if (method.rows[0].code === 'withholding_tax') {
                     // Recorded as its own ledger entry type rather than PAYMENT_SETTLED:
                     // it settles the receivable, but no cash was received, and every
@@ -753,6 +784,16 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::varchar, CASE WHEN $8::varchar = 'settled' THEN CURRENT_TIMESTAMP ELSE NULL END)
                     RETURNING payment_id
                 `, [newInvoiceId, method.rows[0].method_id, paid, tenderVal, changeAmt, null, employee_id, paymentStatus]);
+                // Recorded on the legacy single-tender path too, so the concession
+                // guard below sees the same picture whichever shape the client used.
+                createdTenders.push({
+                    payment_id: ipRes.rows[0].payment_id,
+                    is_cheque: (method.rows[0].code === 'cheque' || method.rows[0].code === 'pdc' ||
+                                method.rows[0].type === 'cheque' ||
+                                (method.rows[0].name || '').toLowerCase().includes('cheque')),
+                    payment_status: paymentStatus,
+                    amount: paid,
+                });
                 if (paymentStatus === 'settled') {
                     await arLedger.appendEntry(client, {
                         customerId: customer_id, invoiceId: newInvoiceId,
@@ -768,6 +809,66 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
             }
         }
 
+
+        // ── The counter concession ─────────────────────────────────────────────
+        // Written after the tenders, so the balance it is measured against is the
+        // one the tenders leave behind. It is not a tender itself: no
+        // payment_methods row, no invoice_payments row, no contribution to the
+        // change calculation, and no line on the BIR receipt's amount received.
+        let posAdjustment = null;
+        if (discountAmount > 0) {
+            // Tenders plus concession cannot exceed the sale. Checked here rather
+            // than left to createAdjustment, because that measures settlement and a
+            // pending cheque is not settlement yet -- without this, a cheque sale
+            // could be discounted for its whole value and then over-settle the
+            // moment the cheque cleared.
+            const totalTendered = createdTenders.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+            if (totalTendered + discountAmount > Number(total_amount) + 0.01) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({
+                    message: `Tenders of ₱${totalTendered.toFixed(2)} plus a ₱${discountAmount.toFixed(2)} concession exceed the ₱${Number(total_amount).toFixed(2)} sale.`,
+                });
+            }
+
+            // A cheque taken at the counter has not cleared, so a concession
+            // granted alongside it has not been earned. It waits at
+            // PENDING_CLEARANCE and pdcService posts or voids it when the PDC desk
+            // says what happened — otherwise a bounce would leave the sale closed
+            // by a discount the customer never earned.
+            const pendingTender = createdTenders.find(t => t.is_cheque && t.payment_status === 'pending');
+            const anchorTender = pendingTender || createdTenders[0] || null;
+
+            let authorizedBy = null;
+            if (!userHasPermission(req, 'ar:discount_grant')) {
+                authorizedBy = await arAdjustmentAuth.consumeAuthorization(client, {
+                    token: discount.authorization_token,
+                    requestedBy: req.user.employee_id,
+                    customerId: customer_id,
+                    totalAmount: discountAmount,
+                    purpose: 'SETTLEMENT_DISCOUNT',
+                });
+            }
+
+            posAdjustment = await arAdjustment.createAdjustment(client, {
+                customerId: customer_id,
+                adjustmentType: 'SETTLEMENT_DISCOUNT',
+                reasonCode: discount.reason_code,
+                allocations: [{ invoice_id: newInvoiceId, amount: discountAmount }],
+                notes: discount.notes || null,
+                grantedBy: req.user.employee_id,
+                authorizedBy,
+                clientRef: discount.client_ref || null,
+                invoicePaymentId: anchorTender?.payment_id || null,
+                pendingClearance: !!pendingTender,
+            });
+
+            if (authorizedBy) {
+                await arAdjustmentAuth.linkAuthorizationToAdjustment(client, {
+                    token: discount.authorization_token,
+                    adjustmentId: posAdjustment.adjustment_id,
+                });
+            }
+        }
 
         // The status seeded on the INSERT above was a guess from the client's
         // amount_paid. Now that every tender exists, settle it from the source
@@ -795,6 +896,9 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
         payment_terms_days: canonicalDays, 
         due_date: dueDate,
         physical_receipt_no: prn,
+        discount_amount: discountAmount,
+        adjustment_no: posAdjustment?.adjustment_no || null,
+        adjustment_status: posAdjustment?.status || null,
         subtotal_ex_tax,
         tax_total,
         total_amount,
@@ -940,6 +1044,48 @@ router.delete('/invoices/:id', protect, hasPermission('invoice:delete'), async (
             `UPDATE invoice_payments SET payment_status = 'voided' WHERE invoice_id = $1 AND payment_status <> 'voided'`,
             [id]
         );
+
+        // A concession granted against this invoice has to come off with it. Its
+        // ledger entry carries no invoice_id (a concession is a document in its own
+        // right, not an invoice event), so the net-offset below cannot see it — and
+        // left alone it would go on relieving a receivable that no longer exists.
+        //
+        // Reversal, not deletion: both documents stay on the customer's statement,
+        // which is the whole reason ar_adjustment is immutable. A concession that
+        // also named other invoices reopens those too; there is no partial reversal,
+        // and the reason text says so.
+        const { rows: postedConcessions } = await client.query(
+            `SELECT DISTINCT a.adjustment_id, a.adjustment_no
+               FROM ar_adjustment a
+               JOIN ar_adjustment_allocation aa ON aa.adjustment_id = a.adjustment_id
+              WHERE aa.invoice_id = $1
+                AND a.status = 'POSTED'
+                AND a.reverses_adjustment_id IS NULL`,
+            [id]
+        );
+        for (const concession of postedConcessions) {
+            await arAdjustment.reverseAdjustment(client, {
+                adjustmentId: concession.adjustment_id,
+                reason: `Invoice ${invoiceNumber} was voided, so the concession granted against it no longer applies.`,
+                employeeId: req.user.employee_id || null,
+            });
+        }
+
+        // One granted alongside a cheque that has not cleared never posted at all,
+        // so there is nothing to reverse — it is simply voided with the sale.
+        const { rows: pendingConcessions } = await client.query(
+            `SELECT DISTINCT a.adjustment_id
+               FROM ar_adjustment a
+               JOIN ar_adjustment_allocation aa ON aa.adjustment_id = a.adjustment_id
+              WHERE aa.invoice_id = $1 AND a.status = 'PENDING_CLEARANCE'`,
+            [id]
+        );
+        for (const concession of pendingConcessions) {
+            await client.query(
+                `UPDATE ar_adjustment SET status = 'VOIDED', reversal_reason = $2 WHERE adjustment_id = $1`,
+                [concession.adjustment_id, `Invoice ${invoiceNumber} was voided before the cheque cleared.`]
+            );
+        }
 
         // Offset the invoice's net effect on the customer's AR ledger with a single
         // adjustment entry rather than touching (immutable) historical rows.

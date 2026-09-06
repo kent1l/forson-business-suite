@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Collection Acknowledgement - {{customer.name}}</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        :root {
+            --font-family: 'Inter', sans-serif;
+            --primary-color: #0F172A;
+            --secondary-color: #475569;
+            --accent-color: #1E40AF;
+            --border-color: #CBD5E1;
+            --concession-color: #B45309;
+            --concession-bg: #FFFBEB;
+        }
+
+        @page {
+            size: A4 portrait;
+            margin: 12mm;
+        }
+
+        body {
+            font-family: var(--font-family);
+            font-size: 11px;
+            color: var(--secondary-color);
+            background: #fff;
+            margin: 0;
+            padding: 0;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        .sheet {
+            max-width: 780px;
+            margin: 0 auto;
+            padding: 4px 8px;
+        }
+
+        .masthead {
+            border-bottom: 2px solid var(--primary-color);
+            padding-bottom: 8px;
+            margin-bottom: 14px;
+        }
+
+        .masthead .company {
+            font-size: 17px;
+            font-weight: 700;
+            color: var(--primary-color);
+            letter-spacing: -0.01em;
+        }
+
+        .masthead .company-meta {
+            font-size: 9.5px;
+            color: var(--secondary-color);
+            margin-top: 2px;
+        }
+
+        .doc-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin-bottom: 14px;
+        }
+
+        .doc-title h1 {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--primary-color);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin: 0;
+        }
+
+        .doc-title .sub {
+            font-size: 9.5px;
+            color: var(--secondary-color);
+            margin-top: 2px;
+        }
+
+        .doc-title .refs {
+            text-align: right;
+            font-size: 10px;
+        }
+
+        .doc-title .refs .label {
+            color: var(--secondary-color);
+            font-size: 8.5px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .doc-title .refs .value {
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .party {
+            background: #F8FAFC;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin-bottom: 14px;
+        }
+
+        .party .label {
+            font-size: 8.5px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--secondary-color);
+        }
+
+        .party .name {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .party .detail {
+            font-size: 9.5px;
+            margin-top: 2px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 4px;
+        }
+
+        thead th {
+            background: #F1F5F9;
+            font-size: 8.5px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--secondary-color);
+            text-align: left;
+            padding: 6px 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        tbody td {
+            padding: 7px 8px;
+            border-bottom: 1px solid #E2E8F0;
+            font-size: 10.5px;
+            vertical-align: top;
+        }
+
+        .text-right { text-align: right; }
+        .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+        .bold { font-weight: 700; }
+
+        /* A concession is not money. It is tinted, labelled, and kept out of the
+           received total below -- a customer or a BIR examiner reading this sheet
+           must be able to tell at a glance what was collected from what was
+           forgiven. */
+        tr.concession td {
+            background: var(--concession-bg);
+            color: var(--concession-color);
+        }
+
+        tr.concession .tag {
+            display: block;
+            font-size: 8px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            margin-top: 1px;
+        }
+
+        .totals {
+            margin-top: 10px;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .totals table {
+            width: 320px;
+        }
+
+        .totals td {
+            border: none;
+            padding: 4px 8px;
+            font-size: 11px;
+        }
+
+        .totals tr.rule td {
+            border-top: 1px solid var(--border-color);
+        }
+
+        .received {
+            margin-top: 14px;
+            border: 2px solid var(--primary-color);
+            border-radius: 6px;
+            padding: 12px 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .received .label {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: var(--primary-color);
+        }
+
+        .received .note {
+            font-size: 8.5px;
+            color: var(--secondary-color);
+            margin-top: 3px;
+            max-width: 400px;
+        }
+
+        .received .amount {
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .or-note {
+            margin-top: 10px;
+            font-size: 9.5px;
+            color: var(--secondary-color);
+        }
+
+        .or-note .or-no {
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .signatures {
+            margin-top: 26px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+        }
+
+        .sig-line {
+            border-top: 1px solid var(--primary-color);
+            padding-top: 4px;
+            font-size: 9px;
+            color: var(--secondary-color);
+        }
+
+        .footer-note {
+            margin-top: 20px;
+            padding-top: 8px;
+            border-top: 1px solid #E2E8F0;
+            font-size: 8.5px;
+            color: #64748B;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="sheet">
+        <div class="masthead">
+            <div class="company">{{company.name}}</div>
+            <div class="company-meta">{{company.meta}}</div>
+        </div>
+
+        <div class="doc-title">
+            <div>
+                <h1>Collection Acknowledgement</h1>
+                <div class="sub">This is not an Official Receipt. It records how a collection was applied.</div>
+            </div>
+            <div class="refs">
+                <div class="label">Reference</div>
+                <div class="value">{{receipt.reference}}</div>
+                <div class="label" style="margin-top:4px;">Date</div>
+                <div class="value">{{receipt.date}}</div>
+            </div>
+        </div>
+
+        <div class="party">
+            <div class="label">Received from</div>
+            <div class="name">{{customer.name}}</div>
+            <div class="detail">{{customer.meta}}</div>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 26%;">Applied to</th>
+                    <th style="width: 44%;">Particulars</th>
+                    <th style="width: 30%;" class="text-right">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{application_rows}}
+            </tbody>
+        </table>
+
+        <div class="totals">
+            <table>
+                <tr>
+                    <td>Cash / cleared funds</td>
+                    <td class="text-right mono">{{totals.cash}}</td>
+                </tr>
+                {{withholding_total_row}}
+                {{concession_total_row}}
+                <tr class="rule">
+                    <td class="bold">Total credited to account</td>
+                    <td class="text-right mono bold">{{totals.credited}}</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="received">
+            <div>
+                <div class="label">Amount received in cash</div>
+                <div class="note">
+                    The figure below is the money actually received. It excludes any concession granted
+                    and any tax withheld at source, neither of which is an amount received.
+                </div>
+            </div>
+            <div class="amount">{{totals.cash}}</div>
+        </div>
+
+        {{or_note}}
+
+        <div class="signatures">
+            <div class="sig-line">Received by &mdash; {{receipt.received_by}}</div>
+            <div class="sig-line">Acknowledged by (Customer)</div>
+        </div>
+
+        <div class="footer-note">
+            {{footer_note}}
+        </div>
+    </div>
+</body>
+
+</html>

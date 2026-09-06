@@ -6,6 +6,7 @@ const { parsePaginationQuery, paginatedResponse } = require('../helpers/paginati
 const arLedger = require('../services/arLedgerService');
 const pdcService = require('../services/pdcService');
 const { generateStatementOfAccountPDF } = require('../helpers/pdf/soaPdf');
+const { generateCollectionReceiptPDF } = require('../helpers/pdf/collectionReceiptPdf');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const paperlessService = require('../services/paperlessService');
 const router = express.Router();
@@ -764,6 +765,16 @@ async function fetchGlobalCompanySettings(dbClient) {
     }
 }
 
+/**
+ * The ledger entry types that relieve a receivable without money changing hands.
+ *
+ * A concession is a credit, and on a running balance it behaves exactly like a
+ * payment -- which is the problem. Kept apart from cash on every statement so
+ * that "Payments Received" only ever means money the customer actually handed
+ * over, and a collector can point at the two figures as separate facts.
+ */
+const CONCESSION_ENTRY_TYPES = new Set(['SETTLEMENT_DISCOUNT', 'BALANCE_WRITE_DOWN']);
+
 // GET /ar/customers/:customerId/ledger - Interactive ledger history for SOA
 router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view'), async (req, res) => {
     try {
@@ -862,6 +873,10 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
         let openingBalance = 0;
         let totalCharged = 0;   // sum of debits (positive amounts)
         let totalCredited = 0;  // sum of credits (negative amounts, shown as positive)
+        // Concessions are credits, but they are not money. Tracked apart so no
+        // figure on a statement can present forgiven balance as cash the customer
+        // paid -- the one thing a collector reading it must never be confused about.
+        let totalConcessions = 0;
         let currentRunning = 0;
         const ledgerRows = [];
 
@@ -879,6 +894,9 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
             currentRunning += amt;
             if (amt > 0) totalCharged  += amt;
             else         totalCredited += Math.abs(amt);
+            if (amt < 0 && CONCESSION_ENTRY_TYPES.has(entry.entry_type)) {
+                totalConcessions += Math.abs(amt);
+            }
 
             const rawPhysReceipt = entry.payment_physical_receipt_no || entry.invoice_physical_receipt_no;
             const physReceipt = rawPhysReceipt ? rawPhysReceipt.trim() : null;
@@ -931,6 +949,11 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
                 credit_amount:       amt < 0 ? Math.abs(amt) : null,
                 amount:              amt,
                 running_balance:     currentRunning,
+                // Lets the ledger table mark the row as something other than
+                // money without re-deriving the rule from the entry type in the
+                // browser. The concession keeps its own line, directly after the
+                // payment it belongs to; the two are never merged.
+                is_concession:       amt < 0 && CONCESSION_ENTRY_TYPES.has(entry.entry_type),
                 invoice_id:          entry.invoice_id  || null,
                 payment_id:          entry.payment_id  || null,
                 cn_id:               entry.cn_id        || null,
@@ -963,7 +986,12 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
             },
             opening_balance:        openingBalance,
             total_invoiced:         totalCharged,
+            // total_settled is every credit, kept for callers that already read it.
+            // The two figures beside it are the ones a statement should show: what
+            // was collected, and what was forgiven, never added together.
             total_settled:          totalCredited,
+            total_payments_received: Math.round((totalCredited - totalConcessions) * 100) / 100,
+            total_concessions:      Math.round(totalConcessions * 100) / 100,
             closing_balance:        currentRunning,
             pending_cheque_total:   parseFloat(pendingCheques.pending_cheque_total),
             pending_cheque_count:   pendingCheques.pending_cheque_count,
@@ -1087,6 +1115,7 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
         let openingBalance = 0;
         let totalInvoiced = 0;
         let totalSettled = 0;
+        let totalConcessions = 0;
         let currentRunning = 0;
         const ledgerRows = [];
 
@@ -1104,6 +1133,9 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
             currentRunning += amt;
             if (amt > 0) totalInvoiced += amt;
             else         totalSettled  += Math.abs(amt);
+            if (amt < 0 && CONCESSION_ENTRY_TYPES.has(entry.entry_type)) {
+                totalConcessions += Math.abs(amt);
+            }
 
             const rawPhysReceipt = entry.payment_physical_receipt_no || entry.invoice_physical_receipt_no;
             const physReceipt = rawPhysReceipt ? rawPhysReceipt.trim() : null;
@@ -1151,6 +1183,10 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
                 debit_amount:        amt > 0 ? amt  : null,
                 credit_amount:       amt < 0 ? Math.abs(amt) : null,
                 running_balance:     currentRunning,
+                // Lets the renderer mark the row as something other than money.
+                // The concession prints immediately after the payment it belongs
+                // to, as its own line -- never merged into it.
+                is_concession:       amt < 0 && CONCESSION_ENTRY_TYPES.has(entry.entry_type),
             });
         }
 
@@ -1208,6 +1244,8 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
             openingBalance,
             totalInvoiced,
             totalSettled,
+            totalConcessions,
+            totalPaymentsReceived: Math.round((totalSettled - totalConcessions) * 100) / 100,
             closingBalance:      currentRunning,
             pendingChequeTotal:  parseFloat(pending.pending_total),
             pendingChequeCount:  pending.pending_count,
@@ -1227,6 +1265,111 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
     } catch (err) {
         console.error('AR SOA PDF Error:', err);
         res.status(500).json({ message: 'Failed to generate Statement of Account PDF' });
+    }
+});
+
+// GET /ar/payments/:paymentId/receipt/pdf — Collection Acknowledgement Receipt.
+//
+// Not an Official Receipt, and the document says so on its face. The OR comes off
+// a pre-printed BIR-registered book and must show only the cash actually received;
+// this sheet exists to show how that cash, plus any tax withheld and any balance
+// forgiven, was applied across the customer's invoices — three figures that must
+// never be summed into one.
+router.get('/ar/payments/:paymentId/receipt/pdf', protect, hasPermission('ar:view'), async (req, res) => {
+    const paymentId = parseInt(req.params.paymentId, 10);
+    if (!paymentId) return res.status(400).json({ message: 'Invalid payment ID' });
+
+    try {
+        const companyInfo = await fetchGlobalCompanySettings(db);
+
+        const { rows: [payment] } = await db.query(`
+            SELECT cp.payment_id, cp.customer_id, cp.amount, cp.reference_number,
+                   cp.physical_receipt_no, cp.payment_date, cp.notes, cp.pdc_status,
+                   pm.name AS method_name,
+                   e.username AS received_by,
+                   COALESCE(c.company_name, TRIM(c.first_name || ' ' || COALESCE(c.last_name, ''))) AS customer_name,
+                   c.address AS customer_address,
+                   c.tin AS customer_tin
+              FROM customer_payment cp
+              JOIN customer c              ON c.customer_id = cp.customer_id
+              LEFT JOIN payment_methods pm ON pm.method_id = cp.method_id
+              LEFT JOIN employee e         ON e.employee_id = cp.employee_id
+             WHERE cp.payment_id = $1
+        `, [paymentId]);
+
+        if (!payment) return res.status(404).json({ message: 'Payment not found' });
+
+        const { rows: applications } = await db.query(`
+            SELECT i.invoice_number, ipa.amount_allocated AS amount
+              FROM invoice_payment_allocation ipa
+              JOIN invoice i ON i.invoice_id = ipa.invoice_id
+             WHERE ipa.payment_id = $1
+             ORDER BY i.invoice_date, i.invoice_id
+        `, [paymentId]);
+
+        // Only POSTED concessions appear. One still waiting on a cheque has not
+        // been earned and must not be printed as though the balance were forgiven.
+        const { rows: concessions } = await db.query(`
+            SELECT a.adjustment_no, r.label, a.notes, a.total_amount AS amount
+              FROM ar_adjustment a
+              JOIN ar_adjustment_reason r ON r.reason_code = a.reason_code
+             WHERE a.customer_payment_id = $1
+               AND a.status = 'POSTED'
+               AND a.reverses_adjustment_id IS NULL
+             ORDER BY a.adjustment_id
+        `, [paymentId]);
+
+        const { rows: [withholding] } = await db.query(
+            `SELECT COALESCE(SUM(actual_withheld), 0) AS total
+               FROM withholding_tax_line WHERE customer_payment_id = $1`,
+            [paymentId]
+        );
+
+        // The cash figure is the instrument's own amount. The allocations include
+        // the withheld tax (it settles the receivable), and the concession is not
+        // in them at all — so neither can inflate what this sheet says was
+        // received.
+        const pdfPath = await generateCollectionReceiptPDF({
+            company: companyInfo,
+            customer: {
+                name: payment.customer_name,
+                address: payment.customer_address,
+                tin: payment.customer_tin,
+            },
+            payment: {
+                reference: payment.physical_receipt_no
+                    || payment.reference_number
+                    || `PMT-${String(paymentId).padStart(4, '0')}`,
+                date: payment.payment_date,
+                method_name: payment.method_name,
+                physical_receipt_no: payment.physical_receipt_no,
+                received_by: payment.received_by,
+            },
+            applications: applications.map(a => ({
+                invoice_number: a.invoice_number,
+                particulars: `Settled via ${payment.method_name || 'collection'}`,
+                amount: a.amount,
+            })),
+            concessions: concessions.map(c => ({
+                adjustment_no: c.adjustment_no,
+                label: c.label,
+                notes: c.notes,
+                amount: c.amount,
+            })),
+            withheld: Number(withholding.total) || 0,
+            cash: Number(payment.amount) || 0,
+        });
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition',
+            `inline; filename=Collection_${String(payment.customer_name || 'Customer').replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`);
+        return res.sendFile(pdfPath, (err) => {
+            if (err && !res.headersSent) console.error('Error sending collection receipt PDF:', err);
+            if (pdfPath && fs.existsSync(pdfPath)) fs.unlink(pdfPath, () => {});
+        });
+    } catch (err) {
+        console.error('Collection receipt PDF error:', err);
+        res.status(500).json({ message: 'Failed to generate collection acknowledgement receipt' });
     }
 });
 

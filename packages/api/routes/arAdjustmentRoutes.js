@@ -3,21 +3,23 @@
 /**
  * Post-invoice A/R concessions.
  *
- * Phase 1 surface: the standalone write-down, plus reading and reversing.
- * Settlement discounts granted alongside a collection extend POST /payments
- * instead, so the cash and the concession are recorded in one transaction.
+ * The standalone write-down lives here, along with reading, reversing, and the
+ * inline authorization a cashier without the permission needs. Settlement
+ * discounts granted alongside a collection extend POST /payments instead, so
+ * the cash and the concession are recorded in one transaction.
  *
- * Authorization here is permission-only: a holder of ar:discount_grant acts
- * directly. The inline "have a manager authorize me" path arrives with the
- * counter flows, where it is actually needed — the standalone write-down is a
- * back-office action taken by someone who already holds the permission.
+ * Authorization has one rule and no thresholds: a holder of ar:discount_grant
+ * acts directly, with no modal and no extra keystroke. Anyone else may still
+ * key a concession, but the submission carries a token minted by
+ * POST /ar/adjustments/authorize from a permission-holder's own credentials.
  */
 
 const express = require('express');
 const db = require('../db');
-const { protect, hasPermission } = require('../middleware/authMiddleware');
+const { protect, hasPermission, userHasPermission } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const arAdjustment = require('../services/arAdjustmentService');
+const arAdjustmentAuth = require('../services/arAdjustmentAuthService');
 
 const router = express.Router();
 
@@ -110,9 +112,48 @@ router.get('/ar/customers/:customerId/adjustable-invoices', protect, hasPermissi
     }
 });
 
+// ── Inline manager authorization ────────────────────────────────
+// POST /ar/adjustments/authorize
+//
+// `protect` only, deliberately: the caller is precisely the employee who does
+// NOT hold ar:discount_grant. What is checked is the credentials in the body,
+// which belong to somebody else. The endpoint issues no session and never
+// touches req.user beyond identifying who is asking.
+router.post('/ar/adjustments/authorize', protect, async (req, res) => {
+    const { username, password, customer_id, total_amount, purpose } = req.body;
+    try {
+        const result = await arAdjustmentAuth.issueAuthorization(db, {
+            username,
+            password,
+            requestedBy: req.user.employee_id,
+            customerId: customer_id,
+            totalAmount: total_amount,
+            // What the authorizer is agreeing to, not just how much. A discount
+            // granted while money is being collected and a write-off granted
+            // with none are different acts, and a token for one must not spend
+            // on the other.
+            purpose,
+        });
+        res.json(result);
+    } catch (err) {
+        // Never falls through to the 500 branch with the request body attached:
+        // sendError logs the error object, and the body carries a password.
+        const status = err.statusCode || 500;
+        if (status >= 500) console.error('Failed to issue adjustment authorization:', err.message);
+        res.status(status).json({
+            message: status >= 500 ? 'Failed to authorize' : err.message,
+        });
+    }
+});
+
 // ── Create a standalone concession ──────────────────────────────
 // POST /ar/adjustments
-router.post('/ar/adjustments', protect, hasPermission('ar:discount_grant'), async (req, res) => {
+//
+// ar:view to reach the endpoint; ar:discount_grant OR a valid authorization
+// token to actually write. Splitting it this way keeps the permission-holder's
+// path free of any extra step while still letting a cashier record one that a
+// manager stood behind.
+router.post('/ar/adjustments', protect, hasPermission('ar:view'), async (req, res) => {
     const { employee_id } = req.user;
     const {
         customer_id,
@@ -122,21 +163,71 @@ router.post('/ar/adjustments', protect, hasPermission('ar:discount_grant'), asyn
         entry_date,
         client_ref,
         allocations,
+        authorization_token,
     } = req.body;
+
+    // This route creates write-downs and nothing else. A settlement discount is
+    // by definition granted alongside a collection, and there is no collection
+    // here -- it belongs to POST /payments or POST /invoices, where the cash it
+    // was traded for is recorded in the same transaction. Accepting one here
+    // would let a concession that is supposed to buy a payment be posted with no
+    // payment behind it.
+    if (adjustment_type !== 'BALANCE_WRITE_DOWN') {
+        return res.status(400).json({
+            message: 'A settlement discount is recorded with the collection it was granted for, not on its own.',
+        });
+    }
+
+    const holdsPermission = userHasPermission(req, 'ar:discount_grant');
+    if (!holdsPermission && !authorization_token) {
+        return res.status(403).json({
+            message: 'Recording a concession needs authorization from someone who holds the discount permission.',
+        });
+    }
 
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
+
+        // Normalized once, here, and the same set is both authorized and written.
+        // Computing the authorized amount from the raw body instead would let a
+        // negative line deflate the figure the token is checked against while
+        // contributing nothing to the document the service goes on to write.
+        const { allocations: lines, total } = arAdjustment.normalizeAllocations(allocations);
+
+        // The token is spent before the document is written, inside the same
+        // transaction: a concession the service then rejects rolls the spend
+        // back with it, so a refused attempt never burns the manager's approval.
+        let authorizedBy = null;
+        if (!holdsPermission) {
+            authorizedBy = await arAdjustmentAuth.consumeAuthorization(client, {
+                token: authorization_token,
+                requestedBy: employee_id,
+                customerId: customer_id,
+                totalAmount: total,
+                purpose: 'BALANCE_WRITE_DOWN',
+            });
+        }
+
         const doc = await arAdjustment.createAdjustment(client, {
             customerId: customer_id,
             adjustmentType: adjustment_type,
             reasonCode: reason_code,
-            allocations,
+            allocations: lines,
             notes,
             grantedBy: employee_id,
+            authorizedBy,
             clientRef: client_ref || null,
             entryDate: entry_date || null,
         });
+
+        if (authorizedBy) {
+            await arAdjustmentAuth.linkAuthorizationToAdjustment(client, {
+                token: authorization_token,
+                adjustmentId: doc.adjustment_id,
+            });
+        }
+
         await client.query('COMMIT');
         res.status(201).json(doc);
     } catch (err) {

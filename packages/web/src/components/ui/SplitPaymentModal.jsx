@@ -7,6 +7,10 @@ import InfoTip from '../ui/InfoTip';
 import MathExpressionInput from './MathExpressionInput';
 import { isChequeMethod } from '../../utils/chequeMethod';
 import { ICONS } from '../../constants';
+import { useAuth } from '../../contexts/AuthContext';
+import ManagerAuthorizationModal from './ManagerAuthorizationModal';
+
+const MIN_NOTE_LENGTH = 10;
 
 const SplitPaymentModal = ({
     isOpen,
@@ -30,10 +34,28 @@ const SplitPaymentModal = ({
     withholdingPreview = null
 }) => {
     const { settings } = useSettings();
+    const { hasPermission } = useAuth();
     const [paymentMethods, setPaymentMethods] = useState([]);
     const [payments, setPayments] = useState([]);
     const [loading, setLoading] = useState(false);
     const [showOnAccountConfirmation, setShowOnAccountConfirmation] = useState(false);
+
+    // ── The counter concession ───────────────────────────────────────────────
+    // Deliberately not a payment line. It is not in `payments`, so it cannot
+    // appear in the method picker, cannot add to Total Payments, and cannot enter
+    // the change calculation — a forgiven peso is not money in the drawer. What it
+    // does do is reduce what is left to collect, which is why `remaining`
+    // subtracts it.
+    const canGrantDiscount = hasPermission('ar:discount_grant');
+    const discountsEnabled = String(settings?.ENABLE_AR_ADJUSTMENTS ?? 'true') !== 'false';
+    const [discountAmount, setDiscountAmount] = useState('');
+    const [discountReasons, setDiscountReasons] = useState([]);
+    const [discountReasonCode, setDiscountReasonCode] = useState('');
+    const [discountNotes, setDiscountNotes] = useState('');
+    const [discountAuthToken, setDiscountAuthToken] = useState(null);
+    const [showDiscountAuthModal, setShowDiscountAuthModal] = useState(false);
+    const [resumeAfterDiscountAuth, setResumeAfterDiscountAuth] = useState(false);
+    const [discountClientRef, setDiscountClientRef] = useState(null);
     const initializedRef = useRef(false);
     const appliedOnAccountDefaultRef = useRef(false);
     const appliedWithholdingRef = useRef(false);
@@ -134,9 +156,28 @@ const SplitPaymentModal = ({
             initializedRef.current = false;
             appliedOnAccountDefaultRef.current = false;
             appliedWithholdingRef.current = false;
+            // The concession, its authorization and its idempotency key all belong
+            // to one sale. Carrying any of them into the next customer's would be
+            // the worst kind of bug this feature could have.
+            setDiscountAmount('');
+            setDiscountNotes('');
+            setDiscountAuthToken(null);
+            setDiscountClientRef(null);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, existingPaymentsKey, fetchPaymentMethods]); // Use stable key
+
+    // Reasons a concession granted at the counter may carry.
+    useEffect(() => {
+        if (!isOpen || !discountsEnabled) return;
+        setDiscountClientRef(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : null);
+        api.get('/ar/adjustment-reasons', { params: { applies_to: 'SETTLEMENT' } })
+            .then(res => {
+                setDiscountReasons(res.data || []);
+                setDiscountReasonCode(prev => prev || (res.data || [])[0]?.reason_code || '');
+            })
+            .catch(() => setDiscountReasons([]));
+    }, [isOpen, discountsEnabled]);
 
     // Auto-focus first input when modal opens
     useEffect(() => {
@@ -256,7 +297,7 @@ const SplitPaymentModal = ({
     }, [withholdingPreview, withholdingMethod]);
 
     // Calculate totals and validation
-    const { totalPayments, totalChange, remaining, canConfirm, validationErrors, onAccountSum, requiresOnAccountConfirmation } = useMemo(() => {
+    const { totalPayments, totalChange, remaining, concessionAmount, canConfirm, validationErrors, onAccountSum, requiresOnAccountConfirmation } = useMemo(() => {
         let totalPaid = 0;
         let totalChangeAmount = 0;
         let onAccountTotal = 0;
@@ -314,7 +355,28 @@ const SplitPaymentModal = ({
             }
         }
 
-        const remainingDue = Math.max((totalDue || 0) - totalPaid, 0);
+        // The concession closes the gap between what was tendered and what was
+        // billed, so it belongs here and nowhere else in this calculation. It is
+        // absent from totalPaid and from totalChangeAmount on purpose: it is not
+        // money, so it can neither be counted as collected nor given back as change.
+        const conceded = Math.round(((parseFloat(discountAmount) || 0) + Number.EPSILON) * 100) / 100;
+        if (conceded > 0) {
+            if (conceded > (totalDue || 0) - totalPaid + 0.01) {
+                errors.push('The concession is more than the balance the tenders leave outstanding');
+            }
+            if (!discountReasonCode) {
+                errors.push('Choose a reason for the concession');
+            }
+            const reason = discountReasons.find(r => r.reason_code === discountReasonCode);
+            if (reason?.max_amount != null && conceded > Number(reason.max_amount) + 0.005) {
+                errors.push(`${reason.label} is capped at ${settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}${Number(reason.max_amount).toFixed(2)}`);
+            }
+            if (reason?.requires_note && discountNotes.trim().length < MIN_NOTE_LENGTH) {
+                errors.push(`${reason.label} needs a note of at least ${MIN_NOTE_LENGTH} characters`);
+            }
+        }
+
+        const remainingDue = Math.max((totalDue || 0) - totalPaid - conceded, 0);
         const coveredByOnAccount = onAccountTotal >= remainingDue;
         const requiresOnAccountConfirmation = onAccountTotal > 0 && remainingDue > 0.01 && coveredByOnAccount;
         const canConfirm = errors.length === 0 && (remainingDue <= 0.01 || coveredByOnAccount);
@@ -323,12 +385,14 @@ const SplitPaymentModal = ({
             totalPayments: totalPaid,
             totalChange: totalChangeAmount,
             remaining: remainingDue,
+            concessionAmount: conceded,
             canConfirm,
             validationErrors: errors,
             onAccountSum: onAccountTotal,
             requiresOnAccountConfirmation
         };
-    }, [payments, paymentMethods, totalDue, physicalReceiptNo]);
+    }, [payments, paymentMethods, totalDue, physicalReceiptNo, discountAmount, discountReasonCode,
+        discountReasons, discountNotes, settings?.DEFAULT_CURRENCY_SYMBOL]);
 
     // Auto-allocate remaining amount to selected payment method
     // Compute remaining at click time to avoid stale closure values.
@@ -383,6 +447,13 @@ const SplitPaymentModal = ({
 
         if (!canConfirm) return;
 
+        // Asked on confirm, never while typing: the cashier keys the sale, and only
+        // the act of committing it needs someone else standing there.
+        if (concessionAmount > 0 && !canGrantDiscount && !discountAuthToken) {
+            setShowDiscountAuthModal(true);
+            return;
+        }
+
         // Check if on-account confirmation is required
         if (requiresOnAccountConfirmation && !showOnAccountConfirmation) {
             setShowOnAccountConfirmation(true);
@@ -416,15 +487,41 @@ const SplitPaymentModal = ({
                 };
             });
 
-            await onConfirm(formattedPayments, physicalReceiptNo, { employeeId });
+            // Handed up as its own field, never inside `payments`. POST /invoices
+            // writes it as an ar_adjustment against the new invoice — not as a
+            // tender, and not as a line discount, because the sale really was for
+            // the full amount and only its collectability changed.
+            const concession = concessionAmount > 0 ? {
+                amount: concessionAmount,
+                reason_code: discountReasonCode,
+                notes: discountNotes.trim() || null,
+                client_ref: discountClientRef,
+                authorization_token: canGrantDiscount ? undefined : discountAuthToken,
+            } : undefined;
+
+            await onConfirm(formattedPayments, physicalReceiptNo, { employeeId, discount: concession });
             onClose();
         } catch (err) {
             console.error('Payment confirmation error:', err);
-            toast.error('Failed to process payments');
+            toast.error(err?.response?.data?.message || 'Failed to process payments');
+            // A rejected or spent authorization has to be asked for again; keeping
+            // the stale one would only fail a second time.
+            setDiscountAuthToken(null);
         } finally {
             setLoading(false);
         }
-    }, [canConfirm, payments, paymentMethods, onConfirm, physicalReceiptNo, onClose, validationErrors, requiresOnAccountConfirmation, showOnAccountConfirmation, employeeId]);
+    }, [canConfirm, payments, paymentMethods, onConfirm, physicalReceiptNo, onClose, validationErrors,
+        requiresOnAccountConfirmation, showOnAccountConfirmation, employeeId, concessionAmount,
+        canGrantDiscount, discountAuthToken, discountReasonCode, discountNotes, discountClientRef]);
+
+    // The cashier already pressed Confirm. Making them press it again after the
+    // manager walks away is one more chance to lose the approval.
+    useEffect(() => {
+        if (resumeAfterDiscountAuth && discountAuthToken) {
+            setResumeAfterDiscountAuth(false);
+            handleConfirm();
+        }
+    }, [resumeAfterDiscountAuth, discountAuthToken, handleConfirm]);
 
     // Keyboard shortcuts
     useEffect(() => {
@@ -444,6 +541,13 @@ const SplitPaymentModal = ({
     }, [isOpen, canConfirm, onClose, handleConfirm]);
 
     if (!isOpen) return null;
+
+    // A cheque tender that has not been marked settled. The concession granted
+    // alongside one waits at PENDING_CLEARANCE rather than posting now.
+    const hasPendingChequeTender = payments.some(payment => {
+        const method = paymentMethods.find(m => String(m.method_id) === String(payment.method_id));
+        return isChequeMethod(method) && (method?.settlement_type || 'instant') !== 'instant';
+    });
 
     const requiresPhysicalReceipt = payments.some(payment => {
         const method = paymentMethods.find(m => String(m.method_id) === String(payment.method_id));
@@ -487,6 +591,17 @@ const SplitPaymentModal = ({
                                     {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{remaining.toFixed(2)}
                                 </div>
                             </div>
+                            {concessionAmount > 0 && (
+                                <div>
+                                    {/* Its own tile, never folded into Total Payments:
+                                        a cashier reading this screen has to be able to
+                                        point at what came in and what was forgiven. */}
+                                    <div className="text-sm font-medium text-slate-500 dark:text-slate-400">Concession</div>
+                                    <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">
+                                        {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{concessionAmount.toFixed(2)}
+                                    </div>
+                                </div>
+                            )}
                             {totalChange > 0 && (
                                 <div>
                                     <div className="text-sm font-medium text-slate-500 dark:text-slate-400">Change Due</div>
@@ -815,6 +930,91 @@ const SplitPaymentModal = ({
                         </button>
                     )}
 
+                    {/* ── Concession ────────────────────────────────────────────
+                        Below the tender list and visibly outside it. It is not a
+                        payment method, does not appear in the picker above, and
+                        adds nothing to Total Payments or Change Due. */}
+                    {discountsEnabled && (
+                        <div className="mt-6 rounded-lg border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 p-4">
+                            <div className="flex items-start justify-between gap-4 flex-wrap">
+                                <div>
+                                    <h4 className="text-sm font-semibold text-amber-900 dark:text-amber-200 flex items-center gap-1">
+                                        Concession (not a payment)
+                                        <InfoTip label="Concession">
+                                            Part of the sale forgiven so the customer can settle now. It is <strong>not money received</strong>:
+                                            it adds nothing to the drawer, never becomes change, and is excluded from the day&rsquo;s collections.
+                                            The BIR official receipt still shows only the cash actually handed over. Recorded as a numbered
+                                            adjustment with your name on it.
+                                        </InfoTip>
+                                    </h4>
+                                    <p className="text-xs text-amber-800 dark:text-amber-300/90 mt-0.5">
+                                        Leave it at zero for an ordinary sale.
+                                    </p>
+                                </div>
+                                <div className="w-40">
+                                    <label className="block text-xs font-semibold text-amber-900 dark:text-amber-200 mb-1">Amount forgiven</label>
+                                    <MathExpressionInput
+                                        precision={2}
+                                        value={discountAmount}
+                                        onChange={(val) => setDiscountAmount(val)}
+                                        placeholder="0.00"
+                                        className="w-full px-3 py-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-right font-mono font-bold text-amber-900 dark:text-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                    />
+                                </div>
+                            </div>
+
+                            {concessionAmount > 0 && (
+                                <div className="mt-3 space-y-3">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-semibold text-amber-900 dark:text-amber-200 mb-1">Reason *</label>
+                                            <select
+                                                value={discountReasonCode}
+                                                onChange={(e) => setDiscountReasonCode(e.target.value)}
+                                                className="w-full px-3 py-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-sm text-amber-950 dark:text-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                            >
+                                                {discountReasons.length === 0 && <option value="">No reasons configured</option>}
+                                                {discountReasons.map(r => (
+                                                    <option key={r.reason_code} value={r.reason_code}>{r.label}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-semibold text-amber-900 dark:text-amber-200 mb-1">
+                                                Note {discountReasons.find(r => r.reason_code === discountReasonCode)?.requires_note && <span className="text-danger-600">*</span>}
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={discountNotes}
+                                                onChange={(e) => setDiscountNotes(e.target.value)}
+                                                placeholder="What was agreed, and with whom"
+                                                className="w-full px-3 py-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-sm text-amber-950 dark:text-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* A cheque has not cleared, so the concession has
+                                        not been earned. Said here rather than discovered
+                                        later when the invoice fails to close. */}
+                                    {hasPendingChequeTender && (
+                                        <div className="text-xs text-amber-900 dark:text-amber-200 bg-amber-100/70 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-800 rounded-lg px-3 py-2">
+                                            This sale is being settled by cheque, so the concession is held until the cheque clears.
+                                            If it bounces, the concession is voided and the full balance stands.
+                                        </div>
+                                    )}
+
+                                    {!canGrantDiscount && (
+                                        <div className="text-xs text-amber-900 dark:text-amber-200 bg-amber-100/70 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-800 rounded-lg px-3 py-2">
+                                            {discountAuthToken
+                                                ? 'Authorized. The manager who approved it will be recorded alongside your name.'
+                                                : 'Manager authorization required — you will be asked for it when you confirm.'}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {/* Validation Errors */}
                     {validationErrors.length > 0 && (
                         <div className="mt-6 p-3 bg-danger-50 dark:bg-danger-950/40 border border-danger-200 dark:border-danger-800/60 rounded-lg">
@@ -852,6 +1052,16 @@ const SplitPaymentModal = ({
                         </button>
                     </div>
                 </div>
+
+                <ManagerAuthorizationModal
+                    isOpen={showDiscountAuthModal}
+                    onClose={() => setShowDiscountAuthModal(false)}
+                    permissionLabel="the discount permission"
+                    actionLabel={`a ${settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}${concessionAmount.toFixed(2)} concession${customerName ? ` for ${customerName}` : ''}`}
+                    amount={concessionAmount}
+                    context={{ customer_id: customer?.customer_id, total_amount: concessionAmount, purpose: 'SETTLEMENT_DISCOUNT' }}
+                    onAuthorized={(token) => { setDiscountAuthToken(token); setResumeAfterDiscountAuth(true); }}
+                />
 
                 {/* On Account Confirmation Modal */}
                 {showOnAccountConfirmation && (
