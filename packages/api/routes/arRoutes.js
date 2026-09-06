@@ -153,14 +153,30 @@ router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req
             paramIdx++;
         }
 
-        let havingClause = 'HAVING b.ledger_balance > 0';
+        // The balance predicate is not an aggregate, so it belongs in WHERE; only the
+        // due-date predicates need HAVING. Keeping them separate lets `balanceScope`
+        // widen the list beyond open balances without disturbing the risk filters.
+        //
+        // `open` stays the default so the page still opens on a collections worklist,
+        // but settled and credit accounts are now reachable instead of being silently
+        // dropped: a zero balance means the account is paid, not that it stopped
+        // existing, and a negative balance (customer in credit) is a liability that
+        // must never be hidden from finance.
+        const scope = String(req.query.balanceScope || 'open').toLowerCase();
+        let balanceWhere = '';
+        if (scope === 'open') balanceWhere = ' AND COALESCE(b.ledger_balance, 0) > 0';
+        else if (scope === 'settled') balanceWhere = ' AND COALESCE(b.ledger_balance, 0) = 0';
+        else if (scope === 'credit') balanceWhere = ' AND COALESCE(b.ledger_balance, 0) < 0';
+
+        const havingParts = [];
         if (status === 'CREDIT_HOLD') {
             searchWhere += ' AND c.credit_hold = TRUE';
         } else if (status === 'CURRENT') {
-            havingClause += " AND MIN(COALESCE(i.due_date, i.invoice_date)) >= CURRENT_DATE";
+            havingParts.push('MIN(COALESCE(i.due_date, i.invoice_date)) >= CURRENT_DATE');
         } else if (status === 'OVERDUE') {
-            havingClause += " AND MIN(COALESCE(i.due_date, i.invoice_date)) < CURRENT_DATE";
+            havingParts.push('MIN(COALESCE(i.due_date, i.invoice_date)) < CURRENT_DATE');
         }
+        const havingClause = havingParts.length ? `HAVING ${havingParts.join(' AND ')}` : '';
 
         let orderBy = 'ORDER BY invoice_count DESC, earliest_due_date ASC, total_balance_due DESC';
         if (sortBy) {
@@ -186,11 +202,13 @@ router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req
                 c.last_name,
                 c.credit_hold,
                 c.phone,
-                b.ledger_balance                                    AS total_balance_due,
+                COALESCE(b.ledger_balance, 0)                       AS total_balance_due,
                 COALESCE(w.balance, 0)                              AS wallet_balance,
                 MIN(COALESCE(i.due_date, i.invoice_date))          AS earliest_due_date,
                 COUNT(DISTINCT i.invoice_id)                        AS invoice_count,
                 CASE 
+                    WHEN COALESCE(b.ledger_balance, 0) < 0 THEN 'In Credit'
+                    WHEN MIN(COALESCE(i.due_date, i.invoice_date)) IS NULL THEN 'Settled'
                     WHEN MIN(COALESCE(i.due_date, i.invoice_date)) >= CURRENT_DATE THEN 'Current'
                     WHEN MIN(COALESCE(i.due_date, i.invoice_date)) >= CURRENT_DATE - INTERVAL '30 days' THEN '1-30 Days'
                     WHEN MIN(COALESCE(i.due_date, i.invoice_date)) >= CURRENT_DATE - INTERVAL '60 days' THEN '31-60 Days'
@@ -198,10 +216,11 @@ router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req
                     ELSE '90+ Days'
                 END as status
             FROM customer c
-            JOIN vw_customer_ar_balance b ON b.customer_id = c.customer_id
+            LEFT JOIN vw_customer_ar_balance b ON b.customer_id = c.customer_id
             LEFT JOIN customer_wallet w ON c.customer_id = w.customer_id
             LEFT JOIN invoice i ON c.customer_id = i.customer_id AND i.status IN ('Unpaid', 'Partially Paid')
-            WHERE b.ledger_balance > 0
+            WHERE TRUE
+            ${balanceWhere}
             ${searchWhere}
             GROUP BY c.customer_id, c.company_name, c.first_name, c.last_name, c.credit_hold, c.phone, b.ledger_balance, w.balance
             ${havingClause}
@@ -219,9 +238,10 @@ router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req
             FROM (
                 SELECT c.customer_id
                 FROM customer c
-                JOIN vw_customer_ar_balance b ON b.customer_id = c.customer_id
+                LEFT JOIN vw_customer_ar_balance b ON b.customer_id = c.customer_id
                 LEFT JOIN invoice i ON c.customer_id = i.customer_id AND i.status IN ('Unpaid', 'Partially Paid')
-                WHERE b.ledger_balance > 0
+                WHERE TRUE
+                ${balanceWhere}
                 ${searchWhere}
                 GROUP BY c.customer_id, b.ledger_balance
                 ${havingClause}

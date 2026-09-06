@@ -28,8 +28,18 @@
  * // Returns: { text: '5 days remaining', color: 'bg-green-100 text-green-800' }
  */
 export const getCustomerStatusBadge = (customer) => {
+    // Balance state outranks the due-date countdown. A customer in credit is owed
+    // money by us, and one with nothing outstanding is settled -- neither is
+    // meaningfully described by "days remaining" on an invoice due date.
+    const balance = Number(customer.total_balance_due ?? 0);
+    if (balance < 0) {
+        return { text: 'In credit', color: 'bg-blue-100 text-blue-800' };
+    }
+
     if (!customer.earliest_due_date) {
-        return { text: 'No due date', color: 'bg-gray-100 text-gray-800' };
+        return balance === 0
+            ? { text: 'Settled', color: 'bg-green-100 text-green-800' }
+            : { text: 'No due date', color: 'bg-gray-100 text-gray-800' };
     }
 
     const dueDate = new Date(customer.earliest_due_date);

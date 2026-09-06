@@ -155,36 +155,69 @@ router.get('/customers/with-balances', protect, hasPermission('ar:view'), async 
         const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
         // balance_due is sourced from ar_ledger (vw_customer_ar_balance), the authoritative
         // cash-basis AR balance, not from invoice.amount_paid -- see AR balance consolidation.
+        const { search, balanceScope } = req.query;
+
+        // This endpoint backs customer pickers (notably the SOA combobox), so it must
+        // list every customer, not just the ones currently owing money. Two rules follow
+        // from that:
+        //   * LEFT JOIN the ledger view -- a customer with no ar_ledger rows at all
+        //     (nothing posted yet, or history predating the ledger) still has an account.
+        //   * No implicit balance filter -- a statement of account is routinely issued
+        //     for a fully settled account (proof of settlement) or one carrying a credit.
+        // Callers that genuinely want a collections worklist pass balanceScope=open.
+        const params = [];
+        let paramIdx = 1;
+        const conditions = [];
+
+        if (search && search.trim()) {
+            conditions.push(`(
+                LOWER(COALESCE(c.company_name, '')) LIKE $${paramIdx} OR
+                LOWER(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')) LIKE $${paramIdx} OR
+                LOWER(COALESCE(c.phone, '')) LIKE $${paramIdx}
+            )`);
+            params.push(`%${search.trim().toLowerCase()}%`);
+            paramIdx++;
+        }
+
+        const scope = String(balanceScope || 'all').toLowerCase();
+        if (scope === 'open') conditions.push('COALESCE(b.ledger_balance, 0) > 0');
+        else if (scope === 'settled') conditions.push('COALESCE(b.ledger_balance, 0) = 0');
+        else if (scope === 'credit') conditions.push('COALESCE(b.ledger_balance, 0) < 0');
+
+        const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
         const query = `
             SELECT
                 c.customer_id,
                 c.first_name,
                 c.last_name,
                 c.company_name,
+                c.phone,
                 (SELECT COALESCE(SUM(i.total_amount),0) FROM invoice i WHERE i.customer_id = c.customer_id) AS total_invoiced,
-                b.ledger_balance AS balance_due
+                COALESCE(b.ledger_balance, 0) AS balance_due
             FROM customer c
-            JOIN vw_customer_ar_balance b ON b.customer_id = c.customer_id
-            WHERE b.ledger_balance > 0
-            ORDER BY c.first_name, c.last_name;
+            LEFT JOIN vw_customer_ar_balance b ON b.customer_id = c.customer_id
+            ${whereClause}
+            ORDER BY COALESCE(NULLIF(c.company_name, ''), c.first_name || ' ' || c.last_name) ASC
         `;
+
         if (!paginated) {
-            const { rows } = await db.query(query);
+            const { rows } = await db.query(query, params);
             return res.json(rows);
         }
 
         const countQuery = `
-            SELECT COUNT(*)::int AS total FROM (
-                SELECT c.customer_id
-                FROM customer c
-                JOIN vw_customer_ar_balance b ON b.customer_id = c.customer_id
-                WHERE b.ledger_balance > 0
-            ) grouped_customers;
+            SELECT COUNT(*)::int AS total
+            FROM customer c
+            LEFT JOIN vw_customer_ar_balance b ON b.customer_id = c.customer_id
+            ${whereClause}
         `;
-        const countRes = await db.query(countQuery);
+        const countRes = await db.query(countQuery, params);
         const total = countRes.rows[0]?.total || 0;
-        const paginatedQuery = query.replace(/;\s*$/, ' LIMIT $1 OFFSET $2;');
-        const { rows } = await db.query(paginatedQuery, [limit, offset]);
+        const { rows } = await db.query(
+            `${query} LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
+            [...params, limit, offset]
+        );
         res.json(paginatedResponse({ data: rows, page, pageSize, total }));
     } catch (err) {
         console.error(err.message);

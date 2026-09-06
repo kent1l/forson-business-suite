@@ -6,8 +6,7 @@ import { exportToCSV } from '../utils/csv';
 
 // Owns all state/data-fetching for the AR "Overview & Aging" tab: dashboard KPIs,
 // aging buckets + drill-down, customer summary table, and the receive-payment modal.
-// `customers` is lifted to the page since the Ledger/SOA tab also reads it.
-export default function useAROverviewData({ dateRange, hasPermission, activeTab, setCustomers }) {
+export default function useAROverviewData({ dateRange, hasPermission, activeTab }) {
     const [customerSummary, setCustomerSummary] = useState([]);
     const [dashboardStats, setDashboardStats] = useState({
         totalReceivables: 0,
@@ -40,6 +39,9 @@ export default function useAROverviewData({ dateRange, hasPermission, activeTab,
     const [customerSummaryTotal, setCustomerSummaryTotal] = useState(0);
     const [customerSummarySearchTerm, setCustomerSummarySearchTerm] = useState('');
     const [customerSummaryStatusFilter, setCustomerSummaryStatusFilter] = useState('ALL');
+    // Which balances the worklist covers. Defaults to 'open' (collections view), but
+    // settled and in-credit accounts stay reachable rather than disappearing once paid.
+    const [customerSummaryBalanceScope, setCustomerSummaryBalanceScope] = useState('open');
     const [customerSummarySortConfig, setCustomerSummarySortConfig] = useState({ key: 'invoice_count', direction: 'DESC' });
     const [drillDownPage, setDrillDownPage] = useState(1);
     const [drillDownPageSize, setDrillDownPageSize] = useState(25);
@@ -104,6 +106,7 @@ export default function useAROverviewData({ dateRange, hasPermission, activeTab,
                     paginated: 1,
                     search: customerSummarySearchTerm,
                     status: customerSummaryStatusFilter,
+                    balanceScope: customerSummaryBalanceScope,
                     sortBy: customerSummarySortConfig.key,
                     sortDir: customerSummarySortConfig.direction
                 }
@@ -113,7 +116,7 @@ export default function useAROverviewData({ dateRange, hasPermission, activeTab,
         } catch (err) {
             console.error('Failed to fetch customer summary:', err);
         }
-    }, [customerSummaryPage, customerSummaryPageSize, customerSummarySearchTerm, customerSummaryStatusFilter, customerSummarySortConfig]);
+    }, [customerSummaryPage, customerSummaryPageSize, customerSummarySearchTerm, customerSummaryStatusFilter, customerSummaryBalanceScope, customerSummarySortConfig]);
 
     const fetchDashboardData = useCallback(async () => {
         try {
@@ -125,14 +128,10 @@ export default function useAROverviewData({ dateRange, hasPermission, activeTab,
                 endDate: dateRange.endDate.toISOString()
             };
 
-            const [customersRes, dashboardRes, agingRes] = await Promise.all([
-                api.get('/customers/with-balances', { params: { paginated: 1, page: 1, pageSize: 100 } }),
+            const [dashboardRes, agingRes] = await Promise.all([
                 api.get('/ar/dashboard-stats', { params: dateParams }).catch(() => ({ data: {} })),
                 api.get('/ar/aging-summary').catch(() => ({ data: [] })),
             ]);
-
-            const customersWithBalances = customersRes.data?.data || customersRes.data || [];
-            setCustomers(customersWithBalances);
 
             if (dashboardRes.data && Object.keys(dashboardRes.data).length > 0) {
                 setDashboardStats(dashboardRes.data);
@@ -151,7 +150,7 @@ export default function useAROverviewData({ dateRange, hasPermission, activeTab,
         } finally {
             setLoading(false);
         }
-    }, [dateRange, fetchCustomerSummary, setCustomers]);
+    }, [dateRange, fetchCustomerSummary]);
 
     useEffect(() => {
         if (hasPermission('ar:view') && activeTab === 'overview') {
@@ -263,6 +262,7 @@ export default function useAROverviewData({ dateRange, hasPermission, activeTab,
         setCustomerSummaryPage, setCustomerSummaryPageSize,
         customerSummarySearchTerm, setCustomerSummarySearchTerm,
         customerSummaryStatusFilter, setCustomerSummaryStatusFilter,
+        customerSummaryBalanceScope, setCustomerSummaryBalanceScope,
         customerSummarySortConfig, setCustomerSummarySortConfig,
         drillDownPage, drillDownPageSize, drillDownTotal,
         setDrillDownPage, setDrillDownPageSize,

@@ -36,6 +36,8 @@ const AROverviewTab = ({
     onSearchChange,
     statusFilter,
     onStatusFilterChange,
+    balanceScope,
+    onBalanceScopeChange,
     sortConfig,
     onSortChange,
     customerSummaryPage,
@@ -123,6 +125,8 @@ const AROverviewTab = ({
                         onSearchChange={onSearchChange}
                         statusFilter={statusFilter}
                         onStatusFilterChange={onStatusFilterChange}
+                        balanceScope={balanceScope}
+                        onBalanceScopeChange={onBalanceScopeChange}
                         sortConfig={sortConfig}
                         onSortChange={onSortChange}
                     />
