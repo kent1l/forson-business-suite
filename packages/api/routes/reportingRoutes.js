@@ -4,6 +4,7 @@ const { Parser } = require('json2csv');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const { buildStatusClause } = require('../helpers/invoiceStatusFilter');
+const { costedLineCondition, costedPartCondition, buildCostCoverage } = require('../helpers/costCoverage');
 const router = express.Router();
 
 // GET /api/reports/sales-summary
@@ -35,7 +36,10 @@ router.get('/reports/sales-summary', protect, hasPermission('reports:view'), asy
                 (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers,
                 il.quantity, il.sale_price,
                 (il.quantity * il.sale_price) AS line_total,
-                (il.quantity * il.cost_at_sale) AS line_cost
+                -- Left blank rather than 0 where no cost was recorded. This column reaches the
+                -- user through the CSV export, and a 0.00 in a cost column invites exactly the
+                -- calculation this fix removes from the report: Total - Cost as "profit".
+                CASE WHEN ${costedLineCondition('il')} THEN (il.quantity * il.cost_at_sale) END AS line_cost
             FROM invoice i
             JOIN invoice_line il ON i.invoice_id = il.invoice_id
             JOIN part p ON il.part_id = p.part_id
@@ -55,9 +59,15 @@ router.get('/reports/sales-summary', protect, hasPermission('reports:view'), asy
                 (SELECT COALESCE(SUM(subtotal_ex_tax), 0) FROM credit_note WHERE (refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2) AS total_refunds,
                 (SELECT COALESCE(SUM(tax_total), 0) FROM invoice WHERE (invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND ${summaryStatusClauseBare}) AS gross_vat,
                 (SELECT COALESCE(SUM(tax_total), 0) FROM credit_note WHERE (refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2) AS total_refund_vat,
-                (SELECT COALESCE(SUM(il.quantity * il.cost_at_sale), 0) FROM invoice_line il JOIN invoice i ON il.invoice_id = i.invoice_id WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND ${summaryStatusClauseAliased}) AS total_cost_of_goods_sold,
-                (SELECT COALESCE(SUM(cnl.quantity * p.wac_cost), 0) FROM credit_note_line cnl JOIN part p ON cnl.part_id = p.part_id JOIN credit_note cn ON cnl.cn_id = cn.cn_id WHERE (cn.refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2) AS total_cost_of_goods_returned,
-                (SELECT COUNT(*) FROM invoice WHERE (invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND ${summaryStatusClauseBare}) AS total_invoices
+                (SELECT COALESCE(SUM(il.quantity * il.cost_at_sale), 0) FROM invoice_line il JOIN invoice i ON il.invoice_id = i.invoice_id WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND ${summaryStatusClauseAliased} AND ${costedLineCondition('il')}) AS total_cost_of_goods_sold,
+                (SELECT COALESCE(SUM(cnl.quantity * p.wac_cost), 0) FROM credit_note_line cnl JOIN part p ON cnl.part_id = p.part_id JOIN credit_note cn ON cnl.cn_id = cn.cn_id WHERE (cn.refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND ${costedPartCondition('p')}) AS total_cost_of_goods_returned,
+                (SELECT COUNT(*) FROM invoice WHERE (invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND ${summaryStatusClauseBare}) AS total_invoices,
+                -- Revenue and line counts split by whether the line carries a usable cost, so
+                -- the profit figure below can state how much of the period it actually measured.
+                (SELECT COALESCE(SUM(il.quantity * il.sale_price - COALESCE(il.discount_amount, 0)), 0) FROM invoice_line il JOIN invoice i ON il.invoice_id = i.invoice_id WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND ${summaryStatusClauseAliased} AND ${costedLineCondition('il')}) AS costed_sales,
+                (SELECT COALESCE(SUM(il.quantity * il.sale_price - COALESCE(il.discount_amount, 0)), 0) FROM invoice_line il JOIN invoice i ON il.invoice_id = i.invoice_id WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND ${summaryStatusClauseAliased}) AS all_line_sales,
+                (SELECT COUNT(*) FROM invoice_line il JOIN invoice i ON il.invoice_id = i.invoice_id WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND ${summaryStatusClauseAliased} AND ${costedLineCondition('il')}) AS costed_line_count,
+                (SELECT COUNT(*) FROM invoice_line il JOIN invoice i ON il.invoice_id = i.invoice_id WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 AND ${summaryStatusClauseAliased}) AS total_line_count
         `;
 
         const summaryPromise = client.query(summaryQuery, summaryParams);
@@ -93,15 +103,30 @@ router.get('/reports/sales-summary', protect, hasPermission('reports:view'), asy
         const netVatCollected = grossVat - refundVat;
 
         const netCost = parseFloat(summaryData.total_cost_of_goods_sold) - parseFloat(summaryData.total_cost_of_goods_returned);
-        
-        const summary = { 
+
+        // Profit is measured on the costed subset only. Subtracting cost from ALL sales while
+        // 83% of lines record cost as 0 reported the full sale price of those lines as profit
+        // (86.2% margin over the last 12 months, against a measurable 33.0%).
+        const costedSales = parseFloat(summaryData.costed_sales);
+        const coverage = buildCostCoverage({
+            costedRevenue: costedSales,
+            totalRevenue: parseFloat(summaryData.all_line_sales),
+            costedLines: parseInt(summaryData.costed_line_count, 10),
+            totalLines: parseInt(summaryData.total_line_count, 10),
+        });
+        const measuredProfit = coverage.costedLines > 0 ? costedSales - netCost : null;
+
+        const summary = {
             grossSales,
             totalRefunds,
             totalSales: netSales,
             vatCollected: netVatCollected,
-            totalCost: netCost, 
-            profit: netSales - netCost, 
-            totalInvoices: parseInt(summaryData.total_invoices, 10) 
+            costedSales,
+            totalCost: netCost,
+            profit: measuredProfit,
+            profitBasis: 'costed_lines',
+            coverage,
+            totalInvoices: parseInt(summaryData.total_invoices, 10)
         };
 
         if (format === 'csv') {
@@ -626,8 +651,17 @@ router.get('/reports/profitability-by-product', protect, hasPermission('reports:
                 (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers,
                 SUM(il.quantity) AS total_quantity_sold,
                 SUM(il.tax_base) AS total_revenue,
-                SUM(il.quantity * il.cost_at_sale) AS total_cost, -- UPDATED: Use cost_at_sale
-                SUM(il.tax_base) - SUM(il.quantity * il.cost_at_sale) AS total_profit -- UPDATED: Use cost_at_sale
+                -- Cost and profit cover only lines with a recorded cost. Including lines whose
+                -- cost_at_sale is 0 (83% of them, because the part had no weighted average cost
+                -- when it was sold) reported their entire sale price as profit.
+                SUM(il.quantity * il.cost_at_sale) FILTER (WHERE ${costedLineCondition('il')}) AS total_cost,
+                SUM(il.tax_base) FILTER (WHERE ${costedLineCondition('il')}) AS costed_revenue,
+                (
+                    COALESCE(SUM(il.tax_base) FILTER (WHERE ${costedLineCondition('il')}), 0)
+                    - COALESCE(SUM(il.quantity * il.cost_at_sale) FILTER (WHERE ${costedLineCondition('il')}), 0)
+                ) AS total_profit,
+                COUNT(*) FILTER (WHERE ${costedLineCondition('il')}) AS costed_line_count,
+                COUNT(*) AS total_line_count
             FROM invoice_line il
             JOIN part p ON il.part_id = p.part_id
             JOIN invoice i ON il.invoice_id = i.invoice_id
@@ -635,7 +669,9 @@ router.get('/reports/profitability-by-product', protect, hasPermission('reports:
             LEFT JOIN "group" g ON p.group_id = g.group_id
             WHERE ${whereClauses.join(' AND ')}
             GROUP BY p.part_id, b.brand_name, g.group_name
-            ORDER BY total_profit DESC
+            -- Parts with no measurable profit sort last rather than mixing in at zero, where
+            -- they would push genuine loss-making items off the first page.
+            ORDER BY (COUNT(*) FILTER (WHERE ${costedLineCondition('il')}) > 0) DESC, total_profit DESC
         `;
         const params = [...queryParams];
         if (format === 'json' && paginated) {
@@ -659,7 +695,25 @@ router.get('/reports/profitability-by-product', protect, hasPermission('reports:
             `, queryParams) : Promise.resolve({ rows: [{ total: 0 }] })
         ]);
         const { rows } = rowsRes;
-        const data = rows;
+        // A part whose lines all lack a cost has no measurable profit. Reporting 0 there would
+        // read as "broke even" rather than "we don't know", so the figures are nulled out and
+        // the row carries its own coverage instead.
+        const data = rows.map((row) => {
+            const costedLines = parseInt(row.costed_line_count, 10) || 0;
+            const rowCoverage = buildCostCoverage({
+                costedRevenue: parseFloat(row.costed_revenue) || 0,
+                totalRevenue: parseFloat(row.total_revenue) || 0,
+                costedLines,
+                totalLines: parseInt(row.total_line_count, 10) || 0,
+            });
+            return {
+                ...row,
+                total_cost: costedLines > 0 ? row.total_cost : null,
+                total_profit: costedLines > 0 ? row.total_profit : null,
+                cost_coverage_ratio: rowCoverage.valueRatio,
+                cost_coverage_level: rowCoverage.level,
+            };
+        });
 
         if (format === 'csv') {
             const json2csvParser = new Parser();

@@ -10,6 +10,13 @@ import { getPaginatedPayload } from '../../utils/paginatedResponse';
 import { sortData } from '../../utils/sortData';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
+
+// Cost and profit come back as null when none of an item's sales carried a recorded cost.
+// Rendering 0.00 there would claim the item broke even, which is a different statement.
+const formatMeasured = (value, settings) => {
+    if (value === null || value === undefined || value === '') return 'No cost data';
+    return `${settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}${parseFloat(value).toFixed(2)}`;
+};
 import StatusMultiSelect, { ALL_STATUSES, DEFAULT_STATUSES } from '../ui/StatusMultiSelect';
 import DateRangeShortcuts from '../ui/DateRangeShortcuts';
 
@@ -158,7 +165,11 @@ const ProfitabilityReport = () => {
                                         <span className="inline-flex items-center gap-1">
                                             Total Profit
                                             <InfoTip label="Total Profit" align="right">
-                                                Total Profit = Total Revenue − Total Cost, calculated per item.
+                                                Total Profit = Revenue − Cost, calculated per item over the
+                                                sales where a cost was actually recorded. Sales of an item
+                                                whose cost was never captured are excluded rather than
+                                                counted as pure profit, so an item with no cost on file
+                                                shows &ldquo;No cost data&rdquo; instead of a number.
                                             </InfoTip>
                                         </span>
                                     </SortableHeader>
@@ -167,10 +178,22 @@ const ProfitabilityReport = () => {
                             <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
                                 {sortedReportData.map((row) => (
                                     <tr key={row.internal_sku} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200 transition-colors">
-                                        <td className="p-3 text-sm font-medium text-gray-900 dark:text-slate-100">{row.display_name}</td>
-                                        <td className="p-3 text-sm text-right font-mono text-gray-900 dark:text-slate-100">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.total_revenue).toFixed(2)}</td>
-                                        <td className="p-3 text-sm text-right font-mono text-gray-900 dark:text-slate-100">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.total_cost).toFixed(2)}</td>
-                                        <td className="p-3 text-sm text-right font-mono font-bold text-primary-600 dark:text-primary-400">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.total_profit).toFixed(2)}</td>
+                                        <td className="p-3 text-sm font-medium text-gray-900 dark:text-slate-100">
+                                            {row.display_name}
+                                            {row.cost_coverage_level && row.cost_coverage_level !== 'ok' && (
+                                                <span
+                                                    className="ml-2 align-middle inline-block h-1.5 w-1.5 rounded-full bg-amber-500"
+                                                    title={
+                                                        row.cost_coverage_level === 'none'
+                                                            ? 'No cost recorded for this item, so its profit cannot be measured.'
+                                                            : `Profit measured on ${Math.round((Number(row.cost_coverage_ratio) || 0) * 100)}% of this item's sales.`
+                                                    }
+                                                />
+                                            )}
+                                        </td>
+                                        <td className="p-3 text-sm text-right font-mono text-gray-900 dark:text-slate-100 tnum">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(row.total_revenue || 0).toFixed(2)}</td>
+                                        <td className="p-3 text-sm text-right font-mono text-gray-900 dark:text-slate-100 tnum">{formatMeasured(row.total_cost, settings)}</td>
+                                        <td className="p-3 text-sm text-right font-mono font-bold text-primary-600 dark:text-primary-400 tnum">{formatMeasured(row.total_profit, settings)}</td>
                                     </tr>
                                 ))}
                                 {sortedReportData.length === 0 && (
