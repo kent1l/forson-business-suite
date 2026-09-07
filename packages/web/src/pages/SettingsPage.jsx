@@ -14,6 +14,7 @@ import PaymentMethodSettings from '../components/settings/PaymentMethodSettings'
 import DeduplicationSettings from '../components/settings/DeduplicationSettings';
 import BrandIdentitySettings from '../components/settings/BrandIdentitySettings';
 import ARAdjustmentSettings from '../components/settings/ARAdjustmentSettings';
+import AnalyticsSettings from '../components/settings/AnalyticsSettings';
 
 const MobileAppSettings = ({ settings, handleChange }) => {
     const [showQR, setShowQR] = useState(false);
@@ -666,6 +667,7 @@ const SettingsPage = ({ user }) => {
                                 <button type="button" onClick={() => setActiveTab('financial')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'financial' ? activeTabClass : inactiveTabClass}`}>Financial</button>
                                                                 <button type="button" onClick={() => setActiveTab('payment_methods')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'payment_methods' ? activeTabClass : inactiveTabClass}`}>Payment Methods</button>
                                 <button type="button" onClick={() => setActiveTab('ar_adjustments')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'ar_adjustments' ? activeTabClass : inactiveTabClass}`}>A/R Concessions</button>
+                                <button type="button" onClick={() => setActiveTab('analytics')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'analytics' ? activeTabClass : inactiveTabClass}`}>Analytics</button>
                                 <button type="button" onClick={() => setActiveTab('cycle_count')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'cycle_count' ? activeTabClass : inactiveTabClass}`}>Cycle Count</button>
                                 <button type="button" onClick={() => setActiveTab('deduplication')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'deduplication' ? activeTabClass : inactiveTabClass}`}>Deduplication</button>
                                 <button type="button" onClick={() => setActiveTab('tax_rates')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'tax_rates' ? activeTabClass : inactiveTabClass}`}>Tax Rates</button>
@@ -681,6 +683,7 @@ const SettingsPage = ({ user }) => {
                         {activeTab === 'financial' && <FinancialSettings settings={settings} handleChange={handleChange} />}
                         {activeTab === 'tax_rates' && <TaxRateSettings settings={settings} handleChange={handleChange} />}
                         {activeTab === 'ar_adjustments' && <ARAdjustmentSettings settings={settings} handleChange={handleChange} />}
+                        {activeTab === 'analytics' && <AnalyticsSettings settings={settings} handleChange={handleChange} />}
                         {activeTab === 'cycle_count' && <CycleCountSettings settings={settings} handleChange={handleChange} />}
                         {activeTab === 'deduplication' && <DeduplicationSettings />}
                         {activeTab === 'permissions' && <PermissionsSettings />}
@@ -688,7 +691,7 @@ const SettingsPage = ({ user }) => {
                         {activeTab === 'data' && <DataUtilsSettings />}
                         {activeTab === 'mobile_app' && <MobileAppSettings settings={settings} handleChange={handleChange} />}
 
-                        {['company', 'financial', 'cycle_count', 'backup', 'mobile_app', 'ar_adjustments'].includes(activeTab) && (
+                        {['company', 'financial', 'cycle_count', 'backup', 'mobile_app', 'ar_adjustments', 'analytics'].includes(activeTab) && (
                             <form onSubmit={handleSave}>
                                 <div className="pt-4 flex justify-end mt-6 border-t border-gray-200 dark:border-slate-700">
                                     <button type="submit" className="bg-primary-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-primary-700 transition">

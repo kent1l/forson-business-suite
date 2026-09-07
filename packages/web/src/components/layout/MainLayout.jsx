@@ -15,6 +15,7 @@ import CustomersPage from '../../pages/CustomersPage';
 import PowerSearchPage from '../../pages/PowerSearchPage';
 import InventoryPage from '../../pages/InventoryPage';
 import ReportingPage from '../../pages/ReportingPage';
+import AnalyticsPage from '../../pages/AnalyticsPage';
 import EmployeesPage from '../../pages/EmployeesPage';
 import DepartmentsPage from '../../pages/DepartmentsPage';
 import DtrPage from '../../pages/DtrPage';
@@ -56,6 +57,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'dashboard': return <Dashboard onNavigate={onNavigate} />;
             case 'pos': return <POSPage user={user} lines={posLines} setLines={setPosLines} onNavigate={onNavigate} pageState={currentPage === 'pos' ? pageState : null} />;
             case 'reporting': return <ReportingPage />;
+            case 'analytics': return <AnalyticsPage onNavigate={onNavigate} />;
             case 'power_search': return <PowerSearchPage />;
             case 'suppliers': return <SuppliersPage user={user} />;
             case 'parts': return <PartsPage user={user} onNavigate={onNavigate} />;

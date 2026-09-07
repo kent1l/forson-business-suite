@@ -51,6 +51,9 @@ ICONS.bookmark = "M17 20l-5-5-5 5V5a2 2 0 012-2h6a2 2 0 012 2z";
 ICONS.chevronLeft = "M15 19l-7-7 7-7";
 ICONS.chevronRight = "M9 5l7 7-7 7";
 ICONS.panelLeft = "M4 4h16v16H4V4zm6 0v16";
+// A trend line with points, distinct from the bar-chart `reporting` icon so the
+// two pages are told apart in the sidebar at a glance.
+ICONS.analytics = "M3 3v16.5A1.5 1.5 0 004.5 21H21M7 14.5l3.5-3.5 3 3L20 7.5";
 ICONS.info = "M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z";
 ICONS.check = "M4.5 12.75l6 6 9-13.5";
 ICONS.bank = "M3 21h18M4 10h16M4 10l8-6 8 6M6 10v8m4-8v8m4-8v8m4-8v8";

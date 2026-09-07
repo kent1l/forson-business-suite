@@ -110,6 +110,7 @@ registerRoute('/api', './routes/notificationRoutes');
 registerRoute('/api', './routes/powerSearchRoutes');
 registerRoute('/api', './routes/applicationSearchRoutes');
 registerRoute('/api', './routes/reportingRoutes');
+registerRoute('/api', './routes/analyticsRoutes');
 registerRoute('/api', './routes/settingsRoutes');
 registerRoute('/api', './routes/brandingRoutes');
 registerRoute('/api', './routes/chequeRoutes');

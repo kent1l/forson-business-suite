@@ -2,7 +2,7 @@
 
 > **Forson Business Suite** | **PRD-FBS-ANL-001** | **Version:** 1.0
 > **Date:** 2026-09-06 | **Branch:** `business-analytics`
-> **Status:** Approved — Phase 0 not started
+> **Status:** Phase 0 shipped — Phase 1 not started
 
 ---
 
@@ -16,7 +16,7 @@ Read this first. It is the only section that changes often; update it as phases 
 | Architecture & design review | **Done** | §5–§7 |
 | Profit overstatement bug (prerequisite) | **Done — PR #171** | `fix/profit-cost-coverage` → `master` |
 | `helpers/costCoverage.js` (trust predicate) | **Done — PR #171** | Reused by the metric registry's trust layer |
-| Phase 0 — engine + Overview board | **Not started** | §9 |
+| Phase 0 — engine + Overview board | **Done** | §9, §17 |
 | Phase 1 — Sales + Inventory boards | **Not started** | §9 |
 | Phase 2 — Profitability + Data Trust | **Not started** | §9 |
 | Phase 3 — Customers + Receivables | **Not started** | §9 |
@@ -24,6 +24,7 @@ Read this first. It is the only section that changes often; update it as phases 
 | Phase 5 — saved views, alerts, custom boards | **Designed, not scheduled** | §9 |
 | Insights panel | **Deferred to after Phase 2** (owner decision) | §14 |
 | `cost_at_sale` write-path fix | **Open — needs a decision** | §13, R1 |
+| `credit_note.subtotal_ex_tax` unpopulated | **Open — found during Phase 0** | §17.3 |
 
 ### If you are picking this up cold
 
@@ -31,7 +32,10 @@ Read this first. It is the only section that changes often; update it as phases 
    stop you from building a warehouse this business does not need.
 2. Read §3 (decisions already taken by the owner). Do not relitigate these.
 3. Read §7 (the query builder). It is the one genuinely hard piece.
-4. Start at §9, Phase 0. §12 lists every file to create.
+4. **Read §17 — what Phase 0 actually shipped, and where it diverged from this document.** Phase 0
+   is built; §5–§12 describe the design as planned, and §17 records where the implementation
+   differs and why. Where the two disagree, §17 and the code are right.
+5. Start Phase 1 at §9.
 
 ---
 
@@ -1528,8 +1532,120 @@ in, changing the definition of gross margin requires touching more than
 
 ---
 
-## 17. Change Log
+## 17. What Phase 0 Actually Shipped
+
+Everything §9 lists for Phase 0 is built, live against the real database, and covered by tests.
+This section records only where the implementation diverges from §5–§12, and what the build learned
+about the data that §2 did not know.
+
+### 17.1 The metric contract changed shape (and this matters)
+
+§6.2 has `expr` return a complete aggregate: `expr: (c) => COALESCE(SUM(...), 0)`. That cannot work.
+The builder has to wrap a trusted metric's aggregate in `FILTER (WHERE <predicate>)`, and it cannot
+splice a FILTER into the middle of a finished expression string — nor combine it with a metric that
+already carries a FILTER of its own, such as `inventory.dead_stock_value`. Two FILTERs on one
+aggregate is a syntax error.
+
+**As built, a metric declares three things and the builder assembles them:**
+
+```js
+'margin.gross_profit': {
+  kind: 'additive', source: 'invoice_line', trust: 'costed_line',
+  expr: (c) => `SUM(${c.revenue_ex_tax} - (${c.quantity} * ${c.unit_cost}))`,   // bare aggregate
+}
+'inventory.dead_stock_value': {
+  kind: 'snapshot', source: 'inventory_snapshot', trust: 'wac_known',
+  expr:  (c) => `SUM(${c.stock_on_hand} * ${c.wac_cost})`,
+  where: (c) => `${c.stock_on_hand} > 0 AND (${c.last_sold_at} IS NULL OR ...)`, // its own filter
+}
+```
+
+The builder emits `COALESCE(<expr> FILTER (WHERE <where> AND <trust predicate>), 0)`, combining the
+metric's own filter with its trust rule. The registry **rejects at load** any `expr` containing its
+own `FILTER (`, so the assembly cannot be bypassed by a future author. This makes §6.2's claim —
+"there is no code path that computes the metric without the filter" — literally true rather than a
+convention.
+
+Two smaller consequences:
+
+- **A trusted metric is left NULL, not COALESCEd to 0,** when nothing in a group qualified. "We
+  measured no profit here" and "profit here was zero" are different statements, and the UI renders
+  them differently (a dash, and a coverage badge reading *No cost data*).
+- **`wac_known`'s coverage weight is units on hand, not value.** §6.3 weights it by
+  `stock_on_hand * wac_cost`, which is the very thing that is unknown for an uncosted part — the
+  numerator and denominator would be identical and the rule would report 100% coverage every time.
+  Trust rules therefore also carry an optional `scope`, so coverage is asked only of parts that
+  actually hold stock: `SUM(weight) FILTER (scope AND predicate) / SUM(weight) FILTER (scope)`.
+
+### 17.2 Smaller divergences
+
+| §  | As planned | As built | Why |
+|---|---|---|---|
+| 7.2 | A dimension names the joins it needs | Sources also carry `providedJoins` and `joinDeps` | Reaching a credit note's customer means joining its invoice first. Putting that in the source, not the dimension, lets one dimension definition serve every source. Validated at load. |
+| 7.3 | Date params are `$1`–`$4` | Placeholders are allocated lazily | A query made only of snapshot metrics never mentions a date, and `pg` rejects a statement handed a parameter its text never uses. |
+| 10.1 | `grain` is a fixed string | Tiles may declare `grain: 'auto'` (+ optional `minGrain`) | A tile hard-coded to `month` plots two points on a 30-day board. `auto` is resolved client-side from the period; the server only ever receives a concrete grain. |
+| 8.1 | `/meta` caches readiness for 5 min | `?fresh=1` also clears it | So an admin who has just recorded the first expense sees that tile light up without waiting out the TTL. |
+| 11.1 | EXPLAIN every metric | Also every metric × every dimension × every grain, every filter, and every board tile at every grain it can resolve to | 156 statements, well under a second. This is the test that catches registry/schema drift. |
+
+### 17.3 What the build learned about the data
+
+§2 profiled the database before design. Building against it surfaced three more things, each of
+which changed a source definition:
+
+1. **`credit_note.subtotal_ex_tax` is NULL on 210 of 230 credit notes.** Reading the column alone
+   reports ~₱36K of refunds where the real figure is ~₱443K — a twelvefold understatement. Every
+   credit note in the data records `tax_total = 0`, so `total_amount` *is* the ex-VAT figure for
+   them and `COALESCE(subtotal_ex_tax, total_amount)` is exact, not approximate. With that fallback
+   the refund rate comes out at 3.643%, matching §2's independently measured 3.64%.
+   **`/reports/sales-summary` reads the bare column and therefore still understates refunds.** It is
+   a real bug in the existing report, out of scope for Phase 0, and it should be fixed on its own.
+2. **`invoice_line.tax_base` is NULL on 477 lines, and `invoice.subtotal_ex_tax` on 266 invoices** —
+   the legacy `v1.0` rows that predate the tax-versioning work. They record no VAT, so both sources
+   fall back to the pre-tax total. Without the fallback, line-level revenue lands ~₱66K short of the
+   invoice headers and every margin computed from it inherits the gap. This is also why Analytics
+   reports slightly more revenue than Reporting over ranges containing those invoices; the
+   difference is exactly their value.
+3. **`sales.credit_revenue` is defined by settlement type, not by payment terms.** §13's R6 needs a
+   DSO denominator that excludes walk-in cash. `invoice.terms` is empty on 5,673 of 6,085 invoices,
+   so it cannot carry that meaning; an `EXISTS` over `invoice_payments` joined to
+   `payment_methods.settlement_type = 'on_account'` can, and survives split payments.
+
+### 17.4 Verified against the live database
+
+Twelve months to 2026-09-06, checked directly rather than assumed:
+
+| Metric | §11.2 expected | Measured | |
+|---|---|---|---|
+| COGS (costed) | ₱1,539,693 | ₱1,539,693 | exact |
+| Costed revenue | ₱2,297,769 | ₱2,294,722 | §11.2's figure came from `quantity × sale_price − discount`, which is VAT-inclusive; the registry uses the ex-VAT base consistently |
+| Gross margin | 33.0% | 32.90% | follows from the above |
+| Cost coverage (value) | ~20.5% | 19.8% | |
+| Cost coverage (rows) | 1,965 of 11,527 | 1,965 of 11,522 | the five are `INV-TEST-*` fixtures left in the dev database |
+| Refund rate | 3.64% | 3.643% | only with the §17.3 fallback |
+| Inventory value @ WAC | ~₱2.61M | ₱2,605,358 | |
+
+Dead stock reads ₱1.98M rather than §2's ₱1.55M because the shipped metric uses a 180-day window,
+as §6.4 specifies, where §2 measured twelve months.
+
+### 17.5 The categorical palette
+
+§10.4 asks for a six-colour series palette. Both sets pass all six of the `dataviz` validator's
+checks against their own surface — lightness band, chroma floor, adjacent-pair CVD separation in
+deuteranopia and tritanopia, the normal-vision floor, and contrast:
+
+- light (on white): `#2563eb #c2410c #0891b2 #be185d #7c3aed #4d7c0f`
+- dark (on slate-800): `#5590f0 #d7752f #12a2bd #e0608f #9a7af0 #7ba32e`
+
+Dark is a separately chosen set at the dark band's own lightness, not a flip of the light one. Do
+not edit either by eye — re-run the skill's `scripts/validate_palette.js`. Status colours are
+deliberately absent: reusing a warning amber as "series 4" makes a neutral category look like an
+alarm.
+
+---
+
+## 18. Change Log
 
 | Date | Version | Change |
 |---|---|---|
 | 2026-09-06 | 1.0 | Initial PRD. Live-data profiling, architecture, design review incorporated. PR #171 (profit overstatement) shipped as prerequisite. Insights panel deferred to post-Phase-2 by owner decision. |
+| 2026-09-08 | 1.1 | Phase 0 shipped. §17 records the metric-contract change that makes the trust filter unbypassable, three data findings that changed source definitions (including a twelvefold refund understatement still present in `/reports/sales-summary`), the figures verified against the live database, and the validated series palette. |
