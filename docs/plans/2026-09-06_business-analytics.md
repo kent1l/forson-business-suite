@@ -1,8 +1,8 @@
 # Business Analytics Module — PRD & Developer Handoff
 
 > **Forson Business Suite** | **PRD-FBS-ANL-001** | **Version:** 1.0
-> **Date:** 2026-09-06 | **Branch:** `business-analytics`
-> **Status:** Phase 0 shipped — Phase 1 not started
+> **Date:** 2026-09-06 | **Last updated:** 2026-09-08 | **Branch:** `phase-0`
+> **Status:** Phase 0 shipped (commit `8832a6e`) — Phase 1 not started
 
 ---
 
@@ -16,7 +16,7 @@ Read this first. It is the only section that changes often; update it as phases 
 | Architecture & design review | **Done** | §5–§7 |
 | Profit overstatement bug (prerequisite) | **Done — PR #171** | `fix/profit-cost-coverage` → `master` |
 | `helpers/costCoverage.js` (trust predicate) | **Done — PR #171** | Reused by the metric registry's trust layer |
-| Phase 0 — engine + Overview board | **Done** | §9, §17 |
+| Phase 0 — engine + Overview board | **Done — `phase-0`, commit `8832a6e`** | §17 |
 | Phase 1 — Sales + Inventory boards | **Not started** | §9 |
 | Phase 2 — Profitability + Data Trust | **Not started** | §9 |
 | Phase 3 — Customers + Receivables | **Not started** | §9 |
@@ -24,7 +24,7 @@ Read this first. It is the only section that changes often; update it as phases 
 | Phase 5 — saved views, alerts, custom boards | **Designed, not scheduled** | §9 |
 | Insights panel | **Deferred to after Phase 2** (owner decision) | §14 |
 | `cost_at_sale` write-path fix | **Open — needs a decision** | §13, R1 |
-| `credit_note.subtotal_ex_tax` unpopulated | **Open — found during Phase 0** | §17.3 |
+| Refunds understated 12× in `/reports/sales-summary` | **Open — found during Phase 0; highest-value follow-up** | §17.4 |
 
 ### If you are picking this up cold
 
@@ -32,10 +32,15 @@ Read this first. It is the only section that changes often; update it as phases 
    stop you from building a warehouse this business does not need.
 2. Read §3 (decisions already taken by the owner). Do not relitigate these.
 3. Read §7 (the query builder). It is the one genuinely hard piece.
-4. **Read §17 — what Phase 0 actually shipped, and where it diverged from this document.** Phase 0
-   is built; §5–§12 describe the design as planned, and §17 records where the implementation
-   differs and why. Where the two disagree, §17 and the code are right.
-5. Start Phase 1 at §9.
+4. **Read §17 — Phase 0 as built.** §5–§12 describe the design *as planned*; §17 records what
+   exists, where it lives, how to extend it, and every place the implementation diverges. **Where
+   the two disagree, §17 and the code are right.** §17.2 is the recipe for adding a metric, a tile
+   or a board; §17.7 is how to run the checks.
+5. Start Phase 1 at §17.8, which says what it has to add and what it must not do.
+
+The code is the other half of this document. `packages/api/services/analytics/registry/index.js`
+and `queryBuilder.js` carry long comments explaining *why* each rule exists; they are worth reading
+before changing either.
 
 ---
 
@@ -1532,13 +1537,105 @@ in, changing the definition of gross margin requires touching more than
 
 ---
 
-## 17. What Phase 0 Actually Shipped
+## 17. Phase 0 — As Built
 
-Everything §9 lists for Phase 0 is built, live against the real database, and covered by tests.
-This section records only where the implementation diverges from §5–§12, and what the build learned
-about the data that §2 did not know.
+**Shipped 2026-09-08 on branch `phase-0`, commit `8832a6e`.** Everything §9 lists for Phase 0 is
+built, running against the live database, and covered by tests.
 
-### 17.1 The metric contract changed shape (and this matters)
+§5–§12 describe the design *as planned*. This section describes it *as built*: what exists and
+where, how to extend it, and every place the implementation diverges from the plan. **Where the two
+disagree, this section and the code are right.**
+
+### 17.1 What exists, and where
+
+**API — `packages/api/services/analytics/` (3,393 lines with `routes/analyticsRoutes.js`)**
+
+| File | Lines | Responsibility |
+|---|---|---|
+| `registry/index.js` | 296 | Assembles, cross-validates and deep-freezes the registry. **Throws at `require()` time** on any dangling reference, cycle, grain conflict, permission inversion, or expression that renders `undefined`/`$`. The server refuses to boot rather than serving one broken tile. |
+| `registry/sources.js` | 274 | The six fact sources: `invoice_header`, `invoice_line`, `credit_note_header`, `inventory_snapshot`, `ar_balance`, `expense`. Also `resolveJoins()`. |
+| `registry/dimensions.js` | 126 | Nine dimensions and the closed `GRAINS` map — the only place a grain string reaches SQL. |
+| `registry/trust.js` | 81 | `costed_line` and `wac_known`. Reuses `helpers/costCoverage.js`; does not redefine the predicates. |
+| `registry/metrics/*.js` | 512 | 23 metrics across `sales`, `margin`, `inventory`, `ar`, `finance`. |
+| `registry/formats.js` | 29 | `currency`, `integer`, `percent`, `days`, `ratio`, `text`. |
+| `registry/readiness.js` | 36 | `expense_data`, `payroll_data`, `ar_ledger_data` EXISTS probes. |
+| `queryBuilder.js` | 522 | `buildQuery(spec) -> { text, values, plan }`. The one genuinely hard piece. |
+| `requestValidator.js` | 244 | `parseQueryRequest(body, req)` and `BUDGET`. Every refusal happens here, before any SQL is built. |
+| `executor.js` | 131 | The read-only repeatable-read transaction, `SET LOCAL statement_timeout`, the semaphore, and central numeric coercion. |
+| `responseShaper.js` | 248 | Bucket pivot, ordinal-aligned comparison, JS-side totals, coverage objects. |
+| `periods.js` | 118 | Manila-calendar date arithmetic, the ten presets, the two comparison modes. |
+| `analyticsCache.js` | 58 | Mirrors `services/ai/core/aiCache.js`. |
+| `boards/overview.js` | 205 | The Overview board: 14 tiles. |
+| `boards/index.js` | 99 | Board validation at load, and permission-filtered access. |
+| `index.js` | 217 | The public surface: `getMeta`, `runQuery`, `runBatch`, `explainQuery`, `getBoard`, `listBoards`, `clearCaches`. |
+| `errors.js` | 31 | `AnalyticsRequestError` (a caller could have got this right) and `AnalyticsRegistryError` (a programmer could not). |
+| `routes/analyticsRoutes.js` | 166 | HTTP only. Registered in `index.js:113`, next to `reportingRoutes`. |
+
+**Web — `packages/web/src/` (1,397 lines)**
+
+| File | Lines | Responsibility |
+|---|---|---|
+| `pages/AnalyticsPage.jsx` | 88 | Page shell and board tabs. |
+| `components/analytics/AnalyticsBoard.jsx` | 122 | Board *state*: period, filters, comparison. Persisted per user in `localStorage`. |
+| `components/analytics/AnalyticsBatchContext.jsx` | 105 | Collects tile queries on a microtask, dedupes, chunks, issues one `POST /batch`. |
+| `components/analytics/AnalyticsTile.jsx` | 111 | The entire type dispatch, plus readiness gating, drilldown and CSV export. |
+| `components/analytics/TileShell.jsx` | 118 | Title, InfoTip, coverage, cache age, truncation notice, actions menu, loading/error states. |
+| `components/analytics/CoverageBadge.jsx` | 63 | The coverage disclosure. `none` is its own state with no number. |
+| `components/analytics/NoDataYet.jsx` | 25 | The readiness-false state. |
+| `components/analytics/chartTheme.js` | 89 | `CHART_THEME`, `useChartTheme`, and the validated `SERIES_PALETTE`. Re-exported by `components/dashboard/AnalyticsCharts.jsx`, so the Dashboard is untouched. |
+| `components/analytics/tiles/*.jsx` | 331 | `KpiTile`, `LineTile`, `BarTile`, `TableTile`. |
+| `hooks/useAnalyticsMeta.jsx` | 91 | `/meta` once, context-provided. Owns all formatting. **Note the `.jsx` extension** — it contains a provider, and Vite will not parse JSX in a `.js` file. |
+| `hooks/useAnalyticsQuery.js` | 133 | Per-tile fetch, macro resolution, `grain: 'auto'`. |
+| `components/settings/AnalyticsSettings.jsx` | 121 | The Admin Settings panel. |
+
+**Database** — `database/migrations/20260907_01_analytics_permissions_and_settings.sql`, applied.
+Seeds `analytics:view` / `analytics:financials` / `analytics:export` to Admin and Manager, and the
+four `ANALYTICS_*` settings keys.
+
+**Tests** — `packages/api/tests/analyticsQueryBuilder.test.js` (55 cases incl. 4 SQL snapshots and
+an injection fuzz suite), `analyticsRoutes.test.js` (19 cases), `analyticsRegistry_db_test.js`
+(156 live-schema `EXPLAIN`s, excluded from `testMatch`, run by hand).
+
+**Manual** — `docs/manuals/business_analytics_manual.md`.
+
+### 17.2 How to extend it
+
+This is the acceptance criterion of §1 made operational. If any of these three recipes stops being
+true, the design has failed and the machinery bought nothing.
+
+**Add a metric to an existing board — two entries, no new code.**
+
+1. Add the metric to the right file under `registry/metrics/`. Pick `kind` from §6.1; a metric that
+   subtracts cost from revenue needs `trust: 'costed_line'`.
+2. Add a tile to `boards/overview.js` (or the relevant board) naming that metric id.
+3. Run `docker exec forson_backend_dev node tests/analyticsRegistry_db_test.js`. If the metric's SQL
+   is wrong, it fails here rather than in production.
+
+No React component, no route, no SQL file. Label, format, direction, description, coverage wording
+and number formatting all come from `/meta`, keyed by metric id.
+
+**Add a whole board — one file, one line.**
+
+1. Create `boards/<name>.js` exporting a board object (copy `overview.js`'s shape).
+2. Add it to `BOARD_LIST` in `boards/index.js`.
+
+It is validated at boot, permission-filtered per user, and appears as a tab automatically —
+`AnalyticsPage.jsx` renders whatever `/analytics/boards` returns.
+
+**Add a dimension or fact source.**
+
+Add to `registry/dimensions.js` or `registry/sources.js`, then list the dimension in every source
+that can reach it. Load-time validation will tell you, by name, if a join is missing — that is what
+`providedJoins` and `joinDeps` are for. Then run the `_db_test` to prove the join fragment works
+against the real schema.
+
+**Change what a figure means.** Edit exactly one file. Gross margin lives entirely in
+`registry/metrics/margin.js`; what counts as a costed line lives entirely in
+`helpers/costCoverage.js`, which both this module and the Reports page read.
+
+### 17.3 Divergences from the plan
+
+**The metric contract changed shape, and this is the important one.**
 
 §6.2 has `expr` return a complete aggregate: `expr: (c) => COALESCE(SUM(...), 0)`. That cannot work.
 The builder has to wrap a trusted metric's aggregate in `FILTER (WHERE <predicate>)`, and it cannot
@@ -1546,7 +1643,7 @@ splice a FILTER into the middle of a finished expression string — nor combine 
 already carries a FILTER of its own, such as `inventory.dead_stock_value`. Two FILTERs on one
 aggregate is a syntax error.
 
-**As built, a metric declares three things and the builder assembles them:**
+**As built, a metric declares the parts and the builder assembles them:**
 
 ```js
 'margin.gross_profit': {
@@ -1561,58 +1658,64 @@ aggregate is a syntax error.
 ```
 
 The builder emits `COALESCE(<expr> FILTER (WHERE <where> AND <trust predicate>), 0)`, combining the
-metric's own filter with its trust rule. The registry **rejects at load** any `expr` containing its
-own `FILTER (`, so the assembly cannot be bypassed by a future author. This makes §6.2's claim —
+metric's own filter with its trust rule. **The registry rejects at load any `expr` containing its
+own `FILTER (`**, so the assembly cannot be bypassed by a future author. This makes §6.2's claim —
 "there is no code path that computes the metric without the filter" — literally true rather than a
-convention.
+convention someone has to keep.
 
-Two smaller consequences:
+Two consequences worth knowing before you write a metric:
 
 - **A trusted metric is left NULL, not COALESCEd to 0,** when nothing in a group qualified. "We
   measured no profit here" and "profit here was zero" are different statements, and the UI renders
-  them differently (a dash, and a coverage badge reading *No cost data*).
-- **`wac_known`'s coverage weight is units on hand, not value.** §6.3 weights it by
-  `stock_on_hand * wac_cost`, which is the very thing that is unknown for an uncosted part — the
-  numerator and denominator would be identical and the rule would report 100% coverage every time.
-  Trust rules therefore also carry an optional `scope`, so coverage is asked only of parts that
-  actually hold stock: `SUM(weight) FILTER (scope AND predicate) / SUM(weight) FILTER (scope)`.
+  them differently — a dash, and a coverage badge reading *No cost data*.
+- **`wac_known` weights coverage by units on hand, not by value.** §6.3 weights it by
+  `stock_on_hand * wac_cost`, which is precisely what is unknown for an uncosted part: numerator and
+  denominator would be identical and the rule would report 100% coverage every time. Trust rules
+  therefore also carry an optional `scope`, so the question is asked only of parts that actually
+  hold stock: `SUM(weight) FILTER (scope AND predicate) / SUM(weight) FILTER (scope)`.
 
-### 17.2 Smaller divergences
+**Smaller divergences.**
 
-| §  | As planned | As built | Why |
+| § | As planned | As built | Why |
 |---|---|---|---|
-| 7.2 | A dimension names the joins it needs | Sources also carry `providedJoins` and `joinDeps` | Reaching a credit note's customer means joining its invoice first. Putting that in the source, not the dimension, lets one dimension definition serve every source. Validated at load. |
-| 7.3 | Date params are `$1`–`$4` | Placeholders are allocated lazily | A query made only of snapshot metrics never mentions a date, and `pg` rejects a statement handed a parameter its text never uses. |
-| 10.1 | `grain` is a fixed string | Tiles may declare `grain: 'auto'` (+ optional `minGrain`) | A tile hard-coded to `month` plots two points on a 30-day board. `auto` is resolved client-side from the period; the server only ever receives a concrete grain. |
-| 8.1 | `/meta` caches readiness for 5 min | `?fresh=1` also clears it | So an admin who has just recorded the first expense sees that tile light up without waiting out the TTL. |
-| 11.1 | EXPLAIN every metric | Also every metric × every dimension × every grain, every filter, and every board tile at every grain it can resolve to | 156 statements, well under a second. This is the test that catches registry/schema drift. |
+| 7.2 | A dimension names the joins it needs | Sources also carry `providedJoins` and `joinDeps` | Reaching a credit note's customer means joining its invoice first. Putting that knowledge in the source, not the dimension, lets one dimension definition serve every source. Validated at load. |
+| 7.3 | Date params are `$1`–`$4` | Placeholders are allocated lazily and memoised | A query made only of snapshot metrics never mentions a date, and `pg` rejects a statement handed a parameter its text never uses (`could not determine data type of parameter $1`). |
+| 10.1 | `grain` is a fixed string | Tiles may declare `grain: 'auto'`, with optional `minGrain` | A tile hard-coded to `month` plots two points on a 30-day board. `auto` resolves client-side from the period (`hooks/useAnalyticsQuery.js`); the server only ever receives a concrete grain, which the validator then checks. |
+| 8.1 | `/meta` caches readiness for 5 minutes | `?fresh=1` also clears it | So an admin who has just recorded the first expense sees that tile light up without waiting out the TTL. |
+| 11.1 | EXPLAIN every metric | Also every metric × every dimension its source supports × every grain, every filterable dimension, and every board tile at every grain it can resolve to | 156 statements, well under a second. This is the test that catches registry/schema drift. |
+| 13.1 | — | The registry also refuses a **permission inversion** | A composite returns its components alongside the total, but the permission check runs on what was *asked for*. A metric visible under `analytics:view` whose component required `analytics:financials` would give that component away, so the registry will not load one. Added after the security review flagged it as latent. |
 
-### 17.3 What the build learned about the data
+### 17.4 What the build learned about the data
 
 §2 profiled the database before design. Building against it surfaced three more things, each of
-which changed a source definition:
+which changed a source definition. **These are load-bearing — do not "simplify" the COALESCEs away.**
 
 1. **`credit_note.subtotal_ex_tax` is NULL on 210 of 230 credit notes.** Reading the column alone
    reports ~₱36K of refunds where the real figure is ~₱443K — a twelvefold understatement. Every
    credit note in the data records `tax_total = 0`, so `total_amount` *is* the ex-VAT figure for
    them and `COALESCE(subtotal_ex_tax, total_amount)` is exact, not approximate. With that fallback
    the refund rate comes out at 3.643%, matching §2's independently measured 3.64%.
-   **`/reports/sales-summary` reads the bare column and therefore still understates refunds.** It is
-   a real bug in the existing report, out of scope for Phase 0, and it should be fixed on its own.
-2. **`invoice_line.tax_base` is NULL on 477 lines, and `invoice.subtotal_ex_tax` on 266 invoices** —
+   > ⚠️ **`/reports/sales-summary` reads the bare column and therefore still understates refunds by
+   > the same factor.** That is a real bug in the existing report. It was deliberately left alone in
+   > Phase 0 — it is a Reporting fix, with its own blast radius, and it should ship on its own
+   > branch. It is the single highest-value follow-up in this document.
+
+2. **`invoice_line.tax_base` is NULL on 477 lines and `invoice.subtotal_ex_tax` on 266 invoices** —
    the legacy `v1.0` rows that predate the tax-versioning work. They record no VAT, so both sources
    fall back to the pre-tax total. Without the fallback, line-level revenue lands ~₱66K short of the
-   invoice headers and every margin computed from it inherits the gap. This is also why Analytics
-   reports slightly more revenue than Reporting over ranges containing those invoices; the
-   difference is exactly their value.
+   invoice headers and every margin computed from it inherits the gap. This is also why **Analytics
+   reports slightly more revenue than Reporting** over ranges containing those invoices: Reporting
+   silently drops them, Analytics does not, and the difference is exactly their value. Expect this
+   to be reported as a bug (§13 R2); it is not one.
+
 3. **`sales.credit_revenue` is defined by settlement type, not by payment terms.** §13's R6 needs a
    DSO denominator that excludes walk-in cash. `invoice.terms` is empty on 5,673 of 6,085 invoices,
    so it cannot carry that meaning; an `EXISTS` over `invoice_payments` joined to
    `payment_methods.settlement_type = 'on_account'` can, and survives split payments.
 
-### 17.4 Verified against the live database
+### 17.5 Figures verified against the live database
 
-Twelve months to 2026-09-06, checked directly rather than assumed:
+Twelve months to 2026-09-06, measured rather than assumed. Use these as the regression baseline.
 
 | Metric | §11.2 expected | Measured | |
 |---|---|---|---|
@@ -1620,14 +1723,14 @@ Twelve months to 2026-09-06, checked directly rather than assumed:
 | Costed revenue | ₱2,297,769 | ₱2,294,722 | §11.2's figure came from `quantity × sale_price − discount`, which is VAT-inclusive; the registry uses the ex-VAT base consistently |
 | Gross margin | 33.0% | 32.90% | follows from the above |
 | Cost coverage (value) | ~20.5% | 19.8% | |
-| Cost coverage (rows) | 1,965 of 11,527 | 1,965 of 11,522 | the five are `INV-TEST-*` fixtures left in the dev database |
-| Refund rate | 3.64% | 3.643% | only with the §17.3 fallback |
+| Cost coverage (rows) | 1,965 of 11,527 | 1,965 of 11,522 | the five are `INV-TEST-*` fixtures left in the dev database; they also account for a round ₱66,000 of header-only revenue |
+| Refund rate | 3.64% | 3.643% | only with the §17.4 item 1 fallback |
 | Inventory value @ WAC | ~₱2.61M | ₱2,605,358 | |
 
 Dead stock reads ₱1.98M rather than §2's ₱1.55M because the shipped metric uses a 180-day window,
-as §6.4 specifies, where §2 measured twelve months.
+as §6.4 specifies, where §2 measured twelve months. Both are correct for what they measure.
 
-### 17.5 The categorical palette
+### 17.6 The categorical palette
 
 §10.4 asks for a six-colour series palette. Both sets pass all six of the `dataviz` validator's
 checks against their own surface — lightness band, chroma floor, adjacent-pair CVD separation in
@@ -1636,10 +1739,64 @@ deuteranopia and tritanopia, the normal-vision floor, and contrast:
 - light (on white): `#2563eb #c2410c #0891b2 #be185d #7c3aed #4d7c0f`
 - dark (on slate-800): `#5590f0 #d7752f #12a2bd #e0608f #9a7af0 #7ba32e`
 
-Dark is a separately chosen set at the dark band's own lightness, not a flip of the light one. Do
-not edit either by eye — re-run the skill's `scripts/validate_palette.js`. Status colours are
+Dark is a separately chosen set at the dark band's own lightness, not a flip of the light one. **Do
+not edit either by eye** — re-run the skill's `scripts/validate_palette.js`. Status colours are
 deliberately absent: reusing a warning amber as "series 4" makes a neutral category look like an
-alarm.
+alarm. Order matters — the checks are on *adjacent* pairs.
+
+### 17.7 How to run the checks
+
+```bash
+# Unit tests (SQL snapshots, injection fuzz, routes). Must be 100% green.
+docker exec forson_backend_dev npm run test
+
+# Live-schema check: every metric, dimension, grain, filter and board tile.
+# Run this after ANY registry or schema change. Rolls back; leaves no trace.
+docker exec forson_backend_dev node tests/analyticsRegistry_db_test.js
+
+# Migrations
+docker exec forson_backend_dev npm run migrate:status
+
+# Read the SQL a request would produce, without running it (admin only)
+POST /api/analytics/query?explain=1
+```
+
+> 📝 The SQL snapshots are the review surface. Any change to what a figure *means* shows up as a
+> diff in `tests/__snapshots__/analyticsQueryBuilder.test.js.snap` that a reviewer has to approve.
+> If a snapshot changes and you cannot explain why, you have changed a number by accident.
+
+**Environment gotchas that cost time in Phase 0:**
+
+- Adding a file that pulls in a new dependency makes Vite re-optimise, which invalidates the `?v=`
+  hashes the open page already fetched. Symptom: a blank page and a MIME-type console error.
+  `docker restart forson_frontend_dev` clears it. A reload is enough for an ordinary user.
+- `packages/api/tests/__snapshots__/` must be writable by the container's `appuser` (uid 100) for
+  jest to write a new snapshot; the repo checkout is owned by uid 1000.
+- The dev database contains `INV-TEST-*` and `INV-TXNDATE-FIXTURE` invoices worth ₱66,000 with no
+  lines. They are why header-grain and line-grain revenue differ there. Real data reconciles.
+
+### 17.8 Where Phase 1 starts
+
+Phase 0 deliberately shipped one board and four tile types. §9's Phase 1 is Sales + Inventory, and
+the point of Phase 1 is to prove the design: **if "Sales by brand" turns out to be a board-spec
+entry and nothing else, the machinery has paid for itself. If it needs a new component, stop and
+work out why before writing one.**
+
+What Phase 1 has to add beyond content:
+
+- A `heatmap` tile type for the hour × weekday staffing view (§14), and richer `table` tiles.
+- **Top-N with an "Other" rollup**, done server-side. 444 brands and 767 groups make this mandatory
+  for every categorical breakdown, and doing it client-side would make the "Other" bar wrong
+  whenever the result is also truncated. `OTHER_COLOR` already exists in `chartTheme.js`, and
+  `TableTile`/`BarTile` already special-case a row labelled `Other`.
+- The demand-ranked reorder list — **rank by consequence, not by the reorder-point flag**. The naive
+  flag returns 3,099 parts; ranking by 90-day demand and days-of-cover returns 58 (§2).
+- Drill-down from a chart row into the existing pages. The closed `drilldown` vocabulary and the
+  `$dateRange.*` macro table are already in place; `{kind:'tile'}` is defined but unimplemented.
+
+Things Phase 1 must **not** do: add a second grain to a snapshot metric (§13 R5 — build an
+`inventory_history` source instead), allow a `tag` breakdown of an additive metric without a
+fan-out-safe declaration (§13 R4), or plot the A/R ledger's three weeks as a trend (§2).
 
 ---
 
@@ -1648,4 +1805,4 @@ alarm.
 | Date | Version | Change |
 |---|---|---|
 | 2026-09-06 | 1.0 | Initial PRD. Live-data profiling, architecture, design review incorporated. PR #171 (profit overstatement) shipped as prerequisite. Insights panel deferred to post-Phase-2 by owner decision. |
-| 2026-09-08 | 1.1 | Phase 0 shipped. §17 records the metric-contract change that makes the trust filter unbypassable, three data findings that changed source definitions (including a twelvefold refund understatement still present in `/reports/sales-summary`), the figures verified against the live database, and the validated series palette. |
+| 2026-09-08 | 1.1 | Phase 0 shipped (`phase-0`, `8832a6e`). §17 rewritten as an as-built handoff: the file map, the recipes for adding a metric/tile/board, the metric-contract change that makes the trust filter unbypassable, three data findings that changed source definitions (including a twelvefold refund understatement still present in `/reports/sales-summary`), the figures verified against the live database, the validated series palette, how to run the checks, and where Phase 1 starts. |
