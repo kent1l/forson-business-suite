@@ -41,6 +41,46 @@ const READINESS_PROBES = Object.freeze({
         emptyMessage: 'The A/R ledger has no entries yet.',
     }),
     /**
+     * Purchase orders — the module Phase 4 found empty.
+     *
+     * `purchase_order` holds nothing, and not one of the 336 posted goods
+     * receipts carries a `po_id`. Order-to-receipt lead time is therefore not a
+     * figure this database can produce at all: it is the gap between two events,
+     * and only the second one is recorded. The lead-time metrics are registered
+     * anyway, gated on this probe, exactly as the expense and payroll metrics
+     * were in Phase 0 -- so they light up on their own the day the first order
+     * is raised, with no code change and no forgotten backlog item.
+     *
+     * The alternative -- inferring lead time from the interval between one
+     * receipt and the next -- would produce a number in days that measures how
+     * often a supplier is used, presented as how long they take to deliver.
+     */
+    purchase_order_data: Object.freeze({
+        id: 'purchase_order_data',
+        label: 'Purchase orders raised',
+        sql: 'SELECT EXISTS(SELECT 1 FROM purchase_order) AS ready',
+        emptyMessage: 'Purchase orders are not being raised in the system yet, so the time '
+            + 'between ordering and receiving cannot be measured.',
+    }),
+    ap_ledger_data: Object.freeze({
+        id: 'ap_ledger_data',
+        label: 'A/P ledger populated',
+        sql: 'SELECT EXISTS(SELECT 1 FROM ap_ledger) AS ready',
+        emptyMessage: 'The supplier ledger has no entries yet.',
+    }),
+    /**
+     * Counted lines, not batches. A batch that was opened and never counted
+     * carries no observation, and a "count accuracy" figure computed over zero
+     * observations comes back as a confident 0% -- which reads as "the stock
+     * records are always wrong" rather than "nobody has counted anything".
+     */
+    cycle_count_data: Object.freeze({
+        id: 'cycle_count_data',
+        label: 'Stock counted',
+        sql: 'SELECT EXISTS(SELECT 1 FROM cycle_count_line WHERE counted_at IS NOT NULL) AS ready',
+        emptyMessage: 'No stock has been counted yet.',
+    }),
+    /**
      * Not a probe about a module at all: a probe about a FACT ABOUT THIS
      * BUSINESS that no query can infer.
      *

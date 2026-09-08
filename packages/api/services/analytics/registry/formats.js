@@ -18,6 +18,11 @@ const FORMATS = Object.freeze({
     days: Object.freeze({
         id: 'days', numeric: true, decimals: 1, prefix: '', suffix: ' days', compactable: false,
     }),
+    // Cycle-count line timings live in seconds-to-minutes territory, where a
+    // `days` format would render every one of them as 0.0.
+    minutes: Object.freeze({
+        id: 'minutes', numeric: true, decimals: 2, prefix: '', suffix: ' min', compactable: false,
+    }),
     ratio: Object.freeze({
         id: 'ratio', numeric: true, decimals: 2, prefix: '', suffix: '', compactable: false,
     }),

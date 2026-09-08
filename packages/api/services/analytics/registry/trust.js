@@ -1,4 +1,6 @@
-const { costedLineCondition, costedPartCondition } = require('../../../helpers/costCoverage');
+const {
+    costedLineCondition, costedPartCondition, costedReceiptLineCondition,
+} = require('../../../helpers/costCoverage');
 
 /**
  * Named data-quality predicates -- the honesty layer.
@@ -57,6 +59,35 @@ const TRUST_RULES = Object.freeze({
         // stock and no cost is not a gap in the inventory valuation.
         scope: (c) => `${c.stock_on_hand} > 0`,
         thresholds: Object.freeze({ ok: 0.95, partial: 0.7 }),
+        suppressBelow: 0,
+    }),
+    /**
+     * The buying side of `costed_line`, and the largest single finding of
+     * Phase 4: 1,547 of 2,679 receipt lines carry a landed cost of zero, spread
+     * evenly across all twelve months rather than concentrated in a legacy
+     * import. Purchase spend is measured only over the rest.
+     *
+     * Weighted by UNITS, not by value, for the same reason `wac_known` is:
+     * value is exactly what is unknown on an uncosted line, so a value-weighted
+     * ratio would divide the costed spend by itself and report 100% coverage
+     * on every purchasing tile in the module.
+     *
+     * The scope excludes lines that received nothing -- a fully returned line
+     * is not a gap in the cost data.
+     */
+    costed_receipt_line: Object.freeze({
+        id: 'costed_receipt_line',
+        label: 'Cost coverage',
+        explanation:
+            'Only receipt lines with a recorded landed cost are counted as spend. A line whose '
+            + 'cost was never captured is stored as 0, indistinguishable from goods a supplier '
+            + 'genuinely gave away, so it contributes units but no money. Purchase spend is '
+            + 'therefore understated on a subset of receipts rather than guessed across all of '
+            + 'them.',
+        predicate: (c) => costedReceiptLineCondition(c.__alias),
+        weight: (c) => `GREATEST(${c.quantity}, 0)`,
+        scope: (c) => `${c.quantity} > 0`,
+        thresholds: Object.freeze({ ok: 0.9, partial: 0.5 }),
         suppressBelow: 0,
     }),
 });

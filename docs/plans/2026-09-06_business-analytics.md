@@ -1,10 +1,11 @@
 # Business Analytics Module — PRD & Developer Handoff
 
 > **Forson Business Suite** | **PRD-FBS-ANL-001** | **Version:** 1.0
-> **Date:** 2026-09-06 | **Last updated:** 2026-09-08 | **Branch:** `phase-3-business-analytics`
-> **Status:** Phases 0 (PR #173), 1 (PR #175) and 2 (PR #176) merged; the insights panel with them.
-> Phase 3 built — Customers + Receivables & Cash, and "named account" promoted from a setting one
-> rule read into a fact source of its own. Phase 4 not started.
+> **Date:** 2026-09-06 | **Last updated:** 2026-09-08 | **Branch:** `business-analytics`
+> **Status:** Phases 0 (PR #173), 1 (PR #175), 2 (PR #176) and 3 (PR #177) merged; the insights
+> panel with them. Phase 4 built (PR #178) — Purchasing & Suppliers + Operations, and the discovery
+> that the cost gap the whole module has been reporting is manufactured at the receiving desk.
+> Phase 5 designed, not scheduled.
 
 ---
 
@@ -21,9 +22,11 @@ Read this first. It is the only section that changes often; update it as phases 
 | Phase 0 — engine + Overview board | **Done — merged, PR #173** | §17 |
 | Phase 1 — Sales + Inventory boards | **Done — merged, PR #175** | §19 |
 | Phase 2 — Profitability + Data Trust | **Done — merged, PR #176** | §20 |
-| Phase 3 — Customers + Receivables & Cash | **Done — `phase-3-business-analytics`** | §21 |
-| Phase 4 — Purchasing + Operations | **Not started** | §9 |
+| Phase 3 — Customers + Receivables & Cash | **Done — merged, PR #177** | §21 |
+| Phase 4 — Purchasing + Operations | **Done — PR #178** | §22 |
 | Phase 5 — saved views, alerts, custom boards | **Designed, not scheduled** | §9 |
+| 58% of goods receipt lines carry no cost | **Open — the root of the module's cost gap** | §22.2 |
+| No purchase orders exist; lead time is dark | **Open — registered and gated, not built around** | §22.4 |
 | Insights panel | **Done — the deferral is discharged** | §20.4 |
 | `cost_at_sale` write-path fix | **Open — needs a decision** | §13, R1 |
 | `ANALYTICS_WALKIN_CUSTOMER_ID` still unset | **Open — one admin field; gates half the Customers board** | §21.3 |
@@ -1023,9 +1026,12 @@ is honest without the other. **Also migrate `/reports/profitability-by-product` 
 
 ### Phase 3 — Customers + Receivables & Cash  *(DONE — see §21)*
 
-### Phase 4 — Purchasing & Suppliers, Operations  *(NOT STARTED — start here)*
-Supplier analytics, lead time, price variance; staff productivity and cycle-count accuracy
-(reusing the existing `employee_cycle_count_performance` materialized view).
+### Phase 4 — Purchasing & Suppliers, Operations  *(DONE — see §22)*
+Supplier analytics, lead time, price variance; staff productivity and cycle-count accuracy.
+Built as specified with two documented departures: lead time is registered and *gated dark*
+because no purchase order exists to measure it from, and cycle-count accuracy is measured from
+`cycle_count_line` rather than from `employee_cycle_count_performance`, whose speed column reports
+zero for every employee. Both are explained in §22.
 
 ### Phase 5 — Designed for, not scheduled
 Saved views; scheduled email digests; threshold alerts via the existing notification service;
@@ -1819,6 +1825,7 @@ fan-out-safe declaration (§13 R4), or plot the A/R ledger's three weeks as a tr
 | Date | Version | Change |
 |---|---|---|
 | 2026-09-06 | 1.0 | Initial PRD. Live-data profiling, architecture, design review incorporated. PR #171 (profit overstatement) shipped as prerequisite. Insights panel deferred to post-Phase-2 by owner decision. |
+| 2026-09-08 | 1.5 | Phase 4 built on `business-analytics` (PR #178). §22 records the Purchasing & Suppliers and Operations boards; nine new fact sources, four dimensions, a third trust rule (`costed_receipt_line`) and 52 metrics; the finding that 1,547 of 2,679 goods receipt lines carry no landed cost and are therefore the origin of the cost gap the whole module reports; the placeholder supplier named "N/A" that carries half the receipts, and why it is shown rather than gated the way the walk-in customer was; price variance measured against each part's own previous purchase rather than against the selected range; lead time registered and gated dark because no purchase order exists; `employee_cycle_count_performance` rejected as a source because its speed column is structurally zero; the weighted average done as a ratio of two additive leaves rather than as a new fold; a new load-time guard on source FROM clauses; and six new insight rules. |
 | 2026-09-08 | 1.4 | Phase 3 built on `phase-3-business-analytics`. §21 records the Customers and Receivables & Cash boards; `named_invoice`, the fact source that makes "named account" structural rather than a subtraction one insight rule performed; four more new sources (`open_receivable`, `customer_credit`, `ar_ledger`, `pdc_outstanding`) and five dimensions; the two irreconcilable answers to "what are we owed" and why both lead the board; the ₱1.49M of deliberately written-off pre-cutover invoices that `invoice_aging` still counts; the finding that 28 of 39 open invoices carry no due date at all; a fourth bug found in earlier work (`buildTotals` and the rollup both fold every leaf with SUM, which the registry's first MAX metric would have turned into a meaningless total); and four new insight rules. |
 | 2026-09-08 | 1.3 | Phase 2 built, and the deferred insights panel with it. §20 records the Profitability and Data Trust boards, the `margin_band` dimension, `/reports/profitability-by-product` migrated onto the registry (and the ₱354K it now reports that the old query silently dropped), `runInternalQuery` and the `trusted` path, `offset`, a third bug found in earlier work (a dimension sorted by label, which would have scrambled the first ordered attribute anyone added), and the insights panel — six of seven seed rules firing, the three refusals that keep it honest including the "+10,025%" a thin baseline produced, and the one rule left dark pending `ANALYTICS_WALKIN_CUSTOMER_ID`. |
 | 2026-09-08 | 1.2 | Phase 1 built on `phase-1-business-analytics`. §19 added as the Phase 1 as-built record: the Sales and Inventory boards, the server-side top-N rollup, the `heatmap` tile, the two time dimensions, the `reorder_candidates` source and why the "rank by consequence" rule lives in a source rather than a filter, `period: 'none'` boards, `$row.*` drilldowns into Sales History and Inventory, two bugs found in Phase 0's own work (integer-divided ratios; `date` special-cased by name), and two data findings — line discounts never recorded, and Days of Inventory built, measured at 866 days, and removed as not honestly computable yet. |
@@ -2464,3 +2471,236 @@ Phase 4 is Purchasing & Suppliers, Operations. It should note:
   was done with it temporarily set to `1` and then reset, exactly as Phase 2 did. Filling it in is
   the owner's call, in Settings → Analytics, and it is the single highest-value one-field change
   available: it lights up thirteen of the Customers board's eighteen tiles.
+
+---
+
+## 22. Phase 4 — As Built
+
+**Built on branch `business-analytics`, PR #178.** Phase 4 is §9's Purchasing & Suppliers and
+Operations. Two boards, `boards/purchasing.js` (37 tiles) and `boards/operations.js` (22 tiles).
+Nine new fact sources, four new dimensions, one new trust rule, 52 new metrics — the registry goes
+from 80 to 132 — and six new insight rules.
+
+It also delivers §21.8's handoff item: the weighted average. It did not need a new fold.
+
+### 22.1 The average, done properly, without a third fold
+
+§21.8 asked Phase 4 to *"add `avg` properly (it needs a weight), do not approximate it with a SUM"*.
+
+The right answer turned out to be that the registry could already express it, and adding
+`fold: 'avg'` would have been the wrong shape. A `fold` says how a leaf's rows combine; an average
+is not a way of combining one column, it is a **ratio of two columns that each combine by SUM**.
+Declared as a ratio, it folds correctly everywhere for free: `responseShaper.js` recomputes every
+ratio from the folded leaves, so a table's total row is the mean over all the rows rather than the
+mean of the row means. A `fold: 'avg'` would have had to carry its own weight column through both
+fold sites and would have been wrong in a total the first time somebody forgot it.
+
+So each average here is three metrics — the weighted numerator, the weight, and the ratio — and
+both leaves are visible in the catalogue rather than hidden:
+
+| Average | Numerator | Denominator |
+|---|---|---|
+| `purch.price_variance_pct` — how much repeat purchases cost against last time | `purch.price_variance_value` (money) | `purch.prior_cost_base` (the same units at the old price) |
+| `purch.avg_lead_days` — order to delivery | `purch.lead_days_total` | `purch.orders_received` |
+| `ops.avg_count_minutes` — time per counted line | `ops.count_minutes` | `ops.count_timed_lines` |
+
+Each leaf's own description says it exists as half of an average and is not a figure about the
+business on its own, because it appears in `/meta` and somebody will eventually put it on a tile.
+
+### 22.2 The largest finding: the cost gap is manufactured at the receiving desk
+
+**1,547 of 2,679 goods receipt lines record `landed_unit_cost = 0`, and not one of them is flagged
+`is_free_goods`.** Every phase of this module so far has reported the sales-side consequence — the
+cost coverage badge, `insight.cost_coverage`, the Data Trust board, the whole reason PR #171
+existed. Phase 4 found the cause. A part received without a cost gets no weighted average cost, and
+every sale of it afterwards has no profit that can be worked out.
+
+The gap is spread evenly across all twelve months rather than concentrated in a legacy import, so it
+is a live process, not history:
+
+| | Sep 25 | Oct | Nov | Dec | Jan 26 | Feb | Apr | May | Jun | Jul | Aug | Sep |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| lines | 370 | 527 | 527 | 311 | 302 | 337 | 18 | 27 | 17 | 230 | 10 | 3 |
+| costed | 277 | 86 | 147 | 162 | 140 | 142 | 6 | 23 | 16 | 124 | 7 | 2 |
+
+`helpers/costCoverage.js` gained `costedReceiptLineCondition`, so the buying side and the selling
+side share one definition of "carries a usable cost" rather than two that would eventually disagree.
+The third trust rule, `costed_receipt_line`, is **weighted by units rather than by value** — for the
+same reason `wac_known` is. An uncosted line contributes zero spend, so a value-weighted ratio would
+divide the costed spend by itself and report 100% coverage on every purchasing tile in the module.
+Over twelve months the badge reads **55.0% by units, 1,132 of 2,678 lines**.
+
+`insight.purchase_cost_coverage` fires at 57.75% and links to Cost Data Health — the same page the
+sales-side rule links to, which is now the page where both ends of one problem meet.
+
+### 22.3 "N/A" is shown, not gated — and that is the opposite of Phase 3
+
+§21.8 predicted this and told Phase 4 to reuse the `named_invoice` pattern if it appeared: *"If
+supplier analytics hits an equivalent 'one record carries most of the volume' problem, make it a
+source, not a filter."*
+
+It appeared. **A placeholder supplier record literally named "N/A" carries 167 of the 336 posted
+receipts and ₱790,135 of the ₱3.91M of spend.** The pattern was deliberately *not* reused, and the
+reason is worth stating because it is the interesting half of the rule:
+
+The walk-in customer had to be gated because it is **indistinguishable from a real account**. It
+carries a name, a customer type and a credit limit; only an administrator knows which row it is; and
+a "revenue per customer" computed over it is a plausible wrong number a reader has no way to detect.
+"N/A" **announces itself**. It appears at the top of every supplier ranking under its own name, and
+what it says there — that half of this business's purchasing is not attributed to anybody — is the
+single most useful sentence the purchasing data has to offer. Gating it behind a setting would have
+deleted the finding in the name of accuracy.
+
+The general rule this leaves behind: gate a record when a reader cannot see that it is there; show it
+when the reader can. The test is not how much volume it carries.
+
+### 22.4 What refuses, and what it refuses to say
+
+| Refusal | Why |
+|---|---|
+| **Lead time** (`purchase_lead`, 5 metrics) is gated on `purchase_order_data` | `purchase_order` is EMPTY and no receipt carries a `po_id`. Lead time is the gap between two events of which only the second is recorded. The tempting alternative — the interval between one receipt and the next — measures how often a supplier is used and renders as how long they take to deliver. |
+| **A/P ledger metrics** are gated on `ap_ledger_data`, and no tile plots them over time | The ledger begins 2026-08-19 and holds 16 entries. §21.2's rule applies unchanged: ledger movement is a **table by movement type**, not a line chart that would be eleven months of flat zero. Phase 3's A/R exception does not extend here — a collections chart earned its era notice at 500+ entries; sixteen is not a trend. |
+| **Counting metrics** are gated on `cycle_count_data`, which probes for *counted lines*, not batches | A batch opened and never counted carries no observation. Letting it into the denominator would report work not yet done as work done badly. |
+| **Freight has no tile at all** | ₱6,000 across one receipt in twelve months. It is already inside `landed_unit_cost`, so spend is right either way; a "freight is 0.15% of spend" tile would invite the reader to conclude freight is negligible when the truth is that it is not being recorded. |
+| **Nothing on the Operations board is valued in money**, and a test enforces it | `inventory_transaction.unit_cost` is NULL on every adjustment, reversal and count adjustment. A shrinkage figure would have to price a year-old movement at today's cost and print it as pesos. |
+| **`COUNT(DISTINCT …)` is used nowhere** | It does not add up. `receipt_header` exists as a separate source purely so "receipts recorded" is a `COUNT(*)` that is exact under every breakdown, rather than a distinct count that would report a four-brand receipt four times in a total row. This is the `fold` lesson from §21.4, applied before it could produce the bug. |
+
+### 22.5 The materialized view the plan named, and why it is not used
+
+§9 said to reuse `employee_cycle_count_performance`. Phase 4 read it first:
+
+```
+ employee_id |  employee_name  | avg_speed_mins | match_accuracy_percent | discovery_volume
+           1 | Kent Pilar      |              0 |                   6.67 |                5
+           6 | Jhongie Canoy   |              0 |                  21.39 |              655
+           8 | Jovan Luar      |              0 |                  23.42 |              148
+```
+
+`avg_speed_mins` is `COALESCE(avg(completed_at - started_at), 0)` over batches with
+`status = 'COMPLETED'`. **No batch in this database has ever been marked COMPLETED** — all nine are
+PENDING or IN_PROGRESS — so that column is structurally zero and will stay zero. A zero meaning
+"never measured" renders exactly like a zero meaning "instant", which is the failure mode this whole
+module exists to prevent. The view also has no date column, so it cannot answer "is counting getting
+better".
+
+`count_line` reads the lines' own `started_at` / `counted_at` instead, which gives a real timing
+(**0.35 min per line** over 613 timed lines, median 8 seconds) and a date to break down by. The
+view's accuracy column is sound, and `ops.count_accuracy_pct` reproduces it exactly — 21.94% against
+the view's 21.39%/23.42% split by employee — by reading the count workflow's own verdict
+(`status = 'MATCHED_AUTO_APPROVED'`) rather than recomputing it, so this figure and the Cycle Count
+page cannot drift apart.
+
+### 22.6 The Operations board measures the record, not the people
+
+Every tile that breaks a count or a correction down by staff carries the same sentence in its help
+text: *this measures the stock record, not the person who counted it — a variance is stock that
+moved without being recorded, which happened before the count did.* `insight.stock_record_accuracy`
+is worded the same way and ends with it explicitly.
+
+That is not politeness. A board that let 21.94% read as an individual's error rate would be both
+factually wrong and the kind of thing a reader repeats in a meeting. The accuracy of a batch is
+mostly a property of the parts in it: fast-moving stock disagrees with the system far more often
+than slow stock, and who counted which shelf is not a variable the reader controls.
+
+`ops.corrections` deliberately **excludes** count adjustments. A count is the process working; a
+manual adjustment and a reversal are the process failing. Folding them together would have made a
+counting week look like a bad month.
+
+### 22.7 Price variance, and the one property that makes it a metric at all
+
+`repeat_receipt_line` computes each line's previous landed cost with a `LAG` window over the **whole
+receipt history**, deliberately outside the date filter. The range then applies to the outer row —
+the receipt being measured.
+
+If the window were bounded by the request range, "prices rose 1.5%" would mean "rose against the
+oldest receipt that happened to fall inside the window you picked". The figure would change every
+time a reader moved the date picker without a single price having moved, and there is no way to tell
+that from the screen. A test asserts the inner subquery carries no placeholder.
+
+Both sides must carry a cost — a repeat purchase whose cost was never recorded has no price to
+compare, and treating its zero as a 100% price drop would be the largest wrong number in the module.
+
+Over twelve months: **221 comparable repeat lines, 13 up and 2 down, ₱10,756.92 of extra cost, +1.48%
+weighted.** The value is what the tile leads with, not the count: fifteen parts moving by a peso is
+not news, and one moving by a peso across a thousand units is.
+
+### 22.8 A guard added to the registry
+
+`registry/index.js` now refuses to load a source whose `from` clause or whose join fragments contain
+a `$`. Every other registry fragment was already checked for placeholders; the FROM clause was not,
+because until Phase 4 every one of them was a bare table name. `repeat_receipt_line` is the first
+source whose FROM is a subquery with a WHERE of its own, and a placeholder in static text there
+would silently renumber every parameter after it. A guard, not an inference — as with `fold`, the
+failure would have been a wrong number rather than an error.
+
+### 22.9 Insights
+
+Six rules added. Against the live database over twelve months:
+
+| Rule | Fires when | Today |
+|---|---|---|
+| `insight.purchase_cost_coverage` | uncosted line share > 25% | **warning** — 1,547 of 2,679 lines, 57.75% |
+| `insight.receipts_without_invoice_ref` | share with no supplier invoice > 20% | **warning** — 336 of 336, 100% |
+| `insight.purchase_prices_rising` | price variance > ₱1 *and* > 1% | **info** — ₱10,756.92, +1.48%, 13 lines |
+| `insight.payables_overdue` | overdue share > 20% | correctly silent — nothing is overdue |
+| `insight.stock_record_accuracy` | accuracy < 70% over ≥ 20 counted lines | **warning** — 21.94% of 825 lines, 1,855 units missing |
+| `insight.correction_rate` | corrections > 5% of movements, ≥ 10 of them | **info** — 1,260 of 17,057, 7.39% |
+
+Both accuracy rules carry a **minimum-volume threshold** as well as a level: eight counted lines
+producing 12.5% accuracy is not evidence about a shelf, and a sentence saying it is would be worse
+than silence.
+
+### 22.10 Verified against the live database
+
+Every figure below was produced by running the boards through `runBatch` — the same path the routes
+use — and reconciled against direct SQL.
+
+| Check | Result |
+|---|---|
+| Purchase spend, 12 months | ₱3,914,439.79 · 23,761 units · 2,679 lines — direct SQL over gross quantity gives ₱3,916,564.79, and the ₱2,125 difference is exactly the two returned lines |
+| Cost coverage | 55.0% by units, 1,132 of 2,678 lines in scope (one line has zero net quantity and is out of scope, correctly) |
+| Supplier rollup | 12 suppliers + `Other` folding 23 more; footer total ₱3,914,439.79 equals the hero KPI exactly |
+| Top supplier | "N/A" — ₱790,135.24 across 1,872 lines |
+| Price variance | ₱10,756.92 · +1.48% · 13 up · 2 down · 221 repeat lines — exact against direct SQL |
+| Receipts | 336 posted · 336 with no supplier invoice · 0 backfilled |
+| Payables | ₱223,001.75 open across 4 bills; ledger ₱223,001.75; **gap ₱0**, as §22 predicted and now shows rather than asserts |
+| A/P ledger movement, 12 months | billed ₱232,526.75 · paid ₱2,800 · credits ₱6,725 · 16 entries |
+| Count accuracy | 21.94% — 181 matched of 825 counted; 1,855 units short, 6,254.5 units over (8,109.5 total variance, exact) |
+| Count timing | 0.35 min per line over 613 timed lines |
+| Corrections | 1,260 of 17,057 movements — 617 manual adjustments, 643 reversals, 7.39% |
+| Board load, uncached | Purchasing 289 ms (34/37 tiles) · Operations 474 ms (22/22 tiles) |
+| Lead-time tiles | 3 of 3 return a 409 the tile turns into "purchase orders are not being raised yet" |
+
+### 22.11 Checks, and where Phase 5 starts
+
+```bash
+docker exec forson_backend_dev npm run test                              # 69 suites, 959 tests, 6 snapshots
+docker exec forson_backend_dev node tests/analyticsRegistry_db_test.js   # now 1,034 statements (was 625)
+```
+
+`tests/analyticsPhase4.test.js` is new — 19 tests, each guarding a decision that would still render
+as a plausible number if it stopped holding: the unbounded price-comparison window, receipts net of
+returns, units-weighted coverage, drafts and voids excluded, uncounted lines excluded, timings
+excluded from both halves of the average, no money on the Operations board, and no time axis over
+the A/P ledger.
+
+**No frontend change was needed.** Board specs are server-side (§10.5) and formatting is driven
+entirely by `/meta`, so the new `minutes` format and both new boards render through the existing
+components. That is the architecture's §5 claim — *"a registry entry plus a board-spec entry, never
+a new route, SQL file, or React component"* — holding across a whole phase for the first time.
+
+Phase 5 is saved views, alerts, custom boards. It should note:
+
+- **The highest-value change available to this business is still one field.**
+  `ANALYTICS_WALKIN_CUSTOMER_ID` remains empty and remains seeded empty on purpose (§21.8). It
+  lights up thirteen of the Customers board's eighteen tiles.
+- **The second highest is a habit, not a field.** 336 of 336 receipts carry no supplier invoice
+  number and 58% of receipt lines carry no cost. Both are captured at the receiving desk, both are
+  now measured, and neither needs an engineer.
+- **A board-spec table (§9's Phase 5) must pass the same validator `boards/index.js` runs today.**
+  That validator now enforces nine distinct properties, several of which — the `period: 'none'`
+  contract, the topN rollup shape, filterable drilldowns — exist because a phase got them wrong
+  first. A custom board that bypassed it would reintroduce all of them at once.
+- **Alerts are insight rules with a schedule, and the rules are already written.** Seventeen of them
+  are evaluated deterministically by `/analytics/insights`. Nothing in this module needs an LLM to send an
+  email, and §15 keeps generated prose out of scope.

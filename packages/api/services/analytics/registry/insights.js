@@ -389,6 +389,229 @@ const INSIGHT_RULES = Object.freeze({
         ]),
         action: Object.freeze({ page: 'ar', label: 'Open Accounts Receivable' }),
     }),
+
+    // -----------------------------------------------------------------------
+    // Phase 4 — purchasing and operations.
+    //
+    // Every `when` below tests for null before it compares, for the reason at
+    // the top of this file: `null < 25` is TRUE in JavaScript, so a rule about
+    // something being too low will fire on a period with no data at all unless
+    // it says otherwise.
+    // -----------------------------------------------------------------------
+
+    /**
+     * The buying-side twin of `insight.cost_coverage`, and the cause of it.
+     * A part received without a cost gets no weighted average cost, and every
+     * sale of it afterwards has no profit that can be worked out — so this is
+     * the sentence that says where the sales-side gap is manufactured.
+     */
+    'insight.purchase_cost_coverage': Object.freeze({
+        id: 'insight.purchase_cost_coverage',
+        severity: 'warning',
+        boards: Object.freeze(['purchasing', 'data_trust']),
+        thresholds: Object.freeze({ sharePct: 25 }),
+        query: Object.freeze({
+            metrics: Object.freeze([
+                'purch.uncosted_line_share',
+                'purch.uncosted_lines',
+                'purch.receipt_lines',
+            ]),
+        }),
+        when: ({ v, t }) => {
+            const share = num(v('purch.uncosted_line_share'));
+            return share !== null && share > t.sharePct;
+        },
+        template:
+            '{lines} of {total} receipt lines were booked in without a cost — {share} of '
+            + 'everything received. Those parts get no cost of their own, so nothing sold from '
+            + 'them afterwards has a profit that can be worked out.',
+        values: ({ v }) => ({
+            lines: { metric: 'purch.uncosted_lines', value: v('purch.uncosted_lines') },
+            total: { metric: 'purch.receipt_lines', value: v('purch.receipt_lines') },
+            share: { metric: 'purch.uncosted_line_share', value: v('purch.uncosted_line_share') },
+        }),
+        cites: Object.freeze([
+            'purch.uncosted_line_share', 'purch.uncosted_lines', 'purch.receipt_lines',
+        ]),
+        action: Object.freeze({ page: 'cost_data_health', label: 'Fix cost data' }),
+    }),
+
+    'insight.receipts_without_invoice_ref': Object.freeze({
+        id: 'insight.receipts_without_invoice_ref',
+        severity: 'warning',
+        boards: Object.freeze(['purchasing']),
+        thresholds: Object.freeze({ sharePct: 20 }),
+        query: Object.freeze({
+            metrics: Object.freeze([
+                'purch.invoice_ref_gap_share',
+                'purch.receipts_without_invoice_ref',
+                'purch.receipts',
+            ]),
+        }),
+        when: ({ v, t }) => {
+            const share = num(v('purch.invoice_ref_gap_share'));
+            return share !== null && share > t.sharePct;
+        },
+        template:
+            '{count} of {total} receipts carry no supplier invoice number — {share} of them. '
+            + 'Without it a receipt cannot be matched against the bill that arrives for it, '
+            + 'which is how the same delivery gets paid for twice.',
+        values: ({ v }) => ({
+            count: {
+                metric: 'purch.receipts_without_invoice_ref',
+                value: v('purch.receipts_without_invoice_ref'),
+            },
+            total: { metric: 'purch.receipts', value: v('purch.receipts') },
+            share: { metric: 'purch.invoice_ref_gap_share', value: v('purch.invoice_ref_gap_share') },
+        }),
+        cites: Object.freeze([
+            'purch.invoice_ref_gap_share', 'purch.receipts_without_invoice_ref', 'purch.receipts',
+        ]),
+        action: Object.freeze({ page: 'goods_receipt_history', label: 'Open Receipt History' }),
+    }),
+
+    /**
+     * Fires on MONEY, not on a count of price rises. Fifteen parts going up by a
+     * peso is not news; one going up by a peso on a thousand units is.
+     */
+    'insight.purchase_prices_rising': Object.freeze({
+        id: 'insight.purchase_prices_rising',
+        severity: 'info',
+        boards: Object.freeze(['purchasing']),
+        thresholds: Object.freeze({ minValue: 1, minPct: 1 }),
+        query: Object.freeze({
+            metrics: Object.freeze([
+                'purch.price_variance_value',
+                'purch.price_variance_pct',
+                'purch.price_increases',
+            ]),
+        }),
+        when: ({ v, t }) => {
+            const value = num(v('purch.price_variance_value'));
+            const pct = num(v('purch.price_variance_pct'));
+            if (value === null || pct === null) return false;
+            return value > t.minValue && pct > t.minPct;
+        },
+        template:
+            'Buying the same parts again cost {value} more than it would have at their previous '
+            + 'prices — {pct} up, across {count} lines where the price had moved.',
+        values: ({ v }) => ({
+            value: { metric: 'purch.price_variance_value', value: v('purch.price_variance_value') },
+            pct: { metric: 'purch.price_variance_pct', value: v('purch.price_variance_pct') },
+            count: { metric: 'purch.price_increases', value: v('purch.price_increases') },
+        }),
+        cites: Object.freeze([
+            'purch.price_variance_value', 'purch.price_variance_pct', 'purch.price_increases',
+        ]),
+        action: Object.freeze({ board: 'purchasing', label: 'Open Purchasing' }),
+    }),
+
+    'insight.payables_overdue': Object.freeze({
+        id: 'insight.payables_overdue',
+        severity: 'warning',
+        boards: Object.freeze(['purchasing']),
+        thresholds: Object.freeze({ sharePct: 20 }),
+        query: Object.freeze({
+            metrics: Object.freeze([
+                'purch.ap_overdue_share',
+                'purch.ap_overdue_balance',
+                'purch.ap_open_balance',
+                'purch.ap_oldest_overdue_days',
+            ]),
+        }),
+        when: ({ v, t }) => {
+            const share = num(v('purch.ap_overdue_share'));
+            return share !== null && share > t.sharePct;
+        },
+        template:
+            '{overdue} of the {total} owed to suppliers is past its due date — {share} of the '
+            + 'book, with the oldest bill {days} overdue.',
+        values: ({ v }) => ({
+            overdue: { metric: 'purch.ap_overdue_balance', value: v('purch.ap_overdue_balance') },
+            total: { metric: 'purch.ap_open_balance', value: v('purch.ap_open_balance') },
+            share: { metric: 'purch.ap_overdue_share', value: v('purch.ap_overdue_share') },
+            days: {
+                metric: 'purch.ap_oldest_overdue_days',
+                value: v('purch.ap_oldest_overdue_days'),
+            },
+        }),
+        cites: Object.freeze([
+            'purch.ap_overdue_share', 'purch.ap_overdue_balance', 'purch.ap_open_balance',
+            'purch.ap_oldest_overdue_days',
+        ]),
+        action: Object.freeze({ page: 'ap', label: 'Open Payables' }),
+    }),
+
+    /**
+     * Deliberately worded about the RECORD rather than about whoever counted.
+     * A variance is stock that moved without being recorded, which happened
+     * before the count did; a sentence that read as an accusation would be both
+     * wrong and the kind of thing a reader repeats.
+     */
+    'insight.stock_record_accuracy': Object.freeze({
+        id: 'insight.stock_record_accuracy',
+        severity: 'warning',
+        boards: Object.freeze(['operations']),
+        thresholds: Object.freeze({ accuracyPct: 70, minLines: 20 }),
+        query: Object.freeze({
+            metrics: Object.freeze([
+                'ops.count_accuracy_pct',
+                'ops.counted_lines',
+                'ops.count_shortfall_units',
+            ]),
+        }),
+        when: ({ v, t }) => {
+            const accuracy = num(v('ops.count_accuracy_pct'));
+            const lines = num(v('ops.counted_lines'));
+            // Both guards matter: a null accuracy means nothing was counted, and
+            // a handful of counted lines is not evidence about the whole shelf.
+            if (accuracy === null || lines === null) return false;
+            return lines >= t.minLines && accuracy < t.accuracyPct;
+        },
+        template:
+            'Only {accuracy} of the {lines} lines counted matched what the system held, and '
+            + '{short} units the system expected were not on the shelf. That is stock leaving '
+            + 'without being recorded, not counting done badly.',
+        values: ({ v }) => ({
+            accuracy: { metric: 'ops.count_accuracy_pct', value: v('ops.count_accuracy_pct') },
+            lines: { metric: 'ops.counted_lines', value: v('ops.counted_lines') },
+            short: { metric: 'ops.count_shortfall_units', value: v('ops.count_shortfall_units') },
+        }),
+        cites: Object.freeze([
+            'ops.count_accuracy_pct', 'ops.counted_lines', 'ops.count_shortfall_units',
+        ]),
+        action: Object.freeze({ page: 'stock_reconciliation', label: 'Open Stock Reconciliation' }),
+    }),
+
+    'insight.correction_rate': Object.freeze({
+        id: 'insight.correction_rate',
+        severity: 'info',
+        boards: Object.freeze(['operations']),
+        thresholds: Object.freeze({ sharePct: 5, minCorrections: 10 }),
+        query: Object.freeze({
+            metrics: Object.freeze([
+                'ops.correction_share',
+                'ops.corrections',
+                'ops.stock_movements',
+            ]),
+        }),
+        when: ({ v, t }) => {
+            const share = num(v('ops.correction_share'));
+            const corrections = num(v('ops.corrections'));
+            if (share === null || corrections === null) return false;
+            return corrections >= t.minCorrections && share > t.sharePct;
+        },
+        template:
+            '{corrections} of the {movements} stock movements recorded were corrections — '
+            + '{share} of the work was fixing earlier work.',
+        values: ({ v }) => ({
+            corrections: { metric: 'ops.corrections', value: v('ops.corrections') },
+            movements: { metric: 'ops.stock_movements', value: v('ops.stock_movements') },
+            share: { metric: 'ops.correction_share', value: v('ops.correction_share') },
+        }),
+        cites: Object.freeze(['ops.correction_share', 'ops.corrections', 'ops.stock_movements']),
+        action: Object.freeze({ board: 'operations', label: 'Open Operations' }),
+    }),
 });
 
 module.exports = { INSIGHT_RULES, SEVERITIES };
