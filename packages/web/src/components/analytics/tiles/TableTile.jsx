@@ -26,6 +26,15 @@ import CoverageBadge from '../CoverageBadge';
  * - **The rollup row is styled and pinned, never sorted away.** 'Other' is a
  *   statement about what is NOT listed, so it stays at the bottom whatever the
  *   reader sorts by.
+ *
+ * A tile may also ask for a **running share** (`display.cumulative`), which is
+ * what turns a ranked table into a Pareto: read down the column to find how few
+ * rows make up most of the total. Two things make it honest rather than
+ * decorative. The denominator is the tile's own TOTAL, which a server-side
+ * rollup makes exact — nothing was truncated, so the column really does reach
+ * 100%. And client-side re-sorting is switched OFF on such a table: a running
+ * total means nothing in an order other than the one it was accumulated in, and
+ * a column that silently stopped being cumulative would be worse than no column.
  */
 const TableTile = ({ spec, data, onSelectRow }) => {
     const { metric, format } = useAnalyticsMeta();
@@ -34,12 +43,17 @@ const TableTile = ({ spec, data, onSelectRow }) => {
     const perRowCoverage = spec.display?.coverage?.perRow ? spec.display.coverage.rule : null;
     const showRank = !!spec.display?.rank;
     const barMetric = spec.display?.bar || null;
+    const cumulativeMetric = spec.display?.cumulative || null;
 
     // null = the server's own order, which is the order the top-N was chosen by.
     const [sort, setSort] = useState(null);
     const rows = useMemo(() => data?.rows || [], [data]);
 
-    const { body, footer, barMax } = useMemo(() => {
+    const cumulativeTotal = cumulativeMetric
+        ? Number(data?.totals?.values?.[cumulativeMetric])
+        : null;
+
+    const { body, footer, barMax, runningShare } = useMemo(() => {
         const rollup = rows.filter((r) => r.rollup);
         const listed = rows.filter((r) => !r.rollup);
         const sorted = sort
@@ -55,8 +69,20 @@ const TableTile = ({ spec, data, onSelectRow }) => {
         const max = barMetric
             ? listed.reduce((m, r) => Math.max(m, Math.abs(Number(r.values[barMetric]) || 0)), 0)
             : 0;
-        return { body: sorted, footer: rollup, barMax: max };
-    }, [rows, sort, barMetric]);
+
+        // Accumulated in the SERVER's ranking -- which is the only order a
+        // running total is a true statement in -- and keyed by row so the fold,
+        // pinned to the bottom, still lands on the last share.
+        const shares = new Map();
+        if (cumulativeMetric && Number.isFinite(cumulativeTotal) && cumulativeTotal !== 0) {
+            let acc = 0;
+            for (const row of [...listed, ...rollup]) {
+                acc += Number(row.values[cumulativeMetric]) || 0;
+                shares.set(row, (acc / cumulativeTotal) * 100);
+            }
+        }
+        return { body: sorted, footer: rollup, barMax: max, runningShare: shares };
+    }, [rows, sort, barMetric, cumulativeMetric, cumulativeTotal]);
 
     if (rows.length === 0) {
         return <EmptyState title="Nothing to show for this period" className="py-8" />;
@@ -119,6 +145,11 @@ const TableTile = ({ spec, data, onSelectRow }) => {
                         {format(id, row.values[id])}
                     </td>
                 ))}
+                {cumulativeMetric && (
+                    <td className="tnum py-2 pl-3 text-right whitespace-nowrap text-neutral-500 dark:text-slate-400">
+                        {runningShare.has(row) ? `${runningShare.get(row).toFixed(1)}%` : '—'}
+                    </td>
+                )}
             </tr>
         );
     };
@@ -134,20 +165,32 @@ const TableTile = ({ spec, data, onSelectRow }) => {
                             const active = sort && sort.by === id;
                             return (
                                 <th key={id} className="py-2 pl-3 text-right font-medium whitespace-nowrap">
-                                    <button
-                                        type="button"
-                                        onClick={() => toggleSort(id)}
-                                        title={`Sort the rows shown by ${metric(id)?.label || id}`}
-                                        className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-neutral-700 dark:hover:text-slate-200"
-                                    >
-                                        {metric(id)?.label || id}
-                                        <span aria-hidden="true" className={active ? '' : 'opacity-0'}>
-                                            {active && sort.dir === 'ASC' ? '▲' : '▼'}
-                                        </span>
-                                    </button>
+                                    {cumulativeMetric ? (
+                                        <span className="uppercase tracking-wide">{metric(id)?.label || id}</span>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={() => toggleSort(id)}
+                                            title={`Sort the rows shown by ${metric(id)?.label || id}`}
+                                            className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-neutral-700 dark:hover:text-slate-200"
+                                        >
+                                            {metric(id)?.label || id}
+                                            <span aria-hidden="true" className={active ? '' : 'opacity-0'}>
+                                                {active && sort.dir === 'ASC' ? '▲' : '▼'}
+                                            </span>
+                                        </button>
+                                    )}
                                 </th>
                             );
                         })}
+                        {cumulativeMetric && (
+                            <th
+                                className="py-2 pl-3 text-right font-medium whitespace-nowrap"
+                                title={`Running share of ${metric(cumulativeMetric)?.label || cumulativeMetric}, accumulated in the order shown. This table is not re-sortable, because a running total only means something in the order it was added up in.`}
+                            >
+                                Running
+                            </th>
+                        )}
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100 dark:divide-slate-700/60">
@@ -167,6 +210,7 @@ const TableTile = ({ spec, data, onSelectRow }) => {
                                 {format(id, data?.totals?.values?.[id])}
                             </td>
                         ))}
+                        {cumulativeMetric && <td className="py-2 pl-3" />}
                     </tr>
                 </tfoot>
             </table>

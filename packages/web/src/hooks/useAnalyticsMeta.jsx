@@ -42,6 +42,8 @@ export const AnalyticsMetaProvider = ({ children }) => {
             metric: (id) => byId.get(id) || null,
             dimension: (id) => dimensionsById.get(id) || null,
             readiness: meta?.readiness || {},
+            // The server's own wording for "why is this blank", keyed by probe.
+            readinessMessage: (id) => (meta?.readinessInfo || {})[id]?.message || null,
             presets: meta?.presets || [],
             trustRule: (id) => (meta?.trustRules || []).find((r) => r.id === id) || null,
             format: (metricId, value) => formatValue(meta, metricId, value),

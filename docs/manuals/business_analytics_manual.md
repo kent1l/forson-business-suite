@@ -12,7 +12,7 @@ last_updated: 2026-09-08
 > - **What it's for:** Seeing how the business is doing this period, and against the period before it.
 > - **Who uses it:** Owner and Managers.
 > - **You'll mostly come here to:** Check the month against the last one, see what is selling, and find out what needs reordering.
-> - **Boards:** **Overview** (how are we doing), **Sales** (what sold, to whom, when), **Inventory** (what is on the shelf and what is about to run out), **Profitability** (where margin comes from), **Data Trust** (how much of all this you can believe).
+> - **Boards:** **Overview** (how are we doing), **Sales** (what sold, to whom, when), **Inventory** (what is on the shelf and what is about to run out), **Profitability** (where margin comes from), **Customers** (who the named accounts are and how much credit they have drawn), **Receivables & Cash** (who owes you and how old it is), **Data Trust** (how much of all this you can believe).
 
 ## Overview
 
@@ -256,6 +256,74 @@ things are improving.
    is why Analytics reports slightly more revenue, and considerably more refunds, than the Reports
    page over the same dates.
 
+## How To — See Who Your Real Customers Are
+
+*Why this matters:* Almost every invoice in the system goes to one walk-in record, so a plain
+"revenue per customer" describes the queue at the counter rather than your customer book. The
+Customers board takes the counter out, and only then divides.
+
+*Precision:* Normal default. It opens on the last ninety days, because there are far fewer named
+account invoices than counter sales and a thirty-day window is too thin to read.
+
+> ⚠️ **One setting has to be filled in first.** Analytics cannot tell the walk-in record apart from a
+> real account — it is a customer row like any other. Until an administrator enters its customer ID
+> under **Settings → Analytics → Walk-in customer record**, the revenue half of this board says
+> *Not recorded yet* and explains what is missing. It will not guess, because guessing wrong would
+> make the page state something confident and false about who the business depends on. The credit
+> tiles work either way.
+
+1. Open the **Customers** board.
+2. **Named Account Revenue** is the headline, and it is deliberately much smaller than the revenue on
+   the Overview board. The difference is counter trade.
+3. **Revenue concentration** ranks your accounts with a **Running** share beside them. Read down that
+   column to find how few customers make up most of the book — that is your concentration risk.
+   Everything below the twelfth account is added together into one **Other** row rather than cut off,
+   so the running share reaches 100% and means it. This table cannot be re-sorted, because a running
+   total only makes sense in the order it was added up in.
+4. **Revenue by when the account was won** splits this period's revenue by the month each account
+   first bought from you. It answers whether the customers you won a year ago are still buying.
+5. **New Accounts** counts accounts whose first invoice ever falls inside the period. Over a
+   twelve-month range almost every account counts as new, because the records only go back that far —
+   the figure means something over a shorter window.
+6. **Credit Drawn**, **Credit Extended** and **Accounts Over Their Limit** are positions as of now and
+   do not move with the date picker. Most credit limits are the system default rather than a figure
+   anyone decided on, so read **Credit Extended** as what the settings currently permit.
+
+## How To — See Who Owes You and How Old It Is
+
+*Why this matters:* Deciding who to chase, and knowing how much of what you are owed you can even
+put an age on.
+
+*Precision:* Normal default. Everything above the ledger section is a position as of now; only the
+movement tiles change with the date range.
+
+1. Open the **Receivables & Cash** board.
+2. **Two figures lead the board, and they do not agree.** *Owed on Open Invoices* is every unsettled
+   invoice, including those raised before the A/R module went live. *On the A/R Ledger* is the same
+   question asked of the ledger, which only knows invoices since 19 August 2026. **Not on the Ledger**
+   is the difference between them. Neither figure is wrong; quote *Owed on Open Invoices* as your
+   total exposure. The gap shrinks on its own as the older invoices settle.
+3. **How old is what we are owed** buckets the balances by age. *(No payment terms)* is a band of its
+   own — an invoice with no due date can never become overdue however long it sits, so most of what
+   you are owed will never appear in an overdue figure. That is why **Overdue Balance** and **Balance
+   With No Terms** sit side by side.
+4. **Who owes us** ranks accounts by what they owe, with the overdue portion and the age of their
+   oldest invoice beside it. The rows below the fifteenth are added together, so the total at the
+   bottom matches the figure at the top of the board. Click a row to open Accounts Receivable.
+5. **What moved on the ledger** is the whole story of the receivable in one table: what was charged,
+   what was collected, what was written off, and what was reversed. The movements add up to the change
+   in the balance.
+6. **Concessions Granted** and **Balances Written Down** are money that was invoiced and then agreed
+   not to be collected. They are shown gross; **Adjustments Reversed** is separate rather than netted
+   off either, because the ledger does not record which kind of adjustment a reversal cancels.
+7. **Cheques in the pipeline** is what has been taken in and has not cleared the bank. *Bounced* means
+   the balance is already back on the customer's account.
+
+> 📝 Note — Anything to do with collection *over time* (Collected, Collected vs Charged, Days Sales
+> Outstanding) is measured from the A/R ledger, which begins on 18 August 2026. Over a range that
+> starts earlier it looks like a collapse in activity when the truth is that there is no ledger to
+> read. Each of those tiles says so in its ⓘ.
+
 ## How To — Export a Tile
 
 *Why this matters:* For sharing with a bookkeeper or working a list offline.
@@ -284,7 +352,7 @@ want the very latest.
 
 | Field/Control | Description | Notes |
 |---|---|---|
-| Board tabs | Overview, Sales, Inventory, Profitability, Data Trust | Tiles you have no permission for are not shown at all |
+| Board tabs | Overview, Sales, Inventory, Profitability, Customers, Receivables & Cash, Data Trust | Tiles you have no permission for are not shown at all |
 | Period dropdown | The date range every figure on the board describes | Your choice is remembered on this device; the Inventory board has none, because nothing on it moves with a date |
 | Compare with the previous period | Adds the equally long stretch immediately before, and the change | Off for *As of now* figures, which have no period |
 | Net Revenue | Gross revenue minus refunds, each in its own period | Shows its two parts underneath |
@@ -310,6 +378,19 @@ want the very latest.
 | Margin band | Sales grouped by the margin they made | *(No cost recorded)* is a band of its own, not hidden rows |
 | Parts With Negative Stock | Parts recorded as holding less than zero | Always a data fault; fix on Stock Reconciliation |
 | What stands out | The insights panel | Fixed rules, never an AI; each line names the figures behind it |
+| Named Account Revenue | Invoiced sales to named accounts, counter trade excluded | Much smaller than the Overview revenue, and meant to be |
+| Running | A running share of the total, down the ranked rows | Only meaningful in the order shown, so that table cannot be re-sorted |
+| Customer since | The month an account first bought from you | A fact about the customer, not about the date range |
+| New Accounts | Accounts whose first invoice ever falls in this period | Over a twelve-month range nearly every account counts as new |
+| Credit Drawn / Credit Extended | What accounts owe, against the limits they were granted | Most limits are the system default rather than a decision |
+| Owed on Open Invoices | Every unsettled invoice, net of credit notes | The figure to quote as total exposure |
+| On the A/R Ledger | The same question asked of the A/R ledger | Only knows invoices raised since 19 August 2026 |
+| Not on the Ledger | The difference between the two figures above | Not an error in either — it is the size of the gap |
+| Balance With No Terms | Owed on invoices with no due date | Can never appear as overdue, however old it gets |
+| Oldest Overdue | Days past due on the most overdue open invoice | In a table, the **Other** row shows the oldest it folded, not a sum |
+| Collected / Charged to Accounts | Money off and onto customer accounts in the period | Read from the A/R ledger, which begins 18 August 2026 |
+| Concessions Granted / Written Down | Balances agreed not to be collected | Gross; reversals are counted separately |
+| Cheques Not Yet Cleared | Customer cheques still in the pipeline | Held, deposited and bounced are all counted — none is cash yet |
 | **☰** | Refresh, Export CSV, and Open in page | Options vary by tile |
 
 ## Common Errors & What They Mean
@@ -320,6 +401,7 @@ want the very latest.
 | **Measured on 11.5% of the data** | The figure is real, but covers only that share of sales | Read the ⓘ, and treat the profit amount as a floor |
 | **No comparable earlier period** | There is no data in the stretch before this one | Normal for the earliest months; pick a shorter range |
 | **Not recorded yet** | The figure needs a module the business is not using | Nothing to do — it appears on its own once that module carries data |
+| **Analytics cannot tell counter trade from a named account…** | The walk-in customer record has not been identified | An administrator enters its customer ID under Settings → Analytics. The rest of the Customers board works meanwhile |
 | A dash (—) in a table cell | That row carried no recorded cost, so the figure could not be worked out | Not a zero. Fix the part's cost to make it appear |
 | **Showing the top rows only** | There are more rows than the tile lists | Export the tile to CSV to see them all |
 | **This tile failed** | That one figure could not be loaded; the rest of the board is fine | Click **Retry**. If it keeps failing, tell an administrator |

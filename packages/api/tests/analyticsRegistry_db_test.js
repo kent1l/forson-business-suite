@@ -17,11 +17,17 @@
 const db = require('../db');
 const { METRICS, DIMENSIONS, SOURCES } = require('../services/analytics/registry');
 const { BOARDS } = require('../services/analytics/boards');
+const { INSIGHT_RULES } = require('../services/analytics/registry/insights');
 const { parseQueryRequest } = require('../services/analytics/requestValidator');
 const { buildQuery } = require('../services/analytics/queryBuilder');
 
 const ADMIN = { user: { employee_id: 0, permission_level_id: 10, permissions: [] } };
 const RANGE = { from: '2025-01-01', to: '2026-12-31' };
+// The named-account source refuses to build without it, which is the point of
+// it. Supplied here, as the server does at runtime from the settings table, so
+// this check covers those statements rather than skipping them; the id itself is
+// irrelevant to whether the SQL parses.
+const OPTS = { walkInCustomerId: 1 };
 
 const failures = [];
 const record = (label, err) => {
@@ -31,7 +37,7 @@ const record = (label, err) => {
 async function explain(client, label, body) {
   let built;
   try {
-    built = buildQuery(parseQueryRequest(body, ADMIN));
+    built = buildQuery(parseQueryRequest(body, ADMIN, OPTS));
   } catch (err) {
     record(`${label} (could not be built)`, err);
     return;
@@ -116,6 +122,40 @@ async function run() {
         metrics: ['sales.net_revenue', 'margin.gross_margin_pct'],
         dimensions: ['date'], grain: 'month', dateRange: RANGE, compare: mode,
       });
+      checked += 1;
+    }
+
+    // 6. Every insight rule's own query, exactly as the panel asks for it.
+    // A rule is prose, which a reader trusts more than a number, so a rule whose
+    // query no longer parses must be a red run rather than a sentence that
+    // quietly stops appearing.
+    for (const rule of Object.values(INSIGHT_RULES)) {
+      await explain(client, `insight ${rule.id}`, {
+        metrics: [...rule.query.metrics],
+        dimensions: [...(rule.query.dimensions || [])],
+        grain: null,
+        dateRange: RANGE,
+        ...(rule.query.topN ? { topN: { ...rule.query.topN } } : {}),
+        ...(rule.query.compare ? { compare: rule.query.compare } : {}),
+      });
+      checked += 1;
+    }
+
+    // 7. The named-account source with the setting absent. Every statement above
+    // proves the SQL is right; this proves the refusal is, because the failure it
+    // guards against -- counter trade silently counted as a customer -- looks
+    // entirely plausible on screen.
+    for (const metric of Object.values(METRICS)) {
+      if (metric.source !== 'named_invoice') continue;
+      let refused = false;
+      try {
+        buildQuery(parseQueryRequest({ metrics: [metric.id], dateRange: RANGE }, ADMIN));
+      } catch (err) {
+        refused = err.status === 409;
+      }
+      if (!refused) {
+        failures.push(`metric ${metric.id} was built without the walk-in setting, silently including counter trade`);
+      }
       checked += 1;
     }
 

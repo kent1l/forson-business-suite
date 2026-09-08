@@ -233,7 +233,13 @@ function buildTotals({ rows, plan, ctx }) {
         for (const leafId of plan.leafMetrics) {
             const v = row[plan.metricColumns[leafId]];
             if (v === null || v === undefined) continue;
-            leafSums.set(leafId, leafSums.get(leafId) + Number(v));
+            // Mirrors the rollup's fold exactly, so a table's total row and its
+            // 'Other' row are combined by the same rule. Adding up each
+            // customer's oldest overdue invoice would give a number of days that
+            // means nothing and still looks like a figure.
+            leafSums.set(leafId, METRICS[leafId].fold === 'max'
+                ? (leafSeen.get(leafId) ? Math.max(leafSums.get(leafId), Number(v)) : Number(v))
+                : leafSums.get(leafId) + Number(v));
             leafSeen.set(leafId, true);
         }
         for (const cov of plan.coverageRules) {

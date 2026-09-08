@@ -34,10 +34,16 @@ const readyFor = (rule, readiness) => (rule.query.metrics || []).every((id) => {
  * and because the arithmetic is worth being able to read: the walk-in record is
  * removed from BOTH the ranking and the denominator, so the answer is a share of
  * invoiced trade rather than a share of everything.
+ *
+ * Since Phase 3 the rule reads `customers.named_revenue`, which is measured over
+ * the `named_invoice` source — the counter is already gone before the rows get
+ * here, so the subtraction below finds nothing to subtract. It is kept anyway,
+ * and the walk-in guard with it: a rule that would state which customer the
+ * business depends on must refuse to answer when it cannot tell a customer from
+ * a counter, whichever layer happens to be enforcing that today.
  */
-function namedConcentration(rows, totals, walkInId) {
+function namedConcentration(rows, totals, walkInId, metric = 'sales.gross_revenue') {
     if (walkInId === null) return null;
-    const metric = 'sales.gross_revenue';
     const total = Number(totals.values[metric]);
     if (!Number.isFinite(total) || total <= 0) return null;
 
@@ -88,7 +94,12 @@ function contextFor(result, rule, settings) {
         named: namedConcentration(
             result.rows || [],
             totals,
-            Number.isInteger(walkInId) ? walkInId : null
+            Number.isInteger(walkInId) ? walkInId : null,
+            // Named on the rule, not inferred: the metric the concentration is
+            // measured over is part of what the rule means, and guessing it from
+            // the query's first entry would break silently the day someone
+            // reorders that list.
+            rule.concentrationMetric || 'sales.gross_revenue'
         ),
     };
 }

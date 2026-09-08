@@ -99,7 +99,7 @@ router.post('/analytics/query', protect, hasPermission('analytics:view'), async 
             return res.status(403).json({ message: 'Only an administrator may inspect the generated query.' });
         }
         try {
-            return res.json(analytics.explainQuery(req.body, req));
+            return res.json(await analytics.explainQuery(req.body, req));
         } catch (err) {
             return respondToError(res, err, 'explain the analytics query');
         }

@@ -38,7 +38,7 @@ const asArray = (v) => {
  * `mustResolve` uses hasOwnProperty rather than `in`, so `__proto__` and
  * `constructor` resolve to nothing rather than to an Object.prototype member.
  */
-function parseQueryRequest(body, req, { forCsv = false, trusted = false } = {}) {
+function parseQueryRequest(body, req, { forCsv = false, trusted = false, walkInCustomerId = null } = {}) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
         throw new AnalyticsRequestError(400, 'A query body is required.');
     }
@@ -191,6 +191,22 @@ function parseQueryRequest(body, req, { forCsv = false, trusted = false } = {}) 
         });
     }
 
+    // The walk-in customer record is NOT a request option, and there is
+    // deliberately no way to name it in a body. It is a fact about the business,
+    // read from the settings table by the caller in ./index.js and handed down
+    // through this server-authored third argument — the same channel `trusted`
+    // travels on, and one no request can reach.
+    //
+    // Checked, never coerced. `parseInt` would turn "1.5" and "1; DROP TABLE
+    // customer" both into customer 1 — bound as a parameter, so not an injection,
+    // but a setting somebody typed wrong would silently start excluding a real
+    // account and the page would say nothing. A value that is not already a
+    // positive integer is treated exactly as unset, and the sources that need it
+    // refuse.
+    const walkIn = Number.isInteger(walkInCustomerId) && walkInCustomerId > 0
+        ? walkInCustomerId
+        : null;
+
     return {
         metrics,
         dimensions,
@@ -202,7 +218,7 @@ function parseQueryRequest(body, req, { forCsv = false, trusted = false } = {}) 
         topN,
         limit,
         offset,
-        sourceOptions: { status },
+        sourceOptions: { status, walkInCustomerId: walkIn },
         context: { days_in_range: days },
     };
 }

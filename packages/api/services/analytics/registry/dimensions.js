@@ -64,6 +64,63 @@ const marginBandCase = (c, emit) => {
         ELSE ${emit(6)} END`;
 };
 
+/**
+ * Aging bands for an open receivable, as an ordered CASE over the invoice's own
+ * overdue days.
+ *
+ * Two decisions are load-bearing:
+ *
+ * - **"No payment terms" is a band, not a missing value.** 28 of the 39 open
+ *   invoices in this database carry no due date at all, and an invoice with no
+ *   due date can never become overdue. Dropping those rows would show an aging
+ *   chart over a minority of the money owed; folding them into "not yet due"
+ *   would assert they are healthy when the truth is that nobody agreed when
+ *   they are payable. They are their own band, and they read last.
+ * - **The key is an ordinal.** Ordering by the label would sort "1–30 days"
+ *   before "Over 90 days" and put "31–60" before "61–90" only by accident of
+ *   the digits. See `sortBy` below.
+ */
+const AGING_BANDS = Object.freeze([
+    [0, 'Not yet due'],
+    [1, '1–30 days'],
+    [2, '31–60 days'],
+    [3, '61–90 days'],
+    [4, 'Over 90 days'],
+    [5, '(No payment terms)'],
+]);
+
+const agingBandCase = (c, emit) => `CASE
+        WHEN ${c.due_date} IS NULL THEN ${emit(5)}
+        WHEN COALESCE(${c.days_overdue}, 0) <= 0 THEN ${emit(0)}
+        WHEN ${c.days_overdue} <= 30 THEN ${emit(1)}
+        WHEN ${c.days_overdue} <= 60 THEN ${emit(2)}
+        WHEN ${c.days_overdue} <= 90 THEN ${emit(3)}
+        ELSE ${emit(4)} END`;
+
+/**
+ * The A/R ledger's entry types, rendered in the words a person uses.
+ *
+ * The enum labels (`PAYMENT_SETTLED`, `PDC_BOUNCED_REVERSAL`) are accurate and
+ * unreadable. The CASE is exhaustive over the enum as it stands and falls back
+ * to the raw value, so a type added to `ar_ledger_entry_type` later shows up
+ * as itself rather than disappearing into an "(Other)" bucket nobody can chase.
+ */
+const AR_ENTRY_LABELS = Object.freeze([
+    ['INVOICE_POSTED', 'Invoiced to account'],
+    ['PAYMENT_SETTLED', 'Payment received'],
+    ['CREDIT_MEMO_APPLIED', 'Credit note applied'],
+    ['CREDIT_ADJUSTMENT', 'Credit adjustment'],
+    ['PDC_BOUNCED_REVERSAL', 'Bounced cheque reversed'],
+    ['WITHHOLDING_TAX_CREDIT', 'Withholding tax credited'],
+    ['SETTLEMENT_DISCOUNT', 'Settlement concession'],
+    ['BALANCE_WRITE_DOWN', 'Balance written down'],
+    ['ADJUSTMENT_REVERSAL', 'Adjustment reversed'],
+]);
+
+const arEntryLabelCase = (c) => `CASE ${c.entry_type}::text
+        ${AR_ENTRY_LABELS.map(([k, label]) => `WHEN '${k}' THEN '${label}'`).join('\n        ')}
+        ELSE ${c.entry_type}::text END`;
+
 const DIMENSIONS = Object.freeze({
     date: Object.freeze({
         id: 'date',
@@ -220,6 +277,94 @@ const DIMENSIONS = Object.freeze({
         valueType: 'int',
         key: (c) => marginBandCase(c, (n) => String(n)),
         keyLabel: (c) => marginBandCase(c, (n) => `'${MARGIN_BANDS[n][1]}'`),
+    }),
+
+    /**
+     * The month a customer FIRST bought from the business.
+     *
+     * This is the retention question §14 asks for, in the only shape this
+     * database can answer honestly. A classic cohort grid (cohort month x months
+     * since first purchase) needs years of history to say anything; twelve
+     * months of it produces a triangle that is mostly empty and reads as churn.
+     * Revenue in the selected period, split by the vintage of the account that
+     * produced it, answers "are the customers we won a year ago still buying?"
+     * with the data that actually exists.
+     *
+     * It is a fact about the CUSTOMER, not about the requested range, so no
+     * request value reaches it — the source's own lateral supplies the date.
+     */
+    customer_cohort: Object.freeze({
+        id: 'customer_cohort',
+        label: 'Customer since',
+        kind: 'attribute',
+        requiresJoins: Object.freeze([]),
+        // Derived from a timestamp on the source's FROM clause, but not from the
+        // source's own `dateColumn`, so a source without a date could still carry
+        // it. `named_invoice` is the only one that does.
+        filterable: false,
+        sortBy: 'key',
+        valueType: 'text',
+        key: (c) => `date_trunc('month', ${c.first_invoice_at} ${MANILA})`,
+        keyLabel: (c) => `to_char(date_trunc('month', ${c.first_invoice_at} ${MANILA}), 'Mon YYYY')`,
+    }),
+
+    aging_bucket: Object.freeze({
+        id: 'aging_bucket',
+        label: 'Age',
+        kind: 'attribute',
+        requiresJoins: Object.freeze([]),
+        // Derived from two columns rather than stored, so filtering on it would
+        // mean re-deriving it in a WHERE clause. A reader who wants only the
+        // overdue rows is better served by the overdue metric beside it.
+        filterable: false,
+        sortBy: 'key',
+        valueType: 'int',
+        key: (c) => agingBandCase(c, (n) => String(n)),
+        keyLabel: (c) => agingBandCase(c, (n) => `'${AGING_BANDS[n][1]}'`),
+    }),
+
+    ar_entry_type: Object.freeze({
+        id: 'ar_entry_type',
+        label: 'Ledger movement',
+        kind: 'attribute',
+        requiresJoins: Object.freeze([]),
+        filterable: false,
+        valueType: 'text',
+        key: (c) => `${c.entry_type}::text`,
+        keyLabel: (c) => arEntryLabelCase(c),
+    }),
+
+    /**
+     * Why a concession or write-down was granted.
+     *
+     * Reached through the `adjustment` join, which is a LEFT JOIN on a UNIQUE
+     * column (`ar_adjustment.ledger_id`), so it cannot fan a ledger row out and
+     * double-count its amount. Ledger entries that are not adjustments read
+     * "(Not an adjustment)" rather than NULL, so they are visible in a breakdown
+     * instead of collapsing into an unlabelled row.
+     */
+    adjustment_reason: Object.freeze({
+        id: 'adjustment_reason',
+        label: 'Reason',
+        kind: 'attribute',
+        requiresJoins: Object.freeze(['adjustment']),
+        filterable: false,
+        valueType: 'text',
+        key: () => "COALESCE(adj.reason_code, '(none)')",
+        keyLabel: () => `CASE
+            WHEN adj.reason_code IS NULL THEN '(Not an adjustment)'
+            ELSE initcap(replace(adj.reason_code, '_', ' ')) END`,
+    }),
+
+    pdc_status: Object.freeze({
+        id: 'pdc_status',
+        label: 'Cheque status',
+        kind: 'attribute',
+        requiresJoins: Object.freeze([]),
+        filterable: false,
+        valueType: 'text',
+        key: (c) => c.pdc_status,
+        keyLabel: (c) => `initcap(replace(${c.pdc_status}, '_', ' '))`,
     }),
 });
 

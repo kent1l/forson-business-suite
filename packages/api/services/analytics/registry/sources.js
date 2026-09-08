@@ -1,5 +1,5 @@
 const { buildStatusClause } = require('../../../helpers/invoiceStatusFilter');
-const { AnalyticsRegistryError } = require('../errors');
+const { AnalyticsRegistryError, AnalyticsRequestError } = require('../errors');
 
 /**
  * Fact sources.
@@ -35,6 +35,47 @@ const { AnalyticsRegistryError } = require('../errors');
 const invoiceStatusWhere = (params, opts, column) => [
     buildStatusClause(opts && opts.status, params, { defaultFilter: 'active', column }),
 ];
+
+/**
+ * Exclude the walk-in counter record, by bound parameter.
+ *
+ * The walk-in id is a FACT ABOUT THIS BUSINESS that lives in the settings table
+ * and cannot be inferred: the record is a customer row like any other and
+ * carries roughly 83% of revenue. It reaches SQL the same way an invoice status
+ * filter does -- pushed onto the live `values` array and referenced by
+ * placeholder -- so §7.5's invariant holds: no byte of the statement text comes
+ * from outside this file.
+ *
+ * It is read from the SETTINGS, never from the request body. `index.js` resolves
+ * it once per batch and hands it down through the server-authored `opts`
+ * argument that `trusted` also travels on.
+ *
+ * A source that cannot honour it REFUSES rather than quietly including the
+ * counter: a "revenue per account" over 5,658 walk-in invoices plus 387 real
+ * ones is a plausible wrong number, and the metrics on these sources gate on the
+ * `walkin_customer_identified` readiness probe so a caller normally never gets
+ * this far.
+ */
+const excludeWalkIn = (params, opts, column) => {
+    const id = opts && opts.walkInCustomerId;
+    if (!Number.isInteger(id)) {
+        throw new AnalyticsRequestError(
+            409,
+            'This figure separates counter trade from named accounts, which needs the walk-in '
+            + 'customer record to be named under Settings → Analytics.',
+            { setting: 'ANALYTICS_WALKIN_CUSTOMER_ID' }
+        );
+    }
+    params.push(id);
+    return `${column} IS DISTINCT FROM $${params.length}`;
+};
+
+// The statuses an open receivable can hold. Literals here rather than a request
+// option: what counts as "still owed" is a definition the whole business shares,
+// and 'Written Off' in particular must never be one of them -- 312 pre-cutover
+// invoices worth ₱1.49M were deliberately written off when the A/R ledger went
+// live, and counting them would report an exposure eight times the real one.
+const OPEN_INVOICE_STATUSES = "iwb.status IN ('Unpaid', 'Partially Paid')";
 
 const SOURCES = Object.freeze({
     invoice_header: Object.freeze({
@@ -307,6 +348,208 @@ const SOURCES = Object.freeze({
             group: 'LEFT JOIN "group" g ON g.group_id = p.group_id',
         }),
         dimensions: Object.freeze(['part', 'brand', 'group']),
+    }),
+
+    /**
+     * Invoices to NAMED ACCOUNTS — the counter record excluded.
+     *
+     * This source is the Phase 3 answer to §2's oldest finding: one customer row
+     * carries 82-83% of revenue and 5,658 of 6,095 invoices, so every
+     * per-customer average computed over `invoice_header` describes the counter
+     * queue rather than the customer book. Rather than leave that to whoever
+     * writes a tile -- or to a rule that subtracts the walk-in row afterwards --
+     * "named account" is a FACT SOURCE, and a metric defined on it cannot
+     * accidentally include the counter.
+     *
+     * The lateral supplies each customer's first invoice date, which is what
+     * makes "new account" and the cohort dimension answerable without any
+     * request value reaching the SQL: an invoice is a customer's first when its
+     * own date equals that minimum, a comparison between two columns of the same
+     * row.
+     */
+    named_invoice: Object.freeze({
+        id: 'named_invoice',
+        label: 'Invoices to named accounts',
+        grain: 'invoice',
+        from: `FROM invoice i
+         LEFT JOIN LATERAL (
+           SELECT MIN(i0.invoice_date) AS first_at
+           FROM invoice i0
+           WHERE i0.customer_id = i.customer_id AND i0.status <> 'Cancelled') fa ON TRUE`,
+        dateColumn: 'i.invoice_date',
+        defaultWhere: (params, opts) => [
+            ...invoiceStatusWhere(params, opts, 'i.status'),
+            excludeWalkIn(params, opts, 'i.customer_id'),
+        ],
+        cols: Object.freeze({
+            __alias: 'i',
+            invoice_id: 'i.invoice_id',
+            // Identical to invoice_header's, and deliberately restated rather
+            // than shared: a source's cols map is its contract with the query
+            // builder, and the two are free to diverge if the counter ever needs
+            // a column the customer book does not.
+            revenue_ex_tax: 'COALESCE(i.subtotal_ex_tax, i.total_amount - COALESCE(i.tax_total, 0))',
+            revenue_inc_tax: 'i.total_amount',
+            customer_id: 'i.customer_id',
+            employee_id: 'i.employee_id',
+            first_invoice_at: 'fa.first_at',
+            // True on the one invoice that opened the account. A column-to-column
+            // comparison, so counting distinct customers under this filter over a
+            // period gives exactly the accounts won IN that period.
+            is_first_invoice: 'fa.first_at = i.invoice_date',
+        }),
+        joins: Object.freeze({
+            customer: 'LEFT JOIN customer cu ON cu.customer_id = i.customer_id',
+            employee: 'LEFT JOIN employee e ON e.employee_id = i.employee_id',
+        }),
+        dimensions: Object.freeze(['date', 'customer', 'customer_type', 'employee', 'customer_cohort']),
+    }),
+
+    /**
+     * Money still owed, at invoice grain, as of now.
+     *
+     * `invoice_with_balance` is the authoritative view for what a single invoice
+     * still carries: it nets credit notes off the total and reads settled
+     * payments rather than trusting `invoice.amount_paid` alone.
+     *
+     * It is NOT the same question as `ar_balance`. That one reads the A/R ledger,
+     * which begins at the 2026-08-19 cutover and knows nothing of the invoices
+     * raised before it. Over this database the two disagree — ₱241,807 of open
+     * invoices against a ₱202,507 ledger balance — and the Receivables board
+     * shows both side by side rather than picking one and hiding the other. The
+     * ledger stays authoritative for what the A/R module manages; this is the
+     * whole invoice book.
+     *
+     * No date column: an aging position is as of now. Reading it "as of" an
+     * earlier date is a different and much more expensive query.
+     */
+    open_receivable: Object.freeze({
+        id: 'open_receivable',
+        label: 'Open invoices',
+        grain: 'invoice',
+        from: 'FROM invoice_with_balance iwb',
+        dateColumn: null,
+        defaultWhere: () => ['iwb.balance_due > 0', OPEN_INVOICE_STATUSES],
+        cols: Object.freeze({
+            __alias: 'iwb',
+            invoice_id: 'iwb.invoice_id',
+            customer_id: 'iwb.customer_id',
+            balance: 'iwb.balance_due',
+            // NULL where the invoice has no terms, and the aging dimension reads
+            // that as its own band rather than as "not yet due".
+            days_overdue: 'iwb.days_overdue',
+            due_date: 'iwb.due_date',
+            invoice_date: 'iwb.invoice_date',
+        }),
+        joins: Object.freeze({
+            customer: 'LEFT JOIN customer cu ON cu.customer_id = iwb.customer_id',
+        }),
+        dimensions: Object.freeze(['customer', 'customer_type', 'aging_bucket']),
+    }),
+
+    /**
+     * Credit exposure against the limit each account was granted.
+     *
+     * One row per active customer, whether or not they owe anything: the
+     * denominator of "how much of the credit we have extended is drawn" is every
+     * account with a limit, not only the ones currently in debt. The LEFT JOIN
+     * is what keeps a customer at zero on the page instead of dropping them.
+     *
+     * The counter record is NOT excluded here, and that is deliberate: it holds a
+     * default limit and no ledger balance, so it neither distorts the exposure
+     * nor needs the walk-in setting. Keeping this source ungated means the
+     * Customers board still answers a real question before an admin has named
+     * that record.
+     */
+    customer_credit: Object.freeze({
+        id: 'customer_credit',
+        label: 'Customer credit',
+        grain: 'customer',
+        from: `FROM customer cu
+         LEFT JOIN vw_customer_ar_balance v ON v.customer_id = cu.customer_id`,
+        dateColumn: null,
+        providedJoins: Object.freeze(['customer']),
+        defaultWhere: () => ['cu.is_active = TRUE'],
+        cols: Object.freeze({
+            __alias: 'cu',
+            customer_id: 'cu.customer_id',
+            credit_limit: 'COALESCE(cu.credit_limit, 0)',
+            // A credit balance (the customer is in front) is not negative
+            // exposure; GREATEST keeps one prepaid account from cancelling out
+            // another's debt in the total.
+            balance: 'GREATEST(COALESCE(v.ledger_balance, 0), 0)',
+            raw_balance: 'COALESCE(v.ledger_balance, 0)',
+            credit_hold: 'cu.credit_hold',
+        }),
+        joins: Object.freeze({}),
+        dimensions: Object.freeze(['customer', 'customer_type']),
+    }),
+
+    /**
+     * The A/R ledger itself — what actually moved, and when.
+     *
+     * The ledger is append-only and immutable (see the trigger on `ar_ledger`),
+     * which makes it the only place in this database where "we collected X in
+     * September" is a statement about recorded events rather than a
+     * reconstruction. Every metric on it is gated on the `ar_ledger_data`
+     * readiness probe, and every TREND over it carries an era notice in the tile:
+     * the ledger begins on 2026-08-18, so a twelve-month chart of it is eleven
+     * months of a flat zero that reads as a collapse in collections.
+     *
+     * The `adjustment` join is a LEFT JOIN on a UNIQUE column, so it cannot fan a
+     * ledger row out across several adjustments and double its amount.
+     */
+    ar_ledger: Object.freeze({
+        id: 'ar_ledger',
+        label: 'A/R ledger entries',
+        grain: 'ledger_entry',
+        from: 'FROM ar_ledger l',
+        dateColumn: 'l.entry_date',
+        defaultWhere: () => [],
+        cols: Object.freeze({
+            __alias: 'l',
+            ledger_id: 'l.ledger_id',
+            customer_id: 'l.customer_id',
+            // Signed as the ledger stores it: a charge is positive, a payment or
+            // a concession negative. Metrics that report a collection as a
+            // positive figure negate it themselves, and say so.
+            amount: 'l.amount',
+            entry_type: 'l.entry_type',
+        }),
+        joins: Object.freeze({
+            customer: 'LEFT JOIN customer cu ON cu.customer_id = l.customer_id',
+            adjustment: 'LEFT JOIN ar_adjustment adj ON adj.ledger_id = l.ledger_id',
+        }),
+        dimensions: Object.freeze(['date', 'customer', 'customer_type', 'ar_entry_type', 'adjustment_reason']),
+    }),
+
+    /**
+     * Cheques taken in and not yet cleared — the PDC pipeline, as of now.
+     *
+     * A position rather than a period: what matters is what is sitting in the
+     * safe or with the bank today, not how many cheques were accepted last
+     * month. `CLEARED` is excluded because a cleared cheque is cash, and cash is
+     * not a pipeline.
+     */
+    pdc_outstanding: Object.freeze({
+        id: 'pdc_outstanding',
+        label: 'Cheques not yet cleared',
+        grain: 'payment',
+        from: 'FROM customer_payment cp',
+        dateColumn: null,
+        defaultWhere: () => ["cp.pdc_status IS NOT NULL", "cp.pdc_status <> 'CLEARED'"],
+        cols: Object.freeze({
+            __alias: 'cp',
+            payment_id: 'cp.payment_id',
+            customer_id: 'cp.customer_id',
+            amount: 'cp.amount',
+            cheque_date: 'cp.cheque_date',
+            pdc_status: 'cp.pdc_status',
+        }),
+        joins: Object.freeze({
+            customer: 'LEFT JOIN customer cu ON cu.customer_id = cp.customer_id',
+        }),
+        dimensions: Object.freeze(['customer', 'customer_type', 'pdc_status']),
     }),
 
     expense: Object.freeze({

@@ -40,6 +40,31 @@ const READINESS_PROBES = Object.freeze({
         sql: 'SELECT EXISTS(SELECT 1 FROM ar_ledger) AS ready',
         emptyMessage: 'The A/R ledger has no entries yet.',
     }),
+    /**
+     * Not a probe about a module at all: a probe about a FACT ABOUT THIS
+     * BUSINESS that no query can infer.
+     *
+     * The walk-in record is a customer row like any other and carries ~83% of
+     * revenue. Everything on the Customers board that divides by a customer, or
+     * ranks one against another, is meaningless until counter trade can be told
+     * apart from a named account -- and there is no safe way to guess which row
+     * it is. So the `named_invoice` source refuses to build without it, its
+     * metrics gate on this probe, and the tiles say plainly what is missing
+     * instead of quietly reporting that the business depends on one customer.
+     *
+     * Static SQL, like every other probe: it reads the setting, never a request.
+     */
+    walkin_customer_identified: Object.freeze({
+        id: 'walkin_customer_identified',
+        label: 'Walk-in customer record named',
+        sql: `SELECT EXISTS(
+                SELECT 1 FROM settings
+                WHERE setting_key = 'ANALYTICS_WALKIN_CUSTOMER_ID'
+                  AND COALESCE(TRIM(setting_value), '') ~ '^[0-9]+$') AS ready`,
+        emptyMessage:
+            'Analytics cannot tell counter trade from a named account until the walk-in customer '
+            + 'record is named under Settings → Analytics.',
+    }),
 });
 
 const READINESS_TTL_MS = 5 * 60 * 1000;

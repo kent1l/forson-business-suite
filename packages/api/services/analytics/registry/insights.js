@@ -230,20 +230,26 @@ const INSIGHT_RULES = Object.freeze({
     'insight.customer_concentration': Object.freeze({
         id: 'insight.customer_concentration',
         severity: 'info',
-        boards: Object.freeze(['overview', 'sales']),
+        boards: Object.freeze(['overview', 'sales', 'customers']),
         thresholds: Object.freeze({ sharePct: 20 }),
         query: Object.freeze({
-            metrics: Object.freeze(['sales.gross_revenue']),
+            // Phase 3 moved this off `sales.gross_revenue`. The counter is now
+            // excluded in SQL, by the `named_invoice` fact source, rather than
+            // subtracted from the rows afterwards — so the sentence and the
+            // Customers board it links to are computed from one definition of
+            // "named account" instead of two that could drift apart.
+            metrics: Object.freeze(['customers.named_revenue']),
             dimensions: Object.freeze(['customer']),
-            // The fold makes the denominator exact: named revenue is the period
-            // total minus the counter, and the counter is one of these rows.
-            topN: Object.freeze({ n: 6, by: 'sales.gross_revenue' }),
+            // The fold makes the denominator exact: nothing was truncated, so a
+            // share of the total really is a share of the period.
+            topN: Object.freeze({ n: 6, by: 'customers.named_revenue' }),
         }),
-        // The one rule that needs a setting. There is no reliable way to tell the
-        // walk-in record from a real account — it is a customer row like any
-        // other, and it carries 83% of revenue — so an admin has to name it. Until
-        // they do, this rule stays dark rather than reporting "your largest
-        // customer is 83% of revenue", which is true, useless, and alarming.
+        concentrationMetric: 'customers.named_revenue',
+        // Still declared, and still load-bearing. The metric's own readiness gate
+        // covers the same ground, but this rule is the one that would announce
+        // which customer the business depends on, and it should refuse for a
+        // reason stated in the rule rather than only as a side effect of how its
+        // source happens to be built.
         requiresSetting: 'ANALYTICS_WALKIN_CUSTOMER_ID',
         when: ({ named, t }) => named !== null && named.sharePct >= t.sharePct,
         template:
@@ -253,11 +259,135 @@ const INSIGHT_RULES = Object.freeze({
         values: ({ named }) => ({
             name: { value: named ? named.label : null, format: 'text' },
             share: { value: named ? named.sharePct : null, format: 'percent' },
-            value: { metric: 'sales.gross_revenue', value: named ? named.value : null },
-            total: { metric: 'sales.gross_revenue', value: named ? named.namedTotal : null },
+            value: { metric: 'customers.named_revenue', value: named ? named.value : null },
+            total: { metric: 'customers.named_revenue', value: named ? named.namedTotal : null },
         }),
-        cites: Object.freeze(['sales.gross_revenue']),
-        action: Object.freeze({ board: 'sales', label: 'Open Sales' }),
+        cites: Object.freeze(['customers.named_revenue']),
+        action: Object.freeze({ board: 'customers', label: 'Open Customers' }),
+    }),
+
+    /**
+     * The Phase 3 finding worth saying out loud.
+     *
+     * 28 of the 39 open invoices in this database carry no due date, which is
+     * most of the money owed. An aging report shows those invoices as neither
+     * current nor overdue — they simply are not in it — so a manager reading a
+     * clean aging chart concludes the book is healthy when more than half of it
+     * has never been given a date to be late against.
+     */
+    'insight.receivables_no_terms': Object.freeze({
+        id: 'insight.receivables_no_terms',
+        severity: 'warning',
+        boards: Object.freeze(['overview', 'receivables']),
+        thresholds: Object.freeze({ sharePct: 25 }),
+        query: Object.freeze({
+            metrics: Object.freeze(['ar.untermed_share', 'ar.untermed_balance', 'ar.open_balance']),
+        }),
+        when: ({ v, t }) => {
+            const share = num(v('ar.untermed_share'));
+            // Null means nothing is owed at all, not that the share is zero.
+            return share !== null && share > t.sharePct;
+        },
+        template:
+            '{value} of the {total} you are owed — {share} of it — sits on invoices with no '
+            + 'payment terms. That money can never appear as overdue however long it goes '
+            + 'unpaid, so an aging report is describing the smaller half of the book.',
+        values: ({ v }) => ({
+            value: { metric: 'ar.untermed_balance', value: v('ar.untermed_balance') },
+            total: { metric: 'ar.open_balance', value: v('ar.open_balance') },
+            share: { metric: 'ar.untermed_share', value: v('ar.untermed_share') },
+        }),
+        cites: Object.freeze(['ar.untermed_balance', 'ar.open_balance', 'ar.untermed_share']),
+        action: Object.freeze({ page: 'ar', label: 'Open Accounts Receivable' }),
+    }),
+
+    'insight.overdue_receivables': Object.freeze({
+        id: 'insight.overdue_receivables',
+        severity: 'warning',
+        boards: Object.freeze(['receivables']),
+        thresholds: Object.freeze({ sharePct: 20 }),
+        query: Object.freeze({
+            metrics: Object.freeze(['ar.overdue_share', 'ar.overdue_balance', 'ar.oldest_overdue_days']),
+        }),
+        when: ({ v, t }) => {
+            const share = num(v('ar.overdue_share'));
+            return share !== null && share > t.sharePct;
+        },
+        template:
+            '{value} is past its due date — {share} of everything owed — and the oldest open '
+            + 'invoice is {oldest} overdue.',
+        values: ({ v }) => ({
+            value: { metric: 'ar.overdue_balance', value: v('ar.overdue_balance') },
+            share: { metric: 'ar.overdue_share', value: v('ar.overdue_share') },
+            oldest: { metric: 'ar.oldest_overdue_days', value: v('ar.oldest_overdue_days') },
+        }),
+        cites: Object.freeze(['ar.overdue_balance', 'ar.overdue_share', 'ar.oldest_overdue_days']),
+        action: Object.freeze({ page: 'ar', label: 'Open Accounts Receivable' }),
+    }),
+
+    /**
+     * The two answers to "what are we owed" differ, and the gap is worth a
+     * sentence rather than a footnote — a reader who takes one figure from this
+     * board and the other from Accounts Receivable will otherwise believe one of
+     * them is broken.
+     */
+    'insight.ar_ledger_gap': Object.freeze({
+        id: 'insight.ar_ledger_gap',
+        severity: 'info',
+        boards: Object.freeze(['receivables']),
+        thresholds: Object.freeze({ sharePct: 10 }),
+        query: Object.freeze({
+            metrics: Object.freeze(['ar.ledger_gap', 'ar.open_balance', 'ar.balance']),
+        }),
+        when: ({ v, t }) => {
+            const gap = num(v('ar.ledger_gap'));
+            const open = num(v('ar.open_balance'));
+            if (gap === null || open === null || open <= 0) return false;
+            return (Math.abs(gap) / open) * 100 > t.sharePct;
+        },
+        template:
+            '{gap} of the {open} owed is on invoices the A/R ledger does not carry — almost all '
+            + 'of it raised before the ledger went live. Both figures on this board are correct; '
+            + 'this is the size of the difference between them.',
+        values: ({ v }) => ({
+            gap: { metric: 'ar.ledger_gap', value: v('ar.ledger_gap') },
+            open: { metric: 'ar.open_balance', value: v('ar.open_balance') },
+        }),
+        cites: Object.freeze(['ar.ledger_gap', 'ar.open_balance', 'ar.balance']),
+        action: Object.freeze({ page: 'ar', label: 'Open Accounts Receivable' }),
+    }),
+
+    'insight.credit_over_limit': Object.freeze({
+        id: 'insight.credit_over_limit',
+        severity: 'warning',
+        boards: Object.freeze(['customers']),
+        thresholds: Object.freeze({ minAccounts: 1 }),
+        query: Object.freeze({
+            metrics: Object.freeze([
+                'customers.accounts_over_limit',
+                'customers.accounts_owing',
+                'customers.credit_exposure',
+            ]),
+        }),
+        when: ({ v, t }) => {
+            const over = num(v('customers.accounts_over_limit'));
+            return over !== null && over >= t.minAccounts;
+        },
+        template:
+            '{over} of the {owing} accounts currently in debt have gone past the credit limit on '
+            + 'their record, against {exposure} owed in total. Each one is a decision somebody '
+            + 'should have been asked to make.',
+        values: ({ v }) => ({
+            over: { metric: 'customers.accounts_over_limit', value: v('customers.accounts_over_limit') },
+            owing: { metric: 'customers.accounts_owing', value: v('customers.accounts_owing') },
+            exposure: { metric: 'customers.credit_exposure', value: v('customers.credit_exposure') },
+        }),
+        cites: Object.freeze([
+            'customers.accounts_over_limit',
+            'customers.accounts_owing',
+            'customers.credit_exposure',
+        ]),
+        action: Object.freeze({ page: 'ar', label: 'Open Accounts Receivable' }),
     }),
 });
 

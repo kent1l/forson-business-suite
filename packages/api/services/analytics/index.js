@@ -94,6 +94,12 @@ async function getMeta(req, { fresh = false } = {}) {
             id: r.id, label: r.label, explanation: r.explanation, thresholds: r.thresholds,
         })),
         readiness,
+        // What to SAY when a readiness flag is false. Without this the frontend
+        // has to keep its own copy of the wording, and the copy is what goes
+        // stale -- which matters more now that one of these probes is not about a
+        // module at all but about a setting an admin can go and fill in.
+        readinessInfo: Object.fromEntries(Object.values(READINESS_PROBES)
+            .map((p) => [p.id, { label: p.label, message: p.emptyMessage }])),
         budget: BUDGET,
         permissions: {
             financials: userHasPermission(req, 'analytics:financials'),
@@ -129,6 +135,44 @@ function prepare(body, req, opts = {}) {
     const spec = parseQueryRequest(body, req, opts);
     const built = buildQuery(spec);
     return { spec, ...built };
+}
+
+// --- the walk-in customer record ------------------------------------------
+/**
+ * Which customer row is the counter.
+ *
+ * Phase 3 made "named account" a fact source rather than a rule's afterthought
+ * (see `named_invoice` in registry/sources.js), so this value now reaches SQL.
+ * It is read HERE, server-side, from the settings table — never from a request
+ * body, which has no key for it — and handed down through the same
+ * server-authored `opts` argument `trusted` travels on.
+ *
+ * Cached on the same TTL as the readiness probes, and for the same reason: the
+ * probe that decides whether these tiles render at all reads the very same
+ * setting, so caching them differently would let a board decide a figure is
+ * available and then refuse to build it.
+ */
+let walkInCache = null;
+
+async function getWalkInCustomerId({ fresh = false } = {}) {
+    if (!fresh && walkInCache && Date.now() < walkInCache.expiresAt) return walkInCache.value;
+    let value = null;
+    try {
+        const res = await db.query(
+            "SELECT setting_value FROM settings WHERE setting_key = 'ANALYTICS_WALKIN_CUSTOMER_ID'"
+        );
+        // The same shape the `walkin_customer_identified` readiness probe tests
+        // for. Anything else — a decimal, a name, trailing text — is treated as
+        // unset rather than parsed down to whatever integer it starts with.
+        const raw = String((res.rows[0] && res.rows[0].setting_value) || '').trim();
+        value = /^\d+$/.test(raw) && Number(raw) > 0 ? Number(raw) : null;
+    } catch (err) {
+        // Unreadable is treated exactly as unset: the sources that need it
+        // refuse, which is the honest outcome either way.
+        console.error('Analytics could not read the walk-in customer setting:', err.message);
+    }
+    walkInCache = { value, expiresAt: Date.now() + READINESS_TTL_MS };
+    return value;
 }
 
 // The permission every analytics caller holds. runInternalQuery refuses to run
@@ -169,11 +213,15 @@ async function runInternalQuery(body, req, opts = {}) {
 }
 
 async function runBatch(requests, req, { fresh = false, timeoutMs = BUDGET.timeoutMs } = {}) {
+    // Resolved once for the whole batch, so every tile on a board separates
+    // counter trade from named accounts against the same record.
+    const walkInCustomerId = await getWalkInCustomerId({ fresh });
+
     const prepared = [];
     for (const item of requests) {
         try {
             // eslint-disable-next-line no-await-in-loop
-            const p = prepare(item.body, req, item.opts || {});
+            const p = prepare(item.body, req, { ...(item.opts || {}), walkInCustomerId });
             // eslint-disable-next-line no-await-in-loop
             await assertReady(p.spec);
             prepared.push({ key: item.key, ...p, cacheKey: AnalyticsCache.key(p.text, p.values) });
@@ -274,8 +322,12 @@ async function getSettings() {
 }
 
 /** Build the statement without running it. Admin-only; invaluable for debugging. */
-function explainQuery(body, req) {
-    const { text, values, plan } = prepare(body, req);
+async function explainQuery(body, req) {
+    // Async only because of this: a source that separates named accounts from
+    // the counter cannot be built without the setting, so explain has to resolve
+    // it too or it would report a 409 for a query that runs perfectly well.
+    const walkInCustomerId = await getWalkInCustomerId();
+    const { text, values, plan } = prepare(body, req, { walkInCustomerId });
     return { text, values, plan };
 }
 
@@ -286,6 +338,7 @@ function explainQuery(body, req) {
  */
 const clearCaches = () => {
     readinessCache = null;
+    walkInCache = null;
     cache.clear();
 };
 

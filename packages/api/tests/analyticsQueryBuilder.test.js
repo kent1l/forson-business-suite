@@ -17,6 +17,11 @@ const viewerReq = {
 const RANGE = { from: '2026-08-01', to: '2026-08-31' };
 
 const build = (body, req = adminReq) => buildQuery(parseQueryRequest(body, req));
+// For specs whose source separates counter trade from named accounts. The id is
+// a server-authored option read from settings, never from the body -- see the
+// Phase 3 block at the bottom of this file.
+const buildNamed = (body, req = adminReq) =>
+    buildQuery(parseQueryRequest(body, req, { walkInCustomerId: 1 }));
 
 describe('analytics query builder — generated SQL', () => {
     test('a single-source KPI aggregates in one CTE with no stitching', () => {
@@ -479,7 +484,9 @@ describe('analytics query builder — ratios are real numbers', () => {
         for (const metric of Object.values(METRICS)) {
             if (metric.kind !== 'ratio') continue;
             if (!metric.grains.includes('none')) continue;
-            const { text } = build({ metrics: [metric.id], dateRange: RANGE });
+            // buildNamed, not build: some ratios are measured over the
+            // named-account source, which refuses to build without the setting.
+            const { text } = buildNamed({ metrics: [metric.id], dateRange: RANGE });
             expect(text).toMatch(/::numeric \* /);
         }
     });
@@ -573,5 +580,126 @@ describe('analytics query builder — an ordered attribute dimension', () => {
         });
         expect(text).toContain('il.cost_at_sale IS NOT NULL AND il.cost_at_sale > 0');
         expect(text).toContain("'(No cost recorded)'");
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3: the named-account source, the aging bands, and the one setting that
+// now reaches SQL.
+// ---------------------------------------------------------------------------
+describe('analytics query builder — named accounts and the walk-in setting', () => {
+    const namedBody = { metrics: ['customers.named_revenue'], dateRange: RANGE };
+
+    test('the walk-in id is a bound parameter, never text in the statement', () => {
+        const { text, values } = buildQuery(
+            parseQueryRequest(namedBody, adminReq, { walkInCustomerId: 4242 })
+        );
+        expect(text).toContain('i.customer_id IS DISTINCT FROM $');
+        expect(text).not.toContain('4242');
+        expect(values).toContain(4242);
+    });
+
+    test('without the setting the source refuses rather than including the counter', () => {
+        // The alternative is the whole reason this module exists: a "revenue per
+        // account" over 5,658 walk-in invoices plus 387 real ones is a plausible
+        // wrong number, and nothing on screen would say so.
+        expect(() => buildQuery(parseQueryRequest(namedBody, adminReq)))
+            .toThrow(AnalyticsRequestError);
+        expect(() => buildQuery(parseQueryRequest(namedBody, adminReq)))
+            .toThrow(/walk-in customer record/);
+    });
+
+    test.each([null, '', 'abc', '0', -1, 1.5, '1; DROP TABLE customer', {}, []])(
+        'a malformed walk-in setting behaves exactly like an unset one: %p',
+        (bad) => {
+            expect(() => buildQuery(parseQueryRequest(namedBody, adminReq, { walkInCustomerId: bad })))
+                .toThrow(AnalyticsRequestError);
+        }
+    );
+
+    test('a request body cannot name the walk-in record', () => {
+        // It is a fact about the business read from settings, not an option. A
+        // key in the body must be ignored, not honoured.
+        const spec = parseQueryRequest(
+            { ...namedBody, walkInCustomerId: 99, sourceOptions: { walkInCustomerId: 99 } },
+            adminReq
+        );
+        expect(spec.sourceOptions.walkInCustomerId).toBeNull();
+    });
+
+    test('the first-invoice test is a comparison between two columns of one row', () => {
+        // Which is what makes "accounts won in this period" answerable without a
+        // request value ever reaching the expression.
+        const { text } = buildQuery(
+            parseQueryRequest({ metrics: ['customers.new_accounts'], dateRange: RANGE }, adminReq, { walkInCustomerId: 1 })
+        );
+        expect(text).toContain('FILTER (WHERE (fa.first_at = i.invoice_date))');
+    });
+
+    test('the cohort dimension sorts by its month key, not by the month name', () => {
+        // 'Apr 2026' before 'Sep 2025' would be alphabetical and entirely
+        // plausible-looking.
+        const { text } = buildQuery(parseQueryRequest({
+            metrics: ['customers.named_revenue'],
+            dimensions: ['customer_cohort'],
+            dateRange: RANGE,
+            sort: { by: 'customer_cohort', dir: 'ASC' },
+        }, adminReq, { walkInCustomerId: 1 }));
+        expect(text).toMatch(/ORDER BY bucket ASC, dim_0 ASC NULLS LAST/);
+        expect(text).not.toMatch(/ORDER BY bucket ASC, dim_0_label/);
+    });
+});
+
+describe('analytics query builder — the open receivable book', () => {
+    test('written-off and cancelled invoices are never counted as owed', () => {
+        // 312 pre-cutover invoices worth ₱1.49M were deliberately written off
+        // when the A/R ledger went live. Counting them reports an exposure eight
+        // times the real one, which is what the invoice_aging view does.
+        const { text } = build({ metrics: ['ar.open_balance'], dateRange: RANGE });
+        expect(text).toContain("iwb.status IN ('Unpaid', 'Partially Paid')");
+        expect(text).toContain('iwb.balance_due > 0');
+    });
+
+    test('a position carries no date filter, so the picker cannot silently change it', () => {
+        const { text } = build({ metrics: ['ar.open_balance'], dateRange: RANGE });
+        expect(text).not.toContain('iwb.invoice_date');
+    });
+
+    test('aging bands sort by their ordinal and keep "no terms" as its own band', () => {
+        const { text } = build({
+            metrics: ['ar.open_balance'],
+            dimensions: ['aging_bucket'],
+            dateRange: RANGE,
+            sort: { by: 'aging_bucket', dir: 'ASC' },
+        });
+        expect(text).toMatch(/ORDER BY bucket ASC, dim_0 ASC NULLS LAST/);
+        expect(text).toContain("'(No payment terms)'");
+        // An invoice with no due date must not be folded into "not yet due":
+        // that would claim it is healthy when nobody ever agreed a date for it.
+        expect(text).toMatch(/WHEN iwb\.due_date IS NULL THEN 5/);
+    });
+
+    test('the ledger and the invoice book are stitched, not conflated', () => {
+        // They answer different questions over different eras, and the board
+        // shows both. The builder must keep them in separate CTEs.
+        const { text } = build({
+            metrics: ['ar.ledger_gap', 'ar.open_balance', 'ar.balance'],
+            dateRange: RANGE,
+        });
+        expect(text).toContain('src_open_receivable AS');
+        expect(text).toContain('src_ar_balance AS');
+        const openCte = text.slice(text.indexOf('src_open_receivable AS'), text.indexOf('src_ar_balance AS'));
+        expect(openCte).not.toContain('vw_customer_ar_balance');
+    });
+
+    test('the adjustment join cannot fan a ledger entry out', () => {
+        // ar_adjustment.ledger_id is UNIQUE, so one entry meets at most one
+        // adjustment; without that the amounts would double under a breakdown.
+        const { text } = build({
+            metrics: ['ar.concessions_granted'],
+            dimensions: ['adjustment_reason'],
+            dateRange: RANGE,
+        });
+        expect(text).toContain('LEFT JOIN ar_adjustment adj ON adj.ledger_id = l.ledger_id');
     });
 });
