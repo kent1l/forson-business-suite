@@ -5,11 +5,12 @@ const {
 } = require('./registry');
 const { READINESS_TTL_MS } = require('./registry/readiness');
 const { PRESETS, COMPARE_MODES } = require('./periods');
-const { parseQueryRequest, BUDGET } = require('./requestValidator');
+const { parseQueryRequest, parseDateRange, BUDGET } = require('./requestValidator');
 const { buildQuery } = require('./queryBuilder');
 const { executeAll, coerceRows } = require('./executor');
 const { shapeResponse } = require('./responseShaper');
-const { boardFor, listBoards } = require('./boards');
+const { boardFor, listBoards, BOARDS } = require('./boards');
+const { evaluateInsights } = require('./insights');
 const cache = require('./analyticsCache');
 const { AnalyticsCache } = require('./analyticsCache');
 const { userHasPermission } = require('../../middleware/authMiddleware');
@@ -130,6 +131,43 @@ function prepare(body, req, opts = {}) {
     return { spec, ...built };
 }
 
+// The permission every analytics caller holds. runInternalQuery refuses to run
+// anything narrower, so the trusted path cannot become a way around the
+// per-metric grants.
+const BASE_PERMISSION = 'analytics:view';
+
+/**
+ * Run a spec written in server code, for a route that enforces its own
+ * permission.
+ *
+ * This exists so `/reports/profitability-by-product` can take its figures from
+ * this registry instead of keeping a second copy of the profit SQL — the drift
+ * §13's R2 predicted, and the reason the two pages disagreed before PR #171.
+ *
+ * Two things make it safe, and both must stay true:
+ *
+ * - **The body must be authored in server code, never assembled from a request.**
+ *   The metric ids in the calling route are literals. Passing a caller's body
+ *   here would hand them every metric in the registry.
+ * - **It refuses any metric that requires more than `analytics:view`.** A future
+ *   author cannot reach an `analytics:financials` figure through it, whatever
+ *   permission their route happens to check.
+ */
+async function runInternalQuery(body, req, opts = {}) {
+    for (const id of [].concat(body.metrics || [])) {
+        const metric = METRICS[id];
+        if (metric && metric.permission !== BASE_PERMISSION) {
+            throw new AnalyticsRequestError(
+                500,
+                `Analytics: '${id}' requires '${metric.permission}' and cannot be read through an internal query.`
+            );
+        }
+    }
+    const [only] = await runBatch([{ key: 'q', body, opts: { ...opts, trusted: true } }], req, opts);
+    if (only.error) throw only.error;
+    return only.result;
+}
+
 async function runBatch(requests, req, { fresh = false, timeoutMs = BUDGET.timeoutMs } = {}) {
     const prepared = [];
     for (const item of requests) {
@@ -186,6 +224,55 @@ async function runQuery(body, req, opts = {}) {
     return only.result;
 }
 
+/**
+ * The insights panel (PRD §14), deferred until after Phase 2 by owner decision
+ * and delivered here.
+ *
+ * Rules are evaluated server-side, against the same query path and the same
+ * snapshot the board's tiles use, so a sentence and the tile it cites cannot
+ * disagree. `settings` is read per call rather than cached: a threshold an admin
+ * has just changed should take effect on the next refresh.
+ */
+async function getInsights({ boardId, dateRange, compare }, req) {
+    if (!BOARDS[boardId]) {
+        throw new AnalyticsRequestError(404, `Unknown board: ${JSON.stringify(boardId)}`, {
+            valid: Object.keys(BOARDS),
+        });
+    }
+    // Resolved up front, and deliberately before any rule runs. A bad preset
+    // would otherwise fail inside every rule's own query, and the panel would
+    // come back empty with a 200 — reading as "nothing stands out" when the
+    // truth is "the request was wrong". Silence on this panel has to mean one
+    // thing only. Resolving once also guarantees every rule sees the same range.
+    const resolved = parseDateRange(dateRange);
+
+    const [readiness, settings] = await Promise.all([getReadiness(), getSettings()]);
+    return evaluateInsights({ boardId, dateRange: resolved, compare }, req, {
+        runBatch,
+        canSee: canSeeMetric(req),
+        readiness,
+        settings,
+    });
+}
+
+/**
+ * The ANALYTICS_* settings, as a plain map. Read straight from the settings
+ * table so an admin's change is live, and failing soft: an insight that needs a
+ * setting stays dark if the read fails, which is the same thing it does when the
+ * setting is simply unset.
+ */
+async function getSettings() {
+    try {
+        const res = await db.query(
+            "SELECT setting_key, setting_value FROM settings WHERE setting_key LIKE 'ANALYTICS\\_%'"
+        );
+        return Object.fromEntries(res.rows.map((r) => [r.setting_key, r.setting_value]));
+    } catch (err) {
+        console.error('Analytics could not read its settings:', err.message);
+        return {};
+    }
+}
+
 /** Build the statement without running it. Admin-only; invaluable for debugging. */
 function explainQuery(body, req) {
     const { text, values, plan } = prepare(body, req);
@@ -207,6 +294,8 @@ module.exports = {
     getMeta,
     getReadiness,
     runQuery,
+    runInternalQuery,
+    getInsights,
     runBatch,
     explainQuery,
     getBoard: (boardId, req) => boardFor(boardId, canSeeMetric(req)),

@@ -104,6 +104,10 @@ const SOURCES = Object.freeze({
             // ~66k short of the invoice headers over the same range and every
             // margin computed from it inherits the gap.
             revenue_ex_tax: 'COALESCE(il.tax_base, (il.quantity * il.sale_price) - COALESCE(il.discount_amount, 0) - COALESCE(il.tax_amount, 0))',
+            // The bare column, for the Data Trust board only. Everything that
+            // measures money reads `revenue_ex_tax` above; this exists purely so
+            // a metric can COUNT the rows where the fallback had to be used.
+            tax_base_raw: 'il.tax_base',
             unit_cost: 'il.cost_at_sale',
             discount: 'il.discount_amount',
             customer_id: 'i.customer_id',
@@ -117,7 +121,7 @@ const SOURCES = Object.freeze({
             employee: 'LEFT JOIN employee e ON e.employee_id = i.employee_id',
         }),
         joinDeps: Object.freeze({ brand: ['part'], group: ['part'] }),
-        dimensions: Object.freeze(['date', 'hour_of_day', 'weekday', 'part', 'brand', 'group', 'customer', 'customer_type', 'employee']),
+        dimensions: Object.freeze(['date', 'hour_of_day', 'weekday', 'part', 'brand', 'group', 'customer', 'customer_type', 'employee', 'margin_band']),
     }),
 
     credit_note_header: Object.freeze({
@@ -138,6 +142,9 @@ const SOURCES = Object.freeze({
             // in the data records tax_total = 0, so total_amount IS the ex-VAT
             // figure for them and the fallback is exact rather than approximate.
             revenue_ex_tax: 'COALESCE(cn.subtotal_ex_tax, cn.total_amount)',
+            // As above: the bare column, so the Data Trust board can count how
+            // many credit notes are relying on the fallback.
+            subtotal_raw: 'cn.subtotal_ex_tax',
             revenue_inc_tax: 'cn.total_amount',
             tax: 'cn.tax_total',
             invoice_id: 'cn.invoice_id',

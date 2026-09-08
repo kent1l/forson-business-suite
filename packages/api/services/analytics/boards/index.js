@@ -5,6 +5,9 @@ const { BUDGET } = require('../requestValidator');
 const { OVERVIEW_BOARD } = require('./overview');
 const { SALES_BOARD } = require('./sales');
 const { INVENTORY_BOARD } = require('./inventory');
+const { INSIGHT_RULES, SEVERITIES } = require('../registry/insights');
+const { PROFITABILITY_BOARD } = require('./profitability');
+const { DATA_TRUST_BOARD } = require('./data_trust');
 
 /**
  * Board registry, validated at require() time against the metric registry.
@@ -19,7 +22,7 @@ const DRILLDOWN_KINDS = new Set(['page', 'tile', 'filter']);
 // the reader that the numbers moved with it when they did not.
 const BOARD_PERIODS = new Set(['range', 'none']);
 
-const BOARD_LIST = [OVERVIEW_BOARD, SALES_BOARD, INVENTORY_BOARD];
+const BOARD_LIST = [OVERVIEW_BOARD, SALES_BOARD, INVENTORY_BOARD, PROFITABILITY_BOARD, DATA_TRUST_BOARD];
 
 const fail = (message) => {
     throw new AnalyticsRegistryError(`Analytics boards: ${message}`);
@@ -139,6 +142,52 @@ for (const board of BOARD_LIST) {
         }
     }
     BOARDS[board.id] = board;
+}
+
+/**
+ * Insight rules, validated here rather than in registry/insights.js: this is the
+ * first module that can see both the metric registry and the board list, so it
+ * is the only place a rule naming a board that does not exist can be caught.
+ *
+ * As everywhere else in this module, a broken rule is a startup crash rather
+ * than a sentence that quietly stops appearing.
+ */
+for (const [id, rule] of Object.entries(INSIGHT_RULES)) {
+    if (id !== rule.id) fail(`insight key '${id}' does not match its id '${rule.id}'`);
+    if (!SEVERITIES.has(rule.severity)) fail(`insight '${id}' has unknown severity '${rule.severity}'`);
+    if (typeof rule.when !== 'function' || typeof rule.values !== 'function') {
+        fail(`insight '${id}' must declare both a \`when\` and a \`values\` function`);
+    }
+    if (!rule.template || !/\{\w+\}/.test(rule.template)) {
+        fail(`insight '${id}' has no template, or a template with nothing substituted into it`);
+    }
+    if (!Array.isArray(rule.cites) || rule.cites.length === 0) {
+        fail(`insight '${id}' cites nothing; an insight a reader cannot check is an opinion`);
+    }
+    for (const boardId of rule.boards) {
+        if (!BOARDS[boardId]) fail(`insight '${id}' names board '${boardId}', which does not exist`);
+    }
+    for (const metricId of [...rule.cites, ...(rule.query.metrics || [])]) {
+        if (!Object.prototype.hasOwnProperty.call(METRICS, metricId)) {
+            fail(`insight '${id}' references unknown metric '${metricId}'`);
+        }
+    }
+    // Everything cited must be something the rule's own query asked for, or the
+    // citation points at a figure the insight never actually read.
+    for (const metricId of rule.cites) {
+        if (!rule.query.metrics.includes(metricId)) {
+            fail(`insight '${id}' cites '${metricId}', which its own query does not ask for`);
+        }
+    }
+    for (const dimId of rule.query.dimensions || []) {
+        if (!DIMENSIONS[dimId]) fail(`insight '${id}' references unknown dimension '${dimId}'`);
+    }
+    if (rule.action && rule.action.board && !BOARDS[rule.action.board]) {
+        fail(`insight '${id}' links to board '${rule.action.board}', which does not exist`);
+    }
+    if (rule.action && rule.action.page && rule.action.board) {
+        fail(`insight '${id}' declares both a page and a board to open; it must be one or the other`);
+    }
 }
 
 /**

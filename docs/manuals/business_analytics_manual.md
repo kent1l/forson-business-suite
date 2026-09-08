@@ -12,7 +12,7 @@ last_updated: 2026-09-08
 > - **What it's for:** Seeing how the business is doing this period, and against the period before it.
 > - **Who uses it:** Owner and Managers.
 > - **You'll mostly come here to:** Check the month against the last one, see what is selling, and find out what needs reordering.
-> - **Boards:** **Overview** (how are we doing), **Sales** (what sold, to whom, when), **Inventory** (what is on the shelf and what is about to run out).
+> - **Boards:** **Overview** (how are we doing), **Sales** (what sold, to whom, when), **Inventory** (what is on the shelf and what is about to run out), **Profitability** (where margin comes from), **Data Trust** (how much of all this you can believe).
 
 ## Overview
 
@@ -192,6 +192,70 @@ is refilled.
 4. Everything here is valued at weighted average cost, so parts with no recorded cost contribute
    nothing. Check the coverage line under each tile before acting on the figure.
 
+## How To — Read the Insights Panel
+
+*Why this matters:* It is the fastest way to see what changed and what needs doing, and knowing how
+it works is what tells you how far to trust it.
+
+*Precision:* Normal default. Treat each line as a pointer to a figure, not as the figure itself.
+
+1. The panel sits above the tiles on each board, headed **What stands out**.
+2. Each line says how serious it is in words — *Needs attention*, *Worth knowing*, *For information*
+   — as well as by colour, and underneath it names the figures it was worked out from.
+3. Click the link at the end of a line to go straight to the page or board that can do something
+   about it.
+4. Click **✕** to dismiss a line for now. It comes back when you change the period or reload.
+
+> 📝 Note — **Nothing in this panel is written by an AI.** Each line is a fixed rule in the system:
+> a condition, a threshold and a sentence with the numbers dropped into it. That is deliberate. A
+> sentence is easier to believe than a number, so every one of them names the figures behind it and
+> you can go and check them.
+
+> ⚠️ Important — The panel stays quiet when it cannot be sure. If a period has no sales, or the
+> period before it barely exists, it says nothing rather than reporting a percentage change that
+> would be arithmetically correct and misleading. Silence here means "nothing worth claiming", not
+> "everything is fine".
+
+## How To — See Where Margin Actually Comes From
+
+*Why this matters:* Total profit tells you the size; this tells you which products and brands earned
+it, and which ones lost money.
+
+*Precision:* High for the loss list — check the cost before repricing anything.
+
+1. Open the **Profitability** board. **Read the first tile first**: it says what share of your sales
+   carried a recorded cost, and every other figure on the board is measured over that share and no
+   more.
+2. **Where the revenue sits, by margin** groups your sales by how much each one made. The
+   *(No cost recorded)* band is normally the largest — that is revenue whose margin is unknown, not
+   revenue that made nothing.
+3. **Sold at a loss** lists products that cost more than they sold for. Because these are measured
+   on sales that *did* record a cost, the system is sure of them: a mispriced item, a cost entered
+   in the wrong unit, or genuine clearance.
+4. **Most profitable products** is the same information as the Profitability by Product report, from
+   the same definitions — the two cannot disagree.
+
+## How To — Check How Much of This You Can Believe
+
+*Why this matters:* Profit and margin here describe the part of the business that recorded a cost.
+This board says how big that part is, whether it is growing, and what to fix to grow it.
+
+*Precision:* Normal default. It opens on the last twelve months, because the question is whether
+things are improving.
+
+1. Open the **Data Trust** board.
+2. **Cost Coverage** is the headline: the share of revenue carrying a recorded cost. **Is coverage
+   improving?** plots it over time. A flat line means the cleanup is not keeping up with new sales.
+3. **Fix these parts first** ranks the parts whose missing costs leave the most revenue
+   unmeasurable. Working down that list is the shortest route to figures worth trusting.
+4. **Parts With Negative Stock** counts parts recorded as holding less than nothing, which is
+   impossible — each is a receipt never entered, a sale entered twice, or an adjustment the wrong
+   way round. Click through to Stock Reconciliation.
+5. **Why this page and Reports can differ** is not a fault list. It counts the two places where a
+   figure was never stored and Analytics falls back to one that is exact for those records — which
+   is why Analytics reports slightly more revenue, and considerably more refunds, than the Reports
+   page over the same dates.
+
 ## How To — Export a Tile
 
 *Why this matters:* For sharing with a bookkeeper or working a list offline.
@@ -220,7 +284,7 @@ want the very latest.
 
 | Field/Control | Description | Notes |
 |---|---|---|
-| Board tabs | Overview, Sales, Inventory | Tiles you have no permission for are not shown at all |
+| Board tabs | Overview, Sales, Inventory, Profitability, Data Trust | Tiles you have no permission for are not shown at all |
 | Period dropdown | The date range every figure on the board describes | Your choice is remembered on this device; the Inventory board has none, because nothing on it moves with a date |
 | Compare with the previous period | Adds the equally long stretch immediately before, and the change | Off for *As of now* figures, which have no period |
 | Net Revenue | Gross revenue minus refunds, each in its own period | Shows its two parts underneath |
@@ -241,6 +305,11 @@ want the very latest.
 | Units Short | Units needed to reach thirty days of cover | Ignores pack sizes, minimums and lead times |
 | Earned (90 days) | What those parts took in over the last 90 days | This is what the reorder list is ranked by |
 | Discount Rate / Discounts Given | Discounts as a share of list price | Shows *Not recorded yet* until discounts are captured on sale lines |
+| Cost Coverage | Share of revenue that carries a recorded cost | The most important figure in Analytics — everything about profit is measured over this share |
+| Revenue We Cannot Measure | Revenue on sales with no recorded cost | The same gap in money rather than in percent |
+| Margin band | Sales grouped by the margin they made | *(No cost recorded)* is a band of its own, not hidden rows |
+| Parts With Negative Stock | Parts recorded as holding less than zero | Always a data fault; fix on Stock Reconciliation |
+| What stands out | The insights panel | Fixed rules, never an AI; each line names the figures behind it |
 | **☰** | Refresh, Export CSV, and Open in page | Options vary by tile |
 
 ## Common Errors & What They Mean

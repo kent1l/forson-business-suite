@@ -1,6 +1,8 @@
 const express = require('express');
 const db = require('../db');
 const { Parser } = require('json2csv');
+const analytics = require('../services/analytics');
+const { AnalyticsRequestError } = require('../services/analytics/errors');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const { buildStatusClause } = require('../helpers/invoiceStatusFilter');
@@ -622,114 +624,148 @@ router.get('/reports/inventory-movement', protect, hasPermission('reports:view')
 });
 
 // GET /api/reports/profitability-by-product
+//
+// The figures here come from the analytics metric registry, not from SQL of this
+// route's own. That is the §13 R2 mitigation made real: before PR #171 this
+// endpoint and the analytics page each carried their own idea of what profit was
+// and disagreed by ₱8.9M, and keeping two copies in step by hand is what
+// produced that. Changing what gross profit means is now one edit in
+// services/analytics/registry/metrics/margin.js and both pages move together.
+//
+// The route still owns what only it knows: its `reports:view` permission, its
+// pagination, and the descriptive columns (SKU, part numbers, brand and group
+// names) that the registry's `part` dimension does not carry. Those are looked
+// up separately and joined on part_id.
+//
+// One deliberate behaviour change comes with the migration. The old query read
+// `il.tax_base` directly, which is NULL on 477 legacy lines, so those sales were
+// silently dropped. The registry falls back to the pre-tax total for them, which
+// is exact because they record no VAT — so this report now agrees with Analytics
+// and reports slightly MORE revenue over ranges containing those rows.
 router.get('/reports/profitability-by-product', protect, hasPermission('reports:view'), async (req, res) => {
     const { startDate, endDate, brandId, groupId, status, format = 'json' } = req.query;
     const { paginated, page, pageSize, limit, offset } = parsePaginationQuery(req.query);
     if (!startDate || !endDate) return res.status(400).json({ message: 'Start date and end date are required.' });
 
-    let whereClauses = ["(i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2"];
-    let queryParams = [startDate, endDate];
-    whereClauses.push(buildStatusClause(status, queryParams, { defaultFilter: 'active', column: 'i.status' }));
-
-    if (brandId) {
-        queryParams.push(brandId);
-        whereClauses.push(`p.brand_id = $${queryParams.length}`);
-    }
-    if (groupId) {
-        queryParams.push(groupId);
-        whereClauses.push(`p.group_id = $${queryParams.length}`);
-    }
+    const wantsPaging = format === 'json' && paginated;
 
     try {
-        let query = `
-            SELECT
-                p.internal_sku,
-                p.detail,
-                b.brand_name,
-                g.group_name,
-                (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
-                (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers,
-                SUM(il.quantity) AS total_quantity_sold,
-                SUM(il.tax_base) AS total_revenue,
-                -- Cost and profit cover only lines with a recorded cost. Including lines whose
-                -- cost_at_sale is 0 (83% of them, because the part had no weighted average cost
-                -- when it was sold) reported their entire sale price as profit.
-                SUM(il.quantity * il.cost_at_sale) FILTER (WHERE ${costedLineCondition('il')}) AS total_cost,
-                SUM(il.tax_base) FILTER (WHERE ${costedLineCondition('il')}) AS costed_revenue,
-                (
-                    COALESCE(SUM(il.tax_base) FILTER (WHERE ${costedLineCondition('il')}), 0)
-                    - COALESCE(SUM(il.quantity * il.cost_at_sale) FILTER (WHERE ${costedLineCondition('il')}), 0)
-                ) AS total_profit,
-                COUNT(*) FILTER (WHERE ${costedLineCondition('il')}) AS costed_line_count,
-                COUNT(*) AS total_line_count
-            FROM invoice_line il
-            JOIN part p ON il.part_id = p.part_id
-            JOIN invoice i ON il.invoice_id = i.invoice_id
-            LEFT JOIN brand b ON p.brand_id = b.brand_id
-            LEFT JOIN "group" g ON p.group_id = g.group_id
-            WHERE ${whereClauses.join(' AND ')}
-            GROUP BY p.part_id, b.brand_name, g.group_name
-            -- Parts with no measurable profit sort last rather than mixing in at zero, where
-            -- they would push genuine loss-making items off the first page.
-            ORDER BY (COUNT(*) FILTER (WHERE ${costedLineCondition('il')}) > 0) DESC, total_profit DESC
-        `;
-        const params = [...queryParams];
-        if (format === 'json' && paginated) {
-            query += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-            params.push(limit, offset);
-        }
-        const [rowsRes, countRes] = await Promise.all([
-            db.query(query, params),
-            (format === 'json' && paginated) ? db.query(`
-                SELECT COUNT(*)::int AS total
-                FROM (
-                    SELECT p.part_id
-                    FROM invoice_line il
-                    JOIN part p ON il.part_id = p.part_id
-                    JOIN invoice i ON il.invoice_id = i.invoice_id
-                    LEFT JOIN brand b ON p.brand_id = b.brand_id
-                    LEFT JOIN "group" g ON p.group_id = g.group_id
-                    WHERE ${whereClauses.join(' AND ')}
-                    GROUP BY p.part_id, b.brand_name, g.group_name
-                ) profitability_rows
-            `, queryParams) : Promise.resolve({ rows: [{ total: 0 }] })
-        ]);
-        const { rows } = rowsRes;
-        // A part whose lines all lack a cost has no measurable profit. Reporting 0 there would
-        // read as "broke even" rather than "we don't know", so the figures are nulled out and
-        // the row carries its own coverage instead.
-        const data = rows.map((row) => {
-            const costedLines = parseInt(row.costed_line_count, 10) || 0;
-            const rowCoverage = buildCostCoverage({
-                costedRevenue: parseFloat(row.costed_revenue) || 0,
-                totalRevenue: parseFloat(row.total_revenue) || 0,
-                costedLines,
-                totalLines: parseInt(row.total_line_count, 10) || 0,
-            });
+        // Authored here, never assembled from the query string: `runInternalQuery`
+        // skips the per-metric permission check precisely because this list is a
+        // literal, and it refuses anything above `analytics:view`.
+        const result = await analytics.runInternalQuery({
+            metrics: [
+                'sales.units_sold',
+                'sales.line_revenue',
+                'margin.cogs',
+                'margin.gross_profit',
+                'margin.costed_revenue',
+            ],
+            dimensions: ['part'],
+            dateRange: { from: startDate, to: endDate },
+            filters: {
+                ...(brandId ? { brand: [brandId] } : {}),
+                ...(groupId ? { group: [groupId] } : {}),
+            },
+            status,
+            // NULLS LAST on a descending sort puts the parts with no measurable
+            // profit at the bottom, which is what the old hand-written
+            // "costed first, then profit" ORDER BY achieved.
+            sort: { by: 'margin.gross_profit', dir: 'DESC' },
+            ...(wantsPaging ? { limit, offset } : {}),
+        }, req, { forCsv: format === 'csv' });
+
+        const partIds = result.rows.map((row) => row.key[0]).filter((id) => id !== null);
+
+        // What the registry's `part` dimension does not carry. Descriptive only —
+        // no money is computed here, so there is nothing for this to drift from.
+        const detailsRes = partIds.length
+            ? await db.query(
+                `SELECT p.part_id, p.internal_sku, p.detail, b.brand_name, g.group_name,
+                        (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn
+                          WHERE pn.part_id = p.part_id
+                            AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers
+                   FROM part p
+                   LEFT JOIN brand b ON p.brand_id = b.brand_id
+                   LEFT JOIN "group" g ON p.group_id = g.group_id
+                  WHERE p.part_id = ANY($1::int[])`,
+                [partIds]
+            )
+            : { rows: [] };
+        const detailsById = new Map(detailsRes.rows.map((r) => [r.part_id, r]));
+
+        const data = result.rows.map((row) => {
+            const details = detailsById.get(row.key[0]) || {};
+            const coverage = row.coverage.costed_line || {};
             return {
-                ...row,
-                total_cost: costedLines > 0 ? row.total_cost : null,
-                total_profit: costedLines > 0 ? row.total_profit : null,
-                cost_coverage_ratio: rowCoverage.valueRatio,
-                cost_coverage_level: rowCoverage.level,
+                internal_sku: details.internal_sku ?? null,
+                detail: details.detail ?? null,
+                brand_name: details.brand_name ?? null,
+                group_name: details.group_name ?? null,
+                display_name: row.label[0],
+                part_numbers: details.part_numbers ?? null,
+                total_quantity_sold: row.values['sales.units_sold'],
+                total_revenue: row.values['sales.line_revenue'],
+                // Null, not zero, where nothing could be measured: "we don't know"
+                // and "it broke even" are different statements, and the registry
+                // already leaves a trusted metric NULL rather than COALESCEing it.
+                total_cost: row.values['margin.cogs'],
+                costed_revenue: row.values['margin.costed_revenue'],
+                total_profit: row.values['margin.gross_profit'],
+                costed_line_count: coverage.numRows ?? 0,
+                total_line_count: coverage.denRows ?? 0,
+                cost_coverage_ratio: coverage.valueRatio ?? 0,
+                cost_coverage_level: coverage.level ?? 'none',
             };
         });
 
         if (format === 'csv') {
-            const json2csvParser = new Parser();
-            const csv = json2csvParser.parse(data);
-            res.header('Content-Type', 'text/csv').attachment('profitability-by-product.csv').send(csv);
-        } else if (paginated) {
-            const total = countRes.rows[0]?.total || 0;
-            res.json(paginatedResponse({ data, page, pageSize, total }));
-        } else {
-            res.json(data);
+            const csv = new Parser().parse(data);
+            return res.header('Content-Type', 'text/csv').attachment('profitability-by-product.csv').send(csv);
         }
+        if (wantsPaging) {
+            // Built once: `buildStatusClause` numbers its placeholders off the
+            // array it is handed and appends to it, so the clause and the values
+            // it refers to have to come from the same call.
+            const where = countWhere(startDate, endDate, brandId, groupId, status);
+            const countRes = await db.query(
+                `SELECT COUNT(DISTINCT il.part_id)::int AS total
+                   FROM invoice_line il
+                   JOIN part p ON il.part_id = p.part_id
+                   JOIN invoice i ON il.invoice_id = i.invoice_id
+                  WHERE ${where.clause}`,
+                where.params
+            );
+            return res.json(paginatedResponse({ data, page, pageSize, total: countRes.rows[0]?.total || 0 }));
+        }
+        return res.json(data);
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
+        if (err instanceof AnalyticsRequestError) {
+            return res.status(err.status).json({ message: err.message });
+        }
+        console.error('profitability-by-product failed:', err.stack || err.message);
+        return res.status(500).send('Server Error');
     }
 });
+
+/**
+ * The row COUNT behind pagination.
+ *
+ * Deliberately still hand-written: it counts distinct parts rather than
+ * measuring money, so there is no definition here that could drift from the
+ * registry. It must select the same rows the registry's `invoice_line` source
+ * does — same Manila date cast, same status default — which is why the status
+ * clause comes from the same helper.
+ */
+function countWhere(startDate, endDate, brandId, groupId, status) {
+    const params = [startDate, endDate];
+    const clauses = ["(i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2"];
+    const statusClause = buildStatusClause(status, params, { defaultFilter: 'active', column: 'i.status' });
+    if (statusClause) clauses.push(statusClause);
+    if (brandId) { params.push(brandId); clauses.push(`p.brand_id = $${params.length}`); }
+    if (groupId) { params.push(groupId); clauses.push(`p.group_id = $${params.length}`); }
+    return { clause: clauses.join(' AND '), params };
+}
 
 // NEW ENDPOINT: Get refunds report
 router.get('/reports/refunds', protect, hasPermission('reports:view'), async (req, res) => {

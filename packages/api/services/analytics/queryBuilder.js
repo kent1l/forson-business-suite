@@ -178,6 +178,9 @@ function buildQuery(spec) {
 
     const orderBy = buildOrderBy(spec, dimColumns, metricColumns);
     const pLimit = P(spec.limit);
+    // Emitted only when asked for, so every statement built before paging
+    // existed still renders byte-for-byte as it did.
+    const pOffset = spec.offset > 0 ? P(spec.offset) : null;
 
     const text = [
         `WITH ${[...ctes, ...stitchCtes].join(',\n')}`,
@@ -185,7 +188,8 @@ function buildQuery(spec) {
         `FROM ${joinedName}`,
         `ORDER BY ${orderBy}`,
         `LIMIT ${pLimit}`,
-    ].join('\n');
+        pOffset ? `OFFSET ${pOffset}` : '',
+    ].filter(Boolean).join('\n');
 
     const plan = {
         sources: sourceIds,
@@ -198,6 +202,7 @@ function buildQuery(spec) {
         compare: !!spec.compare,
         grain: spec.grain,
         limit: spec.limit,
+        offset: spec.offset || 0,
         rollup: spec.topN
             ? { column: ROLLUP_COLUMN, countColumn: ROLLUP_COUNT_COLUMN, n: spec.topN.n, by: spec.topN.by }
             : null,
@@ -629,8 +634,12 @@ function buildOrderBy(spec, dimColumns, metricColumns) {
     const lead = spec.topN ? ['bucket ASC', `${ROLLUP_COLUMN} ASC`] : ['bucket ASC'];
 
     if (spec.sort) {
+        // A dimension is sorted by whichever of its two expressions carries its
+        // natural order -- the label for a brand, the key for a period or an
+        // ordered band. See `sortBy` in registry/dimensions.js.
+        const sortDim = dimColumns.find((d) => d.dimension.id === spec.sort.by);
         const col = metricColumns[spec.sort.by]
-            || (dimColumns.find((d) => d.dimension.id === spec.sort.by) || {}).label;
+            || (sortDim ? sortDim[sortDim.dimension.sortBy === 'key' ? 'key' : 'label'] : null);
         if (!col) {
             throw new AnalyticsRequestError(400, `Cannot sort by '${spec.sort.by}': it is not one of the requested metrics or dimensions.`);
         }

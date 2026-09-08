@@ -61,6 +61,34 @@ router.get('/analytics/boards/:id', protect, hasPermission('analytics:view'), (r
     }
 });
 
+// GET /api/analytics/insights/:boardId
+//
+// Deterministic rules only (PRD §14). Nothing here is generated: the response
+// carries a template declared in the registry, the typed values substituted into
+// it, and the metric ids each sentence was derived from, so the frontend formats
+// the numbers exactly as the tiles do and a reader can follow the citation.
+router.get('/analytics/insights/:boardId', protect, hasPermission('analytics:view'), async (req, res) => {
+    try {
+        const preset = req.query.preset ? String(req.query.preset) : null;
+        const dateRange = preset
+            ? { preset }
+            : { from: String(req.query.from || ''), to: String(req.query.to || '') };
+        const result = await analytics.getInsights({
+            boardId: req.params.boardId,
+            dateRange,
+            compare: req.query.compare !== '0',
+        }, req);
+        if (result.failed) {
+            // Not an empty panel: every rule's query failed, and "nothing stands
+            // out" would be a reassuring lie.
+            return res.status(502).json({ message: 'Could not work out the insights for this board.' });
+        }
+        return res.json(result);
+    } catch (err) {
+        return respondToError(res, err, 'work out the insights for this board');
+    }
+});
+
 // POST /api/analytics/query
 router.post('/analytics/query', protect, hasPermission('analytics:view'), async (req, res) => {
     const wantsCsv = req.body && req.body.format === 'csv';

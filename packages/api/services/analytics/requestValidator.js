@@ -21,6 +21,7 @@ const BUDGET = Object.freeze({
     maxRangeDays: 731,
     maxRowsJson: 500,
     maxRowsCsv: 5000,
+    maxOffset: 100000,
     maxBatchQueries: 12,
     timeoutMs: 8000,
 });
@@ -37,7 +38,7 @@ const asArray = (v) => {
  * `mustResolve` uses hasOwnProperty rather than `in`, so `__proto__` and
  * `constructor` resolve to nothing rather than to an Object.prototype member.
  */
-function parseQueryRequest(body, req, { forCsv = false } = {}) {
+function parseQueryRequest(body, req, { forCsv = false, trusted = false } = {}) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
         throw new AnalyticsRequestError(400, 'A query body is required.');
     }
@@ -53,7 +54,17 @@ function parseQueryRequest(body, req, { forCsv = false } = {}) {
         const metric = mustResolve(METRICS, id, 'metric');
         // Permission is per metric, not per route: a restricted metric is stripped
         // from /meta and refused here, so a hand-written request cannot reach it.
-        if (!userHasPermission(req, metric.permission)) {
+        //
+        // `trusted` turns this off, and exists for exactly one situation: a spec
+        // written in server code, for a route that has already enforced its own
+        // permission. The check guards against a CALLER naming a metric they may
+        // not see; where the metric list is a literal in a route file there is no
+        // caller to guard against, and applying it anyway would make
+        // /reports/profitability-by-product demand `analytics:view` on top of the
+        // `reports:view` it has always required. It is never reachable from a
+        // request body — see runInternalQuery in ./index.js, whose own guard
+        // stops it being used to widen access.
+        if (!trusted && !userHasPermission(req, metric.permission)) {
             throw new AnalyticsRequestError(403, `You do not have permission to view '${metric.label}'.`, {
                 metric: metric.id, permission: metric.permission,
             });
@@ -150,6 +161,27 @@ function parseQueryRequest(body, req, { forCsv = false } = {}) {
     // silently losing the very total the rollup exists to state.
     if (topN) limit = Math.max(limit, topN.n + 1);
 
+    // --- offset. Paging exists for one caller: the Profitability by Product
+    // report, which pages through thousands of parts and now takes its figures
+    // from this registry rather than from its own copy of the SQL. Bounded, so
+    // it cannot be used to walk a table indefinitely.
+    const rawOffset = Number(body.offset);
+    const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? Math.floor(rawOffset) : 0;
+    // Refused, not clamped. Clamping would answer a request for page 2,000 with
+    // page 1,001's rows while the pager still said 2,000 — a plausible wrong
+    // answer, which is the one thing this module is built not to give.
+    if (offset > BUDGET.maxOffset) {
+        throw new AnalyticsRequestError(
+            400,
+            `An offset may be at most ${BUDGET.maxOffset}; this one asked for ${offset}.`
+        );
+    }
+    if (offset > 0 && topN) {
+        // The fold is computed over the whole result; paging past it would show
+        // an 'Other' row that summarises rows on a page the reader cannot see.
+        throw new AnalyticsRequestError(400, 'A top-N rollup cannot be paged through.');
+    }
+
     // --- source options
     const status = body.status === undefined ? undefined : String(body.status);
     if (status !== undefined && status !== 'active' && status !== 'all'
@@ -169,6 +201,7 @@ function parseQueryRequest(body, req, { forCsv = false } = {}) {
         sort,
         topN,
         limit,
+        offset,
         sourceOptions: { status },
         context: { days_in_range: days },
     };
@@ -299,4 +332,4 @@ function parseFilters(raw) {
     return filters;
 }
 
-module.exports = { parseQueryRequest, BUDGET };
+module.exports = { parseQueryRequest, parseDateRange, BUDGET };

@@ -46,6 +46,9 @@ export const AnalyticsMetaProvider = ({ children }) => {
             trustRule: (id) => (meta?.trustRules || []).find((r) => r.id === id) || null,
             format: (metricId, value) => formatValue(meta, metricId, value),
             formatCompact: (metricId, value) => formatValue(meta, metricId, value, { compact: true }),
+            // For the few values that are not a metric — an insight's "up"/"down",
+            // or a percentage derived in a rule rather than declared as a metric.
+            formatBy: (formatId, value) => formatByFormat(meta, formatId, value),
         };
     }, [meta, loading, error, load]);
 
@@ -67,9 +70,14 @@ export const useAnalyticsMeta = () => {
  * as "we made nothing".
  */
 export function formatValue(meta, metricId, value, { compact = false } = {}) {
-    if (value === null || value === undefined) return '—';
     const metric = (meta?.metrics || []).find((m) => m.id === metricId);
-    const format = (meta?.formats || {})[metric?.format] || FALLBACK_FORMAT;
+    return formatByFormat(meta, metric?.format, value, { compact });
+}
+
+/** The same rules, addressed by format id rather than by metric id. */
+export function formatByFormat(meta, formatId, value, { compact = false } = {}) {
+    if (value === null || value === undefined) return '—';
+    const format = (meta?.formats || {})[formatId] || FALLBACK_FORMAT;
     if (!format.numeric) return String(value);
 
     const n = Number(value);

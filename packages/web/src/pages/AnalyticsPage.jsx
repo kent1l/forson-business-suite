@@ -60,7 +60,13 @@ const BoardTabs = ({ onNavigate }) => {
                 <p className="mb-4 text-sm text-neutral-500 dark:text-slate-400">{current.description}</p>
             )}
 
-            <AnalyticsBoard boardId={active} onNavigate={onNavigate} />
+            {/* An insight can point at another board ("see the reorder list"), so
+                the tab state has to be reachable from inside the board. */}
+            <AnalyticsBoard
+                boardId={active}
+                onNavigate={onNavigate}
+                onSelectBoard={(id) => { if (boards.some((b) => b.id === id)) setActive(id); }}
+            />
         </div>
     );
 };
