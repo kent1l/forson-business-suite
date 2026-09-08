@@ -24,16 +24,20 @@ const TILE_TYPES = {
  * ship a type this build has never heard of, and a blank tile beats a blank page.
  */
 const AnalyticsTile = ({ spec, boardState, onNavigate, canExport }) => {
-    const { metric, readiness } = useAnalyticsMeta();
+    const { metric, readiness, readinessMessage } = useAnalyticsMeta();
 
     const primaryId = spec.display?.value || spec.query.metrics[0];
     const primary = metric(primaryId);
     // Every metric on the tile has to be available, not just the headline one:
     // a composite is only as ready as its least-ready component.
-    const ready = spec.query.metrics.every((id) => {
-        const gate = metric(id)?.readiness;
-        return !gate || readiness[gate];
-    });
+    // The first gate that is not satisfied, so the tile can say WHICH thing is
+    // missing. A metric waiting on the walk-in customer setting and one waiting
+    // on the Payroll module both render "not recorded yet", and only one of them
+    // is something the reader can go and fix.
+    const blockedBy = spec.query.metrics
+        .map((id) => metric(id)?.readiness)
+        .find((gate) => gate && !readiness[gate]) || null;
+    const ready = !blockedBy;
 
     const { data, meta, loading, error, refetch } = useAnalyticsQuery(spec.query, {
         boardState,
@@ -114,7 +118,7 @@ const AnalyticsTile = ({ spec, boardState, onNavigate, canExport }) => {
         >
             {ready
                 ? <Body spec={spec} data={data} meta={meta} onSelectRow={onSelectRow} />
-                : <NoDataYet metric={primary} />}
+                : <NoDataYet metric={primary} message={readinessMessage(blockedBy)} />}
         </TileShell>
     );
 };

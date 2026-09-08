@@ -23,6 +23,14 @@ const { METRIC_SOURCE_FILES } = require('./metrics');
 
 const KINDS = new Set(['additive', 'snapshot', 'composite', 'ratio']);
 
+// How a leaf's per-row values combine when rows are added together -- into a
+// total, or into a rollup's 'Other'. Almost everything here is a SUM or a COUNT,
+// for which adding is right. A MAX is not: the largest of several maxima is the
+// answer, and summing them gives a figure with no meaning that still renders as
+// a number. Declared per metric so the two places that fold (the totals in
+// responseShaper.js and the rollup in queryBuilder.js) cannot disagree.
+const FOLDS = new Set(['sum', 'max']);
+
 // The permission every analytics caller already holds. Anything else is a
 // narrower grant on top of it, which is what lets the composite check below
 // reason about "at least as restricted as".
@@ -121,6 +129,9 @@ for (const [id, m] of Object.entries(METRICS)) {
     if (m.kind === 'additive' || m.kind === 'snapshot') {
         const src = SOURCES[m.source];
         if (!src) fail(`metric '${id}' references unknown source '${m.source}'`);
+        if (m.fold !== undefined && !FOLDS.has(m.fold)) {
+            fail(`metric '${id}' declares unknown fold '${m.fold}'`);
+        }
         if (typeof m.expr !== 'function') fail(`metric '${id}' has no expr function`);
         if (m.where !== undefined && typeof m.where !== 'function') {
             fail(`metric '${id}'.where must be a function of the source's cols`);
@@ -155,6 +166,12 @@ for (const [id, m] of Object.entries(METRICS)) {
                     fail(`trust rule '${m.trust}'.${fn} renders 'undefined' against source '${m.source}' (used by '${id}')`);
                 }
             }
+        }
+        if (m.fold === undefined && /^\s*(MAX|MIN)\s*\(/i.test(String(m.expr(src.cols)))) {
+            // A guard rather than an inference: a metric whose aggregate is not
+            // additive must SAY so, because the failure is a plausible wrong
+            // number in a total row rather than an error anyone would notice.
+            fail(`metric '${id}' aggregates with MAX/MIN but does not declare a \`fold\`; adding those together would produce a meaningless total`);
         }
     } else if (m.kind === 'composite') {
         if (!Array.isArray(m.terms) || m.terms.length === 0) fail(`composite metric '${id}' has no terms`);

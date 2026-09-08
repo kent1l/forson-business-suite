@@ -360,7 +360,12 @@ function buildSourceCte({
     }
     // `defaultWhere` is handed the live values array because buildStatusClause
     // numbers its own placeholders from its current length, then appends to it.
-    for (const clause of src.defaultWhere(values, { status: spec.sourceOptions.status })) {
+    // The options object is passed whole rather than key by key. Neither key on
+    // it can carry a byte into the statement text: `status` is narrowed to a
+    // closed vocabulary by the validator and pushed as a bound parameter, and
+    // `walkInCustomerId` never comes from a request at all -- it is read from the
+    // settings table and coerced to an integer before it gets here.
+    for (const clause of src.defaultWhere(values, spec.sourceOptions)) {
         if (clause) where.push(clause);
     }
     for (const f of spec.filters) {
@@ -492,10 +497,14 @@ function buildRollupCtes({ spec, from, dimColumns, leafColumn, coverageRules, P 
     const groupBy = ['1', '2', '3', '4'];
 
     const aggregates = [`    COUNT(*) AS ${ROLLUP_COUNT_COLUMN}`];
-    for (const column of leafColumn.values()) {
+    for (const [metricId, column] of leafColumn) {
         // SUM over an all-NULL group is NULL, which is what a trusted metric must
-        // stay: "nothing here could be measured" survives the fold.
-        aggregates.push(`    SUM(${column}) AS ${column}`);
+        // stay: "nothing here could be measured" survives the fold. A metric
+        // whose aggregate is not additive folds by its own declared rule -- the
+        // 'Other' row of a MAX metric is the largest of what it folded, never
+        // their sum. See `fold` in registry/index.js.
+        const fn = METRICS[metricId].fold === 'max' ? 'MAX' : 'SUM';
+        aggregates.push(`    ${fn}(${column}) AS ${column}`);
     }
     for (const cov of coverageRules) {
         for (const column of Object.values(cov.columns)) {

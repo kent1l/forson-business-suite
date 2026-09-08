@@ -1,10 +1,10 @@
 # Business Analytics Module — PRD & Developer Handoff
 
 > **Forson Business Suite** | **PRD-FBS-ANL-001** | **Version:** 1.0
-> **Date:** 2026-09-06 | **Last updated:** 2026-09-08 | **Branch:** `phase-2-plus-deferred-business-analytics`
-> **Status:** Phases 0 (PR #173) and 1 (PR #175) merged. Phase 2 built — Profitability + Data Trust
-> boards, and `/reports/profitability-by-product` migrated onto the registry. **The insights panel,
-> deferred by owner decision until after Phase 2, is built.** Phase 3 not started.
+> **Date:** 2026-09-06 | **Last updated:** 2026-09-08 | **Branch:** `phase-3-business-analytics`
+> **Status:** Phases 0 (PR #173), 1 (PR #175) and 2 (PR #176) merged; the insights panel with them.
+> Phase 3 built — Customers + Receivables & Cash, and "named account" promoted from a setting one
+> rule read into a fact source of its own. Phase 4 not started.
 
 ---
 
@@ -20,12 +20,14 @@ Read this first. It is the only section that changes often; update it as phases 
 | `helpers/costCoverage.js` (trust predicate) | **Done — PR #171** | Reused by the metric registry's trust layer |
 | Phase 0 — engine + Overview board | **Done — merged, PR #173** | §17 |
 | Phase 1 — Sales + Inventory boards | **Done — merged, PR #175** | §19 |
-| Phase 2 — Profitability + Data Trust | **Done — `phase-2-plus-deferred-business-analytics`** | §20 |
-| Phase 3 — Customers + Receivables | **Not started** | §9 |
+| Phase 2 — Profitability + Data Trust | **Done — merged, PR #176** | §20 |
+| Phase 3 — Customers + Receivables & Cash | **Done — `phase-3-business-analytics`** | §21 |
 | Phase 4 — Purchasing + Operations | **Not started** | §9 |
 | Phase 5 — saved views, alerts, custom boards | **Designed, not scheduled** | §9 |
 | Insights panel | **Done — the deferral is discharged** | §20.4 |
 | `cost_at_sale` write-path fix | **Open — needs a decision** | §13, R1 |
+| `ANALYTICS_WALKIN_CUSTOMER_ID` still unset | **Open — one admin field; gates half the Customers board** | §21.3 |
+| A/R ledger knows nothing before 2026-08-19 | **Disclosed, not fixed — by design** | §21.2 |
 | Refunds understated 12× in `/reports/sales-summary` | **Open — found during Phase 0; highest-value follow-up** | §17.4 |
 | Line discounts never recorded (0 of 11,540 lines) | **Open — found during Phase 1; tiles built and gated** | §19.4 |
 | Days of Inventory | **Built, measured, removed — not honest yet** | §19.4 |
@@ -1019,11 +1021,9 @@ Margin metrics with coverage enforcement; the trust scorecard. Delivered togethe
 is honest without the other. **Also migrate `/reports/profitability-by-product` onto the registry**
 (scheduled here, not aspirational — see §13 R2).
 
-### Phase 3 — Customers + Receivables & Cash  *(NOT STARTED — start here)*
-Pareto/cohort tile types; AR aging from the ledger views. **The insights panel already landed in
-Phase 2** (§20.4), so Phase 3 inherits it rather than building it.
+### Phase 3 — Customers + Receivables & Cash  *(DONE — see §21)*
 
-### Phase 4 — Purchasing & Suppliers, Operations  *(NOT STARTED)*
+### Phase 4 — Purchasing & Suppliers, Operations  *(NOT STARTED — start here)*
 Supplier analytics, lead time, price variance; staff productivity and cycle-count accuracy
 (reusing the existing `employee_cycle_count_performance` materialized view).
 
@@ -1819,6 +1819,7 @@ fan-out-safe declaration (§13 R4), or plot the A/R ledger's three weeks as a tr
 | Date | Version | Change |
 |---|---|---|
 | 2026-09-06 | 1.0 | Initial PRD. Live-data profiling, architecture, design review incorporated. PR #171 (profit overstatement) shipped as prerequisite. Insights panel deferred to post-Phase-2 by owner decision. |
+| 2026-09-08 | 1.4 | Phase 3 built on `phase-3-business-analytics`. §21 records the Customers and Receivables & Cash boards; `named_invoice`, the fact source that makes "named account" structural rather than a subtraction one insight rule performed; four more new sources (`open_receivable`, `customer_credit`, `ar_ledger`, `pdc_outstanding`) and five dimensions; the two irreconcilable answers to "what are we owed" and why both lead the board; the ₱1.49M of deliberately written-off pre-cutover invoices that `invoice_aging` still counts; the finding that 28 of 39 open invoices carry no due date at all; a fourth bug found in earlier work (`buildTotals` and the rollup both fold every leaf with SUM, which the registry's first MAX metric would have turned into a meaningless total); and four new insight rules. |
 | 2026-09-08 | 1.3 | Phase 2 built, and the deferred insights panel with it. §20 records the Profitability and Data Trust boards, the `margin_band` dimension, `/reports/profitability-by-product` migrated onto the registry (and the ₱354K it now reports that the old query silently dropped), `runInternalQuery` and the `trusted` path, `offset`, a third bug found in earlier work (a dimension sorted by label, which would have scrambled the first ordered attribute anyone added), and the insights panel — six of seven seed rules firing, the three refusals that keep it honest including the "+10,025%" a thin baseline produced, and the one rule left dark pending `ANALYTICS_WALKIN_CUSTOMER_ID`. |
 | 2026-09-08 | 1.2 | Phase 1 built on `phase-1-business-analytics`. §19 added as the Phase 1 as-built record: the Sales and Inventory boards, the server-side top-N rollup, the `heatmap` tile, the two time dimensions, the `reorder_candidates` source and why the "rank by consequence" rule lives in a source rather than a filter, `period: 'none'` boards, `$row.*` drilldowns into Sales History and Inventory, two bugs found in Phase 0's own work (integer-divided ratios; `date` special-cased by name), and two data findings — line discounts never recorded, and Days of Inventory built, measured at 866 days, and removed as not honestly computable yet. |
 | 2026-09-08 | 1.1 | Phase 0 shipped (`phase-0`, `8832a6e`). §17 rewritten as an as-built handoff: the file map, the recipes for adding a metric/tile/board, the metric-contract change that makes the trust filter unbypassable, three data findings that changed source definitions (including a twelvefold refund understatement still present in `/reports/sales-summary`), the figures verified against the live database, the validated series palette, how to run the checks, and where Phase 1 starts. |
@@ -2252,3 +2253,214 @@ and should note:
 - Do not restore Days of Inventory, or any ratio whose numerator and denominator carry different
   trust rules, until the `cost_at_sale` write path is fixed (§19.4, §13 R1).
 - Do not plot the A/R ledger's few weeks as a trend (§2).
+
+---
+
+## 21. Phase 3 — As Built
+
+**Built on branch `phase-3-business-analytics`, off `business-analytics` after PR #176.** Phase 3 is
+§9's Customers + Receivables & Cash. It inherits the insights panel rather than building it, per
+§20.7, and adds four rules to it.
+
+Two boards, `boards/customers.js` (18 tiles) and `boards/receivables.js` (26 tiles). Five new fact
+sources, five new dimensions, twenty-eight new metrics — the registry goes from 46 to 74.
+
+### 21.1 "Named account" is now a fact source, not a subtraction
+
+§20.7's handoff said this was where *"named account should become a first-class idea rather than a
+setting one rule reads"*. It is a source.
+
+`named_invoice` is `FROM invoice i` with the walk-in record excluded in the WHERE clause. Every
+customer metric is measured over it, so a metric defined in `registry/metrics/customers.js` is
+*structurally incapable* of counting counter trade. That matters because of the size of the
+distortion: over twelve months, revenue per customer computed over the whole invoice book comes out
+at **₱135K across 85 customers**, and the truth is **84 named accounts averaging ₱25K, plus a
+counter that took ₱9.5M through one record**. Phase 2's concentration insight worked around this by
+subtracting the walk-in row from the result in JavaScript; that rule now reads
+`customers.named_revenue` too, so there is one definition of "named account" rather than two that
+would eventually disagree — and the one that would have disagreed is the sentence, which a reader
+trusts more than a number.
+
+**The cost is that a setting now reaches SQL, which no earlier phase allowed.** The walk-in id is a
+fact about this business that cannot be inferred, and the module's own rules say a figure it cannot
+compute honestly must be refused rather than approximated. So:
+
+- It travels on the **server-authored third argument** of `parseQueryRequest`, the same channel
+  `trusted` uses. There is no request key for it, and `/analytics/batch` supplies no `opts` at all,
+  so a `walkInCustomerId` inside a batch entry lands in `body`, which is never read for options. A
+  test asserts exactly that.
+- It is a **bound parameter**, never text. `excludeWalkIn` pushes it onto the live values array and
+  emits `$n`, the same mechanism `buildStatusClause` has always used.
+- It is **checked, never coerced.** `parseInt` would turn `"1.5"` and `"1; DROP TABLE customer"`
+  both into customer 1 — bound, so not an injection, but a setting somebody typed wrong would
+  silently start excluding a real account and nothing on screen would say so. Both the settings read
+  (`/^\d+$/`) and the validator (`Number.isInteger && > 0`) reject instead. A test fuzzes nine
+  malformed values and requires every one to behave exactly as unset.
+- With no setting, `named_invoice` **refuses to build** (409), and every metric on it declares
+  `readiness: 'walkin_customer_identified'` so the frontend renders the honest state without issuing
+  a query at all. That probe is static SQL over the settings table, like every other probe.
+
+`READINESS_PROBES` gained an `emptyMessage` surfaced through `/meta.readinessInfo`, so the tile says
+*which* thing is missing. "Payroll is not being recorded yet" and "an administrator needs to fill in
+one field" are different states and previously rendered identically.
+
+**Credit exposure is deliberately NOT gated.** The counter record holds a default limit and no
+ledger balance, so `customer_credit` neither distorts the exposure nor needs the setting. The
+Customers board therefore answers a real question out of the box, and the gated half reads as one
+missing setting rather than a broken page.
+
+### 21.2 Two answers to "what are we owed", and both lead the board
+
+The Receivables board opens with two figures that do not agree, on purpose.
+
+| | Over this database |
+|---|---|
+| `ar.open_balance` — every unsettled invoice, net of credit notes | **₱241,806.98** across 39 invoices |
+| `ar.balance` — the A/R ledger, authoritative for what the A/R module manages | **₱202,506.98** |
+| `ar.ledger_gap` — the difference, as a metric of its own | **₱39,300** |
+
+The ledger begins at the 2026-08-19 cutover and knows nothing before it. Neither figure is wrong;
+they answer different questions. Publishing one and hiding the other is how a reader ends up
+trusting a number whose scope they cannot see, so both lead the board, the gap is a composite metric,
+and `insight.ar_ledger_gap` explains it in a sentence when it exceeds 10% of the book.
+
+**What the board deliberately does not use is `invoice_aging`.** That view reports **₱1,748,458**
+outstanding — more than eight times the real figure — because it does not exclude the **312
+pre-cutover invoices worth ₱1,489,501 that were deliberately written off** when the ledger went live
+(migration `20260906_10_reclose_revived_pre_cutover_invoices.sql`). They still carry a positive
+`balance_due` on the invoice row. `open_receivable` reads `invoice_with_balance` and restricts to
+`status IN ('Unpaid', 'Partially Paid')` as a registry literal, never a request option: what counts
+as "still owed" is a definition the whole business shares.
+
+**The finding worth acting on: 28 of the 39 open invoices carry no due date at all — ₱135,300, 56% of
+what is owed.** An invoice with no due date can never become overdue however long it sits, so an
+aging report that only buckets overdue days describes the smaller half of the book and draws it
+looking healthy. Hence:
+
+- `(No payment terms)` is a **visible band** in the `aging_bucket` dimension, ordered last, not
+  dropped rows and not folded into "not yet due";
+- `ar.untermed_balance` and `ar.untermed_share` sit beside `ar.overdue_balance` on the board;
+- `insight.receivables_no_terms` fires at 55.95% and says the money, the total and the share.
+
+Today the entire open book is either *not yet due* (₱106,506.98) or *no terms* (₱135,300) — nothing
+is overdue at all, and `insight.overdue_receivables` is correctly silent.
+
+### 21.3 The new sources, and what each refuses to do
+
+| Source | Grain | Answers | The refusal in it |
+|---|---|---|---|
+| `named_invoice` | invoice | Everything on the Customers board | Will not build without the walk-in setting |
+| `open_receivable` | invoice | What is owed, and how old | Excludes written-off and cancelled invoices as a registry literal |
+| `customer_credit` | customer | Exposure against limits | `GREATEST(balance, 0)` — one prepaid account must not cancel another's debt |
+| `ar_ledger` | ledger entry | What actually moved, and when | Every metric gated on `ar_ledger_data`; every trend tile carries the era in its help text |
+| `pdc_outstanding` | payment | Cheques not yet cash | `CLEARED` excluded — a cleared cheque is cash, and cash is not a pipeline |
+
+Five dimensions: `customer_cohort` (the month an account first bought — a fact about the customer,
+so no request value reaches it), `aging_bucket`, `ar_entry_type`, `adjustment_reason`, `pdc_status`.
+Three of the five are ordered and declare `sortBy: 'key'`, which is the property Phase 2's
+`buildOrderBy` bug taught the registry to require.
+
+`adjustment_reason` is reached through a LEFT JOIN on `ar_adjustment.ledger_id`, which is UNIQUE, so
+it cannot fan a ledger row out and double its amount.
+
+**Retention is a cohort dimension, not a cohort grid.** §14 asked for a retention cohort. The classic
+cohort-month × months-since-first triangle needs years of history; twelve months of it is mostly
+empty and reads as churn. Revenue in the selected period split by the vintage of the account that
+produced it answers the same question with the data that exists — and it says something real here:
+the three oldest cohorts (34 accounts won in Sep–Nov 2025) still produce **₱1.62M of the ₱2.09M** of
+named-account revenue over twelve months.
+
+**The Pareto is a rollup with a running total, exactly as §20.7 predicted — no new tile type.**
+`TableTile` gained `display.cumulative`, whose denominator is the tile's own total; a server-side
+rollup makes that total exact, so the column genuinely reaches 100%. Client-side re-sorting is
+switched **off** on such a table, because a running total means nothing in an order other than the
+one it was accumulated in.
+
+### 21.4 A fourth bug found in earlier work
+
+`ar.oldest_overdue_days` is the registry's first metric whose aggregate is a `MAX` rather than a
+`SUM` or a `COUNT`. Both places that fold rows — `buildTotals` in `responseShaper.js` and the rollup
+in `queryBuilder.js` — added every leaf together unconditionally. Adding up each customer's oldest
+overdue invoice produces a number in days that means nothing at all and renders exactly like one
+that does; on a "who owes us" table it would have appeared in the total row and in the `Other` row.
+
+Fixed structurally rather than locally: a metric may declare **`fold: 'sum' | 'max'`**, both fold
+sites read it, and the registry now **refuses to load** an additive or snapshot metric whose `expr`
+starts with `MAX(`/`MIN(` and does not declare one. A guard, not an inference — the failure mode is
+a plausible wrong number in a footer that nobody would notice.
+
+That fix is also what let the two ranked tables that were truncating (`ar.by_customer` at 20 of 35
+customers, `cust.exposure_table` at 15 of 65 accounts) become rollups. Their footer totals now equal
+the hero KPI above them — a table whose total disagrees with the figure at the top of the same board
+reads as a bug in one of them.
+
+### 21.5 Insights
+
+Four rules added, one migrated. Against the live database:
+
+| Rule | Fires when | Today |
+|---|---|---|
+| `insight.receivables_no_terms` | untermed share > 25% | **warning** — ₱135,300, 55.95% of the book |
+| `insight.ar_ledger_gap` | \|gap\| > 10% of the open book | **info** — ₱39,300 of ₱241,807 |
+| `insight.credit_over_limit` | any account past its limit | **warning** — 3 of 60 accounts in debt |
+| `insight.overdue_receivables` | overdue share > 20% | correctly silent — nothing is overdue |
+| `insight.customer_concentration` | top named account > 20% of named revenue | **info** once the setting is filled in — ADJ-VERIFY-CO at 27.6% over 90 days |
+
+Every `when` tests for null before comparing, and a test drives the whole receivables group with an
+all-null period and asserts total silence: `null > 25` is false but `null < 25` is true, and an empty
+book must not announce that 100% of it has no terms.
+
+### 21.6 The security pass
+
+Run per CLAUDE.md, because a settings value now reaches SQL. **No exploitable findings.** The four
+properties in §21.1 were traced end to end and hold; the spread order in `runBatch`
+(`{ ...item.opts, walkInCustomerId }`) means the server-resolved value always wins over anything a
+caller put in `opts`. Every new source's FROM, WHERE and dimension expression is a literal in the
+registry, which the existing load-time assertions (no `$`, no `undefined`) cover. All twenty-eight
+new metrics are `analytics:view`, so `runInternalQuery`'s "refuses anything narrower" guard is
+unchanged. The review found the `fold` bug in §21.4 as a correctness finding.
+
+The one deliberate widening is a product decision rather than a defect: per-customer balances and
+credit limits are now visible to `analytics:view` holders, which is seeded to Admin and Manager only
+and is what the Customers board *is*.
+
+### 21.7 Verified against the live database
+
+| Check | Result |
+|---|---|
+| Named-account revenue, 90 days | ₱644,371.27 · 51 accounts · 104 invoices — exact against direct SQL |
+| New + returning accounts | 34 + 17 = 51 active — reconciles |
+| Concentration fold | 12 named accounts + `Other`, running share reaching exactly 100.0% |
+| Cohorts | seven cohorts summing to ₱644,371.27 — reconciles with the period |
+| Open receivables | ₱241,806.98 · 39 invoices · 35 customers; ₱135,300 untermed, ₱0 overdue — exact |
+| Ledger movement, 30 days | collected ₱246,397.77 · charged ₱465,612.35 · net ₱202,506.98, which equals the whole ledger balance because the ledger is three weeks old |
+| Credit exposure | 3 over limit · 60 owing · ₱135,336.98 drawn against ₱3,060,000 extended — exact |
+| Board load, uncached | Customers 178 ms · Receivables 112 ms |
+| Both boards over HTTP, walk-in set | 18/18 and 26/26 tiles render, nothing truncated |
+| Both boards over HTTP, walk-in unset | 5/18 and 26/26 render; the other 13 return a 409 the tile turns into an actionable message |
+
+### 21.8 Checks, and where Phase 4 starts
+
+```bash
+docker exec forson_backend_dev npm run test                              # 68 suites, 940 tests, 6 snapshots
+docker exec forson_backend_dev node tests/analyticsRegistry_db_test.js   # now 625 statements (was 396)
+```
+
+The db-test gained two sections: every insight rule's own query is now EXPLAINed (a rule is prose,
+so one that stops parsing must be a red run rather than a sentence that quietly disappears), and
+every `named_invoice` metric is asserted to *refuse* without the setting.
+
+Phase 4 is Purchasing & Suppliers, Operations. It should note:
+
+- **`fold` exists now.** Any metric whose aggregate is not a SUM or COUNT must declare it; the
+  registry will refuse to load one that does not. Lead time and price variance are averages, which
+  is a third fold this file does not yet have — add `avg` properly (it needs a weight), do not
+  approximate it with a SUM.
+- **The `named_invoice` pattern generalises.** If supplier analytics hits an equivalent "one record
+  carries most of the volume" problem, make it a source, not a filter.
+- **Do not plot the A/R ledger, or anything else, longer than its own history** (§21.2).
+- Do not restore Days of Inventory until the `cost_at_sale` write path is fixed (§19.4, §13 R1).
+- **`ANALYTICS_WALKIN_CUSTOMER_ID` is still empty and still seeded empty on purpose.** Verification
+  was done with it temporarily set to `1` and then reset, exactly as Phase 2 did. Filling it in is
+  the owner's call, in Settings → Analytics, and it is the single highest-value one-field change
+  available: it lights up thirteen of the Customers board's eighteen tiles.

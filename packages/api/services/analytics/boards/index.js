@@ -8,6 +8,8 @@ const { INVENTORY_BOARD } = require('./inventory');
 const { INSIGHT_RULES, SEVERITIES } = require('../registry/insights');
 const { PROFITABILITY_BOARD } = require('./profitability');
 const { DATA_TRUST_BOARD } = require('./data_trust');
+const { CUSTOMERS_BOARD } = require('./customers');
+const { RECEIVABLES_BOARD } = require('./receivables');
 
 /**
  * Board registry, validated at require() time against the metric registry.
@@ -22,7 +24,10 @@ const DRILLDOWN_KINDS = new Set(['page', 'tile', 'filter']);
 // the reader that the numbers moved with it when they did not.
 const BOARD_PERIODS = new Set(['range', 'none']);
 
-const BOARD_LIST = [OVERVIEW_BOARD, SALES_BOARD, INVENTORY_BOARD, PROFITABILITY_BOARD, DATA_TRUST_BOARD];
+const BOARD_LIST = [
+    OVERVIEW_BOARD, SALES_BOARD, INVENTORY_BOARD, PROFITABILITY_BOARD,
+    CUSTOMERS_BOARD, RECEIVABLES_BOARD, DATA_TRUST_BOARD,
+];
 
 const fail = (message) => {
     throw new AnalyticsRegistryError(`Analytics boards: ${message}`);

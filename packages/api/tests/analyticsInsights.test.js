@@ -13,7 +13,13 @@ const { METRICS } = require('../services/analytics/registry');
 const RANGE = { preset: 'last_30_days' };
 const req = { user: { employee_id: 1, permission_level_id: 10, permissions: [] } };
 
-const READY = { expense_data: true, payroll_data: true, ar_ledger_data: true, line_discount_data: true };
+const READY = {
+    expense_data: true,
+    payroll_data: true,
+    ar_ledger_data: true,
+    line_discount_data: true,
+    walkin_customer_identified: true,
+};
 
 /**
  * Answers every query in a batch with one canned result, so a rule's condition
@@ -281,5 +287,160 @@ describe('analytics insights — the registry itself', () => {
                 expect(source).toContain(key);
             }
         }
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3: receivables, credit exposure, and the two answers to "what are we
+// owed".
+// ---------------------------------------------------------------------------
+describe('analytics insights — receivables', () => {
+    const onBoard = (boardId, totals, deps = {}) => evaluateInsights(
+        { boardId, dateRange: RANGE, compare: true },
+        req,
+        {
+            canSee: () => true,
+            readiness: READY,
+            settings: {},
+            runBatch: fakeBatch(totalsOf(totals)),
+            ...deps,
+        }
+    );
+
+    test('most of the book having no payment terms is reported, with the money', async () => {
+        const { insights } = await onBoard('receivables', {
+            'ar.untermed_share': 55.95,
+            'ar.untermed_balance': 135300,
+            'ar.open_balance': 241806.98,
+        });
+        const noTerms = insights.find((i) => i.id === 'insight.receivables_no_terms');
+        expect(noTerms).toBeDefined();
+        expect(noTerms.severity).toBe('warning');
+        expect(noTerms.values.value.value).toBe(135300);
+        expect(noTerms.cites).toContain('ar.untermed_share');
+    });
+
+    test('a book that is fully termed says nothing', async () => {
+        const { insights } = await onBoard('receivables', {
+            'ar.untermed_share': 0,
+            'ar.untermed_balance': 0,
+            'ar.open_balance': 241806.98,
+        });
+        expect(insights.find((i) => i.id === 'insight.receivables_no_terms')).toBeUndefined();
+    });
+
+    test('nothing owed at all is silence, not a 100% warning', async () => {
+        // Every one of these is null when the book is empty, and `null > 25` is
+        // false while `null < 25` is true -- the trap this module exists to avoid.
+        const { insights } = await onBoard('receivables', {
+            'ar.untermed_share': null,
+            'ar.untermed_balance': null,
+            'ar.open_balance': null,
+            'ar.overdue_share': null,
+            'ar.overdue_balance': null,
+            'ar.oldest_overdue_days': null,
+            'ar.ledger_gap': null,
+            'ar.balance': null,
+        });
+        expect(insights).toEqual([]);
+    });
+
+    test('overdue money is reported only above its threshold', async () => {
+        const quiet = await onBoard('receivables', {
+            'ar.overdue_share': 0, 'ar.overdue_balance': 0, 'ar.oldest_overdue_days': 0,
+        });
+        expect(quiet.insights.find((i) => i.id === 'insight.overdue_receivables')).toBeUndefined();
+
+        const loud = await onBoard('receivables', {
+            'ar.overdue_share': 41.2, 'ar.overdue_balance': 99000, 'ar.oldest_overdue_days': 214,
+        });
+        expect(loud.insights.find((i) => i.id === 'insight.overdue_receivables')).toBeDefined();
+    });
+
+    test('the gap between the ledger and the invoice book is explained, not hidden', async () => {
+        const { insights } = await onBoard('receivables', {
+            'ar.ledger_gap': 39300,
+            'ar.open_balance': 241806.98,
+            'ar.balance': 202506.98,
+        });
+        const gap = insights.find((i) => i.id === 'insight.ar_ledger_gap');
+        expect(gap).toBeDefined();
+        expect(gap.severity).toBe('info');
+        // Both figures are cited, so a reader can check the subtraction.
+        expect(gap.cites).toEqual(expect.arrayContaining(['ar.open_balance', 'ar.balance']));
+    });
+
+    test('a gap small enough not to matter is not mentioned', async () => {
+        const { insights } = await onBoard('receivables', {
+            'ar.ledger_gap': 500, 'ar.open_balance': 241806.98, 'ar.balance': 241306.98,
+        });
+        expect(insights.find((i) => i.id === 'insight.ar_ledger_gap')).toBeUndefined();
+    });
+
+    test('accounts past their credit limit are named on the Customers board', async () => {
+        const { insights } = await onBoard('customers', {
+            'customers.accounts_over_limit': 3,
+            'customers.accounts_owing': 60,
+            'customers.credit_exposure': 135336.98,
+        });
+        const over = insights.find((i) => i.id === 'insight.credit_over_limit');
+        expect(over).toBeDefined();
+        expect(over.values.over.value).toBe(3);
+    });
+
+    test('concentration stays dark while the counter record is unnamed', async () => {
+        // Two independent gates now: the setting the rule declares, and the
+        // readiness of the source its metric is measured over. Either one alone
+        // must be enough to keep the sentence off the page.
+        const noSetting = await onBoard('customers', { 'customers.named_revenue': 644371.27 });
+        expect(noSetting.insights.find((i) => i.id === 'insight.customer_concentration')).toBeUndefined();
+
+        const noSource = await evaluateInsights(
+            { boardId: 'customers', dateRange: RANGE, compare: true },
+            req,
+            {
+                canSee: () => true,
+                readiness: { ...READY, walkin_customer_identified: false },
+                settings: { ANALYTICS_WALKIN_CUSTOMER_ID: '1' },
+                runBatch: fakeBatch(totalsOf({ 'customers.named_revenue': 644371.27 })),
+            }
+        );
+        expect(noSource.insights.find((i) => i.id === 'insight.customer_concentration')).toBeUndefined();
+    });
+
+    test('concentration is measured over the named-account metric, not gross revenue', async () => {
+        // One definition of "named account", shared with the Customers board.
+        // Two would eventually disagree, and the sentence is the copy a reader
+        // trusts most.
+        const rule = INSIGHT_RULES['insight.customer_concentration'];
+        expect(rule.query.metrics).toEqual(['customers.named_revenue']);
+        expect(rule.concentrationMetric).toBe('customers.named_revenue');
+        expect(METRICS[rule.concentrationMetric].source).toBe('named_invoice');
+
+        const { insights } = await evaluateInsights(
+            { boardId: 'customers', dateRange: RANGE, compare: true },
+            req,
+            {
+                canSee: () => true,
+                readiness: READY,
+                settings: { ANALYTICS_WALKIN_CUSTOMER_ID: '1' },
+                runBatch: fakeBatch(
+                    totalsOf({ 'customers.named_revenue': 100000 }),
+                    {
+                        rows: [
+                            { key: [97], label: ['ADJ-VERIFY-CO'], values: { 'customers.named_revenue': 40000 }, rollup: false },
+                            { key: [11], label: ['MCI CAR DISPLAY'], values: { 'customers.named_revenue': 10000 }, rollup: false },
+                            { key: [null], label: ['Other'], values: { 'customers.named_revenue': 50000 }, rollup: true },
+                        ],
+                    }
+                ),
+            }
+        );
+        const conc = insights.find((i) => i.id === 'insight.customer_concentration');
+        expect(conc).toBeDefined();
+        // 40,000 of 100,000: the counter is not in the source, so the
+        // denominator needs no subtraction.
+        expect(conc.values.share.value).toBeCloseTo(40);
+        expect(conc.values.name.value).toBe('ADJ-VERIFY-CO');
     });
 });

@@ -114,3 +114,69 @@ describe('analytics rollup — what the reader is told about the tail', () => {
         expect(out.meta.rollup).toBeNull();
     });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 3: a metric whose aggregate is not additive.
+// ---------------------------------------------------------------------------
+describe('analytics folding — a metric that must not be added up', () => {
+    const BODY = {
+        metrics: ['ar.open_balance', 'ar.oldest_overdue_days'],
+        dimensions: ['customer'],
+        dateRange: RANGE,
+        sort: { by: 'ar.open_balance', dir: 'DESC' },
+        topN: { n: 2, by: 'ar.open_balance' },
+    };
+
+    test("the rollup folds a MAX metric with MAX, not SUM", () => {
+        // 'Other' must say how overdue the oldest folded invoice is. Adding the
+        // ages of four customers' oldest invoices gives a number of days that
+        // means nothing and renders exactly like one that does.
+        const { text, plan } = buildQuery(parseQueryRequest(BODY, adminReq));
+        const balance = plan.metricColumns['ar.open_balance'];
+        const oldest = plan.metricColumns['ar.oldest_overdue_days'];
+        expect(text).toContain(`SUM(${balance}) AS ${balance}`);
+        expect(text).toContain(`MAX(${oldest}) AS ${oldest}`);
+    });
+
+    test('the totals row folds it the same way the rollup does', () => {
+        const spec = parseQueryRequest(BODY, adminReq);
+        const { plan } = buildQuery(spec);
+        const balance = plan.metricColumns['ar.open_balance'];
+        const oldest = plan.metricColumns['ar.oldest_overdue_days'];
+        const row = (key, label, bal, days, other = false) => ({
+            bucket: 0,
+            is_other: other,
+            rollup_count: other ? 4 : 1,
+            dim_0: key,
+            dim_0_label: label,
+            [balance]: bal,
+            [oldest]: days,
+        });
+        const out = shapeResponse({
+            rows: coerceRows(
+                [row(4, 'IAN DUENAS', 9000, 214), row(9, 'JEFFREY', 5000, 30), row(null, 'Other', 3000, 91, true)],
+                plan.columnMap
+            ),
+            plan,
+            spec,
+        });
+        expect(out.totals.values['ar.open_balance']).toBe(17000);
+        // The oldest open invoice anywhere is 214 days overdue, not 335.
+        expect(out.totals.values['ar.oldest_overdue_days']).toBe(214);
+    });
+
+    test('a metric that aggregates with MAX cannot be registered without saying so', () => {
+        // The guard, not the fix: the failure mode is a plausible wrong number in
+        // a total row, which nobody would notice, so the registry refuses to load
+        // a non-additive aggregate that has not declared how it folds.
+        const { METRICS } = require('../services/analytics/registry');
+        for (const metric of Object.values(METRICS)) {
+            if (metric.kind !== 'additive' && metric.kind !== 'snapshot') continue;
+            const { SOURCES } = require('../services/analytics/registry');
+            if (/^\s*(MAX|MIN)\s*\(/i.test(String(metric.expr(SOURCES[metric.source].cols)))) {
+                expect(metric.fold).toBeDefined();
+            }
+        }
+        expect(METRICS['ar.oldest_overdue_days'].fold).toBe('max');
+    });
+});
