@@ -484,3 +484,94 @@ describe('analytics query builder — ratios are real numbers', () => {
         }
     });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 2: paging, the trusted internal path, and ordered attribute dimensions.
+// ---------------------------------------------------------------------------
+
+describe('analytics query builder — paging', () => {
+    test('OFFSET is emitted only when asked for, and only as a parameter', () => {
+        const paged = build({
+            metrics: ['sales.line_revenue'],
+            dimensions: ['part'],
+            dateRange: RANGE,
+            limit: 25,
+            offset: 50,
+        });
+        expect(paged.text).toMatch(/OFFSET \$\d+$/);
+        expect(paged.values).toContain(50);
+
+        // Every statement built before paging existed must still render exactly
+        // as it did, or six SQL snapshots would move for no reason.
+        const unpaged = build({ metrics: ['sales.line_revenue'], dateRange: RANGE });
+        expect(unpaged.text).not.toContain('OFFSET');
+    });
+
+    test('a rollup cannot be paged through', () => {
+        // The fold summarises the whole result. Page two of a rollup would carry
+        // an 'Other' row describing rows the reader cannot reach.
+        expect(() => build({
+            metrics: ['sales.line_revenue'],
+            dimensions: ['brand'],
+            dateRange: RANGE,
+            topN: { n: 5 },
+            offset: 10,
+        })).toThrow(AnalyticsRequestError);
+    });
+
+    test('an offset past the budget is refused, never quietly clamped', () => {
+        // Clamping would hand back page 1,001's rows while the pager still said
+        // page 2,000 — a plausible wrong answer, which is the failure mode this
+        // whole module is built to avoid.
+        expect(() => build({
+            metrics: ['sales.line_revenue'],
+            dimensions: ['part'],
+            dateRange: RANGE,
+            offset: 500000,
+        })).toThrow(AnalyticsRequestError);
+    });
+
+    test('a negative or nonsense offset is treated as no offset, never spliced', () => {
+        for (const offset of [-5, 'abc', {}, NaN]) {
+            const { text } = build({ metrics: ['sales.line_revenue'], dateRange: RANGE, offset });
+            expect(text).not.toContain('OFFSET');
+        }
+    });
+});
+
+describe('analytics query builder — an ordered attribute dimension', () => {
+    test('margin bands sort by their ordinal, not alphabetically by label', () => {
+        // Ordering by the label would put '10–25%' before '0–10%' and scramble
+        // the distribution while looking entirely reasonable.
+        const { text } = build({
+            metrics: ['sales.line_revenue'],
+            dimensions: ['margin_band'],
+            dateRange: RANGE,
+            sort: { by: 'margin_band', dir: 'ASC' },
+        });
+        expect(text).toMatch(/ORDER BY bucket ASC, dim_0 ASC NULLS LAST/);
+        expect(text).not.toMatch(/ORDER BY bucket ASC, dim_0_label/);
+    });
+
+    test('an entity dimension still sorts by its name', () => {
+        const { text } = build({
+            metrics: ['sales.line_revenue'],
+            dimensions: ['brand'],
+            dateRange: RANGE,
+            sort: { by: 'brand', dir: 'ASC' },
+        });
+        expect(text).toMatch(/ORDER BY bucket ASC, dim_0_label ASC NULLS LAST/);
+    });
+
+    test('the band expression reuses the shared costed-line predicate', () => {
+        // Restating it here would let the distribution and the coverage badge
+        // disagree about which lines are measurable.
+        const { text } = build({
+            metrics: ['sales.line_revenue'],
+            dimensions: ['margin_band'],
+            dateRange: RANGE,
+        });
+        expect(text).toContain('il.cost_at_sale IS NOT NULL AND il.cost_at_sale > 0');
+        expect(text).toContain("'(No cost recorded)'");
+    });
+});

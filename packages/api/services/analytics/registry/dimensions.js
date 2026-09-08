@@ -12,11 +12,57 @@
  * A source with no date -- the stock snapshot, the A/R ledger view -- cannot
  * answer it, and both the registry's load-time check and the query builder's
  * per-request check read this flag rather than special-casing 'date' by name.
+ *
+ * `sortBy` says which of the two expressions carries the dimension's natural
+ * order. For a brand or a part that is the label -- nobody wants a chart ordered
+ * by brand id. For a period or a margin band it is the KEY: the bands read
+ * "(No cost recorded), Sold at a loss, 0-10%, 10-25%..." in that order because
+ * the key is an ordinal, where ordering them by their labels would sort "10-25%"
+ * before "0-10%" alphabetically and quietly scramble a distribution.
  */
+
+const { costedLineCondition } = require('../../../helpers/costCoverage');
 
 // The one place this module names a time zone. Everything downstream periodises
 // on the Manila calendar, so a dimension derived from a timestamp must too.
 const MANILA = "AT TIME ZONE 'Asia/Manila'";
+
+/**
+ * Margin bands, as an ordered CASE over the line's own margin.
+ *
+ * The bands are ordinals so they sort into a sensible order on their own, and
+ * band 0 -- "(No cost recorded)" -- is a real, visible band rather than rows
+ * quietly dropped. That is the whole reason this dimension is worth having: on
+ * this data the uncosted band carries ₱9.2M of the ₱11.5M, and a margin
+ * distribution that showed only the measurable ₱2.3M would be a chart about the
+ * fifth of the business we happen to know about, presented as the whole.
+ *
+ * What counts as a costed line comes from helpers/costCoverage.js, the same
+ * definition the trust rules and the Reports page use. It is NOT restated here.
+ */
+const MARGIN_BANDS = Object.freeze([
+    [0, '(No cost recorded)'],
+    [1, 'No revenue'],
+    [2, 'Sold at a loss'],
+    [3, '0–10%'],
+    [4, '10–25%'],
+    [5, '25–40%'],
+    [6, '40% or more'],
+]);
+
+const marginBandCase = (c, emit) => {
+    const rev = c.revenue_ex_tax;
+    const profit = `(${rev} - (${c.quantity} * ${c.unit_cost}))`;
+    const pct = `(${profit} / NULLIF(${rev}, 0))`;
+    return `CASE
+        WHEN NOT (${costedLineCondition(c.__alias)}) THEN ${emit(0)}
+        WHEN ${rev} <= 0 THEN ${emit(1)}
+        WHEN ${pct} < 0 THEN ${emit(2)}
+        WHEN ${pct} < 0.10 THEN ${emit(3)}
+        WHEN ${pct} < 0.25 THEN ${emit(4)}
+        WHEN ${pct} < 0.40 THEN ${emit(5)}
+        ELSE ${emit(6)} END`;
+};
 
 const DIMENSIONS = Object.freeze({
     date: Object.freeze({
@@ -26,6 +72,7 @@ const DIMENSIONS = Object.freeze({
         requiresJoins: Object.freeze([]),
         filterable: false,
         needsDateColumn: true,
+        sortBy: 'key',
         valueType: 'text',
         key: (c, src, ctx) =>
             `date_trunc('${ctx.grainUnit}', ${src.dateColumn} ${MANILA})`,
@@ -157,6 +204,22 @@ const DIMENSIONS = Object.freeze({
         valueType: 'text',
         key: () => 'i.status',
         keyLabel: () => 'i.status',
+    }),
+    margin_band: Object.freeze({
+        id: 'margin_band',
+        label: 'Margin band',
+        kind: 'attribute',
+        requiresJoins: Object.freeze([]),
+        // Deliberately not filterable. The band is derived from two columns
+        // rather than stored, so filtering on it would mean re-deriving it in a
+        // WHERE clause -- and a reader who wants only the loss-making lines is
+        // better served by sorting the table than by a filter that silently
+        // changes every other tile on the board.
+        filterable: false,
+        sortBy: 'key',
+        valueType: 'int',
+        key: (c) => marginBandCase(c, (n) => String(n)),
+        keyLabel: (c) => marginBandCase(c, (n) => `'${MARGIN_BANDS[n][1]}'`),
     }),
 });
 

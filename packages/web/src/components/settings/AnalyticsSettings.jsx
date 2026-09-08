@@ -113,6 +113,49 @@ const AnalyticsSettings = ({ settings, handleChange }) => (
                         className={`${inputClass} max-w-[8rem]`}
                     />
                 </div>
+
+                <div className="flex items-start gap-3">
+                    <input
+                        type="checkbox"
+                        id="ANALYTICS_INSIGHTS_ENABLED"
+                        name="ANALYTICS_INSIGHTS_ENABLED"
+                        checked={settings?.ANALYTICS_INSIGHTS_ENABLED !== 'false'}
+                        onChange={(e) => handleChange({
+                            target: { name: 'ANALYTICS_INSIGHTS_ENABLED', value: e.target.checked ? 'true' : 'false' },
+                        })}
+                        className="mt-1 h-4 w-4 rounded border-neutral-300 text-primary-600"
+                    />
+                    <label htmlFor="ANALYTICS_INSIGHTS_ENABLED" className="text-sm font-medium text-gray-800 dark:text-slate-200">
+                        Show the insights panel
+                        <InfoTip label="Insights panel">
+                            A short list above each board saying what stands out — dead stock, parts about to run
+                            out, how much of your sales the profit figures actually cover. Every line is worked
+                            out from fixed rules in the code, never written by an AI, and each one names the
+                            figures it came from so you can check it.
+                        </InfoTip>
+                    </label>
+                </div>
+
+                <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-800 dark:text-slate-200">
+                        Walk-in customer record
+                        <InfoTip label="Walk-in customer record">
+                            The customer used for counter sales. It carries the great majority of invoices, so
+                            until Analytics knows which record it is, it cannot tell counter trade apart from a
+                            real account — and the insight about relying too much on one customer stays hidden
+                            rather than naming the walk-in record. Enter the customer ID, or leave it blank if
+                            you do not use one.
+                        </InfoTip>
+                    </label>
+                    <input
+                        type="number" min="1"
+                        name="ANALYTICS_WALKIN_CUSTOMER_ID"
+                        value={settings?.ANALYTICS_WALKIN_CUSTOMER_ID ?? ''}
+                        onChange={handleChange}
+                        placeholder="Not set"
+                        className={`${inputClass} max-w-[8rem]`}
+                    />
+                </div>
             </div>
         </section>
     </div>

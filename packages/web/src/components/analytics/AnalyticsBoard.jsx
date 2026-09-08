@@ -8,6 +8,8 @@ import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
 import { AnalyticsBatchProvider } from './AnalyticsBatchContext';
 import AnalyticsTile from './AnalyticsTile';
+import InsightsPanel from './InsightsPanel';
+import { useSettings } from '../../contexts/SettingsContext';
 
 /**
  * Owns board *state* — the date range, the active filters, whether comparison is
@@ -18,8 +20,9 @@ import AnalyticsTile from './AnalyticsTile';
  * State is per user in localStorage, so someone who works in "last 90 days"
  * finds the page as they left it.
  */
-const AnalyticsBoard = ({ boardId, onNavigate }) => {
+const AnalyticsBoard = ({ boardId, onNavigate, onSelectBoard }) => {
     const { presets, meta } = useAnalyticsMeta();
+    const { settings } = useSettings();
     const [board, setBoard] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -113,6 +116,15 @@ const AnalyticsBoard = ({ boardId, onNavigate }) => {
                     </button>
                 )}
             </div>
+
+            {settings?.ANALYTICS_INSIGHTS_ENABLED !== 'false' && (
+                <InsightsPanel
+                    boardId={boardId}
+                    boardState={boardState}
+                    onNavigate={onNavigate}
+                    onSelectBoard={onSelectBoard}
+                />
+            )}
 
             <AnalyticsBatchProvider>
                 <div className="grid grid-cols-12 gap-4">

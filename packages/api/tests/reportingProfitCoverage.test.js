@@ -7,6 +7,14 @@
  * lines as profit -- 86.2% margin over the last 12 months against a measurable
  * 33.0%. These tests assert the filter is present and that the response tells the
  * caller how much of the period it actually measured.
+ *
+ * /reports/profitability-by-product no longer owns the SQL that does this: it
+ * reads the analytics metric registry, so that changing what gross profit means
+ * moves both pages at once (PRD §13 R2). The tests below therefore assert the
+ * ENDPOINT's contract -- nulls rather than zeros, coverage on every row, the
+ * costed-line filter reaching the database -- rather than the shape of a query
+ * string this route no longer writes. /reports/sales-summary is untouched and
+ * its tests below are unchanged.
  */
 
 const request = require('supertest');
@@ -27,62 +35,166 @@ app.use('/api', reportingRouter);
 
 const COSTED_FILTER = /cost_at_sale IS NOT NULL AND \w+\.cost_at_sale > 0/;
 
-describe('GET /api/reports/profitability-by-product', () => {
-    beforeEach(() => jest.clearAllMocks());
+const analytics = require('../services/analytics');
+const { parseQueryRequest } = require('../services/analytics/requestValidator');
+const { buildQuery } = require('../services/analytics/queryBuilder');
 
-    const runReport = async (rows) => {
-        db.query.mockResolvedValueOnce({ rows });
-        return request(app).get('/api/reports/profitability-by-product')
-            .query({ startDate: '2026-01-01', endDate: '2026-01-31' });
+/**
+ * The metrics the route asks the registry for. Declared here deliberately: it is
+ * the endpoint's contract, so a future edit that stops asking for gross profit
+ * should fail this file rather than pass it quietly.
+ */
+const ROUTE_METRICS = [
+    'sales.units_sold',
+    'sales.line_revenue',
+    'margin.cogs',
+    'margin.gross_profit',
+    'margin.costed_revenue',
+];
+
+const RANGE = { from: '2026-01-01', to: '2026-01-31' };
+
+/** The plan the route's spec produces, so a fake row can be keyed correctly. */
+const routePlan = () => buildQuery(parseQueryRequest({
+    metrics: ROUTE_METRICS,
+    dimensions: ['part'],
+    dateRange: RANGE,
+    sort: { by: 'margin.gross_profit', dir: 'DESC' },
+}, { user: {} }, { trusted: true })).plan;
+
+const analyticsRow = (plan, { partId, name, values, coverage }) => ({
+    bucket: 0,
+    [plan.dimensionOrder[0].key]: partId,
+    [plan.dimensionOrder[0].label]: name,
+    ...Object.fromEntries(
+        Object.entries(values).map(([metricId, v]) => [plan.metricColumns[metricId], v])
+    ),
+    cov_costed_line_num: coverage.num,
+    cov_costed_line_den: coverage.den,
+    cov_costed_line_num_rows: coverage.numRows,
+    cov_costed_line_den_rows: coverage.denRows,
+});
+
+describe('GET /api/reports/profitability-by-product', () => {
+    let analyticsSql;
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        // The service caches by statement text, so without this the second test
+        // would be answered by the first one's rows.
+        analytics.clearCaches();
+        analyticsSql = null;
+    });
+
+    /**
+     * The analytics executor takes its own client; the route's descriptive lookup
+     * uses the pool. Both are faked here, and the statement the executor was
+     * handed is captured so the tests can assert what actually reached Postgres.
+     */
+    const givenRows = (rows, details = []) => {
+        db.getClient.mockResolvedValue({
+            query: jest.fn((text) => {
+                if (typeof text === 'string' && /^(BEGIN|COMMIT|ROLLBACK|SET)/.test(text.trim())) {
+                    return Promise.resolve({ rows: [] });
+                }
+                analyticsSql = text;
+                return Promise.resolve({ rows });
+            }),
+            release: jest.fn(),
+        });
+        db.query.mockResolvedValue({ rows: details });
     };
 
-    // helpers/partNumberSoftDelete.js probes information_schema on module load, so the
-    // report's own query is not necessarily the first call. Select it by shape.
-    const reportSql = () => db.query.mock.calls
-        .map((c) => c[0])
-        .find((t) => typeof t === 'string' && /total_profit/.test(t));
+    const runReport = (query = {}) => request(app)
+        .get('/api/reports/profitability-by-product')
+        .query({ startDate: RANGE.from, endDate: RANGE.to, ...query });
 
-    test('excludes uncosted lines from cost and profit', async () => {
-        await runReport([]);
-        const sql = reportSql();
-        expect(sql).toMatch(COSTED_FILTER);
-        // The filter must apply to cost AND profit, not just one of them.
-        const filterCount = (sql.match(/cost_at_sale > 0/g) || []).length;
-        expect(filterCount).toBeGreaterThanOrEqual(3);
+    test('the costed-line filter reaches the database', async () => {
+        givenRows([]);
+        await runReport();
+        expect(analyticsSql).toMatch(COSTED_FILTER);
+        // Cost, profit and costed revenue are three separate trusted metrics, and
+        // the filter has to be on all of them, not just whichever one was noticed.
+        expect((analyticsSql.match(/cost_at_sale > 0/g) || []).length).toBeGreaterThanOrEqual(3);
     });
 
     test('reports profit as null, not zero, when nothing in a row carried a cost', async () => {
-        const res = await runReport([{
-            internal_sku: 'X-1', display_name: 'Uncosted part',
-            total_revenue: '5000.00', total_cost: '0', costed_revenue: '0',
-            total_profit: '0', costed_line_count: '0', total_line_count: '12',
-        }]);
+        const plan = routePlan();
+        givenRows(
+            [analyticsRow(plan, {
+                partId: 11,
+                name: 'Uncosted part',
+                values: {
+                    'sales.units_sold': '12',
+                    'sales.line_revenue': '5000.00',
+                    // A trusted metric with nothing measurable is NULL, never 0.
+                    'margin.cogs': null,
+                    'margin.gross_profit': null,
+                    'margin.costed_revenue': null,
+                },
+                coverage: { num: '0', den: '5000', numRows: '0', denRows: '12' },
+            })],
+            [{ part_id: 11, internal_sku: 'X-1', detail: null, brand_name: null, group_name: null, part_numbers: null }]
+        );
 
+        const res = await runReport();
         expect(res.status).toBe(200);
         const row = res.body[0];
         expect(row.total_profit).toBeNull();
         expect(row.total_cost).toBeNull();
         expect(row.cost_coverage_level).toBe('none');
         // Revenue is still real and must survive.
-        expect(row.total_revenue).toBe('5000.00');
+        expect(row.total_revenue).toBe(5000);
+        expect(row.display_name).toBe('Uncosted part');
+        expect(row.internal_sku).toBe('X-1');
     });
 
     test('keeps profit and reports coverage when some lines carried a cost', async () => {
-        const res = await runReport([{
-            internal_sku: 'X-2', display_name: 'Partly costed part',
-            total_revenue: '10000.00', total_cost: '3000.00', costed_revenue: '4000.00',
-            total_profit: '1000.00', costed_line_count: '4', total_line_count: '10',
-        }]);
+        const plan = routePlan();
+        givenRows(
+            [analyticsRow(plan, {
+                partId: 22,
+                name: 'Partly costed part',
+                values: {
+                    'sales.units_sold': '30',
+                    'sales.line_revenue': '10000.00',
+                    'margin.cogs': '3000.00',
+                    'margin.gross_profit': '1000.00',
+                    'margin.costed_revenue': '4000.00',
+                },
+                coverage: { num: '4000', den: '10000', numRows: '4', denRows: '10' },
+            })],
+            [{ part_id: 22, internal_sku: 'X-2', detail: null, brand_name: 'ACME', group_name: null, part_numbers: 'A-1; A-2' }]
+        );
 
-        const row = res.body[0];
-        expect(row.total_profit).toBe('1000.00');
+        const row = (await runReport()).body[0];
+        expect(row.total_profit).toBe(1000);
+        expect(row.total_cost).toBe(3000);
+        expect(row.costed_revenue).toBe(4000);
         expect(row.cost_coverage_ratio).toBeCloseTo(0.4);
         expect(row.cost_coverage_level).toBe('low');
+        expect(row.costed_line_count).toBe(4);
+        expect(row.total_line_count).toBe(10);
+        // Descriptive columns the registry's `part` dimension does not carry.
+        expect(row.brand_name).toBe('ACME');
+        expect(row.part_numbers).toBe('A-1; A-2');
     });
 
     test('sorts rows with no measurable profit last', async () => {
-        await runReport([]);
-        expect(reportSql()).toMatch(/ORDER BY \(COUNT\(\*\) FILTER/);
+        givenRows([]);
+        await runReport();
+        // NULLS LAST on a descending sort is what the old hand-written
+        // "costed first, then profit" ORDER BY was doing by hand.
+        expect(analyticsSql).toMatch(/ORDER BY .*DESC NULLS LAST/);
+    });
+
+    test('measures revenue the way Analytics does, including the legacy rows', async () => {
+        givenRows([]);
+        await runReport();
+        // The old query read il.tax_base directly and silently dropped the 477
+        // legacy lines that carry NULL. Reading the fallback is what makes this
+        // report and the Analytics page agree.
+        expect(analyticsSql).toContain('COALESCE(il.tax_base');
     });
 
     test('requires a date range', async () => {
@@ -91,9 +203,8 @@ describe('GET /api/reports/profitability-by-product', () => {
     });
 
     test('returns 500 when the database fails', async () => {
-        db.query.mockRejectedValueOnce(new Error('DB failure'));
-        const res = await request(app).get('/api/reports/profitability-by-product')
-            .query({ startDate: '2026-01-01', endDate: '2026-01-31' });
+        db.getClient.mockRejectedValueOnce(new Error('DB failure'));
+        const res = await runReport();
         expect(res.status).toBe(500);
     });
 });

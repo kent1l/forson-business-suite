@@ -1,9 +1,10 @@
 # Business Analytics Module — PRD & Developer Handoff
 
 > **Forson Business Suite** | **PRD-FBS-ANL-001** | **Version:** 1.0
-> **Date:** 2026-09-06 | **Last updated:** 2026-09-08 | **Branch:** `phase-1-business-analytics`
-> **Status:** Phase 0 merged (PR #173). Phase 1 built — Sales + Inventory boards, the top-N rollup,
-> the heatmap. Phase 2 not started.
+> **Date:** 2026-09-06 | **Last updated:** 2026-09-08 | **Branch:** `phase-2-plus-deferred-business-analytics`
+> **Status:** Phases 0 (PR #173) and 1 (PR #175) merged. Phase 2 built — Profitability + Data Trust
+> boards, and `/reports/profitability-by-product` migrated onto the registry. **The insights panel,
+> deferred by owner decision until after Phase 2, is built.** Phase 3 not started.
 
 ---
 
@@ -18,16 +19,17 @@ Read this first. It is the only section that changes often; update it as phases 
 | Profit overstatement bug (prerequisite) | **Done — PR #171** | `fix/profit-cost-coverage` → `master` |
 | `helpers/costCoverage.js` (trust predicate) | **Done — PR #171** | Reused by the metric registry's trust layer |
 | Phase 0 — engine + Overview board | **Done — merged, PR #173** | §17 |
-| Phase 1 — Sales + Inventory boards | **Done — `phase-1-business-analytics`** | §19 |
-| Phase 2 — Profitability + Data Trust | **Not started** | §9 |
+| Phase 1 — Sales + Inventory boards | **Done — merged, PR #175** | §19 |
+| Phase 2 — Profitability + Data Trust | **Done — `phase-2-plus-deferred-business-analytics`** | §20 |
 | Phase 3 — Customers + Receivables | **Not started** | §9 |
 | Phase 4 — Purchasing + Operations | **Not started** | §9 |
 | Phase 5 — saved views, alerts, custom boards | **Designed, not scheduled** | §9 |
-| Insights panel | **Deferred to after Phase 2** (owner decision) | §14 |
+| Insights panel | **Done — the deferral is discharged** | §20.4 |
 | `cost_at_sale` write-path fix | **Open — needs a decision** | §13, R1 |
 | Refunds understated 12× in `/reports/sales-summary` | **Open — found during Phase 0; highest-value follow-up** | §17.4 |
 | Line discounts never recorded (0 of 11,540 lines) | **Open — found during Phase 1; tiles built and gated** | §19.4 |
 | Days of Inventory | **Built, measured, removed — not honest yet** | §19.4 |
+| `ANALYTICS_WALKIN_CUSTOMER_ID` unset | **Needs an owner decision** — one insight stays dark until it is | §20.4 |
 
 ### If you are picking this up cold
 
@@ -39,7 +41,9 @@ Read this first. It is the only section that changes often; update it as phases 
    exists, where it lives, how to extend it, and every place the implementation diverges. **Where
    the two disagree, §17 and the code are right.** §17.2 is the recipe for adding a metric, a tile
    or a board; §17.7 is how to run the checks.
-5. **Read §19 — Phase 1 as built.** §17 is the Phase 0 handoff and is still accurate about the
+5. **Read §19 and §20 — Phases 1 and 2 as built.** §20 also covers the insights panel and the
+   Reports migration, and §20.7 says where Phase 3 starts.
+6. Phase 1 detail: **§19.** §17 is the Phase 0 handoff and is still accurate about the
    engine; §19 records what Phase 1 added, the two bugs it uncovered in Phase 0's own work, and
    where Phase 2 starts. §17.8 is what Phase 1 was *asked* to do; §19 is what it did.
 
@@ -1010,13 +1014,14 @@ settings migration; page shell, board renderer, tile framework, `useAnalyticsQue
 The two highest-value boards. Adds `heatmap` and richer `table` tiles, top-N + "Other" rollup,
 CSV export, drill-down into existing pages.
 
-### Phase 2 — Profitability + Data Trust  *(NOT STARTED)*
+### Phase 2 — Profitability + Data Trust  *(DONE — see §20)*
 Margin metrics with coverage enforcement; the trust scorecard. Delivered together because neither
 is honest without the other. **Also migrate `/reports/profitability-by-product` onto the registry**
 (scheduled here, not aspirational — see §13 R2).
 
-### Phase 3 — Customers + Receivables & Cash  *(NOT STARTED)*
-Pareto/cohort tile types; AR aging from the ledger views; the insights panel (§14) may land here.
+### Phase 3 — Customers + Receivables & Cash  *(NOT STARTED — start here)*
+Pareto/cohort tile types; AR aging from the ledger views. **The insights panel already landed in
+Phase 2** (§20.4), so Phase 3 inherits it rather than building it.
 
 ### Phase 4 — Purchasing & Suppliers, Operations  *(NOT STARTED)*
 Supplier analytics, lead time, price variance; staff productivity and cycle-count accuracy
@@ -1466,9 +1471,13 @@ Operating-P&L metrics (opex by category, payroll cost, net profit) are registere
 Overview and Profitability in a "not being recorded yet" state until the Expenses and Payroll
 modules carry data.
 
-### The insights panel — DEFERRED (owner decision)
+### The insights panel — BUILT (the deferral is discharged)
 
-**Status: deferred to after Phase 2.** Generated prose is the highest-risk-per-line part of this
+> ✅ **Built in Phase 2. See §20.4 for what shipped, which of the seed rules below fire against real
+> data, and the one that needs an owner decision before it can.** The design below is what was
+> asked for; §20.4 records what exists.
+
+**Status: was deferred to after Phase 2.** Generated prose is the highest-risk-per-line part of this
 feature on data this uneven, and it is the part a reader trusts most because it reads like a
 colleague talking. It ships once the coverage layer has been used on real data.
 
@@ -1810,6 +1819,7 @@ fan-out-safe declaration (§13 R4), or plot the A/R ledger's three weeks as a tr
 | Date | Version | Change |
 |---|---|---|
 | 2026-09-06 | 1.0 | Initial PRD. Live-data profiling, architecture, design review incorporated. PR #171 (profit overstatement) shipped as prerequisite. Insights panel deferred to post-Phase-2 by owner decision. |
+| 2026-09-08 | 1.3 | Phase 2 built, and the deferred insights panel with it. §20 records the Profitability and Data Trust boards, the `margin_band` dimension, `/reports/profitability-by-product` migrated onto the registry (and the ₱354K it now reports that the old query silently dropped), `runInternalQuery` and the `trusted` path, `offset`, a third bug found in earlier work (a dimension sorted by label, which would have scrambled the first ordered attribute anyone added), and the insights panel — six of seven seed rules firing, the three refusals that keep it honest including the "+10,025%" a thin baseline produced, and the one rule left dark pending `ANALYTICS_WALKIN_CUSTOMER_ID`. |
 | 2026-09-08 | 1.2 | Phase 1 built on `phase-1-business-analytics`. §19 added as the Phase 1 as-built record: the Sales and Inventory boards, the server-side top-N rollup, the `heatmap` tile, the two time dimensions, the `reorder_candidates` source and why the "rank by consequence" rule lives in a source rather than a filter, `period: 'none'` boards, `$row.*` drilldowns into Sales History and Inventory, two bugs found in Phase 0's own work (integer-divided ratios; `date` special-cased by name), and two data findings — line discounts never recorded, and Days of Inventory built, measured at 866 days, and removed as not honestly computable yet. |
 | 2026-09-08 | 1.1 | Phase 0 shipped (`phase-0`, `8832a6e`). §17 rewritten as an as-built handoff: the file map, the recipes for adding a metric/tile/board, the metric-contract change that makes the trust filter unbypassable, three data findings that changed source definitions (including a twelvefold refund understatement still present in `/reports/sales-summary`), the figures verified against the live database, the validated series palette, how to run the checks, and where Phase 1 starts. |
 
@@ -2017,4 +2027,228 @@ What Phase 2 must **not** do:
   two coverages.
 - Do not add a second grain to a snapshot metric (§13 R5) — build an `inventory_history` source.
 - Do not allow a `tag` breakdown of an additive metric without a fan-out-safe declaration (§13 R4).
+- Do not plot the A/R ledger's few weeks as a trend (§2).
+
+---
+
+## 20. Phase 2 — As Built, and the Insights Panel
+
+**Built on branch `phase-2-plus-deferred-business-analytics`, off `business-analytics` after
+PR #175.** Phase 2 is §9's Profitability + Data Trust, delivered together because neither is honest
+without the other, plus the scheduled Reports migration (§13 R2). The insights panel (§14), deferred
+by owner decision until the coverage layer had been used on real data, is built here too.
+
+### 20.1 The Profitability and Data Trust boards
+
+Two boards, `boards/profitability.js` (15 tiles) and `boards/data_trust.js` (11 tiles). Registered
+the same way every board is: one file, one line in `BOARD_LIST`.
+
+**Profitability opens with what it cannot see.** The first tile is Cost Coverage, not Gross Profit.
+Cost is recorded on about a fifth of revenue, so every other figure on the board is a true statement
+about a minority of the business; a reader who takes the margin away without the coverage has been
+misled by the layout, whatever the badge underneath said. Every money tile carries
+`coverage: { rule: 'costed_line' }` — including the ones where it looks redundant.
+
+**Data Trust makes the gap the figure.** Everywhere else a gap is disclosed *beside* a number. Here
+it is the number, because "can I believe this?" and "what do I have to fix, and is it improving?"
+are different questions with different owners. Every tile ends somewhere a person can act — Cost
+Data Health, Stock Reconciliation — and the board is ranked by consequence like the reorder list:
+*Revenue we cannot measure* (₱2.06M over 90 days) leads, not *lines missing a cost* (9,480), because
+a count nobody can hold is not a decision.
+
+It defaults to **twelve months**, not thirty days. Whether the cost cleanup is working is a question
+about a trend, and two of its tiles are historical: over a short recent window they read zero, which
+would suggest there is nothing to explain when over a year there is.
+
+**Eight new metrics** in a new `registry/metrics/quality.js`, taking the registry from 38 to 46.
+They deliberately carry no `trust` rule — counting the rows a trust rule excludes and then filtering
+by that same rule would report zero every time. What counts as a costed line still comes from
+`helpers/costCoverage.js`.
+
+**One new dimension: `margin_band`.** An ordered CASE over each line's own margin, which is what
+makes §14's "margin distribution" answerable. Band 0 is `(No cost recorded)` and is a **visible band,
+not dropped rows** — on twelve months it carries ₱9.2M of the ₱11.5M. A distribution over only the
+measurable ₱2.3M would be a chart about a fifth of the business presented as the whole.
+
+That dimension exposed a real ordering bug. `buildOrderBy` sorted a dimension by its **label**, so
+the bands would have come out `(No cost recorded), 0–10%, 10–25%, 25–40%, 40% or more, Sold at a
+loss` — alphabetical, scrambled, and entirely plausible-looking. Dimensions now declare `sortBy`:
+`'label'` for a brand or a part (nobody wants a chart ordered by brand id), `'key'` for a period or
+an ordered band.
+
+### 20.2 The Reports migration (§13 R2)
+
+`/reports/profitability-by-product` no longer writes its own profit SQL. It calls the metric
+registry, so changing what gross profit means is one edit in `registry/metrics/margin.js` and both
+pages move together. Before PR #171 the two disagreed by ₱8.9M, and keeping two copies in step by
+hand is exactly what produced that.
+
+The route still owns what only it knows: its `reports:view` permission, its pagination, and the
+descriptive columns (SKU, part numbers, brand and group names) the registry's `part` dimension does
+not carry. Those are looked up separately and joined on `part_id`. The pagination COUNT is still
+hand-written on purpose — it counts distinct parts rather than measuring money, so there is no
+definition in it that could drift.
+
+Two pieces of machinery were needed:
+
+- **`offset` on the query contract.** Bounded at 100,000, emitted only when asked for so every
+  statement built before paging existed still renders byte-for-byte as it did, and refused outright
+  alongside a rollup — page two of a fold would carry an "Other" row summarising rows the reader
+  cannot reach.
+- **`runInternalQuery`.** The per-metric permission check exists to stop a *caller* naming a metric
+  they may not see. Where the metric list is a literal in a route file there is no caller to guard
+  against, and applying the check anyway would have made this endpoint demand `analytics:view` on
+  top of the `reports:view` it has always required — a silent permission regression for anyone
+  holding one and not the other. `runInternalQuery` takes a server-authored body, passes
+  `trusted: true`, and **refuses any metric requiring more than `analytics:view`**, so it cannot
+  become a way around the `analytics:financials` grant whatever a future route happens to check.
+
+> ⚠️ **This changes what the report shows, and it is not a bug.** The old query read `il.tax_base`
+> directly, which is NULL on the legacy rows, so it silently dropped them. Over twelve months the
+> report now reads **₱11,493,783.03 where it used to read ₱11,139,570.04 — ₱354,213 more, from 393
+> lines.** The registry falls back to the pre-tax total for those rows, which is exact because they
+> record no VAT. This is the divergence §17.4 predicted would be reported as a bug; the report and
+> Analytics now agree, and the Data Trust board's *Why this page and Reports can differ* tile shows
+> the counts behind it.
+>
+> Row figures also come back as JSON **numbers** rather than the strings `pg` returns for NUMERIC.
+> `ProfitabilityReport.jsx` reads them through `parseFloat`, so it is unaffected.
+
+The PR #171 tests that asserted on this route's hand-written SQL were rewritten, not deleted. Every
+property they protected still holds and is still tested — nulls rather than zeros, coverage on every
+row, the costed-line filter reaching the database, no-measurable-profit rows last — but against the
+endpoint's contract rather than the shape of a query string it no longer writes.
+
+### 20.3 A third bug found in earlier work
+
+`buildOrderBy` sorting a dimension by its label (§20.1). Harmless for `date`, whose label sorts the
+same as its key, and never hit before because no board sorted by a categorical dimension. It would
+have silently scrambled the first ordered attribute anyone added.
+
+### 20.4 The insights panel — the deferral, discharged
+
+§14 deferred this because **generated prose is the highest-risk-per-line part of the feature: it
+reads like a colleague talking and is therefore trusted more than a number is.** What shipped keeps
+that fear in the architecture.
+
+- **No LLM. Nothing is generated.** Every sentence is a template in
+  `registry/insights.js` with values substituted into it. §15 puts LLM narrative out of scope
+  through Phase 4; this file is what "deterministic rules only" means in practice.
+- **The server sends a template and typed values, never a finished string.** Formatting belongs to
+  `/meta`, keyed by metric id, exactly as it does for tiles — so a figure inside a sentence is
+  written identically to the same figure on the tile below it, and a currency change moves both.
+- **Every insight cites the metrics it came from and carries their coverage.** An insight a reader
+  cannot check is an opinion.
+- **Severity is never carried by colour alone** — icon plus the severity in words, because a red
+  left border means nothing to a reader who cannot see red.
+- **Thresholds are named, in the registry, never inline in a condition**, so they are ready to be
+  admin-tunable. A test asserts no rule declares a threshold it does not read.
+
+Rules are evaluated server-side through the same query path, cache and snapshot the tiles use, so a
+sentence and the tile it cites cannot disagree. `GET /api/analytics/insights/:boardId` is the
+surface; `ANALYTICS_INSIGHTS_ENABLED` turns the panel off.
+
+**Six of §14's seven seed rules fire against real data. The seventh needs a decision.**
+
+| Rule | Fires when | Against real data today |
+|---|---|---|
+| `insight.reorder` | any part with repeat demand under 30 days' cover | **critical** — 118 parts, ₱822K taken over 90 days |
+| `insight.cost_coverage` | coverage < 80% | **warning** — 20% of sales; 9,480 lines, ₱9.2M unmeasurable |
+| `insight.dead_stock` | non-moving > 25% of stock value | **warning** — ₱1.98M, 76%, 2,011 parts |
+| `insight.uncosted_parts` | stocked-but-uncosted ≥ 500 | **info** — 1,842 of 2,635 |
+| `insight.period_movement` | net revenue moves ≥ 10% | **info** — down 21.4% on last 30 days |
+| `insight.refund_spike` | rate up ≥ 50% over a ≥ 1% floor | correctly silent |
+| `insight.customer_concentration` | top named account > 20% of named revenue | **dark — see below** |
+
+Three refusals are worth keeping:
+
+1. **Null is not a low value.** `null < 80` is `true` in JavaScript, so a period with no sales would
+   have announced that cost coverage had collapsed. Every condition tests for null first, and a test
+   drives every rule with an all-null period and asserts total silence.
+2. **A sentence with a hole in it is worse than no sentence.** If a rule fires but one of its values
+   came back null, the insight is dropped rather than rendered with a dash in the middle of a claim.
+3. **A movement needs a real baseline.** This one was caught in testing against live data. On "last
+   12 months" the period before it is mostly older than the database, so the panel said *"Revenue is
+   up 10,025% against the previous period."* Arithmetically correct; a confident falsehood about the
+   business. §13's R13 in the direction nobody expected — R13 anticipated a misleading `-100%`, not
+   a misleading `+10,025%`. A prior period holding less than a fifth of this one's revenue is now
+   treated as partial history rather than a movement, and the trend chart shows it honestly where a
+   sentence cannot. The real −21.4% on a 30-day window still reports.
+
+**The rule that needs an owner decision.** Customer concentration is meaningless without separating
+counter trade from named accounts, and the walk-in record is a customer row like any other carrying
+~83% of revenue. There is no safe way to detect it — guessing wrong would make the panel state a
+confident falsehood about who the business depends on. So a new setting,
+**`ANALYTICS_WALKIN_CUSTOMER_ID`, is seeded deliberately EMPTY**, and the rule stays dark until an
+admin names the record in Settings → Analytics. Verified working: set to customer 1, the rule
+evaluates and correctly does *not* fire, because the largest named account is 13.9% of named revenue
+against a 20% threshold.
+
+### 20.5 The security pass
+
+Run per CLAUDE.md, because the `trusted` option in `requestValidator.js` disables a permission
+check. **No exploitable findings.** The two properties that matter were traced end to end and hold:
+
+- **`trusted` is unreachable from a request.** `parseQueryRequest` reads it from its third argument,
+  and every caller builds that object as a literal. `/analytics/batch` supplies no `opts` at all, so
+  a `trusted` key inside a batch entry lands in `body`, which is never consulted for options.
+- **The `runInternalQuery` guard is sound for derived metrics**, though not on its own: it inspects
+  only top-level metrics, and what closes the gap is the boot-time invariant in `registry/index.js`
+  that a derived metric must be at least as restricted as every leaf it is computed from. Together
+  they prove that anything passing the guard is composed only of `analytics:view` leaves. Neither
+  `sort.by` nor `topN.by` can smuggle a metric in — both require membership of the checked list.
+
+`topN.n` and `offset` are bound parameters; the `margin_band` CASE and the `reorder_candidates`
+source are registry literals; `getSettings` is a static statement and no setting value reaches SQL;
+the migrated report keeps `reports:view` and parameterises everything in its hand-written COUNT.
+
+The review also found a **correctness** bug, now fixed: `parsePaginationQuery` caps page size but not
+page number, so a request past page 1,001 produced an offset above the budget, which the validator
+silently **clamped** — returning page 1,001's rows while the pager claimed a higher page. An
+over-budget offset is now refused with a 400. A plausible wrong answer is the one thing this module
+is built not to give.
+
+Two flaws were also found by probing the running server, and both are fixed:
+
+- **A bad preset returned an empty insights panel with a 200.** The failure happened inside every
+  rule's own query, so the panel read "nothing stands out" when the truth was "your request was
+  wrong". The date range is now resolved once, up front, before any rule runs — which also
+  guarantees every rule sees the same range. If every rule group fails, the endpoint returns 502
+  rather than a reassuring blank.
+- The panel now reports `degraded` when some rule groups failed but others succeeded.
+
+### 20.6 Verified against the live database
+
+| Check | Result |
+|---|---|
+| Migrated report vs direct SQL, one part | revenue ₱204,399.00 · cost ₱163,568.26 · profit ₱31,381.74 · 36/38 lines — exact |
+| Migrated report, 12 months | ₱11,493,783.03 vs the old query's ₱11,139,570.04 — the 393 legacy rows, as designed |
+| Margin distribution | six bands totalling ₱11,493,783.0343 — reconciles with the period |
+| Uncosted + costed revenue | ₱2,059,088.41 + ₱425,716.06 = ₱2,484,804.47 — the 90-day line revenue, exact |
+| Board load, uncached | Profitability 248 ms · Data Trust 296 ms |
+| Legacy-row tile | untaxed lines confined to 2025-09; credit notes without a subtotal ran to 2026-07 and **stopped in 2026-08** — worth knowing, that one appears to have been fixed upstream |
+
+### 20.7 Checks, and where Phase 3 starts
+
+```bash
+docker exec forson_backend_dev npm run test                              # 68 suites, 908 tests, 6 snapshots
+docker exec forson_backend_dev node tests/analyticsRegistry_db_test.js   # now 396 statements (was 279)
+docker exec forson_backend_dev npm run migrate                           # 20260908_01 adds the two insight settings
+```
+
+New tests: `analyticsInsights.test.js` (18 cases), `analyticsInternalQuery.test.js` (3 — the trusted
+path's two safety properties), plus blocks in `analyticsQueryBuilder.test.js` for paging and ordered
+attribute dimensions.
+
+Phase 3 is Customers + Receivables & Cash. It inherits the insights panel rather than building it,
+and should note:
+
+- **The rollup already does concentration.** A Pareto tile is a rollup with a running total, not a
+  new query shape.
+- **`period: 'none'`** is the pattern for any board that is purely a position.
+- **`ANALYTICS_WALKIN_CUSTOMER_ID` is the Customers board's dependency too.** Every per-customer
+  average is distorted by that record (§2), and Phase 3 is where "named account" should become a
+  first-class idea rather than a setting one rule reads.
+- Do not restore Days of Inventory, or any ratio whose numerator and denominator carry different
+  trust rules, until the `cost_at_sale` write path is fixed (§19.4, §13 R1).
 - Do not plot the A/R ledger's few weeks as a trend (§2).
