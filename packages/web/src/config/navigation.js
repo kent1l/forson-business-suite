@@ -82,7 +82,10 @@ export const CATEGORIES = [
         title: 'System & Analytics',
         icon: ICONS.reporting,
         items: [
-            { name: 'Reporting',   icon: ICONS.reporting, page: 'reporting', permission: 'reports:view', keywords: ['analytics', 'reports'] },
+            { name: 'Analytics',   icon: ICONS.analytics, page: 'analytics', permission: 'analytics:view', keywords: ['insights', 'kpi', 'metrics', 'business intelligence', 'margin', 'trend', 'dashboard'] },
+            // 'analytics' as a keyword now belongs to the item above, so the command
+            // palette resolves the word to the new page rather than to the tables.
+            { name: 'Reporting',   icon: ICONS.reporting, page: 'reporting', permission: 'reports:view', keywords: ['reports', 'export', 'csv', 'tables'] },
             { name: 'Settings',    icon: ICONS.settings,  page: 'settings',  permission: 'settings:view', keywords: ['configuration', 'preferences'] },
             { name: 'User Guide',  icon: ICONS.guide,     external: true, href: '/user-guide.html', permission: 'dashboard:view', keywords: ['help', 'documentation', 'manual'] },
         ],

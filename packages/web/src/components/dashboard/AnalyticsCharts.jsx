@@ -10,36 +10,12 @@ import {
     ResponsiveContainer
 } from 'recharts';
 import { Calendar, TrendingUp, PackageSearch } from 'lucide-react';
-import { useTheme } from '../../contexts/ThemeContext';
+// Chart colours live in components/analytics/chartTheme.js so the Analytics
+// module and this Dashboard cannot drift into two different-looking blues.
+// Re-exported here for anything still importing them from this file.
+import { CHART_THEME, useChartTheme } from '../analytics/chartTheme';
 
-// Chart surfaces don't respond to Tailwind's `dark:` classes (SVG/canvas is
-// painted by recharts via inline styles), so colors are picked in JS from the
-// resolved theme mode instead.
-const CHART_THEME = {
-    light: {
-        grid: '#e2e8f0',
-        tick: '#64748b',
-        line: '#2563eb',
-        bar: '#8f56f0',
-        tooltipBg: '#ffffff',
-        tooltipBorder: '#e2e8f0',
-        tooltipLabel: '#64748b',
-    },
-    dark: {
-        grid: '#334155',
-        tick: '#94a3b8',
-        line: '#60a5fa',
-        bar: '#a78bfa',
-        tooltipBg: '#1e293b',
-        tooltipBorder: '#334155',
-        tooltipLabel: '#94a3b8',
-    },
-};
-
-const useChartTheme = () => {
-    const { mode } = useTheme() || {};
-    return CHART_THEME[mode === 'dark' ? 'dark' : 'light'];
-};
+export { CHART_THEME, useChartTheme };
 
 const CustomTooltip = ({ active, payload, label, formatter, theme }) => {
     if (active && payload && payload.length) {
