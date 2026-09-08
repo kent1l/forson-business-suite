@@ -68,7 +68,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'goods_receipt_history': return <GoodsReceiptHistoryPage user={user} />;
             case 'goods_receipt_drafts': return <GoodsReceiptDraftsPage onNavigate={onNavigate} />;
             case 'invoicing': return <InvoicingPage user={user} onNavigate={onNavigate} pageState={currentPage === 'invoicing' ? pageState : null} />;
-            case 'sales_history': return <SalesHistoryPage />; // <-- Add case for new page
+            case 'sales_history': return <SalesHistoryPage pageState={currentPage === 'sales_history' ? pageState : null} />;
             case 'documents': return <DocumentsPage />;
             case 'purchase_orders': return <PurchaseOrderPage />;
             case 'ar': return <AccountsReceivablePage pageState={currentPage === 'ar' ? pageState : null} />;
@@ -78,7 +78,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'withholding_tax': return <WithholdingTaxPage />;
             case 'ar_concessions': return <ARConcessionsPage />;
             case 'staged_sales': return <CashierApprovalDesk onNavigate={onNavigate} />;
-            case 'inventory': return <InventoryPage user={user} />;
+            case 'inventory': return <InventoryPage user={user} pageState={currentPage === 'inventory' ? pageState : null} />;
             case 'cycle_count': return <CycleCountExecutionPage />;
             case 'manager_audit': return <ManagerReviewDesk />;
             case 'cost_data_health': return <CostDataHealthPage />;

@@ -11,7 +11,8 @@ last_updated: 2026-09-08
 > **At a Glance**
 > - **What it's for:** Seeing how the business is doing this period, and against the period before it.
 > - **Who uses it:** Owner and Managers.
-> - **You'll mostly come here to:** Check the month against the last one, and see where the money is sitting.
+> - **You'll mostly come here to:** Check the month against the last one, see what is selling, and find out what needs reordering.
+> - **Boards:** **Overview** (how are we doing), **Sales** (what sold, to whom, when), **Inventory** (what is on the shelf and what is about to run out).
 
 ## Overview
 
@@ -114,25 +115,82 @@ the coverage line is the difference between using this page and being misled by 
 
 ## How To — See What Is Selling and What Is Not Moving
 
-*Why this matters:* Revenue tells you the total; these tiles tell you where it came from and where
-money is stuck.
+*Why this matters:* Revenue tells you the total; these tiles tell you where it came from.
 
 *Precision:* Normal default; adjust the period to suit the question.
 
-1. **Revenue by brand** ranks the largest brands for the period. Only the top few appear — the tile
-   says so when there are more.
-2. **Top products** lists the biggest sellers with their revenue, units, and gross profit. A dash in
+1. Open the **Sales** board.
+2. **Revenue by brand** and **Revenue by group** rank the largest of each for the period.
+3. **Top products** lists the biggest sellers with their revenue, units, and gross profit. A dash in
    the **Gross Profit** column means that product's sales carried no recorded cost, so no profit can
    be worked out for it — it does not mean it made nothing.
-3. **Dead Stock Value** and **Inventory Value** together tell you what share of your stock is not
-   moving. Both are as of now.
-4. **How much of this we can measure** breaks the period down and shows what share of each one
-   carried cost data. Use it to see whether coverage is improving as parts get fixed.
+4. Click any column heading in a table to re-sort the rows on screen. Click it twice to reverse,
+   three times to go back to the original ranking.
+5. Click a bar or a row to narrow the whole board to it. Use **Clear filters** at the top to undo.
 
 **Example:** Revenue by brand shows MUSASHI at ₱178K, well ahead of CALTEX at ₱38.9K. In Top
 Products, the MUSASHI oil seal shows ₱178,047.35 of revenue and a dash for Gross Profit — that one
 product is a quarter of the period's revenue and the system cannot say what it cost. That is the
 first part worth fixing in Cost Data Health.
+
+> ⚠️ Important — "Other" is not a brand. Where a chart or table shows an **Other** row, it is
+> everything outside the top few added together, and the tile says how many things it stands for.
+> It is there so the figures add up to the whole period rather than to whatever fitted on the
+> chart — on this catalogue **Other** is often the biggest row, because there are more than 400
+> brands and 700 groups. You cannot click into it, because it is not one thing.
+
+## How To — Work Out When to Put a Second Person on the Counter
+
+*Why this matters:* Staffing costs the same all day; takings do not.
+
+*Precision:* Normal default. Use a long period — 90 days or more — so one unusual day does not
+dominate the picture.
+
+1. Open the **Sales** board and find **When the counter is busy**.
+2. Each square is one hour of one weekday, with every week in the period added together. The darker
+   the square, the more was taken in that hour.
+3. Hover a square to read the exact figure and the number of invoices underneath the grid.
+
+> 📝 Note — A **grey** square means nothing at all was sold in that hour. The **palest blue** means
+> something was sold, but very little. They are drawn differently on purpose: "we were shut" and "we
+> were open and nobody came" call for opposite decisions.
+
+## How To — Find What Needs Reordering
+
+*Why this matters:* An empty shelf on a part that sells steadily is a lost sale every week until it
+is refilled.
+
+*Precision:* High. Check the figures against the shelf before raising a purchase order.
+
+1. Open the **Inventory** board. There is no date range on it — everything is the position as of now.
+2. **Reorder first** lists the parts that sold on at least **three separate invoices in the last 90
+   days** and now hold **under thirty days of cover** at that rate, or none at all.
+3. The list is ranked by **Earned (90 days)** — the money those parts brought in — so the top of the
+   list is what it costs you most to be out of.
+4. Click any row to open that part on the Inventory page.
+
+> ⚠️ Important — This is deliberately **not** the "below reorder point" flag. That flag currently
+> fires on thousands of parts because their reorder points were never maintained, which is why
+> nobody looks at it. This list is short because it only shows parts with real, repeated demand.
+
+> 📝 Note — **Units Short** is how many units would bring the part back to thirty days of cover. It
+> is a starting point, not a recommendation: it knows nothing about pack sizes, supplier minimums or
+> lead times.
+
+## How To — See What Stock Is Not Moving
+
+*Why this matters:* Dead stock is money already spent that is not coming back through the counter.
+
+*Precision:* Normal default.
+
+1. Open the **Inventory** board.
+2. **Dead Stock Value**, **Dead Stock Share** and **Dead Stock Lines** together say how much of the
+   shelf has not sold in 180 days, and across how many parts. Parts never sold at all are included.
+3. **Stock value by brand** and **Dead stock by brand** sit side by side. Read them together: a brand
+   that is large in both is simply a big brand; one that is small on the left and large on the right
+   is where buying went wrong.
+4. Everything here is valued at weighted average cost, so parts with no recorded cost contribute
+   nothing. Check the coverage line under each tile before acting on the figure.
 
 ## How To — Export a Tile
 
@@ -142,7 +200,8 @@ first part worth fixing in Cost Data Health.
 
 1. Click the **☰** in the top-right of any chart or table tile.
 2. Choose **Export CSV**. The file downloads with the rows behind the tile, plus a coverage column
-   so the figures cannot be read out of context later.
+   so the figures cannot be read out of context later. Where the tile shows an **Other** row, the
+   export contains it too, so the exported column still adds up to the period.
 
 > 📝 Note — Exporting needs the **Export Analytics Data** permission. If the option is missing, ask
 > an administrator.
@@ -161,7 +220,8 @@ want the very latest.
 
 | Field/Control | Description | Notes |
 |---|---|---|
-| Period dropdown | The date range every figure on the board describes | Your choice is remembered on this device |
+| Board tabs | Overview, Sales, Inventory | Tiles you have no permission for are not shown at all |
+| Period dropdown | The date range every figure on the board describes | Your choice is remembered on this device; the Inventory board has none, because nothing on it moves with a date |
 | Compare with the previous period | Adds the equally long stretch immediately before, and the change | Off for *As of now* figures, which have no period |
 | Net Revenue | Gross revenue minus refunds, each in its own period | Shows its two parts underneath |
 | Gross Profit | Revenue minus cost, on sales with a recorded cost only | Always read with its coverage line |
@@ -174,6 +234,13 @@ want the very latest.
 | Stocked Parts Without a Cost | Parts holding stock with no cost recorded | Click through to fix them |
 | Net Profit | Gross profit less operating costs | Shows *Not recorded yet* until Expenses and Payroll are in use |
 | **ⓘ** | Explains the figure in plain language | Every tile and every coverage line has one |
+| Other | Everything outside the top few, added together | Says how many things it stands for; not clickable |
+| Column headings in a table | Click to re-sort the rows on screen | Sorts only what is listed; it cannot fetch different rows |
+| Parts to Reorder | Parts with repeat demand and under 30 days of cover | Not the "below reorder point" flag — see the how-to |
+| Days of Cover | How long the stock lasts at the last 90 days' rate | Zero means the part is already out |
+| Units Short | Units needed to reach thirty days of cover | Ignores pack sizes, minimums and lead times |
+| Earned (90 days) | What those parts took in over the last 90 days | This is what the reorder list is ranked by |
+| Discount Rate / Discounts Given | Discounts as a share of list price | Shows *Not recorded yet* until discounts are captured on sale lines |
 | **☰** | Refresh, Export CSV, and Open in page | Options vary by tile |
 
 ## Common Errors & What They Mean

@@ -15,7 +15,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { sortData } from '../utils/sortData';
 
-const InventoryPage = () => {
+const InventoryPage = ({ pageState = null }) => {
     const { user, hasPermission } = useAuth();
     const { settings } = useSettings();
     const [inventory, setInventory] = useState([]);
@@ -32,6 +32,15 @@ const InventoryPage = () => {
     const [globalSortBy, setGlobalSortBy] = useState('name');
     const [globalSortDirection, setGlobalSortDirection] = useState('ASC');
     // No client-side sort: preserve backend / MeiliSearch ordering
+
+    // Arriving from an Analytics drilldown — the reorder list, or a top-product
+    // row. The part's display name is what the search index is built from, so
+    // the clicked part comes back first.
+    useEffect(() => {
+        if (!pageState || !pageState.search) return;
+        setSearchTerm(String(pageState.search));
+        setPage(1);
+    }, [pageState]);
 
     const fetchInventory = useCallback(async () => {
         try {

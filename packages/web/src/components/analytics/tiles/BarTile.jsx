@@ -30,8 +30,21 @@ const BarTile = ({ spec, data, onSelectRow }) => {
 
     const chartData = rows.map((row) => ({
         key: row.key[0],
-        label: row.label[0] ?? '(None)',
+        // The folded tail says how much it stands for. A grey bar labelled only
+        // "Other" invites the reader to ignore it; on this catalogue it is often
+        // the largest bar on the chart.
+        label: row.rollup && row.rollupCount > 1
+            ? `Other (${row.rollupCount.toLocaleString()})`
+            : (row.label[0] ?? '(None)'),
         value: row.values[metricId],
+        // Read off the server's flag, never the label: a brand genuinely named
+        // "Other" is a category like any other and keeps its own colour.
+        rollup: !!row.rollup,
+        // The analytics row itself rides along, because `onSelectRow` is the
+        // same contract the table uses and its consumers read `key` and `label`
+        // as arrays. Handing them this flattened chart datum instead would make
+        // a `$row.label` drilldown resolve to the first CHARACTER of the label.
+        row,
     }));
 
     const height = Math.max(180, chartData.length * 34);
@@ -64,7 +77,9 @@ const BarTile = ({ spec, data, onSelectRow }) => {
                         />
                         <Bar
                             dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={18}
-                            onClick={onSelectRow ? (entry) => onSelectRow(entry) : undefined}
+                            // 'Other' is not a category, so it is not something a
+                            // reader can filter down into.
+                            onClick={onSelectRow ? (entry) => { if (!entry.rollup) onSelectRow(entry.row); } : undefined}
                             cursor={onSelectRow ? 'pointer' : 'default'}
                             label={{
                                 position: 'right', fontSize: 11, fill: theme.tick,
@@ -72,7 +87,7 @@ const BarTile = ({ spec, data, onSelectRow }) => {
                             }}
                         >
                             {chartData.map((entry) => (
-                                <Cell key={entry.key ?? entry.label} fill={entry.label === 'Other' ? other : barColor} />
+                                <Cell key={entry.key ?? entry.label} fill={entry.rollup ? other : barColor} />
                             ))}
                         </Bar>
                     </BarChart>

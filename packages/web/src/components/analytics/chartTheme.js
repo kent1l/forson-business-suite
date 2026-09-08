@@ -65,6 +65,41 @@ export const OTHER_COLOR = { light: '#94a3b8', dark: '#64748b' };
  */
 export const COMPARE_STROKE = { light: '#94a3b8', dark: '#64748b' };
 
+/**
+ * The sequential ramp, for continuous magnitude — the hour x weekday heatmap.
+ *
+ * ONE hue, light to dark, seven steps. A sequential encoding is not a
+ * categorical one: cycling hues across intensity would say these cells are
+ * different *kinds* of thing when the only thing that differs is how much.
+ * Blue is used because it is already series 0, so the busiest hour and the
+ * revenue line on the board above it read as the same measure.
+ *
+ * Checked with the dataviz validator against each mode's own surface (white,
+ * slate-800). Both ramps pass every check that applies to a sequential ramp:
+ * monotone lightness, an adjacent step gap of at least 0.06, and a single hue
+ * (spread 4 deg light, 5 deg dark). The validator's remaining check — that the
+ * end nearest the surface clears 2:1 contrast — is an ORDINAL requirement and
+ * is deliberately not met: in a sequential ramp the palest step means "nearly
+ * nothing" and is meant to recede. Trimming the ramp does not fix it (the next
+ * step reaches only 1.79:1) and would throw away the low end of the scale.
+ *
+ * That is exactly why HEATMAP_EMPTY exists and is a NEUTRAL rather than a
+ * paler blue. "The shop was shut" and "the shop was open and sold almost
+ * nothing" are different facts, and on a staffing chart they lead to opposite
+ * decisions, so they must not be two shades of the same colour.
+ *
+ * Do not edit any of this by eye; re-run scripts/validate_palette.js.
+ */
+export const SEQUENTIAL_PALETTE = {
+    light: ['#cde2fb', '#9ec5f4', '#6da7ec', '#3987e5', '#256abf', '#184f95', '#0d366b'],
+    // Selected at the dark band's own lightness and running dark -> light, not a
+    // reversal of the light ramp.
+    dark: ['#1e3a5f', '#24508f', '#2a68bd', '#3d86dc', '#6da7ec', '#9ec5f4', '#cde2fb'],
+};
+
+/** A cell with no data at all: neutral, and visibly not part of the ramp. */
+export const HEATMAP_EMPTY = { light: '#f1f5f9', dark: '#0f172a' };
+
 export const useChartTheme = () => {
     const { mode } = useTheme() || {};
     return CHART_THEME[mode === 'dark' ? 'dark' : 'light'];
@@ -83,6 +118,34 @@ export const useSeriesPalette = () => {
         other: OTHER_COLOR[key],
         compare: COMPARE_STROKE[key],
         colorFor: (index) => (index >= 0 && index < palette.length ? palette[index] : OTHER_COLOR[key]),
+    };
+};
+
+/**
+ * The sequential ramp for the current theme, plus a resolver from a value to a
+ * step.
+ *
+ * `stepFor` is linear against the largest cell, and deliberately so. A square
+ * root or a log would spread the low end out and make a quiet hour look busier
+ * than it was — a distortion the reader cannot see and would not expect from a
+ * chart that is used to decide when to put a second person on the counter.
+ * `null` (no data at all) returns null, never step 0.
+ */
+export const useSequentialPalette = () => {
+    const { mode } = useTheme() || {};
+    const key = mode === 'dark' ? 'dark' : 'light';
+    const ramp = SEQUENTIAL_PALETTE[key];
+    return {
+        ramp,
+        empty: HEATMAP_EMPTY[key],
+        stepFor: (value, max) => {
+            if (value === null || value === undefined || !Number.isFinite(Number(value))) return null;
+            if (!(max > 0)) return ramp[0];
+            const ratio = Math.min(Math.max(Number(value) / max, 0), 1);
+            // Any positive value lands on at least the first step: a cell that
+            // sold something must never be painted as though it sold nothing.
+            return ramp[Math.min(ramp.length - 1, Math.max(Number(value) > 0 ? 1 : 0, Math.ceil(ratio * ramp.length)) - 1)];
+        },
     };
 };
 

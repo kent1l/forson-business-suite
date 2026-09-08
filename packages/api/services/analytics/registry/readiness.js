@@ -23,6 +23,17 @@ const READINESS_PROBES = Object.freeze({
         sql: 'SELECT EXISTS(SELECT 1 FROM payroll_run) AS ready',
         emptyMessage: 'Payroll is not being recorded yet.',
     }),
+    // Not one of the scaffolded modules: discounts are a field on a table that
+    // is very much in use, and not one of 11,540 sale lines carries a non-zero
+    // one. A discount rate of 0.0% would read as "we never discount" where the
+    // truth is "this is not being captured", so the tile says so instead --
+    // and lights up on its own the day a cashier records the first one.
+    line_discount_data: Object.freeze({
+        id: 'line_discount_data',
+        label: 'Line discounts recorded',
+        sql: 'SELECT EXISTS(SELECT 1 FROM invoice_line WHERE COALESCE(discount_amount, 0) <> 0) AS ready',
+        emptyMessage: 'Discounts are not being recorded on sale lines yet.',
+    }),
     ar_ledger_data: Object.freeze({
         id: 'ar_ledger_data',
         label: 'A/R ledger populated',

@@ -18,6 +18,11 @@
  * Several KPI tiles deliberately share one identical `query`. The batch context
  * dedupes them into a single round trip, and each tile picks its own figure out
  * of the shared result with `display.value`.
+ *
+ * Every categorical breakdown declares `topN` rather than a bare `limit`. With
+ * 444 brands and 767 groups, a plain limit shows the largest eight and says
+ * nothing about the other four hundred; the rollup puts the remainder on screen
+ * as one row, so what is drawn adds up to the period.
  */
 
 const HEADLINE_QUERY = {
@@ -137,15 +142,17 @@ const OVERVIEW_BOARD = {
             id: 'overview.revenue_by_brand',
             type: 'bar',
             title: 'Revenue by brand',
-            help: 'The largest brands by ex-VAT revenue in this period. With hundreds of brands in '
-                + 'the catalogue, only the top few are shown.',
+            help: 'The largest brands by ex-VAT revenue in this period. There are hundreds of '
+                + 'brands in the catalogue, so everything outside the top eight is added into '
+                + '"Other" — the bars therefore account for all of the period’s line revenue '
+                + 'rather than for as much of it as fitted on the chart.',
             span: { base: 12, md: 12, lg: 6 },
             query: {
                 metrics: ['sales.line_revenue'],
                 dimensions: ['brand'],
                 grain: null,
                 sort: { by: 'sales.line_revenue', dir: 'DESC' },
-                limit: 8,
+                topN: { n: 8, by: 'sales.line_revenue' },
             },
             display: { value: 'sales.line_revenue', category: 'brand' },
             drilldown: { kind: 'filter', dimension: 'brand' },
@@ -154,17 +161,22 @@ const OVERVIEW_BOARD = {
             id: 'overview.top_products',
             type: 'table',
             title: 'Top products',
+            help: 'Ranked by ex-VAT revenue, with every other part added into "Other" so the '
+                + 'column totals are the period’s whole line revenue. Gross profit is measured '
+                + 'only over lines that recorded a cost.',
             span: { base: 12, md: 12, lg: 6 },
             query: {
                 metrics: ['sales.line_revenue', 'sales.units_sold', 'margin.gross_profit'],
                 dimensions: ['part'],
                 grain: null,
                 sort: { by: 'sales.line_revenue', dir: 'DESC' },
-                limit: 10,
+                topN: { n: 10, by: 'sales.line_revenue' },
             },
             display: {
                 columns: ['sales.line_revenue', 'sales.units_sold', 'margin.gross_profit'],
                 category: 'part',
+                rank: true,
+                bar: 'sales.line_revenue',
                 coverage: { show: true, rule: 'costed_line' },
             },
         },

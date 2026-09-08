@@ -22,7 +22,9 @@ const { resolveJoins } = require('./registry/sources');
  *   1. one CTE per fact source in play, each aggregated to the requested keys;
  *   2. a UNION of those CTEs' keys, if there is more than one source;
  *   3. a LEFT JOIN of each source back onto that key set;
- *   4. a final SELECT that computes composites, ratios and coverage ratios
+ *   4. optionally, a top-N stage that ranks the categories and folds the tail
+ *      into a single 'Other' row;
+ *   5. a final SELECT that computes composites, ratios and coverage ratios
  *      *after* aggregation.
  *
  * Step 1 is why refunds are safe. Sales and credit notes are different sources
@@ -32,6 +34,22 @@ const { resolveJoins } = require('./registry/sources');
  */
 
 const MANILA = "AT TIME ZONE 'Asia/Manila'";
+
+/**
+ * Flags the folded tail row. The label alone cannot carry this: a brand that is
+ * genuinely called "Other" and the rollup bucket must be distinguishable, and so
+ * must a NULL key that means "(No brand)" from a NULL key that means "the other
+ * four hundred brands".
+ */
+const ROLLUP_COLUMN = 'is_other';
+
+/**
+ * How many categories a row stands for: 1 for a kept row, and the size of the
+ * tail on the folded one. "Other — 436 more brands" is a different statement
+ * from an unlabelled grey bar, and it is the only thing on screen that says how
+ * much of the catalogue the chart is not naming.
+ */
+const ROLLUP_COUNT_COLUMN = 'rollup_count';
 
 const manilaDate = (col) => `(${col} ${MANILA})::date`;
 
@@ -139,14 +157,22 @@ function buildQuery(spec) {
         }));
 
     // --- step 5: stitch ------------------------------------------------------
-    const joinedName = sourceIds.length === 1 ? `src_${sourceIds[0]}` : 'joined';
+    let joinedName = sourceIds.length === 1 ? `src_${sourceIds[0]}` : 'joined';
     const stitchCtes = [];
     if (sourceIds.length > 1) {
         stitchCtes.push(buildKeysCte(sourceIds, dimColumns));
         stitchCtes.push(buildJoinedCte(sourceIds, dimColumns, bySource, coverageBySource, leafColumn));
     }
 
-    // --- step 6: final SELECT ------------------------------------------------
+    // --- step 6: top-N with an 'Other' rollup ---------------------------------
+    if (spec.topN) {
+        stitchCtes.push(...buildRollupCtes({
+            spec, from: joinedName, dimColumns, leafColumn, coverageRules, P,
+        }));
+        joinedName = 'rolled';
+    }
+
+    // --- step 7: final SELECT ------------------------------------------------
     const { selectList, columnMap, metricColumns } =
         buildFinalSelect({ spec, dimColumns, leafColumn, coverageRules, P });
 
@@ -172,6 +198,9 @@ function buildQuery(spec) {
         compare: !!spec.compare,
         grain: spec.grain,
         limit: spec.limit,
+        rollup: spec.topN
+            ? { column: ROLLUP_COLUMN, countColumn: ROLLUP_COUNT_COLUMN, n: spec.topN.n, by: spec.topN.by }
+            : null,
     };
 
     return { text, values, plan };
@@ -203,14 +232,19 @@ function validateCombination(spec, bySource) {
         const src = SOURCES[sourceId];
         const { name: owner, part } = blame(metrics[0].id);
 
-        // The date case gets its own message: "no date to break down by" tells the
-        // caller something true about the metric, where the generic wording below
-        // would send them looking for a missing join.
-        if (requestedDims.includes('date') && !src.dateColumn) {
+        // Dimensions derived from the source's own timestamp -- the period, the
+        // hour of day, the weekday -- get their own message. "No date to break
+        // down by" tells the caller something true about the metric, where the
+        // generic wording below would send them looking for a missing join.
+        // Driven by the dimension's `needsDateColumn` flag rather than by name,
+        // so adding another time dimension needs no change here.
+        const timeDim = [...spec.dimensions, ...spec.filters.map((f) => f.dimension)]
+            .find((d) => d.needsDateColumn);
+        if (timeDim && !src.dateColumn) {
             throw new AnalyticsRequestError(
                 400,
-                `${owner} is a point-in-time figure and has no date to break down by.`,
-                { metric: metrics[0].id, source: sourceId }
+                `${owner} is a point-in-time figure and has no date, so it cannot be broken down by ${timeDim.label.toLowerCase()}.`,
+                { metric: metrics[0].id, dimension: timeDim.id, source: sourceId }
             );
         }
 
@@ -411,6 +445,71 @@ function buildJoinedCte(sourceIds, dimColumns, bySource, coverageBySource, leafC
 }
 
 // ---------------------------------------------------------------------------
+// Step 6 — top-N with an 'Other' rollup
+//
+// This has to happen in SQL, not in the browser. There are 444 brands and 767
+// groups in this catalogue; a client that received only the rows the row limit
+// allowed would compute an "Other" bar out of a truncated tail and draw it
+// smaller than it is. Folding here means the returned rows are the whole
+// period, so the tile's own totals are exact and nothing is truncated.
+//
+// The fold is done over LEAF columns, before any ratio is computed. Summing the
+// tail's margin percentages would be meaningless; summing its profit and its
+// costed revenue and dividing afterwards is the same rule the rest of the
+// module already follows.
+// ---------------------------------------------------------------------------
+
+function buildRollupCtes({ spec, from, dimColumns, leafColumn, coverageRules, P }) {
+    const dc = dimColumns[0];   // the validator guarantees exactly one, and not 'date'
+    const pN = P(spec.topN.n);
+    const rankSql = derivationSql(spec.topN.by, { spec, leafColumn, P });
+
+    // The key is the tiebreak so a tie between two categories resolves the same
+    // way on every run; a rollup whose membership flickers between refreshes
+    // would make the 'Other' bar change height for no reason.
+    const ranked = [
+        'ranked AS (',
+        '  SELECT j.*,',
+        `    ROW_NUMBER() OVER (PARTITION BY j.bucket ORDER BY ${rankSql} DESC NULLS LAST, j.${dc.key} ASC NULLS LAST) AS rn`,
+        `  FROM ${from} j`,
+        ')',
+    ].join('\n');
+
+    const select = [
+        '    bucket',
+        `    (rn > ${pN}) AS ${ROLLUP_COLUMN}`,
+        `    CASE WHEN rn <= ${pN} THEN ${dc.key} END AS ${dc.key}`,
+        `    CASE WHEN rn <= ${pN} THEN ${dc.label} ELSE 'Other' END AS ${dc.label}`,
+    ];
+    // GROUP BY the four key columns above. Every kept row is its own group; every
+    // folded row collapses onto (true, NULL, 'Other'). Including the flag in the
+    // grouping is what keeps a real "(No brand)" row out of the tail bucket.
+    const groupBy = ['1', '2', '3', '4'];
+
+    const aggregates = [`    COUNT(*) AS ${ROLLUP_COUNT_COLUMN}`];
+    for (const column of leafColumn.values()) {
+        // SUM over an all-NULL group is NULL, which is what a trusted metric must
+        // stay: "nothing here could be measured" survives the fold.
+        aggregates.push(`    SUM(${column}) AS ${column}`);
+    }
+    for (const cov of coverageRules) {
+        for (const column of Object.values(cov.columns)) {
+            aggregates.push(`    SUM(${column}) AS ${column}`);
+        }
+    }
+
+    const rolled = [
+        'rolled AS (',
+        `  SELECT\n${[...select, ...aggregates].join(',\n')}`,
+        '  FROM ranked',
+        `  GROUP BY ${groupBy.join(', ')}`,
+        ')',
+    ].join('\n');
+
+    return [ranked, rolled];
+}
+
+// ---------------------------------------------------------------------------
 // Step 6 — the final SELECT: composites, ratios and coverage ratios, computed
 // after aggregation.
 //
@@ -419,22 +518,19 @@ function buildJoinedCte(sourceIds, dimColumns, bySource, coverageBySource, leafC
 // than per invoice.
 // ---------------------------------------------------------------------------
 
-function buildFinalSelect({ spec, dimColumns, leafColumn, coverageRules, P }) {
-    const selectList = ['bucket'];
-    const columnMap = { bucket: { kind: 'bucket' } };
-    const metricColumns = {};
-
-    for (const dc of dimColumns) {
-        selectList.push(dc.key, dc.label);
-        columnMap[dc.key] = { kind: 'dimension_key', dimension: dc.dimension.id };
-        columnMap[dc.label] = { kind: 'dimension_label', dimension: dc.dimension.id };
-    }
-
-    // Inline rather than alias-reference: SQL cannot use an output alias inside
-    // the same SELECT list, so each derivation is expanded down to leaf columns.
-    const sqlFor = (metricId) => {
-        const m = METRICS[metricId];
-        if (m.kind === 'additive' || m.kind === 'snapshot') return leafColumn.get(metricId);
+/**
+ * Expand a metric down to an expression over the leaf columns available on the
+ * stitched (or rolled-up) row.
+ *
+ * Inline rather than alias-reference: SQL cannot use an output alias inside the
+ * same SELECT list, so each derivation is expanded all the way down. Shared with
+ * the rollup stage so the column a top-N is ranked by is computed by exactly the
+ * same rule as the column it is later displayed as.
+ */
+const derivationSql = (metricId, { spec, leafColumn, P }) => {
+    const sqlFor = (id) => {
+        const m = METRICS[id];
+        if (m.kind === 'additive' || m.kind === 'snapshot') return leafColumn.get(id);
         if (m.kind === 'composite') {
             const terms = m.terms.map((t, i) => {
                 const inner = sqlFor(t.metric);
@@ -446,9 +542,35 @@ function buildFinalSelect({ spec, dimColumns, leafColumn, coverageRules, P }) {
         const num = sqlFor(m.numerator);
         const den = sqlFor(m.denominator);
         const scale = scaleSql(m, spec, P);
+        // The ::numeric cast is load-bearing, not tidiness. Where both sides are
+        // integer counts -- lines over invoices, say -- Postgres does integer
+        // division and 2,238 / 1,259 comes back as 1 rather than 1.78. Every
+        // ratio here is a real number by definition, so the cast is applied
+        // once, centrally, rather than left to each metric author to remember.
         return `CASE WHEN COALESCE(${den}, 0) = 0 THEN ${zeroDenominatorLiteral(m)}`
-            + ` ELSE (${num}) * ${scale} / NULLIF(${den}, 0) END`;
+            + ` ELSE (${num})::numeric * ${scale} / NULLIF(${den}, 0) END`;
     };
+    return sqlFor(metricId);
+};
+
+function buildFinalSelect({ spec, dimColumns, leafColumn, coverageRules, P }) {
+    const selectList = ['bucket'];
+    const columnMap = { bucket: { kind: 'bucket' } };
+    const metricColumns = {};
+
+    if (spec.topN) {
+        selectList.push(ROLLUP_COLUMN, ROLLUP_COUNT_COLUMN);
+        columnMap[ROLLUP_COLUMN] = { kind: 'rollup' };
+        columnMap[ROLLUP_COUNT_COLUMN] = { kind: 'rollup_count' };
+    }
+
+    for (const dc of dimColumns) {
+        selectList.push(dc.key, dc.label);
+        columnMap[dc.key] = { kind: 'dimension_key', dimension: dc.dimension.id };
+        columnMap[dc.label] = { kind: 'dimension_label', dimension: dc.dimension.id };
+    }
+
+    const sqlFor = (metricId) => derivationSql(metricId, { spec, leafColumn, P });
 
     const emitted = new Set();
     const emit = (metricId, column, sql) => {
@@ -502,6 +624,9 @@ function scaleSql(metric, spec, P) {
 function buildOrderBy(spec, dimColumns, metricColumns) {
     const dateDim = dimColumns.find((d) => d.dimension.id === 'date');
     const tiebreak = dimColumns.map((d) => `${d.key} ASC NULLS LAST`);
+    // 'Other' is a summary of what is not shown, so it reads last whatever the
+    // sort is -- including when the fold is larger than every named category.
+    const lead = spec.topN ? ['bucket ASC', `${ROLLUP_COLUMN} ASC`] : ['bucket ASC'];
 
     if (spec.sort) {
         const col = metricColumns[spec.sort.by]
@@ -510,13 +635,13 @@ function buildOrderBy(spec, dimColumns, metricColumns) {
             throw new AnalyticsRequestError(400, `Cannot sort by '${spec.sort.by}': it is not one of the requested metrics or dimensions.`);
         }
         // dir is 'ASC' | 'DESC', already narrowed to those two literals upstream.
-        return ['bucket ASC', `${col} ${spec.sort.dir} NULLS LAST`, ...tiebreak].join(', ');
+        return [...lead, `${col} ${spec.sort.dir} NULLS LAST`, ...tiebreak].join(', ');
     }
 
     // A trend reads in time order; anything else reads biggest-first.
-    if (dateDim) return ['bucket ASC', `${dateDim.key} ASC`].join(', ');
+    if (dateDim) return [...lead, `${dateDim.key} ASC`].join(', ');
     const first = metricColumns[spec.metrics[0].id];
-    return ['bucket ASC', `${first} DESC NULLS LAST`, ...tiebreak].join(', ');
+    return [...lead, `${first} DESC NULLS LAST`, ...tiebreak].join(', ');
 }
 
 module.exports = { buildQuery };

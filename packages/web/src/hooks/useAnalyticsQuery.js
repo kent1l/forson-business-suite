@@ -9,21 +9,30 @@ import { useAnalyticsBatch } from '../components/analytics/AnalyticsBatchContext
  * resolved here — a substitution table, not an expression language. A board spec
  * cannot become a place where arbitrary code runs.
  */
-const resolveMacro = (token, boardState) => {
+const resolveMacro = (token, boardState, row) => {
     if (typeof token !== 'string' || !token.startsWith('$')) return token;
     const path = token.slice(1).split('.');
     if (path[0] === 'dateRange') return boardState.dateRange?.[path[1]] ?? null;
     if (path[0] === 'filters') return boardState.filters?.[path[1]] ?? null;
     if (path[0] === 'grain') return boardState.grain ?? null;
+    // `$row.label` / `$row.key` are only meaningful for a drilldown launched
+    // from a specific row; everywhere else they resolve to null rather than to
+    // something stale from a previous click.
+    if (path[0] === 'row') {
+        if (!row) return null;
+        if (path[1] === 'label') return row.label?.[0] ?? null;
+        if (path[1] === 'key') return row.key?.[0] ?? null;
+        return null;
+    }
     return null;
 };
 
-export const resolveParams = (params, boardState) => {
+export const resolveParams = (params, boardState, row = null) => {
     const out = {};
     for (const [key, value] of Object.entries(params || {})) {
         out[key] = Array.isArray(value)
-            ? value.map((v) => resolveMacro(v, boardState))
-            : resolveMacro(value, boardState);
+            ? value.map((v) => resolveMacro(v, boardState, row))
+            : resolveMacro(value, boardState, row);
     }
     return out;
 };
@@ -40,6 +49,10 @@ export const buildRequestBody = (querySpec, boardState) => {
         dateRange: boardState.dateRange,
         filters: { ...(boardState.filters || {}), ...resolveParams(querySpec.filters, boardState) },
         sort: querySpec.sort || null,
+        // The fold is computed server-side. Doing it here would make the 'Other'
+        // row the remainder of whatever the row limit returned rather than the
+        // remainder of the period.
+        topN: querySpec.topN || null,
         limit: querySpec.limit || null,
     };
     // A tile opts into comparison; the board can only turn one off, never on, so

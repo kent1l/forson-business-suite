@@ -116,7 +116,7 @@ function coerceRows(rows, columnMap) {
                 out[col] = value;
             } else if (meta.kind === 'metric') {
                 out[col] = FORMATS[meta.format] && FORMATS[meta.format].numeric ? Number(value) : value;
-            } else if (meta.kind === 'coverage' || meta.kind === 'bucket') {
+            } else if (meta.kind === 'coverage' || meta.kind === 'bucket' || meta.kind === 'rollup_count') {
                 out[col] = Number(value);
             } else if (meta.kind === 'dimension_label') {
                 out[col] = String(value);

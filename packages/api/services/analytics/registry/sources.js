@@ -81,7 +81,7 @@ const SOURCES = Object.freeze({
               ) pm_pick ON TRUE
               LEFT JOIN payment_methods pm ON pm.method_id = pm_pick.method_id`,
         }),
-        dimensions: Object.freeze(['date', 'customer', 'customer_type', 'employee', 'payment_method', 'invoice_status']),
+        dimensions: Object.freeze(['date', 'hour_of_day', 'weekday', 'customer', 'customer_type', 'employee', 'payment_method', 'invoice_status']),
     }),
 
     invoice_line: Object.freeze({
@@ -117,7 +117,7 @@ const SOURCES = Object.freeze({
             employee: 'LEFT JOIN employee e ON e.employee_id = i.employee_id',
         }),
         joinDeps: Object.freeze({ brand: ['part'], group: ['part'] }),
-        dimensions: Object.freeze(['date', 'part', 'brand', 'group', 'customer', 'customer_type', 'employee']),
+        dimensions: Object.freeze(['date', 'hour_of_day', 'weekday', 'part', 'brand', 'group', 'customer', 'customer_type', 'employee']),
     }),
 
     credit_note_header: Object.freeze({
@@ -217,6 +217,89 @@ const SOURCES = Object.freeze({
         }),
         joins: Object.freeze({}),
         dimensions: Object.freeze(['customer', 'customer_type']),
+    }),
+
+    /**
+     * Parts that genuinely need reordering.
+     *
+     * This source exists because "below the reorder point" is not a signal in
+     * this database: 4,840 of 7,485 active parts are below theirs, almost all of
+     * them from unmaintained defaults, and a list of 4,840 rows is a list nobody
+     * reads. The PRD's §2 finding -- rank by consequence, not by flag -- is
+     * therefore encoded HERE, in the candidate set, rather than left to whoever
+     * writes the tile.
+     *
+     * A candidate is a part that:
+     *   - sold on at least three separate invoices in the last 90 days. One
+     *     large one-off order is a customer, not a trend, and reordering against
+     *     it is how dead stock is created;
+     *   - is out of stock, or holds less than 30 days of cover at that rate.
+     *
+     * That is 120 parts against 4,840 for the naive flag. Ranking within the set
+     * is the tile's business, and the tile ranks by the revenue those parts
+     * actually earned -- the consequence of not having them.
+     *
+     * The thresholds are literals in this file on purpose. Making them a request
+     * parameter would put an untrusted number inside a WHERE clause and turn a
+     * definition the whole business shares into a per-user preference.
+     *
+     * `defaultWhere` cannot filter a source out of existence: with no candidates
+     * the metrics return zero rows, which the tile renders as "nothing needs
+     * reordering" rather than as an error.
+     */
+    reorder_candidates: Object.freeze({
+        id: 'reorder_candidates',
+        label: 'Parts needing a reorder',
+        grain: 'part',
+        from: `FROM part p
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(SUM(it.quantity), 0) AS soh
+           FROM inventory_transaction it WHERE it.part_id = p.part_id) soh ON TRUE
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(SUM(il3.quantity), 0) AS qty,
+                  COUNT(DISTINCT il3.invoice_id) AS orders,
+                  COALESCE(SUM(COALESCE(il3.tax_base,
+                    (il3.quantity * il3.sale_price)
+                      - COALESCE(il3.discount_amount, 0)
+                      - COALESCE(il3.tax_amount, 0))), 0) AS revenue
+           FROM invoice_line il3 JOIN invoice i3 ON i3.invoice_id = il3.invoice_id
+           WHERE il3.part_id = p.part_id
+             AND i3.status <> 'Cancelled'
+             AND (i3.invoice_date AT TIME ZONE 'Asia/Manila')::date
+                 > (CURRENT_DATE - INTERVAL '90 days')) dem ON TRUE`,
+        // A position as of now, like the stock snapshot: metrics here declare
+        // grains: ['none'] so no month breakdown can repeat today's list.
+        dateColumn: null,
+        providedJoins: Object.freeze(['part']),
+        defaultWhere: () => [
+            'p.is_service = FALSE',
+            'p.is_active = TRUE',
+            'p.merged_into_part_id IS NULL',
+            'dem.orders >= 3',
+            'dem.qty > 0',
+            // Parenthesised: clauses are joined with AND, and an unbracketed OR
+            // here would quietly widen the whole candidate set.
+            '(soh.soh <= 0 OR soh.soh < (dem.qty / 90.0) * 30)',
+        ],
+        cols: Object.freeze({
+            __alias: 'p',
+            part_id: 'p.part_id',
+            stock_on_hand: 'soh.soh',
+            wac_cost: 'p.wac_cost',
+            reorder_point: 'p.reorder_point',
+            demand_90d: 'dem.qty',
+            orders_90d: 'dem.orders',
+            revenue_90d: 'dem.revenue',
+            // Units needed to reach thirty days of cover. Never negative: a part
+            // that is short on one measure and not the other should read 0, not
+            // hand a negative "shortfall" to a purchasing decision.
+            units_short: "GREATEST(CEIL((dem.qty / 90.0) * 30) - soh.soh, 0)",
+        }),
+        joins: Object.freeze({
+            brand: 'LEFT JOIN brand b ON b.brand_id = p.brand_id',
+            group: 'LEFT JOIN "group" g ON g.group_id = p.group_id',
+        }),
+        dimensions: Object.freeze(['part', 'brand', 'group']),
     }),
 
     expense: Object.freeze({
