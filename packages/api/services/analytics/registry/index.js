@@ -71,8 +71,8 @@ for (const [id, src] of Object.entries(SOURCES)) {
     for (const dimId of src.dimensions) {
         const dim = DIMENSIONS[dimId];
         if (!dim) fail(`source '${id}' lists unknown dimension '${dimId}'`);
-        if (dimId === 'date' && !src.dateColumn) {
-            fail(`source '${id}' lists the 'date' dimension but has no dateColumn`);
+        if (dim.needsDateColumn && !src.dateColumn) {
+            fail(`source '${id}' lists the '${dimId}' dimension, which is derived from a timestamp, but has no dateColumn`);
         }
         try {
             resolveJoins(src, dim.requiresJoins);

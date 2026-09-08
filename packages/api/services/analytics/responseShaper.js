@@ -111,6 +111,16 @@ function shapeResponse({ rows, plan, spec, meta = {} }) {
             values,
             components,
             coverage,
+            // The folded tail, flagged rather than inferred from the label: a
+            // brand genuinely called "Other" must not be styled, filtered or
+            // drilled into as though it were the rollup. `rollupCount` is how
+            // many categories the row stands for -- 1 everywhere but the fold.
+            ...(plan.rollup
+                ? {
+                    rollup: row[plan.rollup.column] === true,
+                    rollupCount: Number(row[plan.rollup.countColumn]) || 0,
+                }
+                : {}),
         };
     };
 
@@ -167,6 +177,18 @@ function shapeResponse({ rows, plan, spec, meta = {} }) {
             rowCount: shaped.length,
             // Silence here is how a chart lies: say so when there was more.
             truncated: shaped.length >= plan.limit,
+            // A rollup is the honest alternative to truncation: nothing was
+            // dropped, the tail is on screen as one row, and the tile says how
+            // many categories it stands for.
+            rollup: plan.rollup
+                ? {
+                    n: plan.rollup.n,
+                    by: plan.rollup.by,
+                    // Categories folded into 'Other'. Zero means every category
+                    // fitted, and the tile should not claim otherwise.
+                    folded: shaped.reduce((n, r) => (r.rollup ? n + r.rollupCount : n), 0),
+                }
+                : null,
             ...meta,
         },
         rows: shaped,

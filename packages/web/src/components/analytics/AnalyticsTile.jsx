@@ -8,8 +8,11 @@ import KpiTile from './tiles/KpiTile';
 import LineTile from './tiles/LineTile';
 import BarTile from './tiles/BarTile';
 import TableTile from './tiles/TableTile';
+import HeatmapTile from './tiles/HeatmapTile';
 
-const TILE_TYPES = { kpi: KpiTile, line: LineTile, bar: BarTile, table: TableTile };
+const TILE_TYPES = {
+    kpi: KpiTile, line: LineTile, bar: BarTile, table: TableTile, heatmap: HeatmapTile,
+};
 
 /**
  * The whole dispatch. A board spec names a type and a metric; everything else —
@@ -50,14 +53,21 @@ const AnalyticsTile = ({ spec, boardState, onNavigate, canExport }) => {
         if (onNavigate) onNavigate(page, params);
     };
 
+    // The actions-menu drilldown belongs to the whole tile, so it resolves with
+    // no row: a `$row.*` macro yields null rather than whatever was hovered.
     const onDrilldown = drilldown?.kind === 'page' && onNavigate
-        ? () => navigateTo(drilldown.page, resolveParams(drilldown.params, boardState))
+        ? () => navigateTo(drilldown.page, resolveParams(drilldown.params, boardState, null))
         : null;
 
+    // A click on a row either narrows the board or leaves it. The 'Other' row
+    // does neither: it is a summary of what is not listed, so there is nothing
+    // to filter to and nothing to open.
     const onSelectRow = drilldown?.kind === 'filter'
-        ? (row) => boardState.onAddFilter?.(drilldown.dimension, row.key?.[0] ?? row.key)
+        ? (row) => { if (row && !row.rollup) boardState.onAddFilter?.(drilldown.dimension, row.key?.[0]); }
         : (drilldown?.kind === 'page' && onNavigate
-            ? () => navigateTo(drilldown.page, resolveParams(drilldown.params, boardState))
+            // The row is passed through so a drilldown can resolve `$row.label`
+            // and land on the part the reader actually clicked.
+            ? (row) => { if (!row?.rollup) navigateTo(drilldown.page, resolveParams(drilldown.params, boardState, row)); }
             : null);
 
     const onExportCsv = canExport && spec.type !== 'kpi'
@@ -91,6 +101,7 @@ const AnalyticsTile = ({ spec, boardState, onNavigate, canExport }) => {
             onRetry={refetch}
             coverage={coverage}
             truncated={meta?.truncated}
+            rollup={meta?.rollup}
             cached={meta?.cached}
             cacheAgeMs={meta?.cacheAgeMs}
             actions={{

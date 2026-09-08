@@ -34,7 +34,7 @@ const cacheAge = (ms) => {
  * the top 8 of 444 brands is a chart that lies.
  */
 const TileShell = ({
-    title, help, span, loading, error, onRetry, coverage, truncated, cached, cacheAgeMs,
+    title, help, span, loading, error, onRetry, coverage, truncated, rollup, cached, cacheAgeMs,
     actions = {}, footer, centerBody = false, children,
 }) => (
     <section className={`${spanClasses(span)} flex flex-col rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800`}>
@@ -90,13 +90,21 @@ const TileShell = ({
                     : children}
         </div>
 
-        {(coverage || truncated || (cached && cacheAge(cacheAgeMs)) || footer) && (
+        {(coverage || truncated || rollup?.folded > 0 || (cached && cacheAge(cacheAgeMs)) || footer) && (
             <footer className="mt-3 space-y-1 border-t border-neutral-100 pt-2 dark:border-slate-700">
                 {coverage ? <CoverageBadge coverage={coverage} onFixData={actions.onFixData} /> : null}
                 {footer}
                 {truncated ? (
                     <p className="text-[11px] text-neutral-500 dark:text-slate-400">
                         Showing the top rows only — there are more than are listed here.
+                    </p>
+                ) : null}
+                {/* The honest alternative to truncation: nothing was dropped, and
+                    this says how much of the answer the last row is carrying. */}
+                {rollup?.folded > 0 ? (
+                    <p className="text-[11px] text-neutral-500 dark:text-slate-400">
+                        The top {rollup.n} are listed; the other {rollup.folded.toLocaleString()} are
+                        added together as “Other”, so the figures here cover the whole period.
                     </p>
                 ) : null}
                 {cached && cacheAge(cacheAgeMs) ? (

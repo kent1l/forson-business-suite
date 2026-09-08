@@ -62,6 +62,9 @@ const AnalyticsBoard = ({ boardId, onNavigate }) => {
 
     const activeFilterCount = Object.values(filters).reduce((n, v) => n + v.length, 0);
     const canExport = !!meta?.permissions?.export;
+    // A board of positions as of now has nothing for a date picker to change.
+    // Showing one anyway would teach the reader that the figures moved with it.
+    const periodless = board?.period === 'none';
 
     if (loading) return <LoadingState label="Loading board…" />;
     if (error) return <ErrorState title="Could not load this board" description={error} onRetry={load} />;
@@ -70,26 +73,35 @@ const AnalyticsBoard = ({ boardId, onNavigate }) => {
     return (
         <div>
             <div className="mb-4 flex flex-wrap items-center gap-3">
-                <label className="flex items-center gap-2 text-sm text-neutral-600 dark:text-slate-300">
-                    <Icon path={ICONS.calendar} className="h-4 w-4 text-neutral-400" />
-                    <select
-                        value={preset}
-                        onChange={(e) => setPreset(e.target.value)}
-                        className="rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm text-neutral-800 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                    >
-                        {presets.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-                    </select>
-                </label>
+                {periodless ? (
+                    <span className="flex items-center gap-2 text-sm text-neutral-500 dark:text-slate-400">
+                        <Icon path={ICONS.calendar} className="h-4 w-4 text-neutral-400" />
+                        Everything here is the position as of now.
+                    </span>
+                ) : (
+                    <>
+                        <label className="flex items-center gap-2 text-sm text-neutral-600 dark:text-slate-300">
+                            <Icon path={ICONS.calendar} className="h-4 w-4 text-neutral-400" />
+                            <select
+                                value={preset}
+                                onChange={(e) => setPreset(e.target.value)}
+                                className="rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm text-neutral-800 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                            >
+                                {presets.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+                            </select>
+                        </label>
 
-                <label className="flex items-center gap-2 text-sm text-neutral-600 dark:text-slate-300">
-                    <input
-                        type="checkbox"
-                        checked={!!compareOn}
-                        onChange={(e) => setCompareOn(e.target.checked)}
-                        className="h-4 w-4 rounded border-neutral-300 text-primary-600"
-                    />
-                    Compare with the previous period
-                </label>
+                        <label className="flex items-center gap-2 text-sm text-neutral-600 dark:text-slate-300">
+                            <input
+                                type="checkbox"
+                                checked={!!compareOn}
+                                onChange={(e) => setCompareOn(e.target.checked)}
+                                className="h-4 w-4 rounded border-neutral-300 text-primary-600"
+                            />
+                            Compare with the previous period
+                        </label>
+                    </>
+                )}
 
                 {activeFilterCount > 0 && (
                     <button

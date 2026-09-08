@@ -1,8 +1,9 @@
 # Business Analytics Module — PRD & Developer Handoff
 
 > **Forson Business Suite** | **PRD-FBS-ANL-001** | **Version:** 1.0
-> **Date:** 2026-09-06 | **Last updated:** 2026-09-08 | **Branch:** `phase-0`
-> **Status:** Phase 0 shipped (commit `8832a6e`) — Phase 1 not started
+> **Date:** 2026-09-06 | **Last updated:** 2026-09-08 | **Branch:** `phase-1-business-analytics`
+> **Status:** Phase 0 merged (PR #173). Phase 1 built — Sales + Inventory boards, the top-N rollup,
+> the heatmap. Phase 2 not started.
 
 ---
 
@@ -16,8 +17,8 @@ Read this first. It is the only section that changes often; update it as phases 
 | Architecture & design review | **Done** | §5–§7 |
 | Profit overstatement bug (prerequisite) | **Done — PR #171** | `fix/profit-cost-coverage` → `master` |
 | `helpers/costCoverage.js` (trust predicate) | **Done — PR #171** | Reused by the metric registry's trust layer |
-| Phase 0 — engine + Overview board | **Done — `phase-0`, commit `8832a6e`** | §17 |
-| Phase 1 — Sales + Inventory boards | **Not started** | §9 |
+| Phase 0 — engine + Overview board | **Done — merged, PR #173** | §17 |
+| Phase 1 — Sales + Inventory boards | **Done — `phase-1-business-analytics`** | §19 |
 | Phase 2 — Profitability + Data Trust | **Not started** | §9 |
 | Phase 3 — Customers + Receivables | **Not started** | §9 |
 | Phase 4 — Purchasing + Operations | **Not started** | §9 |
@@ -25,6 +26,8 @@ Read this first. It is the only section that changes often; update it as phases 
 | Insights panel | **Deferred to after Phase 2** (owner decision) | §14 |
 | `cost_at_sale` write-path fix | **Open — needs a decision** | §13, R1 |
 | Refunds understated 12× in `/reports/sales-summary` | **Open — found during Phase 0; highest-value follow-up** | §17.4 |
+| Line discounts never recorded (0 of 11,540 lines) | **Open — found during Phase 1; tiles built and gated** | §19.4 |
+| Days of Inventory | **Built, measured, removed — not honest yet** | §19.4 |
 
 ### If you are picking this up cold
 
@@ -36,7 +39,9 @@ Read this first. It is the only section that changes often; update it as phases 
    exists, where it lives, how to extend it, and every place the implementation diverges. **Where
    the two disagree, §17 and the code are right.** §17.2 is the recipe for adding a metric, a tile
    or a board; §17.7 is how to run the checks.
-5. Start Phase 1 at §17.8, which says what it has to add and what it must not do.
+5. **Read §19 — Phase 1 as built.** §17 is the Phase 0 handoff and is still accurate about the
+   engine; §19 records what Phase 1 added, the two bugs it uncovered in Phase 0's own work, and
+   where Phase 2 starts. §17.8 is what Phase 1 was *asked* to do; §19 is what it did.
 
 The code is the other half of this document. `packages/api/services/analytics/registry/index.js`
 and `queryBuilder.js` carry long comments explaining *why* each rule exists; they are worth reading
@@ -1001,7 +1006,7 @@ settings migration; page shell, board renderer, tile framework, `useAnalyticsQue
 *This phase determines whether the rest is cheap. Everything after is content. When Phase 1 needs
 "Sales by brand" and it is a board-spec entry, the design has proved itself.*
 
-### Phase 1 — Sales + Inventory  *(NOT STARTED)*
+### Phase 1 — Sales + Inventory  *(DONE — see §19)*
 The two highest-value boards. Adds `heatmap` and richer `table` tiles, top-N + "Other" rollup,
 CSV export, drill-down into existing pages.
 
@@ -1805,4 +1810,211 @@ fan-out-safe declaration (§13 R4), or plot the A/R ledger's three weeks as a tr
 | Date | Version | Change |
 |---|---|---|
 | 2026-09-06 | 1.0 | Initial PRD. Live-data profiling, architecture, design review incorporated. PR #171 (profit overstatement) shipped as prerequisite. Insights panel deferred to post-Phase-2 by owner decision. |
+| 2026-09-08 | 1.2 | Phase 1 built on `phase-1-business-analytics`. §19 added as the Phase 1 as-built record: the Sales and Inventory boards, the server-side top-N rollup, the `heatmap` tile, the two time dimensions, the `reorder_candidates` source and why the "rank by consequence" rule lives in a source rather than a filter, `period: 'none'` boards, `$row.*` drilldowns into Sales History and Inventory, two bugs found in Phase 0's own work (integer-divided ratios; `date` special-cased by name), and two data findings — line discounts never recorded, and Days of Inventory built, measured at 866 days, and removed as not honestly computable yet. |
 | 2026-09-08 | 1.1 | Phase 0 shipped (`phase-0`, `8832a6e`). §17 rewritten as an as-built handoff: the file map, the recipes for adding a metric/tile/board, the metric-contract change that makes the trust filter unbypassable, three data findings that changed source definitions (including a twelvefold refund understatement still present in `/reports/sales-summary`), the figures verified against the live database, the validated series palette, how to run the checks, and where Phase 1 starts. |
+
+---
+
+## 19. Phase 1 — As Built
+
+**Built on branch `phase-1-business-analytics`, off `business-analytics` after PR #173.**
+
+§17.8 set Phase 1 one job above all others: prove the Phase 0 design by finding out whether "Sales
+by brand" is a board-spec entry and nothing else.
+
+**It is.** Every one of the 30 new tiles across the two new boards is a registry entry plus a board
+entry. No new route, no new SQL file, no new React component *per tile*. The only new component in
+the whole phase is `HeatmapTile`, and that is a genuinely new **shape** — a grid of cells with a
+colour scale — rather than a new question. The machinery has paid for itself.
+
+### 19.1 What Phase 1 added
+
+**Two boards.** `boards/sales.js` (16 tiles) and `boards/inventory.js` (14 tiles), registered in
+`BOARD_LIST` — one file and one line each, exactly as §17.2 promised.
+
+**15 new metrics**, taking the registry from 23 to 38:
+
+| File | Added |
+|---|---|
+| `metrics/sales.js` | `line_count`, `customers_served`, `discount_given`, `undiscounted_revenue`, `lines_per_invoice`, `discount_rate` |
+| `metrics/inventory.js` | `units_on_hand`, `dead_stock_parts`, and the seven `reorder_*` metrics |
+
+**Two dimensions.** `hour_of_day` and `weekday`, both derived from the source's own timestamp in
+Manila local time. Deliberately **not** grains: a grain slices a period into consecutive buckets,
+where these fold every day in the range onto the same 24 hours. That folding is the entire point —
+it is what makes "when should the second cashier start" answerable.
+
+**One fact source.** `reorder_candidates` — see §19.2.
+
+**Server-side top-N with an 'Other' rollup.** `topN: { n, by }` on a query adds two CTEs between the
+stitch and the final SELECT: `ranked` numbers the categories by the ranking metric, and `rolled`
+folds everything past *n* into one row flagged `is_other` and sized by `rollup_count`.
+
+Four properties are load-bearing:
+
+- **The fold is over LEAF columns, before any ratio is computed.** Summing a tail of margin
+  percentages would be meaningless; summing its profit and its costed revenue and dividing
+  afterwards is the rule the rest of the module already follows.
+- **A trusted leaf stays NULL through the fold.** `SUM` over an all-NULL group is NULL, so "no cost
+  was recorded for any of those 374 brands" survives as a dash and a *No cost data* badge rather
+  than becoming a confident zero.
+- **The tail is identified by a flag, never by its label.** A brand genuinely called "Other" is a
+  category like any other, and a NULL key that means "(No brand)" must not merge into a NULL key
+  that means "the other four hundred". The flag is also what stops the fold being clicked into,
+  filtered on, or sorted out of last place.
+- **It is refused on anything but one non-date breakdown.** Across two dimensions "the rest" could
+  be the rest of either; against a date grain it would mean a different set of categories in every
+  period. There is no `other: false` — a rollup always states what it left out, and a caller who
+  wants a plain top ten sets `limit`.
+
+Verified against the live database: top 6 brands + Other over twelve months totals
+**₱11,493,783.0343**, matching an independent `SUM` over the same range to the cent, with 374 brands
+folded and `truncated: false`.
+
+**Overview's two categorical tiles were migrated to it.** They previously carried `limit: 8` and
+reported `truncated: true` — the largest eight brands with no statement about the other 109. That is
+the exact failure §17.8 called mandatory to fix, and leaving Overview on the old behaviour while the
+new boards did it properly would have been worse than not having the feature.
+
+**A `heatmap` tile type**, built from plain elements rather than a second charting dependency —
+recharts has no cell mark. A cell with no data is a **neutral**, not the palest step of the ramp:
+"we were shut" and "we were open and sold almost nothing" lead to opposite staffing decisions.
+
+**Richer tables.** A rank column, a proportion bar behind the ranked column drawn as a share of the
+largest row, and client-side re-sorting. The re-sort is over the rows already on screen only, and
+the header tooltip says so — re-sorting must not be able to fetch a different set, because the set
+was chosen by the server's own ranking and changing it would make the 'Other' row wrong.
+
+**Board-level `period: 'none'`.** The Inventory board is entirely positions as of now, and the two
+windows it uses (180 days for dead stock, 90 for reorder demand) are properties of those
+definitions, not of a picker. A date control that changed nothing would teach the reader that the
+figures moved with it, so the board declares no period and the frontend shows "Everything here is
+the position as of now" instead. Board validation enforces the promise: nothing comparable, no
+grain, no date dimension, no comparison may appear on such a board.
+
+**Drill-down into existing pages.** The `$row.*` macro joins the closed vocabulary, so a tile can
+declare `params: { search: '$row.label' }` and land on the row the reader clicked.
+`SalesHistoryPage` and `InventoryPage` now accept `pageState` and seed their date range and search
+box from it. A part's display name is what the search index is built from, so the clicked part comes
+back first — checked against Meilisearch, exact match ranked first in both spot checks.
+
+### 19.2 The reorder list, and why it is a source rather than a filter
+
+§2 measured that "below reorder point" flags 3,099 parts. Re-measured during Phase 1 it is **4,840
+of 7,485** — noise from unmaintained defaults, and a list nobody reads.
+
+The rule "rank by consequence, not by flag" is therefore encoded in a **fact source**, not left to
+whoever writes a tile. `reorder_candidates` restricts, in its `defaultWhere`, to parts that:
+
+- sold on **at least three separate invoices** in the last 90 days — one large one-off order is a
+  customer, not a trend, and reordering against it is how dead stock gets created; and
+- are **out of stock, or hold under thirty days of cover** at that rate.
+
+That is **118 parts**. A metric's `where` could not have done this: `where` becomes a `FILTER` on the
+aggregate, so a part failing it would still produce a row, with a zero in it. A source's
+`defaultWhere` is the only place the *row set* itself can be defined.
+
+The thresholds are literals in that file on purpose. Making them a request parameter would put an
+untrusted number inside a `WHERE` clause and turn a definition the whole business shares into a
+per-user preference.
+
+The list is ranked by `reorder_revenue_90d` — what those parts actually earned — because that is the
+money at risk if the shelf stays empty. It is one of the few tiles that keeps a plain `limit` rather
+than a rollup: an "Other" row on a to-do list is not actionable, and `truncated: true` correctly
+tells the reader there are more than the 25 shown.
+
+### 19.3 Two bugs Phase 1 found in Phase 0's own work
+
+Both were found by running new tiles against the live database, and both are fixed here.
+
+**1. Ratios were integer-divided.** `buildFinalSelect` emitted `(num) * scale / NULLIF(den, 0)`.
+Where both sides are integer counts, Postgres does integer division: `sales.lines_per_invoice` came
+back as **1** where the true figure is 2,238 / 1,259 = **1.78**. No Phase 0 metric hit it —
+`avg_ticket` divides a numeric by a count, and `refund_rate` carries a numeric scale — so the first
+ratio over two counts was the first to expose it. The fix is a `::numeric` cast on the numerator,
+applied once and centrally rather than left to each metric author, and it shows up as a one-line
+diff in the SQL snapshot. Note the JS `evaluateMetric` in `responseShaper.js` was always right, so
+**the totals disagreed with the rows** — which is precisely the class of quiet wrong number the
+snapshots exist to catch.
+
+**2. `date` was special-cased by name.** The registry and the builder both checked
+`dimId === 'date' && !src.dateColumn`. Adding two more timestamp-derived dimensions would have let
+`hour_of_day` through on the stock snapshot, where `src.dateColumn` is null and the rendered SQL
+would have said `EXTRACT(HOUR FROM null...)`. Both checks now read a `needsDateColumn` flag off the
+dimension, so a third one needs no change anywhere.
+
+### 19.4 What Phase 1 learned about the data
+
+**1. Line discounts have never been recorded — 0 of 11,540 lines carry a non-zero
+`discount_amount`.** A Discount Rate tile would therefore have read a confident **0.0%**, which says
+"we never discount" where the truth is "this is not being captured". The metrics are built and
+registered; they are gated behind a new readiness probe `line_discount_data` and render *"Discounts
+are not being recorded on sale lines yet"* until a cashier records the first one, at which point
+they light up with no code change. This is the readiness mechanism doing the job §3.4 designed it
+for, applied to a field on a table that is very much in use rather than to a scaffolded module.
+
+**2. Days of Inventory was built, measured, and removed.** Stock value over cost of goods sold is
+the textbook measure and the `scale: { context: 'days_in_range' }` machinery already existed for it.
+Run against the live database it returned **866 days**. The numerator is measured over the 38% of
+stocked parts that carry a weighted average cost; the denominator over the 17% of sale lines that
+recorded one. Dividing two figures whose coverage is unrelated produces a number that is wrong by
+roughly six times, and **a single coverage badge cannot disclose that** — the tile would have shown
+one percentage and been distorted by another. §3's first decision forbids exactly this, so the
+metric was deleted rather than shipped with a caveat. The reasoning is recorded at the top of
+`metrics/inventory.js`, where the next author will look for it. It becomes computable honestly once
+the `cost_at_sale` write path stops recording 0 for an unknown cost (§13 R1).
+
+**3. Late-evening and midnight invoices exist.** The heatmap's columns span the first to the last
+hour that traded, and a handful of rows at 00:00 and 21:00–23:00 stretch that to the full day. They
+are real records — entered late — so they are shown rather than trimmed. Hours *inside* the trading
+day that sold nothing keep their column, because that gap is the finding.
+
+### 19.5 Figures verified against the live database
+
+| Check | Result |
+|---|---|
+| Top-6 brands + Other, 12 months | ₱11,493,783.0343 — matches an independent `SUM` to the cent; 374 brands folded |
+| Stock value by brand, top 3 + Other | ₱2,605,358.24 — identical to the standalone Inventory Value KPI; 441 brands folded |
+| Reorder candidates | 118 parts, against 4,840 for the naive below-reorder-point flag |
+| Trading pattern (heatmap, 90 days) | Peaks 10:00–12:00 and 14:00–16:00, matching §2's independent profiling |
+| Board load, live, uncached | Overview 704 ms · Sales 165 ms · Inventory 1,866 ms (the reorder laterals and the `parts_view` label lookup) — all well inside the 8 s statement timeout |
+
+### 19.6 Checks
+
+Unchanged from §17.7, plus one file:
+
+```bash
+docker exec forson_backend_dev npm run test                        # 66 suites, 862 tests, 6 snapshots
+docker exec forson_backend_dev node tests/analyticsRegistry_db_test.js   # now 279 statements (was 156)
+```
+
+New tests: `tests/analyticsRollup.test.js` (7 cases — the fold end to end, through
+`buildQuery -> coerceRows -> shapeResponse`), and four new blocks in
+`analyticsQueryBuilder.test.js` covering the rollup SQL and its refusals, the two time dimensions,
+and the integer-division regression. Two new SQL snapshots.
+
+> ⚠️ The `packages/api/tests/__snapshots__/` permission gotcha in §17.7 bites again the first time a
+> new snapshot is written. `chmod 777` the directory and `chmod 666` the `.snap` files before
+> running jest in the container.
+
+### 19.7 Where Phase 2 starts
+
+§9's Phase 2 is Profitability + Data Trust, delivered together because neither is honest without the
+other, plus migrating `/reports/profitability-by-product` onto the registry (§13 R2).
+
+What it inherits, and should use:
+
+- **The rollup handles the concentration story.** A Pareto tile is a rollup with a running total,
+  not a new query shape.
+- **`period: 'none'`** is the pattern for the Data Trust board, which is also entirely a position.
+- **The readiness probes now cover four cases**, and `line_discount_data` shows the pattern for "a
+  field that exists and is not being filled in" as distinct from "a module not yet in use".
+
+What Phase 2 must **not** do:
+
+- Do not restore Days of Inventory, or any other ratio whose numerator and denominator carry
+  different trust rules, until the write path is fixed. §19.4 explains why one badge cannot cover
+  two coverages.
+- Do not add a second grain to a snapshot metric (§13 R5) — build an `inventory_history` source.
+- Do not allow a `tag` breakdown of an additive metric without a fan-out-safe declaration (§13 R4).
+- Do not plot the A/R ledger's few weeks as a trend (§2).

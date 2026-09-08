@@ -7,7 +7,17 @@
  *
  * `valueType` decides the array cast a filter is pushed with, so the cast is
  * registry-controlled rather than inferred from whatever the caller sent.
+ *
+ * `needsDateColumn` marks a dimension derived from the source's own date column.
+ * A source with no date -- the stock snapshot, the A/R ledger view -- cannot
+ * answer it, and both the registry's load-time check and the query builder's
+ * per-request check read this flag rather than special-casing 'date' by name.
  */
+
+// The one place this module names a time zone. Everything downstream periodises
+// on the Manila calendar, so a dimension derived from a timestamp must too.
+const MANILA = "AT TIME ZONE 'Asia/Manila'";
+
 const DIMENSIONS = Object.freeze({
     date: Object.freeze({
         id: 'date',
@@ -15,11 +25,52 @@ const DIMENSIONS = Object.freeze({
         kind: 'time',
         requiresJoins: Object.freeze([]),
         filterable: false,
+        needsDateColumn: true,
         valueType: 'text',
         key: (c, src, ctx) =>
-            `date_trunc('${ctx.grainUnit}', ${src.dateColumn} AT TIME ZONE 'Asia/Manila')`,
+            `date_trunc('${ctx.grainUnit}', ${src.dateColumn} ${MANILA})`,
         keyLabel: (c, src, ctx) =>
-            `to_char(date_trunc('${ctx.grainUnit}', ${src.dateColumn} AT TIME ZONE 'Asia/Manila'), '${ctx.dateFormat}')`,
+            `to_char(date_trunc('${ctx.grainUnit}', ${src.dateColumn} ${MANILA}), '${ctx.dateFormat}')`,
+    }),
+    /**
+     * Hour of the trading day, in Manila local time.
+     *
+     * Deliberately NOT a grain. A grain slices a period into consecutive
+     * buckets; this folds every day in the range onto the same 24 hours, which
+     * is what makes "when should the second cashier start" answerable at all.
+     * Pairing it with `weekday` gives the staffing heatmap; the two together are
+     * the whole reason this dimension exists.
+     */
+    hour_of_day: Object.freeze({
+        id: 'hour_of_day',
+        label: 'Hour of day',
+        kind: 'time',
+        requiresJoins: Object.freeze([]),
+        filterable: false,
+        needsDateColumn: true,
+        valueType: 'int',
+        key: (c, src) => `EXTRACT(HOUR FROM ${src.dateColumn} ${MANILA})::int`,
+        // Written out rather than to_char'd off the timestamp so the label is a
+        // pure function of the key, and a GROUP BY on both cannot split an hour.
+        keyLabel: (c, src) =>
+            `lpad(EXTRACT(HOUR FROM ${src.dateColumn} ${MANILA})::text, 2, '0') || ':00'`,
+    }),
+    /**
+     * Day of the week, Monday first (ISO), in Manila local time.
+     *
+     * The key is the ISO number so the heatmap's rows sort Mon-Sun on their own
+     * rather than alphabetically; the label is the short day name.
+     */
+    weekday: Object.freeze({
+        id: 'weekday',
+        label: 'Day of week',
+        kind: 'time',
+        requiresJoins: Object.freeze([]),
+        filterable: false,
+        needsDateColumn: true,
+        valueType: 'int',
+        key: (c, src) => `EXTRACT(ISODOW FROM ${src.dateColumn} ${MANILA})::int`,
+        keyLabel: (c, src) => `to_char(${src.dateColumn} ${MANILA}, 'Dy')`,
     }),
     brand: Object.freeze({
         id: 'brand',

@@ -220,6 +220,60 @@ describe('analytics query builder — injection safety', () => {
         expect(() => build({ metrics: ['sales.gross_revenue'], dateRange: { from: "2026-01-01'; --", to: '2026-01-31' } }))
             .toThrow(AnalyticsRequestError);
     });
+
+    // topN is the newest request surface, and the only one that puts a caller's
+    // NUMBER inside a window-function stage rather than a WHERE clause.
+    test.each(HOSTILE)('a hostile topN ranking metric yields a 400: %s', (hostile) => {
+        expect(() => build({
+            metrics: ['sales.line_revenue'],
+            dimensions: ['brand'],
+            dateRange: RANGE,
+            topN: { n: 5, by: hostile },
+        })).toThrow(AnalyticsRequestError);
+    });
+
+    test.each([
+        '5; DROP TABLE part;--',
+        '5 OR 1=1',
+        5.5,
+        Infinity,
+        NaN,
+        -1,
+        null,
+    ])('a topN size that is not a whole number in range is refused: %p', (hostile) => {
+        expect(() => build({
+            metrics: ['sales.line_revenue'],
+            dimensions: ['brand'],
+            dateRange: RANGE,
+            topN: { n: hostile },
+        })).toThrow(AnalyticsRequestError);
+    });
+
+    test('anything that does numify is coerced to a real integer before it is bound', () => {
+        // Not a hole: a JSON body cannot carry a function, and whatever the caller
+        // sent becomes a genuine JS number here or is refused. It reaches the
+        // statement as a bound parameter either way, never as text.
+        const { text, values } = build({
+            metrics: ['sales.line_revenue'],
+            dimensions: ['brand'],
+            dateRange: RANGE,
+            topN: { n: '6' },
+        });
+        expect(values).toContain(6);
+        expect(values).not.toContain('6');
+        expect(text).toMatch(/rn > \$\d+/);
+    });
+
+    test('a valid topN size still reaches the statement only as a parameter', () => {
+        const { text, values } = build({
+            metrics: ['sales.line_revenue'],
+            dimensions: ['brand'],
+            dateRange: RANGE,
+            topN: { n: 7 },
+        });
+        expect(text).not.toMatch(/\b7\b/);
+        expect(values).toContain(7);
+    });
 });
 
 describe('registry SQL carries no placeholders of its own', () => {
@@ -272,5 +326,161 @@ describe('registry SQL carries no placeholders of its own', () => {
         const aggregate = text.split('\n').find((line) => line.includes('cost_at_sale') && line.includes('SUM('));
         expect(aggregate).toContain('FILTER (WHERE');
         expect(aggregate).toContain('il.cost_at_sale > 0');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 1: the top-N rollup, the two time dimensions, and the integer-division
+// regression the first ratio over two counts uncovered.
+// ---------------------------------------------------------------------------
+
+describe('analytics query builder — top-N with an Other rollup', () => {
+    // Deliberately not the assertion-counting helper the older blocks use: some
+    // of these refusals are worth checking twice in one test, and a fixed count
+    // makes that impossible.
+    const refusalFor = (body) => {
+        try {
+            build(body);
+        } catch (err) {
+            return err;
+        }
+        throw new Error(`Expected ${JSON.stringify(body)} to be refused, but it built.`);
+    };
+    const expectStatus = (body, status, matcher) => {
+        const err = refusalFor(body);
+        expect(err).toBeInstanceOf(AnalyticsRequestError);
+        expect(err.status).toBe(status);
+        expect(err.message).toMatch(matcher);
+    };
+
+    const BRANDS = {
+        metrics: ['sales.line_revenue'],
+        dimensions: ['brand'],
+        dateRange: RANGE,
+        topN: { n: 8, by: 'sales.line_revenue' },
+    };
+
+    test('the fold happens in SQL, over leaf columns, and is flagged and counted', () => {
+        const { text } = build(BRANDS);
+        expect(text).toMatchSnapshot();
+
+        expect(text).toContain('ranked AS (');
+        expect(text).toContain('rolled AS (');
+        expect(text).toMatch(/ROW_NUMBER\(\) OVER \(PARTITION BY j\.bucket ORDER BY m_0 DESC NULLS LAST/);
+        // The tail is identified by a flag and sized by a count, so the frontend
+        // never has to infer either from the label.
+        expect(text).toContain('AS is_other');
+        expect(text).toContain('COUNT(*) AS rollup_count');
+        // Leaves are summed; nothing derived is folded, because summing a tail of
+        // margin percentages would be meaningless.
+        expect(text).toContain('SUM(m_0) AS m_0');
+    });
+
+    test('n is a parameter, never spliced into the text', () => {
+        const { text, values } = build(BRANDS);
+        expect(text).not.toMatch(/rn > 8\b/);
+        expect(text).toMatch(/rn > \$\d+/);
+        expect(values).toContain(8);
+    });
+
+    test("the 'Other' row sorts last whatever the reader sorted by", () => {
+        const { text } = build({ ...BRANDS, sort: { by: 'sales.line_revenue', dir: 'ASC' } });
+        // Without this the fold would lead an ascending sort, and a summary of
+        // what is NOT listed would sit above the things that are.
+        expect(text).toMatch(/ORDER BY bucket ASC, is_other ASC,/);
+    });
+
+    test('the row limit is raised above n so the fold cannot be cut off the bottom', () => {
+        // A tile setting both limit: 8 and topN: { n: 8 } would otherwise lose the
+        // very row the rollup exists to produce.
+        const spec = parseQueryRequest({ ...BRANDS, limit: 8 }, adminReq);
+        expect(spec.limit).toBe(9);
+    });
+
+    test('a rollup needs exactly one non-date breakdown', () => {
+        expectStatus(
+            { ...BRANDS, dimensions: ['brand', 'customer'] },
+            400,
+            /exactly one category breakdown/
+        );
+        expectStatus(
+            {
+                metrics: ['sales.gross_revenue'],
+                dimensions: ['date'],
+                grain: 'month',
+                dateRange: RANGE,
+                topN: { n: 5 },
+            },
+            400,
+            /exactly one category breakdown/
+        );
+    });
+
+    test('a rollup can only be ranked by a metric the query asks for', () => {
+        expectStatus(
+            { ...BRANDS, topN: { n: 8, by: 'margin.gross_profit' } },
+            400,
+            /Cannot rank a top-N by/
+        );
+    });
+
+    test('n is bounded', () => {
+        expectStatus({ ...BRANDS, topN: { n: 0 } }, 400, /whole number between 1 and/);
+        expectStatus({ ...BRANDS, topN: { n: 5000 } }, 400, /whole number between 1 and/);
+    });
+
+    test('a query with no topN is unchanged — no ranking stage at all', () => {
+        const { text } = build({ metrics: ['sales.line_revenue'], dimensions: ['brand'], dateRange: RANGE });
+        expect(text).not.toContain('ranked AS (');
+        expect(text).not.toContain('is_other');
+    });
+});
+
+describe('analytics query builder — the hour and weekday dimensions', () => {
+    test('both fold the whole range onto one grid, in Manila local time', () => {
+        const { text } = build({
+            metrics: ['sales.gross_revenue'],
+            dimensions: ['weekday', 'hour_of_day'],
+            dateRange: RANGE,
+        });
+        expect(text).toMatchSnapshot();
+        expect(text).toContain("EXTRACT(ISODOW FROM i.invoice_date AT TIME ZONE 'Asia/Manila')::int");
+        expect(text).toContain("EXTRACT(HOUR FROM i.invoice_date AT TIME ZONE 'Asia/Manila')::int");
+        // Not a grain: there is no date_trunc, so the hours of every day in the
+        // range land in the same 24 buckets rather than in consecutive ones.
+        expect(text).not.toContain('date_trunc');
+    });
+
+    test('a source with no timestamp refuses them by name', () => {
+        expect.assertions(2);
+        try {
+            build({
+                metrics: ['inventory.stock_value'],
+                dimensions: ['hour_of_day'],
+                dateRange: RANGE,
+            });
+        } catch (err) {
+            expect(err.status).toBe(400);
+            // Driven by the dimension's needsDateColumn flag, not by naming 'date'.
+            expect(err.message).toMatch(/has no date, so it cannot be broken down by hour of day/);
+        }
+    });
+});
+
+describe('analytics query builder — ratios are real numbers', () => {
+    test('a ratio over two integer counts is cast, not integer-divided', () => {
+        // Lines per invoice was the first ratio whose numerator and denominator
+        // are both counts. Without the cast Postgres returned 2238 / 1259 = 1.
+        const { text } = build({ metrics: ['sales.lines_per_invoice'], dateRange: RANGE });
+        expect(text).toMatch(/ELSE \(m_\d\)::numeric \* /);
+    });
+
+    test('every ratio in the registry carries the cast', () => {
+        for (const metric of Object.values(METRICS)) {
+            if (metric.kind !== 'ratio') continue;
+            if (!metric.grains.includes('none')) continue;
+            const { text } = build({ metrics: [metric.id], dateRange: RANGE });
+            expect(text).toMatch(/::numeric \* /);
+        }
     });
 });

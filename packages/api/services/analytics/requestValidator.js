@@ -15,6 +15,7 @@ const { KNOWN_INVOICE_STATUSES } = require('../../helpers/invoiceStatusFilter');
 const BUDGET = Object.freeze({
     maxMetrics: 8,
     maxDimensions: 2,
+    maxTopN: 50,
     maxFilters: 4,
     maxFilterValues: 200,
     maxRangeDays: 731,
@@ -134,13 +135,20 @@ function parseQueryRequest(body, req, { forCsv = false } = {}) {
         sort = { by, dir };
     }
 
+    // --- top-N with an 'Other' rollup
+    const topN = parseTopN(body.topN, { metrics, dimensions, sort });
+
     // --- limit. Always applied: when the row count meets it the response says so,
     // because a chart that silently shows the first 200 of 800 categories lies.
     const maxRows = forCsv ? BUDGET.maxRowsCsv : BUDGET.maxRowsJson;
     const requested = Number(body.limit);
-    const limit = Number.isFinite(requested) && requested > 0
+    let limit = Number.isFinite(requested) && requested > 0
         ? Math.min(Math.floor(requested), maxRows)
         : maxRows;
+    // A rollup returns n rows plus the fold. A tile that set both `limit: 8` and
+    // `topN: { n: 8 }` would otherwise cut the 'Other' row off the bottom --
+    // silently losing the very total the rollup exists to state.
+    if (topN) limit = Math.max(limit, topN.n + 1);
 
     // --- source options
     const status = body.status === undefined ? undefined : String(body.status);
@@ -159,10 +167,60 @@ function parseQueryRequest(body, req, { forCsv = false } = {}) {
         dateRange,
         compare,
         sort,
+        topN,
         limit,
         sourceOptions: { status },
         context: { days_in_range: days },
     };
+}
+
+/**
+ * A top-N rollup: keep the largest `n` categories and fold everything else into
+ * one 'Other' row, server-side.
+ *
+ * Deliberately narrow. It applies to exactly one categorical breakdown, because
+ * that is the only shape whose fold has an unambiguous meaning: across two
+ * dimensions "the rest" could be the rest of either, and against a date grain it
+ * would mean a different set of categories in every period. A caller who wants a
+ * plain top ten with no fold sets `limit` instead -- there is no `other: false`,
+ * so a rollup always states what it left out.
+ */
+function parseTopN(raw, { metrics, dimensions, sort }) {
+    if (raw === undefined || raw === null || raw === false) return null;
+    if (typeof raw !== 'object' || Array.isArray(raw)) {
+        throw new AnalyticsRequestError(400, 'topN must be an object, as { n, by }.');
+    }
+
+    if (dimensions.length !== 1 || dimensions[0].id === 'date') {
+        throw new AnalyticsRequestError(
+            400,
+            "A top-N rollup applies to exactly one category breakdown. Across two dimensions, or over a period, 'Other' would not name a single group of things.",
+            { dimensions: dimensions.map((d) => d.id) }
+        );
+    }
+
+    const n = Number(raw.n);
+    if (!Number.isInteger(n) || n < 1 || n > BUDGET.maxTopN) {
+        throw new AnalyticsRequestError(
+            400,
+            `topN.n must be a whole number between 1 and ${BUDGET.maxTopN}; received ${JSON.stringify(raw.n)}.`
+        );
+    }
+
+    // Ranked by a metric the query already asks for, so the ordering the reader
+    // sees and the ordering the fold was decided by cannot come apart.
+    const by = raw.by !== undefined && raw.by !== null
+        ? String(raw.by)
+        : ((sort && sort.by) || metrics[0].id);
+    if (!metrics.some((m) => m.id === by)) {
+        throw new AnalyticsRequestError(
+            400,
+            `Cannot rank a top-N by '${by}': it is not one of the requested metrics.`,
+            { valid: metrics.map((m) => m.id) }
+        );
+    }
+
+    return { n, by };
 }
 
 function parseDateRange(raw) {

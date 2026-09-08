@@ -129,6 +129,114 @@ const SALES_METRICS = {
         permission: 'analytics:view',
     },
 
+    'sales.line_count': {
+        id: 'sales.line_count',
+        label: 'Sales Lines',
+        description:
+            'Number of individual item lines across all invoices in the period. An invoice for '
+            + 'three different parts is one invoice and three lines.',
+        kind: 'additive',
+        source: 'invoice_line',
+        expr: (c) => `COUNT(${c.line_id})`,
+        format: 'integer',
+        direction: 'higher_is_better',
+        comparable: true,
+        grains: ALL_GRAINS,
+        permission: 'analytics:view',
+    },
+
+    'sales.customers_served': {
+        id: 'sales.customers_served',
+        label: 'Customers Served',
+        description:
+            'Distinct customer records invoiced in the period. Note that walk-in counter sales '
+            + 'all share ONE customer record, so this counts the walk-in trade as a single '
+            + 'customer no matter how many people came through the door. Read it as "how many '
+            + 'named accounts bought from us", not as footfall.',
+        kind: 'additive',
+        source: 'invoice_header',
+        expr: (c) => `COUNT(DISTINCT ${c.customer_id})`,
+        format: 'integer',
+        direction: 'higher_is_better',
+        comparable: true,
+        grains: ALL_GRAINS,
+        permission: 'analytics:view',
+    },
+
+    'sales.discount_given': {
+        id: 'sales.discount_given',
+        label: 'Discounts Given',
+        description:
+            'Total discount recorded on invoice lines in the period. This is money that was on '
+            + 'the price list and was not collected.',
+        kind: 'additive',
+        source: 'invoice_line',
+        readiness: 'line_discount_data',
+        expr: (c) => `SUM(COALESCE(${c.discount}, 0))`,
+        format: 'currency',
+        direction: 'lower_is_better',
+        comparable: true,
+        grains: ALL_GRAINS,
+        permission: 'analytics:view',
+    },
+
+    'sales.lines_per_invoice': {
+        id: 'sales.lines_per_invoice',
+        label: 'Lines per Invoice',
+        description:
+            'Sales lines divided by invoices — how many different items a typical sale contains. '
+            + 'A counter business lives on this number: selling one more line per visit is '
+            + 'usually cheaper than finding another customer.',
+        kind: 'ratio',
+        numerator: 'sales.line_count',
+        denominator: 'sales.invoice_count',
+        zeroDenominator: null,
+        format: 'ratio',
+        direction: 'higher_is_better',
+        comparable: true,
+        grains: ALL_GRAINS,
+        permission: 'analytics:view',
+    },
+
+    'sales.discount_rate': {
+        id: 'sales.discount_rate',
+        label: 'Discount Rate',
+        description:
+            'Discounts as a percentage of what the same lines would have earned undiscounted '
+            + '(line revenue plus the discount). Rising quietly is the usual sign that '
+            + 'discretion at the counter has widened.',
+        kind: 'ratio',
+        numerator: 'sales.discount_given',
+        denominator: 'sales.undiscounted_revenue',
+        readiness: 'line_discount_data',
+        scale: 100,
+        zeroDenominator: null,
+        format: 'percent',
+        direction: 'lower_is_better',
+        comparable: true,
+        grains: ALL_GRAINS,
+        permission: 'analytics:view',
+    },
+
+    'sales.undiscounted_revenue': {
+        id: 'sales.undiscounted_revenue',
+        label: 'Revenue Before Discount',
+        description:
+            'Ex-VAT line revenue with the discount added back — what the same lines would have '
+            + 'earned at list price. Exists as the denominator of Discount Rate.',
+        kind: 'composite',
+        terms: [
+            { metric: 'sales.line_revenue', sign: 1 },
+            { metric: 'sales.discount_given', sign: 1 },
+        ],
+        readiness: 'line_discount_data',
+        format: 'currency',
+        direction: 'neutral',
+        comparable: true,
+        grains: ALL_GRAINS,
+        permission: 'analytics:view',
+    },
+
     'sales.avg_ticket': {
         id: 'sales.avg_ticket',
         label: 'Average Ticket',
