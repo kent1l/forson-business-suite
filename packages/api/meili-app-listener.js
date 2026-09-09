@@ -25,11 +25,11 @@ const startMeiliApplicationsListener = async () => {
       if (upserts.length) {
         const { rows } = await db.query(`
           SELECT a.application_id, a.make_id, a.model_id, a.engine_id,
-                 vmk.make_name AS make, vmd.model_name AS model, veng.engine_name AS engine
+                 vmk.make_name AS make, vmd.model_name AS model, veng.engine_code AS engine
           FROM application a
           LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
           LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
-          LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
+          LEFT JOIN engine veng ON a.engine_id = veng.engine_id
           WHERE a.application_id = ANY($1::int[])`, [upserts]);
         const docs = rows.map(r => ({
           application_id: r.application_id,

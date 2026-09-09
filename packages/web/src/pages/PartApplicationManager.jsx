@@ -5,7 +5,8 @@ import InfoTip from '../components/ui/InfoTip';
 import { ICONS } from '../constants';
 import Modal from '../components/ui/Modal';
 import ApplicationSearchCombobox from '../components/applications/ApplicationSearchCombobox';
-import NewApplicationModal from '../components/applications/NewApplicationModal';
+import ApplicationCascadeForm from '../components/applications/ApplicationCascadeForm';
+import { useAuth } from '../contexts/AuthContext';
 
 const EditYearForm = ({ link, onSave, onCancel }) => {
     const [years, setYears] = useState({ year_start: '', year_end: '' });
@@ -87,6 +88,8 @@ const EditYearForm = ({ link, onSave, onCancel }) => {
 };
 
 const PartApplicationManager = ({ part, onCancel }) => {
+    const { hasPermission } = useAuth();
+    const canEdit = hasPermission('applications:edit');
     const [linkedApps, setLinkedApps] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -130,6 +133,7 @@ const PartApplicationManager = ({ part, onCancel }) => {
 
     const handleLinkApp = async (e) => {
         e.preventDefault();
+        if (!canEdit) return;
         if (!selectedApp?.application_id) {
             alert('Please select an application.');
             return;
@@ -153,6 +157,7 @@ const PartApplicationManager = ({ part, onCancel }) => {
     };
     
     const handleUnlinkApp = async (applicationId) => {
+        if (!canEdit) return;
         try {
             await api.delete(`/parts/${part.part_id}/applications/${applicationId}`);
             await refetchData();
@@ -163,11 +168,13 @@ const PartApplicationManager = ({ part, onCancel }) => {
     };
 
     const handleEditLink = (link) => {
+        if (!canEdit) return;
         setCurrentLink(link);
         setIsEditModalOpen(true);
     };
-    
+
     const handleSaveYears = async (partAppId, years) => {
+        if (!canEdit) return;
         try {
             await api.put(`/part-applications/${partAppId}`, years);
             setIsEditModalOpen(false);
@@ -208,71 +215,86 @@ const PartApplicationManager = ({ part, onCancel }) => {
                                 <span className="font-medium">{app.make} {app.model} {app.engine ? `(${app.engine})` : ''}</span>
                                 <span className="text-xs text-gray-500 dark:text-slate-400 font-mono ml-2">{formatYearRange(app.year_start, app.year_end)}</span>
                            </div>
-                           <div className="flex items-center space-x-3">
-                               <button onClick={() => handleEditLink(app)} className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 p-1" title="Edit Years"><Icon path={ICONS.edit} className="h-4 w-4"/></button>
-                               <button onClick={() => handleUnlinkApp(app.application_id)} className="text-danger-600 dark:text-danger-400 hover:text-danger-700 dark:hover:text-danger-300 p-1" title="Unlink"><Icon path={ICONS.trash} className="h-4 w-4"/></button>
-                           </div>
+                           {canEdit && (
+                               <div className="flex items-center space-x-3">
+                                   <button onClick={() => handleEditLink(app)} className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 p-1" title="Edit Years"><Icon path={ICONS.edit} className="h-4 w-4"/></button>
+                                   <button onClick={() => handleUnlinkApp(app.application_id)} className="text-danger-600 dark:text-danger-400 hover:text-danger-700 dark:hover:text-danger-300 p-1" title="Unlink"><Icon path={ICONS.trash} className="h-4 w-4"/></button>
+                               </div>
+                           )}
                         </li>
                     ))}
                     {linkedApps.length === 0 && <li className="text-sm text-gray-500 dark:text-slate-400 py-4 text-center">No applications linked yet.</li>}
                 </ul>
             )}
 
-            <form onSubmit={handleLinkApp}>
-                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1 flex items-center gap-1">
-                    Link New Application
-                    <InfoTip label="Year Start / Year End">
-                        Optionally limit the fitment to specific model years (e.g., 2010-2015). Leave both
-                        blank if the fitment applies to all years of that vehicle.
-                    </InfoTip>
-                </label>
-                <div className="grid grid-cols-1 gap-2">
-                    <div className="flex items-end gap-2">
-                        <div className="flex-1">
-                            <ApplicationSearchCombobox value={selectedApp} onChange={setSelectedApp} refreshKey={appsRefreshKey} />
+            {canEdit && (
+                <form onSubmit={handleLinkApp}>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1 flex items-center gap-1">
+                        Link New Application
+                        <InfoTip label="Year Start / Year End">
+                            Optionally limit the fitment to specific model years (e.g., 2010-2015). Leave both
+                            blank if the fitment applies to all years of that vehicle.
+                        </InfoTip>
+                    </label>
+                    <div className="grid grid-cols-1 gap-2">
+                        <div className="flex items-end gap-2">
+                            <div className="flex-1">
+                                <ApplicationSearchCombobox value={selectedApp} onChange={setSelectedApp} refreshKey={appsRefreshKey} />
+                            </div>
+                            <button type="button" onClick={() => setShowNewApp(true)} className="px-3.5 py-2 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 flex items-center gap-1 text-sm font-medium transition-colors">
+                                <Icon path={ICONS.plus} className="h-4 w-4" /> New
+                            </button>
                         </div>
-                        <button type="button" onClick={() => setShowNewApp(true)} className="px-3.5 py-2 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 flex items-center gap-1 text-sm font-medium transition-colors">
-                            <Icon path={ICONS.plus} className="h-4 w-4" /> New
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Year Start</label>
+                                <input
+                                    type="number"
+                                    placeholder="e.g., 2010"
+                                    value={yearStart}
+                                    onChange={(e) => setYearStart(e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Year End</label>
+                                <input
+                                    type="number"
+                                    placeholder="e.g., 2015"
+                                    value={yearEnd}
+                                    onChange={(e) => setYearEnd(e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                />
+                            </div>
+                        </div>
+                        <button type="submit" className="w-full px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 mt-2 text-sm font-medium transition-colors shadow-xs">
+                            Link Application
                         </button>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Year Start</label>
-                            <input
-                                type="number"
-                                placeholder="e.g., 2010"
-                                value={yearStart}
-                                onChange={(e) => setYearStart(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Year End</label>
-                            <input
-                                type="number"
-                                placeholder="e.g., 2015"
-                                value={yearEnd}
-                                onChange={(e) => setYearEnd(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                            />
-                        </div>
-                    </div>
-                    <button type="submit" className="w-full px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 mt-2 text-sm font-medium transition-colors shadow-xs">
-                        Link Application
-                    </button>
-                </div>
-            </form>
+                </form>
+            )}
              <div className="mt-6 flex justify-end pt-4 border-t border-gray-200 dark:border-slate-700">
                 <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 text-sm font-medium transition-colors">Close</button>
             </div>
             <Modal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} title={`Edit Year Range for ${currentLink?.make} ${currentLink?.model}`}>
                 <EditYearForm link={currentLink} onSave={handleSaveYears} onCancel={() => setIsEditModalOpen(false)} />
             </Modal>
-            <NewApplicationModal
-                isOpen={showNewApp}
-                onClose={() => setShowNewApp(false)}
-                onCreated={(app) => { setSelectedApp(app); setAppsRefreshKey(k => k + 1); }}
-            />
+            <Modal isOpen={showNewApp} onClose={() => setShowNewApp(false)} title="Add New Application">
+                <ApplicationCascadeForm
+                    submitLabel="Create"
+                    onCancel={() => setShowNewApp(false)}
+                    onSave={async (payload) => {
+                        try {
+                            const { data } = await api.post('/applications', payload);
+                            setSelectedApp(data);
+                            setAppsRefreshKey(k => k + 1);
+                            setShowNewApp(false);
+                        } catch (error) {
+                            alert('Failed to create application: ' + (error.response?.data?.message || error.message));
+                        }
+                    }}
+                />
+            </Modal>
         </div>
     );
 };

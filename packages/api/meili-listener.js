@@ -54,7 +54,7 @@ const startMeiliListener = async () => {
                 (SELECT COALESCE(json_agg(pa.application_id), '[]'::json)
                    FROM part_application pa
                    WHERE pa.part_id = pv.part_id) AS applications,
-                (SELECT COALESCE(json_agg(concat_ws(' ', COALESCE(av.make,''), COALESCE(av.model,''), COALESCE(av.engine,''))), '[]'::json)
+                (SELECT COALESCE(json_agg(concat_ws(' ', COALESCE(av.make,''), COALESCE(av.model,''), COALESCE(av.engine,''), COALESCE(pa.year_start::text,''), COALESCE(pa.year_end::text,''))), '[]'::json)
                    FROM part_application pa
                    JOIN application_view av ON av.application_id = pa.application_id
                    WHERE pa.part_id = pv.part_id) AS searchable_applications

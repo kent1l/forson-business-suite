@@ -20,11 +20,11 @@ router.post('/reindex/applications', async (_req, res) => {
   try {
     const { rows } = await db.query(`
       SELECT a.application_id, a.make_id, a.model_id, a.engine_id,
-             vmk.make_name AS make, vmd.model_name AS model, veng.engine_name AS engine
+             vmk.make_name AS make, vmd.model_name AS model, eng.engine_code AS engine
       FROM application a
       LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
       LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
-      LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
+      LEFT JOIN engine eng ON a.engine_id = eng.engine_id
     `);
     const docs = rows.map(toDoc);
     if (docs.length) await syncApplications(docs);
