@@ -52,9 +52,14 @@ async function resolveModel(client, { model_id, model, makeId }) {
     return null;
 }
 
+const VALID_FUEL_TYPES = ['diesel', 'gasoline', 'hybrid', 'mild_hybrid', 'electric', 'other'];
+
 // Engine is global master data (Phase 0) -- it is no longer scoped to a model,
 // so resolving/creating one never depends on make/model being set.
-async function resolveEngine(client, { engine_id, engine }) {
+// displacement_liters/fuel_type (Phase 1a) are only applied when a *new* engine
+// row is created here -- editing an existing engine's specs is a deliberate
+// separate action via PUT /engines/:id, not a side effect of linking a fitment.
+async function resolveEngine(client, { engine_id, engine, displacement_liters, fuel_type }) {
     if (engine_id) {
         const check = await client.query('SELECT engine_id FROM engine WHERE engine_id = $1', [engine_id]);
         if (!check.rows.length) throw new Error('Engine ID not found');
@@ -64,9 +69,11 @@ async function resolveEngine(client, { engine_id, engine }) {
         const code = engine.trim();
         const existing = await client.query('SELECT engine_id FROM engine WHERE lower(engine_code) = lower($1)', [code]);
         if (existing.rows.length) return existing.rows[0].engine_id;
+        if (fuel_type && !VALID_FUEL_TYPES.includes(fuel_type)) throw new Error('Invalid fuel type');
         const inserted = await client.query(
-            'INSERT INTO engine (engine_code) VALUES ($1) ON CONFLICT (engine_code) DO UPDATE SET engine_code = engine.engine_code RETURNING engine_id',
-            [code]
+            `INSERT INTO engine (engine_code, displacement_liters, fuel_type) VALUES ($1, $2, $3)
+             ON CONFLICT (engine_code) DO UPDATE SET engine_code = engine.engine_code RETURNING engine_id`,
+            [code, displacement_liters || null, fuel_type || null]
         );
         return inserted.rows[0].engine_id;
     }
@@ -202,6 +209,28 @@ router.get('/engines', protect, hasPermission('applications:view'), async (req, 
     }
 });
 
+// PUT - edit an existing engine's displacement/fuel type (Phase 1a). Deliberately
+// separate from the get-or-create path used while linking a fitment, so editing
+// specs is an explicit action, not a side effect of picking an engine elsewhere.
+router.put('/engines/:id', protect, hasPermission('applications:edit'), async (req, res) => {
+    const { id } = req.params;
+    const { displacement_liters, fuel_type } = req.body;
+    if (fuel_type && !VALID_FUEL_TYPES.includes(fuel_type)) {
+        return res.status(400).json({ message: 'Invalid fuel type' });
+    }
+    try {
+        const { rows } = await db.query(
+            'UPDATE engine SET displacement_liters = $1, fuel_type = $2 WHERE engine_id = $3 RETURNING *',
+            [displacement_liters || null, fuel_type || null, id]
+        );
+        if (!rows.length) return res.status(404).json({ message: 'Engine not found' });
+        res.json(rows[0]);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
 // GET engines known to have been used in a specific model (via the
 // vehicle_engine_fitment cross-reference, which is auto-derived as fitments are
 // entered -- see partApplicationRoutes.js). This powers the cascading
@@ -224,7 +253,7 @@ router.get('/models/:modelId/engines', protect, hasPermission('applications:view
 });
 
 router.post('/applications', protect, hasPermission('applications:edit'), async (req, res) => {
-    const { make_id, model_id, engine_id, make, model, engine } = req.body;
+    const { make_id, model_id, engine_id, make, model, engine, displacement_liters, fuel_type } = req.body;
     const client = await db.getClient();
 
     try {
@@ -233,7 +262,7 @@ router.post('/applications', protect, hasPermission('applications:edit'), async 
 
         const finalMakeId = await resolveMake(client, { make_id, make });
         const finalModelId = await resolveModel(client, { model_id, model, makeId: finalMakeId });
-        const finalEngineId = await resolveEngine(client, { engine_id, engine });
+        const finalEngineId = await resolveEngine(client, { engine_id, engine, displacement_liters, fuel_type });
 
         if (!finalMakeId && !finalModelId && !finalEngineId) {
             throw new Error('At least one of make, model, or engine is required');
@@ -302,7 +331,7 @@ router.post('/applications', protect, hasPermission('applications:edit'), async 
 // PUT - Update an existing application
 router.put('/applications/:id', protect, hasPermission('applications:edit'), async (req, res) => {
     const { id } = req.params;
-    const { make_id, model_id, engine_id, make, model, engine } = req.body;
+    const { make_id, model_id, engine_id, make, model, engine, displacement_liters, fuel_type } = req.body;
 
     const client = await db.getClient();
     try {
@@ -316,7 +345,7 @@ router.put('/applications/:id', protect, hasPermission('applications:edit'), asy
 
         const finalMakeId = await resolveMake(client, { make_id, make });
         const finalModelId = await resolveModel(client, { model_id, model, makeId: finalMakeId });
-        const finalEngineId = await resolveEngine(client, { engine_id, engine });
+        const finalEngineId = await resolveEngine(client, { engine_id, engine, displacement_liters, fuel_type });
 
         if (!finalMakeId && !finalModelId && !finalEngineId) {
             throw new Error('At least one of make, model, or engine is required');

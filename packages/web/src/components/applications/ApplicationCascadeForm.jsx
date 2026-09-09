@@ -32,8 +32,14 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
         engine_id: '',
         make_name: '',
         model_name: '',
-        engine_name: ''
+        engine_name: '',
+        displacement_liters: '',
+        fuel_type: ''
     });
+    // Tracks the engine's specs as loaded, so we only PUT /engines/:id when the
+    // user actually changed them for an *existing* engine (creating a new one
+    // sends displacement/fuel_type along with the create payload instead).
+    const [originalEngineSpecs, setOriginalEngineSpecs] = useState(null);
 
     const initialFormData = useMemo(() => {
         if (application) {
@@ -65,13 +71,16 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
     useEffect(() => {
         if (!application) return;
         setEngineOnly(!application.make_id && !application.model_id && !!application.engine_id);
+        setOriginalEngineSpecs(null);
         setFormData({
             make_id: application.make_id || '',
             model_id: application.model_id || '',
             engine_id: application.engine_id || '',
             make_name: application.make || '',
             model_name: application.model || '',
-            engine_name: application.engine || ''
+            engine_name: application.engine || '',
+            displacement_liters: '',
+            fuel_type: ''
         });
         if (application.make_id) {
             setSelectedMake({ make_id: application.make_id, make_name: application.make });
@@ -119,7 +128,8 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
         setModelQuery('');
         setEngineQuery('');
         setModels([]);
-        setFormData({ make_id: '', model_id: '', engine_id: '', make_name: '', model_name: '', engine_name: '' });
+        setOriginalEngineSpecs(null);
+        setFormData({ make_id: '', model_id: '', engine_id: '', make_name: '', model_name: '', engine_name: '', displacement_liters: '', fuel_type: '' });
     };
 
     const handleMakeSelect = async (make) => {
@@ -175,11 +185,17 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
         if (!engine) return;
         if (engine.engine_id) {
             setSelectedEngine(engine);
-            setFormData(prev => ({ ...prev, engine_id: String(engine.engine_id), engine_name: engine.engine_code }));
+            const specs = {
+                displacement_liters: engine.displacement_liters != null ? String(engine.displacement_liters) : '',
+                fuel_type: engine.fuel_type || ''
+            };
+            setOriginalEngineSpecs(specs);
+            setFormData(prev => ({ ...prev, engine_id: String(engine.engine_id), engine_name: engine.engine_code, ...specs }));
             return;
         }
         if (engine.engine_code) {
             setSelectedEngine({ engine_code: engine.engine_code });
+            setOriginalEngineSpecs(null);
             setFormData(prev => ({ ...prev, engine_id: '', engine_name: engine.engine_code }));
         }
     };
@@ -187,11 +203,38 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
     const handleEngineInput = (val) => {
         setEngineQuery(val);
         setSelectedEngine(null);
+        setOriginalEngineSpecs(null);
         setFormData(prev => ({ ...prev, engine_id: '', engine_name: val }));
     };
 
-    const handleSubmit = useCallback((e) => {
+    const handleSubmit = useCallback(async (e) => {
         if (e) e.preventDefault();
+
+        // Editing an existing engine's specs is a deliberate separate action from
+        // linking a fitment -- save it via PUT /engines/:id first if changed.
+        if (formData.engine_id && originalEngineSpecs) {
+            const changed = formData.displacement_liters !== originalEngineSpecs.displacement_liters
+                || formData.fuel_type !== originalEngineSpecs.fuel_type;
+            if (changed) {
+                try {
+                    await api.put(`/engines/${formData.engine_id}`, {
+                        displacement_liters: formData.displacement_liters ? Number(formData.displacement_liters) : null,
+                        fuel_type: formData.fuel_type || null
+                    });
+                } catch (err) {
+                    alert('Failed to update engine specs: ' + (err.response?.data?.message || err.message));
+                    return;
+                }
+            }
+        }
+
+        const engineExtras = !formData.engine_id
+            ? {
+                displacement_liters: formData.displacement_liters ? Number(formData.displacement_liters) : undefined,
+                fuel_type: formData.fuel_type || undefined
+            }
+            : {};
+
         const payload = engineOnly
             ? {
                 make_id: undefined,
@@ -199,7 +242,8 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
                 make: undefined,
                 model: undefined,
                 engine_id: formData.engine_id ? Number(formData.engine_id) : undefined,
-                engine: formData.engine_name || undefined
+                engine: formData.engine_name || undefined,
+                ...engineExtras
             }
             : {
                 make_id: formData.make_id ? Number(formData.make_id) : undefined,
@@ -207,10 +251,11 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
                 engine_id: formData.engine_id ? Number(formData.engine_id) : undefined,
                 make: formData.make_name || undefined,
                 model: formData.model_name || undefined,
-                engine: formData.engine_name || undefined
+                engine: formData.engine_name || undefined,
+                ...engineExtras
             };
         onSave(payload);
-    }, [engineOnly, formData, onSave]);
+    }, [engineOnly, formData, onSave, originalEngineSpecs]);
 
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -327,6 +372,38 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
                     </div>
                 </Combobox>
             </div>
+
+            {formData.engine_name && formData.engine_name.trim() !== '' && (
+                <div className="grid grid-cols-2 gap-2">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Displacement (L)</label>
+                        <input
+                            type="number"
+                            step="0.1"
+                            placeholder="e.g., 2.5"
+                            value={formData.displacement_liters}
+                            onChange={(e) => setFormData(prev => ({ ...prev, displacement_liters: e.target.value }))}
+                            className={inputClass}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Fuel Type</label>
+                        <select
+                            value={formData.fuel_type}
+                            onChange={(e) => setFormData(prev => ({ ...prev, fuel_type: e.target.value }))}
+                            className={inputClass}
+                        >
+                            <option value="">-- Unspecified --</option>
+                            <option value="diesel">Diesel</option>
+                            <option value="gasoline">Gasoline</option>
+                            <option value="hybrid">Hybrid</option>
+                            <option value="mild_hybrid">Mild Hybrid</option>
+                            <option value="electric">Electric</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                </div>
+            )}
 
             <div className="mt-6 flex justify-end space-x-3 pt-4 border-t border-gray-200 dark:border-slate-700">
                 <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 text-sm font-medium transition-colors">Cancel</button>
