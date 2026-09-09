@@ -2729,7 +2729,7 @@ and scheduled insight alerts with a weekly digest. Every piece of it is now live
 2. **Database Migration (`database/migrations/20260909_01_analytics_phase5_boards_and_saved_views.sql`)**
    - `analytics_board`: persistent store for custom boards (`board_id`, `owner_employee_id`, `name`, `description`, `period`, `default_preset`, `spec`, `is_system`, timestamps).
    - `analytics_saved_view`: persistent store for saved views (`view_id`, `board_id`, `owner_employee_id`, `name`, `state`, `is_default`, timestamps), with unique constraint on `(board_id, owner_employee_id, name)`.
-   - `app_settings` defaults: `ANALYTICS_ALERTS_ENABLED = 'true'`, `ANALYTICS_ALERT_SCHEDULE = '0 8 * * *'`, `ANALYTICS_DIGEST_SCHEDULE = '0 8 * * 1'`.
+   - `app_settings` defaults: `ANALYTICS_ALERTS_ENABLED = 'true'`, `ANALYTICS_ALERT_SCHEDULE = '30 7 * * *'`, `ANALYTICS_DIGEST_SCHEDULE = '0 8 * * 1'`.
 
 3. **Custom Boards & Saved Views Services**
    - `services/analytics/boards/index.js`: extended with `listAllBoards`, `getBoard`, `createBoard`, `updateBoard`, `deleteBoard`. Built-in boards are protected against mutation/deletion; custom boards are scoped by owner with admin override.
