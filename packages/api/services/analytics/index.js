@@ -9,7 +9,12 @@ const { parseQueryRequest, parseDateRange, BUDGET } = require('./requestValidato
 const { buildQuery } = require('./queryBuilder');
 const { executeAll, coerceRows } = require('./executor');
 const { shapeResponse } = require('./responseShaper');
-const { boardFor, listBoards, BOARDS } = require('./boards');
+const {
+    boardFor, listBoards, listAllBoards, getBoard, createBoard, updateBoard, deleteBoard, validateBoardSpec, BOARDS,
+} = require('./boards');
+const {
+    listSavedViews, createSavedView, updateSavedView, deleteSavedView,
+} = require('./savedViews');
 const { evaluateInsights } = require('./insights');
 const cache = require('./analyticsCache');
 const { AnalyticsCache } = require('./analyticsCache');
@@ -351,8 +356,27 @@ module.exports = {
     getInsights,
     runBatch,
     explainQuery,
-    getBoard: (boardId, req) => boardFor(boardId, canSeeMetric(req)),
-    listBoards: (req) => listBoards(canSeeMetric(req)),
+    getBoard: (boardId, req) => getBoard(boardId, canSeeMetric(req), req?.user),
+    getBuiltinBoard: (boardId, req) => boardFor(boardId, canSeeMetric(req)),
+    listBoards: (req) => listAllBoards(canSeeMetric(req), req?.user),
+    listBuiltinBoards: (req) => listBoards(canSeeMetric(req)),
+    createBoard: (boardData, req) => createBoard(boardData, req?.user),
+    updateBoard: (boardId, boardData, req) => updateBoard(boardId, boardData, req?.user),
+    deleteBoard: (boardId, req) => deleteBoard(boardId, req?.user),
+    validateBoardSpec,
+    listSavedViews: (req, boardId) => listSavedViews(req?.user?.employee_id, boardId),
+    createSavedView: (req, viewData) => createSavedView(req?.user?.employee_id, viewData),
+    updateSavedView: (req, viewId, viewData) => updateSavedView(
+        req?.user?.employee_id,
+        viewId,
+        viewData,
+        Number(req?.user?.permission_level_id) === 10
+    ),
+    deleteSavedView: (req, viewId) => deleteSavedView(
+        req?.user?.employee_id,
+        viewId,
+        Number(req?.user?.permission_level_id) === 10
+    ),
     canSeeMetric,
     BUDGET,
     cache,
