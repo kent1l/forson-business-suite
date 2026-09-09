@@ -136,6 +136,64 @@ const AnalyticsSettings = ({ settings, handleChange }) => (
                     </label>
                 </div>
 
+                <div className="flex items-start gap-3">
+                    <input
+                        type="checkbox"
+                        id="ANALYTICS_ALERTS_ENABLED"
+                        name="ANALYTICS_ALERTS_ENABLED"
+                        checked={settings?.ANALYTICS_ALERTS_ENABLED !== 'false'}
+                        onChange={(e) => handleChange({
+                            target: { name: 'ANALYTICS_ALERTS_ENABLED', value: e.target.checked ? 'true' : 'false' },
+                        })}
+                        className="mt-1 h-4 w-4 rounded border-neutral-300 text-primary-600"
+                    />
+                    <label htmlFor="ANALYTICS_ALERTS_ENABLED" className="text-sm font-medium text-gray-800 dark:text-slate-200">
+                        Send insight alerts &amp; the weekly digest
+                        <InfoTip label="Insight alerts">
+                            When on, a daily scan raises an in-app notification for any critical or warning
+                            insight, and a weekly digest summarises revenue, margin, open A/R and dead stock.
+                            Both reuse the same rules and figures as the insights panel above.
+                        </InfoTip>
+                    </label>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                        <label className="mb-1 block text-sm font-medium text-gray-800 dark:text-slate-200">
+                            Alert scan schedule (cron, Manila time)
+                        </label>
+                        <input
+                            type="text"
+                            name="ANALYTICS_ALERT_SCHEDULE"
+                            value={settings?.ANALYTICS_ALERT_SCHEDULE ?? '30 7 * * *'}
+                            onChange={handleChange}
+                            placeholder="30 7 * * *"
+                            disabled={settings?.ANALYTICS_ALERTS_ENABLED === 'false'}
+                            className={`${inputClass} max-w-[14rem] font-mono disabled:opacity-50`}
+                        />
+                        <p className="mt-1 text-xs text-gray-500 dark:text-slate-500">
+                            How often the daily insight scan runs. <a href="https://crontab.guru/" target="_blank" rel="noopener noreferrer" className="underline hover:text-primary-600 dark:hover:text-primary-500">crontab.guru</a>
+                        </p>
+                    </div>
+                    <div>
+                        <label className="mb-1 block text-sm font-medium text-gray-800 dark:text-slate-200">
+                            Weekly digest schedule (cron, Manila time)
+                        </label>
+                        <input
+                            type="text"
+                            name="ANALYTICS_DIGEST_SCHEDULE"
+                            value={settings?.ANALYTICS_DIGEST_SCHEDULE ?? '0 8 * * 1'}
+                            onChange={handleChange}
+                            placeholder="0 8 * * 1"
+                            disabled={settings?.ANALYTICS_ALERTS_ENABLED === 'false'}
+                            className={`${inputClass} max-w-[14rem] font-mono disabled:opacity-50`}
+                        />
+                        <p className="mt-1 text-xs text-gray-500 dark:text-slate-500">
+                            When the weekly business summary notification goes out.
+                        </p>
+                    </div>
+                </div>
+
                 <div>
                     <label className="mb-1 block text-sm font-medium text-gray-800 dark:text-slate-200">
                         Walk-in customer record
