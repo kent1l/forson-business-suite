@@ -1,11 +1,10 @@
 # Business Analytics Module — PRD & Developer Handoff
 
 > **Forson Business Suite** | **PRD-FBS-ANL-001** | **Version:** 1.0
-> **Date:** 2026-09-06 | **Last updated:** 2026-09-09 | **Branch:** `phase-4-business-analytics`
-> **Status:** Phases 0 (PR #173), 1 (PR #175), 2 (PR #176) and 3 (PR #177) merged; the insights
-> panel with them. Phase 4 built (PR #178) — Purchasing & Suppliers + Operations, and the discovery
-> that the cost gap the whole module has been reporting is manufactured at the receiving desk.
-> Phase 5 designed, not scheduled.
+> **Date:** 2026-09-06 | **Last updated:** 2026-09-09 | **Branch:** `phase-5-business-analytics`
+> **Status:** Phases 0 (PR #173), 1 (PR #175), 2 (PR #176), 3 (PR #177), and 4 (PR #178) merged.
+> Phase 5 built — user-customizable boards, saved views, scheduled threshold insight alerts, and
+> weekly digest notifications wired into `notificationService`.
 
 ---
 
@@ -24,7 +23,7 @@ Read this first. It is the only section that changes often; update it as phases 
 | Phase 2 — Profitability + Data Trust | **Done — merged, PR #176** | §20 |
 | Phase 3 — Customers + Receivables & Cash | **Done — merged, PR #177** | §21 |
 | Phase 4 — Purchasing + Operations | **Done — PR #178** | §22 |
-| Phase 5 — saved views, alerts, custom boards | **Designed, not scheduled** | §9 |
+| Phase 5 — saved views, alerts, custom boards | **Done** | §23 |
 | 58% of goods receipt lines carry no cost | **Open — the root of the module's cost gap** | §22.2 |
 | No purchase orders exist; lead time is dark | **Open — registered and gated, not built around** | §22.4 |
 | Insights panel | **Done — the deferral is discharged** | §20.4 |
@@ -2704,3 +2703,54 @@ Phase 5 is saved views, alerts, custom boards. It should note:
 - **Alerts are insight rules with a schedule, and the rules are already written.** Seventeen of them
   are evaluated deterministically by `/analytics/insights`. Nothing in this module needs an LLM to send an
   email, and §15 keeps generated prose out of scope.
+
+---
+
+## 23. Phase 5 — As Built
+
+Phase 5 was designed in §9 as the closing chapter of the module: user-customizable boards, saved views,
+and scheduled insight alerts with a weekly digest. Every piece of it is now live on `phase-5-business-analytics`.
+
+### 23.1 What was built
+
+1. **Strict Board Validator (`services/analytics/boards/validator.js`)**
+   The 9 board and tile layout invariants developed across Phases 0–4 were factored out into a single,
+   reusable validator `validateBoardSpec(board, { isRegistry })`:
+   - Unique tile IDs per board.
+   - Every metric cited must exist in `METRICS`.
+   - Disallowed dimensions are rejected.
+   - `grain` is validated against metric and global `GRAINS`.
+   - `topN` structures (measure, dimension, limit) are strictly checked.
+   - Drilldowns validate target boards, filter maps, and period propagation.
+   - `period: 'none'` contract is enforced for snapshot metrics (e.g. `ar.balance`, `inventory.dead_stock_value`).
+   - Budget constraints (tile count ≤ 40) are enforced identically for built-in and user boards.
+   - Custom boards cannot use reserved system IDs (`overview`, `sales`, `inventory`, `profitability`, `customers`, `receivables`, `purchasing`, `operations`, `data_trust`).
+
+2. **Database Migration (`database/migrations/20260909_01_analytics_phase5_boards_and_saved_views.sql`)**
+   - `analytics_board`: persistent store for custom boards (`board_id`, `owner_employee_id`, `name`, `description`, `period`, `default_preset`, `spec`, `is_system`, timestamps).
+   - `analytics_saved_view`: persistent store for saved views (`view_id`, `board_id`, `owner_employee_id`, `name`, `state`, `is_default`, timestamps), with unique constraint on `(board_id, owner_employee_id, name)`.
+   - `app_settings` defaults: `ANALYTICS_ALERTS_ENABLED = 'true'`, `ANALYTICS_ALERT_SCHEDULE = '30 7 * * *'`, `ANALYTICS_DIGEST_SCHEDULE = '0 8 * * 1'`.
+
+3. **Custom Boards & Saved Views Services**
+   - `services/analytics/boards/index.js`: extended with `listAllBoards`, `getBoard`, `createBoard`, `updateBoard`, `deleteBoard`. Built-in boards are protected against mutation/deletion; custom boards are scoped by owner with admin override.
+   - `services/analytics/savedViews.js`: provides `listSavedViews`, `createSavedView`, `updateSavedView`, `deleteSavedView`. Setting a view as default unsets default on other views for that user on that board.
+
+4. **Alerts & Weekly Digest Engine (`services/analyticsAlertService.js`)**
+   - Evaluates the 17 deterministic rules from `INSIGHT_RULES` without LLM generation.
+   - Formats templates deterministically via `formatInsightSentence` and `formatSlot` (currency, percent, count, ratio, days).
+   - Routes notifications safely through `notificationService` (`category: 'inventory' | 'finance'`) avoiding database constraint violations.
+   - Weekly digest summarizes critical/warning insights, total receivables balance, and dead stock value with safe query comparisons for snapshot metrics.
+   - Engine starts conditionally on server boot (`startAnalyticsAlertEngine()`) using `node-cron`.
+
+5. **Frontend Components**
+   - `CreateBoardModal.jsx`: dynamic board builder with tile management (metric, dimension, title, width, presentation).
+   - `SavedViewsMenu.jsx`: saved view switcher, default view pin, and save dialog integrated into board toolbar.
+   - `AnalyticsBoard.jsx` & `AnalyticsPage.jsx`: custom board tabs, delete action, saved view application.
+
+### 23.2 Checks & Verification
+
+- Backend unit & DB tests: `tests/analyticsPhase5.test.js` (18 passed).
+- Full backend suite: 70 suites, 977 passed, 1 skipped.
+- DB Registry test: `tests/analyticsRegistry_db_test.js` (1,034 statements passed).
+- Linters: 0 errors on `packages/api` and `packages/web`.
+

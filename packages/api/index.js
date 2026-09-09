@@ -15,6 +15,7 @@ const { startApDueDateReminderEngine } = require('./services/apDueDateReminderSe
 const { startArDueDateReminderEngine } = require('./services/arDueDateReminderService');
 const { startLedgerReconciliationEngine } = require('./services/ledgerReconciliationService');
 const { startNotificationGroomer } = require('./services/notificationGroomer');
+const { startAnalyticsAlertEngine } = require('./services/analyticsAlertService');
 
 // Set default timezone to Philippine Time
 process.env.TZ = 'Asia/Manila';
@@ -212,4 +213,5 @@ app.listen(PORT, async () => {
   startArDueDateReminderEngine();
   startLedgerReconciliationEngine();
   startNotificationGroomer();
+  startAnalyticsAlertEngine();
 });

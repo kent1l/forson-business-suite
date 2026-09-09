@@ -44,20 +44,90 @@ router.get('/analytics/meta', protect, hasPermission('analytics:view'), async (r
 });
 
 // GET /api/analytics/boards
-router.get('/analytics/boards', protect, hasPermission('analytics:view'), (req, res) => {
+router.get('/analytics/boards', protect, hasPermission('analytics:view'), async (req, res) => {
     try {
-        res.json(analytics.listBoards(req));
+        res.json(await analytics.listBoards(req));
     } catch (err) {
         respondToError(res, err, 'list analytics boards');
     }
 });
 
 // GET /api/analytics/boards/:id
-router.get('/analytics/boards/:id', protect, hasPermission('analytics:view'), (req, res) => {
+router.get('/analytics/boards/:id', protect, hasPermission('analytics:view'), async (req, res) => {
     try {
-        res.json(analytics.getBoard(req.params.id, req));
+        res.json(await analytics.getBoard(req.params.id, req));
     } catch (err) {
         respondToError(res, err, 'load the analytics board');
+    }
+});
+
+// POST /api/analytics/boards
+router.post('/analytics/boards', protect, hasPermission('analytics:view'), async (req, res) => {
+    try {
+        const board = await analytics.createBoard(req.body, req);
+        res.status(201).json(board);
+    } catch (err) {
+        respondToError(res, err, 'create the analytics board');
+    }
+});
+
+// PUT /api/analytics/boards/:id
+router.put('/analytics/boards/:id', protect, hasPermission('analytics:view'), async (req, res) => {
+    try {
+        const board = await analytics.updateBoard(req.params.id, req.body, req);
+        res.json(board);
+    } catch (err) {
+        respondToError(res, err, 'update the analytics board');
+    }
+});
+
+// DELETE /api/analytics/boards/:id
+router.delete('/analytics/boards/:id', protect, hasPermission('analytics:view'), async (req, res) => {
+    try {
+        const result = await analytics.deleteBoard(req.params.id, req);
+        res.json(result);
+    } catch (err) {
+        respondToError(res, err, 'delete the analytics board');
+    }
+});
+
+// GET /api/analytics/saved-views
+router.get('/analytics/saved-views', protect, hasPermission('analytics:view'), async (req, res) => {
+    try {
+        const views = await analytics.listSavedViews(req, req.query.boardId);
+        res.json(views);
+    } catch (err) {
+        respondToError(res, err, 'list saved views');
+    }
+});
+
+// POST /api/analytics/saved-views
+router.post('/analytics/saved-views', protect, hasPermission('analytics:view'), async (req, res) => {
+    try {
+        const view = await analytics.createSavedView(req, req.body);
+        res.status(201).json(view);
+    } catch (err) {
+        respondToError(res, err, 'create saved view');
+    }
+});
+
+// PUT /api/analytics/saved-views/:id
+router.put('/analytics/saved-views/:id', protect, hasPermission('analytics:view'), async (req, res) => {
+    try {
+        const view = await analytics.updateSavedView(req, Number(req.params.id), req.body);
+        res.json(view);
+    } catch (err) {
+        respondToError(res, err, 'update saved view');
+    }
+});
+
+// DELETE /api/analytics/saved-views/:id
+router.delete('/analytics/saved-views/:id', protect, hasPermission('analytics:view'), async (req, res) => {
+    try {
+        const result = await analytics.deleteSavedView(req, Number(req.params.id));
+        res.json(result);
+    } catch (err) {
+        respondToError(res, err, 'delete saved view');
     }
 });
 

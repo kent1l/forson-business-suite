@@ -9,6 +9,7 @@ import { ICONS } from '../../constants';
 import { AnalyticsBatchProvider } from './AnalyticsBatchContext';
 import AnalyticsTile from './AnalyticsTile';
 import InsightsPanel from './InsightsPanel';
+import SavedViewsMenu from './SavedViewsMenu';
 import { useSettings } from '../../contexts/SettingsContext';
 
 /**
@@ -63,6 +64,13 @@ const AnalyticsBoard = ({ boardId, onNavigate, onSelectBoard }) => {
         onAddFilter,
     }), [preset, filters, compareOn, onAddFilter]);
 
+    const onApplyState = useCallback((state) => {
+        if (!state) return;
+        if (state.preset) setPreset(state.preset);
+        if (state.compare !== undefined) setCompareOn(state.compare);
+        if (state.filters) setFilters(state.filters);
+    }, [setPreset, setCompareOn]);
+
     const activeFilterCount = Object.values(filters).reduce((n, v) => n + v.length, 0);
     const canExport = !!meta?.permissions?.export;
     // A board of positions as of now has nothing for a date picker to change.
@@ -105,6 +113,12 @@ const AnalyticsBoard = ({ boardId, onNavigate, onSelectBoard }) => {
                         </label>
                     </>
                 )}
+
+                <SavedViewsMenu
+                    boardId={boardId}
+                    currentState={{ preset, compare: !!compareOn, filters }}
+                    onApplyState={onApplyState}
+                />
 
                 {activeFilterCount > 0 && (
                     <button

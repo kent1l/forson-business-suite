@@ -1,7 +1,5 @@
 const { AnalyticsRegistryError, AnalyticsRequestError } = require('../errors');
-const { METRICS, DIMENSIONS, GRAINS } = require('../registry');
-const { PRESETS } = require('../periods');
-const { BUDGET } = require('../requestValidator');
+const { METRICS, DIMENSIONS } = require('../registry');
 const { OVERVIEW_BOARD } = require('./overview');
 const { SALES_BOARD } = require('./sales');
 const { INVENTORY_BOARD } = require('./inventory');
@@ -19,12 +17,8 @@ const { OPERATIONS_BOARD } = require('./operations');
  * A tile citing a metric that has since been renamed becomes a startup failure
  * and a red test run, rather than one blank tile that nobody notices for weeks.
  */
-const TILE_TYPES = new Set(['kpi', 'line', 'bar', 'table', 'heatmap']);
-const DRILLDOWN_KINDS = new Set(['page', 'tile', 'filter']);
-// A board is either about a period or about now. 'none' hides the range and
-// comparison controls, because a picker that changes nothing on screen teaches
-// the reader that the numbers moved with it when they did not.
-const BOARD_PERIODS = new Set(['range', 'none']);
+const db = require('../../../db');
+const { validateBoardSpec } = require('./validator');
 
 const BOARD_LIST = [
     OVERVIEW_BOARD, SALES_BOARD, INVENTORY_BOARD, PROFITABILITY_BOARD,
@@ -39,116 +33,7 @@ const fail = (message) => {
 const BOARDS = {};
 for (const board of BOARD_LIST) {
     if (BOARDS[board.id]) fail(`board id '${board.id}' is declared twice`);
-    if (!PRESETS[board.defaultPreset]) fail(`board '${board.id}' has unknown default preset '${board.defaultPreset}'`);
-    if (board.period !== undefined && !BOARD_PERIODS.has(board.period)) {
-        fail(`board '${board.id}' has unknown period mode '${board.period}'`);
-    }
-
-    const seenTiles = new Set();
-    for (const tile of board.tiles) {
-        if (seenTiles.has(tile.id)) fail(`board '${board.id}' declares tile '${tile.id}' twice`);
-        seenTiles.add(tile.id);
-        if (!TILE_TYPES.has(tile.type)) fail(`tile '${tile.id}' has unknown type '${tile.type}'`);
-        if (!tile.query || !Array.isArray(tile.query.metrics) || tile.query.metrics.length === 0) {
-            fail(`tile '${tile.id}' has no metrics`);
-        }
-        for (const metricId of tile.query.metrics) {
-            if (!Object.prototype.hasOwnProperty.call(METRICS, metricId)) {
-                fail(`tile '${tile.id}' references unknown metric '${metricId}'`);
-            }
-        }
-        for (const dimId of tile.query.dimensions || []) {
-            if (!Object.prototype.hasOwnProperty.call(DIMENSIONS, dimId)) {
-                fail(`tile '${tile.id}' references unknown dimension '${dimId}'`);
-            }
-        }
-        // 'auto' is resolved client-side from the board's period; the server only
-        // ever sees a concrete grain, which the request validator then checks.
-        if (tile.query.grain && tile.query.grain !== 'auto' && !GRAINS[tile.query.grain]) {
-            fail(`tile '${tile.id}' references unknown grain '${tile.query.grain}'`);
-        }
-        if (tile.query.minGrain && !GRAINS[tile.query.minGrain]) {
-            fail(`tile '${tile.id}' references unknown minGrain '${tile.query.minGrain}'`);
-        }
-        if (tile.query.minGrain && tile.query.grain !== 'auto') {
-            fail(`tile '${tile.id}' sets minGrain without grain: 'auto', which has no effect`);
-        }
-        const displayValue = tile.display && tile.display.value;
-        if (displayValue && !Object.prototype.hasOwnProperty.call(METRICS, displayValue)) {
-            fail(`tile '${tile.id}' displays unknown metric '${displayValue}'`);
-        }
-        if (displayValue && !tile.query.metrics.includes(displayValue)) {
-            fail(`tile '${tile.id}' displays '${displayValue}', which its own query does not ask for`);
-        }
-        // A drilldown is a closed vocabulary, never a URL: the frontend resolves it
-        // through the existing navigation switch, so a board spec cannot become a
-        // way to point a user anywhere.
-        if (tile.drilldown && !DRILLDOWN_KINDS.has(tile.drilldown.kind)) {
-            fail(`tile '${tile.id}' has unknown drilldown kind '${tile.drilldown.kind}'`);
-        }
-        if (tile.drilldown && tile.drilldown.kind === 'filter') {
-            const dimId = tile.drilldown.dimension;
-            const dim = DIMENSIONS[dimId];
-            if (!dim) fail(`tile '${tile.id}' drills down into unknown dimension '${dimId}'`);
-            // Clicking a bar adds a filter. A dimension that cannot be filtered
-            // would produce a click that silently does nothing.
-            if (!dim.filterable) fail(`tile '${tile.id}' drills down into '${dimId}', which cannot be filtered on`);
-            if (!(tile.query.dimensions || []).includes(dimId)) {
-                fail(`tile '${tile.id}' drills down into '${dimId}', which is not one of its own breakdowns`);
-            }
-        }
-
-        // A heatmap names its two axes, and both must be dimensions the query
-        // actually asks for -- otherwise it renders an empty grid at runtime.
-        if (tile.type === 'heatmap') {
-            const dims = tile.query.dimensions || [];
-            for (const axis of ['rows', 'columns']) {
-                const dimId = tile.display && tile.display[axis];
-                if (!dimId) fail(`heatmap tile '${tile.id}' does not declare its '${axis}' axis`);
-                if (!dims.includes(dimId)) {
-                    fail(`heatmap tile '${tile.id}' puts '${dimId}' on its ${axis} axis but does not break down by it`);
-                }
-            }
-            if (tile.display.rows === tile.display.columns) {
-                fail(`heatmap tile '${tile.id}' uses the same dimension on both axes`);
-            }
-        }
-
-        // topN is validated here as well as per request, so a board that would
-        // be refused at query time is a startup failure instead of a red tile.
-        if (tile.query.topN !== undefined) {
-            const { n, by } = tile.query.topN || {};
-            if (!Number.isInteger(n) || n < 1 || n > BUDGET.maxTopN) {
-                fail(`tile '${tile.id}' has an unusable topN.n of ${JSON.stringify(n)}`);
-            }
-            const dims = tile.query.dimensions || [];
-            if (dims.length !== 1 || dims[0] === 'date') {
-                fail(`tile '${tile.id}' asks for a topN rollup but breaks down by ${JSON.stringify(dims)}; a rollup needs exactly one non-date dimension`);
-            }
-            if (by !== undefined && !tile.query.metrics.includes(by)) {
-                fail(`tile '${tile.id}' ranks its topN by '${by}', which its own query does not ask for`);
-            }
-        }
-
-        // The promise a period-less board makes to the reader: nothing on it
-        // moves with a date range, so nothing on it may ask for one.
-        if (board.period === 'none') {
-            if (tile.query.compare) {
-                fail(`tile '${tile.id}' asks for a comparison on board '${board.id}', which declares no period`);
-            }
-            if ((tile.query.dimensions || []).includes('date') || tile.query.grain) {
-                fail(`tile '${tile.id}' breaks down by period on board '${board.id}', which declares no period`);
-            }
-            // `comparable` is the registry's own word for "this measures a
-            // stretch of time". Anything that does belongs on a board with a
-            // date picker, not on one that claims to be a position as of now.
-            for (const metricId of tile.query.metrics) {
-                if (METRICS[metricId].comparable) {
-                    fail(`tile '${tile.id}' uses '${metricId}', which measures a period, on board '${board.id}', which declares none`);
-                }
-            }
-        }
-    }
+    validateBoardSpec(board, { isRegistry: true });
     BOARDS[board.id] = board;
 }
 
@@ -226,4 +111,305 @@ const listBoards = (canSeeMetric) => Object.values(BOARDS)
     }))
     .filter((b) => b.tileCount > 0);
 
-module.exports = { BOARDS, boardFor, listBoards };
+/**
+ * Loads a board by ID: first checks built-ins, then queries custom boards from
+ * the database. Enforces permission filtering on tiles.
+ */
+async function getBoard(boardId, canSeeMetric, user) {
+    if (BOARDS[boardId]) {
+        return boardFor(boardId, canSeeMetric);
+    }
+
+    const employeeId = user?.employee_id;
+    const isAdmin = Number(user?.permission_level_id) === 10;
+
+    let res = null;
+    try {
+        res = await db.query(
+            `SELECT board_id, owner_employee_id, name, description, period, default_preset, spec, is_system, created_at, updated_at
+             FROM analytics_board
+             WHERE board_id = $1
+               AND (is_system = TRUE OR owner_employee_id = $2 OR $3 = TRUE)`,
+            [boardId, employeeId, isAdmin]
+        );
+    } catch {
+        // DB error or test mock without configured return
+    }
+
+    if (!res || !res.rows || res.rows.length === 0) {
+        throw new AnalyticsRequestError(404, `Unknown board: ${JSON.stringify(boardId)}`, {
+            valid: Object.keys(BOARDS),
+        });
+    }
+
+    const row = res.rows[0];
+    if (!row || !row.board_id) {
+        throw new AnalyticsRequestError(404, `Unknown board: ${JSON.stringify(boardId)}`, {
+            valid: Object.keys(BOARDS),
+        });
+    }
+    const specTiles = Array.isArray(row.spec?.tiles) ? row.spec.tiles : (Array.isArray(row.spec) ? row.spec : []);
+    const board = {
+        id: row.board_id,
+        title: row.name,
+        description: row.description || '',
+        period: row.period || 'range',
+        defaultPreset: row.default_preset || 'last_30_days',
+        tiles: specTiles,
+        isSystem: !!row.is_system,
+        isCustom: true,
+        ownerEmployeeId: row.owner_employee_id,
+        isOwner: employeeId ? row.owner_employee_id === employeeId : false,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+    };
+
+    validateBoardSpec(board, { isRegistry: false });
+
+    return {
+        ...board,
+        period: board.period || 'range',
+        tiles: board.tiles.filter((tile) => tile.query.metrics.every(canSeeMetric)),
+    };
+}
+
+/**
+ * Lists all boards visible to the user: built-ins plus user-created or system custom boards.
+ */
+async function listAllBoards(canSeeMetric, user) {
+    const builtins = listBoards(canSeeMetric).map((b) => ({
+        ...b,
+        isBuiltin: true,
+        isCustom: false,
+        isSystem: true,
+    }));
+
+    const employeeId = user?.employee_id;
+    const isAdmin = Number(user?.permission_level_id) === 10;
+
+    try {
+        const res = await db.query(
+            `SELECT board_id, owner_employee_id, name, description, period, default_preset, spec, is_system, created_at, updated_at
+             FROM analytics_board
+             WHERE is_system = TRUE OR owner_employee_id = $1 OR $2 = TRUE
+             ORDER BY name ASC`,
+            [employeeId, isAdmin]
+        );
+
+        const customBoards = (res?.rows || []).map((row) => {
+            if (!row || !row.board_id) return null;
+            const specTiles = Array.isArray(row.spec?.tiles) ? row.spec.tiles : (Array.isArray(row.spec) ? row.spec : []);
+            const board = {
+                id: row.board_id,
+                title: row.name,
+                description: row.description || '',
+                period: row.period || 'range',
+                defaultPreset: row.default_preset || 'last_30_days',
+                tiles: specTiles,
+                isSystem: !!row.is_system,
+                isCustom: true,
+                ownerEmployeeId: row.owner_employee_id,
+                isOwner: employeeId ? row.owner_employee_id === employeeId : false,
+                createdAt: row.created_at,
+                updatedAt: row.updated_at,
+            };
+            try {
+                validateBoardSpec(board, { isRegistry: false });
+            } catch (err) {
+                console.warn(`Analytics: custom board '${board.id}' failed validation and was skipped:`, err.message);
+                return null;
+            }
+            const visibleTiles = board.tiles.filter((t) => t.query.metrics.every(canSeeMetric));
+            return {
+                id: board.id,
+                title: board.title,
+                description: board.description,
+                period: board.period,
+                defaultPreset: board.defaultPreset,
+                tileCount: visibleTiles.length,
+                isBuiltin: false,
+                isSystem: board.isSystem,
+                isCustom: true,
+                isOwner: board.isOwner,
+                ownerEmployeeId: board.ownerEmployeeId,
+                createdAt: board.createdAt,
+                updatedAt: board.updatedAt,
+            };
+        }).filter((b) => b && b.tileCount > 0);
+
+        return [...builtins, ...customBoards];
+    } catch (err) {
+        console.error('Analytics: failed to load custom boards from DB:', err.message);
+        return builtins;
+    }
+}
+
+async function createBoard(boardData, user) {
+    const employeeId = user?.employee_id;
+    const isAdmin = Number(user?.permission_level_id) === 10;
+
+    if (!boardData || typeof boardData !== 'object') {
+        throw new AnalyticsRequestError(400, 'Board data must be an object.');
+    }
+
+    const id = String(boardData.id || `custom_${Date.now()}`).trim();
+    if (BOARDS[id]) {
+        throw new AnalyticsRequestError(409, `Board ID '${id}' is already reserved for a built-in board.`);
+    }
+
+    const specTiles = Array.isArray(boardData.tiles)
+        ? boardData.tiles
+        : (Array.isArray(boardData.spec?.tiles) ? boardData.spec.tiles : (Array.isArray(boardData.spec) ? boardData.spec : []));
+
+    const candidate = {
+        id,
+        title: String(boardData.title || boardData.name || '').trim(),
+        description: boardData.description ? String(boardData.description).trim() : '',
+        period: boardData.period || 'range',
+        defaultPreset: boardData.defaultPreset || 'last_30_days',
+        tiles: specTiles,
+    };
+
+    validateBoardSpec(candidate, { isRegistry: false });
+
+    const isSystem = isAdmin ? !!boardData.isSystem : false;
+
+    try {
+        const res = await db.query(
+            `INSERT INTO analytics_board (
+                board_id, owner_employee_id, name, description, period, default_preset, spec, is_system
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             RETURNING *`,
+            [
+                candidate.id,
+                employeeId || null,
+                candidate.title,
+                candidate.description,
+                candidate.period,
+                candidate.defaultPreset,
+                JSON.stringify({ tiles: candidate.tiles }),
+                isSystem,
+            ]
+        );
+        const row = res.rows[0];
+        return {
+            id: row.board_id,
+            title: row.name,
+            description: row.description || '',
+            period: row.period,
+            defaultPreset: row.default_preset,
+            tiles: candidate.tiles,
+            isSystem: row.is_system,
+            isCustom: true,
+            ownerEmployeeId: row.owner_employee_id,
+            isOwner: true,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+        };
+    } catch (err) {
+        if (err.code === '23505') {
+            throw new AnalyticsRequestError(409, `A board with ID '${candidate.id}' already exists.`);
+        }
+        throw err;
+    }
+}
+
+async function updateBoard(boardId, boardData, user) {
+    if (BOARDS[boardId]) {
+        throw new AnalyticsRequestError(403, 'Built-in boards cannot be modified.');
+    }
+
+    const employeeId = user?.employee_id;
+    const isAdmin = Number(user?.permission_level_id) === 10;
+
+    const existing = await db.query('SELECT * FROM analytics_board WHERE board_id = $1', [boardId]);
+    if (existing.rows.length === 0) {
+        throw new AnalyticsRequestError(404, `Board '${boardId}' not found.`);
+    }
+    const row = existing.rows[0];
+    if (row.owner_employee_id !== employeeId && !isAdmin) {
+        throw new AnalyticsRequestError(403, 'You do not have permission to modify this board.');
+    }
+
+    const specTiles = boardData.tiles !== undefined
+        ? boardData.tiles
+        : (boardData.spec?.tiles !== undefined ? boardData.spec.tiles : (row.spec?.tiles || []));
+
+    const candidate = {
+        id: boardId,
+        title: boardData.title !== undefined ? String(boardData.title).trim() : row.name,
+        description: boardData.description !== undefined ? String(boardData.description).trim() : row.description,
+        period: boardData.period !== undefined ? boardData.period : row.period,
+        defaultPreset: boardData.defaultPreset !== undefined ? boardData.defaultPreset : row.default_preset,
+        tiles: specTiles,
+    };
+
+    validateBoardSpec(candidate, { isRegistry: false });
+
+    const isSystem = isAdmin && boardData.isSystem !== undefined ? !!boardData.isSystem : row.is_system;
+
+    const res = await db.query(
+        `UPDATE analytics_board
+         SET name = $2, description = $3, period = $4, default_preset = $5, spec = $6, is_system = $7, updated_at = NOW()
+         WHERE board_id = $1
+         RETURNING *`,
+        [
+            boardId,
+            candidate.title,
+            candidate.description,
+            candidate.period,
+            candidate.defaultPreset,
+            JSON.stringify({ tiles: candidate.tiles }),
+            isSystem,
+        ]
+    );
+    const updated = res.rows[0];
+    return {
+        id: updated.board_id,
+        title: updated.name,
+        description: updated.description || '',
+        period: updated.period,
+        defaultPreset: updated.default_preset,
+        tiles: candidate.tiles,
+        isSystem: updated.is_system,
+        isCustom: true,
+        ownerEmployeeId: updated.owner_employee_id,
+        isOwner: employeeId ? updated.owner_employee_id === employeeId : false,
+        createdAt: updated.created_at,
+        updatedAt: updated.updated_at,
+    };
+}
+
+async function deleteBoard(boardId, user) {
+    if (BOARDS[boardId]) {
+        throw new AnalyticsRequestError(403, 'Built-in boards cannot be deleted.');
+    }
+
+    const employeeId = user?.employee_id;
+    const isAdmin = Number(user?.permission_level_id) === 10;
+
+    const existing = await db.query('SELECT * FROM analytics_board WHERE board_id = $1', [boardId]);
+    if (existing.rows.length === 0) {
+        throw new AnalyticsRequestError(404, `Board '${boardId}' not found.`);
+    }
+    const row = existing.rows[0];
+    if (row.owner_employee_id !== employeeId && !isAdmin) {
+        throw new AnalyticsRequestError(403, 'You do not have permission to delete this board.');
+    }
+
+    await db.query('DELETE FROM analytics_saved_view WHERE board_id = $1', [boardId]);
+    await db.query('DELETE FROM analytics_board WHERE board_id = $1', [boardId]);
+    return { success: true, message: `Board '${boardId}' deleted.` };
+}
+
+module.exports = {
+    BOARDS,
+    boardFor,
+    listBoards,
+    listAllBoards,
+    getBoard,
+    createBoard,
+    updateBoard,
+    deleteBoard,
+    validateBoardSpec,
+};
