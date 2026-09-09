@@ -21,6 +21,11 @@ export const ICONS = {
   menu: "M4 6h16M4 12h16M4 18h16",
   box: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4",
   warning: "M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z",
+  // Severity glyphs for the analytics insights panel. They exist so severity is
+  // never carried by colour alone, which a reader who cannot distinguish red
+  // from amber would otherwise miss entirely.
+  alert: "M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
+  info: "M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
   truck: "M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z M9 11a1 1 0 100-2 1 1 0 000 2z",
   edit: "M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.536l12.232-12.232z",
   trash: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16",
@@ -51,6 +56,9 @@ ICONS.bookmark = "M17 20l-5-5-5 5V5a2 2 0 012-2h6a2 2 0 012 2z";
 ICONS.chevronLeft = "M15 19l-7-7 7-7";
 ICONS.chevronRight = "M9 5l7 7-7 7";
 ICONS.panelLeft = "M4 4h16v16H4V4zm6 0v16";
+// A trend line with points, distinct from the bar-chart `reporting` icon so the
+// two pages are told apart in the sidebar at a glance.
+ICONS.analytics = "M3 3v16.5A1.5 1.5 0 004.5 21H21M7 14.5l3.5-3.5 3 3L20 7.5";
 ICONS.info = "M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z";
 ICONS.check = "M4.5 12.75l6 6 9-13.5";
 ICONS.bank = "M3 21h18M4 10h16M4 10l8-6 8 6M6 10v8m4-8v8m4-8v8m4-8v8";

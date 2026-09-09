@@ -1,0 +1,210 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`analytics query builder — generated SQL a period comparison is one query with a bucket column, not two round trips 1`] = `
+"WITH src_invoice_header AS (
+  SELECT
+    CASE WHEN (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 THEN 0 ELSE 1 END AS bucket,
+    date_trunc('month', i.invoice_date AT TIME ZONE 'Asia/Manila') AS dim_0,
+    to_char(date_trunc('month', i.invoice_date AT TIME ZONE 'Asia/Manila'), 'YYYY-MM') AS dim_0_label,
+    COALESCE(SUM(COALESCE(i.subtotal_ex_tax, i.total_amount - COALESCE(i.tax_total, 0))), 0) AS m_0
+  FROM invoice i
+  WHERE ((i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 OR (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $3 AND $4)
+    AND i.status <> 'Cancelled'
+  GROUP BY 1, 2, 3
+),
+src_credit_note_header AS (
+  SELECT
+    CASE WHEN (cn.refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 THEN 0 ELSE 1 END AS bucket,
+    date_trunc('month', cn.refund_date AT TIME ZONE 'Asia/Manila') AS dim_0,
+    to_char(date_trunc('month', cn.refund_date AT TIME ZONE 'Asia/Manila'), 'YYYY-MM') AS dim_0_label,
+    COALESCE(SUM(COALESCE(cn.subtotal_ex_tax, cn.total_amount)), 0) AS m_1
+  FROM credit_note cn
+  WHERE ((cn.refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2 OR (cn.refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $3 AND $4)
+  GROUP BY 1, 2, 3
+),
+keys AS (
+  SELECT bucket, dim_0, dim_0_label FROM src_invoice_header
+  UNION
+  SELECT bucket, dim_0, dim_0_label FROM src_credit_note_header
+),
+joined AS (
+  SELECT
+    k.bucket,
+    k.dim_0,
+    k.dim_0_label,
+    COALESCE(s0.m_0, 0) AS m_0,
+    COALESCE(s1.m_1, 0) AS m_1
+  FROM keys k
+    LEFT JOIN src_invoice_header s0 ON s0.bucket IS NOT DISTINCT FROM k.bucket
+      AND s0.dim_0 IS NOT DISTINCT FROM k.dim_0
+      AND s0.dim_0_label IS NOT DISTINCT FROM k.dim_0_label
+    LEFT JOIN src_credit_note_header s1 ON s1.bucket IS NOT DISTINCT FROM k.bucket
+      AND s1.dim_0 IS NOT DISTINCT FROM k.dim_0
+      AND s1.dim_0_label IS NOT DISTINCT FROM k.dim_0_label
+)
+SELECT
+  bucket,
+  dim_0,
+  dim_0_label,
+  m_0,
+  m_1,
+  (m_0 - m_1) AS d_0
+FROM joined
+ORDER BY bucket ASC, dim_0 ASC
+LIMIT $5"
+`;
+
+exports[`analytics query builder — generated SQL a single-source KPI aggregates in one CTE with no stitching 1`] = `
+"WITH src_invoice_header AS (
+  SELECT
+    0 AS bucket,
+    COALESCE(SUM(COALESCE(i.subtotal_ex_tax, i.total_amount - COALESCE(i.tax_total, 0))), 0) AS m_0
+  FROM invoice i
+  WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
+    AND i.status <> 'Cancelled'
+)
+SELECT
+  bucket,
+  m_0
+FROM src_invoice_header
+ORDER BY bucket ASC, m_0 DESC NULLS LAST
+LIMIT $3"
+`;
+
+exports[`analytics query builder — generated SQL a trusted metric is filtered and its coverage measured, in the same CTE 1`] = `
+"WITH src_invoice_line AS (
+  SELECT
+    0 AS bucket,
+    SUM(COALESCE(il.tax_base, (il.quantity * il.sale_price) - COALESCE(il.discount_amount, 0) - COALESCE(il.tax_amount, 0)) - (il.quantity * il.cost_at_sale)) FILTER (WHERE (il.cost_at_sale IS NOT NULL AND il.cost_at_sale > 0)) AS m_0,
+    SUM(COALESCE(il.tax_base, (il.quantity * il.sale_price) - COALESCE(il.discount_amount, 0) - COALESCE(il.tax_amount, 0))) FILTER (WHERE (il.cost_at_sale IS NOT NULL AND il.cost_at_sale > 0)) AS m_1,
+    COALESCE(SUM(COALESCE(il.tax_base, (il.quantity * il.sale_price) - COALESCE(il.discount_amount, 0) - COALESCE(il.tax_amount, 0))) FILTER (WHERE ((il.cost_at_sale IS NOT NULL AND il.cost_at_sale > 0))), 0) AS cov_costed_line_num,
+    COALESCE(SUM(COALESCE(il.tax_base, (il.quantity * il.sale_price) - COALESCE(il.discount_amount, 0) - COALESCE(il.tax_amount, 0))), 0) AS cov_costed_line_den,
+    COUNT(*) FILTER (WHERE ((il.cost_at_sale IS NOT NULL AND il.cost_at_sale > 0))) AS cov_costed_line_num_rows,
+    COUNT(*) AS cov_costed_line_den_rows
+  FROM invoice_line il JOIN invoice i ON i.invoice_id = il.invoice_id
+  WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
+    AND i.status <> 'Cancelled'
+)
+SELECT
+  bucket,
+  m_0,
+  m_1,
+  CASE WHEN COALESCE(m_1, 0) = 0 THEN NULL::numeric ELSE (m_0)::numeric * $3 / NULLIF(m_1, 0) END AS d_1,
+  CASE WHEN cov_costed_line_den = 0 THEN NULL ELSE cov_costed_line_num::numeric / cov_costed_line_den END AS cov_costed_line_ratio,
+  CASE WHEN cov_costed_line_den_rows = 0 THEN NULL ELSE cov_costed_line_num_rows::numeric / cov_costed_line_den_rows END AS cov_costed_line_row_ratio,
+  cov_costed_line_num,
+  cov_costed_line_den,
+  cov_costed_line_num_rows,
+  cov_costed_line_den_rows
+FROM src_invoice_line
+ORDER BY bucket ASC, m_0 DESC NULLS LAST
+LIMIT $4"
+`;
+
+exports[`analytics query builder — generated SQL sales and refunds are aggregated in separate CTEs keyed by their own date columns 1`] = `
+"WITH src_invoice_header AS (
+  SELECT
+    0 AS bucket,
+    COALESCE(SUM(COALESCE(i.subtotal_ex_tax, i.total_amount - COALESCE(i.tax_total, 0))), 0) AS m_0
+  FROM invoice i
+  WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
+    AND i.status <> 'Cancelled'
+),
+src_credit_note_header AS (
+  SELECT
+    0 AS bucket,
+    COALESCE(SUM(COALESCE(cn.subtotal_ex_tax, cn.total_amount)), 0) AS m_1
+  FROM credit_note cn
+  WHERE (cn.refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
+),
+keys AS (
+  SELECT bucket FROM src_invoice_header
+  UNION
+  SELECT bucket FROM src_credit_note_header
+),
+joined AS (
+  SELECT
+    k.bucket,
+    COALESCE(s0.m_0, 0) AS m_0,
+    COALESCE(s1.m_1, 0) AS m_1
+  FROM keys k
+    LEFT JOIN src_invoice_header s0 ON s0.bucket IS NOT DISTINCT FROM k.bucket
+    LEFT JOIN src_credit_note_header s1 ON s1.bucket IS NOT DISTINCT FROM k.bucket
+)
+SELECT
+  bucket,
+  m_0,
+  m_1,
+  (m_0 - m_1) AS d_0
+FROM joined
+ORDER BY bucket ASC, d_0 DESC NULLS LAST
+LIMIT $3"
+`;
+
+exports[`analytics query builder — the hour and weekday dimensions both fold the whole range onto one grid, in Manila local time 1`] = `
+"WITH src_invoice_header AS (
+  SELECT
+    0 AS bucket,
+    EXTRACT(ISODOW FROM i.invoice_date AT TIME ZONE 'Asia/Manila')::int AS dim_0,
+    to_char(i.invoice_date AT TIME ZONE 'Asia/Manila', 'Dy') AS dim_0_label,
+    EXTRACT(HOUR FROM i.invoice_date AT TIME ZONE 'Asia/Manila')::int AS dim_1,
+    lpad(EXTRACT(HOUR FROM i.invoice_date AT TIME ZONE 'Asia/Manila')::text, 2, '0') || ':00' AS dim_1_label,
+    COALESCE(SUM(COALESCE(i.subtotal_ex_tax, i.total_amount - COALESCE(i.tax_total, 0))), 0) AS m_0
+  FROM invoice i
+  WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
+    AND i.status <> 'Cancelled'
+  GROUP BY 2, 3, 4, 5
+)
+SELECT
+  bucket,
+  dim_0,
+  dim_0_label,
+  dim_1,
+  dim_1_label,
+  m_0
+FROM src_invoice_header
+ORDER BY bucket ASC, m_0 DESC NULLS LAST, dim_0 ASC NULLS LAST, dim_1 ASC NULLS LAST
+LIMIT $3"
+`;
+
+exports[`analytics query builder — top-N with an Other rollup the fold happens in SQL, over leaf columns, and is flagged and counted 1`] = `
+"WITH src_invoice_line AS (
+  SELECT
+    0 AS bucket,
+    b.brand_id AS dim_0,
+    COALESCE(b.brand_name, '(No brand)') AS dim_0_label,
+    COALESCE(SUM(COALESCE(il.tax_base, (il.quantity * il.sale_price) - COALESCE(il.discount_amount, 0) - COALESCE(il.tax_amount, 0))), 0) AS m_0
+  FROM invoice_line il JOIN invoice i ON i.invoice_id = il.invoice_id
+  JOIN part p ON p.part_id = il.part_id
+  LEFT JOIN brand b ON b.brand_id = p.brand_id
+  WHERE (i.invoice_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
+    AND i.status <> 'Cancelled'
+  GROUP BY 2, 3
+),
+ranked AS (
+  SELECT j.*,
+    ROW_NUMBER() OVER (PARTITION BY j.bucket ORDER BY m_0 DESC NULLS LAST, j.dim_0 ASC NULLS LAST) AS rn
+  FROM src_invoice_line j
+),
+rolled AS (
+  SELECT
+    bucket,
+    (rn > $3) AS is_other,
+    CASE WHEN rn <= $3 THEN dim_0 END AS dim_0,
+    CASE WHEN rn <= $3 THEN dim_0_label ELSE 'Other' END AS dim_0_label,
+    COUNT(*) AS rollup_count,
+    SUM(m_0) AS m_0
+  FROM ranked
+  GROUP BY 1, 2, 3, 4
+)
+SELECT
+  bucket,
+  is_other,
+  rollup_count,
+  dim_0,
+  dim_0_label,
+  m_0
+FROM rolled
+ORDER BY bucket ASC, is_other ASC, m_0 DESC NULLS LAST, dim_0 ASC NULLS LAST
+LIMIT $4"
+`;

@@ -39,7 +39,7 @@ const getStatusBadge = (status) => {
 };
 
 
-const SalesHistoryPage = () => {
+const SalesHistoryPage = ({ pageState = null }) => {
     const { settings } = useSettings();
     const [invoices, setInvoices] = useState([]);
     const [financialSummary, setFinancialSummary] = useState(null); // Backend-aggregated stats for the full filtered range
@@ -56,6 +56,18 @@ const SalesHistoryPage = () => {
             endDate: dateStr,
         };
     });
+    // Arriving from an Analytics drilldown: open on the range the tile was
+    // showing rather than on today, so the figure the user clicked is the figure
+    // this page adds up. Re-applied on every navigation, not just the first, so
+    // a second drilldown from a different period is not silently ignored.
+    useEffect(() => {
+        if (!pageState) return;
+        const { startDate, endDate } = pageState;
+        if (!startDate || !endDate) return;
+        setDates({ startDate, endDate });
+        setPage(1);
+    }, [pageState]);
+
     const [query, setQuery] = useState('');
     const [debouncedQuery, setDebouncedQuery] = useState('');
     const debounceRef = useRef(null);
