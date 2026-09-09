@@ -76,6 +76,20 @@ for (const [id, src] of Object.entries(SOURCES)) {
     if (typeof src.defaultWhere !== 'function') fail(`source '${id}' has no defaultWhere function`);
     if (!src.cols || typeof src.cols !== 'object') fail(`source '${id}' has no cols map`);
 
+    // The FROM clause is the one registry fragment that was never checked, and
+    // Phase 4 introduced the first source whose FROM is a subquery with its own
+    // WHERE (`repeat_receipt_line`). Placeholders belong to `defaultWhere`,
+    // which is handed the live values array; one appearing in static text would
+    // renumber every parameter after it.
+    if (src.from.includes('$')) {
+        fail(`source '${id}'.from contains a placeholder; a source's FROM clause must be a literal`);
+    }
+    for (const [name, join] of Object.entries(src.joins || {})) {
+        if (String(join).includes('$')) {
+            fail(`source '${id}' join '${name}' contains a placeholder; join fragments must be literals`);
+        }
+    }
+
     for (const dimId of src.dimensions) {
         const dim = DIMENSIONS[dimId];
         if (!dim) fail(`source '${id}' lists unknown dimension '${dimId}'`);

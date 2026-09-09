@@ -32,6 +32,24 @@ const costedPartCondition = (alias) =>
     `(${alias}.wac_cost IS NOT NULL AND ${alias}.wac_cost > 0)`;
 
 /**
+ * SQL predicate selecting goods receipt lines whose cost can be trusted.
+ *
+ * The same three-state problem as a sale line, on the buying side: 1,547 of
+ * 2,679 receipt lines carry `landed_unit_cost = 0`, and none of them is flagged
+ * `is_free_goods`, so "we did not record what this cost" and "the supplier gave
+ * it to us" are stored identically. Purchase spend computed without excluding
+ * them counts those units as free.
+ *
+ * `landed_unit_cost` rather than `cost_price` throughout: it is the figure after
+ * discount and allocated freight, and is what the PRD's §5 costing convention
+ * requires.
+ *
+ * @param {string} alias table alias for `goods_receipt_line` (e.g. 'grl')
+ */
+const costedReceiptLineCondition = (alias) =>
+    `(${alias}.landed_unit_cost IS NOT NULL AND ${alias}.landed_unit_cost > 0)`;
+
+/**
  * Coverage levels drive how the UI presents a profit figure. Below `low` the
  * figure is too thin to lead with; at zero there is nothing to show at all and
  * the caller must render "no cost data" rather than a confident 0.
@@ -91,6 +109,7 @@ const buildCostCoverage = ({ costedRevenue, totalRevenue, costedLines, totalLine
 module.exports = {
     costedLineCondition,
     costedPartCondition,
+    costedReceiptLineCondition,
     buildCostCoverage,
     COVERAGE_LEVELS,
 };

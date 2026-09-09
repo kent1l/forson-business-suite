@@ -117,9 +117,66 @@ const AR_ENTRY_LABELS = Object.freeze([
     ['ADJUSTMENT_REVERSAL', 'Adjustment reversed'],
 ]);
 
-const arEntryLabelCase = (c) => `CASE ${c.entry_type}::text
-        ${AR_ENTRY_LABELS.map(([k, label]) => `WHEN '${k}' THEN '${label}'`).join('\n        ')}
-        ELSE ${c.entry_type}::text END`;
+
+/**
+ * The A/P ledger's entry types, in the words a person uses. Same shape and same
+ * reasoning as `AR_ENTRY_LABELS`: exhaustive over the enum as it stands, with a
+ * fallback to the raw value so a type added later shows up as itself instead of
+ * disappearing into an unlabelled bucket.
+ */
+const AP_ENTRY_LABELS = Object.freeze([
+    ['BILL_POSTED', 'Billed by supplier'],
+    ['PAYMENT_SETTLED', 'Paid to supplier'],
+    ['PDC_BOUNCED_REVERSAL', 'Our cheque bounced'],
+    ['BOUNCE_FEE_PENALTY', 'Bounce fee charged to us'],
+    ['DEBIT_ADJUSTMENT', 'Debit adjustment'],
+    ['CREDIT_ADJUSTMENT', 'Credit adjustment'],
+    ['RETURN_CREDIT', 'Credit for returned goods'],
+]);
+
+/**
+ * Stock movement types.
+ *
+ * `inventory_transaction.trans_type` is free text rather than an enum, so the
+ * fallback matters more here than it does for the ledgers: a type this list has
+ * never seen reads as itself, and is therefore visible and chaseable, instead of
+ * vanishing. The two cycle-count types are kept APART rather than merged --
+ * "a person reviewed this variance and approved it" and "the system moved the
+ * stock on its own" are different facts about how carefully stock is controlled.
+ */
+const STOCK_MOVEMENT_LABELS = Object.freeze([
+    ['StockIn', 'Received into stock'],
+    ['StockOut', 'Sold'],
+    ['Refund', 'Returned by a customer'],
+    ['Adjustment', 'Manual adjustment'],
+    ['Reversal', 'Reversed transaction'],
+    ['Cycle Count Adjustment', 'Count adjustment (reviewed)'],
+    ['Cycle Count Auto-Adjustment', 'Count adjustment (automatic)'],
+]);
+
+const labelCase = (expr, pairs) => `CASE ${expr}::text
+        ${pairs.map(([k, label]) => `WHEN '${k}' THEN '${label}'`).join('\n        ')}
+        ELSE ${expr}::text END`;
+
+/**
+ * What a count found, as an ordered CASE over the counted quantity against the
+ * quantity the system believed.
+ *
+ * "Counted short" and "counted over" are deliberately separate bands rather
+ * than one "variance" figure. They are different problems: short is stock that
+ * has left without being recorded, over is stock that arrived without being
+ * recorded, and a net variance near zero can hide a great deal of both.
+ */
+const COUNT_VARIANCE_BANDS = Object.freeze([
+    [0, 'Matched the system'],
+    [1, 'Counted short'],
+    [2, 'Counted over'],
+]);
+
+const countVarianceCase = (c, emit) => `CASE
+        WHEN ${c.counted_qty} = ${c.system_qty} THEN ${emit(0)}
+        WHEN ${c.counted_qty} < ${c.system_qty} THEN ${emit(1)}
+        ELSE ${emit(2)} END`;
 
 const DIMENSIONS = Object.freeze({
     date: Object.freeze({
@@ -331,7 +388,7 @@ const DIMENSIONS = Object.freeze({
         filterable: false,
         valueType: 'text',
         key: (c) => `${c.entry_type}::text`,
-        keyLabel: (c) => arEntryLabelCase(c),
+        keyLabel: (c) => labelCase(c.entry_type, AR_ENTRY_LABELS),
     }),
 
     /**
@@ -354,6 +411,71 @@ const DIMENSIONS = Object.freeze({
         keyLabel: () => `CASE
             WHEN adj.reason_code IS NULL THEN '(Not an adjustment)'
             ELSE initcap(replace(adj.reason_code, '_', ' ')) END`,
+    }),
+
+    /**
+     * The supplier a receipt, bill or ledger entry belongs to.
+     *
+     * Worth reading the top supplier on this dimension before trusting any
+     * chart built on it: the largest one in this database is a placeholder
+     * record literally named "N/A", carrying 167 of the 336 posted receipts.
+     *
+     * That is deliberately NOT handled the way Phase 3 handled the walk-in
+     * customer. The walk-in record is indistinguishable from a real account --
+     * it has a name, and only an administrator knows which row it is -- so
+     * every per-customer figure over it was a plausible wrong number and the
+     * source had to refuse. "N/A" announces itself: it appears in every
+     * breakdown under its own name, at the top of the ranking, and reads
+     * exactly as what it is, which is that half the receipts in this business
+     * are not attributed to anybody. Hiding it behind a setting would remove
+     * the most important thing the purchasing data has to say.
+     */
+    supplier: Object.freeze({
+        id: 'supplier',
+        label: 'Supplier',
+        kind: 'entity',
+        requiresJoins: Object.freeze(['supplier']),
+        filterable: true,
+        valueType: 'int',
+        lookup: '/suppliers',
+        key: (c) => c.supplier_id,
+        keyLabel: () => "COALESCE(NULLIF(s.supplier_name, ''), '(No supplier)')",
+    }),
+
+    ap_entry_type: Object.freeze({
+        id: 'ap_entry_type',
+        label: 'Ledger movement',
+        kind: 'attribute',
+        requiresJoins: Object.freeze([]),
+        filterable: false,
+        valueType: 'text',
+        key: (c) => `${c.entry_type}::text`,
+        keyLabel: (c) => labelCase(c.entry_type, AP_ENTRY_LABELS),
+    }),
+
+    stock_movement_type: Object.freeze({
+        id: 'stock_movement_type',
+        label: 'Movement',
+        kind: 'attribute',
+        requiresJoins: Object.freeze([]),
+        filterable: false,
+        valueType: 'text',
+        key: (c) => c.trans_type,
+        keyLabel: (c) => labelCase(c.trans_type, STOCK_MOVEMENT_LABELS),
+    }),
+
+    count_variance_band: Object.freeze({
+        id: 'count_variance_band',
+        label: 'Count result',
+        kind: 'attribute',
+        requiresJoins: Object.freeze([]),
+        // Derived from two columns rather than stored, like every other band in
+        // this file, so it is read rather than filtered on.
+        filterable: false,
+        sortBy: 'key',
+        valueType: 'int',
+        key: (c) => countVarianceCase(c, (n) => String(n)),
+        keyLabel: (c) => countVarianceCase(c, (n) => `'${COUNT_VARIANCE_BANDS[n][1]}'`),
     }),
 
     pdc_status: Object.freeze({

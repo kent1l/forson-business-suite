@@ -77,6 +77,20 @@ const excludeWalkIn = (params, opts, column) => {
 // live, and counting them would report an exposure eight times the real one.
 const OPEN_INVOICE_STATUSES = "iwb.status IN ('Unpaid', 'Partially Paid')";
 
+// The one place this file names a time zone; the query builder wraps date
+// COLUMNS itself, but `purchase_lead` subtracts two of them and has to do the
+// cast where the subtraction happens.
+const MANILA = "AT TIME ZONE 'Asia/Manila'";
+
+// A receipt only counts once it has been posted and has not been taken back. A
+// draft is somebody's half-finished data entry and a void is a mistake that was
+// reversed; either one counted as spend is money the business never committed.
+// Literals here rather than request options, for the same reason the open-invoice
+// statuses are: what counts as a purchase is a definition the whole business
+// shares.
+const POSTED_RECEIPT = "gr.workflow_status = 'Posted'";
+const ACTIVE_RECEIPT = "gr.status <> 'Voided'";
+
 const SOURCES = Object.freeze({
     invoice_header: Object.freeze({
         id: 'invoice_header',
@@ -550,6 +564,391 @@ const SOURCES = Object.freeze({
             customer: 'LEFT JOIN customer cu ON cu.customer_id = cp.customer_id',
         }),
         dimensions: Object.freeze(['customer', 'customer_type', 'pdc_status']),
+    }),
+
+    /**
+     * Goods received, at line grain — the buying side of the business.
+     *
+     * Only POSTED, non-voided receipts. A draft receipt is somebody's
+     * half-finished data entry and a voided one is a mistake that was taken
+     * back; counting either as spend would report money the business never
+     * committed.
+     *
+     * Quantities are NET OF RETURNS throughout (`quantity - return_quantity`),
+     * because a line that was received and sent straight back is not a purchase.
+     * Both the trust rule's weight and every spend metric read the same net
+     * column, so there is no way to accidentally value the gross.
+     *
+     * Cost comes from `landed_unit_cost`, never `cost_price`: it is the figure
+     * after line discount and allocated freight, and it is what the PRD's §5
+     * costing convention requires. 1,547 of 2,679 lines carry zero there, which
+     * is what the `costed_receipt_line` trust rule exists to say out loud.
+     */
+    receipt_line: Object.freeze({
+        id: 'receipt_line',
+        label: 'Goods receipt lines',
+        grain: 'receipt_line',
+        from: 'FROM goods_receipt_line grl JOIN goods_receipt gr ON gr.grn_id = grl.grn_id',
+        // A line is periodised by its RECEIPT's date; the line has none of its own.
+        dateColumn: 'gr.receipt_date',
+        defaultWhere: () => [POSTED_RECEIPT, ACTIVE_RECEIPT],
+        cols: Object.freeze({
+            __alias: 'grl',
+            grn_line_id: 'grl.grn_line_id',
+            grn_id: 'grl.grn_id',
+            part_id: 'grl.part_id',
+            supplier_id: 'gr.supplier_id',
+            employee_id: 'gr.received_by',
+            // Net of what was sent back. Everything that measures a purchase
+            // reads this, never `grl.quantity`.
+            quantity: '(grl.quantity - grl.return_quantity)',
+            return_quantity: 'grl.return_quantity',
+            landed_unit_cost: 'grl.landed_unit_cost',
+            spend: '((grl.quantity - grl.return_quantity) * grl.landed_unit_cost)',
+            rejection_reason: 'grl.rejection_reason',
+            is_free_goods: 'grl.is_free_goods',
+        }),
+        joins: Object.freeze({
+            supplier: 'LEFT JOIN supplier s ON s.supplier_id = gr.supplier_id',
+            employee: 'LEFT JOIN employee e ON e.employee_id = gr.received_by',
+            part: 'JOIN part p ON p.part_id = grl.part_id',
+            brand: 'LEFT JOIN brand b ON b.brand_id = p.brand_id',
+            group: 'LEFT JOIN "group" g ON g.group_id = p.group_id',
+        }),
+        joinDeps: Object.freeze({ brand: ['part'], group: ['part'] }),
+        dimensions: Object.freeze(['date', 'supplier', 'employee', 'part', 'brand', 'group']),
+    }),
+
+    /**
+     * Goods received, at RECEIPT grain.
+     *
+     * A separate source rather than a `COUNT(DISTINCT grn_id)` on the line
+     * source, and the reason is the same one that produced `fold` in Phase 3: a
+     * distinct count does not add up. Broken down by brand and totalled, a
+     * receipt carrying four brands would be counted four times, and the total
+     * row would look entirely plausible. At this grain `COUNT(*)` is exact under
+     * every breakdown the source offers, because a receipt has exactly one
+     * supplier, one receiver and one date.
+     */
+    receipt_header: Object.freeze({
+        id: 'receipt_header',
+        label: 'Goods receipts',
+        grain: 'receipt',
+        from: 'FROM goods_receipt gr',
+        dateColumn: 'gr.receipt_date',
+        defaultWhere: () => [POSTED_RECEIPT, ACTIVE_RECEIPT],
+        cols: Object.freeze({
+            __alias: 'gr',
+            grn_id: 'gr.grn_id',
+            supplier_id: 'gr.supplier_id',
+            employee_id: 'gr.received_by',
+            // TRUE where the receipt was entered to correct historical stock
+            // rather than to record a delivery that happened that day.
+            is_backfill: 'gr.is_backfill',
+            supplier_invoice_no: 'gr.supplier_invoice_no',
+            po_id: 'gr.po_id',
+        }),
+        joins: Object.freeze({
+            supplier: 'LEFT JOIN supplier s ON s.supplier_id = gr.supplier_id',
+            employee: 'LEFT JOIN employee e ON e.employee_id = gr.received_by',
+        }),
+        dimensions: Object.freeze(['date', 'supplier', 'employee']),
+    }),
+
+    /**
+     * What a part cost this time, against what it cost last time.
+     *
+     * The window runs over the WHOLE receipt history, deliberately outside any
+     * date filter: the previous purchase of a part is a fact about the part, not
+     * a function of the range on screen. Computing the comparison inside the
+     * range would make "prices rose 4%" mean "prices rose 4% against the oldest
+     * receipt that happens to fall inside the window you picked", which changes
+     * every time the reader moves the date picker and is not a price change at
+     * all. The date filter then applies to the outer row — the receipt being
+     * measured — exactly as it does on every other dated source.
+     *
+     * Only costed lines take part, on both sides. A repeat purchase whose cost
+     * was never recorded has no price to compare, and treating its zero as a
+     * 100% price drop would be the largest wrong number in the module.
+     */
+    repeat_receipt_line: Object.freeze({
+        id: 'repeat_receipt_line',
+        label: 'Repeat purchases',
+        grain: 'receipt_line',
+        from: `FROM (
+           SELECT grl.grn_line_id, grl.part_id, grl.quantity, grl.return_quantity,
+                  grl.landed_unit_cost, gr.receipt_date, gr.supplier_id, gr.received_by,
+                  LAG(grl.landed_unit_cost) OVER (
+                    PARTITION BY grl.part_id
+                    ORDER BY gr.receipt_date, grl.grn_line_id) AS prev_unit_cost
+           FROM goods_receipt_line grl JOIN goods_receipt gr ON gr.grn_id = grl.grn_id
+           WHERE ${POSTED_RECEIPT} AND ${ACTIVE_RECEIPT} AND grl.landed_unit_cost > 0
+         ) rp`,
+        dateColumn: 'rp.receipt_date',
+        defaultWhere: () => ['rp.prev_unit_cost IS NOT NULL', 'rp.prev_unit_cost > 0'],
+        cols: Object.freeze({
+            __alias: 'rp',
+            grn_line_id: 'rp.grn_line_id',
+            part_id: 'rp.part_id',
+            supplier_id: 'rp.supplier_id',
+            employee_id: 'rp.received_by',
+            quantity: '(rp.quantity - rp.return_quantity)',
+            unit_cost: 'rp.landed_unit_cost',
+            prev_unit_cost: 'rp.prev_unit_cost',
+            unit_cost_delta: '(rp.landed_unit_cost - rp.prev_unit_cost)',
+            // What the price change actually cost, in money: the per-unit move
+            // multiplied by the units bought at the new price. A 40% rise on
+            // three units is not the same event as a 2% rise on nine hundred,
+            // and a percentage on its own cannot tell them apart.
+            value_impact: '((rp.landed_unit_cost - rp.prev_unit_cost) * (rp.quantity - rp.return_quantity))',
+            // The denominator of the weighted price change: what those same
+            // units would have cost at the previous price.
+            prior_value: '(rp.prev_unit_cost * (rp.quantity - rp.return_quantity))',
+        }),
+        joins: Object.freeze({
+            supplier: 'LEFT JOIN supplier s ON s.supplier_id = rp.supplier_id',
+            part: 'JOIN part p ON p.part_id = rp.part_id',
+            brand: 'LEFT JOIN brand b ON b.brand_id = p.brand_id',
+            group: 'LEFT JOIN "group" g ON g.group_id = p.group_id',
+        }),
+        joinDeps: Object.freeze({ brand: ['part'], group: ['part'] }),
+        dimensions: Object.freeze(['date', 'supplier', 'part', 'brand', 'group']),
+    }),
+
+    /**
+     * Purchase orders and how long they took to arrive.
+     *
+     * Registered against an EMPTY TABLE, on purpose, and gated on the
+     * `purchase_order_data` probe. There are no purchase orders in this
+     * database and not one of the 336 posted receipts carries a `po_id`, so
+     * lead time is the gap between two events of which only the second is
+     * recorded. These metrics light up on their own the day the first order is
+     * raised, exactly as the expense and payroll metrics have waited since
+     * Phase 0.
+     *
+     * `lead_days` is NULL until something is received against the order, so an
+     * outstanding order does not enter the average as a zero-day delivery.
+     */
+    purchase_lead: Object.freeze({
+        id: 'purchase_lead',
+        label: 'Purchase orders',
+        grain: 'purchase_order',
+        from: `FROM purchase_order po
+         LEFT JOIN LATERAL (
+           SELECT MIN(gr.receipt_date) AS first_receipt
+           FROM goods_receipt gr
+           WHERE gr.po_id = po.po_id AND ${ACTIVE_RECEIPT} AND ${POSTED_RECEIPT}) fr ON TRUE`,
+        dateColumn: 'po.order_date',
+        defaultWhere: () => ["po.status <> 'Cancelled'"],
+        cols: Object.freeze({
+            __alias: 'po',
+            po_id: 'po.po_id',
+            supplier_id: 'po.supplier_id',
+            employee_id: 'po.employee_id',
+            ordered_value: 'po.total_amount',
+            first_receipt_at: 'fr.first_receipt',
+            lead_days: `((fr.first_receipt ${MANILA})::date - (po.order_date ${MANILA})::date)`,
+            is_received: 'fr.first_receipt IS NOT NULL',
+        }),
+        joins: Object.freeze({
+            supplier: 'LEFT JOIN supplier s ON s.supplier_id = po.supplier_id',
+            employee: 'LEFT JOIN employee e ON e.employee_id = po.employee_id',
+        }),
+        dimensions: Object.freeze(['date', 'supplier', 'employee']),
+    }),
+
+    /**
+     * What is still owed to suppliers, at bill grain, as of now.
+     *
+     * The A/P counterpart of `open_receivable`, and it reuses the SAME
+     * `aging_bucket` dimension — that dimension reads `due_date` and
+     * `days_overdue` off whatever source it is applied to, so a second set of
+     * bands would only be a second thing to keep in step.
+     *
+     * `days_overdue` is computed here rather than read from a view because A/P
+     * has no `invoice_with_balance` equivalent. It mirrors that view's
+     * semantics exactly: NULL where no due date was agreed, 0 where the bill is
+     * not yet due, positive days once it is late.
+     */
+    supplier_bill_open: Object.freeze({
+        id: 'supplier_bill_open',
+        label: 'Open supplier bills',
+        grain: 'bill',
+        from: 'FROM supplier_bill sb',
+        dateColumn: null,
+        // Voided bills are excluded by the status list, and so are paid ones. As
+        // in A/R, what counts as "still owed" is a registry literal rather than a
+        // request option: it is a definition the whole business shares.
+        defaultWhere: () => [
+            "sb.status IN ('Unpaid', 'Partially Paid')",
+            '(sb.total_amount - sb.amount_paid) > 0',
+        ],
+        cols: Object.freeze({
+            __alias: 'sb',
+            bill_id: 'sb.bill_id',
+            supplier_id: 'sb.supplier_id',
+            balance: '(sb.total_amount - sb.amount_paid)',
+            due_date: 'sb.due_date',
+            days_overdue: `CASE
+                WHEN sb.due_date IS NULL THEN NULL
+                WHEN sb.due_date < CURRENT_DATE THEN (CURRENT_DATE - sb.due_date)
+                ELSE 0 END`,
+            bill_date: 'sb.bill_date',
+        }),
+        joins: Object.freeze({
+            supplier: 'LEFT JOIN supplier s ON s.supplier_id = sb.supplier_id',
+        }),
+        dimensions: Object.freeze(['supplier', 'aging_bucket']),
+    }),
+
+    /**
+     * What the supplier ledger says we owe, right now.
+     *
+     * The A/P counterpart of `ar_balance`, and authoritative for what the A/P
+     * module manages. Unlike A/R, the two answers agree over this database —
+     * the ledger and the open bill book both come to ₱223,001.75 — because
+     * nothing was billed before the ledger went live. `purch.ap_ledger_gap`
+     * publishes the difference anyway rather than asserting the agreement: a
+     * zero a reader can see is worth more than a claim they cannot check.
+     */
+    ap_balance: Object.freeze({
+        id: 'ap_balance',
+        label: 'A/P balances',
+        grain: 'supplier',
+        from: 'FROM vw_supplier_ap_balance v JOIN supplier s ON s.supplier_id = v.supplier_id',
+        dateColumn: null,
+        providedJoins: Object.freeze(['supplier']),
+        defaultWhere: () => [],
+        cols: Object.freeze({
+            __alias: 'v',
+            supplier_id: 'v.supplier_id',
+            balance: 'v.ledger_balance',
+            last_activity_at: 'v.last_activity_at',
+        }),
+        joins: Object.freeze({}),
+        dimensions: Object.freeze(['supplier']),
+    }),
+
+    /**
+     * The A/P ledger itself — what actually moved on supplier accounts.
+     *
+     * Append-only and immutable, like its A/R twin, and subject to the same
+     * rule: the ledger begins on 19 August 2026, so every trend over it carries
+     * the era in its help text. It is far thinner than the A/R ledger — sixteen
+     * entries — which is a reason to state the era louder, not quieter.
+     */
+    ap_ledger: Object.freeze({
+        id: 'ap_ledger',
+        label: 'A/P ledger entries',
+        grain: 'ledger_entry',
+        from: 'FROM ap_ledger apl',
+        dateColumn: 'apl.entry_date',
+        defaultWhere: () => [],
+        cols: Object.freeze({
+            __alias: 'apl',
+            ledger_id: 'apl.ledger_id',
+            supplier_id: 'apl.supplier_id',
+            // Signed as the ledger stores it: a bill is positive, a payment or a
+            // credit negative. Metrics that report a payment as money out negate
+            // it themselves, and say so.
+            amount: 'apl.amount',
+            entry_type: 'apl.entry_type',
+        }),
+        joins: Object.freeze({
+            supplier: 'LEFT JOIN supplier s ON s.supplier_id = apl.supplier_id',
+        }),
+        dimensions: Object.freeze(['date', 'supplier', 'ap_entry_type']),
+    }),
+
+    /**
+     * Stock counted against what the system believed, one line per observation.
+     *
+     * Only lines somebody actually counted. A batch line still sitting at
+     * PENDING carries no observation, and letting it into the denominator of a
+     * count-accuracy figure would report the work not yet done as work done
+     * badly.
+     *
+     * `minutes_taken` is NULL where the line has no start time — 235 of 848 of
+     * them — so it drops out of both halves of the average rather than entering
+     * it as an instant count. This is measured from the LINE's own timestamps
+     * and not from `employee_cycle_count_performance.avg_speed_mins`, which is
+     * computed from batch start and completion times and reads 0 for every
+     * employee because no batch in this database was ever marked COMPLETED.
+     */
+    count_line: Object.freeze({
+        id: 'count_line',
+        label: 'Counted stock lines',
+        grain: 'count_line',
+        from: 'FROM cycle_count_line ccl JOIN cycle_count_batch ccb ON ccb.batch_id = ccl.batch_id',
+        dateColumn: 'ccl.counted_at',
+        defaultWhere: () => [
+            'ccl.counted_at IS NOT NULL',
+            'ccl.counted_qty IS NOT NULL',
+            'ccl.system_qty_snapshot IS NOT NULL',
+        ],
+        cols: Object.freeze({
+            __alias: 'ccl',
+            line_id: 'ccl.line_id',
+            part_id: 'ccl.part_id',
+            employee_id: 'ccb.employee_id',
+            counted_qty: 'ccl.counted_qty',
+            system_qty: 'ccl.system_qty_snapshot',
+            variance: '(ccl.counted_qty - ccl.system_qty_snapshot)',
+            // A line the system got exactly right. The status is what the count
+            // workflow itself concluded, so this figure and the Cycle Count page
+            // cannot drift apart.
+            is_match: "(ccl.status = 'MATCHED_AUTO_APPROVED')",
+            is_unassigned_find: 'ccl.is_unassigned_find',
+            started_at: 'ccl.started_at',
+            minutes_taken: 'EXTRACT(EPOCH FROM (ccl.counted_at - ccl.started_at)) / 60.0',
+        }),
+        joins: Object.freeze({
+            employee: 'LEFT JOIN employee e ON e.employee_id = ccb.employee_id',
+            part: 'JOIN part p ON p.part_id = ccl.part_id',
+            brand: 'LEFT JOIN brand b ON b.brand_id = p.brand_id',
+            group: 'LEFT JOIN "group" g ON g.group_id = p.group_id',
+        }),
+        joinDeps: Object.freeze({ brand: ['part'], group: ['part'] }),
+        dimensions: Object.freeze(['date', 'employee', 'part', 'brand', 'group', 'count_variance_band']),
+    }),
+
+    /**
+     * Every movement of stock, whoever caused it.
+     *
+     * The operations control signal: sales and receipts are the movements the
+     * business intends, and adjustments and reversals are the ones that correct
+     * something. Every row carries an employee — all 17,057 of them do — which
+     * is what makes "who is correcting stock, and how often" answerable.
+     *
+     * Measured in UNITS and line counts only. `unit_cost` is NULL on every
+     * adjustment, reversal and count adjustment in this database, so a valued
+     * shrinkage figure would have to reach for the part's current weighted
+     * average cost — today's price for a movement that happened a year ago,
+     * presented as money lost. Units are what was actually observed.
+     */
+    stock_movement: Object.freeze({
+        id: 'stock_movement',
+        label: 'Stock movements',
+        grain: 'stock_movement',
+        from: 'FROM inventory_transaction it',
+        dateColumn: 'it.transaction_date',
+        defaultWhere: () => [],
+        cols: Object.freeze({
+            __alias: 'it',
+            inv_trans_id: 'it.inv_trans_id',
+            part_id: 'it.part_id',
+            employee_id: 'it.employee_id',
+            quantity: 'it.quantity',
+            trans_type: 'it.trans_type',
+        }),
+        joins: Object.freeze({
+            employee: 'LEFT JOIN employee e ON e.employee_id = it.employee_id',
+            part: 'JOIN part p ON p.part_id = it.part_id',
+            brand: 'LEFT JOIN brand b ON b.brand_id = p.brand_id',
+            group: 'LEFT JOIN "group" g ON g.group_id = p.group_id',
+        }),
+        joinDeps: Object.freeze({ brand: ['part'], group: ['part'] }),
+        dimensions: Object.freeze(['date', 'employee', 'part', 'brand', 'group', 'stock_movement_type']),
     }),
 
     expense: Object.freeze({
