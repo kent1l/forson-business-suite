@@ -109,6 +109,30 @@ const formatSingleApplication = (application, granularOptions = {}) => {
  * @param {number} options.maxLength - Maximum length before truncation (default: 100)
  * @returns {string} Formatted applications text
  */
+// Graduated compression ladder (PRD-FBS-FIT-002 §10d).
+//
+// The priority is to show EVERY fitment for as long as possible, and to spend
+// the cheapest compressions first. Each rung keeps all the vehicles and only
+// changes how they are written; only the last rung actually hides fitments
+// behind a "+N more" count, and it is reached only when nothing else fits.
+//
+//   0. Everything, written out in full.
+//   1. Curated shorthand + two-digit years. Lossless: the same facts, fewer
+//      characters.
+//   2. Drop the make. Safe only where the model name belongs to exactly one
+//      make -- the make is recoverable from the model, so nothing is lost.
+//      (modelNeedsMake keeps it for Ranger/Rosa, which two makes share.)
+//   3. Drop engine codes. The first genuinely lossy rung; the caller is
+//      expected to put the full text in a title/tooltip.
+//   4. Only now, hide whole fitments behind a count, shedding as few as
+//      possible.
+const ADAPTIVE_LADDER = [
+    {},
+    { useShorthand: true, shortenYears: true },
+    { useShorthand: true, shortenYears: true, dropRedundantMake: true },
+    { useShorthand: true, shortenYears: true, dropRedundantMake: true, includeEngine: false },
+];
+
 export const formatApplicationText = (applications, options = {}) => {
     if (!applications) return '';
 
@@ -116,6 +140,39 @@ export const formatApplicationText = (applications, options = {}) => {
     let merged = { ...options };
     if (options.style) {
         merged = { ...getPreset(options.style), ...options };
+    }
+
+    // Adaptive mode: try each rung in turn and return the first that fits the
+    // character budget, so a part with two fitments is never compressed at all
+    // and a part with thirty degrades only as far as it must.
+    if (merged.adaptive && merged.budget) {
+        const budget = Number(merged.budget);
+        const base = { ...merged, adaptive: false, budget: undefined, truncateMode: 'none' };
+
+        for (const rung of ADAPTIVE_LADDER) {
+            const attempt = formatApplicationText(applications, { ...base, ...rung });
+            if (attempt.length <= budget) return attempt;
+        }
+
+        // Nothing fit even with engines dropped. Shed whole fitments one at a
+        // time from the tightest rung, keeping as many visible as the budget
+        // allows rather than jumping straight to showing one.
+        const tightest = { ...base, ...ADAPTIVE_LADDER[ADAPTIVE_LADDER.length - 1] };
+        const total = Array.isArray(applications) ? applications.length : 1;
+        // maxApplications counts RENDERED items, which after merging by make is
+        // the number of make-groups, not the number of fitment rows. Starting
+        // the walk at the row count would spin through many identical
+        // renderings first, so cap the start at a realistic group count.
+        const start = Math.max(1, Math.min(total - 1, 8));
+        for (let visible = start; visible >= 1; visible--) {
+            const attempt = formatApplicationText(applications, {
+                ...tightest,
+                truncateMode: 'logical',
+                logicalStrategy: 'apps-then-more',
+                maxApplications: visible,
+            });
+            if (attempt.length <= budget || visible === 1) return attempt;
+        }
     }
 
     const {
@@ -138,6 +195,8 @@ export const formatApplicationText = (applications, options = {}) => {
     shortenYears = false,
     useShorthand = false,
     dropRedundantMake = false,
+    adaptive = false,
+    budget = null,
         cache = true,
         fallbackUnknown = '',
     } = merged;
@@ -155,7 +214,7 @@ export const formatApplicationText = (applications, options = {}) => {
 
     const appsArray = Array.isArray(applications) ? applications : [applications];
 
-    const cacheKeyBase = cache ? JSON.stringify({ a: appsArray.map(a => (typeof a === 'object' ? a.application_id || a : a)), o: { separator, multiline, maxApplications, truncateMode, truncateChars, truncateWords, logicalStrategy, includeYears, includeEngine, collapseDuplicateEngines, dense, shortenYears, useShorthand, dropRedundantMake } }) : null;
+    const cacheKeyBase = cache ? JSON.stringify({ a: appsArray.map(a => (typeof a === 'object' ? a.application_id || a : a)), o: { separator, multiline, maxApplications, truncateMode, truncateChars, truncateWords, logicalStrategy, includeYears, includeEngine, collapseDuplicateEngines, dense, shortenYears, useShorthand, dropRedundantMake, adaptive, budget } }) : null;
     if (cache && cacheKeyBase) {
         const hit = getCache(cacheKeyBase);
         if (hit) return hit;

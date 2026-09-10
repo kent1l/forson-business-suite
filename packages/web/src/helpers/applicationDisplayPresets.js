@@ -1,40 +1,52 @@
 // Centralized presets for application text formatting
 // Each preset can be merged into options passed to formatApplicationText
 
+// Character budgets for the adaptive compression ladder (PRD-FBS-FIT-002 §10d).
+// Roughly the number of characters that actually fit at each surface's width in
+// the 11.5px monospace the fitment line is set in. They are the one knob worth
+// tuning by eye: raise a budget to show more before anything compresses, lower
+// it to compress sooner.
+//
+// The ladder always shows every fitment for as long as it can, spends the
+// lossless compressions first (shorthand, two-digit years), then drops the make
+// where the model already identifies it, then engine codes, and only hides
+// whole fitments behind a count when nothing else fits.
+
 export const APPLICATION_DISPLAY_PRESETS = {
   searchSuggestion: {
-    truncateMode: 'logical',
-    maxApplications: 2,
+    adaptive: true,
+    budget: 110,
     showMoreTemplate: (hidden) => `(+${hidden} more)`,
     separator: ', ',
     includeYears: true,
     includeEngine: true,
-  mergeModelsByMake: true,
-    truncateChars: 80,
+    mergeModelsByMake: true,
   },
   tableCell: {
-    truncateMode: 'chars',
-    truncateChars: 60,
-    includeYears: false,
+    adaptive: true,
+    budget: 60,
+    showMoreTemplate: (hidden) => `(+${hidden})`,
+    includeYears: true,
     includeEngine: true,
-  mergeModelsByMake: true,
+    mergeModelsByMake: true,
   },
+  // The Power Search panel is wide and is where staff go for the full picture,
+  // so it stays uncompressed: every fitment, full names, full years.
   multilineFull: {
     multiline: true,
     separator: '\n',
     truncateMode: 'none',
     includeYears: true,
     includeEngine: true,
-  mergeModelsByMake: false,
+    mergeModelsByMake: false,
   },
   compact: {
-    truncateMode: 'logical',
-    maxApplications: 1,
+    adaptive: true,
+    budget: 40,
     showMoreTemplate: (hidden) => `(+${hidden})`,
     includeYears: false,
     includeEngine: true,
-    truncateChars: 40,
-  mergeModelsByMake: true,
+    mergeModelsByMake: true,
   },
 };
 

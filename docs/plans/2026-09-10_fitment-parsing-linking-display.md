@@ -19,7 +19,8 @@ Read this first. It is the only section that changes often — update it as phas
 | Phase 9 — Display-only engine-code compression (`4D55/56`) | **Done** | §9 |
 | Phase 9c — Shared-SUFFIX compression (`1GD/1KD/2KD-FTV`) both sides | **Done** | §9c |
 | Phase 10 — Dense display: shorthand dictionary, short years, dropped make | **Done, not yet enabled per preset** | §10 |
-| Which density option each surface uses (A–F) | **Awaiting the user's pick** | §10c |
+| Phase 10d — Graduated compression ladder, enabled per preset | **Done** | §10d |
+| Budget values per surface (110 / 60 / 40 chars) | **Tune by eye if needed** | §10d |
 | Splitting legacy `4D55/56/65` (engine_id 8) into three rows | **Done** — fanned out to 3 applications, 0 part links affected | §6.1 |
 | Keeping Meilisearch index atomic (never store compressed codes) | **Done** — index untouched; compression is render-only | §9.4 |
 | Live browser click-through of the review panel | **Not done** | §10 |
@@ -626,13 +627,53 @@ the long-but-correct form, never to a wrong short one.
 | E — dense (shorthand + short years + make dropped) | 169 (−21%) |
 | F — dense, engine codes on hover | 90 (−58%) |
 
-### Still open
+### 10d. Graduated compression ladder (how density is actually decided)
 
-`dense` is implemented but **not yet switched on in any preset** — which surface
-gets which option (A–F) is the user's pick, presented at
-<https://claude.ai/code/artifact/c1b57c8d-b6d0-4b9a-b248-0332d295777b>. Density
-is per preset, so the POS suggestion, table cell and Power Search panel can each
-differ.
+Fixed per-preset flags were replaced by an **adaptive ladder** driven by a
+character `budget`. The governing principle, set by the user: *show every
+fitment for as long as possible, and spend the cheapest compressions first.*
+Each rung is tried in order and the first output that fits the budget wins, so a
+part with two fitments is never compressed at all while a part with thirty
+degrades only as far as it must.
+
+| Rung | What it does | Lossy? |
+|---|---|---|
+| 0 | Everything written out in full | no |
+| 1 | Curated shorthand + two-digit years | no — same facts, fewer characters |
+| 2 | Drop the make | no — the model already identifies it, and `modelNeedsMake` keeps it for Ranger/Rosa |
+| 3 | Drop engine codes | **yes** — caller should put full text in a tooltip |
+| 4 | Hide whole fitments behind `+N more` | **yes** — last resort, sheds as few as possible |
+
+Measured on the 13-fitment sample as the budget tightens:
+
+```
+budget 400 -> 213  Toyota Fortuner (1KD/2KD-FTV)/Hilux (…)/Innova (…) (2005-2015), Mitsubishi L300 …
+budget 210 -> 187  Toyota Fortuner (…) (05-15), Mits L300 (4D55/6)(95-10)/…          <- rung 1
+budget 170 -> 169  Fortuner (…)/Hilux (…)/Innova (…) (05-15), L300 (4D55/6)(95-10)/… <- rung 2
+budget 120 ->  90  Fortuner/Hilux/Innova (05-15), L300(95-10)/Montero(08-15)/…       <- rung 3
+budget  80 ->  39  Fortuner/Hilux/Innova (05-15) (+2 more)                            <- rung 4
+```
+
+Enabled in the presets: `searchSuggestion` budget 110, `tableCell` 60,
+`compact` 40. **`multilineFull` (the Power Search panel) is deliberately left
+uncompressed** — it is wide, and it is where staff go for the full picture.
+
+The budgets are the one knob worth tuning by eye: raise one to show more before
+anything compresses, lower it to compress sooner.
+
+**Known granularity characteristic:** `maxApplications` at rung 4 counts
+*rendered* items, which after merging by make is the number of make-groups, not
+fitment rows. Shedding therefore happens a whole make at a time, which is why
+the 90 → 39 step is large.
+
+### Search is unaffected — verified
+
+Compression is the last render step and never reaches the data. Confirmed
+against the live Meilisearch index: `searchable_applications` holds full make
+names and full four-digit years (`"KIA Bongo III , TOYOTA Hilux ,   4m40 2024"`),
+`withYearTokens` expands a range into individual year tokens so a literal year
+like `2026` matches directly, and no frontend page filters on the formatted
+string. Searching `2010` → 1 hit, `Mitsubishi` → 70, `4D56` → 22.
 
 ### Incidental fix
 
