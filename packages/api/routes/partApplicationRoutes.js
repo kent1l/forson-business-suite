@@ -5,6 +5,9 @@ const { enqueuePartUpsert } = require('../services/meiliOutboxService');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { withYearTokens } = require('../helpers/vehicleFitmentSearch');
 const { vehicleFitmentParserAI } = require('../services/ai');
+const vehicleTaxonomyIndex = require('../helpers/vehicleTaxonomyIndex');
+const { parseFitmentText: parseFitmentTextLocally, buildShortlist } = require('../helpers/fitmentTextParser');
+const { normalizeAlias } = require('../helpers/engineCodeGrammar');
 const router = express.Router();
 
 function isValidYearRange(year_start, year_end) {
@@ -265,25 +268,189 @@ router.delete('/parts/:partId/applications/:appId', protect, hasPermission('appl
     }
 });
 
-// POST /applications/parse-fitment-text - AI-assisted natural-language fitment entry (Phase 5).
-// Proposes structured candidate rows only -- never writes to the taxonomy or
-// part_application. The frontend renders each candidate for review/edit via
-// ApplicationCascadeForm, and only the normal /applications + parts/:id/applications
-// endpoints (which independently re-validate any id) commit anything.
+// POST /applications/parse-fitment-text - natural-language fitment entry.
+//
+// Phase 8 (PRD-FBS-FIT-002 §8): deterministic-first. The local parser
+// (helpers/fitmentTextParser.js) handles the regular majority of input in
+// microseconds with no LLM call at all. Only genuine residue -- text the
+// grammar and gazetteer could not account for -- escalates to the AI, and then
+// with a SHORTLIST of plausible taxonomy rows rather than the entire taxonomy,
+// so the fallback prompt no longer grows with the catalog.
+//
+// Unchanged from Phase 5: this endpoint only ever PROPOSES. Nothing is written
+// to the taxonomy or to part_application here; the frontend reviews each
+// candidate and commits through the normal /applications and
+// /parts/:partId/applications endpoints, which independently re-validate ids.
 router.post('/applications/parse-fitment-text', protect, hasPermission('applications:edit'), async (req, res) => {
     const { text } = req.body;
     if (!text || !String(text).trim()) {
         return res.status(400).json({ message: 'Fitment description text is required.' });
     }
+
+    let local;
+    let index;
     try {
-        const result = await vehicleFitmentParserAI.parseFitmentText(text);
-        res.json(result);
+        index = await vehicleTaxonomyIndex.getIndex();
+        local = parseFitmentTextLocally(text, index);
     } catch (error) {
+        // A local-parser failure must not take the feature down -- fall through
+        // to the AI path, which is self-sufficient.
+        console.error('[parse-fitment-text] local parse failed, falling back to AI:', error.message);
+        local = null;
+    }
+
+    if (local && local.fullyResolved) {
+        return res.json({
+            fitments: local.fitments,
+            notes: '',
+            source: 'local',
+            ai_used: false,
+        });
+    }
+
+    try {
+        // A shortlist only helps if it actually contains plausible candidates.
+        // When the residue is nothing like any taxonomy row the shortlist comes
+        // back empty -- and passing an empty grounding would be actively
+        // harmful, because the AI parser validates returned ids against the
+        // grounding snapshot and would strip every one of them. Fall back to the
+        // full taxonomy in that case; correctness beats the token saving.
+        const shortlist = (local && index) ? buildShortlist(local.residue, index) : null;
+        const shortlistSize = shortlist
+            ? shortlist.makes.length + shortlist.models.length + shortlist.engines.length
+            : 0;
+
+        const aiResult = await vehicleFitmentParserAI.parseFitmentText(
+            text,
+            shortlistSize > 0 ? { grounding: shortlist } : {}
+        );
+
+        // Prefer the locally resolved rows where we have them: they are
+        // deterministic and already confirmed against the taxonomy. The AI's
+        // rows fill in what the local pass could not account for.
+        const merged = mergeFitmentCandidates(local ? local.fitments : [], aiResult.fitments || []);
+
+        return res.json({
+            fitments: merged,
+            notes: aiResult.notes || '',
+            source: local && local.fitments.length ? 'hybrid' : 'ai',
+            ai_used: true,
+            residue: local ? local.residue : [],
+        });
+    } catch (error) {
+        // The AI is unavailable, but a partial local parse is still genuinely
+        // useful -- return it rather than failing the whole request.
+        if (local && local.fitments.length) {
+            return res.json({
+                fitments: local.fitments,
+                notes: 'AI assistance was unavailable; showing locally recognized fitments only. Review carefully for anything missing.',
+                source: 'local',
+                ai_used: false,
+                degraded: true,
+            });
+        }
         if (error.statusCode === 503) {
             return res.status(503).json({ error: error.message, fallback: 'manual' });
         }
         console.error('Error in /applications/parse-fitment-text:', error);
-        res.status(503).json({ error: 'AI fitment parsing failed', fallback: 'manual' });
+        return res.status(503).json({ error: 'AI fitment parsing failed', fallback: 'manual' });
+    }
+});
+
+// Deduplicates local and AI candidates onto one review list. Local rows win on
+// a collision because they were resolved deterministically against the real
+// taxonomy rather than proposed by a model.
+function mergeFitmentCandidates(localRows, aiRows) {
+    const keyOf = row => [
+        row.make_id ?? (row.make || '').toLowerCase(),
+        row.model_id ?? (row.model || '').toLowerCase(),
+        row.engine_id ?? (row.engine || '').toLowerCase(),
+        row.year_start ?? '',
+        row.year_end ?? '',
+    ].join('|');
+
+    const merged = [];
+    const seen = new Set();
+    for (const row of localRows) {
+        const key = keyOf(row);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        merged.push({ ...row, source: 'local' });
+    }
+    for (const row of aiRows) {
+        const key = keyOf(row);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        merged.push({ ...row, source: 'ai' });
+    }
+    return merged;
+}
+
+// POST /applications/fitment-alias - records that a human confirmed a raw input
+// string means a particular taxonomy row (PRD-FBS-FIT-002 §8.3).
+//
+// This is the learning loop that makes the deterministic parser get better with
+// use: once staff accept that "Mits" is Mitsubishi or that some informal engine
+// code is a specific engine, that mapping resolves locally forever after and
+// never needs the AI again. Aliases are only ever recorded from an explicit
+// accept, never inferred from a silent save.
+router.post('/applications/fitment-alias', protect, hasPermission('applications:edit'), async (req, res) => {
+    const { alias_text, make_id, model_id, engine_id } = req.body || {};
+    const alias = normalizeAlias(alias_text);
+
+    if (!alias || alias.length < 2) {
+        return res.status(400).json({ message: 'alias_text is required.' });
+    }
+    const targets = [make_id, model_id, engine_id].filter(v => v != null);
+    if (targets.length !== 1) {
+        return res.status(400).json({ message: 'Exactly one of make_id, model_id or engine_id is required.' });
+    }
+
+    const spec = make_id != null
+        ? { table: 'vehicle_make_alias', column: 'make_id', id: make_id, parent: 'vehicle_make', parentCol: 'make_id' }
+        : model_id != null
+            ? { table: 'vehicle_model_alias', column: 'model_id', id: model_id, parent: 'vehicle_model', parentCol: 'model_id' }
+            : { table: 'engine_alias', column: 'engine_id', id: engine_id, parent: 'engine', parentCol: 'engine_id' };
+
+    if (!Number.isInteger(Number(spec.id))) {
+        return res.status(400).json({ message: 'Target id must be an integer.' });
+    }
+
+    try {
+        // Re-validate the target exists -- the id reaches us from a client that
+        // may have been showing an AI suggestion.
+        const exists = await db.query(
+            `SELECT 1 FROM ${spec.parent} WHERE ${spec.parentCol} = $1`,
+            [spec.id]
+        );
+        if (!exists.rows.length) {
+            return res.status(404).json({ message: 'Target taxonomy row not found.' });
+        }
+
+        // Never let a learned alias shadow a real canonical name -- that would
+        // make an existing engine or model unreachable by its own code.
+        const collision = await db.query(
+            `SELECT 1 FROM engine WHERE upper(engine_code) = $1
+             UNION ALL SELECT 1 FROM vehicle_make WHERE upper(make_name) = $1
+             UNION ALL SELECT 1 FROM vehicle_model WHERE upper(model_name) = $1`,
+            [alias]
+        );
+        if (collision.rows.length) {
+            return res.status(409).json({ message: 'That text is already a canonical taxonomy name.' });
+        }
+
+        await db.query(
+            `INSERT INTO ${spec.table} (${spec.column}, alias_text, source)
+             VALUES ($1, $2, 'learned')
+             ON CONFLICT DO NOTHING`,
+            [spec.id, alias]
+        );
+
+        vehicleTaxonomyIndex.invalidate();
+        res.status(201).json({ message: 'Alias recorded.', alias_text: alias });
+    } catch (err) {
+        console.error('Error in /applications/fitment-alias:', err.message);
+        res.status(500).send('Server Error');
     }
 });
 

@@ -2,7 +2,14 @@ const express = require('express');
 const db = require('../db');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
+const vehicleTaxonomyIndex = require('../helpers/vehicleTaxonomyIndex');
 const router = express.Router();
+
+// The deterministic fitment parser reads the taxonomy from an in-process cache
+// (helpers/vehicleTaxonomyIndex.js). Every path below that creates or edits a
+// make/model/engine must invalidate it, or newly added taxonomy would stay
+// invisible to parsing until the TTL expired -- a silent, hard-to-notice
+// degradation rather than a visible failure.
 
 // Resolves a make by id (must exist) or by name (case/whitespace-insensitive
 // get-or-create). Shared by POST/PUT /applications so both go through the same
@@ -21,6 +28,7 @@ async function resolveMake(client, { make_id, make }) {
             'INSERT INTO vehicle_make (make_name) VALUES ($1) ON CONFLICT (make_name) DO UPDATE SET make_name = vehicle_make.make_name RETURNING make_id',
             [name]
         );
+        vehicleTaxonomyIndex.invalidate();
         return inserted.rows[0].make_id;
     }
     return null;
@@ -47,6 +55,7 @@ async function resolveModel(client, { model_id, model, makeId }) {
             'INSERT INTO vehicle_model (make_id, model_name) VALUES ($1, $2) ON CONFLICT (make_id, model_name) DO UPDATE SET model_name = vehicle_model.model_name RETURNING model_id',
             [makeId, name]
         );
+        vehicleTaxonomyIndex.invalidate();
         return inserted.rows[0].model_id;
     }
     return null;
@@ -75,6 +84,7 @@ async function resolveEngine(client, { engine_id, engine, displacement_liters, f
              ON CONFLICT (engine_code) DO UPDATE SET engine_code = engine.engine_code RETURNING engine_id`,
             [code, displacement_liters || null, fuel_type || null]
         );
+        vehicleTaxonomyIndex.invalidate();
         return inserted.rows[0].engine_id;
     }
     return null;
@@ -224,6 +234,7 @@ router.put('/engines/:id', protect, hasPermission('applications:edit'), async (r
             [displacement_liters || null, fuel_type || null, id]
         );
         if (!rows.length) return res.status(404).json({ message: 'Engine not found' });
+        vehicleTaxonomyIndex.invalidate();
         res.json(rows[0]);
     } catch (err) {
         console.error(err.message);

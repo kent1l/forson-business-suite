@@ -20,6 +20,13 @@ class VehicleFitmentParserAI {
      * Loads the current taxonomy as grounding context so the model prefers
      * matching existing makes/models/engines over inventing near-duplicates
      * (the whole point of Phase 1b's seeded reference data).
+     *
+     * Phase 8 note: this full-taxonomy load is now the FALLBACK path only.
+     * Callers that have already run the deterministic parser
+     * (helpers/fitmentTextParser.js) pass a shortlist instead -- see
+     * parseFitmentText's `grounding` option. Loading everything made both
+     * latency and token cost scale with catalog size rather than with the
+     * difficulty of the staff member's input.
      */
     async _loadGroundingData() {
         const [makesRes, modelsRes, enginesRes] = await Promise.all([
@@ -35,7 +42,7 @@ class VehicleFitmentParserAI {
         return { makes: makesRes.rows, models: modelsRes.rows, engines: enginesRes.rows };
     }
 
-    _formatGroundingPrompt({ makes, models, engines }) {
+    _formatGroundingPrompt({ makes = [], models = [], engines = [] }) {
         const modelsByMake = new Map();
         for (const m of models) {
             if (!modelsByMake.has(m.make_name)) modelsByMake.set(m.make_name, []);
@@ -63,13 +70,16 @@ ${enginesBlock}`;
      * Never writes anything -- callers must commit each accepted row through
      * the normal application/part_application endpoints.
      */
-    async parseFitmentText(text) {
+    async parseFitmentText(text, options = {}) {
         const cleanText = sanitizeInput(text);
         if (!cleanText) {
             return { fitments: [], notes: '' };
         }
 
-        const grounding = await this._loadGroundingData();
+        // A caller that has already narrowed the taxonomy (the deterministic
+        // parser's shortlist) supplies it here; otherwise fall back to loading
+        // the whole thing.
+        const grounding = options.grounding || await this._loadGroundingData();
         const groundingPrompt = this._formatGroundingPrompt(grounding);
 
         const basePrompt = `You are a vehicle fitment extraction agent for an auto parts store in the Philippines.

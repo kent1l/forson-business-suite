@@ -1,0 +1,19 @@
+{
+  "_comment": "Round-trip truth table for engine-code shorthand (PRD-FBS-FIT-002 §9.3). The API's jest suite asserts that expandSlashToken(compressed) === codes; the web suite asserts that compressEngineCodes(codes) === compressed. The two implementations live in different packages (there is no shared package in this repo), so this shared fixture is what stops them drifting apart.",
+  "roundTrip": [
+    { "codes": ["4D55", "4D56"], "compressed": "4D55/6" },
+    { "codes": ["4JA1", "4JB1"], "compressed": "4JA1/B1" },
+    { "codes": ["4D55", "4D56", "4D65"], "compressed": "4D55/56/65" },
+    { "codes": ["1KR-DE", "1KR-VE"], "compressed": "1KR-DE/VE" }
+  ],
+  "_notCompressible_comment": "Cases that must render separately. Compression is cosmetic, so every guard fails safe.",
+  "notCompressible": [
+    { "codes": ["4JA1", "4JA1-T"], "why": "empty tail - NA vs turbo must stay visibly distinct" },
+    { "codes": ["4JJ1-TC", "4JJ1-TCX"], "why": "empty tail - variant suffixes carry mechanical meaning" },
+    { "codes": ["JT", "JX"], "why": "shared prefix too short to be meaningful" },
+    { "codes": ["4D56"], "why": "a single code is not a group" },
+    { "codes": ["4D56", "1TR-FE"], "why": "no meaningful shared prefix" },
+    { "codes": ["4D5", "4D56"], "why": "tails differ in length, ambiguous in reverse" },
+    { "codes": ["4D55", "4D56", "4D65", "4JA1", "4JB1"], "why": "group larger than the readable cap" }
+  ]
+}

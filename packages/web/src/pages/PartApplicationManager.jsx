@@ -7,6 +7,7 @@ import Modal from '../components/ui/Modal';
 import ApplicationSearchCombobox from '../components/applications/ApplicationSearchCombobox';
 import ApplicationCascadeForm from '../components/applications/ApplicationCascadeForm';
 import { useAuth } from '../contexts/AuthContext';
+import { groupFitmentsForDisplay, formatFitmentGroup } from '../utils/engineCodeFormat';
 
 const CONFIDENCE_BADGE = {
     high: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300',
@@ -34,6 +35,7 @@ const DescribeFitmentPanel = ({ partId, onCommitted }) => {
     const [parseError, setParseError] = useState('');
     const [notes, setNotes] = useState('');
     const [candidates, setCandidates] = useState(null); // null = not parsed yet
+    const [parseSource, setParseSource] = useState(null); // 'local' | 'hybrid' | 'ai'
     const [editingIndex, setEditingIndex] = useState(null);
     const [saving, setSaving] = useState(false);
     const [saveErrors, setSaveErrors] = useState({});
@@ -44,13 +46,26 @@ const DescribeFitmentPanel = ({ partId, onCommitted }) => {
         setParseError('');
         try {
             const { data } = await api.post('/applications/parse-fitment-text', { text });
-            const withMeta = (data.fitments || []).map(f => ({ ...f, selected: true, year_start: f.year_start ?? '', year_end: f.year_end ?? '' }));
+            // Keep each row's originally typed text so that if the reviewer
+            // resolves it by hand we can record what it meant (see
+            // recordAliasFromEdit).
+            const withMeta = (data.fitments || []).map(f => ({
+                ...f,
+                selected: true,
+                year_start: f.year_start ?? '',
+                year_end: f.year_end ?? '',
+                _rawMake: f.make_id ? null : f.make,
+                _rawModel: f.model_id ? null : f.model,
+                _rawEngine: f.engine_id ? null : f.engine,
+            }));
             setCandidates(withMeta);
             setNotes(data.notes || '');
+            setParseSource(data.source || 'ai');
             setSaveErrors({});
         } catch (error) {
             setParseError(error.response?.data?.error || error.response?.data?.message || error.message);
             setCandidates(null);
+            setParseSource(null);
         } finally {
             setParsing(false);
         }
@@ -64,7 +79,31 @@ const DescribeFitmentPanel = ({ partId, onCommitted }) => {
         setCandidates(prev => prev.filter((_, i) => i !== idx));
     };
 
+    // The learning loop (PRD-FBS-FIT-002 §8.3): when a reviewer resolves text the
+    // parser could not match, record what that text meant. The next time anyone
+    // types it, the deterministic parser resolves it locally and no AI call is
+    // needed at all. Recorded only on an explicit edit -- never inferred from a
+    // silent save -- and a failure here must never block the fitment itself.
+    const recordAliasFromEdit = async (original, payload) => {
+        const learnings = [
+            { raw: original._rawMake, key: 'make_id', id: payload.make_id },
+            { raw: original._rawModel, key: 'model_id', id: payload.model_id },
+            { raw: original._rawEngine, key: 'engine_id', id: payload.engine_id },
+        ];
+        for (const { raw, key, id } of learnings) {
+            if (!raw || !id) continue;
+            try {
+                await api.post('/applications/fitment-alias', { alias_text: raw, [key]: id });
+            } catch {
+                // A duplicate or a collision with a canonical name is expected
+                // and harmless; the fitment save is what matters.
+            }
+        }
+    };
+
     const handleEditSave = (idx, payload) => {
+        const original = candidates[idx];
+        recordAliasFromEdit(original, payload);
         // ApplicationCascadeForm's payload uses undefined for unset fields;
         // normalize those back to null/'' so the candidate row stays consistent.
         updateCandidate(idx, {
@@ -116,6 +155,7 @@ const DescribeFitmentPanel = ({ partId, onCommitted }) => {
             setCandidates(null);
             setText('');
             setNotes('');
+            setParseSource(null);
             onCommitted();
         } else {
             // Keep only the rows that failed so staff can retry/fix just those.
@@ -127,10 +167,12 @@ const DescribeFitmentPanel = ({ partId, onCommitted }) => {
     return (
         <div className="mt-6 pt-4 border-t border-gray-200 dark:border-slate-700">
             <h4 className="text-sm font-medium text-gray-800 dark:text-slate-100 mb-2 flex items-center gap-1">
-                Describe Fitment (AI-assisted)
+                Describe Fitment
                 <InfoTip label="Describe Fitment">
                     Type a natural description like "Fits Hilux 2005-2015 2.5L Diesel, also Fortuner same years"
-                    and review the parsed rows below before saving. Nothing is written until you save.
+                    and review the parsed rows below before saving. Recognised makes, models, engine codes and
+                    shorthand like "4D55/6" are matched instantly against the catalog; AI assistance is used only
+                    for wording that cannot be matched. Nothing is written until you save.
                 </InfoTip>
             </h4>
             <textarea
@@ -147,13 +189,22 @@ const DescribeFitmentPanel = ({ partId, onCommitted }) => {
                     disabled={parsing || !text.trim()}
                     className="px-3.5 py-2 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 text-sm font-medium transition-colors disabled:opacity-50"
                 >
-                    {parsing ? 'Parsing…' : 'Parse with AI'}
+                    {parsing ? 'Parsing…' : 'Parse Description'}
                 </button>
             </div>
             {parseError && <p className="text-sm text-danger-600 dark:text-danger-400 mt-2">{parseError}</p>}
 
             {candidates && (
                 <div className="mt-3 space-y-2">
+                    {parseSource && (
+                        <p className="text-xs text-gray-500 dark:text-slate-400">
+                            {parseSource === 'local'
+                                ? 'Matched directly against the catalog — no AI used.'
+                                : parseSource === 'hybrid'
+                                    ? 'Partly matched against the catalog; AI assisted with the rest.'
+                                    : 'Parsed with AI assistance.'}
+                        </p>
+                    )}
                     {notes && <p className="text-xs text-amber-700 dark:text-amber-400 italic">{notes}</p>}
                     {candidates.length === 0 && <p className="text-sm text-gray-500 dark:text-slate-400">No fitments recognized in that text.</p>}
                     {candidates.map((c, idx) => (
@@ -311,6 +362,12 @@ const PartApplicationManager = ({ part, onCancel }) => {
     const [showNewApp, setShowNewApp] = useState(false);
     const [appsRefreshKey, setAppsRefreshKey] = useState(0);
 
+    // Engines are stored and linked atomically, which is correct but makes a
+    // fitment list read as a wall of near-identical codes. Grouping recombines
+    // them for display only, and only within an identical make/model/year
+    // context -- never across vehicles.
+    const displayGroups = useMemo(() => groupFitmentsForDisplay(linkedApps), [linkedApps]);
+
     useEffect(() => {
         const run = async () => {
             if (part) {
@@ -420,19 +477,46 @@ const PartApplicationManager = ({ part, onCancel }) => {
             </h3>
             {loading ? <p className="text-sm text-gray-500 dark:text-slate-400">Loading...</p> : (
                 <ul className="bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700 p-3 rounded-lg mb-4 h-36 overflow-y-auto divide-y divide-gray-100 dark:divide-slate-700/60">
-                    {linkedApps.map(app => (
-                        <li key={app.part_app_id} className="text-sm flex justify-between items-center py-2 text-gray-900 dark:text-slate-100">
-                           <div>
-                                <span className="font-medium">{app.make} {app.model} {app.engine ? `(${app.engine})` : ''}</span>
-                                <span className="text-xs text-gray-500 dark:text-slate-400 font-mono ml-2">{formatYearRange(app.year_start, app.year_end)}</span>
-                           </div>
-                           {canEdit && (
-                               <div className="flex items-center space-x-3">
-                                   <button onClick={() => handleEditLink(app)} className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 p-1" title="Edit Years"><Icon path={ICONS.edit} className="h-4 w-4"/></button>
-                                   <button onClick={() => handleUnlinkApp(app.application_id)} className="text-danger-600 dark:text-danger-400 hover:text-danger-700 dark:hover:text-danger-300 p-1" title="Unlink"><Icon path={ICONS.trash} className="h-4 w-4"/></button>
-                               </div>
-                           )}
-                        </li>
+                    {displayGroups.map((group, groupIdx) => (
+                        group.fitments.length === 1 ? (
+                            <li key={group.fitments[0].part_app_id} className="text-sm flex justify-between items-center py-2 text-gray-900 dark:text-slate-100">
+                                <div>
+                                    <span className="font-medium">{group.fitments[0].make} {group.fitments[0].model} {group.fitments[0].engine ? `(${group.fitments[0].engine})` : ''}</span>
+                                    <span className="text-xs text-gray-500 dark:text-slate-400 font-mono ml-2">{formatYearRange(group.fitments[0].year_start, group.fitments[0].year_end)}</span>
+                                </div>
+                                {canEdit && (
+                                    <div className="flex items-center space-x-3">
+                                        <button onClick={() => handleEditLink(group.fitments[0])} className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 p-1" title="Edit Years"><Icon path={ICONS.edit} className="h-4 w-4"/></button>
+                                        <button onClick={() => handleUnlinkApp(group.fitments[0].application_id)} className="text-danger-600 dark:text-danger-400 hover:text-danger-700 dark:hover:text-danger-300 p-1" title="Unlink"><Icon path={ICONS.trash} className="h-4 w-4"/></button>
+                                    </div>
+                                )}
+                            </li>
+                        ) : (
+                            // Several engines share this vehicle and year range, so the
+                            // header shows them in the shorthand staff write by hand
+                            // ("4D55/6"). Each engine is still its own row underneath
+                            // with its own controls -- the compression is display only,
+                            // and every engine remains individually linked and
+                            // individually removable.
+                            <li key={`group-${groupIdx}`} className="py-2 text-gray-900 dark:text-slate-100">
+                                <div className="text-sm font-medium" title={group.engineCodes.join(', ')}>
+                                    {formatFitmentGroup(group)}
+                                </div>
+                                <ul className="mt-1 ml-3 space-y-1 border-l border-gray-200 dark:border-slate-700 pl-3">
+                                    {group.fitments.map(app => (
+                                        <li key={app.part_app_id} className="flex justify-between items-center text-xs text-gray-600 dark:text-slate-300">
+                                            <span className="font-mono">{app.engine || '—'}</span>
+                                            {canEdit && (
+                                                <div className="flex items-center space-x-2">
+                                                    <button onClick={() => handleEditLink(app)} className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 p-1" title="Edit Years"><Icon path={ICONS.edit} className="h-3.5 w-3.5"/></button>
+                                                    <button onClick={() => handleUnlinkApp(app.application_id)} className="text-danger-600 dark:text-danger-400 hover:text-danger-700 dark:hover:text-danger-300 p-1" title="Unlink"><Icon path={ICONS.trash} className="h-3.5 w-3.5"/></button>
+                                                </div>
+                                            )}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </li>
+                        )
                     ))}
                     {linkedApps.length === 0 && <li className="text-sm text-gray-500 dark:text-slate-400 py-4 text-center">No applications linked yet.</li>}
                 </ul>

@@ -27,6 +27,8 @@ Read this first. It is the only section that changes often — update it as phas
 
 **Ready for next phase?** All 5 phases from the original plan are now built. Remaining work is the explicitly deferred items (§10) — the taxonomy merge tool and bulk CSV import — plus Phase 5's still-open live browser verification (§16). Nothing is blocked.
 
+> **Continued in [`2026-09-10_fitment-parsing-linking-display.md`](./2026-09-10_fitment-parsing-linking-display.md) (PRD-FBS-FIT-002, Phases 6–9)** — deterministic local parsing ahead of the Phase 5 AI path, atomic engine linking (splitting the legacy `4D55/56/65` row), and display-only engine-code compression. Read that document for anything after Phase 5.
+
 ---
 
 ## 1. For a New Session or Agent Picking This Up
