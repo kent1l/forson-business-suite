@@ -17,17 +17,27 @@ Read this first. It is the only section that changes often — update it as phas
 | Phase 7 — Deterministic local fitment parser (no AI on the happy path) | **Done** | §7 |
 | Phase 8 — AI demoted to shortlist fallback + alias learning loop | **Done** | §8 |
 | Phase 9 — Display-only engine-code compression (`4D55/56`) | **Done** | §9 |
+| Phase 9c — Shared-SUFFIX compression (`1GD/1KD/2KD-FTV`) both sides | **Done** | §9c |
+| Phase 10 — Dense display: shorthand dictionary, short years, dropped make | **Done, not yet enabled per preset** | §10 |
+| Which density option each surface uses (A–F) | **Awaiting the user's pick** | §10c |
 | Splitting legacy `4D55/56/65` (engine_id 8) into three rows | **Done** — fanned out to 3 applications, 0 part links affected | §6.1 |
 | Keeping Meilisearch index atomic (never store compressed codes) | **Done** — index untouched; compression is render-only | §9.4 |
 | Live browser click-through of the review panel | **Not done** | §10 |
 | Real staff input samples to tune segmentation + seed aliases | **Still open — needs the user** | §11 |
+| Taxonomy self-growth (new makes/models/engines usable immediately) | **Working** — verified end to end | §7.1 |
+| Duplicate model rows (`D-Max`/`DMAX`, `Hiace`/`HI-ACE`) blocking those names | **Known, not fixed** — needs the merge tool | §0, §12 |
 | Displacement for `4D55` and `4D65` | **Left NULL deliberately** — not confidently known | §6.1 |
 | Taxonomy dedupe/merge tool | **Still deferred** (inherited from FIT-001 §10) | FIT-001 §10 |
 | Bulk CSV import/export of part-to-vehicle mappings | **Still deferred** (inherited from FIT-001 §10) | FIT-001 §10 |
 
 **Ready for next phase?** All four phases are built and verified by tests. The two open items are the live browser click-through (§10) and the real staff input corpus (§11), which is the only thing genuinely blocked on the user.
 
-**Measured on the dev DB (2026-09-10):** 7 of 9 representative inputs parsed fully locally with no AI call, in 1-4 ms each. For the two that escalated, the shortlist cut the AI grounding from 20 makes / 155 models / 272 engines down to 1/6/4 and 7/8/8 respectively.
+**Taxonomy coverage, measured against the real dev DB (2026-09-10, after the §9b fixes):** every make/model/engine typed verbatim resolves except:
+
+- **6 of 273 engine codes** — `1.2`, `1.5`, `2L`, `3L`, `5L` (deliberately excluded, see §7.3) and `BYD476ZQC + Dual Motors` (the `+` is read as a clause separator).
+- **8 of 155 model names** — all genuine ambiguity, not parser defects: `Ranger` (Ford *and* Hino), `Rosa` (Mitsubishi Fuso *and* Hino) are real cross-make homonyms that resolve correctly once a make is given; `D-Max`/`DMAX` (both Isuzu) and `Hiace`/`HI-ACE` (both Toyota) are **duplicate taxonomy rows — a data-quality problem needing the deferred merge tool** (§12).
+
+Escalations to AI carry a shortlist rather than the full taxonomy: for two sample residues the grounding dropped from 20 makes / 155 models / 272 engines to 1/6/4 and 7/8/8.
 
 ---
 
@@ -475,6 +485,40 @@ The compressed form must never appear in:
 
 ---
 
+## 9b. Taxonomy Coverage Bugs (found by asking "does it actually self-grow?")
+
+Caught only by parsing **every real taxonomy row** and checking it resolves --
+the fixture-based tests could not see any of this, because the fixture happened
+to use `4D`/`4J`-shaped codes throughout. Keep the §10 coverage check.
+
+1. **The engine-token regex was far too narrow: 82 of 273 real engine codes
+   (30%) did not parse when typed verbatim.** It could not see `D4BA`,
+   `HR12DE`, `10PA1`, `YD25DDTi`, `1.5L Ti-VCT`, `Cummins ISF 2.8` or
+   `EcoBlue 2.0 Bi-Turbo`. Fixed by matching **known codes as literal spans**
+   from the taxonomy index (`engineCodeTokens`, longest-first) *before* the
+   numeric passes -- otherwise `extractDisplacement` ate the `1.5L` out of
+   `1.5L Ti-VCT`. The loose regex now only does the job it is suited to:
+   nominating code-shaped tokens the catalog has **not** seen yet. Result: 82
+   failures down to 6.
+
+2. **The literal matcher initially matched code prefixes, which was dangerous.**
+   It took `4D55` out of `4D55/6` (losing the second engine) and matched `4JA1`
+   inside `4JA1-T` -- collapsing a turbo engine into its naturally aspirated
+   base, precisely the thing Decision 4 forbids. Fixed by widening the span
+   boundary for engine codes to exclude `/`, `-`, `_` and `.`, so a code that is
+   merely the prefix of a longer code token cannot match.
+
+3. **Model names containing `&`, `/` or parentheses never matched** (`C&E
+   Series`, `Every / Multicab`, `300 Series (Dutro)`), because the internal
+   separator class only allowed whitespace, hyphen, underscore and dot.
+
+4. **The seeded `FUSO` make alias shadowed a real model.** This catalog has a
+   Mitsubishi model literally named `FUSO` (model_id 1), and makes are matched
+   before models, so the alias broke `Fuso Super Great` and `Fuso The Great`.
+   The alias was removed from the seed migration with a comment explaining why.
+
+---
+
 ## 9a. Bugs Found and Fixed During Implementation
 
 Both were caught by running the parser against the *real* taxonomy rather than
@@ -503,7 +547,103 @@ digit.
 
 ---
 
-## 10. Verification Commands
+## 9c. Shared-Suffix Compression — As Built
+
+Prefix compression alone only captured Mitsubishi/Isuzu-style codes and left the
+very common Toyota style untouched, because those differ at the FRONT
+(`1GD-FTV` / `2KD-FTV` share a suffix, not a prefix). Measured on a realistic
+part, prefix-only compression saved just 8%.
+
+The mirror rule now runs as a fallback on both sides, keeping them exact
+inverses:
+
+```
+{1GD-FTV, 1KD-FTV, 2GD-FTV, 2KD-FTV} -> 1GD/1KD/2GD/2KD-FTV
+{4JJ1-TC, 4JK1-TC, 4JH1-TC}          -> 4JH1/4JJ1/4JK1-TC
+```
+
+Saving went from 8% to **28%**. Two guards, both tested:
+
+- **The shared part must be a whole hyphen-delimited segment.** `1G/1K/2G/2KD-FTV`
+  would save two more characters but reads as gibberish, and the hyphen boundary
+  is what makes the form unambiguous to expand back.
+- **A head equal to the final segment's base disables the rule.** For
+  `4JA1/4JA1-L` the suffix reading would silently drop the naturally aspirated
+  4JA1, so it falls through to the overlay rule instead.
+
+The parser's `expandSharedSuffix` only fires when the LAST segment carries a
+hyphen and the earlier ones do not, which is what keeps `4D55/6` and `1KR-DE/VE`
+on the overlay path.
+
+---
+
+## 10. Phase 10 — Dense Display — As Built
+
+Three further compressions, all presentation-only, all off by default behind a
+`dense` option on `formatApplicationText` (individually switchable via
+`shortenYears`, `useShorthand`, `dropRedundantMake`).
+
+### 10a. Shorthand dictionary
+
+`display_short` on `vehicle_make` / `vehicle_model` / `engine`
+(`20260910_03_display_shorthand.sql`), served by
+`GET /applications/display-dictionary` from the cached taxonomy index.
+
+This is deliberately **not** the alias tables from `20260910_02`: aliases map
+many input spellings onto one row and include variants nobody would want on
+screen; `display_short` is one curated preferred abbreviation per row, for
+rendering only. Seeded for 4 makes, 15 models and 5 engines —
+**the seed list is business vocabulary and should be reviewed by someone who
+works the counter.** Anything left NULL renders with its full name.
+
+### 10b. Year shorthand
+
+`packages/web/src/utils/yearShorthand.js`. `2005-2015` → `05-15`, `2015+` →
+`15+`, `up to 2018` → `≤18`. The century pivot matches the parser's
+`expandTwoDigitYear` (70–99 → 19xx), and any year that would round-trip to the
+wrong century keeps all four digits — a range containing one is never
+half-shortened.
+
+### 10c. Dropping a redundant make
+
+The biggest single saving, and the one with a real trap. Dropping "Toyota" from
+"Toyota Hilux" is safe because no other make has a Hilux — but this catalog has
+a **Ranger under both Ford and Hino** and a **Rosa under both Mitsubishi Fuso and
+Hino**. Dropping the make on those would put a wrong answer in front of someone
+at the counter.
+
+The dictionary endpoint therefore also returns `ambiguousModels`, computed from
+the live taxonomy, and the make is dropped only when every model shown under it
+is unique catalog-wide. **Until the dictionary loads (or if it fails),
+`modelNeedsMake` returns true and no make is ever dropped** — the UI degrades to
+the long-but-correct form, never to a wrong short one.
+
+### Measured on the sample part (13 fitments, rendered by the real formatter)
+
+| Rendering | Chars |
+|---|---|
+| A — current | 213 |
+| E — dense (shorthand + short years + make dropped) | 169 (−21%) |
+| F — dense, engine codes on hover | 90 (−58%) |
+
+### Still open
+
+`dense` is implemented but **not yet switched on in any preset** — which surface
+gets which option (A–F) is the user's pick, presented at
+<https://claude.ai/code/artifact/c1b57c8d-b6d0-4b9a-b248-0332d295777b>. Density
+is per preset, so the POS suggestion, table cell and Power Search panel can each
+differ.
+
+### Incidental fix
+
+`applicationCache.js` and `displayDictionary.js` now import the axios client
+lazily, and `applicationTextHelper.js` uses explicit `.js` extensions. This makes
+the whole formatter chain loadable under plain `node --test`, which is what
+allowed the dense rules to be tested end to end rather than by inspection.
+
+---
+
+## 11. Verification Commands
 
 ```bash
 # Re-check the engine-family split is still safe before writing the Phase 6 migration
@@ -533,6 +673,21 @@ cd packages/api && npm test
 # environment issue, not a code failure -- build to a scratch dir to confirm:
 cd packages/web && npx vite build --outDir /tmp/webdist --emptyOutDir
 
+# TAXONOMY COVERAGE CHECK -- do not skip. Parses every make/model/engine in the
+# database and reports any that do not resolve. This is what caught the §9b
+# bugs; the fixture tests were blind to all of them.
+docker compose -f docker-compose.dev.yml exec -T backend node -e "
+const idx = require('/usr/src/app/helpers/vehicleTaxonomyIndex');
+const { parseFitmentText } = require('/usr/src/app/helpers/fitmentTextParser');
+idx.getIndex().then(i => {
+  const missE = i.engines.filter(e => !parseFitmentText(e.engine_code, i).fitments.some(f => f.engine_id === e.engine_id)).map(e => e.engine_code);
+  const missM = i.models.filter(m => !parseFitmentText(m.model_name, i).fitments.some(f => f.model_id === m.model_id)).map(m => m.model_name);
+  console.log('engines unmatched:', missE.length + '/' + i.engines.length, missE.join(' | '));
+  console.log('models unmatched:', missM.length + '/' + i.models.length, missM.join(' | '));
+  process.exit(0);
+});
+"
+
 # End-to-end check of the parser against the REAL taxonomy. Both bugs in §9a
 # were invisible to the fixture-based tests and only appeared here, so do not
 # skip this step.
@@ -550,7 +705,7 @@ idx.getIndex().then(i => {
 
 ---
 
-## 11. Open Question for the User
+## 12. Open Question for the User
 
 **Real staff input samples.** The segmentation rules (§7.2) and the seed alias
 list (§6.2) should be tuned against 15–20 examples of the free text staff
@@ -560,7 +715,7 @@ corpus check and §6.2's alias seed cannot be finalized without it.
 
 ---
 
-## 12. Explicitly Deferred
+## 13. Explicitly Deferred
 
 Inherited from FIT-001 §10 and still deferred — deprioritized, not next up:
 
@@ -573,7 +728,7 @@ Inherited from FIT-001 §10 and still deferred — deprioritized, not next up:
 
 ---
 
-## 13. What's in Hindsight (don't duplicate here, don't skip recalling it)
+## 14. What's in Hindsight (don't duplicate here, don't skip recalling it)
 
 Rationale, gotchas and debugging lessons for this feature live in hindsight
 under tags `["forson-business-suite", "vehicle_fitment"]`. Recall it rather than
@@ -582,7 +737,7 @@ See also FIT-001 §11.
 
 ---
 
-## 14. Files Touched
+## 15. Files Touched
 
 **New:**
 
@@ -593,7 +748,11 @@ See also FIT-001 §11.
 - `packages/api/helpers/fitmentTextParser.js` — pure deterministic parser and `buildShortlist`
 - `packages/api/tests/fitmentTextParser.test.js` — 44 tests
 - `packages/api/tests/fixtures/engineCodeRoundTrip.json` — shared round-trip truth table
-- `packages/web/src/utils/engineCodeFormat.js` — display-only compression
+- `packages/web/src/utils/engineCodeFormat.js` — display-only compression (prefix + shared suffix)
+- `packages/web/src/utils/yearShorthand.js` — two-digit year notation
+- `packages/web/src/helpers/displayDictionary.js` — curated shorthand + ambiguous-model data
+- `packages/web/tests/denseDisplay.test.js` — 17 tests
+- `database/migrations/20260910_03_display_shorthand.sql`
 - `packages/web/tests/engineCodeFormat.test.js` — 11 tests
 
 **Modified:**
@@ -602,14 +761,18 @@ See also FIT-001 §11.
 - `packages/api/routes/partApplicationRoutes.js` — local-first orchestration, merge, `/applications/fitment-alias`
 - `packages/api/routes/applicationRoutes.js` — taxonomy-index invalidation at 4 write sites
 - `packages/web/src/pages/PartApplicationManager.jsx` — grouped display, parse-source line, alias learning
+- `packages/web/src/helpers/applicationTextHelper.js` — engine compression + `dense` mode; this is the single integration point that lights up POS, Power Search, Parts table, GRN, PO and Invoicing
+- `packages/web/src/helpers/applicationCache.js` — lazy axios import so the chain is unit-testable
 
 For current structure, prefer `graphify query "vehicle fitment parsing"` over this list.
 
 ---
 
-## 15. Change Log
+## 16. Change Log
 
 | Date | Session | Change |
 |---|---|---|
 | 2026-09-10 | Planning session (Claude Opus 5) | Document created. Phases 6–9 planned; Decisions 1–8 settled with the user; engine-family split verified safe against the dev DB (1 application, 0 part links). Nothing built yet. |
+| 2026-09-10 | Implementation session, cont. 2 (Claude Opus 5) | Added shared-suffix compression on both sides (§9c, 8% → 28% saving) and Phase 10 dense display (§10): `display_short` dictionary + endpoint, year shorthand, and dropping a redundant make guarded by catalog-wide model-name ambiguity. Migration `20260910_03` applied. Web tests 11 → 90 (17 new dense tests), API 56 → 63. `dense` is built but not yet enabled in any preset — awaiting the user's per-surface pick. |
+| 2026-09-10 | Implementation session, cont. (Claude Opus 5) | Answered "does the taxonomy actually self-grow?" — it does (invalidation is wired at all 4 taxonomy write sites plus the alias endpoint, and the API is a single non-clustered process), but the check exposed that 82/273 engine codes and 15/155 model names did not parse at all. Four coverage bugs found and fixed (§9b); engine failures now 6/273, model failures 8/155 and all of those are genuine ambiguity or duplicate rows. Test count 44 → 56. `FUSO` make alias removed from the seed migration. |
 | 2026-09-10 | Implementation session (Claude Opus 5) | Phases 6–9 all built. Both migrations applied to the dev DB and checksums verified. 44 API + 11 web unit tests passing; web production build clean. Three bugs found and fixed during implementation (§9a). Departed from the plan on one point: displacement is no longer copied from the family row to all members (§6.1). Live browser click-through still outstanding; real staff input corpus still needed from the user (§11). |

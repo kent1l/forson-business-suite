@@ -52,17 +52,53 @@ export function compressEngineCodes(codes) {
 
     const sorted = [...unique].sort();
     const prefix = longestCommonPrefix(sorted);
-    if (prefix.length < MIN_PREFIX_LENGTH) return null;
+
+    // Prefix compression is tried first -- it is the tighter form ("4D55/6")
+    // and the one staff already write by hand. Shared-suffix compression is the
+    // fallback for code families that differ at the front.
+    if (prefix.length < MIN_PREFIX_LENGTH) return compressSharedSuffix(sorted);
 
     const shortest = Math.min(...sorted.map(c => c.length));
-    if (prefix.length * 2 < shortest) return null;
+    if (prefix.length * 2 < shortest) return compressSharedSuffix(sorted);
 
     const tails = sorted.map(c => c.slice(prefix.length));
-    if (tails.some(t => t.length === 0)) return null;
-    if (tails.some(t => /[-_/\s]/.test(t))) return null;
-    if (new Set(tails.map(t => t.length)).size !== 1) return null;
+    if (tails.some(t => t.length === 0)) return null; // e.g. {4JA1, 4JA1-T}
+    if (tails.some(t => /[-_/\s]/.test(t))) return compressSharedSuffix(sorted);
+    if (new Set(tails.map(t => t.length)).size !== 1) return compressSharedSuffix(sorted);
 
     return `${sorted[0]}/${tails.slice(1).join('/')}`;
+}
+
+/**
+ * Compresses a shared trailing segment: the mirror of prefix compression, for
+ * the very common Toyota style where codes differ at the FRONT.
+ *
+ *   {1GD-FTV, 1KD-FTV, 2GD-FTV, 2KD-FTV} -> 1GD/1KD/2GD/2KD-FTV
+ *   {4JJ1-TC, 4JK1-TC, 4JH1-TC}          -> 4JJ1/4JK1/4JH1-TC
+ *
+ * The shared part must be a WHOLE hyphen-delimited segment. Cutting mid-segment
+ * would technically save a character or two ("1G/1K/2G/2KD-FTV") but reads as
+ * gibberish, and it is the hyphen boundary that makes the form unambiguous to
+ * expand back.
+ *
+ * Returns null when it does not apply, including when any head would still
+ * contain a hyphen -- the parser's expansion rule keys off exactly that, so
+ * producing such a string would break the round trip.
+ */
+function compressSharedSuffix(sorted) {
+    const suffixes = sorted.map(code => {
+        const at = code.indexOf('-');
+        return at > 0 ? code.slice(at) : null;
+    });
+    const suffix = suffixes[0];
+    if (!suffix || suffix.length < 2) return null;
+    if (!suffixes.every(sfx => sfx === suffix)) return null;
+
+    const heads = sorted.map(code => code.slice(0, code.length - suffix.length));
+    if (heads.some(h => !h || h.includes('-'))) return null;
+    if (new Set(heads).size !== heads.length) return null;
+
+    return `${heads.slice(0, -1).join('/')}/${sorted[sorted.length - 1]}`;
 }
 
 /**

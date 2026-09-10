@@ -386,6 +386,56 @@ function mergeFitmentCandidates(localRows, aiRows) {
     return merged;
 }
 
+// GET /applications/display-dictionary - shorthand + ambiguity data for rendering
+// dense fitment lists (PRD-FBS-FIT-002 §10a).
+//
+// The frontend shortens fitment text in three ways, and all three need facts
+// only the server has:
+//   1. curated `display_short` abbreviations for long names;
+//   2. which model names are ambiguous across makes, so the make can be dropped
+//      from every OTHER model safely -- this catalog has exactly two such names
+//      ("Ranger" is both Ford and Hino, "Rosa" both Mitsubishi Fuso and Hino),
+//      and dropping the make on those would mislead someone at the counter;
+//   3. nothing else -- year shorthand is pure formatting and needs no data.
+//
+// Served from the cached taxonomy index, so this is not an extra round trip to
+// the database. Everything here is presentation-only: none of it is ever stored
+// on a record or indexed into Meilisearch, which keeps full names so a search
+// for "Mitsubishi" still matches.
+router.get('/applications/display-dictionary', protect, hasPermission('applications:view'), async (req, res) => {
+    try {
+        const index = await vehicleTaxonomyIndex.getIndex();
+
+        const makes = {};
+        for (const m of index.makes) {
+            if (m.display_short) makes[m.make_name] = m.display_short;
+        }
+
+        const models = {};
+        const modelMakeCount = new Map();
+        for (const m of index.models) {
+            if (m.display_short) models[m.model_name] = m.display_short;
+            const key = String(m.model_name).trim().toLowerCase();
+            if (!modelMakeCount.has(key)) modelMakeCount.set(key, new Set());
+            modelMakeCount.get(key).add(m.make_id);
+        }
+
+        const engines = {};
+        for (const e of index.engines) {
+            if (e.display_short) engines[e.engine_code] = e.display_short;
+        }
+
+        const ambiguousModels = [...modelMakeCount.entries()]
+            .filter(([, makeIds]) => makeIds.size > 1)
+            .map(([name]) => name);
+
+        res.json({ makes, models, engines, ambiguousModels });
+    } catch (err) {
+        console.error('Error in /applications/display-dictionary:', err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
 // POST /applications/fitment-alias - records that a human confirmed a raw input
 // string means a particular taxonomy row (PRD-FBS-FIT-002 §8.3).
 //

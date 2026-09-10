@@ -162,7 +162,7 @@ function extractFuel(text) {
  * Greedy longest-first literal span match against a name list, so multi-word
  * models ("Grand Vitara", "Mitsubishi Fuso") win over their first token.
  */
-function matchNameSpans(text, nameTokens, resolve) {
+function matchNameSpans(text, nameTokens, resolve, boundary = 'A-Za-z0-9') {
     let working = text;
     const hits = [];
     for (const name of nameTokens) {
@@ -174,9 +174,12 @@ function matchNameSpans(text, nameTokens, resolve) {
             .split('')
             .filter(ch => /[A-Za-z0-9]/.test(ch))
             .map(ch => ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-            .join('[\\s\\-_.]*');
+            // Separator class must cover every punctuation style used in real
+            // taxonomy names: `Hi-Lux`, `L 300`, `C&E Series`, `Every / Multicab`,
+            // `300 Series (Dutro)`.
+            .join('[\\s\\-_./&()]*');
         if (!pattern) continue;
-        const re = new RegExp(`(?<![A-Za-z0-9])${pattern}(?![A-Za-z0-9])`, 'i');
+        const re = new RegExp(`(?<![${boundary}])${pattern}(?![${boundary}])`, 'i');
         const m = working.match(re);
         if (m) {
             const resolved = resolve(key);
@@ -285,6 +288,26 @@ function parseClause(clause, index) {
     const modelHit = matchNameSpans(working, index.modelNameTokens, k => index.modelsByKey.get(k));
     working = modelHit.masked;
 
+    // Known engine codes are matched as literal spans BEFORE the numeric passes.
+    // Codes like `1.5L Ti-VCT`, `2.0L GDI` and `Cummins ISF 2.8` contain what
+    // looks like a displacement, so if extractDisplacement ran first it would
+    // swallow part of the code and the engine would never resolve.
+    //
+    // The boundary for engine codes must also exclude `/`, `-`, `_` and `.`,
+    // not just alphanumerics. Without that, the literal matcher would take
+    // `4D55` out of `4D55/6` (leaving a stray `/6` and losing the second
+    // engine) and -- far worse -- would match `4JA1` inside `4JA1-T`,
+    // collapsing a turbo engine into its naturally aspirated base. A code that
+    // is merely the prefix of a longer code token must not match; that token
+    // belongs to the slash/variant handling below.
+    const knownEngineHit = matchNameSpans(
+        working,
+        index.engineCodeTokens || [],
+        k => (index.enginesByNameKey ? index.enginesByNameKey.get(k) : null),
+        'A-Za-z0-9/_.\\-'
+    );
+    working = knownEngineHit.masked;
+
     const years = extractYears(working);
     working = years.masked;
 
@@ -294,8 +317,13 @@ function parseClause(clause, index) {
     const fuel = extractFuel(working);
     working = fuel.masked;
 
-    // Engine codes last, over whatever text no earlier pass claimed.
-    const engineSpans = [];
+    // Anything the taxonomy already knows was claimed above; the loose regex
+    // below only nominates code-shaped tokens the catalog has not seen yet.
+    const engineSpans = knownEngineHit.hits.map(hit => ({
+        text: hit.text,
+        matches: hit.matches,
+        method: 'known',
+    }));
     const engineMatches = working.match(ENGINE_TOKEN_RE) || [];
     for (const span of engineMatches) {
         const trimmed = span.trim();

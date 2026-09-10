@@ -28,6 +28,11 @@ const RAW = {
         { model_id: 13, model_name: 'L300', make_id: 2, make_name: 'Mitsubishi' },
         { model_id: 14, model_name: 'Grand Vitara', make_id: 4, make_name: 'Suzuki' },
         { model_id: 15, model_name: 'Crosswind', make_id: 3, make_name: 'Isuzu' },
+        // Punctuation-heavy real names, and a genuine cross-make homonym.
+        { model_id: 16, model_name: 'C&E Series', make_id: 3, make_name: 'Isuzu' },
+        { model_id: 17, model_name: 'Every / Multicab', make_id: 4, make_name: 'Suzuki' },
+        { model_id: 18, model_name: 'Ranger', make_id: 1, make_name: 'Toyota' },
+        { model_id: 19, model_name: 'Ranger', make_id: 3, make_name: 'Isuzu' },
     ],
     engines: [
         { engine_id: 101, engine_code: '4D55', displacement_liters: null, fuel_type: 'diesel' },
@@ -41,6 +46,14 @@ const RAW = {
         { engine_id: 109, engine_code: '4JJ1-TCX', displacement_liters: '3.00', fuel_type: 'diesel' },
         { engine_id: 110, engine_code: '1TR-FE', displacement_liters: '2.00', fuel_type: 'gasoline' },
         { engine_id: 111, engine_code: 'JT', displacement_liters: '2.70', fuel_type: 'diesel' },
+        // Shapes the loose token regex cannot see on its own -- these are why
+        // known codes are matched as literal spans.
+        { engine_id: 112, engine_code: 'D4BA', displacement_liters: '2.50', fuel_type: 'diesel' },
+        { engine_id: 113, engine_code: 'HR12DE', displacement_liters: '1.20', fuel_type: 'gasoline' },
+        { engine_id: 114, engine_code: 'YD25DDTi', displacement_liters: '2.50', fuel_type: 'diesel' },
+        { engine_id: 115, engine_code: '1.5L Ti-VCT', displacement_liters: '1.50', fuel_type: 'gasoline' },
+        { engine_id: 116, engine_code: 'Cummins ISF 2.8', displacement_liters: '2.80', fuel_type: 'diesel' },
+        { engine_id: 117, engine_code: '2L', displacement_liters: '2.40', fuel_type: 'diesel' },
     ],
     makeAliases: [
         { make_id: 2, alias_text: 'MITS' },
@@ -313,5 +326,100 @@ describe('buildShortlist', () => {
     test('ignores residue too short to be meaningful', () => {
         const shortlist = buildShortlist(['a'], index);
         expect(shortlist.models).toEqual([]);
+    });
+});
+
+describe('parseFitmentText - known codes are matched literally, not by regex shape', () => {
+    // Regression: the engine-token regex alone could not see about a third of
+    // the real catalog (D4BA, HR12DE, 10PA1, YD25DDTi, "1.5L Ti-VCT",
+    // "Cummins ISF 2.8"). Known codes are now matched as literal spans, so
+    // anything already in the taxonomy resolves regardless of its shape.
+    test.each([
+        ['D4BA', 112],
+        ['HR12DE', 113],
+        ['YD25DDTi', 114],
+        ['1.5L Ti-VCT', 115],
+        ['Cummins ISF 2.8', 116],
+    ])('%s resolves to its engine', (code, engineId) => {
+        const r = parse(code);
+        expect(r.fitments[0].engine_id).toBe(engineId);
+        expect(r.fullyResolved).toBe(true);
+    });
+
+    test('a known code is matched case- and separator-insensitively', () => {
+        expect(parse('yd25 ddti').fitments[0].engine_id).toBe(114);
+    });
+
+    // The literal matcher must never match a code that is merely the PREFIX of
+    // a longer code token -- that would take 4D55 out of "4D55/6" (losing the
+    // second engine) or collapse "4JA1-T" into the naturally aspirated 4JA1.
+    test('literal matching does not consume a prefix of a slash token', () => {
+        const r = parse('4D55/6');
+        expect(r.fitments.map(f => f.engine_id).sort()).toEqual([101, 102]);
+    });
+
+    test('literal matching does not collapse a variant suffix into its base', () => {
+        const r = parse('4JA1-T');
+        expect(r.fitments.every(f => f.engine_id !== 105)).toBe(true);
+    });
+
+    // Bare displacement-style codes ("2L", "1.5") are deliberately NOT matched
+    // literally: they are indistinguishable from litre notation, and matching
+    // them would swallow the displacement of ordinary descriptions.
+    test('a bare displacement-style code does not eat a stated displacement', () => {
+        const r = parse('Hilux 2L diesel');
+        expect(r.fitments[0].model_id).toBe(11);
+        expect(r.fitments[0].displacement_liters).toBe(2);
+    });
+});
+
+describe('parseFitmentText - punctuation-heavy and homonymous names', () => {
+    test('model names containing & and / resolve', () => {
+        expect(parse('C&E Series').fitments[0].model_id).toBe(16);
+        expect(parse('Every / Multicab').fitments[0].model_id).toBe(17);
+    });
+
+    // A model name shared by two makes is genuinely ambiguous. The parser must
+    // refuse to guess, but must resolve cleanly once the make is stated.
+    test('a cross-make homonym is left unresolved on its own', () => {
+        const r = parse('Ranger');
+        expect(r.fitments[0].model_id).toBeNull();
+        expect(r.fullyResolved).toBe(false);
+    });
+
+    test('the same homonym resolves once the make is given', () => {
+        expect(parse('Toyota Ranger').fitments[0].model_id).toBe(18);
+        expect(parse('Isuzu Ranger').fitments[0].model_id).toBe(19);
+    });
+});
+
+describe('engineCodeGrammar - shared-suffix expansion', () => {
+    test('distributes a shared trailing segment across the heads', () => {
+        expect(expandSlashToken('1GD/1KD/2GD/2KD-FTV'))
+            .toEqual(['1GD-FTV', '1KD-FTV', '2GD-FTV', '2KD-FTV']);
+        expect(expandSlashToken('4JJ1/4JK1/4JH1-TC'))
+            .toEqual(['4JJ1-TC', '4JK1-TC', '4JH1-TC']);
+    });
+
+    // The guard that stops the suffix reading from eating a distinct base code:
+    // "4JA1/4JA1-L" must keep the naturally aspirated 4JA1, not turn both into
+    // 4JA1-L.
+    test('does not swallow a head that equals the final segment base', () => {
+        expect(expandSlashToken('4JA1/4JA1-L')).toEqual(['4JA1', '4JA1-L']);
+    });
+
+    // The suffix rule keys off the LAST segment carrying a hyphen while the
+    // earlier ones do not; these must still take the overlay path.
+    test('does not hijack the right-aligned overlay forms', () => {
+        expect(expandSlashToken('4D55/6')).toEqual(['4D55', '4D56']);
+        expect(expandSlashToken('1KR-DE/VE')).toEqual(['1KR-DE', '1KR-VE']);
+        expect(expandSlashToken('4D55/56/65')).toEqual(['4D55', '4D56', '4D65']);
+    });
+
+    test('a suffix-compressed code family resolves through the parser', () => {
+        // 1TR-FE is the only -FE engine in the fixture, so this exercises the
+        // grammar reaching the gazetteer rather than inventing codes.
+        const r = parse('9ZZ/1TR-FE');
+        expect(r.fitments.some(f => f.engine_id === 110)).toBe(true);
     });
 });

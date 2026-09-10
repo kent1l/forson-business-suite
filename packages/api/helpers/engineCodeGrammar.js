@@ -67,6 +67,15 @@ function expandSlashToken(token) {
     const segments = cleaned.split('/').map(s => s.trim()).filter(Boolean);
     if (segments.length === 0) return [];
 
+    // Shared-SUFFIX form: "1GD/1KD/2GD/2KD-FTV" means all four Toyota codes end
+    // in -FTV. This is the mirror of the overlay rule and is how staff compress
+    // the very common Toyota style, where codes differ at the FRONT rather than
+    // the tail. It applies only when the final segment carries a hyphen segment
+    // and none of the earlier ones do -- otherwise "4D55/6" or "1KR-DE/VE" would
+    // be misread.
+    const suffixExpansion = expandSharedSuffix(segments);
+    if (suffixExpansion) return suffixExpansion;
+
     const base = segments[0];
     const out = [base];
 
@@ -77,6 +86,41 @@ function expandSlashToken(token) {
         if (!out.includes(expanded)) out.push(expanded);
     }
 
+    return out;
+}
+
+/**
+ * Expands the shared-suffix form, or returns null when it does not apply.
+ *
+ *   1GD/1KD/2GD/2KD-FTV -> 1GD-FTV, 1KD-FTV, 2GD-FTV, 2KD-FTV
+ *   4JJ1/4JK1/4JH1-TC   -> 4JJ1-TC, 4JK1-TC, 4JH1-TC
+ *
+ * Guarded so it cannot swallow a legitimately distinct base code: if an earlier
+ * segment already equals the final segment's base ("4JA1/4JA1-L"), the shared
+ * suffix reading would silently drop the naturally aspirated 4JA1, so we fall
+ * through to the overlay rule instead.
+ */
+function expandSharedSuffix(segments) {
+    if (segments.length < 2) return null;
+
+    const last = segments[segments.length - 1];
+    const hyphenAt = last.indexOf('-');
+    if (hyphenAt <= 0) return null;
+
+    const heads = segments.slice(0, -1);
+    if (heads.some(h => h.includes('-'))) return null;
+
+    const lastBase = last.slice(0, hyphenAt);
+    const suffix = last.slice(hyphenAt);
+    if (!lastBase || suffix.length < 2) return null;
+    if (heads.some(h => h === lastBase)) return null;
+
+    const out = [];
+    for (const head of heads) {
+        const expanded = head + suffix;
+        if (!out.includes(expanded)) out.push(expanded);
+    }
+    if (!out.includes(last)) out.push(last);
     return out;
 }
 

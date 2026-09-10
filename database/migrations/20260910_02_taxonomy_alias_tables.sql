@@ -67,7 +67,10 @@ FROM (VALUES
     ('MITS',            'Mitsubishi'),
     ('MITSU',           'Mitsubishi'),
     ('CHEVY',           'Chevrolet'),
-    ('FUSO',            'Mitsubishi Fuso'),
+    -- NOTE: 'FUSO' is deliberately NOT aliased to the Mitsubishi Fuso make.
+    -- This catalog already has a Mitsubishi MODEL literally named 'FUSO'
+    -- (model_id 1), so a make alias of the same text would shadow it and break
+    -- parsing of "Fuso Super Great" and "Fuso The Great".
     ('UD',              'UD Trucks / Nissan Diesel'),
     ('NISSAN DIESEL',   'UD Trucks / Nissan Diesel'),
     ('TOY',             'Toyota'),

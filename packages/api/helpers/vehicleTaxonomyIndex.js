@@ -42,14 +42,14 @@ function pushTo(map, key, value) {
 async function fetchTaxonomy() {
     const db = require('../db');
     const [makes, models, engines, makeAliases, modelAliases, engineAliases, modelEnginePairs] = await Promise.all([
-        db.query('SELECT make_id, make_name FROM vehicle_make ORDER BY make_name'),
+        db.query('SELECT make_id, make_name, display_short FROM vehicle_make ORDER BY make_name'),
         db.query(`
-            SELECT vm.model_id, vm.model_name, vm.make_id, mk.make_name
+            SELECT vm.model_id, vm.model_name, vm.display_short, vm.make_id, mk.make_name
             FROM vehicle_model vm
             JOIN vehicle_make mk ON mk.make_id = vm.make_id
             ORDER BY mk.make_name, vm.model_name
         `),
-        db.query('SELECT engine_id, engine_code, displacement_liters, fuel_type FROM engine ORDER BY engine_code'),
+        db.query('SELECT engine_id, engine_code, display_short, displacement_liters, fuel_type FROM engine ORDER BY engine_code'),
         db.query('SELECT make_id, alias_text FROM vehicle_make_alias'),
         db.query('SELECT model_id, alias_text FROM vehicle_model_alias'),
         db.query('SELECT engine_id, alias_text FROM engine_alias'),
@@ -112,6 +112,40 @@ function buildIndex(raw) {
     const enginesByExactCode = new Map();
     for (const e of raw.engines) pushTo(enginesByExactCode, String(e.engine_code).toUpperCase().trim(), e);
 
+    // Engine codes matched as literal spans, longest first. The token regex
+    // alone was far too narrow for this catalog: it could not see `D4BA`,
+    // `HR12DE`, `10PA1`, `YD25DDTi`, `1.5L Ti-VCT` or `Cummins ISF 2.8`, which
+    // between them account for about a third of the real engine list. Matching
+    // known codes literally means anything already in the taxonomy is always
+    // recognized regardless of shape, and the regex is left to do the only job
+    // it is actually suited to -- nominating code-shaped tokens the catalog has
+    // not seen yet.
+    //
+    // Bare displacement-style codes are deliberately excluded. This catalog has
+    // legacy engine rows literally named `1.2` and `1.5`, and Toyota's real
+    // `2L`/`3L`/`5L` codes are genuinely indistinguishable from litre notation
+    // ("2L" is both an engine and two litres). Matching those literally would
+    // swallow the displacement of ordinary descriptions like "Hilux 2.5L", so
+    // they are reachable only by an exact whole-token match.
+    const isBareDisplacementCode = code => /^\d+(\.\d+)?\s*L?$/i.test(String(code).trim());
+
+    const engineCodeTokens = [...new Set([
+        ...raw.engines.map(e => String(e.engine_code).trim()),
+        ...raw.engineAliases.map(a => String(a.alias_text).trim()),
+    ])]
+        .filter(Boolean)
+        .filter(code => !isBareDisplacementCode(code))
+        .sort((a, b) => b.length - a.length);
+
+    // Keyed with nameKey so matchNameSpans (which uses nameKey) can resolve
+    // against it. nameKey and lookupKey agree on every code without a slash.
+    const enginesByNameKey = new Map();
+    for (const e of raw.engines) pushTo(enginesByNameKey, nameKey(e.engine_code), e);
+    for (const a of raw.engineAliases) {
+        const target = enginesById.get(a.engine_id);
+        if (target) pushTo(enginesByNameKey, nameKey(a.alias_text), target);
+    }
+
     // Model names, longest first, for greedy multi-word span matching
     // ("Grand Vitara" must beat "Grand").
     const modelNameTokens = [...new Set(raw.models.map(m => String(m.model_name).trim()))]
@@ -147,6 +181,8 @@ function buildIndex(raw) {
         modelsByKey,
         enginesByKey,
         enginesByExactCode,
+        enginesByNameKey,
+        engineCodeTokens,
         makeNameTokens,
         modelNameTokens,
     };

@@ -3,8 +3,24 @@
  * @param {Object} application - The application object
  * @returns {string} Formatted application text
  */
-import { getApplication } from './applicationCache';
-import { getPreset } from './applicationDisplayPresets';
+import { getApplication } from './applicationCache.js';
+import { getPreset } from './applicationDisplayPresets.js';
+import { compressEngineCodes } from '../utils/engineCodeFormat.js';
+import { formatYears } from '../utils/yearShorthand.js';
+import { shortMake, shortModel, shortEngine, modelNeedsMake } from './displayDictionary.js';
+
+// Engines are stored and linked atomically (a part fitting a 4D55 does not
+// necessarily fit a 4D56), so a vehicle with several engine variants produces
+// one fitment row per engine. Displaying them as staff write them by hand --
+// "4D55/6" rather than "4D55/4D56" -- is purely cosmetic and saves real space
+// in dense lists. compressEngineCodes refuses to combine anything unsafe (a
+// variant suffix like 4JA1 vs 4JA1-T, or codes with no meaningful shared
+// prefix), in which case we fall back to listing them.
+const joinEngines = (engines, separator = '/') => {
+    if (!engines || engines.length === 0) return '';
+    if (engines.length === 1) return engines[0];
+    return compressEngineCodes(engines) || engines.join(separator);
+};
 
 // Simple LRU cache for formatted results to avoid recomputation on identical inputs
 const FORMAT_CACHE_LIMIT = 100;
@@ -46,9 +62,11 @@ const formatSingleApplication = (application, granularOptions = {}) => {
     }
 
     if (typeof application === 'object') {
-        const { includeYears = true, includeEngine = true } = granularOptions;
-        // If there's a pre-formatted display property, use it
-        if (application.display) return application.display;
+        const { includeYears = true, includeEngine = true, dense: denseOpts = null } = granularOptions;
+        // A pre-formatted `display` from the backend is the fast path, but it is
+        // built from full names and full years, so dense mode has to rebuild
+        // from the fields instead of reusing it.
+        if (application.display && !denseOpts) return application.display;
 
         // If it only has application_id (from backend normalization), return id string (will be enriched later if cache loaded)
         if (application.application_id && !(application.make || application.model || application.engine)) {
@@ -57,12 +75,24 @@ const formatSingleApplication = (application, granularOptions = {}) => {
             return String(application.application_id);
         }
 
-        const parts = [application.make, application.model];
-        if (includeEngine) parts.push(application.engine);
+        const makeName = denseOpts ? denseOpts.make(application.make) : application.make;
+        const modelName = denseOpts ? denseOpts.model(application.model) : application.model;
+        const engineCode = denseOpts ? denseOpts.engine(application.engine) : application.engine;
+
+        // Drop the make only when this model name belongs to exactly one make.
+        const keepMake = !denseOpts
+            || !denseOpts.dropMake
+            || !application.model
+            || denseOpts.needsMake(application.model);
+
+        const parts = [keepMake ? makeName : null, modelName];
+        if (includeEngine) parts.push(engineCode);
         let base = parts.filter(Boolean).join(' ').trim();
 
         if (includeYears && (application.year_start || application.year_end)) {
-            const years = [application.year_start, application.year_end].filter(Boolean).join('-');
+            const years = denseOpts
+                ? denseOpts.years(application.year_start, application.year_end)
+                : [application.year_start, application.year_end].filter(Boolean).join('-');
             if (years) base = `${base} (${years})`;
         }
         return base.trim();
@@ -101,17 +131,47 @@ export const formatApplicationText = (applications, options = {}) => {
     includeEngine = true,
     collapseDuplicateEngines = false, // deprecated in favor of mergeModelsByMake
     mergeModelsByMake = false,
+    // Dense mode (PRD-FBS-FIT-002 §10): curated shorthand for long names,
+    // two-digit year notation, and dropping the make where the model name is
+    // unique across the catalog. All presentation-only.
+    dense = false,
+    shortenYears = false,
+    useShorthand = false,
+    dropRedundantMake = false,
         cache = true,
         fallbackUnknown = '',
     } = merged;
 
+    // `dense` is a shorthand for the three compressions; each can still be
+    // switched on individually for a surface that wants only some of them.
+    const useYearShorthand = shortenYears || dense;
+    const useNameShorthand = useShorthand || dense;
+    const dropMake = dropRedundantMake || dense;
+
+    const displayMake = (name) => (useNameShorthand ? shortMake(name) : name);
+    const displayModel = (name) => (useNameShorthand ? shortModel(name) : name);
+    const displayEngine = (code) => (useNameShorthand ? shortEngine(code) : code);
+    const displayYears = (start, end) => formatYears(start, end, { short: useYearShorthand });
+
     const appsArray = Array.isArray(applications) ? applications : [applications];
 
-    const cacheKeyBase = cache ? JSON.stringify({ a: appsArray.map(a => (typeof a === 'object' ? a.application_id || a : a)), o: { separator, multiline, maxApplications, truncateMode, truncateChars, truncateWords, logicalStrategy, includeYears, includeEngine, collapseDuplicateEngines } }) : null;
+    const cacheKeyBase = cache ? JSON.stringify({ a: appsArray.map(a => (typeof a === 'object' ? a.application_id || a : a)), o: { separator, multiline, maxApplications, truncateMode, truncateChars, truncateWords, logicalStrategy, includeYears, includeEngine, collapseDuplicateEngines, dense, shortenYears, useShorthand, dropRedundantMake } }) : null;
     if (cache && cacheKeyBase) {
         const hit = getCache(cacheKeyBase);
         if (hit) return hit;
     }
+
+    const denseHelpers = (useNameShorthand || useYearShorthand || dropMake)
+        ? {
+            make: displayMake,
+            model: displayModel,
+            engine: displayEngine,
+            years: displayYears,
+            dropMake,
+            needsMake: modelNeedsMake,
+        }
+        : null;
+    const granular = { includeYears, includeEngine, dense: denseHelpers };
 
     // 1. Optional hierarchical merging by make
     let formattedList;
@@ -144,12 +204,12 @@ export const formatApplicationText = (applications, options = {}) => {
                 // Collect engines (always show engines when includeEngine=true approval #2 option 1)
                 let enginePart = '';
                 if (includeEngine) {
-                    const engines = Array.from(new Set(modelEntries.map(me => me.engine).filter(Boolean))).sort();
-                    if (engines.length === 1) enginePart = ` (${engines[0]})`;
-                    else if (engines.length > 1) enginePart = ` (${engines.join('/')})`;
+                    const engines = Array.from(new Set(modelEntries.map(me => displayEngine(me.engine)).filter(Boolean))).sort();
+                    const joined = joinEngines(engines, '/');
+                    if (joined) enginePart = ` (${joined})`;
                 }
                 // Years handling (#3a): if differing ranges per model, we append per model; shared range appended later at make-level
-                const ranges = Array.from(new Set(modelEntries.map(me => (me.yearStart || me.yearEnd) ? `${me.yearStart || ''}-${me.yearEnd || ''}` : '').filter(Boolean)));
+                const ranges = Array.from(new Set(modelEntries.map(me => displayYears(me.yearStart, me.yearEnd)).filter(Boolean)));
                 let yearPart = '';
                 // We'll decide shared vs per-model after computing all models
                 return { modelName, enginePart, ranges, rawEntries: modelEntries, placeholder: null, yearPart };
@@ -167,7 +227,7 @@ export const formatApplicationText = (applications, options = {}) => {
             modelParts.forEach(mp => {
                 if (!sharedYearRange) {
                     if (mp.ranges.length === 1) {
-                        mp.yearPart = mp.ranges[0] ? `(${mp.ranges[0].replace(/^-|-$|--/g,'').replace(/(^-|-$)/g,'')})` : '';
+                        mp.yearPart = mp.ranges[0] ? `(${mp.ranges[0]})` : '';
                     } else if (mp.ranges.length > 1) {
                         // Multiple distinct ranges; join compactly
                         mp.yearPart = `(${mp.ranges.join('|')})`;
@@ -186,15 +246,25 @@ export const formatApplicationText = (applications, options = {}) => {
             }
 
             const modelsMerged = visibleModels.map(mp => {
-                const base = mp.modelName || '';
+                const base = displayModel(mp.modelName) || '';
                 return `${base}${mp.enginePart || ''}${mp.yearPart ? mp.yearPart : ''}`.trim();
             }).filter(Boolean).join('/');
 
+            // The make is redundant when every model shown under it is unique
+            // across the whole catalog -- nobody but Toyota makes a Hilux. It is
+            // NOT redundant for a name two makes share: this catalog really does
+            // have a Ranger under both Ford and Hino, and dropping the make there
+            // would put a wrong answer in front of someone at the counter. The
+            // server tells us which names those are; until it does,
+            // modelNeedsMake returns true and the make stays.
+            const makeIsRedundant = dropMake
+                && visibleModels.length > 0
+                && visibleModels.every(mp => mp.modelName && !modelNeedsMake(mp.modelName));
+
             let segment = modelsMerged;
-            if (make) segment = `${make} ${modelsMerged}`.trim();
+            if (make && !makeIsRedundant) segment = `${displayMake(make)} ${modelsMerged}`.trim();
             if (sharedYearRange && includeYears) {
-                const yr = sharedYearRange.replace(/^-|-$|--/g,'').replace(/(^-|-$)/g,'');
-                if (yr) segment = `${segment} (${yr})`;
+                segment = `${segment} (${sharedYearRange})`;
             }
             if (tailNote) segment += tailNote;
             makeSegments.push(segment.trim());
@@ -204,11 +274,11 @@ export const formatApplicationText = (applications, options = {}) => {
         if (makeSegments.length) {
             formattedList = makeSegments;
         } else {
-            formattedList = appsArray.map(a => formatSingleApplication(a, { includeYears, includeEngine })).filter(Boolean);
+            formattedList = appsArray.map(a => formatSingleApplication(a, granular)).filter(Boolean);
         }
     } else {
         // Non-merge path
-        formattedList = appsArray.map(a => formatSingleApplication(a, { includeYears, includeEngine })).filter(Boolean);
+        formattedList = appsArray.map(a => formatSingleApplication(a, granular)).filter(Boolean);
     }
 
     // 2. Collapse duplicate engines (same make+model) if requested
@@ -234,7 +304,8 @@ export const formatApplicationText = (applications, options = {}) => {
                     if (group && group.idxs.length > 1) {
                         group.idxs.forEach(i => used.add(i));
                         const engines = Array.from(group.engines.values());
-                        const enginePart = engines.length ? ` (${engines.join(' / ')})` : '';
+                        const joined = joinEngines(engines, ' / ');
+                        const enginePart = joined ? ` (${joined})` : '';
                         rebuilt.push(`${[a.make, a.model].filter(Boolean).join(' ')}${enginePart}`.trim());
                         return;
                     }
