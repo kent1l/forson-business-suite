@@ -28,7 +28,13 @@ pools:
       - provider: gemini
         model: "gemini-2.5-flash-lite"
       - provider: openrouter
-        model: "openrouter/free"
+        model: "google/gemini-2.5-flash-lite"
+      - provider: openrouter
+        model: "deepseek/deepseek-chat"
+      - provider: openrouter
+        model: "openai/gpt-4o-mini"
+      - provider: openrouter
+        model: "qwen/qwen-2.5-7b-instruct"
 
   expense_reasoning_pool:
     description: "Escalation pool for ambiguous or low-confidence expense strings"
@@ -64,4 +70,10 @@ pools:
       - provider: gemini
         model: "gemini-2.5-flash-lite"
       - provider: openrouter
-        model: "openrouter/free"
+        model: "google/gemini-2.5-flash-lite"
+      - provider: openrouter
+        model: "deepseek/deepseek-chat"
+      - provider: openrouter
+        model: "openai/gpt-4o-mini"
+      - provider: openrouter
+        model: "qwen/qwen-2.5-7b-instruct"
