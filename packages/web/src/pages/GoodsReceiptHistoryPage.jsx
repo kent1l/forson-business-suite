@@ -91,11 +91,17 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
         setReturnTargetLine(null);
         try {
             console.log('Fetching GRN lines for:', grn.grn_id);
-            const response = await api.get(`/goods-receipts/${grn.grn_id}/lines`);
-            console.log('API Response:', response.data);
+            const [linesResponse, grnResponse] = await Promise.all([
+                api.get(`/goods-receipts/${grn.grn_id}/lines`),
+                api.get(`/goods-receipts/${grn.grn_id}`),
+            ]);
+            console.log('API Response:', linesResponse.data);
+            if (grnResponse.data) {
+                setSelectedGrn(prev => ({ ...prev, ...grnResponse.data }));
+            }
             
             // Add more detailed logging about each line
-            const processedLines = response.data.map(line => {
+            const processedLines = linesResponse.data.map(line => {
                 const processed = { ...line };
                 console.log('Processing line in handleRowClick:', {
                     original: line,
@@ -105,7 +111,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                 return processed;
             });
             
-            setGrnLines(response.data);
+            setGrnLines(linesResponse.data);
             setEditedLines(processedLines);
         } catch (error) {
             console.error('Error fetching GRN lines:', error);
@@ -464,6 +470,47 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                         )}
                                     </div>
                                 )}
+                            </div>
+                        )}
+
+                        {selectedGrn?.freight_costs && selectedGrn.freight_costs.length > 0 && (
+                            <div className="bg-gray-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-gray-100 dark:border-slate-700 text-sm">
+                                <div className="font-semibold text-xs text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                                    Freight Charges ({selectedGrn.freight_costs.length})
+                                </div>
+                                <div className="divide-y divide-gray-200 dark:divide-slate-800">
+                                    {selectedGrn.freight_costs.map((fc, idx) => (
+                                        <div key={fc.grn_freight_id || idx} className="py-2 flex flex-wrap items-center justify-between gap-2">
+                                            <div className="flex items-center flex-wrap gap-2">
+                                                <span className="font-medium text-gray-900 dark:text-slate-100">
+                                                    {fc.supplier_name || 'Direct pickup / travel'}
+                                                </span>
+                                                {fc.receipt_number && (
+                                                    <span className="text-xs font-mono bg-gray-200 dark:bg-slate-700 px-1.5 py-0.5 rounded text-gray-700 dark:text-slate-300">
+                                                        Waybill/Receipt #{fc.receipt_number}
+                                                    </span>
+                                                )}
+                                                {fc.notes && (
+                                                    <span className="text-xs text-gray-500 dark:text-slate-400 italic">
+                                                        ({fc.notes})
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                                                    fc.is_paid
+                                                        ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-400'
+                                                        : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                                                }`}>
+                                                    {fc.is_paid ? `Paid (${fc.payment_method_name || 'Cash'})` : 'Unpaid (A/P Bill)'}
+                                                </span>
+                                                <span className="font-mono font-semibold text-gray-900 dark:text-slate-100">
+                                                    {formatCurrency(fc.amount)}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         )}
 

@@ -319,11 +319,12 @@ router.get('/ap/supplier-bills', protect, hasPermission(['ap-pdc:view', 'ap:view
                             'grn_number', gr.grn_number,
                             'receipt_date', gr.receipt_date,
                             'status', gr.status,
-                            'link_type', CASE WHEN gr.freight_bill_id = sb.bill_id THEN 'freight' ELSE 'goods' END
+                            'link_type', CASE WHEN gr.freight_bill_id = sb.bill_id OR EXISTS (SELECT 1 FROM goods_receipt_freight grf WHERE grf.grn_id = gr.grn_id AND grf.bill_id = sb.bill_id) THEN 'freight' ELSE 'goods' END
                         ) ORDER BY gr.receipt_date, gr.grn_id), '[]'::json) AS related_grns
                 FROM goods_receipt gr
                 WHERE gr.bill_id = sb.bill_id
                    OR gr.freight_bill_id = sb.bill_id
+                   OR EXISTS (SELECT 1 FROM goods_receipt_freight grf WHERE grf.grn_id = gr.grn_id AND grf.bill_id = sb.bill_id)
                    OR (sb.grn_id IS NOT NULL AND gr.grn_id = sb.grn_id)
              ) grn ON true
              ${where} ORDER BY sb.due_date NULLS LAST, sb.bill_date`,

@@ -108,7 +108,9 @@ const BillGoodsReceiptsModal = ({ isOpen, onClose, bill }) => {
                 {!loading && receipts.map((grn) => {
                     const isFreight = grn.link_type === 'freight';
                     const totals = grn.totals || {};
-                    const expected = isFreight ? num(grn.freight_amount) : num(grn.goods_value);
+                    const expected = isFreight
+                        ? num(grn.billed_freight_amount != null ? grn.billed_freight_amount : grn.freight_amount)
+                        : num(grn.goods_value);
                     const variance = num(bill.total_amount) - expected;
                     const hasReturns = num(totals.returned_value) > 0;
                     return (
@@ -136,8 +138,14 @@ const BillGoodsReceiptsModal = ({ isOpen, onClose, bill }) => {
                                     {grn.supplier_invoice_no && <span>Supplier invoice {grn.supplier_invoice_no}</span>}
                                     {num(grn.freight_amount) > 0 && (
                                         <span>
-                                            Freight {formatCurrency(grn.freight_amount)}
-                                            {grn.freight_supplier_name ? ` — ${grn.freight_supplier_name}` : ''}
+                                            {isFreight && grn.billed_freight_charge ? (
+                                                <>Carrier charge: {formatCurrency(grn.billed_freight_charge.amount)} ({grn.billed_freight_charge.supplier_name || 'Carrier'}{grn.billed_freight_charge.receipt_number ? `, Waybill/Rcpt #${grn.billed_freight_charge.receipt_number}` : ''}) of {formatCurrency(grn.freight_amount)} total freight</>
+                                            ) : (
+                                                <>
+                                                    Freight {formatCurrency(grn.freight_amount)}
+                                                    {grn.freight_costs?.length > 1 ? ` (${grn.freight_costs.length} charges)` : (grn.freight_supplier_name ? ` — ${grn.freight_supplier_name}` : '')}
+                                                </>
+                                            )}
                                         </span>
                                     )}
                                     {num(grn.overall_discount_percent) > 0 && (

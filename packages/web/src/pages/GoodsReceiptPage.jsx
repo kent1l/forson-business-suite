@@ -79,6 +79,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     // not to any one line.
     const [freightAmount, setFreightAmount] = useState(0);
     const [freightSupplierId, setFreightSupplierId] = useState('');
+    const [freightCosts, setFreightCosts] = useState([]);
     const [freightMethod, setFreightMethod] = useState(METHOD_A);
     const [overallDiscount, setOverallDiscount] = useState({ percent: null, amount: null });
     const [syncRetailPrices, setSyncRetailPrices] = useState(true);
@@ -99,8 +100,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     // Reusable draft hook
     const draftData = useMemo(() => (stagedGrn ? {} : {
         selectedSupplier, lines, selectedPO,
-        freightAmount, freightSupplierId, freightMethod, overallDiscount, syncRetailPrices,
-    }), [stagedGrn, selectedSupplier, lines, selectedPO, freightAmount, freightSupplierId, freightMethod, overallDiscount, syncRetailPrices]);
+        freightAmount, freightSupplierId, freightCosts, freightMethod, overallDiscount, syncRetailPrices,
+    }), [stagedGrn, selectedSupplier, lines, selectedPO, freightAmount, freightSupplierId, freightCosts, freightMethod, overallDiscount, syncRetailPrices]);
     const isEmpty = useMemo(() => (d) => (!d?.selectedSupplier && (!d?.lines || d.lines.length === 0) && !d?.selectedPO), []);
     const { status: draftStatus, lastSavedAt, draft, loaded: draftLoaded, clearDraft } = useDraft('goods-receipt', { data: draftData, isEmpty, debounceMs: 750 });
 
@@ -212,6 +213,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             setSelectedSupplier(String(header.supplier_id));
             setFreightAmount(Number(header.freight_amount) || 0);
             setFreightSupplierId(header.freight_supplier_id ? String(header.freight_supplier_id) : '');
+            setFreightCosts(header.freight_costs || []);
             setFreightMethod(header.freight_allocation_method || METHOD_A);
             setOverallDiscount({
                 percent: header.overall_discount_percent != null ? Number(header.overall_discount_percent) : null,
@@ -255,6 +257,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             if (draft.selectedPO) setSelectedPO(draft.selectedPO);
             if (draft.freightAmount) setFreightAmount(draft.freightAmount);
             if (draft.freightSupplierId) setFreightSupplierId(draft.freightSupplierId);
+            if (draft.freightCosts) setFreightCosts(draft.freightCosts);
             if (draft.freightMethod) setFreightMethod(draft.freightMethod);
             if (draft.overallDiscount) setOverallDiscount(draft.overallDiscount);
             if (draft.syncRetailPrices !== undefined) setSyncRetailPrices(draft.syncRetailPrices);
@@ -505,6 +508,14 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         freight_amount: freightAmount || 0,
         freight_allocation_method: freightMethod,
         freight_supplier_id: freightSupplierId || null,
+        freight_costs: freightCosts.filter(c => Number(c.amount) > 0).map(c => ({
+            supplier_id: c.supplier_id ? Number(c.supplier_id) : null,
+            amount: Number(c.amount) || 0,
+            receipt_number: c.receipt_number?.trim() || null,
+            notes: c.notes?.trim() || null,
+            is_paid: Boolean(c.is_paid),
+            payment_method_id: c.is_paid && c.payment_method_id ? Number(c.payment_method_id) : null,
+        })),
         overall_discount_percent: overallDiscount.percent,
         overall_discount_amount: overallDiscount.amount,
         sync_retail_prices: syncRetailPrices,
@@ -518,6 +529,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         setSupplierInvoiceNo('');
         setFreightAmount(0);
         setFreightSupplierId('');
+        setFreightCosts([]);
         setFreightMethod(METHOD_A);
         setOverallDiscount({ percent: null, amount: null });
         setSyncRetailPrices(true);
@@ -538,7 +550,15 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             toast.error('Enter the date the goods actually arrived.');
             return false;
         }
-        if (freightAmount > 0 && !freightSupplierId) {
+        if (freightCosts.length > 0) {
+            for (let i = 0; i < freightCosts.length; i++) {
+                const c = freightCosts[i];
+                if (Number(c.amount) > 0 && !c.is_paid && !c.supplier_id) {
+                    toast.error(`Freight charge #${i + 1} is marked unpaid — choose the carrier it is owed to.`);
+                    return false;
+                }
+            }
+        } else if (freightAmount > 0 && !freightSupplierId) {
             toast.error('Choose the carrier the freight is owed to.');
             return false;
         }
@@ -931,14 +951,18 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                             className="w-full h-10 px-3 flex items-center justify-between rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm hover:bg-gray-50 dark:hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                             <span className={freightAmount > 0 ? 'font-mono text-gray-900 dark:text-slate-100' : 'text-gray-400 dark:text-slate-500'}>
-                                {freightAmount > 0 ? formatCurrency(freightAmount) : 'No freight'}
+                                {freightAmount > 0
+                                    ? `${formatCurrency(freightAmount)}${freightCosts.length > 1 ? ` (${freightCosts.length} charges)` : ''}`
+                                    : 'No freight'}
                             </span>
                             <span className="text-xs text-primary-600 dark:text-primary-400">
                                 {freightAmount > 0 ? 'Edit split' : 'Add'}
                             </span>
                         </button>
-                        {freightAmount > 0 && !freightSupplierId && (
-                            <p className="mt-1 text-xs text-danger-600 dark:text-danger-400">Choose a carrier to bill.</p>
+                        {(freightCosts.length > 0
+                            ? freightCosts.some(c => Number(c.amount) > 0 && !c.is_paid && !c.supplier_id)
+                            : freightAmount > 0 && !freightSupplierId) && (
+                            <p className="mt-1 text-xs text-danger-600 dark:text-danger-400">Choose a carrier for unpaid freight.</p>
                         )}
                     </div>
 
@@ -1332,11 +1356,13 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 suppliers={suppliers}
                 initialFreightAmount={freightAmount}
                 initialFreightSupplierId={freightSupplierId}
+                initialFreightCosts={freightCosts}
                 initialMethod={freightMethod}
                 onCreateCarrier={canEditSuppliers ? handleCreateCarrier : null}
                 overallDiscountPercent={overallDiscount.percent}
                 overallDiscountAmount={overallDiscount.amount}
-                onApply={({ freight_amount, freight_supplier_id, freight_allocation_method, overrides }) => {
+                onApply={({ freight_amount, freight_supplier_id, freight_costs, freight_allocation_method, overrides }) => {
+                    setFreightCosts(freight_costs || []);
                     setFreightAmount(freight_amount);
                     setFreightSupplierId(freight_supplier_id || '');
                     setFreightMethod(freight_allocation_method);
