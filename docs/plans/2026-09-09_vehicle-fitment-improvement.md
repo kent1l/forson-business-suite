@@ -19,7 +19,7 @@ Read this first. It is the only section that changes often — update it as phas
 | Taxonomy seeded with real reference data (20 makes, 155 models, 270 engines, 400 fitment mappings) | **Done** | Phase 1b |
 | Pre-existing duplicate-casing makes (Toyota/TOYOTA, Isuzu/ISUZU, "KIA "/KIA) | **Fixed** | §9.1 |
 | Near-duplicate engine codes (`1TR` vs `1TR-FE`, etc.) | **Known, not fixed** — needs the merge tool | §9.2 |
-| Vehicle-based part search (free text + structured filters) | **Not started** | Phase 4 |
+| Vehicle-based part search (free text + structured filters) | **Done** | Phase 4 |
 | AI-assisted fitment entry ("describe it, review it, save it") | **Not started** | Phase 5 |
 | Taxonomy dedupe/merge tool | **Deferred** | §10 |
 | Bulk CSV import/export of part-to-vehicle mappings | **Deferred** | §10 |
@@ -230,19 +230,37 @@ Migration: `20260909_03_fitment_integrity_and_taxonomy_sync.sql` (shared with pa
 
 ---
 
-## 14. Phase 4 — Vehicle-Based Part Search — Not Started
+## 14. Phase 4 — Vehicle-Based Part Search — As Built
 
-Depends on: Phase 0 (schema, done), Phase 1 (seeded taxonomy, done), Phase 2 (index, done). No blockers — ready to start.
+### 4a. Free-text mixed queries — verified complete from Phase 0/2
 
-### 4a. Free-text mixed queries ("oil filter hilux 2015")
-`GET /power-search/parts` already uses `matchingStrategy: 'all'` against `searchable_applications`, so a query like "oil filter hilux" already requires both terms to be present. Two gaps remain:
-1. `searchable_applications` (built in 4 places — `partApplicationRoutes.js`'s `getPartDataForMeili`, `partRoutes.js`, `meili-outbox-worker.js`, `meili-listener.js`) needs the engine code included (trivial now that engine is global master data — **note: `partApplicationRoutes.js`, `partRoutes.js`, and `meili-outbox-worker.js` already do this as of this session's Phase 0/2 fixes**, via the new shared helper `packages/api/helpers/vehicleFitmentSearch.js`'s `withYearTokens()`; `meili-listener.js` has a lighter year-boundary-only version — see that file's comment).
-2. Year tokens are already appended by `withYearTokens()` for the 3 sites that use it. Confirm `meili-listener.js`'s simpler boundary-year approach is sufficient or upgrade it to full expansion for consistency.
+`searchable_applications` already contained make/model/engine text at all 3 primary sync sites (`partApplicationRoutes.js`, `partRoutes.js`, `meili-outbox-worker.js`) via `withYearTokens()`. Year tokens expand the full range (e.g. 2010–2020 → individual year tokens `2010 2011 ... 2020`, capped at 40 tokens).
 
-### 4b. Structured filters
-1. Extend `GET /power-search/parts` to accept optional `make_id`/`model_id`/`engine_id`/`year`, matching at whatever specificity tier the search specifies, additionally surfacing engine-only-fitted parts via `vehicle_engine_fitment` when searching by vehicle without an engine, always including `part.is_universal = true` parts, and applying the year-range overlap predicate.
-2. Add Make/Model/Engine cascading filters (reuse `ApplicationCascadeForm` in a read-only "filter mode") plus a Year input to both `POSPage.jsx` and `PowerSearchPage.jsx`, factored into a shared `VehicleFilterBar.jsx`.
-3. Reuse `GET /makes`, `/makes/:id/models`; use the already-built `GET /engines` for the engine-only filter path.
+Gap fixed in this phase: `meili-listener.js` was using a boundary-only year approach (concatenating `year_start` and `year_end` as raw strings). Upgraded to import `withYearTokens` from `helpers/vehicleFitmentSearch.js` and fetch `application_year_ranges` separately, making all 4 sync sites consistent. Mid-range years (e.g. searching "2015" for a 2010–2020 part) now work across all sync paths.
+
+### 4b. Structured filters — new in this phase
+
+**Backend (`packages/api/routes/powerSearchRoutes.js`):**
+- New optional query params: `make_id`, `model_id`, `engine_id` (integers), `year` (integer).
+- When any vehicle dimension is set, a DB query runs first to collect candidate `part_id` values:
+  - `engine_id` matches both direct `application.engine_id` rows AND applications linked to any model that uses that engine via `vehicle_engine_fitment` (so a part fitted "engine-only" surfaces when searching by model that has that engine).
+  - All specified dimensions are AND-ed together.
+  - `year` filters `part_application` rows by `year_start ≤ year ≤ year_end`, NULLs allowed.
+  - `is_universal = true` parts always union in, with status filter applied.
+- Results are intersected with Meilisearch's ranked output for keyword relevance. Vehicle-only (no keyword) bypasses the ranking and returns the vehicle set directly (up to 200).
+- `is_universal` added to `filterableAttributes` in `meilisearch-setup.js`.
+
+**Frontend:**
+- New shared `packages/web/src/components/VehicleFilterBar.jsx`:
+  - Cascading Make → Model → Engine selects (Model disabled until Make selected; Engine disabled until Model selected).
+  - Year free-text input.
+  - Compact mode (`compact` prop) for the POS sidebar.
+  - "Clear" button appears when any filter is set.
+  - Calls `onChange({ make_id, model_id, engine_id, year })` (nulls for unset).
+- `PowerSearchPage.jsx`: VehicleFilterBar wired below search bar; search triggers on keyword OR vehicle filter change; all vehicle params passed to `/power-search/parts`.
+- `POSPage.jsx`: VehicleFilterBar (compact) wired below the search row; same vehicle param forwarding.
+
+**Verified:** Node syntax check (`--check`) passes on all modified API files; `vite build` succeeds with no errors.
 
 ---
 
@@ -290,3 +308,4 @@ Use the `run` skill for a full in-browser pass before shipping any further phase
 ## 18. Change Log
 
 - **2026-09-09** — Phases 0, 1 (1a+1b), 2, 3 built, verified end-to-end (API + in-browser), and documented. Pre-existing duplicate-casing makes fixed; near-duplicate engine codes flagged for the future merge tool. Not yet committed to git as of this document's creation — confirm `git status` before assuming this work is on the remote branch.
+- **2026-09-10** — Phase 4 built and verified (build passes). Files changed: `packages/api/routes/powerSearchRoutes.js` (vehicle filter params + DB pre-filter), `packages/api/meili-listener.js` (upgraded to `withYearTokens` full expansion), `packages/api/meilisearch-setup.js` (added `is_universal` to filterableAttributes), `packages/web/src/components/VehicleFilterBar.jsx` (new), `packages/web/src/pages/PowerSearchPage.jsx` (wired VehicleFilterBar), `packages/web/src/pages/POSPage.jsx` (wired VehicleFilterBar compact). No migrations required.
