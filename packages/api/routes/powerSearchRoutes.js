@@ -7,8 +7,73 @@ const router = express.Router();
 
 // GET /api/power-search/parts - Advanced multi-filter search using Meilisearch
 // Default behavior: only return active parts unless `status=all` or `status=inactive` is passed.
+// Vehicle filter params (all optional, integers): make_id, model_id, engine_id, year.
+// When any vehicle filter is set the route resolves matching part IDs from DB first
+// (including engine-only parts via vehicle_engine_fitment and is_universal parts),
+// then intersects with Meilisearch keyword results for relevance ranking.
 router.get('/power-search/parts', protect, hasPermission(['parts:view', 'pos:use']), async (req, res) => {
-    const { keyword, status = 'active' } = req.query; // Other filters (brand, group, application, year) reserved for future enhancement
+    const { keyword, status = 'active' } = req.query;
+    const makeId   = req.query.make_id   ? parseInt(req.query.make_id, 10)   : null;
+    const modelId  = req.query.model_id  ? parseInt(req.query.model_id, 10)  : null;
+    const engineId = req.query.engine_id ? parseInt(req.query.engine_id, 10) : null;
+    const year     = req.query.year      ? parseInt(req.query.year, 10)      : null;
+
+    // --- Phase 4b: structured vehicle filter → candidate part IDs from DB ---
+    // Runs only when at least one vehicle dimension is specified.
+    // null = no vehicle filter active; [] = filter active but nothing matched.
+    let vehiclePartIds = null;
+
+    if (makeId || modelId || engineId) {
+        const params = [];
+        let p = 1;
+        const ph = (val) => { params.push(val); return `$${p++}`; };
+
+        // Build WHERE clause for the application table.
+        // engine_id also matches applications linked to any model that uses that engine
+        // (via vehicle_engine_fitment), so engine-only fitments surface correctly.
+        const whereClauses = [];
+        if (engineId) {
+            const ep = ph(engineId);
+            whereClauses.push(`(a.engine_id = ${ep} OR (a.model_id IS NOT NULL AND a.model_id IN (
+                SELECT vef.model_id FROM vehicle_engine_fitment vef WHERE vef.engine_id = ${ep}
+            )))`);
+        }
+        if (modelId) whereClauses.push(`a.model_id = ${ph(modelId)}`);
+        if (makeId)  whereClauses.push(`a.make_id  = ${ph(makeId)}`);
+
+        let yearWhereClause = '';
+        if (year) {
+            const yp = ph(year);
+            yearWhereClause = `WHERE (pa.year_start IS NULL OR pa.year_start <= ${yp})
+              AND (pa.year_end IS NULL OR pa.year_end >= ${yp})`;
+        }
+
+        const universalStatusClause =
+            status === 'active'   ? 'AND is_active = true'  :
+            status === 'inactive' ? 'AND is_active = false' : '';
+
+        const sql = `
+            WITH matched_apps AS (
+                SELECT DISTINCT a.application_id
+                FROM application a
+                WHERE ${whereClauses.join(' AND ')}
+            )
+            SELECT DISTINCT pa.part_id
+            FROM part_application pa
+            JOIN matched_apps ma ON pa.application_id = ma.application_id
+            ${yearWhereClause}
+            UNION
+            SELECT part_id FROM part WHERE is_universal = true ${universalStatusClause}
+        `;
+
+        const { rows: vRows } = await db.query(sql, params);
+        vehiclePartIds = vRows.map(r => r.part_id);
+    }
+
+    // Vehicle filter is active but produced no candidates — short-circuit before Meili
+    if (vehiclePartIds !== null && vehiclePartIds.length === 0) {
+        return res.json([]);
+    }
 
     try {
         const index = meiliClient.index('parts');
@@ -44,11 +109,23 @@ router.get('/power-search/parts', protect, hasPermission(['parts:view', 'pos:use
         if (filter.length > 0) searchOptions.filter = filter.join(' AND ');
 
         const searchResults = await index.search(keyword || '', searchOptions);
-        const partIds = searchResults.hits.map(h => h.part_id).filter(Boolean);
+        let partIds = searchResults.hits.map(h => h.part_id).filter(Boolean);
+
+        // Intersect with vehicle-filtered candidates when the vehicle filter was active.
+        if (vehiclePartIds !== null) {
+            const vehicleSet = new Set(vehiclePartIds);
+            if (keyword && keyword.trim()) {
+                // Keyword + vehicle: intersection preserving Meili rank order
+                partIds = partIds.filter(id => vehicleSet.has(id));
+            } else {
+                // Vehicle-only (no keyword): use vehicle set directly, limited to 200
+                partIds = vehiclePartIds.slice(0, 200);
+            }
+        }
 
         if (partIds.length === 0) return res.json([]);
 
-        // Fetch stock and sale price and other display fields from DB while preserving MeiliSearch order
+        // Fetch display fields from DB while preserving result order
         const query = `
             SELECT
                 p.part_id,
@@ -111,71 +188,59 @@ router.get('/power-search/parts', protect, hasPermission(['parts:view', 'pos:use
 
         const { rows } = await db.query(query, [partIds]);
 
-                // Map returned rows back into MeiliSearch order just in case
-                const rowsById = rows.reduce((acc, r) => { acc[r.part_id] = r; return acc; }, {});
-                const parts = partIds.map(id => {
-                    const p = rowsById[id] || null;
-                    if (!p) return null;
+        const rowsById = rows.reduce((acc, r) => { acc[r.part_id] = r; return acc; }, {});
+        const parts = partIds.map(id => {
+            const p = rowsById[id] || null;
+            if (!p) return null;
 
-                    // Get the MeiliSearch hit for this part
-                    const hit = searchResults.hits.find(h => h.part_id === id) || {};
-                    
-                    const rawApps = hit.applications || hit.applications_array || [];
+            const hit = searchResults.hits.find(h => h.part_id === id) || {};
+            const rawApps = hit.applications || hit.applications_array || [];
 
-                    // Normalize rawApps into an array of primitive/objects
-                    let normalized = [];
-                    if (Array.isArray(rawApps)) {
-                        normalized = rawApps;
-                    } else if (typeof rawApps === 'string') {
-                        // Support legacy comma-separated id strings like "7, 3"
-                        if (rawApps.includes(',')) {
-                            normalized = rawApps.split(',').map(s => s.trim()).filter(Boolean);
-                        } else if (rawApps.trim()) {
-                            normalized = [rawApps.trim()];
-                        }
-                    } else if (rawApps) {
-                        // Single object? wrap it
-                        normalized = [rawApps];
+            let normalized = [];
+            if (Array.isArray(rawApps)) {
+                normalized = rawApps;
+            } else if (typeof rawApps === 'string') {
+                if (rawApps.includes(',')) {
+                    normalized = rawApps.split(',').map(s => s.trim()).filter(Boolean);
+                } else if (rawApps.trim()) {
+                    normalized = [rawApps.trim()];
+                }
+            } else if (rawApps) {
+                normalized = [rawApps];
+            }
+
+            const formattedApps = normalized.flatMap(a => {
+                if (!a) return [];
+                if (typeof a === 'number') return [{ application_id: a, _source: 'id' }];
+                if (typeof a === 'string') {
+                    const trimmed = a.trim();
+                    if (!trimmed) return [];
+                    if (/^\d+$/.test(trimmed)) return [{ application_id: parseInt(trimmed, 10), _source: 'id-string' }];
+                    return [{ display: trimmed, _source: 'string' }];
+                }
+                if (typeof a === 'object') {
+                    if (a.application_id && !(a.make || a.model || a.engine || a.display)) {
+                        return [{ application_id: a.application_id, _source: 'id-object' }];
                     }
+                    const base = `${a.make || ''} ${a.model || ''} ${a.engine || ''}`.trim();
+                    const yrs = (a.year_start || a.year_end)
+                        ? ` (${[a.year_start, a.year_end].filter(Boolean).join('-')})`
+                        : '';
+                    const display = (a.display || (base + yrs).trim()).trim();
+                    if (!display) return [];
+                    return [{ display, ...a, _source: 'object' }];
+                }
+                return [];
+            });
 
-                    const formattedApps = normalized.flatMap(a => {
-                        if (!a) return [];
-                        // Numeric ID coming from index (number)
-                        if (typeof a === 'number') {
-                            return [{ application_id: a, _source: 'id' }];
-                        }
-                        // Numeric string ID
-                        if (typeof a === 'string') {
-                            const trimmed = a.trim();
-                            if (!trimmed) return [];
-                            if (/^\d+$/.test(trimmed)) {
-                                return [{ application_id: parseInt(trimmed, 10), _source: 'id-string' }];
-                            }
-                            // Plain text application already formatted
-                            return [{ display: trimmed, _source: 'string' }];
-                        }
-                        if (typeof a === 'object') {
-                            // If object only has application_id keep minimal so frontend enrichment can resolve full text
-                            if (a.application_id && !(a.make || a.model || a.engine || a.display)) {
-                                return [{ application_id: a.application_id, _source: 'id-object' }];
-                            }
-                            const base = `${a.make || ''} ${a.model || ''} ${a.engine || ''}`.trim();
-                            const yrs = (a.year_start || a.year_end)
-                                ? ` (${[a.year_start, a.year_end].filter(Boolean).join('-')})`
-                                : '';
-                            const display = (a.display || (base + yrs).trim()).trim();
-                            if (!display) return [];
-                            return [{ display, ...a, _source: 'object' }];
-                        }
-                        return [];
-                    });
+            return {
+                ...p,
+                display_name: p.display_name || '',
+                applications: formattedApps
+            };
+        }).filter(Boolean);
 
-                    return {
-                        ...p,
-                        display_name: p.display_name || '',
-                        applications: formattedApps
-                    };
-                }).filter(Boolean);        res.json(parts);
+        res.json(parts);
     } catch (err) {
         console.error('Meilisearch Error:', err.message);
         res.status(500).send('Server Error during search.');

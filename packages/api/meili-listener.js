@@ -1,6 +1,7 @@
 const db = require('./db');
 const { syncPartWithMeili, removePartFromMeili } = require('./meilisearch');
 const { activeAliasCondition } = require('./helpers/partNumberSoftDelete');
+const { withYearTokens } = require('./helpers/vehicleFitmentSearch');
 
 /**
  * Dedicated listener that uses a persistent Postgres client to LISTEN for
@@ -54,27 +55,40 @@ const startMeiliListener = async () => {
                 (SELECT COALESCE(json_agg(pa.application_id), '[]'::json)
                    FROM part_application pa
                    WHERE pa.part_id = pv.part_id) AS applications,
-                (SELECT COALESCE(json_agg(concat_ws(' ', COALESCE(av.make,''), COALESCE(av.model,''), COALESCE(av.engine,''), COALESCE(pa.year_start::text,''), COALESCE(pa.year_end::text,''))), '[]'::json)
+                -- Full make/model/engine string per application row, without year tokens.
+                -- Year tokens are added in JS via withYearTokens() for consistency with
+                -- the other 3 Meili sync sites (outbox worker, partRoutes, partApplicationRoutes).
+                (SELECT COALESCE(json_agg(concat_ws(' ', COALESCE(av.make,''), COALESCE(av.model,''), COALESCE(av.engine,''))), '[]'::json)
                    FROM part_application pa
                    JOIN application_view av ON av.application_id = pa.application_id
-                   WHERE pa.part_id = pv.part_id) AS searchable_applications
+                   WHERE pa.part_id = pv.part_id) AS searchable_applications_base,
+                (SELECT COALESCE(json_agg(ARRAY[pa.year_start, pa.year_end]), '[]'::json)
+                   FROM part_application pa
+                   WHERE pa.part_id = pv.part_id) AS application_year_ranges
              FROM public.parts_view pv
              WHERE pv.part_id = ANY($1::int[])`,
             [upserts]
           );
 
-          const docs = rows.map(row => ({
-            part_id: row.part_id,
-            display_name: row.display_name || '',
-            internal_sku: row.internal_sku,
-            brand_name: row.brand_name,
-            group_name: row.group_name,
-            is_active: row.is_active,
-            part_numbers: row.part_numbers || [],
-            tags: row.tags || [],
-            applications: row.applications || [],
-            searchable_applications: row.searchable_applications || [],
-          }));
+          const docs = rows.map(row => {
+            const baseStr = (row.searchable_applications_base || [])
+                .filter(Boolean).join(' ');
+            const yearRanges = (row.application_year_ranges || [])
+                .filter(Boolean)
+                .map(r => Array.isArray(r) ? r : [r.year_start, r.year_end]);
+            return {
+              part_id: row.part_id,
+              display_name: row.display_name || '',
+              internal_sku: row.internal_sku,
+              brand_name: row.brand_name,
+              group_name: row.group_name,
+              is_active: row.is_active,
+              part_numbers: row.part_numbers || [],
+              tags: row.tags || [],
+              applications: row.applications || [],
+              searchable_applications: withYearTokens(baseStr, yearRanges),
+            };
+          });
 
           if (docs.length) await syncPartWithMeili(docs);
         }

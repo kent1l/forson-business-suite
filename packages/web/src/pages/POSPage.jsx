@@ -25,6 +25,7 @@ import PriceQuantityModal from '../components/ui/PriceQuantityModal';
 import MathExpressionInput from '../components/ui/MathExpressionInput';
 import Receipt from '../components/ui/Receipt';
 import SavedSalesPanel from '../components/pos/SavedSalesPanel';
+import VehicleFilterBar from '../components/VehicleFilterBar';
 
 // Grid with Save Sale + View Saved + Void Transaction
 const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave, handleVoid, canVoid, openCustomer, selectedCustomer, handleConvertToInvoice }) => {
@@ -170,6 +171,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
     const [physicalReceiptInput, setPhysicalReceiptInput] = useState('');
     const [selectedTaxRate, setSelectedTaxRate] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [vehicleFilter, setVehicleFilter] = useState({ make_id: null, model_id: null, engine_id: null, year: null });
     const [searchResults, setSearchResults] = useState([]); // State for search results
     const [customers, setCustomers] = useState([]);
     const [brands, setBrands] = useState([]);
@@ -231,16 +233,20 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
 
     // Debounced search effect
     useEffect(() => {
-        if (searchTerm.trim() === '') {
+        const hasVehicleFilter = vehicleFilter.make_id || vehicleFilter.model_id || vehicleFilter.engine_id || vehicleFilter.year;
+        if (searchTerm.trim() === '' && !hasVehicleFilter) {
             setSearchResults([]);
             return;
         }
 
         const fetchSearchResults = async () => {
             try {
-                const response = await api.get('/power-search/parts', {
-                    params: { keyword: searchTerm }
-                });
+                const params = { keyword: searchTerm };
+                if (vehicleFilter.make_id)   params.make_id   = vehicleFilter.make_id;
+                if (vehicleFilter.model_id)  params.model_id  = vehicleFilter.model_id;
+                if (vehicleFilter.engine_id) params.engine_id = vehicleFilter.engine_id;
+                if (vehicleFilter.year)      params.year      = vehicleFilter.year;
+                const response = await api.get('/power-search/parts', { params });
                 // Debug: log raw hits for applications field
                 console.debug('[POS] raw search results', response.data.map(r => ({ part_id: r.part_id, apps: r.applications })));
                 // Enrich applications (convert id arrays to objects) so the application text helper shows readable text
@@ -258,7 +264,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
         }, 300);
 
         return () => clearTimeout(searchDebounceRef.current);
-    }, [searchTerm]);
+    }, [searchTerm, vehicleFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
     const fetchCustomers = async () => {
@@ -956,6 +962,8 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                             New Part
                         </button>
                     </div>
+                    {/* Vehicle filter bar — compact mode for the POS sidebar */}
+                    <VehicleFilterBar onChange={setVehicleFilter} compact />
                     {/* Keyboard Shortcut Pills */}
                     <div className="flex flex-wrap items-center gap-2">
                         <button

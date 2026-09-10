@@ -184,7 +184,7 @@ const setupMeiliSearch = async () => {
           'a', 'an', 'and', 'the'
         ],
         synonyms: symmetricSynonyms,
-        filterableAttributes: ['is_active', 'tags', 'applications'],
+        filterableAttributes: ['is_active', 'tags', 'applications', 'is_universal'],
         sortableAttributes: ['display_name', 'internal_sku', 'brand_name', 'group_name'],
         typoTolerance: {
           enabled: true,
