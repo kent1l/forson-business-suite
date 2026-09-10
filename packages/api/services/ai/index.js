@@ -7,6 +7,7 @@ const embeddingLoader = require('./core/embeddingLoader');
 const embeddingClient = require('./core/embeddingClient');
 const partDeduplicationAI = require('./features/partDeduplicationAI');
 const expenseParserAI = require('./features/expenseParserAI');
+const vehicleFitmentParserAI = require('./features/vehicleFitmentParserAI');
 
 module.exports = {
     llmClient,
@@ -17,5 +18,6 @@ module.exports = {
     embeddingLoader,
     embeddingClient,
     partDeduplicationAI,
-    expenseParserAI
+    expenseParserAI,
+    vehicleFitmentParserAI
 };

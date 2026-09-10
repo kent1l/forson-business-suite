@@ -2,7 +2,7 @@
 
 > **Forson Business Suite** | **PRD-FBS-FIT-001** | **Version:** 1.0
 > **Date:** 2026-09-09 | **Branch:** `parts-fitment-improvement` | **PR:** [#181](https://github.com/kent1l/forson-business-suite/pull/181)
-> **Status:** Phases 0, 1 (1a + 1b), 2, and 3 built and verified on the dev stack. Phases 4 and 5 not started.
+> **Status:** Phases 0, 1 (1a + 1b), 2, 3, 4, and 5 built. Phase 5 verified via build/syntax/lint checks only — no live browser click-through (see §16 Phase 5 As Built).
 
 ---
 
@@ -20,12 +20,12 @@ Read this first. It is the only section that changes often — update it as phas
 | Pre-existing duplicate-casing makes (Toyota/TOYOTA, Isuzu/ISUZU, "KIA "/KIA) | **Fixed** | §9.1 |
 | Near-duplicate engine codes (`1TR` vs `1TR-FE`, etc.) | **Known, not fixed** — needs the merge tool | §9.2 |
 | Vehicle-based part search (free text + structured filters) | **Done** | Phase 4 |
-| AI-assisted fitment entry ("describe it, review it, save it") | **Not started** | Phase 5 |
+| AI-assisted fitment entry ("describe it, review it, save it") | **Done** | Phase 5 |
 | Taxonomy dedupe/merge tool | **Deferred** | §10 |
 | Bulk CSV import/export of part-to-vehicle mappings | **Deferred** | §10 |
 | All 6 new migrations applied on dev DB (`forson_db`) | **Done, uncommitted in git as of this doc** | §8 |
 
-**Ready for next phase?** Yes — Phase 4 depends on Phase 0 (schema), Phase 1 (seeded taxonomy), and Phase 2 (index), all of which are done. Phase 5 depends mainly on Phase 1's seeded taxonomy for AI grounding quality, also done. Either phase can be picked up next; there's no blocker.
+**Ready for next phase?** All 5 phases from the original plan are now built. Remaining work is the explicitly deferred items (§10) — the taxonomy merge tool and bulk CSV import — plus Phase 5's still-open live browser verification (§16). Nothing is blocked.
 
 ---
 
@@ -264,15 +264,23 @@ Gap fixed in this phase: `meili-listener.js` was using a boundary-only year appr
 
 ---
 
-## 15. Phase 5 — AI-Assisted Fitment Entry — Not Started
+## 15. Phase 5 — AI-Assisted Fitment Entry — As Built
 
 Goal: staff type a natural description ("Fits Toyota Hilux 2005-2015 2.5L & 3.0L Diesel, also fits Fortuner same years") and get back a pre-filled, editable list of structured fitment rows to confirm.
 
-- New feature module `packages/api/services/ai/features/vehicleFitmentParserAI.js`, following the exact pattern of `expenseParserAI.js`/`partDeduplicationAI.js` (`llmClient.executeWithPool`, `wrapJsonInstruction`/`sanitizeInput`, schema-validated JSON output). Ground it with existing `vehicle_make`/models/`engine` lists so it prefers matching existing IDs over inventing near-duplicates.
-- New endpoint `POST /applications/parse-fitment-text` in `partApplicationRoutes.js` — proposes only, never writes.
-- Frontend: a "Describe fitment" box in `PartApplicationManager.jsx`, rendering parsed candidates as editable rows via `ApplicationCascadeForm` before a single "Save" commits through the normal endpoints.
-- **Safety-critical:** validate any `make_id`/`model_id`/`engine_id` the model claims to have matched actually exists before using it — never trust an LLM-returned ID directly into a write.
-- Phase 1b's seeded taxonomy makes this feature's grounding data rich from day one — most fitment descriptions should match existing entries rather than the model needing to propose new ones.
+- New pool `vehicle_fitment_parser_pool` in `packages/api/config/ai-models.yaml` (same 4-candidate gemini/groq/openrouter fallback chain as `part_deduplication_pool`).
+- New feature module `packages/api/services/ai/features/vehicleFitmentParserAI.js`, following the exact pattern of `expenseParserAI.js`/`partDeduplicationAI.js` (`llmClient.executeWithPool`, `wrapJsonInstruction`/`sanitizeInput`, schema-described JSON output). `parseFitmentText(text)`:
+  - Loads the current `vehicle_make`/`vehicle_model`/`engine` tables and formats them into the prompt as grounding context (makes list, models grouped by make, engine codes with known displacement/fuel type) so the model prefers matching existing rows over inventing near-duplicates — Phase 1b's seeded taxonomy (20 makes/155 models/270 engines) makes this grounding data rich from day one.
+  - Extracts one row per make+model+engine combination described, with `year_start`/`year_end`, `displacement_liters`, `fuel_type`, and a `confidence` tier (high/medium/low) per row, per the rules embedded in the prompt (§3's "engine-only, model-agnostic, etc." tiers are extracted as-is, not forced to a single tier).
+  - **Safety-critical validation** (`_validateResult`): any `make_id`/`model_id`/`engine_id` the model claims is only kept if it's actually present in the grounding snapshot just fetched, and a claimed `model_id` is only kept if it actually belongs to the claimed `make_id` — otherwise the id is stripped back to `null` while the name text is preserved, so a hallucinated id degrades to "needs manual match/create" instead of silently pointing at the wrong row. This is on top of (not a replacement for) the independent re-validation `resolveMake`/`resolveModel`/`resolveEngine` in `applicationRoutes.js` already do at actual save time (§13).
+  - Registered in `packages/api/services/ai/index.js` as `vehicleFitmentParserAI`.
+- New endpoint `POST /applications/parse-fitment-text` in `partApplicationRoutes.js`, gated on `applications:edit` — proposes only, never writes; a 503 on AI failure signals `fallback: 'manual'` the same way `/expenses/parse` does.
+- Frontend: a "Describe Fitment (AI-assisted)" panel in `PartApplicationManager.jsx` (`DescribeFitmentPanel`), rendered below the existing "Link New Application" form when `applications:edit` is held:
+  - Textarea + "Parse with AI" button calling the new endpoint; each returned candidate renders as a row with a checkbox, a one-line make/model/engine/year summary, a confidence badge, inline year-start/year-end inputs, and "Edit"/"Remove". "New make"/"New model"/"New engine" tags surface when a name came back without a matching id.
+  - "Edit" reuses the existing shared `ApplicationCascadeForm` unmodified (no changes needed to that component) — it's opened in a modal pre-filled from the candidate row, and its `onSave` is redirected to update local candidate state instead of hitting the API directly, since nothing is committed until the review step is done.
+  - "Save N Selected Fitments" commits each checked row through the same two calls the manual "Link New Application" flow already uses — `POST /applications` (get-or-create via `resolveMake`/`resolveModel`/`resolveEngine`) then `POST /parts/:partId/applications` (which also derives `vehicle_engine_fitment`, §6, for free) — no new write path was introduced. Rows that fail to save are kept on screen with their error so staff can fix and retry just those; successful rows are cleared and the linked-applications list is refetched.
+
+**Verified:** Node syntax/require checks pass on the new backend files (including a live `getPoolConfig('vehicle_fitment_parser_pool')` load from the YAML); backend and frontend ESLint are clean (a handful of `no-unused-vars` warnings on this file are pre-existing — this project's ESLint config doesn't track JSX component usage — confirmed by diffing against the pre-change file, not introduced by this phase); `vite build` succeeds. **Not verified:** an actual live browser click-through of the "Describe Fitment" flow — the session that built this had no dev-stack login credentials available and the user chose to ship on code-level checks rather than provide them. All three AI provider keys (Gemini/Groq/OpenRouter) are configured in `.env`, so the feature should be live-capable rather than degraded, but this has not been exercised end-to-end against a real LLM response. **If you pick this up next: run a real browser pass against `/parts/:id` → Applications → Describe Fitment before considering Phase 5 fully done**, and watch in particular for (a) whether the LLM actually returns well-formed JSON matching the schema on the first try across a few varied descriptions, (b) whether the grounding prompt (all 155 models + 270 engines) stays within provider context/latency budgets, and (c) the "Edit" modal correctly round-trips a candidate that has no `make`/`model` at all (an engine-only extraction).
 
 ---
 
@@ -286,6 +294,8 @@ Goal: staff type a natural description ("Fits Toyota Hilux 2005-2015 2.5L & 3.0L
 - `packages/web/src/components/applications/ApplicationCascadeForm.jsx` (new, replaces `NewApplicationModal.jsx`, deleted).
 - `packages/web/src/pages/ApplicationsPage.jsx`, `PartApplicationManager.jsx`, `packages/web/src/components/forms/PartForm.jsx`.
 - Deleted: `ApplicationSearchCombobox.jsx.new` (stray dead file), `NewApplicationModal.jsx`.
+- Phase 4: `packages/api/routes/powerSearchRoutes.js`, `packages/api/meili-listener.js`, `packages/api/meilisearch-setup.js`, `packages/web/src/components/VehicleFilterBar.jsx` (new), `packages/web/src/pages/PowerSearchPage.jsx`, `packages/web/src/pages/POSPage.jsx`.
+- Phase 5: `packages/api/config/ai-models.yaml` (new `vehicle_fitment_parser_pool`), `packages/api/services/ai/features/vehicleFitmentParserAI.js` (new), `packages/api/services/ai/index.js`, `packages/api/routes/partApplicationRoutes.js`, `packages/web/src/pages/PartApplicationManager.jsx`.
 
 ## 17. Verification Commands
 
@@ -309,3 +319,4 @@ Use the `run` skill for a full in-browser pass before shipping any further phase
 
 - **2026-09-09** — Phases 0, 1 (1a+1b), 2, 3 built, verified end-to-end (API + in-browser), and documented. Pre-existing duplicate-casing makes fixed; near-duplicate engine codes flagged for the future merge tool. Not yet committed to git as of this document's creation — confirm `git status` before assuming this work is on the remote branch.
 - **2026-09-10** — Phase 4 built and verified (build passes). Files changed: `packages/api/routes/powerSearchRoutes.js` (vehicle filter params + DB pre-filter), `packages/api/meili-listener.js` (upgraded to `withYearTokens` full expansion), `packages/api/meilisearch-setup.js` (added `is_universal` to filterableAttributes), `packages/web/src/components/VehicleFilterBar.jsx` (new), `packages/web/src/pages/PowerSearchPage.jsx` (wired VehicleFilterBar), `packages/web/src/pages/POSPage.jsx` (wired VehicleFilterBar compact). No migrations required.
+- **2026-09-10** — Phase 4 re-verified at the start of a new session (0 pending migrations, taxonomy counts match, backend routes load, frontend builds clean) before Phase 5 began. Phase 5 (AI-assisted fitment entry) built: new `vehicle_fitment_parser_pool` AI pool + `vehicleFitmentParserAI.js` feature module, `POST /applications/parse-fitment-text` endpoint (propose-only), and a "Describe Fitment (AI-assisted)" review panel in `PartApplicationManager.jsx` that commits accepted rows through the existing `/applications` + `/parts/:id/applications` endpoints. Verified via build/syntax/lint/require checks only — no live browser click-through was done (no dev-stack credentials available this session; user opted to skip rather than provide them). See §15 for what a follow-up session should specifically check before calling Phase 5 fully verified. No migrations required. Not yet committed to git as of this entry.

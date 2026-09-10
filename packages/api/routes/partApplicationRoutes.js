@@ -4,6 +4,7 @@ const { syncPartWithMeili } = require('../meilisearch');
 const { enqueuePartUpsert } = require('../services/meiliOutboxService');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { withYearTokens } = require('../helpers/vehicleFitmentSearch');
+const { vehicleFitmentParserAI } = require('../services/ai');
 const router = express.Router();
 
 function isValidYearRange(year_start, year_end) {
@@ -261,6 +262,28 @@ router.delete('/parts/:partId/applications/:appId', protect, hasPermission('appl
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
+    }
+});
+
+// POST /applications/parse-fitment-text - AI-assisted natural-language fitment entry (Phase 5).
+// Proposes structured candidate rows only -- never writes to the taxonomy or
+// part_application. The frontend renders each candidate for review/edit via
+// ApplicationCascadeForm, and only the normal /applications + parts/:id/applications
+// endpoints (which independently re-validate any id) commit anything.
+router.post('/applications/parse-fitment-text', protect, hasPermission('applications:edit'), async (req, res) => {
+    const { text } = req.body;
+    if (!text || !String(text).trim()) {
+        return res.status(400).json({ message: 'Fitment description text is required.' });
+    }
+    try {
+        const result = await vehicleFitmentParserAI.parseFitmentText(text);
+        res.json(result);
+    } catch (error) {
+        if (error.statusCode === 503) {
+            return res.status(503).json({ error: error.message, fallback: 'manual' });
+        }
+        console.error('Error in /applications/parse-fitment-text:', error);
+        res.status(503).json({ error: 'AI fitment parsing failed', fallback: 'manual' });
     }
 });
 

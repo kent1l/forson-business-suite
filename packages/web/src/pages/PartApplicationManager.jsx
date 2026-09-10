@@ -8,6 +8,217 @@ import ApplicationSearchCombobox from '../components/applications/ApplicationSea
 import ApplicationCascadeForm from '../components/applications/ApplicationCascadeForm';
 import { useAuth } from '../contexts/AuthContext';
 
+const CONFIDENCE_BADGE = {
+    high: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300',
+    medium: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+    low: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
+};
+
+const describeCandidate = (c) => {
+    const parts = [c.make, c.model, c.engine].filter(Boolean);
+    const base = parts.length ? parts.join(' ') : '(unspecified vehicle)';
+    const years = (c.year_start || c.year_end)
+        ? ` (${[c.year_start, c.year_end].filter(Boolean).join('-')})`
+        : '';
+    return base + years;
+};
+
+// Phase 5: staff describe a fitment in plain text and get back structured,
+// editable candidate rows to review before anything is saved. The parse
+// endpoint only proposes -- nothing is written until "Save Selected" commits
+// each accepted row through the normal /applications + link endpoints below,
+// which independently re-validate any id the AI claimed to have matched.
+const DescribeFitmentPanel = ({ partId, onCommitted }) => {
+    const [text, setText] = useState('');
+    const [parsing, setParsing] = useState(false);
+    const [parseError, setParseError] = useState('');
+    const [notes, setNotes] = useState('');
+    const [candidates, setCandidates] = useState(null); // null = not parsed yet
+    const [editingIndex, setEditingIndex] = useState(null);
+    const [saving, setSaving] = useState(false);
+    const [saveErrors, setSaveErrors] = useState({});
+
+    const handleParse = async () => {
+        if (!text.trim()) return;
+        setParsing(true);
+        setParseError('');
+        try {
+            const { data } = await api.post('/applications/parse-fitment-text', { text });
+            const withMeta = (data.fitments || []).map(f => ({ ...f, selected: true, year_start: f.year_start ?? '', year_end: f.year_end ?? '' }));
+            setCandidates(withMeta);
+            setNotes(data.notes || '');
+            setSaveErrors({});
+        } catch (error) {
+            setParseError(error.response?.data?.error || error.response?.data?.message || error.message);
+            setCandidates(null);
+        } finally {
+            setParsing(false);
+        }
+    };
+
+    const updateCandidate = (idx, patch) => {
+        setCandidates(prev => prev.map((c, i) => i === idx ? { ...c, ...patch } : c));
+    };
+
+    const removeCandidate = (idx) => {
+        setCandidates(prev => prev.filter((_, i) => i !== idx));
+    };
+
+    const handleEditSave = (idx, payload) => {
+        // ApplicationCascadeForm's payload uses undefined for unset fields;
+        // normalize those back to null/'' so the candidate row stays consistent.
+        updateCandidate(idx, {
+            make_id: payload.make_id ?? null,
+            make: payload.make ?? null,
+            model_id: payload.model_id ?? null,
+            model: payload.model ?? null,
+            engine_id: payload.engine_id ?? null,
+            engine: payload.engine ?? null,
+            displacement_liters: payload.displacement_liters ?? null,
+            fuel_type: payload.fuel_type ?? null,
+            confidence: 'high' // user-confirmed via the cascading form
+        });
+        setEditingIndex(null);
+    };
+
+    const selectedCount = (candidates || []).filter(c => c.selected).length;
+
+    const handleSaveSelected = async () => {
+        if (!candidates) return;
+        setSaving(true);
+        const errors = {};
+        for (let i = 0; i < candidates.length; i++) {
+            const c = candidates[i];
+            if (!c.selected) continue;
+            try {
+                const { data: app } = await api.post('/applications', {
+                    make_id: c.make_id ?? undefined,
+                    make: c.make_id ? undefined : (c.make ?? undefined),
+                    model_id: c.model_id ?? undefined,
+                    model: c.model_id ? undefined : (c.model ?? undefined),
+                    engine_id: c.engine_id ?? undefined,
+                    engine: c.engine_id ? undefined : (c.engine ?? undefined),
+                    displacement_liters: c.displacement_liters ?? undefined,
+                    fuel_type: c.fuel_type ?? undefined
+                });
+                await api.post(`/parts/${partId}/applications`, {
+                    application_id: app.application_id,
+                    year_start: c.year_start || null,
+                    year_end: c.year_end || null
+                });
+            } catch (error) {
+                errors[i] = error.response?.data?.message || error.message;
+            }
+        }
+        setSaving(false);
+        setSaveErrors(errors);
+        if (Object.keys(errors).length === 0) {
+            setCandidates(null);
+            setText('');
+            setNotes('');
+            onCommitted();
+        } else {
+            // Keep only the rows that failed so staff can retry/fix just those.
+            setCandidates(prev => prev.filter((_, i) => errors[i] !== undefined).map(c => ({ ...c, selected: true })));
+            onCommitted();
+        }
+    };
+
+    return (
+        <div className="mt-6 pt-4 border-t border-gray-200 dark:border-slate-700">
+            <h4 className="text-sm font-medium text-gray-800 dark:text-slate-100 mb-2 flex items-center gap-1">
+                Describe Fitment (AI-assisted)
+                <InfoTip label="Describe Fitment">
+                    Type a natural description like "Fits Hilux 2005-2015 2.5L Diesel, also Fortuner same years"
+                    and review the parsed rows below before saving. Nothing is written until you save.
+                </InfoTip>
+            </h4>
+            <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                rows={2}
+                placeholder="e.g. Fits Toyota Hilux 2005-2015 2.5L & 3.0L Diesel, also fits Fortuner same years"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+            <div className="flex justify-end mt-2">
+                <button
+                    type="button"
+                    onClick={handleParse}
+                    disabled={parsing || !text.trim()}
+                    className="px-3.5 py-2 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 text-sm font-medium transition-colors disabled:opacity-50"
+                >
+                    {parsing ? 'Parsing…' : 'Parse with AI'}
+                </button>
+            </div>
+            {parseError && <p className="text-sm text-danger-600 dark:text-danger-400 mt-2">{parseError}</p>}
+
+            {candidates && (
+                <div className="mt-3 space-y-2">
+                    {notes && <p className="text-xs text-amber-700 dark:text-amber-400 italic">{notes}</p>}
+                    {candidates.length === 0 && <p className="text-sm text-gray-500 dark:text-slate-400">No fitments recognized in that text.</p>}
+                    {candidates.map((c, idx) => (
+                        <div key={idx} className="flex items-start gap-2 p-2 border border-gray-200 dark:border-slate-700 rounded-lg">
+                            <input
+                                type="checkbox"
+                                checked={c.selected}
+                                onChange={(e) => updateCandidate(idx, { selected: e.target.checked })}
+                                className="mt-1"
+                            />
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-sm font-medium text-gray-900 dark:text-slate-100">{describeCandidate(c)}</span>
+                                    <span className={`text-xs px-1.5 py-0.5 rounded ${CONFIDENCE_BADGE[c.confidence] || CONFIDENCE_BADGE.low}`}>{c.confidence}</span>
+                                    {!c.make_id && c.make && <span className="text-xs text-gray-500 dark:text-slate-400">(new make)</span>}
+                                    {!c.model_id && c.model && <span className="text-xs text-gray-500 dark:text-slate-400">(new model)</span>}
+                                    {!c.engine_id && c.engine && <span className="text-xs text-gray-500 dark:text-slate-400">(new engine)</span>}
+                                </div>
+                                <div className="flex items-center gap-2 mt-1">
+                                    <input
+                                        type="number" placeholder="Year start" value={c.year_start}
+                                        onChange={(e) => updateCandidate(idx, { year_start: e.target.value })}
+                                        className="w-24 px-2 py-1 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono rounded text-xs"
+                                    />
+                                    <input
+                                        type="number" placeholder="Year end" value={c.year_end}
+                                        onChange={(e) => updateCandidate(idx, { year_end: e.target.value })}
+                                        className="w-24 px-2 py-1 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono rounded text-xs"
+                                    />
+                                    <button type="button" onClick={() => setEditingIndex(idx)} className="text-primary-600 dark:text-primary-400 hover:text-primary-700 text-xs font-medium">Edit</button>
+                                    <button type="button" onClick={() => removeCandidate(idx)} className="text-danger-600 dark:text-danger-400 hover:text-danger-700 text-xs font-medium">Remove</button>
+                                </div>
+                                {saveErrors[idx] && <p className="text-xs text-danger-600 dark:text-danger-400 mt-1">{saveErrors[idx]}</p>}
+                            </div>
+                        </div>
+                    ))}
+                    {candidates.length > 0 && (
+                        <div className="flex justify-end">
+                            <button
+                                type="button"
+                                onClick={handleSaveSelected}
+                                disabled={saving || selectedCount === 0}
+                                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors shadow-xs disabled:opacity-50"
+                            >
+                                {saving ? 'Saving…' : `Save ${selectedCount} Selected Fitment${selectedCount === 1 ? '' : 's'}`}
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            <Modal isOpen={editingIndex !== null} onClose={() => setEditingIndex(null)} title="Edit Parsed Fitment">
+                {editingIndex !== null && (
+                    <ApplicationCascadeForm
+                        submitLabel="Apply"
+                        application={candidates[editingIndex]}
+                        onCancel={() => setEditingIndex(null)}
+                        onSave={(payload) => handleEditSave(editingIndex, payload)}
+                    />
+                )}
+            </Modal>
+        </div>
+    );
+};
+
 const EditYearForm = ({ link, onSave, onCancel }) => {
     const [years, setYears] = useState({ year_start: '', year_end: '' });
 
@@ -273,6 +484,7 @@ const PartApplicationManager = ({ part, onCancel }) => {
                     </div>
                 </form>
             )}
+            {canEdit && <DescribeFitmentPanel partId={part.part_id} onCommitted={refetchData} />}
              <div className="mt-6 flex justify-end pt-4 border-t border-gray-200 dark:border-slate-700">
                 <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 text-sm font-medium transition-colors">Close</button>
             </div>
