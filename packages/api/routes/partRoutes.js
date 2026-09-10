@@ -131,6 +131,48 @@ const manageBarcodes = async (client, barcodes, partId) => {
     }
 };
 
+// Links a newly-created part to any applications picked via the quick-add
+// search combobox on the "New Part" form (no year range -- that combobox
+// doesn't collect one, same as the equivalent quick-add on the edit form;
+// staff use PartApplicationManager's "Manage" afterward for year ranges).
+// Create-only: a new part has no pre-existing links, so this is pure insert,
+// unlike edit-time reconciliation (add + remove) which isn't implemented.
+// Mirrors deriveVehicleEngineFitment() in partApplicationRoutes.js so a
+// full make+model+engine fitment picked at creation still feeds the
+// vehicle_engine_fitment cross-reference the same way a post-creation link does.
+const manageApplications = async (client, applications, partId) => {
+    if (!Array.isArray(applications) || applications.length === 0) return;
+
+    const applicationIds = [...new Set(
+        applications.map(a => a?.application_id).filter(Boolean)
+    )];
+
+    for (const applicationId of applicationIds) {
+        await client.query(
+            `INSERT INTO part_application (part_id, application_id)
+             VALUES ($1, $2)
+             ON CONFLICT (part_id, application_id) DO NOTHING`,
+            [partId, applicationId]
+        );
+
+        const { rows } = await client.query(
+            'SELECT model_id, engine_id FROM application WHERE application_id = $1',
+            [applicationId]
+        );
+        const app = rows[0];
+        if (!app || !app.model_id || !app.engine_id) continue;
+
+        await client.query(
+            `INSERT INTO vehicle_engine_fitment (model_id, engine_id, year_start, year_end)
+             VALUES ($1, $2, NULL, NULL)
+             ON CONFLICT (model_id, engine_id) DO UPDATE SET
+                 year_start = LEAST(vehicle_engine_fitment.year_start, EXCLUDED.year_start),
+                 year_end = GREATEST(vehicle_engine_fitment.year_end, EXCLUDED.year_end)`,
+            [app.model_id, app.engine_id]
+        );
+    }
+};
+
 // GET all parts with status filter, search, and sorting (POWERED BY MEILISEARCH)
 router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
     const { status = 'active', search = '', tags = '' } = req.query;
@@ -333,7 +375,7 @@ router.get('/parts/:id/tags', protect, hasPermission('parts:view'), async (req, 
 
 router.post('/parts', protect, hasPermission('parts:create'), async (req, res) => {
     console.log('[DEBUG] POST /parts - Request body:', req.body);
-    const { tags, barcodes, created_by, part_numbers_string, ...partData } = req.body;
+    const { tags, barcodes, created_by, part_numbers_string, applications, ...partData } = req.body;
     partData.detail = normalizeText(partData.detail);
     // detail is optional; only brand and group are required
     if (!partData.brand_id || !partData.group_id) {
@@ -417,6 +459,7 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
 
         await manageTags(client, tagsToApply, newPartData.part_id);
         await manageBarcodes(client, barcodes, newPartData.part_id);
+        await manageApplications(client, applications, newPartData.part_id);
         await client.query('COMMIT');
         
         const partForMeili = await getPartDataForMeili(db, newPartData.part_id);

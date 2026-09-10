@@ -371,9 +371,13 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                     </div>
                 )}
 
-                {/* --- NEW: Application linker (search + add) --- */}
-                {/* Show applications only when editing an existing part and it isn't marked universal */}
-                {!isBulkEdit && part && !formData.is_universal && (
+                {/* Application linker (search + add). Shown for both new and existing
+                    parts (as long as it isn't marked universal) -- quick-added
+                    applications are staged in selectedApps and included in the save
+                    payload either way; for a brand-new part the backend links them
+                    at creation time since there's no part_id yet to call the
+                    dedicated /parts/:id/applications endpoint against. */}
+                {!isBulkEdit && !formData.is_universal && (
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Applications</label>
                         <div className="flex items-center space-x-2">
@@ -399,6 +403,12 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                                     <div className="text-sm text-gray-500 dark:text-slate-400">No linked applications</div>
                                 )}
                             </div>
+                            {!part && (
+                                <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                                    Links to existing vehicle fitments only (no year range or new taxonomy entries here) --
+                                    use Manage after saving for year ranges or to create a new make/model/engine.
+                                </p>
+                            )}
                         </div>
                     </div>
                 )}
