@@ -281,11 +281,17 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             toast.loading('Loading PO items...');
             const response = await api.get(`/purchase-orders/${poId}/lines`);
             // Ensure sale_price exists on each line; default to part's last_sale_price if present
-            const linesWithSale = response.data.map(l => ({
-                ...l,
-                cost_price: typeof l.cost_price !== 'undefined' ? l.cost_price : (l.last_cost || 0),
-                sale_price: typeof l.sale_price !== 'undefined' ? l.sale_price : (l.last_sale_price || 0)
-            }));
+            const linesWithSale = response.data.map(l => {
+                const poCost = l.cost_price != null ? Number(l.cost_price) : (l.last_cost != null ? Number(l.last_cost) : 0);
+                const poSale = l.sale_price != null && Number(l.sale_price) > 0
+                    ? Number(l.sale_price)
+                    : (l.last_sale_price != null && Number(l.last_sale_price) > 0 ? Number(l.last_sale_price) : null);
+                return {
+                    ...l,
+                    cost_price: poCost,
+                    sale_price: poSale,
+                };
+            });
             setLines(linesWithSale);
             toast.dismiss();
         } catch {
@@ -415,16 +421,27 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 line.part_id === part.part_id ? { ...line, quantity: line.quantity + 1 } : line
             ));
         } else {
+            const defaultCost = (part.last_receipt_unit_cost != null && Number(part.last_receipt_unit_cost) > 0)
+                ? Number(part.last_receipt_unit_cost)
+                : (part.last_cost != null ? Number(part.last_cost) : 0);
+
+            const defaultSale = (part.last_sale_price != null && Number(part.last_sale_price) > 0)
+                ? Number(part.last_sale_price)
+                : (part.last_receipt_sale_price != null && Number(part.last_receipt_sale_price) > 0
+                    ? Number(part.last_receipt_sale_price)
+                    : null);
+
+            const initialMarkup = (defaultSale != null && defaultCost > 0)
+                ? (markupFromPrice(defaultSale, defaultCost) ?? DEFAULT_MARKUP_PERCENT)
+                : DEFAULT_MARKUP_PERCENT;
+
             setLines([...lines, {
                 ...part,
                 part_id: part.part_id,
                 quantity: 1,
-                cost_price: typeof part.last_cost !== 'undefined' ? part.last_cost : 0,
-                // Left null so the costing module derives a price from the landed cost at
-                // the default markup. A price carried over from the catalogue would be
-                // built on the last delivery's cost, not this one's.
-                sale_price: null,
-                effective_markup_percent: DEFAULT_MARKUP_PERCENT,
+                cost_price: defaultCost,
+                sale_price: defaultSale,
+                effective_markup_percent: initialMarkup,
                 line_discount_percent: null,
                 line_discount_amount: null,
                 override_freight_amount: null,

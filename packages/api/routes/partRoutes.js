@@ -365,6 +365,11 @@ router.get('/parts/barcode/:barcode', protect, async (req, res) => {
                 p.part_id, p.internal_sku, p.detail, p.last_sale_price, p.last_cost,
                 COALESCE(p.wac_cost, 0) AS wac_cost, p.tax_rate_id, p.is_tax_inclusive_price,
                 b.brand_name, g.group_name,
+                lr.grn_number       AS last_receipt_grn_number,
+                lr.receipt_date     AS last_receipt_date,
+                lr.cost_price       AS last_receipt_unit_cost,
+                lr.landed_unit_cost AS last_receipt_landed_cost,
+                lr.sale_price       AS last_receipt_sale_price,
                 (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
                 (SELECT ARRAY_AGG(pb2.barcode) FROM part_barcode pb2 WHERE pb2.part_id = p.part_id) AS barcodes,
                 (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order)
@@ -374,6 +379,18 @@ router.get('/parts/barcode/:barcode', protect, async (req, res) => {
              JOIN part p ON pb.part_id = p.part_id
              LEFT JOIN brand b ON p.brand_id = b.brand_id
              LEFT JOIN "group" g ON p.group_id = g.group_id
+             LEFT JOIN LATERAL (
+                 SELECT gr.grn_number, gr.receipt_date, grl.cost_price,
+                        grl.landed_unit_cost, grl.sale_price
+                 FROM goods_receipt_line grl
+                 JOIN goods_receipt gr ON gr.grn_id = grl.grn_id
+                 WHERE grl.part_id = p.part_id
+                   AND gr.status = 'Active'
+                   AND gr.workflow_status = 'Posted'
+                   AND (grl.quantity - grl.return_quantity) > 0
+                 ORDER BY gr.receipt_date DESC, gr.grn_id DESC
+                 LIMIT 1
+             ) lr ON TRUE
              WHERE pb.barcode = $1 AND p.is_active = true
              LIMIT 1`,
             [barcode.trim()]
@@ -402,12 +419,29 @@ router.get('/parts/:id', protect, hasPermission(['parts:view', 'goods_receipt:cr
                 p.is_using_default_quantity,
                 p.is_service,
                 p.low_stock_warning,
+                lr.grn_number       AS last_receipt_grn_number,
+                lr.receipt_date     AS last_receipt_date,
+                lr.cost_price       AS last_receipt_unit_cost,
+                lr.landed_unit_cost AS last_receipt_landed_cost,
+                lr.sale_price       AS last_receipt_sale_price,
                 (SELECT ARRAY_AGG(pb.barcode) FROM part_barcode pb WHERE pb.part_id = pv.part_id) as barcodes,
                 (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = pv.part_id AND ${activeAliasCondition('pn')}) AS part_numbers,
                 (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = pv.part_id) AS tags,
                 (SELECT COALESCE(SUM(it.quantity), 0) FROM inventory_transaction it WHERE it.part_id = pv.part_id) AS stock_on_hand
             FROM public.parts_view AS pv
             JOIN public.part p ON pv.part_id = p.part_id
+            LEFT JOIN LATERAL (
+                SELECT gr.grn_number, gr.receipt_date, grl.cost_price,
+                       grl.landed_unit_cost, grl.sale_price
+                FROM goods_receipt_line grl
+                JOIN goods_receipt gr ON gr.grn_id = grl.grn_id
+                WHERE grl.part_id = p.part_id
+                  AND gr.status = 'Active'
+                  AND gr.workflow_status = 'Posted'
+                  AND (grl.quantity - grl.return_quantity) > 0
+                ORDER BY gr.receipt_date DESC, gr.grn_id DESC
+                LIMIT 1
+            ) lr ON TRUE
             WHERE pv.part_id = $1;
         `;
         const { rows } = await db.query(query, [id]);
