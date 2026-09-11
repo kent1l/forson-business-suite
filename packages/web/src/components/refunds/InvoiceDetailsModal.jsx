@@ -9,6 +9,7 @@ import { formatPhysicalReceiptNumber } from '../../utils/receiptNumberFormatter'
 import ChangeTransactionDateModal from '../common/ChangeTransactionDateModal';
 import TransactionDateHistory from '../common/TransactionDateHistory';
 import InfoTip from '../ui/InfoTip';
+import ExchangeModal from '../pos/ExchangeModal';
 
 // Helper function to get payment status badge styles
 const getPaymentStatusBadge = (status) => {
@@ -37,6 +38,7 @@ void RefundForm;
 void ChangeTransactionDateModal;
 void TransactionDateHistory;
 void InfoTip;
+void ExchangeModal;
 
 const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
     const { settings } = useSettings();
@@ -46,6 +48,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
     const [paymentsForbidden, setPaymentsForbidden] = useState(false);
     const [loading, setLoading] = useState(false);
     const [showRefundForm, setShowRefundForm] = useState(false);
+    const [showExchangeModal, setShowExchangeModal] = useState(false);
     const [isEditingReceiptNo, setIsEditingReceiptNo] = useState(false);
     const [editingReceiptNo, setEditingReceiptNo] = useState('');
     const [showChangeDate, setShowChangeDate] = useState(false);
@@ -110,6 +113,12 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
         } catch {
             // ignore if window not available
         }
+    };
+
+    const handleExchangeSuccess = () => {
+        setShowExchangeModal(false);
+        onClose(); // Close the modal
+        onActionSuccess(); // Trigger a refresh on the parent page
     };
 
     const handleDelete = async () => {
@@ -412,7 +421,15 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                     </button>
                                 )}
                             </div>
-                            <div className="flex-1 text-right">
+                            <div className="flex-1 text-right flex justify-end gap-2">
+                                {hasPermission('invoicing:create') && invoice.status !== 'Cancelled' && (
+                                    <button
+                                        onClick={() => setShowExchangeModal(true)}
+                                        className="bg-primary-600 hover:bg-primary-700 text-white font-semibold px-4 py-2 rounded-lg transition-colors"
+                                    >
+                                        Exchange Items
+                                    </button>
+                                )}
                                 <button
                                     onClick={() => setShowRefundForm(true)}
                                     className="bg-danger-600 hover:bg-danger-700 text-white font-semibold px-4 py-2 rounded-lg transition-colors"
@@ -444,6 +461,14 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                         // ignore if window not available
                     }
                 }}
+            />
+
+            <ExchangeModal
+                isOpen={showExchangeModal}
+                onClose={() => setShowExchangeModal(false)}
+                initialInvoice={invoice}
+                onExchangeSuccess={handleExchangeSuccess}
+                zIndexClass="z-50"
             />
         </Modal>
     );
