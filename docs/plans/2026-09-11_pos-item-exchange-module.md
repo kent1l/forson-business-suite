@@ -13,7 +13,7 @@ Read this first. It is the only section that changes often — update it as phas
 
 | Item | Status | Reference |
 |---|---|---|
-| Phase 1 — Backend Exchange API (`POST /api/invoices/exchange`) | **Not started** | §6.1 |
+| Phase 1 — Backend Exchange API (`POST /api/invoices/exchange`) | **Done** | §6.1 |
 | Phase 2 — POS & Sales History Exchange Modals (`ExchangeModal.jsx`) | **Not started** | §6.2 |
 | Phase 3 — Receipt Thermal Printing & SOA Rendering (`Receipt.jsx`, `soaPdf.js`) | **Not started** | §6.3 |
 | Phase 4 — Unit & Integration Test Suite (`exchange_db_test.js`) | **Not started** | §6.4 |
@@ -162,26 +162,23 @@ Under `ar_ledger`, every financial movement is an immutable event:
 
 ## 6. Implementation Phases (Step-by-Step Specification)
 
-### Phase 1 — Backend Exchange API (`packages/api`)
-- [ ] Create `packages/api/routes/exchangeRoutes.js`:
-  - Validate payload (`original_invoice_id`, `returned_lines[]`, `replacement_lines[]`, `differential_settlement`).
-  - Check available refundable quantity per line: `quantity - COALESCE(refunded_quantity, 0)`.
-  - Calculate prorated unit discount: `unitDiscount = original_discount / original_quantity`.
-  - Calculate tax snapshot for credit note lines using `computeTaxForBase`.
-  - Generate next `CN` document number via `getNextDocumentNumber(client, 'CN')`.
-  - Insert into `credit_note`, `credit_note_line`, and `credit_note_tax_breakdown`.
-  - Insert `inventory_transaction` for each returned line:
-    - If `is_defective === true`: `trans_type: 'Defective Return'`.
-    - Else: `trans_type: 'Refund'`.
-  - Generate next `INV` document number via `getNextDocumentNumber(client, 'INV')`.
-  - Calculate taxes for replacement lines using `calculateInvoiceTax`.
-  - Insert into `invoice`, `invoice_line`, and `invoice_tax_breakdown`.
-  - Settlement processing:
-    - Apply CN credit amount to new invoice.
-    - If upgrade (+diff): record `invoice_payments` row for cash/card/GCash, or flag `settlement_type = 'on_account'`.
-    - If downgrade (-diff): credit `customer_wallet` via `appendWalletTransaction`, or dispense cash, or let A/R absorb.
-  - Rely on `recompute_invoice_settlement` trigger to update invoice balances.
-- [ ] Mount route in `packages/api/index.js` at `/api/invoices`.
+### Phase 1 — Backend Exchange API (`packages/api`) — DONE 2026-09-11
+- [x] Migration `database/migrations/20260911_01_pos_exchange_schema.sql`:
+  - `credit_note_line.is_defective boolean` (Decision #4 disposition flag).
+  - `credit_note.exchange_replacement_invoice_id` / `invoice.exchange_original_invoice_id` link columns (both nullable, `ON DELETE SET NULL`) so a CN and the invoice it helped pay for can find each other for Phase 3 receipt/SOA rendering.
+  - Seeds an `exchange_credit` payment method (`type: 'credit'`, `settlement_type: 'instant'`) — the mechanism that lets the traded-in value settle the new invoice's own `amount_paid`, the same way `store_wallet` already does for a real credit balance.
+- [x] Migration `database/migrations/20260911_02_exchange_credit_ledger_safety_net.sql` — **found live during smoke testing, not anticipated in the original PRD.** `update_invoice_balance_after_payment()` (20260906_01) posts a `PAYMENT_SETTLED` ar_ledger entry for *every* settled `invoice_payments` row unconditionally, including an `exchange_credit` tender. That value was already ledgered once via the credit note's `CREDIT_MEMO_APPLIED` entry against the *original* invoice — the safety net posting a second entry against the *replacement* invoice silently understated every on-account exchange's A/R impact by the full returned amount. Fixed by teaching the trigger to skip the ledger write for `exchange_credit` specifically (mirrors how it already special-cases `withholding_tax`). Confirmed via a live on-account upgrade test: ledger net movement was exactly the ₱1,000 upgrade differential, not ₱1,000 − 2×₱12,800.
+- [x] Created `packages/api/routes/exchangeRoutes.js` (`POST /api/invoices/exchange`):
+  - Validates payload (`original_invoice_id`, `employee_id`, `returned_lines[]`, `replacement_lines[]`).
+  - Checks available return quantity per line: `quantity - COALESCE(refunded_quantity, 0)` (reuses refundRoutes.js's query).
+  - Prorated unit discount (`unitDiscount = original_discount / original_quantity`) and tax snapshot via `computeTaxForBase`, exactly as refundRoutes.js.
+  - Generates `CN` and `INV` document numbers; inserts `credit_note` / `credit_note_line` (with `is_defective`) / `credit_note_tax_breakdown`, and `invoice` / `invoice_line` / `invoice_tax_breakdown` (reuses `calculateInvoiceTax`).
+  - `inventory_transaction`: returned lines post `'Defective Return'` (quarantine) or `'Refund'` (restock) per line; replacement lines post `'StockOut'`.
+  - Settlement: an `exchange_credit` tender for `min(returnCredit, replacementTotal)` always applies first (silently, no ar_ledger entry — see migration 02). An upgrade's remainder either charges to A/R (credit sale, no further tender) or must be fully covered by `payments[]` (cash/walk-in, reusing invoiceRoutes.js's tender loop incl. cheque/PDC and store_wallet-as-tender handling). A downgrade's leftover is absorbed into A/R automatically for credit sales (Decision #2 — no code path can dispense cash/wallet credit on an on-account sale), or requires `downgrade_disposition: 'wallet'` (`customerWalletService.appendWalletTransaction`) or `'cash_payout'` (recorded via `credit_note.refund_payment_method`, no DB tender — mirrors how refundRoutes.js already treats a Cash refund) for cash/walk-in.
+  - Booked at `CURRENT_TIMESTAMP` always (Decision #1); >30-day original invoice returns a non-blocking `aging_warning` in the response (Phase 5 will make this a hard block per §7).
+  - `recompute_invoice_settlement()` called for both the new and original invoice before commit.
+- [x] Mounted in `packages/api/index.js` (`registerRoute('/api', './routes/exchangeRoutes')`).
+- [x] Smoke-tested live against the dev DB (even exchange, on-account upgrade, walk-in downgrade-to-wallet with a defective-flagged return) and against `tests/refunds.test.js` + `tests/invoicePaymentSettle.test.js` (no regressions). Phase 4's `exchange_db_test.js` still needs writing to pin this in CI.
 
 ### Phase 2 — POS & Sales History UI (`packages/web`)
 - [ ] Create `packages/web/src/components/pos/ExchangeModal.jsx`:

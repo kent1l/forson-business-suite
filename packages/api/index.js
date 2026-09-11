@@ -65,6 +65,7 @@ registerRoute('/api', './routes/paymentMethodRoutes');
 registerRoute('/api', './routes/stagedSaleRoutes');
 registerRoute('/api', './routes/draftRoutes');
 registerRoute('/api', './routes/refundRoutes');
+registerRoute('/api', './routes/exchangeRoutes');
 registerRoute('/api', './routes/paymentTermRoutes');
 registerRoute('/api', './routes/arRoutes');
 registerRoute('/api', './routes/arAdjustmentRoutes');
