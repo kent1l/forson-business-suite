@@ -1,6 +1,7 @@
 const db = require('./db');
 const { syncPartWithMeili, removePartFromMeili } = require('./meilisearch');
 const { normalizePartData } = require('./helpers/normalizePart');
+const { withYearTokens } = require('./helpers/vehicleFitmentSearch');
 
 const STATUS = Object.freeze({
   PENDING: 'pending',
@@ -33,14 +34,15 @@ const loadPartDocs = async (partIds) => {
     SELECT
       pv.*,
       (SELECT ARRAY_AGG(
-        CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''))
+        CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_code), ''))
       )
       FROM part_application pa
       JOIN application a ON pa.application_id = a.application_id
       LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
       LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
-      LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
+      LEFT JOIN engine veng ON a.engine_id = veng.engine_id
       WHERE pa.part_id = pv.part_id) AS applications_array,
+      (SELECT ARRAY_AGG(ARRAY[pa.year_start, pa.year_end]) FROM part_application pa WHERE pa.part_id = pv.part_id) AS application_year_ranges,
       (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = pv.part_id) AS tags_array
     FROM public.parts_view AS pv
     WHERE pv.part_id = ANY($1::int[])
@@ -50,13 +52,14 @@ const loadPartDocs = async (partIds) => {
 
   return rows.map((part) => {
     const normalizedFields = normalizePartData(part);
+    const baseSearchableApplications = (part.applications_array && Array.isArray(part.applications_array))
+      ? part.applications_array.map((app) => (typeof app === 'string' ? app : `${app.make || ''} ${app.model || ''} ${app.engine || ''}`.trim())).join(', ')
+      : '';
     return {
       ...part,
       // display_name is provided natively by parts_view
       applications: part.applications_array || [],
-      searchable_applications: (part.applications_array && Array.isArray(part.applications_array))
-        ? part.applications_array.map((app) => (typeof app === 'string' ? app : `${app.make || ''} ${app.model || ''} ${app.engine || ''}`.trim())).join(', ')
-        : '',
+      searchable_applications: withYearTokens(baseSearchableApplications, part.application_year_ranges || []),
       tags: part.tags_array || [],
       normalized_internal_sku: normalizedFields.normalized_internal_sku,
       normalized_part_numbers: normalizedFields.normalized_part_numbers

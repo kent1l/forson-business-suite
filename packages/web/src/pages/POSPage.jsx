@@ -25,6 +25,7 @@ import PriceQuantityModal from '../components/ui/PriceQuantityModal';
 import MathExpressionInput from '../components/ui/MathExpressionInput';
 import Receipt from '../components/ui/Receipt';
 import SavedSalesPanel from '../components/pos/SavedSalesPanel';
+import VehicleFilterBar from '../components/VehicleFilterBar';
 
 // Grid with Save Sale + View Saved + Void Transaction
 const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave, handleVoid, canVoid, openCustomer, selectedCustomer, handleConvertToInvoice }) => {
@@ -170,6 +171,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
     const [physicalReceiptInput, setPhysicalReceiptInput] = useState('');
     const [selectedTaxRate, setSelectedTaxRate] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [vehicleFilter, setVehicleFilter] = useState({ make_id: null, model_id: null, engine_id: null, year: null });
     const [searchResults, setSearchResults] = useState([]); // State for search results
     const [customers, setCustomers] = useState([]);
     const [brands, setBrands] = useState([]);
@@ -191,9 +193,24 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
     const [isReceiptConfirmOpen, setIsReceiptConfirmOpen] = useState(false);
     const [pendingPaymentData, setPendingPaymentData] = useState(null);
     const searchInputRef = useRef(null);
+    const searchContainerRef = useRef(null);
     const physicalReceiptRef = useRef(null);
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const [isSearchFocused, setIsSearchFocused] = useState(false);
     // Ref to cancel the pending debounce when Enter is pressed (scanner use)
     const searchDebounceRef = useRef(null);
+
+    // Close search dropdown on click outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
+                setIsSearchOpen(false);
+                setIsSearchFocused(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     // Instant barcode lookup — hits the DB directly, no Meilisearch, no debounce
     // rawValue is the DOM input's .value passed directly from useTypeahead on Enter,
@@ -204,6 +221,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
         // Cancel any in-flight debounce so the dropdown doesn't appear after
         if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
         setSearchResults([]);
+        setIsSearchOpen(false);
         try {
             const response = await api.get(`/parts/barcode/${encodeURIComponent(term)}`);
             const enriched = await enrichPartsArray([response.data]);
@@ -221,32 +239,42 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
         items: searchResults,
         onSelect: (item) => { handleSelectPart(item); },
         onEnterUnselected: handleRapidScan,
+        onClose: () => { setIsSearchOpen(false); },
         inputRef: searchInputRef,
         inputId: 'pos-search-input',
         listboxId: 'pos-search-results'
     });
+    const inputProps = getInputProps();
 
     // Saved sales hook (user-specific)
     const { saved, count: savedCount, saveSale, remove: removeSaved, get: getSaved } = useSavedSales({ userId: user?.employee_id, max: 10 });
 
     // Debounced search effect
     useEffect(() => {
-        if (searchTerm.trim() === '') {
+        const hasVehicleFilter = Boolean(vehicleFilter.make_id || vehicleFilter.model_id || vehicleFilter.engine_id || vehicleFilter.year);
+        if (searchTerm.trim() === '' && (!hasVehicleFilter || !isSearchFocused)) {
             setSearchResults([]);
+            setIsSearchOpen(false);
             return;
         }
 
         const fetchSearchResults = async () => {
             try {
-                const response = await api.get('/power-search/parts', {
-                    params: { keyword: searchTerm }
-                });
+                const params = { keyword: searchTerm };
+                if (vehicleFilter.make_id)   params.make_id   = vehicleFilter.make_id;
+                if (vehicleFilter.model_id)  params.model_id  = vehicleFilter.model_id;
+                if (vehicleFilter.engine_id) params.engine_id = vehicleFilter.engine_id;
+                if (vehicleFilter.year)      params.year      = vehicleFilter.year;
+                const response = await api.get('/power-search/parts', { params });
                 // Debug: log raw hits for applications field
                 console.debug('[POS] raw search results', response.data.map(r => ({ part_id: r.part_id, apps: r.applications })));
                 // Enrich applications (convert id arrays to objects) so the application text helper shows readable text
                 const enriched = await enrichPartsArray(response.data || []);
                 console.debug('[POS] enriched results', enriched.map(r => ({ part_id: r.part_id, apps: r.applications })));
                 setSearchResults(enriched);
+                if (enriched.length > 0) {
+                    setIsSearchOpen(true);
+                }
             } catch (error) {
                 console.error("Search failed:", error);
                 toast.error("Search failed.");
@@ -258,7 +286,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
         }, 300);
 
         return () => clearTimeout(searchDebounceRef.current);
-    }, [searchTerm]);
+    }, [searchTerm, vehicleFilter, isSearchFocused]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
     const fetchCustomers = async () => {
@@ -317,6 +345,8 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
         setIsPriceModalOpen(true);
         setSearchTerm('');
         setSearchResults([]);
+        setIsSearchOpen(false);
+        setIsSearchFocused(false);
         reset();
     };
 
@@ -919,37 +949,78 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
         <>
             <div className="flex flex-col h-full gap-1">
                 <div className="space-y-2">
+                    {/* Vehicle filter bar — compact mode for the POS */}
+                    <VehicleFilterBar onChange={setVehicleFilter} compact />
                     <div className="flex items-center space-x-2">
-                        <div className="relative flex-grow">
+                        <div className="relative flex-grow" ref={searchContainerRef}>
                             <SearchBar
-                                {...getInputProps()}
+                                {...inputProps}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'ArrowDown' && !isSearchOpen && searchResults.length > 0) {
+                                        setIsSearchOpen(true);
+                                    }
+                                    inputProps.onKeyDown?.(e);
+                                }}
                                 value={searchTerm}
-                                onChange={setSearchTerm}
-                                onClear={() => { setSearchTerm(''); setSearchResults([]); reset(); }}
+                                onChange={(val) => {
+                                    setSearchTerm(val);
+                                    if (val.trim()) setIsSearchOpen(true);
+                                }}
+                                onFocus={() => {
+                                    setIsSearchFocused(true);
+                                    if (searchResults.length > 0) setIsSearchOpen(true);
+                                }}
+                                onClear={() => {
+                                    setSearchTerm('');
+                                    setSearchResults([]);
+                                    setIsSearchOpen(false);
+                                    setIsSearchFocused(false);
+                                    reset();
+                                }}
                                 placeholder="Scan or search (Ctrl+F)..."
                                 disabled={false}
                                 className=""
                                 ref={searchInputRef}
                             />
-                            {searchResults.length > 0 && (
-                                <ul id="pos-search-results" className="absolute z-10 w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto scrollbar-thin" role="listbox">
-                                    {searchResults.map((part, index) => {
-                                        const itemProps = getItemProps(index);
-                                        return (
-                                            <li key={part.part_id} {...itemProps} className={`px-4 py-3 cursor-pointer transition-colors ${itemProps['aria-selected'] ? 'bg-primary-50 dark:bg-primary-900/40' : 'hover:bg-gray-50 dark:hover:bg-slate-700/50'}`}>
-                                                <div className="flex items-baseline justify-between">
-                                                    <div className="flex items-baseline space-x-2 flex-1 min-w-0">
-                                                        <div className="text-sm font-medium text-gray-800 dark:text-slate-100 truncate">{part.display_name}</div>
-                                                        {part.applications && <div className="text-xs text-gray-500 dark:text-slate-400 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
+                            {isSearchOpen && searchResults.length > 0 && (
+                                <div id="pos-search-results-container" className="absolute z-20 w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-md mt-1 shadow-lg overflow-hidden flex flex-col">
+                                    <div className="flex items-center justify-between px-3 py-1.5 bg-gray-50 dark:bg-slate-700/60 border-b border-gray-200 dark:border-slate-700 text-xs text-gray-500 dark:text-slate-400">
+                                        <span>
+                                            {searchResults.length} {searchResults.length === 1 ? 'part' : 'parts'} found
+                                            {(vehicleFilter.make_id || vehicleFilter.model_id || vehicleFilter.engine_id || vehicleFilter.year) ? ' (vehicle filtered)' : ''}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setIsSearchOpen(false);
+                                            }}
+                                            className="text-gray-400 hover:text-gray-600 dark:hover:text-slate-200 text-xs px-1.5 py-0.5 rounded hover:bg-gray-200 dark:hover:bg-slate-600 transition flex items-center gap-1 cursor-pointer"
+                                            title="Minimize / Close (Esc)"
+                                        >
+                                            <span>Minimize</span>
+                                            <kbd className="text-[10px] font-mono bg-white dark:bg-slate-800 px-1 py-0.2 border border-gray-300 dark:border-slate-600 rounded">Esc</kbd>
+                                        </button>
+                                    </div>
+                                    <ul id="pos-search-results" className="max-h-60 overflow-y-auto scrollbar-thin" role="listbox">
+                                        {searchResults.map((part, index) => {
+                                            const itemProps = getItemProps(index);
+                                            return (
+                                                <li key={part.part_id} {...itemProps} className={`px-4 py-3 cursor-pointer transition-colors ${itemProps['aria-selected'] ? 'bg-primary-50 dark:bg-primary-900/40' : 'hover:bg-gray-50 dark:hover:bg-slate-700/50'}`}>
+                                                    <div className="flex items-baseline justify-between">
+                                                        <div className="flex items-baseline space-x-2 flex-1 min-w-0">
+                                                            <div className="text-sm font-medium text-gray-800 dark:text-slate-100 truncate">{part.display_name}</div>
+                                                            {part.applications && <div className="text-xs text-gray-500 dark:text-slate-400 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
+                                                        </div>
+                                                        <div className="text-sm font-semibold text-gray-700 dark:text-slate-300 ml-2">
+                                                            {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
+                                                        </div>
                                                     </div>
-                                                    <div className="text-sm font-semibold text-gray-700 dark:text-slate-300 ml-2">
-                                                        {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
-                                                    </div>
-                                                </div>
-                                            </li>
-                                        );
-                                    })}
-                                </ul>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                </div>
                             )}
                         </div>
                         <button onClick={() => setIsNewPartModalOpen(true)} className="bg-primary-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-primary-700 transition whitespace-nowrap">

@@ -182,7 +182,7 @@ class PartMergeService {
                                'application_id', pa.application_id,
                                'make', vm.make_name,
                                'model', vmo.model_name,
-                               'engine', ve.engine_name
+                               'engine', ve.engine_code
                            )
                        ) FILTER (WHERE pa.application_id IS NOT NULL), 
                        '[]'::json
@@ -195,7 +195,7 @@ class PartMergeService {
             LEFT JOIN application a ON pa.application_id = a.application_id
             LEFT JOIN vehicle_make vm ON a.make_id = vm.make_id
             LEFT JOIN vehicle_model vmo ON a.model_id = vmo.model_id
-            LEFT JOIN vehicle_engine ve ON a.engine_id = ve.engine_id
+            LEFT JOIN engine ve ON a.engine_id = ve.engine_id
             WHERE p.part_id = $1
             GROUP BY p.part_id, b.brand_name, g.group_name
         `, [partId]);

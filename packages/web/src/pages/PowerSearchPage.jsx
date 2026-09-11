@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast'; // Use the configured api instance
 import Icon from '../components/ui/Icon'; // Import the Icon component
@@ -9,6 +9,7 @@ import Modal from '../components/ui/Modal';
 import { formatApplicationText } from '../helpers/applicationTextHelper';
 import PartCostLadder from '../components/parts/PartCostLadder';
 import { formatCurrency } from '../utils/currency';
+import VehicleFilterBar from '../components/VehicleFilterBar';
 
 /** A money cell that distinguishes "no value recorded" from a genuine zero. The cost
  *  columns default to 0.00 for every part imported before costing existed, so showing
@@ -31,6 +32,7 @@ const PowerSearchPage = () => {
     const [isDetailOpen, setIsDetailOpen] = useState(false);
     const [detailLoading, setDetailLoading] = useState(false);
     const [selectedPartDetail, setSelectedPartDetail] = useState(null);
+    const [vehicleFilter, setVehicleFilter] = useState({ make_id: null, model_id: null, engine_id: null, year: null });
 
     // The backend now handles MeiliSearch ordering. Use the results array directly.
     const sortedResults = results;
@@ -51,9 +53,11 @@ const PowerSearchPage = () => {
         }
     };
 
+    const hasVehicleFilter = vehicleFilter.make_id || vehicleFilter.model_id || vehicleFilter.engine_id || vehicleFilter.year;
+
     useEffect(() => {
-        // Do not search if the keyword is empty
-        if (keyword.trim() === '') {
+        // Search when keyword OR vehicle filter is set
+        if (!keyword.trim() && !hasVehicleFilter) {
             setResults([]);
             setHasSearched(false);
             return;
@@ -65,10 +69,13 @@ const PowerSearchPage = () => {
                 setError('');
                 setHasSearched(true);
 
-                // The API call is now much simpler
-                const response = await api.get(`/power-search/parts`, {
-                    params: { keyword }
-                });
+                const params = { keyword: keyword || '' };
+                if (vehicleFilter.make_id)   params.make_id   = vehicleFilter.make_id;
+                if (vehicleFilter.model_id)  params.model_id  = vehicleFilter.model_id;
+                if (vehicleFilter.engine_id) params.engine_id = vehicleFilter.engine_id;
+                if (vehicleFilter.year)      params.year      = vehicleFilter.year;
+
+                const response = await api.get(`/power-search/parts`, { params });
                 setResults(response.data);
 
             } catch (err) {
@@ -85,26 +92,27 @@ const PowerSearchPage = () => {
         }, 300); // 300ms delay
 
         return () => clearTimeout(debounceTimer);
-    }, [keyword]);
+    }, [keyword, vehicleFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
     return (
         <div className="space-y-6">
             <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100 flex items-center gap-1.5">
                 Power Search
                 <InfoTip label="Power Search">
-                    Finds parts only — by SKU, name, part number, brand, or vehicle application. It does not search
-                    invoices or customers; use Sales History for those.
+                    Finds parts by SKU, name, part number, brand, vehicle application, or a combination.
+                    Use the vehicle filters to narrow by make, model, engine, and year.
                 </InfoTip>
             </h1>
 
-            {/* --- The Simplified Search Bar --- */}
-            <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 shadow-card">
+            {/* --- Search Bar + Vehicle Filters --- */}
+            <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 shadow-card space-y-3">
                 <SearchBar
                     value={keyword}
                     onChange={setKeyword}
                     onClear={() => { setKeyword(''); setResults([]); }}
                     placeholder="Search by SKU, Name, Part Number, Brand, or Application..."
                 />
+                <VehicleFilterBar onChange={setVehicleFilter} />
             </div>
 
             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-card">
@@ -175,7 +183,7 @@ const PowerSearchPage = () => {
                                 )}
                                 {!hasSearched && (
                                     <tr>
-                                        <td colSpan="9" className="p-6 text-center text-gray-500 dark:text-slate-400">Type in the search box to begin.</td>
+                                        <td colSpan="9" className="p-6 text-center text-gray-500 dark:text-slate-400">Type a keyword or select vehicle filters above to begin.</td>
                                     </tr>
                                 )}
                             </tbody>

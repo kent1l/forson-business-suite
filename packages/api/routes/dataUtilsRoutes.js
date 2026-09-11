@@ -7,6 +7,7 @@ const { protect, isAdmin, hasPermission } = require('../middleware/authMiddlewar
 const { generateUniqueCode } = require('../helpers/codeGenerator');
 const { syncPartWithMeili } = require('../meilisearch');
 const { normalizeText, normalizeName, normalizeEmail, normalizePhone, normalizePartNumber } = require('../helpers/normalizeEntity');
+const { withYearTokens } = require('../helpers/vehicleFitmentSearch');
 const router = express.Router();
 
 // CSV imports are one of the biggest sources of case/whitespace-inconsistent
@@ -289,13 +290,14 @@ router.get('/sync-parts-to-meili', protect, isAdmin, async (req, res) => {
                 pv.*,
                 (SELECT ARRAY_AGG(pb.barcode) FROM part_barcode pb WHERE pb.part_id = pv.part_id) as barcodes,
                 (SELECT ARRAY_AGG(
-                        CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''))
+                        CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_code), ''))
                 ) FROM part_application pa
                     JOIN application a ON pa.application_id = a.application_id
                     LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
                     LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
-                    LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
+                    LEFT JOIN engine veng ON a.engine_id = veng.engine_id
                 WHERE pa.part_id = pv.part_id) AS applications_array,
+                (SELECT ARRAY_AGG(ARRAY[pa.year_start, pa.year_end]) FROM part_application pa WHERE pa.part_id = pv.part_id) AS application_year_ranges,
                 (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = pv.part_id) AS tags_array
             FROM public.parts_view AS pv
         `;
@@ -305,13 +307,17 @@ router.get('/sync-parts-to-meili', protect, isAdmin, async (req, res) => {
             return res.status(200).json({ message: 'No parts found in the database to sync.' });
         }
 
-        const partsToSync = rows.map(part => ({
-            ...part,
-            // display_name is natively provided by parts_view
-            applications: part.applications_array || [],
-            tags: part.tags_array || [],
-            barcodes: part.barcodes || []
-        }));
+        const partsToSync = rows.map(part => {
+            const baseSearchableApplications = (part.applications_array || []).join(', ');
+            return {
+                ...part,
+                // display_name is natively provided by parts_view
+                applications: part.applications_array || [],
+                searchable_applications: withYearTokens(baseSearchableApplications, part.application_year_ranges || []),
+                tags: part.tags_array || [],
+                barcodes: part.barcodes || []
+            };
+        });
 
         // Sync with Meilisearch
         await syncPartWithMeili(partsToSync);

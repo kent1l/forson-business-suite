@@ -21,35 +21,68 @@ pools:
     confidence_threshold: 0.60
     escalation_pool: "expense_reasoning_pool"
     fallback_chain:
-      - provider: groq
-        model: "llama-3.3-70b-versatile"
-      - provider: gemini
-        model: "gemini-3.7-flash"
       - provider: gemini
         model: "gemini-3.5-flash-lite"
+      - provider: gemini
+        model: "gemini-3.1-flash-lite"
+      - provider: gemini
+        model: "gemini-2.5-flash-lite"
       - provider: openrouter
-        model: "meta-llama/llama-3.3-70b-instruct"
-
-  expense_reasoning_pool:
-    description: "Escalation pool for ambiguous or low-confidence expense strings"
-    fallback_chain:
-      - provider: gemini
-        model: "gemini-3.7-flash"
-      - provider: gemini
-        model: "gemini-3.6-flash"
-      - provider: groq
-        model: "llama-3.3-70b-versatile"
+        model: "google/gemini-2.5-flash-lite"
       - provider: openrouter
         model: "deepseek/deepseek-chat"
+      - provider: openrouter
+        model: "openai/gpt-4o-mini"
+      - provider: openrouter
+        model: "qwen/qwen-2.5-7b-instruct"
 
-  part_deduplication_pool:
-    description: "Complex semantic clustering and cross-reference verification for auto parts"
+  expense_reasoning_pool:
+    description: >-
+      Escalation pool for ambiguous or low-confidence expense strings. Re-runs the
+      SAME strict-JSON classification prompt as expense_parser_pool (not a distinct
+      reasoning task), just against a stronger model -- so this favors cheap, strong,
+      non-chain-of-thought instruction models over expensive "reasoning" models,
+      since escalations happen often enough at scale that per-call cost compounds.
     fallback_chain:
       - provider: gemini
-        model: "gemini-3.7-flash"
-      - provider: gemini
-        model: "gemini-3.6-flash"
-      - provider: groq
-        model: "llama-3.3-70b-versatile"
+        model: "gemini-3.8-flash"          # free/quota direct AI Studio call, tried first
       - provider: openrouter
-        model: "meta-llama/llama-3.3-70b-instruct"
+        model: "qwen/qwen-2.5-72b-instruct" # cheapest strong non-CoT fallback (~$0.64/1000 @ this prompt's real size)
+      - provider: openrouter
+        model: "google/gemini-3.8-flash"   # same model, different billing/quota path -- covers direct-API rate limits
+      - provider: openrouter
+        model: "openai/gpt-4o"             # premium last resort for genuinely hard cases only
+
+  part_deduplication_pool:
+    description: >-
+      Complex semantic clustering and cross-reference verification for auto parts.
+      Strict-JSON grouping/verification output (verifyDuplicate: one pair; analyzeGroup:
+      a cluster of 2-50 parts in one prompt) -- a classification task, not open-ended
+      reasoning, so cheap non-chain-of-thought instruction models are favored here too.
+    fallback_chain:
+      - provider: gemini
+        model: "gemini-3.8-flash"          # free/quota direct AI Studio call, tried first
+      - provider: openrouter
+        model: "qwen/qwen-2.5-72b-instruct" # cheapest strong non-CoT fallback
+      - provider: openrouter
+        model: "google/gemini-3.8-flash"   # same model, different billing/quota path
+      - provider: openrouter
+        model: "openai/gpt-4o"             # premium last resort for genuinely hard cases only
+
+  vehicle_fitment_parser_pool:
+    description: "Structured extraction of vehicle fitment rows (make/model/engine/year) from a free-text description, grounded against the existing taxonomy"
+    fallback_chain:
+      - provider: gemini
+        model: "gemini-3.5-flash-lite"
+      - provider: gemini
+        model: "gemini-3.1-flash-lite"
+      - provider: gemini
+        model: "gemini-2.5-flash-lite"
+      - provider: openrouter
+        model: "google/gemini-2.5-flash-lite"
+      - provider: openrouter
+        model: "deepseek/deepseek-chat"
+      - provider: openrouter
+        model: "openai/gpt-4o-mini"
+      - provider: openrouter
+        model: "qwen/qwen-2.5-7b-instruct"

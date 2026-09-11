@@ -1,4 +1,7 @@
-import api from '../api';
+// `api` is imported lazily inside the functions that call it, rather than at
+// module load, so that formatApplicationText (which imports this module) can be
+// unit-tested under plain node without pulling in the axios client and its
+// environment config.
 
 // Simple in-memory cache for applications
 const cache = {
@@ -22,6 +25,7 @@ const normalizeAppObj = (appRow) => {
 export const loadApplications = async () => {
   if (cache.loaded) return cache.byId;
   try {
+    const { default: api } = await import('../api');
     const res = await api.get('/applications');
     const apps = res.data || [];
     cache.byId = {};

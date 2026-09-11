@@ -100,7 +100,8 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                 brand_id: '', group_id: '',
                 reorder_point: '', warning_quantity: '', last_cost: '', last_sale_price: '', measurement_unit: '', tax_rate_id: '',
                 is_active: 'unchanged', is_price_change_allowed: 'unchanged', is_using_default_quantity: 'unchanged',
-                is_service: 'unchanged', low_stock_warning: 'unchanged', is_tax_inclusive_price: 'unchanged'
+                is_service: 'unchanged', low_stock_warning: 'unchanged', is_tax_inclusive_price: 'unchanged',
+                is_universal: 'unchanged'
             };
         }
         if (part) {
@@ -120,7 +121,8 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                 is_using_default_quantity: part.is_using_default_quantity ?? true,
                 is_service: part.is_service ?? false,
                 low_stock_warning: part.low_stock_warning ?? true,
-                is_tax_inclusive_price: part.is_tax_inclusive_price ?? (settings?.DEFAULT_IS_TAX_INCLUSIVE !== 'false')
+                is_tax_inclusive_price: part.is_tax_inclusive_price ?? (settings?.DEFAULT_IS_TAX_INCLUSIVE !== 'false'),
+                is_universal: part.is_universal ?? false
             };
         }
         return {
@@ -128,8 +130,9 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
             reorder_point: 1, warning_quantity: 1, is_active: true,
             last_cost: 0, last_sale_price: 0, measurement_unit: 'pcs', tax_rate_id: '',
             is_price_change_allowed: true, is_using_default_quantity: true,
-            is_service: false, low_stock_warning: true, 
-            is_tax_inclusive_price: settings?.DEFAULT_IS_TAX_INCLUSIVE !== 'false' // Default to true unless explicitly set to false
+            is_service: false, low_stock_warning: true,
+            is_tax_inclusive_price: settings?.DEFAULT_IS_TAX_INCLUSIVE !== 'false', // Default to true unless explicitly set to false
+            is_universal: false
         };
     }, [isBulkEdit, settings, part]);
 
@@ -351,9 +354,30 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                     </div>
                 )}
 
-                {/* --- NEW: Application linker (search + add) --- */}
-                {/* Show applications only when editing an existing part (hide for New Part) */}
-                {!isBulkEdit && part && (
+                {!isBulkEdit && (
+                    <div>
+                        <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-slate-300">
+                            <input
+                                type="checkbox"
+                                name="is_universal"
+                                checked={!!formData.is_universal}
+                                onChange={handleChange}
+                            />
+                            Universal part (fits any vehicle, e.g. generic hose clamps, fasteners)
+                        </label>
+                        <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                            Universal parts always appear in vehicle-based search results and don't need vehicle fitments below.
+                        </p>
+                    </div>
+                )}
+
+                {/* Application linker (search + add). Shown for both new and existing
+                    parts (as long as it isn't marked universal) -- quick-added
+                    applications are staged in selectedApps and included in the save
+                    payload either way; for a brand-new part the backend links them
+                    at creation time since there's no part_id yet to call the
+                    dedicated /parts/:id/applications endpoint against. */}
+                {!isBulkEdit && !formData.is_universal && (
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Applications</label>
                         <div className="flex items-center space-x-2">
@@ -379,6 +403,12 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                                     <div className="text-sm text-gray-500 dark:text-slate-400">No linked applications</div>
                                 )}
                             </div>
+                            {!part && (
+                                <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                                    Links to existing vehicle fitments only (no year range or new taxonomy entries here) --
+                                    use Manage after saving for year ranges or to create a new make/model/engine.
+                                </p>
+                            )}
                         </div>
                     </div>
                 )}

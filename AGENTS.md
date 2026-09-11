@@ -63,3 +63,7 @@ When the user types `/graphify`, use the installed graphify skill or instruction
 - If `graphify-out/wiki/index.md` exists, use it for broad navigation instead of raw source browsing.
 - Read `graphify-out/GRAPH_REPORT.md` only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+
+## plan-to-docs
+
+This project uses the plan-to-docs skill (installed globally at ~/.gemini/config/skills/plan-to-docs/SKILL.md) to hand off multi-phase implementation plans. Whenever a multi-phase plan is paused, deprioritized, handed off, or just finished, use the plan-to-docs skill to write the handoff doc — following the project's existing docs convention — instead of writing an ad hoc summary.

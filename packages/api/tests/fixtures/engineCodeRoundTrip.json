@@ -1,0 +1,127 @@
+{
+  "_comment": "Round-trip truth table for engine-code shorthand (PRD-FBS-FIT-002 \u00a79.3). The API's jest suite asserts that expandSlashToken(compressed) === codes; the web suite asserts that compressEngineCodes(codes) === compressed. The two implementations live in different packages (there is no shared package in this repo), so this shared fixture is what stops them drifting apart.",
+  "roundTrip": [
+    {
+      "codes": [
+        "4D55",
+        "4D56"
+      ],
+      "compressed": "4D55/6"
+    },
+    {
+      "codes": [
+        "4JA1",
+        "4JB1"
+      ],
+      "compressed": "4JA1/B1"
+    },
+    {
+      "codes": [
+        "4D55",
+        "4D56",
+        "4D65"
+      ],
+      "compressed": "4D55/56/65"
+    },
+    {
+      "codes": [
+        "1KR-DE",
+        "1KR-VE"
+      ],
+      "compressed": "1KR-DE/VE"
+    },
+    {
+      "codes": [
+        "1GD-FTV",
+        "1KD-FTV",
+        "2GD-FTV",
+        "2KD-FTV"
+      ],
+      "compressed": "1GD/1KD/2GD/2KD-FTV"
+    },
+    {
+      "codes": [
+        "1NZ-FE",
+        "2NZ-FE"
+      ],
+      "compressed": "1NZ/2NZ-FE"
+    },
+    {
+      "codes": [
+        "4JH1-TC",
+        "4JJ1-TC",
+        "4JK1-TC"
+      ],
+      "compressed": "4JH1/4JJ1/4JK1-TC"
+    }
+  ],
+  "_notCompressible_comment": "Cases that must render separately. Compression is cosmetic, so every guard fails safe.",
+  "notCompressible": [
+    {
+      "codes": [
+        "4JA1",
+        "4JA1-T"
+      ],
+      "why": "empty tail - NA vs turbo must stay visibly distinct"
+    },
+    {
+      "codes": [
+        "4JJ1-TC",
+        "4JJ1-TCX"
+      ],
+      "why": "empty tail - variant suffixes carry mechanical meaning"
+    },
+    {
+      "codes": [
+        "JT",
+        "JX"
+      ],
+      "why": "shared prefix too short to be meaningful"
+    },
+    {
+      "codes": [
+        "4D56"
+      ],
+      "why": "a single code is not a group"
+    },
+    {
+      "codes": [
+        "4D56",
+        "1TR-FE"
+      ],
+      "why": "no meaningful shared prefix"
+    },
+    {
+      "codes": [
+        "4D5",
+        "4D56"
+      ],
+      "why": "tails differ in length, ambiguous in reverse"
+    },
+    {
+      "codes": [
+        "4D55",
+        "4D56",
+        "4D65",
+        "4JA1",
+        "4JB1"
+      ],
+      "why": "group larger than the readable cap"
+    },
+    {
+      "codes": [
+        "4JA1",
+        "4JA1-L"
+      ],
+      "why": "one code is the other's base - shared-suffix reading would drop the plain 4JA1"
+    },
+    {
+      "codes": [
+        "1NZ-FE",
+        "2NZ-FX"
+      ],
+      "why": "trailing segments differ, nothing shared to factor out"
+    }
+  ],
+  "_suffix_comment": "Shared-SUFFIX cases: the mirror of the right-aligned overlay, for code families that differ at the front (the common Toyota style). The shared part is always a whole hyphen-delimited segment, which is what makes it unambiguous to expand back."
+}

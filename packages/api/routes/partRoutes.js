@@ -7,6 +7,7 @@ const { activeAliasCondition } = require('../helpers/partNumberSoftDelete');
 const { normalizePartData } = require('../helpers/normalizePart');
 const { normalizeText, normalizePartNumber } = require('../helpers/normalizeEntity');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
+const { withYearTokens } = require('../helpers/vehicleFitmentSearch');
 const router = express.Router();
 
 // Helper function to get all data for a part for Meilisearch indexing
@@ -17,13 +18,14 @@ const getPartDataForMeili = async (client, partId) => {
             (SELECT ARRAY_AGG(pb.barcode) FROM part_barcode pb WHERE pb.part_id = pv.part_id) as barcodes,
             (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = pv.part_id AND ${activeAliasCondition('pn')}) as part_numbers,
                         (SELECT ARRAY_AGG(
-                                CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''))
+                                CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_code), ''))
                         ) FROM part_application pa
                             JOIN application a ON pa.application_id = a.application_id
                             LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
                             LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
-                            LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
+                            LEFT JOIN engine veng ON a.engine_id = veng.engine_id
                         WHERE pa.part_id = pv.part_id) AS applications_array,
+            (SELECT ARRAY_AGG(ARRAY[pa.year_start, pa.year_end]) FROM part_application pa WHERE pa.part_id = pv.part_id) AS application_year_ranges,
             (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = pv.part_id) AS tags_array
         FROM public.parts_view AS pv
         WHERE pv.part_id = $1
@@ -33,17 +35,19 @@ const getPartDataForMeili = async (client, partId) => {
 
     const part = res.rows[0];
     const normalizedFields = normalizePartData(part);
+    const baseSearchableApplications = (part.applications_array && Array.isArray(part.applications_array))
+        ? part.applications_array.map(app => {
+            if (typeof app === 'string') return app;
+            return `${app.make || ''} ${app.model || ''} ${app.engine || ''}`.trim();
+        }).join(', ')
+        : '';
     return {
         ...part,
         // display_name is already provided by parts_view
         applications: part.applications_array || [],
-        // Flatten applications into a single searchable string for Meilisearch
-        searchable_applications: (part.applications_array && Array.isArray(part.applications_array))
-            ? part.applications_array.map(app => {
-                if (typeof app === 'string') return app;
-                return `${app.make || ''} ${app.model || ''} ${app.engine || ''}`.trim();
-            }).join(', ')
-            : '',
+        // Flatten applications (+ fitment years, so a literal year text-matches) into
+        // a single searchable string for Meilisearch.
+        searchable_applications: withYearTokens(baseSearchableApplications, part.application_year_ranges || []),
         tags: part.tags_array || [],
         barcodes: part.barcodes || [],
         normalized_internal_sku: normalizedFields.normalized_internal_sku,
@@ -127,6 +131,48 @@ const manageBarcodes = async (client, barcodes, partId) => {
     }
 };
 
+// Links a newly-created part to any applications picked via the quick-add
+// search combobox on the "New Part" form (no year range -- that combobox
+// doesn't collect one, same as the equivalent quick-add on the edit form;
+// staff use PartApplicationManager's "Manage" afterward for year ranges).
+// Create-only: a new part has no pre-existing links, so this is pure insert,
+// unlike edit-time reconciliation (add + remove) which isn't implemented.
+// Mirrors deriveVehicleEngineFitment() in partApplicationRoutes.js so a
+// full make+model+engine fitment picked at creation still feeds the
+// vehicle_engine_fitment cross-reference the same way a post-creation link does.
+const manageApplications = async (client, applications, partId) => {
+    if (!Array.isArray(applications) || applications.length === 0) return;
+
+    const applicationIds = [...new Set(
+        applications.map(a => a?.application_id).filter(Boolean)
+    )];
+
+    for (const applicationId of applicationIds) {
+        await client.query(
+            `INSERT INTO part_application (part_id, application_id)
+             VALUES ($1, $2)
+             ON CONFLICT (part_id, application_id) DO NOTHING`,
+            [partId, applicationId]
+        );
+
+        const { rows } = await client.query(
+            'SELECT model_id, engine_id FROM application WHERE application_id = $1',
+            [applicationId]
+        );
+        const app = rows[0];
+        if (!app || !app.model_id || !app.engine_id) continue;
+
+        await client.query(
+            `INSERT INTO vehicle_engine_fitment (model_id, engine_id, year_start, year_end)
+             VALUES ($1, $2, NULL, NULL)
+             ON CONFLICT (model_id, engine_id) DO UPDATE SET
+                 year_start = LEAST(vehicle_engine_fitment.year_start, EXCLUDED.year_start),
+                 year_end = GREATEST(vehicle_engine_fitment.year_end, EXCLUDED.year_end)`,
+            [app.model_id, app.engine_id]
+        );
+    }
+};
+
 // GET all parts with status filter, search, and sorting (POWERED BY MEILISEARCH)
 router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
     const { status = 'active', search = '', tags = '' } = req.query;
@@ -195,12 +241,12 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
                 orderByClause = `ORDER BY LOWER(COALESCE(pv.internal_sku, '')) ${sortDirection}, pv.part_id ${sortDirection}`;
             } else if (sortBy === 'application' || sortBy === 'application_text') {
                 orderByClause = `ORDER BY LOWER(COALESCE((
-                    SELECT STRING_AGG(CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), '')), '; ')
+                    SELECT STRING_AGG(CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_code), '')), '; ')
                     FROM part_application pa
                     JOIN application a ON pa.application_id = a.application_id
                     LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
                     LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
-                    LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
+                    LEFT JOIN engine veng ON a.engine_id = veng.engine_id
                     WHERE pa.part_id = pv.part_id
                 ), '')) ${sortDirection}, pv.part_id ${sortDirection}`;
             } else {
@@ -215,7 +261,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
                 (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = pv.part_id AND ${activeAliasCondition('pn')}) AS part_numbers,
                 (SELECT STRING_AGG(
                     CONCAT(
-                        vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_name), ''),
+                        vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_code), ''),
                         CASE
                             WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL AND pa.year_start = pa.year_end THEN CONCAT(' [', pa.year_start, ']')
                             WHEN pa.year_start IS NOT NULL AND pa.year_end IS NOT NULL THEN CONCAT(' [', pa.year_start, '-', pa.year_end, ']')
@@ -228,7 +274,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
                   JOIN application a ON pa.application_id = a.application_id
                   LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
                   LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
-                  LEFT JOIN vehicle_engine veng ON a.engine_id = veng.engine_id
+                  LEFT JOIN engine veng ON a.engine_id = veng.engine_id
                 WHERE pa.part_id = pv.part_id) AS applications,
                 (SELECT STRING_AGG(t.tag_name, ', ') FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = pv.part_id) AS tags
             FROM public.parts_view AS pv
@@ -329,7 +375,7 @@ router.get('/parts/:id/tags', protect, hasPermission('parts:view'), async (req, 
 
 router.post('/parts', protect, hasPermission('parts:create'), async (req, res) => {
     console.log('[DEBUG] POST /parts - Request body:', req.body);
-    const { tags, barcodes, created_by, part_numbers_string, ...partData } = req.body;
+    const { tags, barcodes, created_by, part_numbers_string, applications, ...partData } = req.body;
     partData.detail = normalizeText(partData.detail);
     // detail is optional; only brand and group are required
     if (!partData.brand_id || !partData.group_id) {
@@ -365,14 +411,15 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
         const taxRateIdOrNull = partData.tax_rate_id ? parseInt(partData.tax_rate_id, 10) : null;
 
         const newPartQuery = `
-            INSERT INTO part (detail, brand_id, group_id, internal_sku, reorder_point, warning_quantity, is_active, last_cost, last_sale_price, measurement_unit, is_price_change_allowed, is_using_default_quantity, is_service, low_stock_warning, created_by, tax_rate_id, is_tax_inclusive_price)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *;
+            INSERT INTO part (detail, brand_id, group_id, internal_sku, reorder_point, warning_quantity, is_active, last_cost, last_sale_price, measurement_unit, is_price_change_allowed, is_using_default_quantity, is_service, low_stock_warning, created_by, tax_rate_id, is_tax_inclusive_price, is_universal)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *;
         `;
         const newPart = await client.query(newPartQuery, [
-            partData.detail, partData.brand_id, partData.group_id, internalSku, partData.reorder_point, 
+            partData.detail, partData.brand_id, partData.group_id, internalSku, partData.reorder_point,
             partData.warning_quantity, partData.is_active, partData.last_cost, partData.last_sale_price,
             partData.measurement_unit, partData.is_price_change_allowed, partData.is_using_default_quantity,
-            partData.is_service, partData.low_stock_warning, created_by, taxRateIdOrNull, partData.is_tax_inclusive_price
+            partData.is_service, partData.low_stock_warning, created_by, taxRateIdOrNull, partData.is_tax_inclusive_price,
+            !!partData.is_universal
         ]);
         const newPartData = newPart.rows[0];
 
@@ -412,6 +459,7 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
 
         await manageTags(client, tagsToApply, newPartData.part_id);
         await manageBarcodes(client, barcodes, newPartData.part_id);
+        await manageApplications(client, applications, newPartData.part_id);
         await client.query('COMMIT');
         
         const partForMeili = await getPartDataForMeili(db, newPartData.part_id);
@@ -461,19 +509,19 @@ router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) 
         const taxRateIdOrNull = partData.tax_rate_id ? parseInt(partData.tax_rate_id, 10) : null;
 
         const updatedPart = await client.query(
-            `UPDATE part SET 
-                detail = $1, brand_id = $2, group_id = $3, reorder_point = $4, 
-                warning_quantity = $5, is_active = $6, last_cost = $7, last_sale_price = $8, 
-                measurement_unit = $9, is_price_change_allowed = $10, 
-                is_using_default_quantity = $11, is_service = $12, low_stock_warning = $13, 
+            `UPDATE part SET
+                detail = $1, brand_id = $2, group_id = $3, reorder_point = $4,
+                warning_quantity = $5, is_active = $6, last_cost = $7, last_sale_price = $8,
+                measurement_unit = $9, is_price_change_allowed = $10,
+                is_using_default_quantity = $11, is_service = $12, low_stock_warning = $13,
                 modified_by = $14, date_modified = CURRENT_TIMESTAMP, tax_rate_id = $15,
-                is_tax_inclusive_price = $16
-            WHERE part_id = $17 RETURNING *`,
+                is_tax_inclusive_price = $16, is_universal = $17
+            WHERE part_id = $18 RETURNING *`,
             [
-                partData.detail, partData.brand_id, partData.group_id, partData.reorder_point, partData.warning_quantity, partData.is_active, 
-                partData.last_cost, partData.last_sale_price, partData.measurement_unit, partData.is_price_change_allowed, 
+                partData.detail, partData.brand_id, partData.group_id, partData.reorder_point, partData.warning_quantity, partData.is_active,
+                partData.last_cost, partData.last_sale_price, partData.measurement_unit, partData.is_price_change_allowed,
                 partData.is_using_default_quantity, partData.is_service, partData.low_stock_warning, modified_by, taxRateIdOrNull,
-                partData.is_tax_inclusive_price, id
+                partData.is_tax_inclusive_price, !!partData.is_universal, id
             ]
         );
         if (updatedPart.rows.length === 0) {
