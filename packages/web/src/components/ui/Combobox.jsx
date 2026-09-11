@@ -15,7 +15,8 @@ const Combobox = ({ options, value, onChange, placeholder, allowCreate = false, 
     }, [inputValue, options]);
 
     const selectedLabel = useMemo(() => {
-        return options.find(opt => opt.value === value)?.label || '';
+        if (value === undefined || value === null || value === '') return '';
+        return options.find(opt => String(opt.value) === String(value))?.label || '';
     }, [value, options]);
 
     const exactMatch = options.some(option => option.label.toLowerCase() === inputValue.trim().toLowerCase());

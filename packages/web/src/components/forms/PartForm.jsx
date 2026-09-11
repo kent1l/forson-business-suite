@@ -110,11 +110,11 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                 brand_id: part.brand_id || '',
                 group_id: part.group_id || '',
                 part_numbers_string: part.part_numbers ? part.part_numbers.replace(/; /g, ', ') : '',
-                reorder_point: part.reorder_point || 1,
-                warning_quantity: part.warning_quantity || 1,
+                reorder_point: part.reorder_point ?? 1,
+                warning_quantity: part.warning_quantity ?? 1,
                 is_active: part.is_active ?? true,
-                last_cost: part.last_cost || 0,
-                last_sale_price: part.last_sale_price || 0,
+                last_cost: part.last_cost ?? 0,
+                last_sale_price: part.last_sale_price ?? 0,
                 measurement_unit: part.measurement_unit || 'pcs',
                 tax_rate_id: part.tax_rate_id || '',
                 is_price_change_allowed: part.is_price_change_allowed ?? true,
@@ -316,7 +316,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                             type="text" 
                             readOnly 
                             tabIndex="-1"
-                            value={(brandOptions.find(b => b.value === formData.brand_id)?.code) || ''} 
+                            value={(brandOptions.find(b => String(b.value) === String(formData.brand_id))?.code) || ''} 
                             className="px-2 py-1 border border-gray-200 dark:border-slate-700 rounded-lg bg-gray-50 dark:bg-slate-900 text-gray-500 dark:text-slate-400 text-sm font-mono w-28 pointer-events-none" 
                         />
                     </div>
@@ -341,7 +341,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                             type="text" 
                             readOnly 
                             tabIndex="-1"
-                            value={(groupOptions.find(g => g.value === formData.group_id)?.code) || ''} 
+                            value={(groupOptions.find(g => String(g.value) === String(formData.group_id))?.code) || ''} 
                             className="px-2 py-1 border border-gray-200 dark:border-slate-700 rounded-lg bg-gray-50 dark:bg-slate-900 text-gray-500 dark:text-slate-400 text-sm font-mono w-28 pointer-events-none" 
                         />
                     </div>

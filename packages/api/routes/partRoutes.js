@@ -3,7 +3,7 @@ const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { meiliClient } = require('../meilisearch');
 const { enqueuePartUpsert, enqueuePartDelete } = require('../services/meiliOutboxService');
-const { activeAliasCondition } = require('../helpers/partNumberSoftDelete');
+const { activeAliasCondition, softDeleteSupported } = require('../helpers/partNumberSoftDelete');
 const { normalizePartData } = require('../helpers/normalizePart');
 const { normalizeText, normalizePartNumber } = require('../helpers/normalizeEntity');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
@@ -173,6 +173,61 @@ const manageApplications = async (client, applications, partId) => {
     }
 };
 
+const managePartNumbers = async (client, partNumbersString, partId, modifiedBy) => {
+    if (typeof partNumbersString !== 'string') return;
+    const numbers = [...new Set(partNumbersString.split(/[,;]/).map(num => normalizePartNumber(num)).filter(Boolean))];
+
+    const { rows: existingRows } = await client.query(
+        `SELECT part_number_id, part_number FROM part_number WHERE part_id = $1 AND ${activeAliasCondition('part_number')}`,
+        [partId]
+    );
+    const existingMap = new Map(existingRows.map(r => [r.part_number, r.part_number_id]));
+
+    // Soft-delete or delete part numbers that were removed
+    for (const [pn, pnId] of existingMap.entries()) {
+        if (!numbers.includes(pn)) {
+            if (softDeleteSupported()) {
+                await client.query(
+                    `UPDATE part_number SET deleted_at = NOW(), deleted_by = $2 WHERE part_number_id = $1`,
+                    [pnId, modifiedBy || null]
+                );
+            } else {
+                await client.query('DELETE FROM part_number WHERE part_number_id = $1', [pnId]);
+            }
+        }
+    }
+
+    // Insert new numbers or restore soft-deleted numbers
+    let order = 1;
+    for (const number of numbers) {
+        if (!existingMap.has(number)) {
+            if (softDeleteSupported()) {
+                const res = await client.query(
+                    `UPDATE part_number SET deleted_at = NULL, deleted_by = NULL, display_order = $3 WHERE part_id = $1 AND part_number = $2 RETURNING part_number_id`,
+                    [partId, number, order]
+                );
+                if (res.rowCount === 0) {
+                    await client.query(
+                        `INSERT INTO part_number (part_id, part_number, display_order) VALUES ($1, $2, $3)`,
+                        [partId, number, order]
+                    );
+                }
+            } else {
+                await client.query(
+                    `INSERT INTO part_number (part_id, part_number, display_order) VALUES ($1, $2, $3)`,
+                    [partId, number, order]
+                );
+            }
+        } else {
+            await client.query(
+                `UPDATE part_number SET display_order = $2 WHERE part_number_id = $1`,
+                [existingMap.get(number), order]
+            );
+        }
+        order++;
+    }
+};
+
 // GET all parts with status filter, search, and sorting (POWERED BY MEILISEARCH)
 router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
     const { status = 'active', search = '', tags = '' } = req.query;
@@ -332,16 +387,27 @@ router.get('/parts/barcode/:barcode', protect, async (req, res) => {
 });
 
 // GET a single part by ID
-router.get('/parts/:id', protect, hasPermission('parts:view'), async (req, res) => {
+router.get('/parts/:id', protect, hasPermission(['parts:view', 'goods_receipt:create', 'goods_receipt:edit']), async (req, res) => {
     const { id } = req.params;
     try {
         const query = `
             SELECT
                 pv.*,
+                p.reorder_point,
+                p.warning_quantity,
+                p.measurement_unit,
+                p.tax_rate_id,
+                p.is_tax_inclusive_price,
+                p.is_price_change_allowed,
+                p.is_using_default_quantity,
+                p.is_service,
+                p.low_stock_warning,
                 (SELECT ARRAY_AGG(pb.barcode) FROM part_barcode pb WHERE pb.part_id = pv.part_id) as barcodes,
                 (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = pv.part_id AND ${activeAliasCondition('pn')}) AS part_numbers,
+                (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = pv.part_id) AS tags,
                 (SELECT COALESCE(SUM(it.quantity), 0) FROM inventory_transaction it WHERE it.part_id = pv.part_id) AS stock_on_hand
             FROM public.parts_view AS pv
+            JOIN public.part p ON pv.part_id = p.part_id
             WHERE pv.part_id = $1;
         `;
         const { rows } = await db.query(query, [id]);
@@ -423,31 +489,7 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
         ]);
         const newPartData = newPart.rows[0];
 
-        if (part_numbers_string) {
-            const numbers = part_numbers_string.split(/[,;]/).map(num => normalizePartNumber(num)).filter(Boolean);
-            for (const number of numbers) {
-                // Use guarded INSERT ... SELECT ... WHERE NOT EXISTS so code works even when
-                // the DB uses a partial unique index (soft-delete) or the unique constraint
-                // is not present. This avoids the Postgres "no unique constraint matching
-                // the ON CONFLICT specification" error.
-                const insertPartNumberQuery = `
-                    WITH input_value AS (
-                        SELECT CAST($2 AS character varying(100)) AS part_number
-                    )
-                    INSERT INTO part_number (part_id, part_number)
-                    SELECT $1, input_value.part_number
-                    FROM input_value
-                    WHERE NOT EXISTS (
-                        SELECT 1 FROM part_number 
-                        WHERE part_id = $1 
-                        AND part_number = input_value.part_number
-                        AND ${activeAliasCondition('part_number')}
-                    )
-                `;
-                console.log('[DEBUG] Inserting part number:', { partId: newPartData.part_id, number });
-                await client.query(insertPartNumberQuery, [newPartData.part_id, number]);
-            }
-        }
+        await managePartNumbers(client, part_numbers_string, newPartData.part_id, created_by);
         
         // Parts quick-added mid-sale are routinely saved with no cost, which leaves them
         // with no WAC and no way to report margin. Flag them at creation so the cost
@@ -493,9 +535,9 @@ router.put('/parts/bulk-update', protect, hasPermission('parts:edit'), async (re
     res.status(501).json({ message: 'Bulk update not implemented yet.' });
 });
 
-router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) => {
+router.put('/parts/:id', protect, hasPermission(['parts:edit', 'goods_receipt:create', 'goods_receipt:edit']), async (req, res) => {
     const { id } = req.params;
-    const { tags, barcodes, modified_by, ...partData } = req.body;
+    const { tags, barcodes, modified_by, part_numbers_string, applications, ...partData } = req.body;
     partData.detail = normalizeText(partData.detail);
     // detail is optional; only brand and group are required
     if (!partData.brand_id || !partData.group_id) {
@@ -507,6 +549,8 @@ router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) 
         await client.query('BEGIN');
         
         const taxRateIdOrNull = partData.tax_rate_id ? parseInt(partData.tax_rate_id, 10) : null;
+        const reorderPoint = (partData.reorder_point !== undefined && partData.reorder_point !== '') ? parseInt(partData.reorder_point, 10) : 0;
+        const warningQuantity = (partData.warning_quantity !== undefined && partData.warning_quantity !== '') ? parseInt(partData.warning_quantity, 10) : 0;
 
         const updatedPart = await client.query(
             `UPDATE part SET
@@ -518,7 +562,7 @@ router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) 
                 is_tax_inclusive_price = $16, is_universal = $17
             WHERE part_id = $18 RETURNING *`,
             [
-                partData.detail, partData.brand_id, partData.group_id, partData.reorder_point, partData.warning_quantity, partData.is_active,
+                partData.detail, partData.brand_id, partData.group_id, reorderPoint, warningQuantity, partData.is_active,
                 partData.last_cost, partData.last_sale_price, partData.measurement_unit, partData.is_price_change_allowed,
                 partData.is_using_default_quantity, partData.is_service, partData.low_stock_warning, modified_by, taxRateIdOrNull,
                 partData.is_tax_inclusive_price, !!partData.is_universal, id
@@ -537,6 +581,8 @@ router.put('/parts/:id', protect, hasPermission('parts:edit'), async (req, res) 
 
         await manageTags(client, tagsToApply, id);
         await manageBarcodes(client, barcodes, id);
+        await managePartNumbers(client, part_numbers_string, id, modified_by);
+        await manageApplications(client, applications, id);
         await client.query('COMMIT');
 
         const partForMeili = await getPartDataForMeili(db, id);

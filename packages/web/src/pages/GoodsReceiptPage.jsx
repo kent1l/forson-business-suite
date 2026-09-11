@@ -66,6 +66,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     const [currentPart, setCurrentPart] = useState(null);
     const [isEditPartModalOpen, setIsEditPartModalOpen] = useState(false);
     const [currentEditPart, setCurrentEditPart] = useState(null);
+    const [loadingEditPartId, setLoadingEditPartId] = useState(null);
     const [openPOs, setOpenPOs] = useState([]);
     const [selectedPO, setSelectedPO] = useState('');
     const [posting, setPosting] = useState(false);
@@ -353,8 +354,24 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         });
     };
 
+    const handleOpenEditPartModal = async (line) => {
+        if (!line?.part_id) return;
+        setLoadingEditPartId(line.part_id);
+        try {
+            const res = await api.get(`/parts/${line.part_id}`);
+            setCurrentEditPart(res.data);
+            setIsEditPartModalOpen(true);
+        } catch (err) {
+            console.error('Failed to load part details', err);
+            toast.error(err?.response?.data?.message || 'Failed to load part details.');
+        } finally {
+            setLoadingEditPartId(null);
+        }
+    };
+
     const handleEditPartSave = (partData) => {
-        const payload = { ...partData };
+        if (!currentEditPart?.part_id) return;
+        const payload = { ...partData, modified_by: user?.employee_id };
         const promise = api.put(`/parts/${currentEditPart.part_id}`, payload);
 
         toast.promise(promise, {
@@ -364,14 +381,25 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 setIsEditPartModalOpen(false);
                 setCurrentEditPart(null);
                 // Update the line with the new part data
-                setLines(lines.map(line =>
+                setLines(prevLines => prevLines.map(line =>
                     line.part_id === updatedPart.part_id
-                        ? { ...line, ...updatedPart, quantity: line.quantity, cost_price: line.cost_price, sale_price: line.sale_price }
+                        ? {
+                            ...line,
+                            ...updatedPart,
+                            quantity: line.quantity,
+                            cost_price: line.cost_price,
+                            sale_price: line.sale_price,
+                            display_name: updatedPart.display_name || line.display_name,
+                            detail: updatedPart.detail !== undefined ? updatedPart.detail : line.detail,
+                            brand_name: updatedPart.brand_name || line.brand_name,
+                            group_name: updatedPart.group_name || line.group_name,
+                            part_numbers: updatedPart.part_numbers || line.part_numbers
+                        }
                         : line
                 ));
                 return 'Part updated successfully!';
             },
-            error: 'Failed to update part.'
+            error: (err) => err?.response?.data?.message || 'Failed to update part.'
         });
     };
 
@@ -1110,8 +1138,10 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                             </div>
                                             <div className="flex items-center gap-1">
                                                 <button
-                                                    onClick={() => { setCurrentEditPart(line); setIsEditPartModalOpen(true); }}
-                                                    className="inline-flex items-center justify-center h-8 w-8 text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 rounded hover:bg-primary-50 dark:hover:bg-primary-900/30"
+                                                    type="button"
+                                                    disabled={loadingEditPartId === line.part_id}
+                                                    onClick={() => handleOpenEditPartModal(line)}
+                                                    className="inline-flex items-center justify-center h-8 w-8 text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 rounded hover:bg-primary-50 dark:hover:bg-primary-900/30 disabled:opacity-50"
                                                     title="Edit Part"
                                                 >
                                                     <Icon path={ICONS.edit} className="h-5 w-5"/>

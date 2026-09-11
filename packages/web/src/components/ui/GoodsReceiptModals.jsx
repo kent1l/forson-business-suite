@@ -52,14 +52,16 @@ const GoodsReceiptModals = ({
             </Modal>
 
             <Modal isOpen={isEditPartModalOpen} onClose={() => { setIsEditPartModalOpen(false); setCurrentEditPart(null); }} title="Edit Part">
-                <PartForm
-                    part={currentEditPart}
-                    brands={brands}
-                    groups={groups}
-                    onSave={handleEditPartSave}
-                    onCancel={() => { setIsEditPartModalOpen(false); setCurrentEditPart(null); }}
-                    onBrandGroupAdded={fetchInitialData}
-                />
+                {currentEditPart && (
+                    <PartForm
+                        part={currentEditPart}
+                        brands={brands}
+                        groups={groups}
+                        onSave={handleEditPartSave}
+                        onCancel={() => { setIsEditPartModalOpen(false); setCurrentEditPart(null); }}
+                        onBrandGroupAdded={fetchInitialData}
+                    />
+                )}
             </Modal>
 
             <Modal isOpen={isAppModalOpen} onClose={handleAppManagerClose} title={`Manage Applications for: ${currentPart?.internal_sku || currentPart?.display_name || currentPart?.detail || ''}`}>
