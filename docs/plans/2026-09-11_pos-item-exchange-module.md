@@ -16,7 +16,7 @@ Read this first. It is the only section that changes often — update it as phas
 | Phase 1 — Backend Exchange API (`POST /api/invoices/exchange`) | **Done** | §6.1 |
 | Phase 2 — POS & Sales History Exchange Modals (`ExchangeModal.jsx`) | **Not started** | §6.2 |
 | Phase 3 — Receipt Thermal Printing & SOA Rendering (`Receipt.jsx`, `soaPdf.js`) | **Not started** | §6.3 |
-| Phase 4 — Unit & Integration Test Suite (`exchange_db_test.js`) | **Not started** | §6.4 |
+| Phase 4 — Unit & Integration Test Suite (`exchange_db_test.js`) | **Done** | §6.4 |
 | Accounting Rule: Never backdate past transactions; book today | **Decided** | §3.1, §4 |
 | A/R Cashier Rule: Strictly zero cash payout on credit (On-Account) sales | **Decided** | §3.2, §4 |
 | Discount Rule: Prorate original line discounts on returned items | **Decided** | §3.3, §4 |
@@ -168,7 +168,7 @@ Under `ar_ledger`, every financial movement is an immutable event:
   - `credit_note.exchange_replacement_invoice_id` / `invoice.exchange_original_invoice_id` link columns (both nullable, `ON DELETE SET NULL`) so a CN and the invoice it helped pay for can find each other for Phase 3 receipt/SOA rendering.
   - Seeds an `exchange_credit` payment method (`type: 'credit'`, `settlement_type: 'instant'`) — the mechanism that lets the traded-in value settle the new invoice's own `amount_paid`, the same way `store_wallet` already does for a real credit balance.
 - [x] Migration `database/migrations/20260911_02_exchange_credit_ledger_safety_net.sql` — **found live during smoke testing, not anticipated in the original PRD.** `update_invoice_balance_after_payment()` (20260906_01) posts a `PAYMENT_SETTLED` ar_ledger entry for *every* settled `invoice_payments` row unconditionally, including an `exchange_credit` tender. That value was already ledgered once via the credit note's `CREDIT_MEMO_APPLIED` entry against the *original* invoice — the safety net posting a second entry against the *replacement* invoice silently understated every on-account exchange's A/R impact by the full returned amount. Fixed by teaching the trigger to skip the ledger write for `exchange_credit` specifically (mirrors how it already special-cases `withholding_tax`). Confirmed via a live on-account upgrade test: ledger net movement was exactly the ₱1,000 upgrade differential, not ₱1,000 − 2×₱12,800.
-- [x] Created `packages/api/routes/exchangeRoutes.js` (`POST /api/invoices/exchange`):
+- [x] Created `packages/api/services/exchangeService.js` (`processExchange(client, payload)`, throws `ExchangeError` for validation failures) and a thin `packages/api/routes/exchangeRoutes.js` (`POST /api/invoices/exchange`) that owns the transaction and maps `ExchangeError.statusCode` to the HTTP response. Split out during Phase 4 so `exchange_db_test.js` could call the logic directly inside its own rollback-only transaction, matching how every other `*_db_test.js` in this codebase tests things (`arAdjustmentService.createAdjustment`, `grnPostingService.postReceipt`) — a route that owns its own `BEGIN`/`COMMIT` can't be wrapped in an outer transaction and rolled back. The logic itself is unchanged from the original inline version:
   - Validates payload (`original_invoice_id`, `employee_id`, `returned_lines[]`, `replacement_lines[]`).
   - Checks available return quantity per line: `quantity - COALESCE(refunded_quantity, 0)` (reuses refundRoutes.js's query).
   - Prorated unit discount (`unitDiscount = original_discount / original_quantity`) and tax snapshot via `computeTaxForBase`, exactly as refundRoutes.js.
@@ -209,15 +209,16 @@ Under `ar_ledger`, every financial movement is an immutable event:
 - [ ] Verify `packages/api/helpers/pdf/soaPdf.js`:
   - Ensure `CN-` rows render with `type_label: 'Credit Note Applied (Exchange)'` and link to primary invoice ref.
 
-### Phase 4 — Unit & Integration Test Suite
-- [ ] Create `packages/api/tests/exchange_db_test.js`:
-  - Test Case 1: Even exchange (₱500 $\leftrightarrow$ ₱500) updates stock correctly and results in ₱0 cash effect.
-  - Test Case 2: Upgrade with cash difference paid (+₱300) records payment and drawer intake.
-  - Test Case 3: Upgrade charged to On-Account customer increases A/R debt.
-  - Test Case 4: Downgrade on On-Account customer strictly decreases A/R debt with zero cash paid.
-  - Test Case 5: Discounted item prorates return credit correctly.
-  - Test Case 6: Attempting to return more than purchased quantity throws 400 error.
-  - Test Case 7: Defective toggle flags inventory transaction as 'Defective Return'.
+### Phase 4 — Unit & Integration Test Suite — DONE 2026-09-11
+- [x] Created `packages/api/tests/exchange_db_test.js` (run with `node tests/exchange_db_test.js` against a live DB — excluded from the normal jest run, matching the `*_db_test.js` convention of `arAdjustment_db_test.js` / `goodsReceiptPosting_db_test.js`). Calls `exchangeService.processExchange()` directly inside a transaction that is rolled back at the end, so it leaves no trace. All 7 cases pass:
+  - Test Case 1: Even exchange (₱500 ↔ ₱500) — stock updates correctly, new invoice fully settled by the exchange_credit tender alone, zero ar_ledger footprint on the new invoice.
+  - Test Case 2: Upgrade with ₱300 cash paid — new invoice `Paid`, cash tender ledgers normally (`PAYMENT_SETTLED -300`).
+  - Test Case 3: Upgrade charged to an on-account customer — **regression test for the ledger safety-net double-count bug** (20260911_02): asserts the customer's `ar_ledger` balance moves by exactly the +300 differential, not by +300 minus a phantom extra -500/+800.
+  - Test Case 4: Downgrade on an on-account customer — A/R strictly decreases by the downgrade amount, zero cash tenders, no wallet credit ever created (PRD Decision #2).
+  - Test Case 5: Discounted item (2 units, ₱200 line discount, return 1) — credits the prorated ₱400, not the gross ₱500.
+  - Test Case 6: Returning more than purchased throws `ExchangeError` (`statusCode: 400`).
+  - Test Case 7: `is_defective: true` posts `inventory_transaction.trans_type = 'Defective Return'` and sets `credit_note_line.is_defective`.
+  - One pre-existing-behavior note surfaced by Case 1: a non-credit exchange still moves the customer's `ar_ledger` balance by the credit note's full amount, because `CREDIT_MEMO_APPLIED` posts unconditionally regardless of customer type (same as `refundRoutes.js` already does) while a plain cash sale never posts an offsetting `INVOICE_POSTED` entry. Asserted as current behavior rather than "fixed," since it predates this module and affects the refund feature equally — out of scope here.
 
 ---
 
@@ -232,25 +233,30 @@ Under `ar_ledger`, every financial movement is an immutable event:
 
 | # | File Path | Action | Description |
 |---|---|---|---|
-| 1 | `packages/api/routes/exchangeRoutes.js` | CREATE | Core atomic exchange controller |
-| 2 | `packages/api/index.js` | MODIFY | Route registration |
-| 3 | `packages/web/src/components/pos/ExchangeModal.jsx` | CREATE | Interactive exchange modal |
-| 4 | `packages/web/src/pages/POSPage.jsx` | MODIFY | POS grid button and handler |
-| 5 | `packages/web/src/components/refunds/InvoiceDetailsModal.jsx` | MODIFY | Launch exchange from Sales History |
-| 6 | `packages/web/src/components/ui/Receipt.jsx` | MODIFY | Thermal exchange slip template |
-| 7 | `packages/api/tests/exchange_db_test.js` | CREATE | Comprehensive PostgreSQL test suite |
+| 1 | `packages/api/services/exchangeService.js` | CREATE | Core atomic exchange business logic (`processExchange(client, payload)`); takes an open transaction client and never calls BEGIN/COMMIT itself, so `exchange_db_test.js` can wrap it in a rollback-only transaction — matching `arAdjustmentService.js` / `grnPostingService.js` |
+| 2 | `packages/api/routes/exchangeRoutes.js` | CREATE | Thin HTTP wrapper: owns the transaction lifecycle and maps `ExchangeError` → status code |
+| 3 | `database/migrations/20260911_01_pos_exchange_schema.sql` | CREATE | `credit_note_line.is_defective`, exchange link columns on `credit_note`/`invoice`, seeds the `exchange_credit` payment method |
+| 4 | `database/migrations/20260911_02_exchange_credit_ledger_safety_net.sql` | CREATE | Fixes a ledger double-count bug found during Phase 1 smoke testing (see Phase 1 notes above) |
+| 5 | `packages/api/index.js` | MODIFY | Route registration |
+| 6 | `packages/api/tests/exchange_db_test.js` | CREATE | PostgreSQL integration test suite (7 cases, §6.4) |
+| 7 | `packages/web/src/components/pos/ExchangeModal.jsx` | CREATE | Interactive exchange modal |
+| 8 | `packages/web/src/pages/POSPage.jsx` | MODIFY | POS grid button and handler |
+| 9 | `packages/web/src/components/refunds/InvoiceDetailsModal.jsx` | MODIFY | Launch exchange from Sales History |
+| 10 | `packages/web/src/components/ui/Receipt.jsx` | MODIFY | Thermal exchange slip template |
 
 ---
 
 ## 9. Verification Commands
 
 ```bash
-# 1. Run API unit & integration tests
-npm run -w packages/api test -- packages/api/tests/exchange_db_test.js
+# 1. Run the exchange integration test against a live DB (excluded from the normal
+#    jest run, like every other *_db_test.js — run directly with node, inside the
+#    backend container against the dev DB):
+docker exec forson_backend_dev sh -lc 'node tests/exchange_db_test.js'
 
 # 2. Run existing refund and invoice test suites to ensure zero regressions
-npm run -w packages/api test -- packages/api/tests/refunds.test.js
-npm run -w packages/api test -- packages/api/tests/invoicing.test.js
+npm run -w packages/api test -- tests/refunds.test.js
+npm run -w packages/api test -- tests/invoicePaymentSettle.test.js
 
 # 3. Verify web linting and build
 npm run -w packages/web lint
