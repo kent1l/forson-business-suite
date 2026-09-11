@@ -58,7 +58,7 @@ router.get('/payment-methods/enabled', protect, async (req, res) => {
     try {
         const { rows } = await db.query(`
             SELECT 
-                method_id, code, name, type, enabled, sort_order, settlement_type, config
+                method_id, code, name, type, enabled, ap_enabled, sort_order, settlement_type, config
             FROM payment_methods 
             WHERE enabled = true
             ORDER BY sort_order ASC, name ASC

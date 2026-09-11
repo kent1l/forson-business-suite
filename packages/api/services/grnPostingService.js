@@ -15,6 +15,7 @@
 
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const apLedgerService = require('./apLedgerService');
+const apPaymentService = require('./apPaymentService');
 const stockReconciliation = require('./stockReconciliationService');
 const { recomputeWacForParts } = require('./transactionDateService');
 
@@ -36,13 +37,13 @@ async function createBillWithLedger(client, {
   const billNumber = await getNextDocumentNumber(client, 'BILL');
 
   const { rows: [bill] } = await client.query(
-    `INSERT INTO supplier_bill (supplier_id, po_id, grn_id, bill_number, bill_date, due_date, total_amount, created_by)
+    `INSERT INTO supplier_bill (supplier_id, po_id, grn_id, bill_number, bill_date, due_date, total_amount, created_by, notes)
      VALUES ($1, $2, $3, $4, COALESCE($8::date, CURRENT_DATE),
              CASE WHEN $5::int IS NOT NULL THEN COALESCE($8::date, CURRENT_DATE) + ($5::int || ' days')::interval ELSE NULL END,
-             $6, $7)
+             $6, $7, $9)
      ON CONFLICT (grn_id) WHERE grn_id IS NOT NULL DO NOTHING
      RETURNING bill_id`,
-    [supplierId, poId, grnId, billNumber, termsDays, totalAmount, createdBy, receiptDate],
+    [supplierId, poId, grnId, billNumber, termsDays, totalAmount, createdBy, receiptDate, notes || null],
   );
 
   if (!bill) return null;
@@ -164,28 +165,119 @@ async function postReceipt(client, {
     if (bill) goodsBillId = bill.bill_id;
   }
 
-  // Freight is owed to the carrier, not to the parts supplier, so it gets its own bill
-  // against its own supplier rather than inflating the goods payable. The cost still
-  // reaches inventory — that happened above, through each line's landed unit cost.
+  // Freight is owed to the carrier, not to the parts supplier, so each freight charge
+  // gets its own bill against its carrier. If marked as already paid, it is immediately settled.
   let freightBillId = null;
-  if (Number(freightAmount) > 0 && freightSupplierId && !isBackfill) {
-    const { rows: [existing] } = await client.query(
-      'SELECT freight_bill_id FROM goods_receipt WHERE grn_id = $1', [grnId],
+  const freightBills = [];
+
+  if (!isBackfill) {
+    const { rows: freightRows } = await client.query(
+      `SELECT grn_freight_id, supplier_id, amount, receipt_number, notes, is_paid, payment_method_id, bill_id, payment_id
+       FROM goods_receipt_freight
+       WHERE grn_id = $1
+       ORDER BY grn_freight_id FOR UPDATE`,
+      [grnId],
     );
-    if (!existing?.freight_bill_id) {
-      const bill = await createBillWithLedger(client, {
-        supplierId: freightSupplierId,
-        poId: null,
-        grnId: null, // the grn_id slot is claimed by the goods bill's idempotency index
-        totalAmount: Number(freightAmount),
-        receiptDate,
-        createdBy: employeeId,
-        notes: `Freight-in for goods receipt ${grnNumber}`,
-        backlink: { column: 'freight_bill_id', grnId },
-      });
-      if (bill) freightBillId = bill.bill_id;
-    } else {
-      freightBillId = existing.freight_bill_id;
+
+    if (freightRows.length > 0) {
+      for (const fRow of freightRows) {
+        const amt = Number(fRow.amount);
+        if (amt <= 0 || !fRow.supplier_id) continue;
+
+        let bId = fRow.bill_id;
+        if (!bId) {
+          const noteText = fRow.receipt_number
+            ? `Freight-in for goods receipt ${grnNumber} (Receipt: ${fRow.receipt_number})`
+            : `Freight-in for goods receipt ${grnNumber}`;
+
+          const bill = await createBillWithLedger(client, {
+            supplierId: fRow.supplier_id,
+            poId: null,
+            grnId: null,
+            totalAmount: amt,
+            receiptDate,
+            createdBy: employeeId,
+            notes: noteText,
+          });
+
+          if (bill) {
+            bId = bill.bill_id;
+            await client.query(
+              'UPDATE goods_receipt_freight SET bill_id = $1 WHERE grn_freight_id = $2',
+              [bId, fRow.grn_freight_id],
+            );
+
+            // Auto-settle if marked as already paid
+            if (fRow.is_paid && !fRow.payment_id) {
+              let methodId = fRow.payment_method_id;
+              if (!methodId) {
+                const { rows: [defaultMethod] } = await client.query(
+                  "SELECT method_id FROM payment_methods WHERE code = 'cash' AND ap_enabled = true LIMIT 1"
+                );
+                methodId = defaultMethod?.method_id;
+              }
+
+              if (methodId) {
+                const payment = await apPaymentService.recordDirectPayment(client, {
+                  supplierId: fRow.supplier_id,
+                  methodId,
+                  amount: amt,
+                  settlementDate: receiptDate,
+                  referenceNumber: fRow.receipt_number || null,
+                  notes: `Settled freight-in for goods receipt ${grnNumber}${fRow.receipt_number ? ' (Receipt: ' + fRow.receipt_number + ')' : ''}`,
+                  allocations: [{ bill_id: bId, amount: amt }],
+                  userId: employeeId,
+                });
+
+                if (payment?.paymentId) {
+                  await client.query(
+                    'UPDATE goods_receipt_freight SET payment_id = $1 WHERE grn_freight_id = $2',
+                    [payment.paymentId, fRow.grn_freight_id],
+                  );
+                }
+              }
+            }
+          }
+        }
+
+        if (bId) {
+          freightBills.push({
+            grn_freight_id: fRow.grn_freight_id,
+            bill_id: bId,
+            supplier_id: fRow.supplier_id,
+            amount: amt,
+            receipt_number: fRow.receipt_number,
+          });
+          if (!freightBillId) freightBillId = bId;
+        }
+      }
+
+      if (freightBillId) {
+        await client.query(
+          'UPDATE goods_receipt SET freight_bill_id = $1 WHERE grn_id = $2 AND freight_bill_id IS NULL',
+          [freightBillId, grnId],
+        );
+      }
+    } else if (Number(freightAmount) > 0 && freightSupplierId) {
+      // Legacy fallback when goods_receipt_freight rows were not created upfront
+      const { rows: [existing] } = await client.query(
+        'SELECT freight_bill_id FROM goods_receipt WHERE grn_id = $1', [grnId],
+      );
+      if (!existing?.freight_bill_id) {
+        const bill = await createBillWithLedger(client, {
+          supplierId: freightSupplierId,
+          poId: null,
+          grnId: null,
+          totalAmount: Number(freightAmount),
+          receiptDate,
+          createdBy: employeeId,
+          notes: `Freight-in for goods receipt ${grnNumber}`,
+          backlink: { column: 'freight_bill_id', grnId },
+        });
+        if (bill) freightBillId = bill.bill_id;
+      } else {
+        freightBillId = existing.freight_bill_id;
+      }
     }
   }
 
@@ -234,7 +326,7 @@ async function postReceipt(client, {
     }
   }
 
-  return { billId: goodsBillId, freightBillId, reconciliations };
+  return { billId: goodsBillId, freightBillId, freightBills, reconciliations };
 }
 
 module.exports = { postReceipt, createBillWithLedger };

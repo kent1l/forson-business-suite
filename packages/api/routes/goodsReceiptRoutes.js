@@ -258,17 +258,29 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
 
   const isBackfill = !!is_backfill;
   const invoiceNo = supplier_invoice_no ? String(supplier_invoice_no).trim() : null;
-  const freightAmount = Number(freight_amount) > 0 ? Number(freight_amount) : 0;
+  const freightCosts = parseFreightCosts(req.body);
+  const totalFreight = freightCosts.length > 0
+    ? freightCosts.reduce((s, f) => s + (Number(f.amount) || 0), 0)
+    : (Number(freight_amount) > 0 ? Number(freight_amount) : 0);
+  const freightAmount = totalFreight;
   const freightMethod = freight_allocation_method || grnCosting.METHOD_A;
-  const freightSupplierId = freight_supplier_id || null;
+  const primaryFreightSupplierId = freightCosts.find((f) => f.supplier_id)?.supplier_id || (freight_supplier_id ? parseInt(freight_supplier_id, 10) : null);
+  const freightSupplierId = primaryFreightSupplierId;
   const overallDiscountPercent = overall_discount_percent ?? null;
   const overallDiscountAmount = overall_discount_amount ?? null;
   const syncRetailPrices = sync_retail_prices === undefined ? true : !!sync_retail_prices;
 
   // Freight with nobody to pay it would silently vanish from accounts payable while
-  // still inflating inventory. Make the encoder name the carrier.
-  if (freightAmount > 0 && !freightSupplierId && !isBackfill) {
-    return res.status(400).json({ message: 'Select the carrier the freight is owed to, so the delivery charge can be billed.' });
+  // still inflating inventory. Make the encoder name the carrier or mark it paid.
+  if (!isBackfill) {
+    if (freightCosts.length > 0) {
+      const invalidUnpaid = freightCosts.find((f) => f.amount > 0 && !f.supplier_id && !f.is_paid);
+      if (invalidUnpaid) {
+        return res.status(400).json({ message: 'Select the carrier the freight is owed to, or mark the charge as already paid.' });
+      }
+    } else if (freightAmount > 0 && !freightSupplierId) {
+      return res.status(400).json({ message: 'Select the carrier the freight is owed to, so the delivery charge can be billed.' });
+    }
   }
 
   if (isBackfill) {
@@ -397,7 +409,11 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
       });
     }
 
-    const { reconciliations } = await postReceipt(client, {
+    if (freightCosts.length > 0) {
+      await writeDraftFreight(client, newGrnId, freightCosts);
+    }
+
+    const { reconciliations, billId, freightBillId, freightBills } = await postReceipt(client, {
       grnId: newGrnId,
       grnNumber: grn_number,
       supplierId: supplier_id,
@@ -419,6 +435,9 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
       grn_id: newGrnId,
       totals: costing.totals,
       warnings: markupWarnings,
+      bill_id: billId,
+      freight_bill_id: freightBillId,
+      freight_bills: freightBills || [],
       // Surfaced so the encoder is told what happened rather than discovering the
       // quantity did not move the way they expected.
       reconciliations: reconciliations.map((r) => ({
@@ -757,28 +776,55 @@ router.delete('/goods-receipts/:id', protect, hasPermission('goods_receipt:void'
       await client.query(`UPDATE supplier_bill SET status = 'Void' WHERE bill_id = $1`, [bill.bill_id]);
     }
 
-    // Freight rides on its own bill against the carrier, so voiding the receipt has to
+    // Freight rides on its own bill(s) against the carrier(s), so voiding the receipt has to
     // reverse that liability too. Without this the carrier's payable would survive a
     // receipt that no longer exists.
-    if (grn.freight_bill_id) {
-      const { rows: [freightBill] } = await client.query(
+    const { rows: freightItems } = await client.query(
+      `SELECT grf.bill_id, grf.payment_id, grf.is_paid, sb.bill_number, sb.supplier_id, sb.amount_paid, sb.status
+       FROM goods_receipt_freight grf
+       JOIN supplier_bill sb ON grf.bill_id = sb.bill_id
+       WHERE grf.grn_id = $1 FOR UPDATE OF sb`,
+      [id],
+    );
+
+    const freightBillsToVoid = [...freightItems];
+    if (grn.freight_bill_id && !freightItems.some((f) => f.bill_id === grn.freight_bill_id)) {
+      const { rows: [fb] } = await client.query(
         'SELECT bill_id, bill_number, supplier_id, total_amount, amount_paid, status FROM supplier_bill WHERE bill_id = $1 FOR UPDATE',
-        [grn.freight_bill_id]
+        [grn.freight_bill_id],
       );
-      if (freightBill && freightBill.status !== 'Void') {
-        if (parseFloat(freightBill.amount_paid) > 0) {
+      if (fb) freightBillsToVoid.push(fb);
+    }
+
+    for (const fb of freightBillsToVoid) {
+      if (fb && fb.status !== 'Void') {
+        if (fb.payment_id) {
+          // Auto-settled on posting: reverse the payment and allocation
+          await client.query('DELETE FROM ap_payment_allocation WHERE payment_id = $1', [fb.payment_id]);
+          await apLedgerService.appendEntry(client, {
+            supplierId: fb.supplier_id,
+            paymentId: fb.payment_id,
+            entryType: 'DEBIT_ADJUSTMENT',
+            amount: parseFloat(fb.amount_paid),
+            referenceNo: grn.grn_number,
+            notes: `SYSTEM REVERSAL: Goods receipt ${grn.grn_number} voided (auto-settlement reversed)`,
+            createdBy: req.user.employee_id || null,
+          });
+          await client.query('DELETE FROM ap_payment WHERE payment_id = $1', [fb.payment_id]);
+        } else if (parseFloat(fb.amount_paid) > 0) {
           await client.query('ROLLBACK');
-          return res.status(400).json({ message: `Cannot void: the freight bill ${freightBill.bill_number} has already been paid. Reverse that payment first.` });
+          return res.status(400).json({ message: `Cannot void: the freight bill ${fb.bill_number} has already been paid. Reverse that payment first.` });
         }
+
         const { rows: [freightLedger] } = await client.query(
           'SELECT COALESCE(SUM(amount), 0) AS net FROM ap_ledger WHERE bill_id = $1',
-          [freightBill.bill_id]
+          [fb.bill_id],
         );
-        const freightNet = parseFloat(freightLedger.net);
+        const freightNet = parseFloat(freightLedger?.net || 0);
         if (freightNet !== 0) {
           await apLedgerService.appendEntry(client, {
-            supplierId: freightBill.supplier_id,
-            billId: freightBill.bill_id,
+            supplierId: fb.supplier_id,
+            billId: fb.bill_id,
             entryType: freightNet <= 0 ? 'DEBIT_ADJUSTMENT' : 'CREDIT_ADJUSTMENT',
             amount: -freightNet,
             referenceNo: grn.grn_number,
@@ -786,7 +832,7 @@ router.delete('/goods-receipts/:id', protect, hasPermission('goods_receipt:void'
             createdBy: req.user.employee_id || null,
           });
         }
-        await client.query(`UPDATE supplier_bill SET status = 'Void' WHERE bill_id = $1`, [freightBill.bill_id]);
+        await client.query(`UPDATE supplier_bill SET status = 'Void' WHERE bill_id = $1`, [fb.bill_id]);
       }
     }
 
@@ -836,7 +882,39 @@ router.delete('/goods-receipts/:id', protect, hasPermission('goods_receipt:void'
 
 const DRAFT_PREFIX = 'GRD';
 
+function parseFreightCosts(body) {
+  if (Array.isArray(body.freight_costs)) {
+    return body.freight_costs
+      .map((f) => ({
+        supplier_id: f.supplier_id ? parseInt(f.supplier_id, 10) : null,
+        amount: Math.round((Number(f.amount) || 0) * 100) / 100,
+        receipt_number: f.receipt_number ? String(f.receipt_number).trim() : null,
+        notes: f.notes ? String(f.notes).trim() : null,
+        is_paid: !!f.is_paid,
+        payment_method_id: f.payment_method_id ? parseInt(f.payment_method_id, 10) : null,
+      }))
+      .filter((f) => f.amount > 0 || f.supplier_id || f.receipt_number);
+  }
+  // Legacy fallback: single freight amount & carrier
+  const legacyAmount = Number(body.freight_amount) > 0 ? Number(body.freight_amount) : 0;
+  if (legacyAmount > 0 || body.freight_supplier_id) {
+    return [{
+      supplier_id: body.freight_supplier_id ? parseInt(body.freight_supplier_id, 10) : null,
+      amount: legacyAmount,
+      receipt_number: body.freight_receipt_number ? String(body.freight_receipt_number).trim() : null,
+      notes: null,
+      is_paid: false,
+      payment_method_id: null,
+    }];
+  }
+  return [];
+}
+
 function parseHeaderPayload(body) {
+  const freightCosts = parseFreightCosts(body);
+  const totalFreight = freightCosts.reduce((sum, f) => sum + (Number(f.amount) || 0), 0);
+  const primarySupplierId = freightCosts.find((f) => f.supplier_id)?.supplier_id || (body.freight_supplier_id ? parseInt(body.freight_supplier_id, 10) : null);
+
   return {
     supplier_id: body.supplier_id || null,
     received_by: body.received_by || null,
@@ -845,13 +923,27 @@ function parseHeaderPayload(body) {
     receipt_date: body.receipt_date || null,
     is_backfill: !!body.is_backfill,
     supplier_invoice_no: body.supplier_invoice_no ? String(body.supplier_invoice_no).trim() : null,
-    freight_amount: Number(body.freight_amount) > 0 ? Number(body.freight_amount) : 0,
+    freight_amount: totalFreight > 0 ? totalFreight : (Number(body.freight_amount) > 0 ? Number(body.freight_amount) : 0),
     freight_allocation_method: body.freight_allocation_method || grnCosting.METHOD_A,
-    freight_supplier_id: body.freight_supplier_id || null,
+    freight_supplier_id: primarySupplierId,
+    freight_costs: freightCosts,
     overall_discount_percent: body.overall_discount_percent ?? null,
     overall_discount_amount: body.overall_discount_amount ?? null,
     sync_retail_prices: body.sync_retail_prices === undefined ? true : !!body.sync_retail_prices,
   };
+}
+
+async function writeDraftFreight(client, grnId, freightCosts = []) {
+  await client.query('DELETE FROM goods_receipt_freight WHERE grn_id = $1', [grnId]);
+  for (const f of freightCosts) {
+    if (f.amount > 0 || f.supplier_id || f.receipt_number) {
+      await client.query(
+        `INSERT INTO goods_receipt_freight (grn_id, supplier_id, amount, receipt_number, notes, is_paid, payment_method_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [grnId, f.supplier_id || null, f.amount || 0, f.receipt_number || null, f.notes || null, !!f.is_paid, f.payment_method_id || null],
+      );
+    }
+  }
 }
 
 // Replace a draft's lines wholesale with the costed payload. Full replacement rather
@@ -960,6 +1052,7 @@ router.post('/goods-receipts/drafts', protect, hasPermission('goods_receipt:crea
     );
 
     await writeDraftLines(client, draft.grn_id, lines, costing);
+    await writeDraftFreight(client, draft.grn_id, header.freight_costs);
     await client.query('COMMIT');
     res.status(201).json({ message: 'Draft saved.', grn_id: draft.grn_id, grn_number: draft.grn_number, costing });
   } catch (err) {
@@ -1058,7 +1151,22 @@ router.get('/goods-receipts/:id', protect, hasPermission('goods_receipt:create')
       [req.params.id],
     );
     if (rows.length === 0) return res.status(404).json({ message: 'Goods receipt not found' });
-    res.json(rows[0]);
+    const grn = rows[0];
+    const { rows: freightRows } = await db.query(
+      `SELECT grf.grn_freight_id, grf.grn_id, grf.supplier_id, grf.amount,
+              grf.receipt_number, grf.notes, grf.is_paid, grf.payment_method_id,
+              grf.bill_id, grf.payment_id, grf.created_at,
+              s.supplier_name,
+              pm.name AS payment_method_name
+       FROM goods_receipt_freight grf
+       LEFT JOIN supplier s ON grf.supplier_id = s.supplier_id
+       LEFT JOIN payment_methods pm ON grf.payment_method_id = pm.method_id
+       WHERE grf.grn_id = $1
+       ORDER BY grf.grn_freight_id`,
+      [req.params.id],
+    );
+    grn.freight_costs = freightRows;
+    res.json(grn);
   } catch (err) {
     console.error('Error fetching goods receipt:', err.message);
     res.status(500).json({ message: 'Server error', error: err.message });
@@ -1126,6 +1234,7 @@ router.put('/goods-receipts/:id/draft', protect, hasPermission('goods_receipt:cr
     );
 
     await writeDraftLines(client, id, lines, costing);
+    await writeDraftFreight(client, id, header.freight_costs);
     await client.query('COMMIT');
     res.json({
       message: wasSubmitted
@@ -1274,7 +1383,7 @@ router.post('/goods-receipts/:id/post', protect, hasPermission('goods_receipt:po
       [grnNumber, req.user.employee_id, id],
     );
 
-    const { reconciliations, billId, freightBillId } = await postReceipt(client, {
+    const { reconciliations, billId, freightBillId, freightBills } = await postReceipt(client, {
       grnId: Number(id),
       grnNumber,
       supplierId: grn.supplier_id,
@@ -1303,6 +1412,7 @@ router.post('/goods-receipts/:id/post', protect, hasPermission('goods_receipt:po
       grn_number: grnNumber,
       bill_id: billId,
       freight_bill_id: freightBillId,
+      freight_bills: freightBills || [],
       totals: costing.totals,
       reconciliations: reconciliations.map((r) => ({
         part_id: r.part_id, backfill_qty: r.backfill_qty, reconcile_qty: r.reconcile_qty,

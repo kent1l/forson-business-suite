@@ -443,7 +443,7 @@ router.get('/ap/supplier-bills/:billId/goods-receipts', protect, hasPermission('
                 po.po_number,
                 TRIM(BOTH ' ' FROM e.first_name || ' ' || COALESCE(e.last_name, '')) AS received_by_name,
                 TRIM(BOTH ' ' FROM ve.first_name || ' ' || COALESCE(ve.last_name, '')) AS voided_by_name,
-                CASE WHEN gr.freight_bill_id = $1 THEN 'freight' ELSE 'goods' END AS link_type
+                CASE WHEN gr.freight_bill_id = $1 OR EXISTS (SELECT 1 FROM goods_receipt_freight grf WHERE grf.grn_id = gr.grn_id AND grf.bill_id = $1) THEN 'freight' ELSE 'goods' END AS link_type
             FROM goods_receipt gr
             JOIN supplier s ON s.supplier_id = gr.supplier_id
             LEFT JOIN supplier fs ON fs.supplier_id = gr.freight_supplier_id
@@ -452,6 +452,7 @@ router.get('/ap/supplier-bills/:billId/goods-receipts', protect, hasPermission('
             LEFT JOIN employee ve ON ve.employee_id = gr.voided_by
             WHERE gr.bill_id = $1
                OR gr.freight_bill_id = $1
+               OR EXISTS (SELECT 1 FROM goods_receipt_freight grf WHERE grf.grn_id = gr.grn_id AND grf.bill_id = $1)
                OR gr.grn_id = (SELECT grn_id FROM supplier_bill WHERE bill_id = $1)
             ORDER BY gr.receipt_date, gr.grn_id
         `, [billId]);
@@ -501,8 +502,31 @@ router.get('/ap/supplier-bills/:billId/goods-receipts', protect, hasPermission('
             return acc;
         }, {});
 
+        const { rows: freightCharges } = await db.query(`
+            SELECT
+                grf.grn_freight_id, grf.grn_id, grf.supplier_id, grf.amount,
+                grf.receipt_number, grf.notes, grf.is_paid, grf.bill_id, grf.payment_id,
+                s.supplier_name
+            FROM goods_receipt_freight grf
+            LEFT JOIN supplier s ON s.supplier_id = grf.supplier_id
+            WHERE grf.grn_id = ANY($1::int[])
+            ORDER BY grf.grn_freight_id ASC
+        `, [grnIds]);
+
+        const freightByGrn = freightCharges.reduce((acc, f) => {
+            (acc[f.grn_id] = acc[f.grn_id] || []).push(f);
+            return acc;
+        }, {});
+
+        const parsedBillId = parseInt(billId, 10);
+
         const data = receipts.map((receipt) => {
             const grnLines = linesByGrn[receipt.grn_id] || [];
+            const grnFreight = freightByGrn[receipt.grn_id] || [];
+            const matchingFreight = grnFreight.find((f) => f.bill_id === parsedBillId);
+            const billedFreightAmount = matchingFreight
+                ? Number(matchingFreight.amount)
+                : Number(receipt.freight_amount) || 0;
             // The figure to check the supplier's invoice against is what the receipt
             // actually made us owe — accepted quantity only, after line and overall
             // discounts. That is exactly grnCostingService's net_goods_value, and it is
@@ -541,6 +565,9 @@ router.get('/ap/supplier-bills/:billId/goods-receipts', protect, hasPermission('
                 lines: billingLines,
                 totals: costing.totals,
                 goods_value: costing.totals.net_goods_value,
+                freight_costs: grnFreight,
+                billed_freight_charge: matchingFreight || null,
+                billed_freight_amount: billedFreightAmount,
             };
         });
 

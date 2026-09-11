@@ -140,6 +140,8 @@ describe('Goods Receipt Inventory & Pricing Routes', () => {
                 .mockResolvedValueOnce({ rows: [{ bill_id: 555 }] }) // INSERT supplier_bill RETURNING bill_id
                 .mockResolvedValueOnce({}) // UPDATE goods_receipt SET bill_id
                 .mockResolvedValueOnce({ rows: [{ ledger_id: 1 }] }) // apLedgerService.appendEntry -> append_ap_ledger_entry()
+                .mockResolvedValueOnce({ rows: [] }) // SELECT goods_receipt_freight rows (none for this receipt)
+                .mockResolvedValueOnce({}) // DELETE FROM part_tag (pending_costing)
                 .mockResolvedValueOnce({}); // COMMIT
 
             const res = await request(app)

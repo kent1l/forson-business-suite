@@ -336,6 +336,119 @@ async function run() {
       );
     } catch { reusable = false; } finally { await client.query('ROLLBACK TO SAVEPOINT c4'); }
     assert(reusable, 'a cancelled receipt releases its supplier invoice number for re-entry');
+
+    // ── Multiple freight charges with receipt # and auto-settlement ─────────
+    console.log('\nMultiple freight charges: receipt numbers, paid auto-settlement, and personal pickup');
+    const { rows: [carrierA] } = await client.query(
+      `INSERT INTO supplier (supplier_name, is_active) VALUES ($1, true) RETURNING supplier_id`,
+      [`TEST Carrier A ${stamp}`],
+    );
+    const { rows: [carrierB] } = await client.query(
+      `INSERT INTO supplier (supplier_name, is_active) VALUES ($1, true) RETURNING supplier_id`,
+      [`TEST Carrier B ${stamp}`],
+    );
+
+    const multiPartId = await makeTestPart(client, `TEST-GRN-MULTI-${stamp}`, brand.brand_id, group.group_id);
+    const multiGrnNumber = await getNextDocumentNumber(client, 'GRN');
+    const { rows: [multiGrn] } = await client.query(
+      `INSERT INTO goods_receipt (grn_number, supplier_id, received_by, workflow_status, freight_amount,
+                                  freight_allocation_method, sync_retail_prices, created_by)
+       VALUES ($1, $2, $3, 'Posted', 1150, 'METHOD_A', false, $3) RETURNING grn_id`,
+      [multiGrnNumber, supplier.supplier_id, employee.employee_id],
+    );
+    const multiGrnId = multiGrn.grn_id;
+
+    const multiLines = [{ part_id: multiPartId, quantity: 10, cost_price: 100, override_freight_amount: null }];
+    const multiCosting = computeCosting({ lines: multiLines, freightAmount: 1150 });
+
+    await client.query(
+      `INSERT INTO goods_receipt_line (grn_id, part_id, quantity, cost_price, sale_price, landed_unit_cost, allocated_freight_amount)
+       VALUES ($1, $2, 10, 100, 150, $3, $4)`,
+      [multiGrnId, multiPartId, multiCosting.lines[0].landed_unit_cost, multiCosting.lines[0].allocated_freight_amount],
+    );
+
+    // Insert 3 freight charges:
+    // 1: Unpaid charge to Carrier A (600) with receipt number
+    // 2: Paid charge to Carrier B (400) with receipt number and cash payment method
+    // 3: Paid direct pickup expense (150) with no carrier
+    await client.query(
+      `INSERT INTO goods_receipt_freight (grn_id, supplier_id, amount, receipt_number, notes, is_paid, payment_method_id)
+       VALUES
+       ($1, $2, 600, 'LBC-101', 'Air express courier', false, null),
+       ($1, $3, 400, 'JNT-202', 'Ground courier COD', true, 1),
+       ($1, null, 150, 'OR-FUEL', 'Warehouse pickup toll and fuel', true, 1)`,
+      [multiGrnId, carrierA.supplier_id, carrierB.supplier_id],
+    );
+
+    const postResult = await postReceipt(client, {
+      grnId: multiGrnId,
+      grnNumber: multiGrnNumber,
+      supplierId: supplier.supplier_id,
+      employeeId: employee.employee_id,
+      lines: multiLines.map((l, i) => ({
+        part_id: l.part_id,
+        quantity: l.quantity,
+        return_quantity: 0,
+        cost_price: l.cost_price,
+        landed_unit_cost: multiCosting.lines[i].landed_unit_cost,
+      })),
+      freightAmount: 1150,
+      netGoodsValue: multiCosting.totals.net_goods_value,
+    });
+
+    assert(postResult.freightBills && postResult.freightBills.length === 2, 'two freight bills were created for the two carriers');
+
+    // Verify Carrier A's bill (unpaid)
+    const { rows: [billA] } = await client.query(
+      'SELECT bill_id, supplier_id, total_amount, amount_paid, status, notes FROM supplier_bill WHERE bill_id = $1',
+      [postResult.freightBills[0].bill_id],
+    );
+    assert(billA && near(billA.total_amount, 600), 'Carrier A bill is for 600');
+    assert(billA.status === 'Unpaid' && Number(billA.amount_paid) === 0, 'Carrier A bill is Unpaid with 0 paid');
+    assert(billA.notes && billA.notes.includes('LBC-101'), 'Carrier A bill notes include receipt # LBC-101');
+
+    // Verify Carrier B's bill (paid & auto-settled)
+    const { rows: [billB] } = await client.query(
+      'SELECT bill_id, supplier_id, total_amount, amount_paid, status, notes FROM supplier_bill WHERE bill_id = $1',
+      [postResult.freightBills[1].bill_id],
+    );
+    assert(billB && near(billB.total_amount, 400), 'Carrier B bill is for 400');
+    assert(billB.status === 'Paid' && near(billB.amount_paid, 400), 'Carrier B bill is automatically marked Paid');
+    assert(billB.notes && billB.notes.includes('JNT-202'), 'Carrier B bill notes include receipt # JNT-202');
+
+    // Verify Carrier B's payment record & allocation
+    const { rows: paymentsB } = await client.query(
+      'SELECT payment_id, pdc_status, amount, method_id FROM ap_payment WHERE supplier_id = $1',
+      [carrierB.supplier_id],
+    );
+    assert(paymentsB.length === 1, 'Carrier B has an AP payment recorded');
+    assert(paymentsB[0].pdc_status === 'CLEARED' && near(paymentsB[0].amount, 400),
+      'Carrier B payment is CLEARED and for 400');
+
+    const { rows: allocsB } = await client.query(
+      'SELECT amount_allocated FROM ap_payment_allocation WHERE payment_id = $1 AND bill_id = $2',
+      [paymentsB[0].payment_id, billB.bill_id],
+    );
+    assert(allocsB.length === 1 && near(allocsB[0].amount_allocated, 400), 'Payment was allocated to Carrier B bill');
+
+    // Verify goods_receipt_freight back-links
+    const { rows: freightRows } = await client.query(
+      'SELECT supplier_id, amount, receipt_number, bill_id, payment_id, is_paid FROM goods_receipt_freight WHERE grn_id = $1 ORDER BY grn_freight_id',
+      [multiGrnId],
+    );
+    assert(freightRows.length === 3, 'three goods_receipt_freight rows exist');
+    assert(freightRows[0].bill_id === billA.bill_id && !freightRows[0].payment_id, 'Carrier A row linked to billA with no payment');
+    assert(freightRows[1].bill_id === billB.bill_id && freightRows[1].payment_id === paymentsB[0].payment_id,
+      'Carrier B row linked to both billB and paymentB');
+    assert(!freightRows[2].bill_id && !freightRows[2].payment_id, 'Pickup row has no bill or payment');
+
+    // Verify stock landed cost includes all 3 charges (1150 total)
+    const { rows: [multiTxn] } = await client.query(
+      `SELECT unit_cost FROM inventory_transaction WHERE part_id = $1 AND reference_no = $2 AND trans_type = 'StockIn'`,
+      [multiPartId, multiGrnNumber],
+    );
+    assert(near(multiTxn.unit_cost, multiCosting.lines[0].landed_unit_cost),
+      `inventory landed unit cost includes all freight charges: ${multiTxn?.unit_cost} vs ${multiCosting.lines[0].landed_unit_cost}`);
   } finally {
     await client.query('ROLLBACK');
     client.release();
