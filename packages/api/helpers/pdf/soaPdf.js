@@ -139,6 +139,10 @@ const generateStatementOfAccountPDF = async (customerData, ledgerRows, agingSumm
         if (row.payment_channel) descParts.push(`Via: ${row.payment_channel.toUpperCase()}`);
         if (row.invoice_terms) descParts.push(`Terms: ${row.invoice_terms}`);
         if (row.cn_number) descParts.push(`CN: ${row.cn_number}`);
+        // The credit note's own value settled the replacement invoice, not this
+        // one -- pointing to it here is what lets the reader trace the exchange
+        // across both rows instead of seeing an unexplained credit.
+        if (row.linked_invoice_number) descParts.push(`Exchanged for: ${row.linked_invoice_number}`);
 
         const descHtml = `<span style="font-size:10px;font-weight:600;color:#1E293B;">${typeLabel}</span>`
             + (descParts.length > 1

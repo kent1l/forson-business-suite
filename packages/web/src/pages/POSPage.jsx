@@ -26,9 +26,10 @@ import MathExpressionInput from '../components/ui/MathExpressionInput';
 import Receipt from '../components/ui/Receipt';
 import SavedSalesPanel from '../components/pos/SavedSalesPanel';
 import VehicleFilterBar from '../components/VehicleFilterBar';
+import ExchangeModal from '../components/pos/ExchangeModal';
 
 // Grid with Save Sale + View Saved + Void Transaction
-const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave, handleVoid, canVoid, openCustomer, selectedCustomer, handleConvertToInvoice }) => {
+const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave, handleVoid, canVoid, openCustomer, selectedCustomer, handleConvertToInvoice, handleOpenExchange }) => {
     const totalCells = 10; // 5 cols x 2 rows
     const cells = Array.from({ length: totalCells });
 
@@ -98,6 +99,28 @@ const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave,
                                         ) : (
                                             <div className="flex-1 border-t border-transparent rounded-b-lg" />
                                         )}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    }
+
+                    // top row, second cell (index 1) -> Exchange Item
+                    if (i === 1) {
+                        return (
+                            <div key={i} className="col-span-1">
+                                <div
+                                    className="flex flex-col w-full h-full rounded-lg border shadow-sm transition-all duration-150 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:shadow-md cursor-pointer border-gray-200 dark:border-slate-700"
+                                    onClick={() => handleOpenExchange && handleOpenExchange()}
+                                    role="button"
+                                >
+                                    <div className="flex-1 flex flex-col items-center justify-center px-2 text-center">
+                                        <div className="mb-1 text-slate-600 dark:text-slate-300"><Icon path={ICONS.refresh} className="h-8 w-8" /></div>
+                                        <span className="font-semibold text-sm text-gray-900 dark:text-slate-100">Exchange Item</span>
+                                        <span className="text-[11px] text-slate-500 dark:text-slate-400">Return &amp; replace</span>
+                                    </div>
+                                    <div className="h-8 w-full flex items-stretch">
+                                        <div className="flex-1 border-t border-transparent rounded-b-lg" />
                                     </div>
                                 </div>
                             </div>
@@ -184,6 +207,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
     const [isNewPartModalOpen, setIsNewPartModalOpen] = useState(false);
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
     const [isSplitPaymentModalOpen, setIsSplitPaymentModalOpen] = useState(false);
+    const [isExchangeModalOpen, setIsExchangeModalOpen] = useState(false);
     const [paymentMethods, setPaymentMethods] = useState([]);
     const [initialPaymentMethod, setInitialPaymentMethod] = useState('');
     const [currentItem, setCurrentItem] = useState(null);
@@ -1066,6 +1090,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                             openCustomer={() => setIsCustomerModalOpen(true)}
                             selectedCustomer={selectedCustomer}
                             handleConvertToInvoice={handleConvertToInvoice}
+                            handleOpenExchange={() => setIsExchangeModalOpen(true)}
                         />
                     </div>
                     <div className="w-full md:w-1/3 bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 flex flex-col order-1 md:order-2 shadow-card">
@@ -1246,6 +1271,11 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                     withholdingPreview={withholdingPreview}
                 />
             )}
+            <ExchangeModal
+                isOpen={isExchangeModalOpen}
+                onClose={() => setIsExchangeModalOpen(false)}
+                onExchangeSuccess={() => setIsExchangeModalOpen(false)}
+            />
             {/* Void confirmation modal (centered, styled like system) */}
             <Modal isOpen={isVoidConfirmOpen} onClose={() => setIsVoidConfirmOpen(false)} title="Confirm Void" centered>
                 <div className="py-4">
