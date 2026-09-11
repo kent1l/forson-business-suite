@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import ReactDOM from 'react-dom/client';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
 import Icon from '../ui/Icon';
 import InfoTip from '../ui/InfoTip';
 import MathExpressionInput from '../ui/MathExpressionInput';
+import Receipt from '../ui/Receipt';
 import useTypeahead from '../../hooks/useTypeahead';
 import { ICONS } from '../../constants';
 import { useAuth } from '../../contexts/AuthContext';
@@ -371,6 +373,20 @@ const ExchangeModal = ({ isOpen, onClose, initialInvoice = null, onExchangeSucce
         tenderRequired, amountDue, currency, selectedPaymentMethod, isChequeMethod, showDowngradeChoice,
         downgradeDisposition, chargeToAccount, termsDays]);
 
+    // Mirrors POSPage.jsx's handlePrintReceipt: a dedicated print window keeps the
+    // thermal-slip CSS isolated from the app's own stylesheet.
+    const handlePrintReceipt = (saleData) => {
+        const printWindow = window.open('/print.html', '_blank', 'width=300,height=500');
+        printWindow.onload = () => {
+            const root = ReactDOM.createRoot(printWindow.document.getElementById('receipt-root'));
+            root.render(<Receipt saleData={saleData} settings={settings} />);
+            setTimeout(() => {
+                printWindow.print();
+                printWindow.close();
+            }, 500);
+        };
+    };
+
     const handleSubmit = async () => {
         if (validationError) { toast.error(validationError); return; }
 
@@ -410,7 +426,48 @@ const ExchangeModal = ({ isOpen, onClose, initialInvoice = null, onExchangeSucce
         setSubmitting(true);
         try {
             const res = await api.post('/invoices/exchange', payload);
-            toast.success(res.data?.message || 'Exchange processed successfully.');
+
+            // PRD Decision #5: a new physical slip is issued referencing the
+            // surrendered original -- built from what this modal already knows
+            // (returned/replacement lines, tender, disposition) plus the
+            // server's authoritative totals and document numbers.
+            const receiptData = {
+                lines: validReplacementLines.map(l => ({ part_id: l.part_id, display_name: l.display_name, quantity: Number(l.quantity), sale_price: Number(l.sale_price) })),
+                total: res.data.invoice.total_amount,
+                subtotal: res.data.invoice.subtotal_ex_tax,
+                tax: res.data.invoice.tax_total,
+                invoice_number: res.data.invoice.invoice_number,
+                physical_receipt_no: res.data.invoice.physical_receipt_no,
+                exchange_data: {
+                    original_invoice_number: selectedInvoice.invoice_number,
+                    original_physical_receipt_no: selectedInvoice.physical_receipt_no || null,
+                    cn_number: res.data.credit_note.cn_number,
+                    returned_lines: selectedReturnLines.map(l => ({
+                        display_name: l.display_name, quantity: l.returnQuantity, sale_price: Number(l.sale_price), is_defective: !!l.is_defective,
+                    })),
+                    return_credit: res.data.credit_note.total_amount,
+                    net_differential: res.data.net_differential,
+                    amount_due: res.data.amount_due,
+                    leftover_credit: res.data.leftover_credit,
+                    is_credit_sale: res.data.is_credit_sale,
+                    downgrade_disposition: showDowngradeChoice ? downgradeDisposition : null,
+                    tenders: showTenderFields ? [{ method_name: selectedPaymentMethod?.name, amount_paid: round2(paymentLine.amount_paid) }] : [],
+                },
+            };
+
+            toast.success(
+                (t) => (
+                    <div className="flex items-center">
+                        <span className="mr-4">{res.data?.message || 'Exchange processed successfully.'}</span>
+                        <button
+                            onClick={() => { toast.dismiss(t.id); handlePrintReceipt(receiptData); }}
+                            className="px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
+                        >
+                            Print Receipt
+                        </button>
+                    </div>
+                ), { duration: 10000 }
+            );
             if (res.data?.aging_warning) toast(res.data.aging_warning, { icon: '⚠️' });
             try { window.dispatchEvent(new CustomEvent('invoices:changed')); } catch { /* ignore */ }
             onExchangeSuccess && onExchangeSuccess(res.data);

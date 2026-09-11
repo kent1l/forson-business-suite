@@ -841,11 +841,14 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
                 i.terms                     AS invoice_terms,
                 i.total_amount              AS invoice_total,
                 cn.cn_number,
-                cn.refund_date              AS cn_date
+                cn.refund_date              AS cn_date,
+                cn.exchange_replacement_invoice_id,
+                exch_inv.invoice_number     AS exchange_replacement_invoice_number
             FROM ar_ledger l
             LEFT JOIN invoice i  ON l.invoice_id = i.invoice_id
             LEFT JOIN customer_payment cp ON l.payment_id = cp.payment_id
             LEFT JOIN credit_note cn ON l.cn_id  = cn.cn_id
+            LEFT JOIN invoice exch_inv ON exch_inv.invoice_id = cn.exchange_replacement_invoice_id
             WHERE l.customer_id = $1
             ORDER BY l.entry_date ASC, l.ledger_id ASC
         `, [customerId]);
@@ -962,6 +965,14 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
                 descText += ` (Ref: ${intRef})`;
             }
 
+            // A credit note the POS Item Exchange module created carries a link to the
+            // replacement invoice it helped pay for (credit_note.exchange_replacement_invoice_id,
+            // 20260911_01_pos_exchange_schema.sql). Flagging it distinctly here -- rather than
+            // leaving it to read as an ordinary refund's "Credit Note Applied" -- is what lets a
+            // customer or collector scanning the statement see at a glance that stock, not cash,
+            // is what actually left the business for this line.
+            const isExchangeCn = entry.entry_type === 'CREDIT_MEMO_APPLIED' && !!entry.exchange_replacement_invoice_id;
+
             ledgerRows.push({
                 ledger_id:           entry.ledger_id,
                 date:                entry.entry_date,
@@ -975,8 +986,9 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
                 sub_ref:             subRef,
                 payment_ref_no:      intRef || null,
                 cn_number:           entry.cn_number       || null,
+                linked_invoice_number: isExchangeCn ? entry.exchange_replacement_invoice_number : null,
                 event_type:          entry.entry_type,
-                type_label:          TYPE_LABELS[entry.entry_type] || entry.entry_type.replace(/_/g, ' '),
+                type_label:          isExchangeCn ? 'Credit Note Applied (Exchange)' : (TYPE_LABELS[entry.entry_type] || entry.entry_type.replace(/_/g, ' ')),
                 reference:           primaryRef,
                 document_number:     primaryRef,
                 payment_channel:     entry.payment_channel || null,
@@ -1126,11 +1138,14 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
                 i.due_date,
                 i.terms             AS invoice_terms,
                 cn.cn_number,
-                cn.refund_date      AS cn_date
+                cn.refund_date      AS cn_date,
+                cn.exchange_replacement_invoice_id,
+                exch_inv.invoice_number AS exchange_replacement_invoice_number
             FROM ar_ledger l
             LEFT JOIN invoice i   ON l.invoice_id = i.invoice_id
             LEFT JOIN customer_payment cp ON l.payment_id = cp.payment_id
             LEFT JOIN credit_note cn ON l.cn_id   = cn.cn_id
+            LEFT JOIN invoice exch_inv ON exch_inv.invoice_id = cn.exchange_replacement_invoice_id
             WHERE l.customer_id = $1
             ORDER BY l.entry_date ASC, l.ledger_id ASC
         `, [customerId]);
@@ -1219,6 +1234,10 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
                 descText += ` (Ref: ${intRef})`;
             }
 
+            // See the sibling /ar/customers/:customerId/ledger route for why this is
+            // flagged distinctly rather than left to read as an ordinary refund.
+            const isExchangeCn = entry.entry_type === 'CREDIT_MEMO_APPLIED' && !!entry.exchange_replacement_invoice_id;
+
             ledgerRows.push({
                 date:                entry.entry_date,
                 invoice_date:        entry.invoice_date   || null,
@@ -1230,8 +1249,9 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
                 sub_ref:             subRef,
                 payment_ref_no:      intRef || null,
                 cn_number:           entry.cn_number       || null,
+                linked_invoice_number: isExchangeCn ? entry.exchange_replacement_invoice_number : null,
                 event_type:          entry.entry_type,
-                type_label:          TYPE_LABELS[entry.entry_type] || entry.entry_type.replace(/_/g, ' '),
+                type_label:          isExchangeCn ? 'Credit Note Applied (Exchange)' : (TYPE_LABELS[entry.entry_type] || entry.entry_type.replace(/_/g, ' ')),
                 reference:           primaryRef,
                 document_number:     primaryRef,
                 payment_channel:     entry.payment_channel || null,
