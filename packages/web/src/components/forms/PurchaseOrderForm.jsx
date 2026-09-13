@@ -79,7 +79,11 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
             // If editing, load data from the existing PO
             api.get(`/purchase-orders/${existingPO.po_id}/lines`).then(res => {
                 setFormData({
-                    lines: res.data,
+                    lines: (res.data || []).map((line, index) => ({
+                        ...line,
+                        client_id: line.client_id || (line.po_line_id ? `po-line-${line.po_line_id}` : `line-${index}`),
+                        confirmed: true,
+                    })),
                     selectedSupplier: existingPO.supplier_id,
                     notes: existingPO.notes || '',
                     expectedDate: existingPO.expected_date ? existingPO.expected_date.split('T')[0] : ''
@@ -149,7 +153,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
         setSearchResults([]);
     };
 
-    const lineKey = line => line.client_id || `part-${line.part_id}`;
+    const lineKey = line => line.client_id || (line.po_line_id ? `po-line-${line.po_line_id}` : (line.part_id ? `part-${line.part_id}` : `draft-${line.custom_item_name || 'uncataloged'}`));
 
     const handleLineChange = (key, field, value) => {
         const numericValue = typeof value === 'number' ? value : (parseFloat(value) || 0);

@@ -1167,8 +1167,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                             </tr>
                         </thead>
                         <tbody>
-                            {lines.map(line => {
-                              const computed = costingByPart.get(line.part_id);
+                            {lines.map((line, index) => {
+                              const computed = costing.lines[index] || costingByPart.get(line.part_id);
                               const belowMinMarkup = (computed?.landed_unit_cost || 0) > 0
                                   && (computed?.effective_markup_percent ?? DEFAULT_MARKUP_PERCENT) < MIN_MARKUP_PERCENT;
                               const returned = Number(line.return_quantity) || 0;

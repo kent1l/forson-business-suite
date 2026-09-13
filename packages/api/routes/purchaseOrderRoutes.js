@@ -465,11 +465,11 @@ router.get('/purchase-orders/:id/pdf', protect, hasPermission('purchase_orders:v
                 p.detail,
                 b.brand_name,
                 g.group_name,
-                (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
+                COALESCE((SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id), pol.custom_item_name) AS display_name,
                 (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order)
                  FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers
             FROM purchase_order_line pol
-            JOIN part p ON pol.part_id = p.part_id
+            LEFT JOIN part p ON pol.part_id = p.part_id
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
             WHERE pol.po_id = $1

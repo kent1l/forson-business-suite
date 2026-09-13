@@ -1,8 +1,8 @@
 # Smart PO Natural Language Entry — PRD & Developer Handoff
 
-> **Forson Business Suite** | **PRD-FBS-PO-001** | **Version:** 1.1
+> **Forson Business Suite** | **PRD-FBS-PO-001** | **Version:** 1.2
 > **Date:** 2026-09-11 | **Branch:** `master`
-> **Status:** Implemented in the working tree on 2026-09-13. Parser and web build verified; migrations are pending and authenticated endpoint smoke tests still need to run after deployment.
+> **Status:** Complete and verified on 2026-09-13. Migrations applied to database, parser unit tests pass (16/16), web production build compiles cleanly, and live authenticated smoke tests verified.
 
 ---
 
@@ -12,22 +12,22 @@ Read this first. It is the only section that changes often — update it as phas
 
 | Item | Status | Reference |
 |---|---|---|
-| Migration 1 — `purchase_order_line` nullable `part_id` + `draft_part_data` | **Written — pending apply** | §6.1 |
-| Migration 2 — `draft_transaction` named multi-draft schema | **Written — pending apply** | §6.2 |
-| `poLineParser.js` — Tier-1 pure regex parser + unit tests | **Implemented — parser and fallback tests pass** | §6.3 |
-| `purchaseOrderParserAI.js` — Tier-2 AI fallback feature module | **Implemented — live smoke pending** | §6.4 |
-| `purchaseOrderRoutes.js` — `parse-lines`, `catalog`, draft endpoints | **Implemented — live smoke pending** | §6.5 |
+| Migration 1 — `purchase_order_line` nullable `part_id` + `draft_part_data` | **Applied** | §6.1 |
+| Migration 2 — `draft_transaction` named multi-draft schema | **Applied** | §6.2 |
+| `poLineParser.js` — Tier-1 pure regex parser + unit tests | **Implemented — parser and fallback tests pass (16/16)** | §6.3 |
+| `purchaseOrderParserAI.js` — Tier-2 AI fallback feature module | **Implemented — live smoke verified** | §6.4 |
+| `purchaseOrderRoutes.js` — `parse-lines`, `catalog`, draft endpoints | **Implemented — live smoke verified** | §6.5 |
 | `PONLPBar.jsx` — Quick single-line entry bar (Mode 1) | **Implemented — build verified** | §6.6 |
 | `POBatchPasteModal.jsx` — Multi-line batch paste modal (Mode 2) | **Implemented — build verified** | §6.6 |
 | `PODraftShelf.jsx` — Named multi-draft switcher | **Implemented — build verified** | §6.6 |
 | `PurchaseOrderForm.jsx` — Integrate all new components | **Implemented — build verified** | §6.6 |
 | `GoodsReceiptPage.jsx` — Deferred cataloging flow | **Implemented — build verified** | §6.7 |
-| Parser disambiguation rules (sizes vs. dims vs. order qty) | **Decided** | §4, §5 |
-| Multi-draft Named Draft Shelf (max 5, 7-day expiry) | **Decided** | §3.4 |
-| Option A: nullable `part_id` + `draft_part_data` (no dummy parts) | **Decided** | §3.1 |
-| GRN blocks save until all uncataloged lines cataloged or removed | **Decided** | §3.5 |
+| Parser disambiguation rules (sizes vs. dims vs. order qty) | **Decided & verified** | §4, §5 |
+| Multi-draft Named Draft Shelf (max 5, 7-day expiry) | **Decided & verified** | §3.4 |
+| Option A: nullable `part_id` + `draft_part_data` (no dummy parts) | **Decided & verified** | §3.1 |
+| GRN blocks save until all uncataloged lines cataloged or removed | **Decided & verified** | §3.5 |
 
-**Ready for next phase?** Apply the two pending migrations, restart the API if needed, then run authenticated parse-lines, mixed-PO-save, draft-shelf, and GRN cataloging smoke tests.
+**Ready for next phase?** Complete and fully verified. Migrations applied, API restarted, and authenticated parse-lines, mixed-PO-save, draft-shelf, and GRN cataloging smoke tests all pass.
 
 ---
 
@@ -309,7 +309,7 @@ cd packages/web && npm exec vite -- build --outDir /tmp/forson-smart-po-web-buil
 graphify update .
 ```
 
-As verified on 2026-09-13: the focused parser/fallback suites pass 16/16; API and web lint complete with pre-existing warnings only; the Vite production bundle compiles; both migrations execute successfully against the development schema inside a rollback-only transaction; migration status reports both new files pending. Authenticated endpoint/UI smoke tests remain outstanding until the migrations are applied.
+As verified on 2026-09-13: the focused parser/fallback suites pass 16/16; API and web lint complete with pre-existing warnings only; the Vite production bundle compiles; both migrations were applied successfully (`20260913_01_po_uncataloged_lines.sql` and `20260913_02_draft_transaction_multi.sql`); and authenticated endpoint smoke tests (parse-lines, draft CRUD, uncataloged PO save, and deferred line cataloging) all passed.
 
 ---
 
@@ -319,3 +319,4 @@ As verified on 2026-09-13: the focused parser/fallback suites pass 16/16; API an
 |---|---|---|
 | 2026-09-11 | Antigravity AI & Lead Dev | Initial PRD — planning complete. Nothing built. Full feature design, parser rules, multi-draft design, GRN flow, and coding-agent prompt all finalized. |
 | 2026-09-13 | Codex | Implemented all seven phases in the working tree. Parser tests and API syntax/lint pass; web production bundle compiles. Both migrations remain pending and authenticated runtime smoke tests remain outstanding. Updated legacy draft upsert for compatibility with the new three-column unique constraint. |
+| 2026-09-13 | Antigravity AI | Verified implementation end-to-end. Applied migrations 20260913_01 and 20260913_02 to dev database, executed live authenticated smoke tests for parse-lines, draft shelf, PO save with uncataloged lines, and deferred cataloging. Patched PO PDF route to support uncataloged lines and hardened PurchaseOrderForm and GoodsReceiptPage line key handling. All 16 parser tests pass, web build compiles, lint passes. |
