@@ -11,7 +11,12 @@
 		"test:api": "npm run -w packages/api test",
 		"test:web": "npm run -w packages/web test",
 		"test:mobile": "npm run -w packages/mobile test",
-		"lint": "npm run --workspaces --if-present lint"
+		"lint": "npm run --workspaces --if-present lint",
+		"graph:query": "graphify query",
+		"graph:explain": "graphify explain",
+		"graph:path": "graphify path",
+		"graph:affected": "graphify affected",
+		"graph:update": "graphify update ."
 	},
 	"dependencies": {
 		"date-fns": "^4.1.0",

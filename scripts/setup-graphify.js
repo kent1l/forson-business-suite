@@ -34,19 +34,21 @@ async function main() {
         console.log('3. Claude Code');
         console.log('4. GitHub Copilot');
         console.log('5. Aider');
-        console.log('6. Skip / Other (I will install it manually)');
+        console.log('6. Codex');
+        console.log('7. Skip / Other (I will install it manually)');
 
         let platform = '';
         while (!platform) {
-            const choice = await askQuestion('\nEnter the number of your assistant (1-6): ');
+            const choice = await askQuestion('\nEnter the number of your assistant (1-7): ');
             switch (choice.trim()) {
                 case '1': platform = 'antigravity'; break;
                 case '2': platform = 'cursor'; break;
                 case '3': platform = 'claude'; break;
                 case '4': platform = 'copilot'; break;
                 case '5': platform = 'aider'; break;
-                case '6': platform = 'skip'; break;
-                default: console.log('Invalid choice. Please enter a number from 1 to 6.');
+                case '6': platform = 'codex'; break;
+                case '7': platform = 'skip'; break;
+                default: console.log('Invalid choice. Please enter a number from 1 to 7.');
             }
         }
 
