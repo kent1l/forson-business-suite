@@ -67,6 +67,7 @@ describe('purchaseOrderParserAI resolver', () => {
 
     test('keeps an editable uncataloged draft when AI and catalog matching cannot resolve a line', async () => {
         jest.spyOn(resolver, '_findPartCandidates').mockResolvedValue([]);
+        jest.spyOn(resolver, '_resolveDraftReferences').mockResolvedValue({ brand_id: 12, group_id: 34 });
         jest.spyOn(resolver, 'parseLine').mockResolvedValue({
             quantity: 2,
             cost_price: 99,
@@ -83,7 +84,20 @@ describe('purchaseOrderParserAI resolver', () => {
             match_status: 'unresolved',
             part: null,
             quantity: 2,
-            draft_part_data: { brand: 'Unknown Brand', group: 'Hose', detail: 'Special hose', unit: '1m' },
+            raw_description: 'UNKNOWN BRAND SPECIAL HOSE 1M',
+            draft_part_data: {
+                schema_version: 1,
+                source_text: 'Unknown Brand Special hose 1m 2pcs @ 99',
+                parsed_by: 'LOCAL+AI',
+                confidence: 'HIGH',
+                brand: 'UNKNOWN BRAND',
+                brand_id: 12,
+                group: 'HOSE',
+                group_id: 34,
+                detail: 'SPECIAL HOSE',
+                pack_size: '1M',
+                purchase_uom: 'PCS',
+            },
         });
     });
 });

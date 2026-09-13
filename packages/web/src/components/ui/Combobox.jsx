@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 
-const Combobox = ({ options, value, onChange, placeholder, allowCreate = false, onCreate }) => {
-    const [inputValue, setInputValue] = useState('');
+const Combobox = ({ options, value, onChange, placeholder, allowCreate = false, onCreate, initialInputValue = '' }) => {
+    const [inputValue, setInputValue] = useState(initialInputValue);
     const [isOpen, setIsOpen] = useState(false);
     const [highlightedIndex, setHighlightedIndex] = useState(-1);
     const inputRef = useRef(null);
@@ -20,6 +20,12 @@ const Combobox = ({ options, value, onChange, placeholder, allowCreate = false, 
     }, [value, options]);
 
     const exactMatch = options.some(option => option.label.toLowerCase() === inputValue.trim().toLowerCase());
+
+    useEffect(() => {
+        if (value === undefined || value === null || value === '') {
+            setInputValue(initialInputValue || '');
+        }
+    }, [initialInputValue, value]);
 
     // Reset highlighted index when options change
     useEffect(() => {
@@ -133,7 +139,7 @@ const Combobox = ({ options, value, onChange, placeholder, allowCreate = false, 
                 ref={inputRef}
                 type="text"
                 className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                value={isOpen ? inputValue : selectedLabel}
+                value={isOpen ? inputValue : (selectedLabel || inputValue)}
                 onChange={handleInputChange}
                 onFocus={handleFocus}
                 onBlur={handleBlur}

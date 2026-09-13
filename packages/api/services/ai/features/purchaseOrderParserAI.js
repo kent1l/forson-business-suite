@@ -9,12 +9,26 @@ const MATCH_THRESHOLD = Number(process.env.PO_SEARCH_MATCH_THRESHOLD || 0.6);
 const AMBIGUOUS_MARGIN = 0.08;
 
 const cleanString = (value) => typeof value === 'string' ? value.trim() || null : null;
+const cleanCatalogString = (value) => {
+    const cleaned = cleanString(value);
+    return cleaned ? cleaned.replace(/\s+/g, ' ').toUpperCase() : null;
+};
 const cleanNumber = (value) => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
     ? Number(value)
     : null;
 const normalizeMatchText = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
 class PurchaseOrderParserAI {
+    async _resolveDraftReferences(brand, group) {
+        const { rows } = await db.query(
+            `SELECT
+                (SELECT brand_id FROM brand WHERE UPPER(TRIM(brand_name)) = $1 LIMIT 1) AS brand_id,
+                (SELECT group_id FROM "group" WHERE UPPER(TRIM(group_name)) = $2 LIMIT 1) AS group_id`,
+            [cleanCatalogString(brand), cleanCatalogString(group)]
+        );
+        return rows[0] || { brand_id: null, group_id: null };
+    }
+
     async _findPartCandidates(description) {
         if (!description) return [];
         const search = await meiliClient.index('parts').search(description, {
@@ -77,20 +91,35 @@ class PurchaseOrderParserAI {
         }
 
         const unresolved = !resolution.part && resolution.match_status !== 'ambiguous';
+        const brand = cleanCatalogString(aiData?.brand);
+        const group = cleanCatalogString(aiData?.group);
+        const packSize = cleanCatalogString(aiData?.pack_size || aiData?.unit || tierOne.pack_size);
+        const purchaseUom = cleanCatalogString(aiData?.purchase_uom || tierOne.order_unit);
+        const detail = cleanCatalogString(aiData?.detail || finalParse.raw_description || tierOne.raw_description);
+        const references = unresolved
+            ? await this._resolveDraftReferences(brand, group)
+            : { brand_id: null, group_id: null };
         return {
             raw,
             quantity: finalParse.quantity ?? null,
             cost_price: finalParse.cost_price ?? null,
-            raw_description: finalParse.raw_description || tierOne.raw_description,
+            raw_description: cleanCatalogString(finalParse.raw_description || tierOne.raw_description),
             match_status: unresolved ? 'unresolved' : resolution.match_status,
             confidence: tierOne.confidence,
             part: resolution.part,
             candidates: resolution.candidates,
             draft_part_data: unresolved ? {
-                brand: aiData?.brand || null,
-                group: aiData?.group || null,
-                detail: aiData?.detail || finalParse.raw_description || tierOne.raw_description,
-                unit: aiData?.unit || null,
+                schema_version: 1,
+                source_text: raw,
+                parsed_by: aiData ? 'LOCAL+AI' : 'LOCAL',
+                confidence: tierOne.confidence,
+                brand,
+                brand_id: references.brand_id || null,
+                group,
+                group_id: references.group_id || null,
+                detail,
+                pack_size: packSize,
+                purchase_uom: purchaseUom,
             } : null,
         };
     }
@@ -106,7 +135,7 @@ class PurchaseOrderParserAI {
         const basePrompt = `You extract one purchase-order line for an automotive parts retailer in the Philippines.
 Return only fields supported by the text. Do not invent a brand, group, price, or quantity.
 
-The quantity field is the number of units being ordered — never a product size. Product size specifiers such as 1L, 5L, 200mL, 1 gal, 35mm, 3/4", 10W-40 are product attributes and belong in description and unit fields only.
+The quantity field is the number of units being ordered — never a product size. Product size specifiers such as 1L, 5L, 200mL, 1 gal, 35mm, 3/4", 10W-40 are product attributes and belong in detail and pack_size. purchase_uom is the ordered container/unit such as PCS, BTL, BOX, SET, or ROLL.
 
 The deterministic parser proposed quantity=${deterministic.quantity ?? 'unknown'}, cost_price=${deterministic.cost_price ?? 'unknown'}, and description="${sanitizeInput(deterministic.raw_description || '')}". Preserve reliable values unless the original text clearly contradicts them.
 
@@ -118,7 +147,8 @@ Purchase-order line: "${safeText}"`;
   "brand": string or null,
   "group": string or null,
   "detail": string or null,
-  "unit": string or null,
+  "pack_size": string or null,
+  "purchase_uom": string or null,
   "raw_description": string
 }`;
 
@@ -129,11 +159,12 @@ Purchase-order line: "${safeText}"`;
             return {
                 quantity: cleanNumber(raw?.quantity) ?? deterministic.quantity ?? null,
                 cost_price: cleanNumber(raw?.cost_price) ?? deterministic.cost_price ?? null,
-                brand: cleanString(raw?.brand),
-                group: cleanString(raw?.group),
-                detail: cleanString(raw?.detail) || cleanString(deterministic.raw_description),
-                unit: cleanString(raw?.unit),
-                raw_description: cleanString(raw?.raw_description) || cleanString(deterministic.raw_description) || safeText,
+                brand: cleanCatalogString(raw?.brand),
+                group: cleanCatalogString(raw?.group),
+                detail: cleanCatalogString(raw?.detail) || cleanCatalogString(deterministic.raw_description),
+                pack_size: cleanCatalogString(raw?.pack_size || raw?.unit) || cleanCatalogString(deterministic.pack_size),
+                purchase_uom: cleanCatalogString(raw?.purchase_uom) || cleanCatalogString(deterministic.order_unit),
+                raw_description: cleanCatalogString(raw?.raw_description) || cleanCatalogString(deterministic.raw_description) || cleanCatalogString(safeText),
             };
         } catch (error) {
             const wrapped = new Error(`AI purchase-order parsing failed: ${error.message}`);

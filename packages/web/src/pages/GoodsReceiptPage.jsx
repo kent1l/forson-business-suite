@@ -22,6 +22,8 @@ import { formatCurrency } from '../utils/currency';
 import { computeCosting, markupFromPrice, roundUpTo, DEFAULT_MARKUP_PERCENT, MIN_MARKUP_PERCENT, PRICE_ROUNDING_INCREMENT, METHOD_A } from '../utils/grnCosting';
 import { useAuth } from '../contexts/AuthContext';
 
+const upperCatalogText = (value) => String(value || '').replace(/\s+/g, ' ').trim().toUpperCase();
+
 const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     const [suppliers, setSuppliers] = useState([]);
     const [brands, setBrands] = useState([]);
@@ -95,6 +97,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     const canSubmit = hasPermission('goods_receipt:submit');
     const canPost = hasPermission('goods_receipt:post');
     const canEditSuppliers = hasPermission('suppliers:edit');
+    const canCatalogParts = hasPermission('parts:create');
 
     // Set when a typed markup lands on a price that is not a whole PRICE_ROUNDING_INCREMENT,
     // and the receiver has to say which of the two they meant. Null the rest of the time.
@@ -538,13 +541,22 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     const catalogPrefill = useMemo(() => {
         if (!catalogTarget) return null;
         const draft = catalogTarget.draft_part_data || {};
-        const brand = brands.find(item => String(item.brand_name || '').toLowerCase() === String(draft.brand || '').toLowerCase());
-        const group = groups.find(item => String(item.group_name || '').toLowerCase() === String(draft.group || '').toLowerCase());
+        const brand = brands.find(item => Number(item.brand_id) === Number(draft.brand_id))
+            || brands.find(item => upperCatalogText(item.brand_name) === upperCatalogText(draft.brand));
+        const group = groups.find(item => Number(item.group_id) === Number(draft.group_id))
+            || groups.find(item => upperCatalogText(item.group_name) === upperCatalogText(draft.group));
+        const packSize = upperCatalogText(draft.pack_size);
+        const parsedDetail = upperCatalogText(draft.detail || catalogTarget.custom_item_name);
+        const detail = packSize && !parsedDetail.includes(packSize)
+            ? `${parsedDetail} ${packSize}`.trim()
+            : parsedDetail;
         return {
-            detail: draft.detail || catalogTarget.custom_item_name || '',
+            detail,
             brand_id: brand?.brand_id || '',
+            brand_name: upperCatalogText(draft.brand),
             group_id: group?.group_id || '',
-            measurement_unit: draft.unit || catalogTarget.unit || 'pcs',
+            group_name: upperCatalogText(draft.group),
+            measurement_unit: upperCatalogText(draft.purchase_uom || catalogTarget.unit || 'PCS'),
             last_cost: catalogTarget.cost_price || 0,
         };
     }, [catalogTarget, brands, groups]);
@@ -552,20 +564,23 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     const handleCatalogPart = async (partData) => {
         if (!catalogTarget || !selectedPO) return;
         try {
-            const { data: created } = await api.post('/parts', { ...partData, created_by: user.employee_id });
-            await api.patch(`/purchase-orders/${selectedPO.po_id}/lines/${catalogTarget.po_line_id}/catalog`, { part_id: created.part_id });
-            const { data: fullPart } = await api.get(`/parts/${created.part_id}`);
+            const { data: fullPart } = await api.post(
+                `/purchase-orders/${selectedPO.po_id}/lines/${catalogTarget.po_line_id}/catalog`,
+                partData
+            );
             setLines(current => current.map(line => line.po_line_id === catalogTarget.po_line_id ? {
                 ...line,
                 ...fullPart,
-                part_id: created.part_id,
+                part_id: fullPart.part_id,
                 draft_part_data: null,
-                display_name: fullPart.display_name || created.display_name || created.detail,
+                display_name: fullPart.display_name || fullPart.detail,
                 quantity: line.quantity,
                 cost_price: line.cost_price,
             } : line));
             setCatalogTarget(null);
-            toast.success('Part cataloged and ready to receive.');
+            toast.success(fullPart.catalog_resolution === 'existing'
+                ? 'Matching catalog part found and linked to this PO line.'
+                : 'Part cataloged and ready to receive.');
         } catch (error) {
             toast.error(error?.response?.data?.message || 'Could not catalog this PO line.');
         }
@@ -1188,11 +1203,13 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                         <div className="flex items-center justify-between gap-2">
                                             <div className="min-w-0 flex-1">
                                                 <div className="truncate text-sm font-medium text-gray-800 dark:text-slate-100">{line.display_name}</div>
-                                                {!line.part_id && (
-                                                    <button type="button" onClick={() => setCatalogTarget(line)} className="mt-1 inline-flex rounded-full bg-yellow-100 px-2 py-1 text-xs font-semibold text-yellow-800 hover:bg-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300">
-                                                        Catalog &amp; Receive
-                                                    </button>
-                                                )}
+                                                {!line.part_id && (canCatalogParts ? (
+                                                        <button type="button" onClick={() => setCatalogTarget(line)} className="mt-1 inline-flex rounded-full bg-yellow-100 px-2 py-1 text-xs font-semibold text-yellow-800 hover:bg-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300">
+                                                            Catalog &amp; Receive
+                                                        </button>
+                                                    ) : (
+                                                        <span className="mt-1 block text-xs text-yellow-700 dark:text-yellow-300">Requires permission to create parts</span>
+                                                    ))}
                                                 {line.stock_on_hand !== undefined && line.stock_on_hand !== null && (
                                                     <div className={`text-xs font-medium ${Number(line.stock_on_hand) > 0 ? 'text-gray-500 dark:text-slate-400' : 'text-danger-600 dark:text-danger-400'}`}>
                                                         {Number(line.stock_on_hand) || 0} in stock
@@ -1484,7 +1501,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             <Modal isOpen={!!catalogTarget} onClose={() => setCatalogTarget(null)} title="Catalog purchase-order item">
                 {catalogPrefill && (
                     <PartForm
-                        part={catalogPrefill}
+                        initialValues={catalogPrefill}
+                        uppercaseText
                         brands={brands}
                         groups={groups}
                         onSave={handleCatalogPart}

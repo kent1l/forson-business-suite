@@ -9,6 +9,32 @@ const router = express.Router();
 
 const PO_DRAFT_LIMIT = 5;
 
+const normalizeCatalogText = (value) => {
+    if (typeof value !== 'string') return null;
+    const cleaned = value.replace(/\s+/g, ' ').trim();
+    return cleaned ? cleaned.toUpperCase() : null;
+};
+
+function normalizeDraftPartData(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const positiveId = (candidate) => Number.isInteger(Number(candidate)) && Number(candidate) > 0
+        ? Number(candidate)
+        : null;
+    return {
+        schema_version: 1,
+        source_text: typeof value.source_text === 'string' ? value.source_text.trim().slice(0, 1000) : null,
+        parsed_by: normalizeCatalogText(value.parsed_by) || 'LOCAL',
+        confidence: normalizeCatalogText(value.confidence),
+        brand: normalizeCatalogText(value.brand),
+        brand_id: positiveId(value.brand_id),
+        group: normalizeCatalogText(value.group),
+        group_id: positiveId(value.group_id),
+        detail: normalizeCatalogText(value.detail),
+        pack_size: normalizeCatalogText(value.pack_size || value.unit),
+        purchase_uom: normalizeCatalogText(value.purchase_uom),
+    };
+}
+
 function validatePurchaseOrderLines(lines) {
     if (!Array.isArray(lines) || lines.length === 0) return 'At least one line is required.';
     for (const line of lines) {
@@ -25,9 +51,9 @@ function validatePurchaseOrderLines(lines) {
 function lineInsertValues(line) {
     return [
         line.part_id || null,
-        line.part_id ? null : String(line.custom_item_name || '').trim(),
-        line.unit || null,
-        line.draft_part_data || null,
+        line.part_id ? null : normalizeCatalogText(line.custom_item_name),
+        normalizeCatalogText(line.unit),
+        line.part_id ? null : normalizeDraftPartData(line.draft_part_data),
         Number(line.quantity),
         Number(line.cost_price),
     ];

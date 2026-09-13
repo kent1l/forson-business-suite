@@ -9,7 +9,7 @@ import MathExpressionInput from '../ui/MathExpressionInput';
 import ApplicationSearchCombobox from '../applications/ApplicationSearchCombobox';
 import PartApplicationManager from '../../pages/PartApplicationManager';
 
-const BrandGroupForm = ({ type, onSave, onCancel, initialName = '' }) => {
+const BrandGroupForm = ({ type, onSave, onCancel, initialName = '', uppercaseText = false }) => {
     const [name, setName] = useState(initialName || '');
     const [code, setCode] = useState('');
     const [saving, setSaving] = useState(false);
@@ -44,7 +44,7 @@ const BrandGroupForm = ({ type, onSave, onCancel, initialName = '' }) => {
         <form onSubmit={handleSubmit} className="space-y-4">
             <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">{type} Name</label>
-                <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" required />
+                <input type="text" value={name} onChange={(e) => setName(uppercaseText ? e.target.value.toUpperCase() : e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" required />
             </div>
             <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">{type} Code (max 10 chars)</label>
@@ -58,7 +58,7 @@ const BrandGroupForm = ({ type, onSave, onCancel, initialName = '' }) => {
     );
 };
 
-const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, isBulkEdit = false, selectedCount: _selectedCount = 0 }) => {
+const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, groups, onSave, onCancel, onBrandGroupAdded, isBulkEdit = false, selectedCount: _selectedCount = 0 }) => {
     const { settings } = useSettings();
     const [tags, setTags] = useState([]); // <-- State for tags
     const [barcodes, setBarcodes] = useState([]); // <-- State for barcodes
@@ -72,7 +72,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
     // fetch existing linked applications for the part when editing
     const fetchSelectedApps = useCallback(async () => {
         if (isBulkEdit) { setSelectedApps([]); return; }
-        if (!part) { setSelectedApps([]); return; }
+        if (!part?.part_id) { setSelectedApps([]); return; }
         try {
             const res = await api.get(`/parts/${part.part_id}/applications`);
             setSelectedApps(Array.isArray(res.data) ? res.data : []);
@@ -104,25 +104,26 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                 is_universal: 'unchanged'
             };
         }
-        if (part) {
+        const source = part || initialValues;
+        if (source) {
             return {
-                detail: part.detail || '',
-                brand_id: part.brand_id || '',
-                group_id: part.group_id || '',
-                part_numbers_string: part.part_numbers ? part.part_numbers.replace(/; /g, ', ') : '',
-                reorder_point: part.reorder_point ?? 1,
-                warning_quantity: part.warning_quantity ?? 1,
-                is_active: part.is_active ?? true,
-                last_cost: part.last_cost ?? 0,
-                last_sale_price: part.last_sale_price ?? 0,
-                measurement_unit: part.measurement_unit || 'pcs',
-                tax_rate_id: part.tax_rate_id || '',
-                is_price_change_allowed: part.is_price_change_allowed ?? true,
-                is_using_default_quantity: part.is_using_default_quantity ?? true,
-                is_service: part.is_service ?? false,
-                low_stock_warning: part.low_stock_warning ?? true,
-                is_tax_inclusive_price: part.is_tax_inclusive_price ?? (settings?.DEFAULT_IS_TAX_INCLUSIVE !== 'false'),
-                is_universal: part.is_universal ?? false
+                detail: source.detail || '',
+                brand_id: source.brand_id || '',
+                group_id: source.group_id || '',
+                part_numbers_string: source.part_numbers ? source.part_numbers.replace(/; /g, ', ') : '',
+                reorder_point: source.reorder_point ?? 1,
+                warning_quantity: source.warning_quantity ?? 1,
+                is_active: source.is_active ?? true,
+                last_cost: source.last_cost ?? 0,
+                last_sale_price: source.last_sale_price ?? 0,
+                measurement_unit: source.measurement_unit || 'pcs',
+                tax_rate_id: source.tax_rate_id || '',
+                is_price_change_allowed: source.is_price_change_allowed ?? true,
+                is_using_default_quantity: source.is_using_default_quantity ?? true,
+                is_service: source.is_service ?? false,
+                low_stock_warning: source.low_stock_warning ?? true,
+                is_tax_inclusive_price: source.is_tax_inclusive_price ?? (settings?.DEFAULT_IS_TAX_INCLUSIVE !== 'false'),
+                is_universal: source.is_universal ?? false
             };
         }
         return {
@@ -134,7 +135,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
             is_tax_inclusive_price: settings?.DEFAULT_IS_TAX_INCLUSIVE !== 'false', // Default to true unless explicitly set to false
             is_universal: false
         };
-    }, [isBulkEdit, settings, part]);
+    }, [isBulkEdit, settings, part, initialValues]);
 
     const [formData, setFormData] = useState(getInitialState());
 
@@ -156,15 +157,16 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
 
     const initialTags = useMemo(() => {
         let tags = [];
-        if (part?.tags) {
-            if (Array.isArray(part.tags)) {
-                tags = part.tags;
-            } else if (typeof part.tags === 'string') {
-                tags = part.tags.split(',').map(t => t.trim()).filter(t => t);
+        const sourceTags = part?.tags ?? initialValues?.tags;
+        if (sourceTags) {
+            if (Array.isArray(sourceTags)) {
+                tags = sourceTags;
+            } else if (typeof sourceTags === 'string') {
+                tags = sourceTags.split(',').map(t => t.trim()).filter(t => t);
             }
         }
         return tags;
-    }, [part]);
+    }, [part, initialValues]);
 
     useEffect(() => {
         setTags(initialTags);
@@ -172,15 +174,16 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
 
     const initialBarcodes = useMemo(() => {
         let bs = [];
-        if (part?.barcodes) {
-            if (Array.isArray(part.barcodes)) {
-                bs = part.barcodes;
-            } else if (typeof part.barcodes === 'string') {
-                bs = part.barcodes.split(',').map(b => b.trim()).filter(b => b);
+        const sourceBarcodes = part?.barcodes ?? initialValues?.barcodes;
+        if (sourceBarcodes) {
+            if (Array.isArray(sourceBarcodes)) {
+                bs = sourceBarcodes;
+            } else if (typeof sourceBarcodes === 'string') {
+                bs = sourceBarcodes.split(',').map(b => b.trim()).filter(b => b);
             }
         }
         return bs;
-    }, [part]);
+    }, [part, initialValues]);
 
     useEffect(() => {
         setBarcodes(initialBarcodes);
@@ -209,7 +212,11 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
     }, [formData, tags, barcodes, selectedApps, onSave]);
 
     const handleChange = (e) => {
-        const { name, value, type, checked } = e.target;
+        const { name, type, checked } = e.target;
+        let { value } = e.target;
+        if (uppercaseText && ['detail', 'part_numbers_string', 'measurement_unit'].includes(name)) {
+            value = value.toUpperCase();
+        }
         setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
     };
     
@@ -301,10 +308,11 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                             value={formData.brand_id}
                             onChange={(value) => handleComboboxChange('brand_id', value)}
                             placeholder={isBulkEdit ? 'No Change' : 'Select a Brand'}
+                            initialInputValue={!formData.brand_id ? initialValues?.brand_name || '' : ''}
                             allowCreate={true}
                             onCreate={(typedName) => {
                                 // open the brand modal and prefill name
-                                setInitialBrandName(typedName);
+                                setInitialBrandName(uppercaseText ? typedName.toUpperCase() : typedName);
                                 setIsBrandModalOpen(true);
                             }}
                         />
@@ -330,8 +338,9 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                             value={formData.group_id}
                             onChange={(value) => handleComboboxChange('group_id', value)}
                             placeholder={isBulkEdit ? 'No Change' : 'Select a Group'}
+                            initialInputValue={!formData.group_id ? initialValues?.group_name || '' : ''}
                             allowCreate={true}
-                            onCreate={(typedName) => { setInitialGroupName(typedName); setIsGroupModalOpen(true); }}
+                            onCreate={(typedName) => { setInitialGroupName(uppercaseText ? typedName.toUpperCase() : typedName); setIsGroupModalOpen(true); }}
                         />
                     </div>
                     {/* Read-only lighter group code display */}
@@ -384,7 +393,7 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                             <div className="flex-grow">
                                 <ApplicationSearchCombobox value={null} onChange={(app) => addApplication(app)} placeholder="Search make model engine " />
                             </div>
-                            {part && (
+                            {part?.part_id && (
                                 <button type="button" onClick={() => setIsAppManagerOpen(true)} className="px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Manage</button>
                             )}
                         </div>
@@ -509,10 +518,10 @@ const PartForm = ({ part, brands, groups, onSave, onCancel, onBrandGroupAdded, i
                 </div>
             </form>
             <Modal isOpen={isBrandModalOpen} onClose={() => { setIsBrandModalOpen(false); setInitialBrandName(''); }} title="Add New Brand">
-                <BrandGroupForm type="Brand" onSave={(newBrand) => handleNewBrandGroup(newBrand, 'Brand')} onCancel={() => { setIsBrandModalOpen(false); setInitialBrandName(''); }} initialName={initialBrandName} />
+                <BrandGroupForm type="Brand" onSave={(newBrand) => handleNewBrandGroup(newBrand, 'Brand')} onCancel={() => { setIsBrandModalOpen(false); setInitialBrandName(''); }} initialName={initialBrandName} uppercaseText={uppercaseText} />
             </Modal>
             <Modal isOpen={isGroupModalOpen} onClose={() => { setIsGroupModalOpen(false); setInitialGroupName(''); }} title="Add New Group">
-                <BrandGroupForm type="Group" onSave={(newGroup) => handleNewBrandGroup(newGroup, 'Group')} onCancel={() => { setIsGroupModalOpen(false); setInitialGroupName(''); }} initialName={initialGroupName} />
+                <BrandGroupForm type="Group" onSave={(newGroup) => handleNewBrandGroup(newGroup, 'Group')} onCancel={() => { setIsGroupModalOpen(false); setInitialGroupName(''); }} initialName={initialGroupName} uppercaseText={uppercaseText} />
             </Modal>
             <Modal isOpen={isAppManagerOpen} onClose={() => { setIsAppManagerOpen(false); fetchSelectedApps(); }} title={`Manage Applications for: ${part?.detail || part?.display_name || ''}`}>
                 <PartApplicationManager part={part} onCancel={() => { setIsAppManagerOpen(false); fetchSelectedApps(); }} />

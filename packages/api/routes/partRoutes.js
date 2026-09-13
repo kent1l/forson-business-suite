@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { protect, hasPermission } = require('../middleware/authMiddleware');
+const { protect, hasPermission, userHasPermission } = require('../middleware/authMiddleware');
 const { meiliClient } = require('../meilisearch');
 const { enqueuePartUpsert, enqueuePartDelete } = require('../services/meiliOutboxService');
 const { activeAliasCondition, softDeleteSupported } = require('../helpers/partNumberSoftDelete');
@@ -226,6 +226,65 @@ const managePartNumbers = async (client, partNumbersString, partId, modifiedBy) 
         }
         order++;
     }
+};
+
+const createPartWithClient = async (client, payload, createdBy, { uppercaseText = false } = {}) => {
+    const { tags, barcodes, part_numbers_string, applications, ...partData } = payload;
+    delete partData.created_by;
+    const normalizedDetail = normalizeText(partData.detail);
+    partData.detail = uppercaseText && normalizedDetail ? normalizedDetail.toUpperCase() : normalizedDetail;
+    if (typeof partData.measurement_unit === 'string') {
+        const normalizedUnit = normalizeText(partData.measurement_unit);
+        partData.measurement_unit = uppercaseText && normalizedUnit ? normalizedUnit.toUpperCase() : normalizedUnit;
+    }
+    if (!partData.brand_id || !partData.group_id) {
+        const error = new Error('Brand and group are required');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const brandRes = await client.query('SELECT brand_code, brand_name FROM brand WHERE brand_id = $1', [partData.brand_id]);
+    const groupRes = await client.query('SELECT group_code, group_name FROM "group" WHERE group_id = $1', [partData.group_id]);
+    if (brandRes.rows.length === 0 || groupRes.rows.length === 0) {
+        const error = new Error('Invalid brand or group ID');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const skuPrefix = `${groupRes.rows[0].group_code}-${brandRes.rows[0].brand_code}`;
+    let nextSeqNum = 1;
+    const seqRes = await client.query('SELECT last_number FROM document_sequence WHERE prefix = $1 FOR UPDATE', [skuPrefix]);
+    if (seqRes.rows.length > 0) {
+        nextSeqNum = seqRes.rows[0].last_number + 1;
+        await client.query('UPDATE document_sequence SET last_number = $1 WHERE prefix = $2', [nextSeqNum, skuPrefix]);
+    } else {
+        await client.query('INSERT INTO document_sequence (prefix, period, last_number) VALUES ($1, \'ALL\', $2)', [skuPrefix, nextSeqNum]);
+    }
+    const internalSku = `${skuPrefix}-${String(nextSeqNum).padStart(4, '0')}`;
+    const taxRateIdOrNull = partData.tax_rate_id ? parseInt(partData.tax_rate_id, 10) : null;
+    const newPart = await client.query(
+        `INSERT INTO part (detail, brand_id, group_id, internal_sku, reorder_point, warning_quantity, is_active, last_cost, last_sale_price, measurement_unit, is_price_change_allowed, is_using_default_quantity, is_service, low_stock_warning, created_by, tax_rate_id, is_tax_inclusive_price, is_universal)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
+        [
+            partData.detail, partData.brand_id, partData.group_id, internalSku, partData.reorder_point,
+            partData.warning_quantity, partData.is_active, partData.last_cost, partData.last_sale_price,
+            partData.measurement_unit, partData.is_price_change_allowed, partData.is_using_default_quantity,
+            partData.is_service, partData.low_stock_warning, createdBy, taxRateIdOrNull,
+            partData.is_tax_inclusive_price, !!partData.is_universal,
+        ]
+    );
+    const newPartData = newPart.rows[0];
+
+    await managePartNumbers(client, part_numbers_string, newPartData.part_id, createdBy);
+    const needsCosting = !partData.is_service && !(Number(partData.last_cost) > 0);
+    const tagsToApply = needsCosting
+        ? [...new Set([...(Array.isArray(tags) ? tags : []), 'pending_costing'])]
+        : tags;
+    await manageTags(client, tagsToApply, newPartData.part_id);
+    await manageBarcodes(client, barcodes, newPartData.part_id);
+    await manageApplications(client, applications, newPartData.part_id);
+
+    return newPartData;
 };
 
 // GET all parts with status filter, search, and sorting (POWERED BY MEILISEARCH)
@@ -474,68 +533,10 @@ router.get('/parts/:id/tags', protect, hasPermission('parts:view'), async (req, 
 });
 
 router.post('/parts', protect, hasPermission('parts:create'), async (req, res) => {
-    console.log('[DEBUG] POST /parts - Request body:', req.body);
-    const { tags, barcodes, created_by, part_numbers_string, applications, ...partData } = req.body;
-    partData.detail = normalizeText(partData.detail);
-    // detail is optional; only brand and group are required
-    if (!partData.brand_id || !partData.group_id) {
-        console.log('[DEBUG] POST /parts - Missing brand_id or group_id');
-        return res.status(400).json({ message: 'Brand and group are required' });
-    }
-    console.log('[DEBUG] POST /parts - Getting DB client');
     const client = await db.getClient();
     try {
-        console.log('[DEBUG] POST /parts - Starting transaction');
         await client.query('BEGIN');
-        console.log('[DEBUG] POST /parts - Fetching brand:', partData.brand_id);
-        const brandRes = await client.query('SELECT brand_code, brand_name FROM brand WHERE brand_id = $1', [partData.brand_id]);
-        console.log('[DEBUG] POST /parts - Fetching group:', partData.group_id);
-        const groupRes = await client.query('SELECT group_code, group_name FROM "group" WHERE group_id = $1', [partData.group_id]);
-        console.log('[DEBUG] POST /parts - Brand result:', brandRes.rows, 'Group result:', groupRes.rows);
-        if (brandRes.rows.length === 0 || groupRes.rows.length === 0) {
-            console.log('[DEBUG] POST /parts - Invalid brand or group');
-            throw new Error('Invalid brand or group ID');
-        }
-        
-        const skuPrefix = `${groupRes.rows[0].group_code}-${brandRes.rows[0].brand_code}`;
-        let nextSeqNum = 1;
-        const seqRes = await client.query('SELECT last_number FROM document_sequence WHERE prefix = $1 FOR UPDATE', [skuPrefix]);
-        if (seqRes.rows.length > 0) {
-            nextSeqNum = seqRes.rows[0].last_number + 1;
-            await client.query('UPDATE document_sequence SET last_number = $1 WHERE prefix = $2', [nextSeqNum, skuPrefix]);
-        } else {
-            await client.query('INSERT INTO document_sequence (prefix, period, last_number) VALUES ($1, \'ALL\', $2)', [skuPrefix, nextSeqNum]);
-        }
-        const internalSku = `${skuPrefix}-${String(nextSeqNum).padStart(4, '0')}`;
-        
-        const taxRateIdOrNull = partData.tax_rate_id ? parseInt(partData.tax_rate_id, 10) : null;
-
-        const newPartQuery = `
-            INSERT INTO part (detail, brand_id, group_id, internal_sku, reorder_point, warning_quantity, is_active, last_cost, last_sale_price, measurement_unit, is_price_change_allowed, is_using_default_quantity, is_service, low_stock_warning, created_by, tax_rate_id, is_tax_inclusive_price, is_universal)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *;
-        `;
-        const newPart = await client.query(newPartQuery, [
-            partData.detail, partData.brand_id, partData.group_id, internalSku, partData.reorder_point,
-            partData.warning_quantity, partData.is_active, partData.last_cost, partData.last_sale_price,
-            partData.measurement_unit, partData.is_price_change_allowed, partData.is_using_default_quantity,
-            partData.is_service, partData.low_stock_warning, created_by, taxRateIdOrNull, partData.is_tax_inclusive_price,
-            !!partData.is_universal
-        ]);
-        const newPartData = newPart.rows[0];
-
-        await managePartNumbers(client, part_numbers_string, newPartData.part_id, created_by);
-        
-        // Parts quick-added mid-sale are routinely saved with no cost, which leaves them
-        // with no WAC and no way to report margin. Flag them at creation so the cost
-        // cleanup queue can find them instead of relying on someone noticing later.
-        const needsCosting = !partData.is_service && !(Number(partData.last_cost) > 0);
-        const tagsToApply = needsCosting
-            ? [...new Set([...(Array.isArray(tags) ? tags : []), 'pending_costing'])]
-            : tags;
-
-        await manageTags(client, tagsToApply, newPartData.part_id);
-        await manageBarcodes(client, barcodes, newPartData.part_id);
-        await manageApplications(client, applications, newPartData.part_id);
+        const newPartData = await createPartWithClient(client, req.body, req.user.employee_id);
         await client.query('COMMIT');
         
         const partForMeili = await getPartDataForMeili(db, newPartData.part_id);
@@ -556,7 +557,113 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
             return res.status(400).json({ error: 'This barcode is already assigned to another item.' });
         }
         console.error(`[${req.method} ${req.url}] Internal Error:`, err);
-        res.status(500).json({ message: 'Internal Server Error' });
+        res.status(err.statusCode || 500).json({ message: err.statusCode ? err.message : 'Internal Server Error' });
+    } finally {
+        client.release();
+    }
+});
+
+router.post('/purchase-orders/:id/lines/:lineId/catalog', protect, hasPermission('goods_receipt:create'), async (req, res) => {
+    if (!userHasPermission(req, 'parts:create')) {
+        return res.status(403).json({ message: 'Creating a catalog part requires parts:create permission.' });
+    }
+
+    const poId = Number(req.params.id);
+    const lineId = Number(req.params.lineId);
+    if (!Number.isInteger(poId) || !Number.isInteger(lineId)) {
+        return res.status(400).json({ message: 'A valid purchase order and line are required.' });
+    }
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        const { rows: lineRows } = await client.query(
+            `SELECT pol.po_line_id, pol.part_id, po.status
+             FROM purchase_order_line pol
+             JOIN purchase_order po ON po.po_id = pol.po_id
+             WHERE pol.po_id = $1 AND pol.po_line_id = $2
+             FOR UPDATE OF pol`,
+            [poId, lineId]
+        );
+        const line = lineRows[0];
+        if (!line) {
+            const error = new Error('Purchase-order line not found.');
+            error.statusCode = 404;
+            throw error;
+        }
+        if (line.part_id) {
+            const error = new Error('This purchase-order line is already cataloged.');
+            error.statusCode = 409;
+            throw error;
+        }
+        if (!['Pending', 'Ordered', 'Partially Received'].includes(line.status)) {
+            const error = new Error(`A ${line.status} purchase order can no longer be cataloged.`);
+            error.statusCode = 409;
+            throw error;
+        }
+
+        const normalizedDetail = normalizeText(req.body.detail)?.toUpperCase() || null;
+        const { rows: duplicates } = await client.query(
+            `SELECT p.part_id, pv.display_name
+             FROM part p
+             JOIN parts_view pv ON pv.part_id = p.part_id
+             WHERE p.is_active = true AND p.brand_id = $1 AND p.group_id = $2
+               AND UPPER(TRIM(COALESCE(p.detail, ''))) = COALESCE($3, '')
+             LIMIT 1`,
+            [req.body.brand_id, req.body.group_id, normalizedDetail]
+        );
+        if (duplicates.length) {
+            const existingPart = await getPartDataForMeili(client, duplicates[0].part_id);
+            const linkResult = await client.query(
+                `UPDATE purchase_order_line
+                 SET part_id = $1, draft_part_data = NULL
+                 WHERE po_id = $2 AND po_line_id = $3 AND part_id IS NULL`,
+                [duplicates[0].part_id, poId, lineId]
+            );
+            if (linkResult.rowCount !== 1) throw new Error('Could not link the existing part to the purchase-order line.');
+            await client.query('COMMIT');
+            return res.status(200).json({
+                ...(existingPart || duplicates[0]),
+                catalog_resolution: 'existing',
+            });
+        }
+
+        const newPartData = await createPartWithClient(
+            client,
+            { ...req.body, detail: normalizedDetail },
+            req.user.employee_id,
+            { uppercaseText: true }
+        );
+        const updateResult = await client.query(
+            `UPDATE purchase_order_line
+             SET part_id = $1, draft_part_data = NULL
+             WHERE po_id = $2 AND po_line_id = $3 AND part_id IS NULL`,
+            [newPartData.part_id, poId, lineId]
+        );
+        if (updateResult.rowCount !== 1) throw new Error('Could not link the new part to the purchase-order line.');
+        await client.query('COMMIT');
+
+        let partForMeili = null;
+        try {
+            partForMeili = await getPartDataForMeili(db, newPartData.part_id);
+            if (partForMeili) {
+                await enqueuePartUpsert(partForMeili.part_id, {
+                    source: 'partRoutes.catalogFromPurchaseOrder',
+                    version_ts: partForMeili.date_modified || partForMeili.date_created || new Date().toISOString()
+                });
+            }
+        } catch (indexError) {
+            // Cataloging is already committed. The durable repair worker can reconcile
+            // search later, so do not report a false failure that tempts a duplicate retry.
+            console.error('[Catalog PO line] Search indexing deferred:', indexError.message);
+        }
+        return res.status(201).json(partForMeili || newPartData);
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(`[${req.method} ${req.url}] Internal Error:`, err);
+        return res.status(err.statusCode || 500).json({
+            message: err.statusCode ? err.message : 'Could not catalog purchase-order line.',
+        });
     } finally {
         client.release();
     }
@@ -662,4 +769,3 @@ router.delete('/parts/:id', protect, hasPermission('parts:delete'), async (req, 
 });
 
 module.exports = { router, manageTags, manageBarcodes, getPartDataForMeili };
-

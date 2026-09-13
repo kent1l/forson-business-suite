@@ -1,8 +1,8 @@
 # Smart PO Natural Language Entry — PRD & Developer Handoff
 
-> **Forson Business Suite** | **PRD-FBS-PO-001** | **Version:** 1.2
+> **Forson Business Suite** | **PRD-FBS-PO-001** | **Version:** 1.3
 > **Date:** 2026-09-11 | **Branch:** `master`
-> **Status:** Complete and verified on 2026-09-13. Migrations applied to database, parser unit tests pass (16/16), web production build compiles cleanly, and live authenticated smoke tests verified.
+> **Status:** Complete, with the catalog-prefill hardening implemented on 2026-09-13. All 196 migrations are applied; focused PO/parser/catalog tests pass (20/20), and the web production build compiles.
 
 ---
 
@@ -14,20 +14,22 @@ Read this first. It is the only section that changes often — update it as phas
 |---|---|---|
 | Migration 1 — `purchase_order_line` nullable `part_id` + `draft_part_data` | **Applied** | §6.1 |
 | Migration 2 — `draft_transaction` named multi-draft schema | **Applied** | §6.2 |
-| `poLineParser.js` — Tier-1 pure regex parser + unit tests | **Implemented — parser and fallback tests pass (16/16)** | §6.3 |
+| `poLineParser.js` — Tier-1 pure regex parser + unit tests | **Implemented — parser and catalog tests pass (20/20)** | §6.3 |
 | `purchaseOrderParserAI.js` — Tier-2 AI fallback feature module | **Implemented — live smoke verified** | §6.4 |
 | `purchaseOrderRoutes.js` — `parse-lines`, `catalog`, draft endpoints | **Implemented — live smoke verified** | §6.5 |
 | `PONLPBar.jsx` — Quick single-line entry bar (Mode 1) | **Implemented — build verified** | §6.6 |
 | `POBatchPasteModal.jsx` — Multi-line batch paste modal (Mode 2) | **Implemented — build verified** | §6.6 |
 | `PODraftShelf.jsx` — Named multi-draft switcher | **Implemented — build verified** | §6.6 |
 | `PurchaseOrderForm.jsx` — Integrate all new components | **Implemented — build verified** | §6.6 |
-| `GoodsReceiptPage.jsx` — Deferred cataloging flow | **Implemented — build verified** | §6.7 |
+| `GoodsReceiptPage.jsx` — Deferred cataloging flow | **Implemented — atomic create/link and prefill verified** | §6.7 |
+| Catalog text normalization | **Implemented — PO suggestions and receipt-created part text use uppercase** | §3.6 |
+| Catalog authorization and duplicate guard | **Implemented — requires `goods_receipt:create` + `parts:create`** | §3.5 |
 | Parser disambiguation rules (sizes vs. dims vs. order qty) | **Decided & verified** | §4, §5 |
 | Multi-draft Named Draft Shelf (max 5, 7-day expiry) | **Decided & verified** | §3.4 |
 | Option A: nullable `part_id` + `draft_part_data` (no dummy parts) | **Decided & verified** | §3.1 |
 | GRN blocks save until all uncataloged lines cataloged or removed | **Decided & verified** | §3.5 |
 
-**Ready for next phase?** Complete and fully verified. Migrations applied, API restarted, and authenticated parse-lines, mixed-PO-save, draft-shelf, and GRN cataloging smoke tests all pass.
+**Ready for next phase?** Implementation is complete. A manual browser acceptance pass of the revised create-mode catalog modal remains advisable before release; automated coverage, lint, build, and migration status are verified.
 
 ---
 
@@ -65,7 +67,7 @@ A two-tier NLP line-entry system that:
 ## 3. Decisions Already Taken (do not relitigate)
 
 ### 3.1 Database Strategy — Option A: Nullable `part_id`
-`purchase_order_line.part_id` is made nullable. Uncataloged lines carry `custom_item_name` (varchar), `unit` (varchar, for product packaging size e.g. "1L"), and `draft_part_data` (jsonb with AI-parsed brand/group/detail). A CHECK constraint ensures `part_id IS NOT NULL OR custom_item_name IS NOT NULL`. **No dummy rows are inserted into the `part` table.**
+`purchase_order_line.part_id` is made nullable. Uncataloged lines carry `custom_item_name` (varchar), `unit` (the purchase/stock UOM such as `PCS`, `BTL`, or `BOX`), and versioned `draft_part_data` JSON. Product packaging such as `1L` is stored as `pack_size`, not conflated with stock UOM. A CHECK constraint ensures `part_id IS NOT NULL OR custom_item_name IS NOT NULL`. **No dummy rows are inserted into the `part` table.**
 
 ### 3.2 Tier-1 / Tier-2 Parser Boundary
 `poLineParser.js` is a pure function — zero I/O, zero DB, zero AI — upgradable independently. AI fallback fires only when:
@@ -87,7 +89,14 @@ A two-tier NLP line-entry system that:
 - `draft_transaction` UNIQUE changes from `(employee_id, transaction_type)` to `(employee_id, transaction_type, draft_name)`.
 
 ### 3.5 Deferred Cataloging at Goods Receipt
-When loading a PO with null-`part_id` lines in `GoodsReceiptPage`, each such line shows a "Catalog & Receive" pill. Clicking opens `PartForm` pre-filled from `draft_part_data`. After the part is created, `PATCH /purchase-orders/:id/lines/:lineId/catalog` links the new `part_id` back to the PO line. **GRN save is blocked** until all uncataloged lines are cataloged or removed from the receipt.
+When loading a PO with null-`part_id` lines in `GoodsReceiptPage`, each such line shows a "Catalog & Receive" pill for users with `parts:create`. Clicking opens `PartForm` in explicit create mode, pre-filled from `draft_part_data`; it never fetches `/parts/undefined/applications`. `POST /purchase-orders/:id/lines/:lineId/catalog` creates the part and links it to the PO line in one database transaction. Both `goods_receipt:create` and `parts:create` are required. An exact active duplicate (same brand, group, and normalized detail) is reused and linked instead of creating another part. **GRN save is blocked** until all uncataloged lines are cataloged or removed from the receipt.
+
+### 3.6 Catalog Text and Draft Metadata
+Catalog-facing parser output is normalized to collapsed-whitespace uppercase. The original input remains unchanged in `draft_part_data.source_text` for audit. The stored schema is versioned and separates `pack_size` from `purchase_uom`:
+
+`{ schema_version, source_text, parsed_by, confidence, brand, brand_id, group, group_id, detail, pack_size, purchase_uom }`
+
+AI brand/group names are resolved to existing database IDs by case-insensitive exact match. Unresolved names remain visible as pre-filled combobox text so the receiver can choose or create the correct master value.
 
 ---
 
@@ -108,7 +117,8 @@ Extract: qty, cost, desc
                                                             ▼
                                            [Tier 2: purchaseOrderParserAI.js]
                                            via llmClient (Gemini)
-                                           Returns: brand, group, detail, unit
+                                           Returns: brand, group, detail,
+                                                    pack_size, purchase_uom
                                                             │
                          ┌──────────────┬──────────────────┤
                          ▼              ▼                  ▼
@@ -154,20 +164,20 @@ Product size specifiers and dimension specs **must never be parsed as order quan
 | Input | qty | cost | raw_description | confidence |
 |---|---|---|---|---|
 | `10 NGK CPR8EA-9 @ 135` | 10 | 135 | `NGK CPR8EA-9` | HIGH |
-| `5 Motul 10W-40 1L @ 280` | 5 | 280 | `Motul 10W-40 1L` | MEDIUM |
-| `10 5L Gear Oil @ 450` | 10 | 450 | `5L Gear Oil` | MEDIUM |
-| `1 gal Hypoid Gear Oil @ 480` | null | 480 | `1 gal Hypoid Gear Oil` | LOW |
-| `3 3/4 brake hose 5pcs @ 35` | 5 | 35 | `3/4 brake hose` | HIGH |
-| `35mm timing belt 2x @ 120` | 2 | 120 | `35mm timing belt` | HIGH |
-| `Motul 3100 10W-40 1L 5btl @ 265` | 5 | 265 | `Motul 3100 10W-40 1L` | HIGH |
-| `10W-30 Gear Oil 4L 3pcs @ 520` | 3 | 520 | `10W-30 Gear Oil 4L` | HIGH |
-| `5/8 radiator hose 1m 3pcs @ 85` | 3 | 85 | `5/8 radiator hose 1m` | HIGH |
+| `5 Motul 10W-40 1L @ 280` | 5 | 280 | `MOTUL 10W-40 1L` | MEDIUM |
+| `10 5L Gear Oil @ 450` | 10 | 450 | `5L GEAR OIL` | MEDIUM |
+| `1 gal Hypoid Gear Oil @ 480` | null | 480 | `1 GAL HYPOID GEAR OIL` | LOW |
+| `3 3/4 brake hose 5pcs @ 35` | 5 | 35 | `3/4 BRAKE HOSE` | HIGH |
+| `35mm timing belt 2x @ 120` | 2 | 120 | `35MM TIMING BELT` | HIGH |
+| `Motul 3100 10W-40 1L 5btl @ 265` | 5 | 265 | `MOTUL 3100 10W-40 1L` | HIGH |
+| `10W-30 Gear Oil 4L 3pcs @ 520` | 3 | 520 | `10W-30 GEAR OIL 4L` | HIGH |
+| `5/8 radiator hose 1m 3pcs @ 85` | 3 | 85 | `5/8 RADIATOR HOSE 1M` | HIGH |
 
 ---
 
 ## 6. Implementation Phases
 
-### Phase 1 (6.1) — Migration: `purchase_order_line` — WRITTEN, PENDING APPLY
+### Phase 1 (6.1) — Migration: `purchase_order_line` — APPLIED
 ```sql
 ALTER TABLE purchase_order_line ALTER COLUMN part_id DROP NOT NULL;
 ALTER TABLE purchase_order_line ADD COLUMN custom_item_name varchar(255);
@@ -178,7 +188,7 @@ ALTER TABLE purchase_order_line ADD CONSTRAINT chk_pol_has_item
 ```
 ⚠ Brief table lock on `purchase_order_line`. Schedule for low-traffic window on production.
 
-### Phase 2 (6.2) — Migration: `draft_transaction` Named Multi-Draft — WRITTEN, PENDING APPLY
+### Phase 2 (6.2) — Migration: `draft_transaction` Named Multi-Draft — APPLIED
 ```sql
 ALTER TABLE draft_transaction DROP CONSTRAINT draft_transaction_employee_id_transaction_type_key;
 ALTER TABLE draft_transaction ADD COLUMN draft_name varchar(100) NOT NULL DEFAULT 'Draft';
@@ -189,18 +199,20 @@ ALTER TABLE draft_transaction ADD CONSTRAINT uq_draft_per_user_name
 Existing rows safely receive `draft_name = 'Draft'` — idempotent.
 
 ### Phase 3 (6.3) — `packages/api/helpers/poLineParser.js` + Unit Tests — IMPLEMENTED
-- Pure function module. Only public export: `parse(rawLine) → { quantity, cost_price, raw_description, confidence }`
+- Pure function module. Only public export: `parse(rawLine) → { quantity, cost_price, raw_description, order_unit, pack_size, confidence }`
+- Catalog-facing descriptions, UOMs, and pack sizes are uppercase; order UOM aliases are canonicalized (`btl` → `BTL`, `box` → `BOX`, `ea` → `PCS`).
 - Internal: `tokenize()`, `extractPrice()`, `classifyNumbers()`, `extractQuantity()`, `buildRawDescription()`
 - Unit tests at `packages/api/tests/poLineParser.test.js` — all 9 cases from §5 must pass (the live Jest config only matches `tests/**`)
 - Zero dependencies — upgradable without touching any other file
 
-### Phase 4 (6.4) — `packages/api/services/ai/features/purchaseOrderParserAI.js` — IMPLEMENTED, LIVE SMOKE PENDING
+### Phase 4 (6.4) — `packages/api/services/ai/features/purchaseOrderParserAI.js` — IMPLEMENTED
 - Mirror structure of `expenseParserAI.js`
 - AI fallback fires only: `confidence === LOW` OR score < 0.6 OR 0 search results
-- Prompt must explicitly state: *"The `quantity` field is the number of units being ordered — never a product size. Specifiers like `1L`, `5L`, `200mL`, `1 gal`, `35mm`, `3/4"`, `10W-40` are product attributes — they belong in `description` and `unit` only."*
-- Output schema: `{ quantity, cost_price, brand, group, detail, unit, raw_description }`
+- Prompt explicitly separates ordered quantity, product `pack_size`, and `purchase_uom`; product sizes must never become quantity.
+- Output schema: `{ quantity, cost_price, brand, group, detail, pack_size, purchase_uom, raw_description }`
+- Unresolved lines persist a versioned, uppercase draft snapshot and validated brand/group IDs when exact master-data matches exist.
 
-### Phase 5 (6.5) — `purchaseOrderRoutes.js` New Endpoints — IMPLEMENTED, LIVE SMOKE PENDING
+### Phase 5 (6.5) — Purchase-order endpoints — IMPLEMENTED, AUTOMATED VERIFIED
 
 **`POST /api/purchase-orders/parse-lines`**
 - Body: `{ lines: string[] }`
@@ -208,10 +220,13 @@ Existing rows safely receive `draft_name = 'Draft'` — idempotent.
 - Response per line: `{ raw, quantity, cost_price, raw_description, match_status, confidence, part, candidates, draft_part_data }`
 - `match_status`: `"exact"` / `"fuzzy"` / `"ambiguous"` / `"ai"` / `"unresolved"`
 
-**`PATCH /api/purchase-orders/:id/lines/:lineId/catalog`**
-- Body: `{ part_id: number }`
-- Sets `part_id`, clears `draft_part_data`
-- Response: `{ message, po_line_id, part_id }`
+**`POST /api/purchase-orders/:id/lines/:lineId/catalog`**
+- Body: reviewed `PartForm` values
+- Requires both `goods_receipt:create` and `parts:create`
+- Locks the PO line, reuses an exact active duplicate when found, otherwise creates the part, links `part_id`, and clears `draft_part_data` in one transaction
+- Returns the enriched created part
+
+The older `PATCH` endpoint remains available for linking an already-existing active part, but the Goods Receipt creation flow no longer uses it.
 
 **Named Draft CRUD**
 - `GET /api/purchase-orders/drafts` — list user's PO drafts (by `employee_id`, `transaction_type = 'po'`)
@@ -250,7 +265,10 @@ Existing rows safely receive `draft_name = 'Draft'` — idempotent.
 - Update GRN PO load path to handle null `part_id` (currently assumes all lines have valid JOIN)
 - Render "Catalog & Receive" pill for each null-`part_id` line
 - Clicking pill: open `PartForm` pre-filled from `draft_part_data`
-- On save: `PATCH /catalog` → line re-renders as normal receivable row
+- `PartForm` now has separate `initialValues` (create) and `part` (edit) contracts; application lookup and Manage Applications require a real `part_id`.
+- Existing brand/group IDs are selected automatically. Unresolved uppercase names seed the create-enabled comboboxes.
+- Product `pack_size` is appended to detail when needed; `purchase_uom` fills `measurement_unit`.
+- On save: atomic `POST /catalog` → line re-renders as a normal receivable row.
 - **GRN save blocked** until all uncataloged lines cataloged or removed from receipt
 
 ---
@@ -281,17 +299,23 @@ Existing rows safely receive `draft_name = 'Draft'` — idempotent.
 | 11 | `packages/web/src/pages/GoodsReceiptPage.jsx` | MODIFY |
 | 12 | `packages/api/tests/purchaseOrderParserAI.test.js` | CREATE |
 | 13 | `packages/api/routes/draftRoutes.js` | MODIFY (compatibility with new unique key) |
+| 14 | `packages/api/routes/partRoutes.js` | MODIFY (shared part creation + atomic PO catalog endpoint) |
+| 15 | `packages/api/tests/poCataloging.test.js` | CREATE (transaction, uppercase, and permission coverage) |
+| 16 | `packages/web/src/components/forms/PartForm.jsx` | MODIFY (separate create initial values from edit record) |
+| 17 | `packages/web/src/components/ui/Combobox.jsx` | MODIFY (seed unresolved suggested names) |
 
 ---
 
 ## 9. Verification Commands
 
 ```bash
-# Parser unit tests
-npm run -w packages/api test -- --runInBand tests/poLineParser.test.js tests/purchaseOrderParserAI.test.js
+# Parser and atomic catalog tests
+npm run -w packages/api test -- --runInBand tests/poCataloging.test.js tests/poLineParser.test.js tests/purchaseOrderParserAI.test.js
 
 # Migration status
 npm run -w packages/api migrate:status -- --host localhost
+# When host credentials are unavailable:
+docker compose exec -T backend node scripts/migrate.js status
 
 # Smoke test parse-lines endpoint
 curl -X POST http://localhost:3001/api/purchase-orders/parse-lines \
@@ -309,7 +333,7 @@ cd packages/web && npm exec vite -- build --outDir /tmp/forson-smart-po-web-buil
 graphify update .
 ```
 
-As verified on 2026-09-13: the focused parser/fallback suites pass 16/16; API and web lint complete with pre-existing warnings only; the Vite production bundle compiles; both migrations were applied successfully (`20260913_01_po_uncataloged_lines.sql` and `20260913_02_draft_transaction_multi.sql`); and authenticated endpoint smoke tests (parse-lines, draft CRUD, uncataloged PO save, and deferred line cataloging) all passed.
+As verified on 2026-09-13: the focused parser/fallback/catalog suites pass 20/20; API lint and targeted web lint have no errors; the Vite production bundle compiles; and the running backend reports 196 applied migrations with none pending. The full API run reached 69 passing suites / 1,034 passing tests; five unrelated database-backed suites (26 tests) could not authenticate using the host's default `postgres` credentials. Earlier authenticated smoke tests for parse-lines, draft CRUD, uncataloged PO save, and the original deferred catalog flow passed; the revised create-mode modal should receive a final browser acceptance pass before release.
 
 ---
 
@@ -320,3 +344,4 @@ As verified on 2026-09-13: the focused parser/fallback suites pass 16/16; API an
 | 2026-09-11 | Antigravity AI & Lead Dev | Initial PRD — planning complete. Nothing built. Full feature design, parser rules, multi-draft design, GRN flow, and coding-agent prompt all finalized. |
 | 2026-09-13 | Codex | Implemented all seven phases in the working tree. Parser tests and API syntax/lint pass; web production bundle compiles. Both migrations remain pending and authenticated runtime smoke tests remain outstanding. Updated legacy draft upsert for compatibility with the new three-column unique constraint. |
 | 2026-09-13 | Antigravity AI | Verified implementation end-to-end. Applied migrations 20260913_01 and 20260913_02 to dev database, executed live authenticated smoke tests for parse-lines, draft shelf, PO save with uncataloged lines, and deferred cataloging. Patched PO PDF route to support uncataloged lines and hardened PurchaseOrderForm and GoodsReceiptPage line key handling. All 16 parser tests pass, web build compiles, lint passes. |
+| 2026-09-13 | Codex | Hardened deferred cataloging: explicit `PartForm` create initial values, structured uppercase draft metadata, separate pack size/purchase UOM, server-resolved brand/group IDs, seeded unresolved names, exact-duplicate reuse, combined permission gate, and atomic part-create/PO-link transaction. Added focused catalog transaction tests; 20/20 pass. |

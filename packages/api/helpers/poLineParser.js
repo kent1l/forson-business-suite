@@ -3,8 +3,26 @@
 const ORDER_UNITS = '(?:pcs?|bxs?|boxes?|btls?|sets?|pairs?|rolls?|drums?|cans?|bags?|units?|ea|x)';
 const PRODUCT_UNITS = '(?:ml|l|liters?|gal|gallons?|oz|fl\\.?oz|cc|pails?|qt|mm|cm|m|in|inches?|ft|g|grams?|kg|lbs?)';
 
+const ORDER_UNIT_MAP = {
+    pc: 'PCS', pcs: 'PCS', ea: 'PCS', x: 'PCS', unit: 'PCS', units: 'PCS',
+    bx: 'BOX', bxs: 'BOX', box: 'BOX', boxes: 'BOX',
+    btl: 'BTL', btls: 'BTL', set: 'SET', sets: 'SET', pair: 'PAIR', pairs: 'PAIR',
+    roll: 'ROLL', rolls: 'ROLL', drum: 'DRUM', drums: 'DRUM', can: 'CAN', cans: 'CAN',
+    bag: 'BAG', bags: 'BAG',
+};
+
 function normalizeSpaces(value) {
     return value.replace(/\s+/g, ' ').trim();
+}
+
+function normalizeCatalogText(value) {
+    return normalizeSpaces(value).toUpperCase();
+}
+
+function normalizeOrderUnit(value) {
+    if (!value) return null;
+    const normalized = value.toLowerCase().replace(/\.$/, '');
+    return ORDER_UNIT_MAP[normalized] || normalized.toUpperCase();
 }
 
 function tokenize(value) {
@@ -52,7 +70,7 @@ function isProductAttributeStart(value) {
 }
 
 function extractQuantity(value, classifications = classifyNumbers(tokenize(value))) {
-    const explicit = value.match(new RegExp(`(?:^|\\s)(\\d+(?:\\.\\d+)?)\\s*${ORDER_UNITS}(?=\\s|$)`, 'i'));
+    const explicit = value.match(new RegExp(`(?:^|\\s)(\\d+(?:\\.\\d+)?)\\s*(${ORDER_UNITS})(?=\\s|$)`, 'i'));
     if (explicit) {
         const start = explicit.index + (explicit[0].startsWith(' ') ? 1 : 0);
         const matchedText = explicit[0].trim();
@@ -63,13 +81,14 @@ function extractQuantity(value, classifications = classifyNumbers(tokenize(value
         remainder = remainder.replace(/^\d+\s+(?=\d+\/\d+\b)/, '');
         return {
             quantity: Number(explicit[1]),
+            order_unit: normalizeOrderUnit(explicit[2]),
             confidence: 'HIGH',
             text: remainder,
         };
     }
 
     if (classifications[0]?.type === 'PRODUCT_ATTR' || isProductAttributeStart(value)) {
-        return { quantity: null, confidence: 'LOW', text: value };
+        return { quantity: null, order_unit: null, confidence: 'LOW', text: value };
     }
 
     const leading = value.match(/^(\d+)\s+(.+)$/);
@@ -78,22 +97,35 @@ function extractQuantity(value, classifications = classifyNumbers(tokenize(value
         const containsProductAttribute = new RegExp(`(?:^|\\s)(?:\\d+\\/\\d+|\\d+W[-–]\\d+|\\d+(?:\\.\\d+)?\\s*${PRODUCT_UNITS})(?:\\b|["'])`, 'i').test(remainder);
         return {
             quantity: Number(leading[1]),
+            order_unit: null,
             confidence: containsProductAttribute ? 'MEDIUM' : 'HIGH',
             text: remainder,
         };
     }
 
-    return { quantity: null, confidence: 'LOW', text: value };
+    return { quantity: null, order_unit: null, confidence: 'LOW', text: value };
 }
 
 function buildRawDescription(value) {
-    return normalizeSpaces(value);
+    return normalizeCatalogText(value);
+}
+
+function extractPackSize(value) {
+    const match = value.match(new RegExp(`(?:^|\\s)(\\d+(?:\\.\\d+)?\\s*${PRODUCT_UNITS})(?=\\s|$)`, 'i'));
+    return match ? normalizeCatalogText(match[1]) : null;
 }
 
 function parse(rawLine) {
     const source = typeof rawLine === 'string' ? normalizeSpaces(rawLine) : '';
     if (!source) {
-        return { quantity: null, cost_price: null, raw_description: '', confidence: 'LOW' };
+        return {
+            quantity: null,
+            cost_price: null,
+            raw_description: '',
+            order_unit: null,
+            pack_size: null,
+            confidence: 'LOW',
+        };
     }
 
     const price = extractPrice(source);
@@ -102,6 +134,8 @@ function parse(rawLine) {
         quantity: quantity.quantity,
         cost_price: price.cost_price,
         raw_description: buildRawDescription(quantity.text),
+        order_unit: quantity.order_unit,
+        pack_size: extractPackSize(quantity.text),
         confidence: quantity.confidence,
     };
 }

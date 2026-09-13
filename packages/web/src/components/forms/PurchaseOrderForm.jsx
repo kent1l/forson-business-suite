@@ -178,7 +178,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                 part_id: chosen?.part_id || null,
                 display_name: chosen?.display_name || result.raw_description,
                 custom_item_name: chosen ? null : result.raw_description,
-                unit: result.draft_part_data?.unit || null,
+                unit: result.draft_part_data?.purchase_uom || result.draft_part_data?.unit || null,
                 draft_part_data: result.draft_part_data,
                 quantity: result.quantity || 1,
                 cost_price: result.cost_price ?? chosen?.last_cost ?? 0,
