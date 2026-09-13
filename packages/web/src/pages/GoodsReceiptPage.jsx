@@ -17,6 +17,7 @@ import MathExpressionInput from '../components/ui/MathExpressionInput';
 import DiscountInput from '../components/ui/DiscountInput';
 import FreightAllocationWizard from '../components/goods-receipt/FreightAllocationWizard';
 import ReturnLineModal from '../components/goods-receipt/ReturnLineModal';
+import PartForm from '../components/forms/PartForm';
 import { formatCurrency } from '../utils/currency';
 import { computeCosting, markupFromPrice, roundUpTo, DEFAULT_MARKUP_PERCENT, MIN_MARKUP_PERCENT, PRICE_ROUNDING_INCREMENT, METHOD_A } from '../utils/grnCosting';
 import { useAuth } from '../contexts/AuthContext';
@@ -89,6 +90,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     // Set once this receipt exists as a staged goods_receipt row rather than a local form.
     const [stagedGrn, setStagedGrn] = useState(null);
     const [savingDraftRow, setSavingDraftRow] = useState(false);
+    const [catalogTarget, setCatalogTarget] = useState(null);
 
     const canSubmit = hasPermission('goods_receipt:submit');
     const canPost = hasPermission('goods_receipt:post');
@@ -290,6 +292,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                     ...l,
                     cost_price: poCost,
                     sale_price: poSale,
+                    display_name: l.display_name || l.custom_item_name,
                 };
             });
             setLines(linesWithSale);
@@ -528,6 +531,46 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         setLines(lines.filter(line => line.part_id !== partId));
     };
 
+    const removeUncatalogedLine = (poLineId) => {
+        setLines(current => current.filter(line => line.po_line_id !== poLineId));
+    };
+
+    const catalogPrefill = useMemo(() => {
+        if (!catalogTarget) return null;
+        const draft = catalogTarget.draft_part_data || {};
+        const brand = brands.find(item => String(item.brand_name || '').toLowerCase() === String(draft.brand || '').toLowerCase());
+        const group = groups.find(item => String(item.group_name || '').toLowerCase() === String(draft.group || '').toLowerCase());
+        return {
+            detail: draft.detail || catalogTarget.custom_item_name || '',
+            brand_id: brand?.brand_id || '',
+            group_id: group?.group_id || '',
+            measurement_unit: draft.unit || catalogTarget.unit || 'pcs',
+            last_cost: catalogTarget.cost_price || 0,
+        };
+    }, [catalogTarget, brands, groups]);
+
+    const handleCatalogPart = async (partData) => {
+        if (!catalogTarget || !selectedPO) return;
+        try {
+            const { data: created } = await api.post('/parts', { ...partData, created_by: user.employee_id });
+            await api.patch(`/purchase-orders/${selectedPO.po_id}/lines/${catalogTarget.po_line_id}/catalog`, { part_id: created.part_id });
+            const { data: fullPart } = await api.get(`/parts/${created.part_id}`);
+            setLines(current => current.map(line => line.po_line_id === catalogTarget.po_line_id ? {
+                ...line,
+                ...fullPart,
+                part_id: created.part_id,
+                draft_part_data: null,
+                display_name: fullPart.display_name || created.display_name || created.detail,
+                quantity: line.quantity,
+                cost_price: line.cost_price,
+            } : line));
+            setCatalogTarget(null);
+            toast.success('Part cataloged and ready to receive.');
+        } catch (error) {
+            toast.error(error?.response?.data?.message || 'Could not catalog this PO line.');
+        }
+    };
+
     // Everything the API needs, in the shape both the one-shot post and the draft
     // endpoints accept.
     const buildPayload = () => ({
@@ -585,6 +628,10 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     const validateBeforeSend = () => {
         if (!selectedSupplier || lines.length === 0) {
             toast.error('Please select a supplier and add at least one item.');
+            return false;
+        }
+        if (lines.some(line => !line.part_id)) {
+            toast.error('Catalog or remove every uncataloged PO line before saving this receipt.');
             return false;
         }
         if (isBackfill && !supplierInvoiceNo.trim()) {
@@ -1136,11 +1183,16 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                               // still delivers stock; it just will not move the average cost.
                               const isUncosted = computed?.is_uncosted === true;
                               return (
-                                <tr key={line.part_id} className="border-b border-gray-100 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors">
+                                <tr key={line.po_line_id || line.part_id} className="border-b border-gray-100 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors">
                                     <td className="p-2 align-middle">
                                         <div className="flex items-center justify-between gap-2">
                                             <div className="min-w-0 flex-1">
                                                 <div className="truncate text-sm font-medium text-gray-800 dark:text-slate-100">{line.display_name}</div>
+                                                {!line.part_id && (
+                                                    <button type="button" onClick={() => setCatalogTarget(line)} className="mt-1 inline-flex rounded-full bg-yellow-100 px-2 py-1 text-xs font-semibold text-yellow-800 hover:bg-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300">
+                                                        Catalog &amp; Receive
+                                                    </button>
+                                                )}
                                                 {line.stock_on_hand !== undefined && line.stock_on_hand !== null && (
                                                     <div className={`text-xs font-medium ${Number(line.stock_on_hand) > 0 ? 'text-gray-500 dark:text-slate-400' : 'text-danger-600 dark:text-danger-400'}`}>
                                                         {Number(line.stock_on_hand) || 0} in stock
@@ -1153,7 +1205,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                                     </div>
                                                 )}
                                             </div>
-                                            <div className="flex items-center gap-1">
+                                            {line.part_id && <div className="flex items-center gap-1">
                                                 <button
                                                     type="button"
                                                     disabled={loadingEditPartId === line.part_id}
@@ -1170,7 +1222,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                                 >
                                                     <Icon path={ICONS.link} className="h-5 w-5"/>
                                                 </button>
-                                            </div>
+                                            </div>}
                                         </div>
                                     </td>
                                     <td className="p-2 align-middle">
@@ -1178,6 +1230,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                             value={line.quantity}
                                             onChange={value => handleLineChange(line.part_id, 'quantity', value)}
                                             className={inputClass}
+                                            disabled={!line.part_id}
                                         />
                                     </td>
                                     <td className="p-2 align-middle">
@@ -1185,7 +1238,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                             value={line.cost_price}
                                             onChange={value => handleLineChange(line.part_id, 'cost_price', value)}
                                             className={inputClass}
-                                            disabled={isFree}
+                                            disabled={isFree || !line.part_id}
                                         />
                                         {(isFree || costIsZero) && (
                                             <label className="mt-1 flex items-center justify-center gap-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 cursor-pointer select-none">
@@ -1260,15 +1313,15 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                     </td>
                                     <td className="p-2 align-middle text-center">
                                         <div className="flex items-center justify-center">
-                                            <button
+                                            {line.part_id ? <button
                                                 onClick={() => setReturnTargetLine(line)}
                                                 className="inline-flex items-center justify-center h-8 w-8 text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 rounded hover:bg-amber-50 dark:hover:bg-amber-900/30"
                                                 title="Reject or return some of this line"
                                             >
                                                 <Icon path={ICONS.undo || ICONS.close} className="h-5 w-5"/>
-                                            </button>
+                                            </button> : null}
                                             <button
-                                                onClick={() => removeLine(line.part_id)}
+                                                onClick={() => line.part_id ? removeLine(line.part_id) : removeUncatalogedLine(line.po_line_id)}
                                                 className="inline-flex items-center justify-center h-8 w-8 text-danger-500 dark:text-danger-400 hover:text-danger-700 dark:hover:text-danger-300 rounded hover:bg-danger-50 dark:hover:bg-danger-900/30"
                                                 title="Remove"
                                             >
@@ -1427,6 +1480,19 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 isPosted={stagedGrn?.workflow_status === 'Posted'}
                 onConfirm={handleReturnLine}
             />
+
+            <Modal isOpen={!!catalogTarget} onClose={() => setCatalogTarget(null)} title="Catalog purchase-order item">
+                {catalogPrefill && (
+                    <PartForm
+                        part={catalogPrefill}
+                        brands={brands}
+                        groups={groups}
+                        onSave={handleCatalogPart}
+                        onCancel={() => setCatalogTarget(null)}
+                        onBrandGroupAdded={fetchInitialData}
+                    />
+                )}
+            </Modal>
 
             <Modal
                 isOpen={!!markupRounding}

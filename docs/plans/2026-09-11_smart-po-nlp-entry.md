@@ -1,8 +1,8 @@
 # Smart PO Natural Language Entry — PRD & Developer Handoff
 
-> **Forson Business Suite** | **PRD-FBS-PO-001** | **Version:** 1.0
+> **Forson Business Suite** | **PRD-FBS-PO-001** | **Version:** 1.1
 > **Date:** 2026-09-11 | **Branch:** `master`
-> **Status:** Planning Complete — **Nothing built yet.** Ready for implementation. All business logic, parser disambiguation rules, multi-draft design, and downstream GRN flow fully designed and approved.
+> **Status:** Implemented in the working tree on 2026-09-13. Parser and web build verified; migrations are pending and authenticated endpoint smoke tests still need to run after deployment.
 
 ---
 
@@ -12,22 +12,22 @@ Read this first. It is the only section that changes often — update it as phas
 
 | Item | Status | Reference |
 |---|---|---|
-| Migration 1 — `purchase_order_line` nullable `part_id` + `draft_part_data` | **Not started** | §6.1 |
-| Migration 2 — `draft_transaction` named multi-draft schema | **Not started** | §6.2 |
-| `poLineParser.js` — Tier-1 pure regex parser + unit tests | **Not started** | §6.3 |
-| `purchaseOrderParserAI.js` — Tier-2 AI fallback feature module | **Not started** | §6.4 |
-| `purchaseOrderRoutes.js` — `parse-lines`, `catalog`, draft endpoints | **Not started** | §6.5 |
-| `PONLPBar.jsx` — Quick single-line entry bar (Mode 1) | **Not started** | §6.6 |
-| `POBatchPasteModal.jsx` — Multi-line batch paste modal (Mode 2) | **Not started** | §6.6 |
-| `PODraftShelf.jsx` — Named multi-draft switcher | **Not started** | §6.6 |
-| `PurchaseOrderForm.jsx` — Integrate all new components | **Not started** | §6.6 |
-| `GoodsReceiptPage.jsx` — Deferred cataloging flow | **Not started** | §6.7 |
+| Migration 1 — `purchase_order_line` nullable `part_id` + `draft_part_data` | **Written — pending apply** | §6.1 |
+| Migration 2 — `draft_transaction` named multi-draft schema | **Written — pending apply** | §6.2 |
+| `poLineParser.js` — Tier-1 pure regex parser + unit tests | **Implemented — parser and fallback tests pass** | §6.3 |
+| `purchaseOrderParserAI.js` — Tier-2 AI fallback feature module | **Implemented — live smoke pending** | §6.4 |
+| `purchaseOrderRoutes.js` — `parse-lines`, `catalog`, draft endpoints | **Implemented — live smoke pending** | §6.5 |
+| `PONLPBar.jsx` — Quick single-line entry bar (Mode 1) | **Implemented — build verified** | §6.6 |
+| `POBatchPasteModal.jsx` — Multi-line batch paste modal (Mode 2) | **Implemented — build verified** | §6.6 |
+| `PODraftShelf.jsx` — Named multi-draft switcher | **Implemented — build verified** | §6.6 |
+| `PurchaseOrderForm.jsx` — Integrate all new components | **Implemented — build verified** | §6.6 |
+| `GoodsReceiptPage.jsx` — Deferred cataloging flow | **Implemented — build verified** | §6.7 |
 | Parser disambiguation rules (sizes vs. dims vs. order qty) | **Decided** | §4, §5 |
 | Multi-draft Named Draft Shelf (max 5, 7-day expiry) | **Decided** | §3.4 |
 | Option A: nullable `part_id` + `draft_part_data` (no dummy parts) | **Decided** | §3.1 |
 | GRN blocks save until all uncataloged lines cataloged or removed | **Decided** | §3.5 |
 
-**Ready for next phase?** Yes — paste the coding-agent prompt from `docs/plans/2026-09-11_smart-po-nlp-entry-coding-prompt.md` into a fresh coding agent to begin.
+**Ready for next phase?** Apply the two pending migrations, restart the API if needed, then run authenticated parse-lines, mixed-PO-save, draft-shelf, and GRN cataloging smoke tests.
 
 ---
 
@@ -167,7 +167,7 @@ Product size specifiers and dimension specs **must never be parsed as order quan
 
 ## 6. Implementation Phases
 
-### Phase 1 (6.1) — Migration: `purchase_order_line` — NOT STARTED
+### Phase 1 (6.1) — Migration: `purchase_order_line` — WRITTEN, PENDING APPLY
 ```sql
 ALTER TABLE purchase_order_line ALTER COLUMN part_id DROP NOT NULL;
 ALTER TABLE purchase_order_line ADD COLUMN custom_item_name varchar(255);
@@ -178,7 +178,7 @@ ALTER TABLE purchase_order_line ADD CONSTRAINT chk_pol_has_item
 ```
 ⚠ Brief table lock on `purchase_order_line`. Schedule for low-traffic window on production.
 
-### Phase 2 (6.2) — Migration: `draft_transaction` Named Multi-Draft — NOT STARTED
+### Phase 2 (6.2) — Migration: `draft_transaction` Named Multi-Draft — WRITTEN, PENDING APPLY
 ```sql
 ALTER TABLE draft_transaction DROP CONSTRAINT draft_transaction_employee_id_transaction_type_key;
 ALTER TABLE draft_transaction ADD COLUMN draft_name varchar(100) NOT NULL DEFAULT 'Draft';
@@ -188,19 +188,19 @@ ALTER TABLE draft_transaction ADD CONSTRAINT uq_draft_per_user_name
 ```
 Existing rows safely receive `draft_name = 'Draft'` — idempotent.
 
-### Phase 3 (6.3) — `packages/api/helpers/poLineParser.js` + Unit Tests — NOT STARTED
+### Phase 3 (6.3) — `packages/api/helpers/poLineParser.js` + Unit Tests — IMPLEMENTED
 - Pure function module. Only public export: `parse(rawLine) → { quantity, cost_price, raw_description, confidence }`
 - Internal: `tokenize()`, `extractPrice()`, `classifyNumbers()`, `extractQuantity()`, `buildRawDescription()`
-- Unit tests at `packages/api/test/poLineParser.test.js` — all 9 cases from §5 must pass
+- Unit tests at `packages/api/tests/poLineParser.test.js` — all 9 cases from §5 must pass (the live Jest config only matches `tests/**`)
 - Zero dependencies — upgradable without touching any other file
 
-### Phase 4 (6.4) — `packages/api/services/ai/features/purchaseOrderParserAI.js` — NOT STARTED
+### Phase 4 (6.4) — `packages/api/services/ai/features/purchaseOrderParserAI.js` — IMPLEMENTED, LIVE SMOKE PENDING
 - Mirror structure of `expenseParserAI.js`
 - AI fallback fires only: `confidence === LOW` OR score < 0.6 OR 0 search results
 - Prompt must explicitly state: *"The `quantity` field is the number of units being ordered — never a product size. Specifiers like `1L`, `5L`, `200mL`, `1 gal`, `35mm`, `3/4"`, `10W-40` are product attributes — they belong in `description` and `unit` only."*
 - Output schema: `{ quantity, cost_price, brand, group, detail, unit, raw_description }`
 
-### Phase 5 (6.5) — `purchaseOrderRoutes.js` New Endpoints — NOT STARTED
+### Phase 5 (6.5) — `purchaseOrderRoutes.js` New Endpoints — IMPLEMENTED, LIVE SMOKE PENDING
 
 **`POST /api/purchase-orders/parse-lines`**
 - Body: `{ lines: string[] }`
@@ -225,7 +225,7 @@ Existing rows safely receive `draft_name = 'Draft'` — idempotent.
 
 ⚠ Business logic in service/helper modules — route handlers stay thin.
 
-### Phase 6 (6.6) — Frontend Components — NOT STARTED
+### Phase 6 (6.6) — Frontend Components — IMPLEMENTED, BUILD VERIFIED
 
 **`PONLPBar.jsx`** (Mode 1)
 - Input bar above PO line table; on Enter: `POST parse-lines` with single string
@@ -246,7 +246,7 @@ Existing rows safely receive `draft_name = 'Draft'` — idempotent.
 - Save: enabled with draft lines + count warning; blocked on unconfirmed fuzzy/ambiguous
 - ⚠ Already 414 lines — all new UI **must** be in separate component files
 
-### Phase 7 (6.7) — `GoodsReceiptPage.jsx` Deferred Cataloging — NOT STARTED
+### Phase 7 (6.7) — `GoodsReceiptPage.jsx` Deferred Cataloging — IMPLEMENTED, BUILD VERIFIED
 - Update GRN PO load path to handle null `part_id` (currently assumes all lines have valid JOIN)
 - Render "Catalog & Receive" pill for each null-`part_id` line
 - Clicking pill: open `PartForm` pre-filled from `draft_part_data`
@@ -271,7 +271,7 @@ Existing rows safely receive `draft_name = 'Draft'` — idempotent.
 | 1 | `database/migrations/<ts>_po_uncataloged_lines.sql` | CREATE |
 | 2 | `database/migrations/<ts>_draft_transaction_multi.sql` | CREATE |
 | 3 | `packages/api/helpers/poLineParser.js` | CREATE |
-| 4 | `packages/api/test/poLineParser.test.js` | CREATE |
+| 4 | `packages/api/tests/poLineParser.test.js` | CREATE (live Jest test root) |
 | 5 | `packages/api/services/ai/features/purchaseOrderParserAI.js` | CREATE |
 | 6 | `packages/api/routes/purchaseOrderRoutes.js` | MODIFY |
 | 7 | `packages/web/src/components/forms/PONLPBar.jsx` | CREATE |
@@ -279,6 +279,8 @@ Existing rows safely receive `draft_name = 'Draft'` — idempotent.
 | 9 | `packages/web/src/components/forms/PODraftShelf.jsx` | CREATE |
 | 10 | `packages/web/src/components/forms/PurchaseOrderForm.jsx` | MODIFY |
 | 11 | `packages/web/src/pages/GoodsReceiptPage.jsx` | MODIFY |
+| 12 | `packages/api/tests/purchaseOrderParserAI.test.js` | CREATE |
+| 13 | `packages/api/routes/draftRoutes.js` | MODIFY (compatibility with new unique key) |
 
 ---
 
@@ -286,7 +288,7 @@ Existing rows safely receive `draft_name = 'Draft'` — idempotent.
 
 ```bash
 # Parser unit tests
-npm run -w packages/api test -- test/poLineParser.test.js
+npm run -w packages/api test -- --runInBand tests/poLineParser.test.js tests/purchaseOrderParserAI.test.js
 
 # Migration status
 npm run -w packages/api migrate:status -- --host localhost
@@ -300,9 +302,14 @@ curl -X POST http://localhost:3001/api/purchase-orders/parse-lines \
 # Web lint
 npm run -w packages/web lint
 
+# Web production compile without touching the root-owned local dist directory
+cd packages/web && npm exec vite -- build --outDir /tmp/forson-smart-po-web-build --emptyOutDir
+
 # Update graphify after implementation
 graphify update .
 ```
+
+As verified on 2026-09-13: the focused parser/fallback suites pass 16/16; API and web lint complete with pre-existing warnings only; the Vite production bundle compiles; both migrations execute successfully against the development schema inside a rollback-only transaction; migration status reports both new files pending. Authenticated endpoint/UI smoke tests remain outstanding until the migrations are applied.
 
 ---
 
@@ -311,3 +318,4 @@ graphify update .
 | Date | Author / Session | Changes |
 |---|---|---|
 | 2026-09-11 | Antigravity AI & Lead Dev | Initial PRD — planning complete. Nothing built. Full feature design, parser rules, multi-draft design, GRN flow, and coding-agent prompt all finalized. |
+| 2026-09-13 | Codex | Implemented all seven phases in the working tree. Parser tests and API syntax/lint pass; web production bundle compiles. Both migrations remain pending and authenticated runtime smoke tests remain outstanding. Updated legacy draft upsert for compatibility with the new three-column unique constraint. |

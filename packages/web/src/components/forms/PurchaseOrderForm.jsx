@@ -9,7 +9,9 @@ import SearchBar from '../SearchBar';
 import Modal from '../ui/Modal';
 import PartForm from './PartForm';
 import MathExpressionInput from '../ui/MathExpressionInput';
-import useDraft from '../../hooks/useDraft';
+import PONLPBar from './PONLPBar';
+import POBatchPasteModal from './POBatchPasteModal';
+import PODraftShelf from './PODraftShelf';
 import { formatApplicationText } from '../../helpers/applicationTextHelper';
 import { enrichPartsArray } from '../../helpers/applicationCache';
 
@@ -26,12 +28,11 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
     const [isNewPartOpen, setIsNewPartOpen] = useState(false);
     const [brands, setBrands] = useState([]);
     const [groups, setGroups] = useState([]);
+    const [isBatchOpen, setIsBatchOpen] = useState(false);
+    const [activeDraftId, setActiveDraftId] = useState(null);
     const searchBarRef = useRef(null);
     const isScrollingRef = useRef(false);
-    // Draft via reusable hook
-    const poDraftData = useMemo(() => formData, [formData]);
     const poIsEmpty = useMemo(() => (d) => (!d?.selectedSupplier && (!d?.lines || d.lines.length === 0)), []);
-    const { status: poDraftStatus, lastSavedAt: poLastSavedAt, draft: poDraft, loaded: poDraftLoaded, clearDraft: clearPODraft } = useDraft('po', { data: poDraftData, isEmpty: poIsEmpty, debounceMs: 750 });
 
     const initialFormData = useMemo(() => {
         if (existingPO) {
@@ -87,19 +88,6 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
         }
     }, [existingPO]);
 
-    // --- Debounced auto-save logic ---
-    // When PO draft loads (create mode), hydrate once
-    useEffect(() => {
-        if (existingPO) return;
-        if (!poDraftLoaded) return;
-        if (poDraft) {
-            setFormData(poDraft);
-            toast('Loaded your saved draft.', { icon: '📄' });
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [poDraftLoaded]);
-
-
     // --- Part search logic ---
     useEffect(() => {
         if (searchTerm.trim() === '') {
@@ -149,6 +137,9 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
         if (!existingLine) {
             const newLines = [...formData.lines, {
                 ...part,
+                client_id: part.client_id || `part-${part.part_id}`,
+                match_status: 'exact',
+                confirmed: true,
                 quantity: 1,
                 cost_price: part.last_cost || 0
             }];
@@ -158,18 +149,56 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
         setSearchResults([]);
     };
 
-    const handleLineChange = (partId, field, value) => {
+    const lineKey = line => line.client_id || `part-${line.part_id}`;
+
+    const handleLineChange = (key, field, value) => {
         const numericValue = typeof value === 'number' ? value : (parseFloat(value) || 0);
         const newLines = formData.lines.map(line =>
-            line.part_id === partId ? { ...line, [field]: numericValue } : line
+            lineKey(line) === key ? { ...line, [field]: numericValue } : line
         );
         setFormData(prev => ({ ...prev, lines: newLines }));
     };
 
-    const removeLine = (partId) => {
-        const newLines = formData.lines.filter(line => line.part_id !== partId);
+    const removeLine = (key) => {
+        const newLines = formData.lines.filter(line => lineKey(line) !== key);
         setFormData(prev => ({ ...prev, lines: newLines }));
     };
+
+    const addParsedResults = useCallback((results) => {
+        const stamp = Date.now();
+        const next = results.map((result, index) => {
+            const chosen = result.part || null;
+            return {
+                ...(chosen || {}),
+                client_id: `nlp-${stamp}-${index}`,
+                part_id: chosen?.part_id || null,
+                display_name: chosen?.display_name || result.raw_description,
+                custom_item_name: chosen ? null : result.raw_description,
+                unit: result.draft_part_data?.unit || null,
+                draft_part_data: result.draft_part_data,
+                quantity: result.quantity || 1,
+                cost_price: result.cost_price ?? chosen?.last_cost ?? 0,
+                match_status: result.match_status,
+                candidates: result.candidates || [],
+                confirmed: ['exact', 'ai', 'unresolved'].includes(result.match_status),
+            };
+        });
+        setFormData(current => ({ ...current, lines: [...current.lines, ...next] }));
+    }, []);
+
+    const confirmLine = (key) => setFormData(current => ({
+        ...current,
+        lines: current.lines.map(line => lineKey(line) === key ? { ...line, confirmed: true } : line),
+    }));
+
+    const chooseCandidate = (key, partId) => setFormData(current => ({
+        ...current,
+        lines: current.lines.map(line => {
+            if (lineKey(line) !== key) return line;
+            const part = line.candidates.find(candidate => candidate.part_id === Number(partId));
+            return part ? { ...line, ...part, part_id: part.part_id, display_name: part.display_name || part.detail, custom_item_name: null, draft_part_data: null, match_status: 'exact', confirmed: true } : line;
+        }),
+    }));
 
     const handleFormChange = (e) => {
         const { name, value } = e.target;
@@ -180,16 +209,29 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
         setFormData(prev => ({ ...prev, selectedSupplier: supplierId }));
     };
 
-    const clearDraftAndCancel = useCallback(async () => {
-        if (!existingPO) await clearPODraft();
-        onCancel();
-    }, [existingPO, clearPODraft, onCancel]);
+    const clearDraftAndCancel = useCallback(() => onCancel(), [onCancel]);
+
+    const loadDraft = useCallback((draftData) => {
+        setFormData({
+            lines: draftData?.lines || [],
+            selectedSupplier: draftData?.selectedSupplier || '',
+            notes: draftData?.notes || '',
+            expectedDate: draftData?.expectedDate || '',
+        });
+        toast('Loaded PO draft.', { icon: '📄' });
+    }, []);
+
+    const newDraft = useCallback(() => setFormData({ lines: [], selectedSupplier: '', notes: '', expectedDate: '' }), []);
+    const setDraftId = useCallback(id => setActiveDraftId(id), []);
 
     const handleSubmit = useCallback((e) => {
         if (e) e.preventDefault();
         // Require at least one line. Supplier will default to the existing "N/A" supplier if not selected.
         if (formData.lines.length === 0) {
             return toast.error('Please add at least one part to the purchase order.');
+        }
+        if (formData.lines.some(line => line.match_status === 'ambiguous' || (line.match_status === 'fuzzy' && !line.confirmed))) {
+            return toast.error('Confirm fuzzy matches and resolve ambiguous lines before saving.');
         }
 
         // If no supplier selected, try to find the placeholder supplier named "N/A" (case-insensitive).
@@ -209,19 +251,19 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
             employee_id: user.employee_id,
             expected_date: formData.expectedDate || null,
             notes: formData.notes,
-            lines: formData.lines.map(({ part_id, quantity, cost_price }) => ({ part_id, quantity, cost_price }))
+            lines: formData.lines.map(({ part_id, custom_item_name, unit, draft_part_data, quantity, cost_price }) => ({
+                part_id, custom_item_name, unit, draft_part_data, quantity, cost_price,
+            }))
         };
 
         const promise = onSave(payload);
 
         promise.then(async () => {
-            if (!existingPO) {
-                await clearPODraft();
-            }
+            if (!existingPO && activeDraftId) await api.delete(`/purchase-orders/drafts/${activeDraftId}`);
         }).catch(() => {
             // Error is handled by the parent component's toast.promise
         });
-    }, [formData, suppliers, user.employee_id, onSave, existingPO, clearPODraft]);
+    }, [formData, suppliers, user.employee_id, onSave, existingPO, activeDraftId]);
 
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -244,18 +286,13 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
     }, [handleSubmit, clearDraftAndCancel, isFormDirty]);
 
     const total = useMemo(() => formData.lines.reduce((sum, line) => sum + (line.quantity * line.cost_price), 0), [formData.lines]);
+    const uncatalogedCount = formData.lines.filter(line => !line.part_id && line.match_status !== 'ambiguous').length;
+    const supplierName = suppliers.find(supplier => String(supplier.supplier_id) === String(formData.selectedSupplier))?.supplier_name || '';
 
     return (
         <>
         <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Draft saved indicator */}
-            <div className="flex items-center justify-end text-xs text-gray-500 dark:text-slate-400">
-                {poDraftStatus === 'saving' && <span>Saving draft…</span>}
-                {poDraftStatus === 'saved' && (
-                    <span>Draft saved{poLastSavedAt ? ` at ${poLastSavedAt.toLocaleTimeString()}` : ''}</span>
-                )}
-                {poDraftStatus === 'error' && <span className="text-danger-600 dark:text-danger-400">Draft save failed</span>}
-            </div>
+            {!existingPO && <PODraftShelf data={formData} supplierName={supplierName} isEmpty={poIsEmpty} onLoad={loadDraft} onNew={newDraft} onActiveChange={setDraftId} />}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Supplier</label>
@@ -277,6 +314,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                     />
                 </div>
             </div>
+            <PONLPBar onResults={addParsedResults} onOpenBatch={() => setIsBatchOpen(true)} />
             <div className="relative" ref={searchBarRef}>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1 flex items-center gap-1">
                     Add Part
@@ -332,20 +370,38 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
             <div className="max-h-64 overflow-y-auto border border-gray-200 dark:border-slate-700 rounded-lg">
                 <table className="w-full text-left text-sm">
                     <tbody className="divide-y divide-gray-100 dark:divide-slate-700/60">
-                        {formData.lines.map(line => (
-                            <tr key={line.part_id} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200">
-                                <td className="p-2 text-gray-900 dark:text-slate-100">{line.display_name}</td>
+                        {formData.lines.map(line => {
+                            const key = lineKey(line);
+                            return (
+                            <tr key={key} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200">
+                                <td className="p-2 text-gray-900 dark:text-slate-100">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <span>{line.display_name || line.custom_item_name}</span>
+                                        {line.match_status === 'exact' && <span className="text-xs text-success-700 dark:text-success-400">✓ Exact</span>}
+                                        {line.match_status === 'ai' && <span className="text-xs text-success-700 dark:text-success-400">✓ AI match</span>}
+                                        {line.match_status === 'fuzzy' && <span className="text-xs text-amber-700 dark:text-amber-400">~ Fuzzy</span>}
+                                        {line.match_status === 'fuzzy' && !line.confirmed && <button type="button" onClick={() => confirmLine(key)} className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800">Confirm ✓</button>}
+                                        {line.match_status === 'ambiguous' && (
+                                            <select defaultValue="" onChange={event => chooseCandidate(key, event.target.value)} className="text-xs px-2 py-1 rounded border border-yellow-400 bg-yellow-50 text-yellow-900">
+                                                <option value="">⚠ Pick match…</option>
+                                                {line.candidates.map(candidate => <option key={candidate.part_id} value={candidate.part_id}>{candidate.display_name || candidate.detail}</option>)}
+                                            </select>
+                                        )}
+                                        {!line.part_id && line.match_status !== 'ambiguous' && <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">🆕 Draft</span>}
+                                    </div>
+                                </td>
                                 <td className="p-2 w-20">
                                     <MathExpressionInput
                                         precision={2}
                                         value={line.quantity}
-                                        onChange={val => handleLineChange(line.part_id, 'quantity', val)}
+                                        onChange={val => handleLineChange(key, 'quantity', val)}
                                         className="w-full p-1 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-md text-center font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                                     />
                                 </td>
-                                <td className="p-2 w-12 text-center"><button type="button" onClick={() => removeLine(line.part_id)} className="text-gray-400 hover:text-danger-600 dark:hover:text-danger-400 p-1"><Icon path={ICONS.trash} className="h-4 w-4" /></button></td>
+                                <td className="p-2 w-12 text-center"><button type="button" onClick={() => removeLine(key)} className="text-gray-400 hover:text-danger-600 dark:hover:text-danger-400 p-1"><Icon path={ICONS.trash} className="h-4 w-4" /></button></td>
                             </tr>
-                        ))}
+                            );
+                        })}
                     </tbody>
                 </table>
             </div>
@@ -356,6 +412,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                     price changes made later during Goods Receipt.
                 </InfoTip>
             </div>
+            {uncatalogedCount > 0 && <p className="text-right text-sm text-blue-700 dark:text-blue-300">{uncatalogedCount} uncataloged item{uncatalogedCount === 1 ? '' : 's'} — will be formalized at receiving</p>}
             <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Notes</label>
                 <textarea name="notes" value={formData.notes} onChange={handleFormChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" rows="2"></textarea>
@@ -365,6 +422,8 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                 <button type="submit" className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors shadow-xs">{existingPO ? 'Update Purchase Order' : 'Create Purchase Order'}</button>
             </div>
         </form>
+
+        <POBatchPasteModal isOpen={isBatchOpen} onClose={() => setIsBatchOpen(false)} onAccept={addParsedResults} />
 
         {/* New Part modal (outside outer form) */}
         <Modal isOpen={isNewPartOpen} onClose={() => setIsNewPartOpen(false)} title="Add New Part">

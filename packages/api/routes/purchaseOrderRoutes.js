@@ -4,7 +4,34 @@ const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const fs = require('fs');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
+const purchaseOrderParserAI = require('../services/ai/features/purchaseOrderParserAI');
 const router = express.Router();
+
+const PO_DRAFT_LIMIT = 5;
+
+function validatePurchaseOrderLines(lines) {
+    if (!Array.isArray(lines) || lines.length === 0) return 'At least one line is required.';
+    for (const line of lines) {
+        if (!line.part_id && !String(line.custom_item_name || '').trim()) {
+            return 'Each uncataloged line requires custom_item_name.';
+        }
+        if (!(Number(line.quantity) > 0) || !(Number(line.cost_price) >= 0)) {
+            return 'Each line requires a positive quantity and a non-negative cost price.';
+        }
+    }
+    return null;
+}
+
+function lineInsertValues(line) {
+    return [
+        line.part_id || null,
+        line.part_id ? null : String(line.custom_item_name || '').trim(),
+        line.unit || null,
+        line.draft_part_data || null,
+        Number(line.quantity),
+        Number(line.cost_price),
+    ];
+}
 
 // GET /api/purchase-orders - Get all purchase orders with status filter
 router.get('/purchase-orders', protect, hasPermission('purchase_orders:view'), async (req, res) => {
@@ -92,6 +119,104 @@ router.get('/purchase-orders/open', protect, hasPermission('purchase_orders:view
     }
 });
 
+router.post('/purchase-orders/parse-lines', protect, hasPermission('purchase_orders:edit'), async (req, res) => {
+    const lines = req.body?.lines;
+    if (!Array.isArray(lines) || lines.length === 0 || lines.length > 50 || lines.some(line => typeof line !== 'string' || !line.trim())) {
+        return res.status(400).json({ message: 'lines must contain between 1 and 50 non-empty strings.' });
+    }
+
+    try {
+        const parsedLines = await Promise.all(lines.map(rawLine => purchaseOrderParserAI.resolveLine(rawLine)));
+        res.json(parsedLines);
+    } catch (error) {
+        console.error('[SmartPO] parse-lines failed:', error.message);
+        res.status(500).json({ message: 'Could not parse purchase-order lines.' });
+    }
+});
+
+router.get('/purchase-orders/drafts', protect, hasPermission('purchase_orders:edit'), async (req, res) => {
+    try {
+        await db.query(`DELETE FROM draft_transaction WHERE employee_id = $1 AND transaction_type = 'PO' AND expires_at <= CURRENT_TIMESTAMP`, [req.user.employee_id]);
+        const { rows } = await db.query(
+            `SELECT draft_id, draft_name, draft_data, last_updated, expires_at
+             FROM draft_transaction
+             WHERE employee_id = $1 AND transaction_type = 'PO'
+             ORDER BY last_updated DESC`,
+            [req.user.employee_id]
+        );
+        res.json(rows);
+    } catch (error) {
+        console.error(error.message);
+        res.status(500).json({ message: 'Could not load PO drafts.' });
+    }
+});
+
+router.post('/purchase-orders/drafts', protect, hasPermission('purchase_orders:edit'), async (req, res) => {
+    const draftData = req.body?.draft_data;
+    if (!draftData || typeof draftData !== 'object' || Array.isArray(draftData)) {
+        return res.status(400).json({ message: 'draft_data must be an object.' });
+    }
+    try {
+        const count = await db.query(
+            `SELECT COUNT(*)::int AS count FROM draft_transaction
+             WHERE employee_id = $1 AND transaction_type = 'PO' AND expires_at > CURRENT_TIMESTAMP`,
+            [req.user.employee_id]
+        );
+        if (count.rows[0].count >= PO_DRAFT_LIMIT) return res.status(409).json({ message: 'You can keep at most 5 active PO drafts.' });
+        const fallbackName = `Draft #${count.rows[0].count + 1}`;
+        const draftName = String(req.body?.draft_name || fallbackName).trim().slice(0, 100) || fallbackName;
+        const { rows } = await db.query(
+            `INSERT INTO draft_transaction (employee_id, transaction_type, draft_name, draft_data, expires_at)
+             VALUES ($1, 'PO', $2, $3, CURRENT_TIMESTAMP + INTERVAL '7 days')
+             RETURNING draft_id, draft_name, draft_data, last_updated, expires_at`,
+            [req.user.employee_id, draftName, draftData]
+        );
+        res.status(201).json(rows[0]);
+    } catch (error) {
+        if (error.code === '23505') return res.status(409).json({ message: 'A PO draft with that name already exists.' });
+        console.error(error.message);
+        res.status(500).json({ message: 'Could not create PO draft.' });
+    }
+});
+
+router.put('/purchase-orders/drafts/:draftId', protect, hasPermission('purchase_orders:edit'), async (req, res) => {
+    const draftData = req.body?.draft_data;
+    if (!draftData || typeof draftData !== 'object' || Array.isArray(draftData)) {
+        return res.status(400).json({ message: 'draft_data must be an object.' });
+    }
+    try {
+        const name = req.body?.draft_name ? String(req.body.draft_name).trim().slice(0, 100) : null;
+        const { rows } = await db.query(
+            `UPDATE draft_transaction
+             SET draft_data = $1, draft_name = COALESCE(NULLIF($2, ''), draft_name),
+                 last_updated = CURRENT_TIMESTAMP, expires_at = CURRENT_TIMESTAMP + INTERVAL '7 days'
+             WHERE draft_id = $3 AND employee_id = $4 AND transaction_type = 'PO'
+             RETURNING draft_id, draft_name, draft_data, last_updated, expires_at`,
+            [draftData, name, req.params.draftId, req.user.employee_id]
+        );
+        if (!rows.length) return res.status(404).json({ message: 'PO draft not found.' });
+        res.json(rows[0]);
+    } catch (error) {
+        if (error.code === '23505') return res.status(409).json({ message: 'A PO draft with that name already exists.' });
+        console.error(error.message);
+        res.status(500).json({ message: 'Could not update PO draft.' });
+    }
+});
+
+router.delete('/purchase-orders/drafts/:draftId', protect, hasPermission('purchase_orders:edit'), async (req, res) => {
+    try {
+        const result = await db.query(
+            `DELETE FROM draft_transaction WHERE draft_id = $1 AND employee_id = $2 AND transaction_type = 'PO'`,
+            [req.params.draftId, req.user.employee_id]
+        );
+        if (!result.rowCount) return res.status(404).json({ message: 'PO draft not found.' });
+        res.json({ message: 'PO draft deleted.' });
+    } catch (error) {
+        console.error(error.message);
+        res.status(500).json({ message: 'Could not delete PO draft.' });
+    }
+});
+
 // --- NEW ---
 // GET /api/purchase-orders/:id/lines - Get all lines for a specific PO
 router.get('/purchase-orders/:id/lines', protect, hasPermission('purchase_orders:view'), async (req, res) => {
@@ -100,7 +225,7 @@ router.get('/purchase-orders/:id/lines', protect, hasPermission('purchase_orders
         const query = `
             SELECT pol.*, p.internal_sku, p.detail, p.last_sale_price AS last_sale_price, p.last_cost AS last_cost, b.brand_name, g.group_name
             FROM purchase_order_line pol
-            JOIN part p ON pol.part_id = p.part_id
+            LEFT JOIN part p ON pol.part_id = p.part_id
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
             WHERE pol.po_id = $1
@@ -110,7 +235,9 @@ router.get('/purchase-orders/:id/lines', protect, hasPermission('purchase_orders
         // Construct display_name for frontend convenience
         const linesWithDisplayName = rows.map(line => ({
             ...line,
-            display_name: `${line.group_name || ''} (${line.brand_name || ''}) | ${line.detail}`
+            display_name: line.part_id
+                ? `${line.group_name || ''} (${line.brand_name || ''}) | ${line.detail || ''}`
+                : line.custom_item_name
         }));
         res.json(linesWithDisplayName);
     } catch (err) {
@@ -119,13 +246,34 @@ router.get('/purchase-orders/:id/lines', protect, hasPermission('purchase_orders
     }
 });
 
+router.patch('/purchase-orders/:id/lines/:lineId/catalog', protect, hasPermission(['purchase_orders:edit', 'goods_receipt:create']), async (req, res) => {
+    const partId = Number(req.body?.part_id);
+    if (!Number.isInteger(partId) || partId <= 0) return res.status(400).json({ message: 'A valid part_id is required.' });
+    try {
+        const { rows } = await db.query(
+            `UPDATE purchase_order_line pol
+             SET part_id = $1, draft_part_data = NULL
+             WHERE pol.po_id = $2 AND pol.po_line_id = $3
+               AND EXISTS (SELECT 1 FROM part p WHERE p.part_id = $1 AND p.is_active = true)
+             RETURNING pol.po_line_id, pol.part_id`,
+            [partId, req.params.id, req.params.lineId]
+        );
+        if (!rows.length) return res.status(404).json({ message: 'PO line or active part not found.' });
+        res.json({ message: 'PO line cataloged.', po_line_id: rows[0].po_line_id, part_id: rows[0].part_id });
+    } catch (error) {
+        console.error(error.message);
+        res.status(500).json({ message: 'Could not catalog PO line.' });
+    }
+});
+
 
 // POST /api/purchase-orders - Create a new purchase order
 router.post('/purchase-orders', protect, hasPermission('purchase_orders:edit'), async (req, res) => {
     const { supplier_id, employee_id, expected_date, lines, notes } = req.body;
 
-    if (!supplier_id || !employee_id || !lines || !Array.isArray(lines) || lines.length === 0) {
-        return res.status(400).json({ message: 'Missing required fields.' });
+    const lineError = validatePurchaseOrderLines(lines);
+    if (!supplier_id || !employee_id || lineError) {
+        return res.status(400).json({ message: lineError || 'Missing required fields.' });
     }
 
     const client = await db.getClient();
@@ -144,12 +292,12 @@ router.post('/purchase-orders', protect, hasPermission('purchase_orders:edit'), 
         const newPoId = poResult.rows[0].po_id;
 
         for (const line of lines) {
-            const { part_id, quantity, cost_price } = line;
             const lineQuery = `
-                INSERT INTO purchase_order_line (po_id, part_id, quantity, cost_price)
-                VALUES ($1, $2, $3, $4);
+                INSERT INTO purchase_order_line
+                    (po_id, part_id, custom_item_name, unit, draft_part_data, quantity, cost_price)
+                VALUES ($1, $2, $3, $4, $5, $6, $7);
             `;
-            await client.query(lineQuery, [newPoId, part_id, quantity, cost_price]);
+            await client.query(lineQuery, [newPoId, ...lineInsertValues(line)]);
         }
 
         await client.query('COMMIT');
@@ -170,8 +318,9 @@ router.put('/purchase-orders/:id', protect, hasPermission('purchase_orders:edit'
     const { id } = req.params;
     const { supplier_id, expected_date, lines, notes } = req.body;
 
-    if (!supplier_id || !lines || !Array.isArray(lines) || lines.length === 0) {
-        return res.status(400).json({ message: 'Missing required fields.' });
+    const lineError = validatePurchaseOrderLines(lines);
+    if (!supplier_id || lineError) {
+        return res.status(400).json({ message: lineError || 'Missing required fields.' });
     }
 
     const client = await db.getClient();
@@ -197,10 +346,11 @@ router.put('/purchase-orders/:id', protect, hasPermission('purchase_orders:edit'
         // Replace PO lines
         await client.query('DELETE FROM purchase_order_line WHERE po_id = $1', [id]);
         for (const line of lines) {
-            const { part_id, quantity, cost_price } = line;
             await client.query(
-                'INSERT INTO purchase_order_line (po_id, part_id, quantity, cost_price) VALUES ($1, $2, $3, $4)',
-                [id, part_id, quantity, cost_price]
+                `INSERT INTO purchase_order_line
+                    (po_id, part_id, custom_item_name, unit, draft_part_data, quantity, cost_price)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+                [id, ...lineInsertValues(line)]
             );
         }
 

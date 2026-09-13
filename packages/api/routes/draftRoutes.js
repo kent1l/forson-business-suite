@@ -33,10 +33,12 @@ router.post('/drafts/:type', protect, async (req, res) => {
 
     try {
         const query = `
-            INSERT INTO draft_transaction (employee_id, transaction_type, draft_data)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (employee_id, transaction_type)
-            DO UPDATE SET draft_data = EXCLUDED.draft_data, last_updated = CURRENT_TIMESTAMP
+            INSERT INTO draft_transaction (employee_id, transaction_type, draft_name, draft_data, expires_at)
+            VALUES ($1, $2, 'Draft', $3, CURRENT_TIMESTAMP + INTERVAL '7 days')
+            ON CONFLICT (employee_id, transaction_type, draft_name)
+            DO UPDATE SET draft_data = EXCLUDED.draft_data,
+                          last_updated = CURRENT_TIMESTAMP,
+                          expires_at = CURRENT_TIMESTAMP + INTERVAL '7 days'
             RETURNING draft_id;
         `;
         const result = await db.query(query, [employee_id, type.toUpperCase(), draft_data]);
