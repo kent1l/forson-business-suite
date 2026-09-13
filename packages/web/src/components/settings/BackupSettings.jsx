@@ -120,8 +120,10 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
         const formData = new FormData();
         formData.append('file', file);
 
-        // Do NOT set Content-Type manually — axios must set it with the multipart boundary
-        const promise = api.post('/backups/upload', formData);
+        // Delete the default Content-Type so axios sets multipart/form-data with the correct boundary
+        const promise = api.post('/backups/upload', formData, {
+            headers: { 'Content-Type': undefined },
+        });
 
         toast.promise(promise, {
             loading: `Uploading ${file.name}...`,
