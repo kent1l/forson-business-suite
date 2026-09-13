@@ -97,6 +97,22 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
         });
     };
 
+    const handleDownload = async (filename) => {
+        try {
+            const response = await api.get(`/backups/${filename}`, { responseType: 'blob' });
+            const url = URL.createObjectURL(response.data);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to download backup.');
+        }
+    };
+
     const handleFileChange = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -104,9 +120,8 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
         const formData = new FormData();
         formData.append('file', file);
 
-        const promise = api.post('/backups/upload', formData, {
-            headers: { 'Content-Type': 'multipart/form-data' }
-        });
+        // Do NOT set Content-Type manually — axios must set it with the multipart boundary
+        const promise = api.post('/backups/upload', formData);
 
         toast.promise(promise, {
             loading: `Uploading ${file.name}...`,
@@ -447,13 +462,12 @@ const BackupSettings = ({ settings, handleChange, handleSave }) => {
                                             {format(toZonedTime(parseISO(backup.createdAt), settings.APP_TIMEZONE || 'Asia/Manila'), 'MM/dd/yyyy hh:mm a')}
                                         </td>
                                         <td className="px-4 py-3 text-right whitespace-nowrap space-x-3">
-                                            <a
-                                                href={`/api/backups/${backup.filename}`}
-                                                download
+                                            <button
+                                                onClick={() => handleDownload(backup.filename)}
                                                 className="text-primary-600 dark:text-primary-500 hover:text-primary-700 dark:hover:text-primary-600 font-medium"
                                             >
                                                 Download
-                                            </a>
+                                            </button>
                                             <button onClick={() => handleRestore(backup.filename)} className="text-success-600 hover:text-success-700 font-medium">Restore</button>
                                             <button onClick={() => handleDelete(backup.filename)} className="text-danger-500 hover:text-danger-700 font-medium">Delete</button>
                                         </td>
