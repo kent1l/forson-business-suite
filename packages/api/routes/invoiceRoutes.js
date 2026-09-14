@@ -392,6 +392,30 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
         }
     }
 
+    // WAC floor: no line may be sold below the item's weighted average cost.
+    // wac_cost = 0 means no cost history yet; those pass freely.
+    {
+        const linePartIds = lines.map(l => l.part_id);
+        const { rows: partWacs } = await db.query(
+            'SELECT part_id, COALESCE(wac_cost, 0) AS wac_cost FROM part WHERE part_id = ANY($1)',
+            [linePartIds]
+        );
+        const wacByPartId = Object.fromEntries(partWacs.map(p => [p.part_id, parseFloat(p.wac_cost)]));
+        for (const line of lines) {
+            const wac = wacByPartId[line.part_id] ?? 0;
+            const salePrice = parseFloat(line.sale_price);
+            if (wac > 0 && salePrice < wac - 0.005) {
+                return res.status(400).json({
+                    code: 'BELOW_WAC',
+                    message: `Sale price ₱${salePrice.toFixed(2)} for part_id ${line.part_id} is below its cost (WAC ₱${wac.toFixed(2)}). Adjust the price before submitting.`,
+                    part_id: line.part_id,
+                    wac_cost: wac,
+                    sale_price: salePrice,
+                });
+            }
+        }
+    }
+
     const client = await db.getClient();
     try {
         await client.query('BEGIN');

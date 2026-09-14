@@ -365,7 +365,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
     })), [customers]);
 
     const handleSelectPart = (part) => {
-        setCurrentItem({ ...part, sale_price: part.last_sale_price || 0 });
+        setCurrentItem({ ...part, sale_price: part.last_sale_price || 0, wac_cost: parseFloat(part.wac_cost ?? 0) });
         setIsPriceModalOpen(true);
         setSearchTerm('');
         setSearchResults([]);
@@ -564,6 +564,13 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
         // Enforce full payment on POS: always send amount_paid equal to the final total.
         console.debug(`POS payment: method=${paymentMethod}, tendered=${tenderedAmount}, amountPaid=${amountPaid}, enforced=${total}`);
         const normalizedPRN = normalizePhysicalReceipt(physicalReceiptInput || physicalReceiptNo || '');
+
+        // WAC floor: refuse submission if any line is priced below cost.
+        const belowWacLine = lines.find(l => (l.wac_cost ?? 0) > 0 && l.sale_price < (l.wac_cost ?? 0) - 0.005);
+        if (belowWacLine) {
+            toast.error(`"${belowWacLine.display_name}" is priced below its WAC (₱${Number(belowWacLine.wac_cost).toFixed(2)}). Adjust the price before completing the sale.`);
+            return;
+        }
 
         try {
             // Coerce provided paymentMethod into a proper method_id; also determine methodName
@@ -1155,6 +1162,11 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                                                 onChange={(val) => handleLineChange(line.part_id, 'sale_price', val)}
                                                 className="w-24 px-2 py-1 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
                                             />
+                                            {(line.wac_cost ?? 0) > 0 && line.sale_price < (line.wac_cost ?? 0) - 0.005 && (
+                                                <span className="ml-1.5 text-xs font-semibold text-red-600 dark:text-red-400 whitespace-nowrap">
+                                                    Below WAC (₱{Number(line.wac_cost).toFixed(2)})
+                                                </span>
+                                            )}
                                         </div>
                                     </div>
                                     <p className="text-sm font-semibold pt-1 text-gray-900 dark:text-slate-100">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{(line.quantity * line.sale_price).toFixed(2)}</p>

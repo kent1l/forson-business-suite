@@ -9,6 +9,9 @@ const PriceQuantityModal = ({ item, onConfirm, onCancel }) => {
         item.stock_on_hand != null ? Number(item.stock_on_hand) : null
     );
 
+    const wacCost = parseFloat(item?.wac_cost ?? 0);
+    const isBelowWac = wacCost > 0 && typeof price === 'number' && price < wacCost - 0.005;
+
     // Selling below zero stays allowed — it is how walk-in sales of not-yet-received
     // stock get recorded — but the cashier should see it, since unexplained negative
     // stock is what makes an item's cost untrustworthy later.
@@ -23,6 +26,7 @@ const PriceQuantityModal = ({ item, onConfirm, onCancel }) => {
 
     const handleSubmit = (e) => {
         e.preventDefault();
+        if (isBelowWac) return;
         const p = typeof price === 'number' ? price : (parseFloat(price) || 0);
         const q = typeof quantity === 'number' ? quantity : (parseFloat(quantity) || 1);
         onConfirm({ ...item, sale_price: p, quantity: q });
@@ -35,6 +39,11 @@ const PriceQuantityModal = ({ item, onConfirm, onCancel }) => {
                     <div className="rounded-lg border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
                         Stock on hand is {stockOnHand}. This sale will leave it at {stockOnHand - quantity}.
                         You can still proceed — post the goods receipt afterwards so the item&apos;s cost stays accurate.
+                    </div>
+                )}
+                {isBelowWac && (
+                    <div className="rounded-lg border border-red-300 dark:border-red-700/60 bg-red-50 dark:bg-red-900/20 px-3 py-2 text-sm text-red-800 dark:text-red-200">
+                        ₱{Number(price).toFixed(2)} is below this item&apos;s WAC (₱{wacCost.toFixed(2)}). Adjust the price.
                     </div>
                 )}
                 <div>
@@ -67,7 +76,11 @@ const PriceQuantityModal = ({ item, onConfirm, onCancel }) => {
                         Cancel
                     </button>
                 )}
-                <button type="submit" className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition">
+                <button
+                    type="submit"
+                    disabled={isBelowWac}
+                    className={`px-6 py-2 rounded-lg transition text-white ${isBelowWac ? 'bg-primary-400 dark:bg-primary-800 cursor-not-allowed opacity-60' : 'bg-primary-600 hover:bg-primary-700'}`}
+                >
                     Add to Sale
                 </button>
             </div>
