@@ -170,14 +170,14 @@ The Inventory & Parts Catalog module covers everything about *what* you stock an
 
 1. Open **My Cycle Count**. The **Pending Tasks** tab shows **Today's Batch** — the number of items assigned to you.
 2. If items are pending, click **Start Counting**. If none are pending, you'll see "All caught up!"
-3. For each item, you'll see its name/SKU on screen. Physically count the item, then enter the quantity using the on-screen numpad (digits, `C` to clear, `⌫` to backspace).
+3. On the web, for each item, you'll see its name/SKU on screen. Physically count the item, then type the quantity into the field — whole and decimal quantities are supported (for example, `24` or `24.5`). Use **Clear**, **−1**, **0**, and **+1** for common corrections; press **Enter** or click **Submit Count** when ready. The mobile keypad is unchanged.
 4. Click **Submit Count**. The app automatically advances to the next item in your batch; after the last item it shows "Batch completed!" and returns you to the dashboard.
-5. If you count something that was *not* in your assigned batch (an unexpected find), click **Log Unassigned Find** from the dashboard (or **Log Unassigned Find** during an active count) instead of trying to force it into the current item. Search for the part by scanning its barcode or typing its name/SKU, select it from the results, enter the counted quantity on the numpad, and click **Submit Count**.
+5. If you count something that was *not* in your assigned batch (an unexpected find), click **Log Unassigned Find** from the dashboard (or **Log Unassigned Find** during an active count) instead of trying to force it into the current item. Search for the part by scanning its barcode or typing its name/SKU, select it from the results, enter the counted quantity, and click **Submit Count**.
 6. Check the **My Progress** tab at any time to review what you've already counted in this session.
 
 > 📝 **Note:** If you make a mistake on a submitted count, do not try to "fix" it by adjusting stock yourself — flag it to whoever manages cycle counts so the batch can be corrected through the count review process, not through an ad hoc stock adjustment.
 
-**Example:** A batch of 15 items is assigned. Tapping **Start Counting** opens item 1 of 15; the counter physically counts 24 units on the shelf, taps `2` `4` on the numpad, and taps **Submit Count** — the app immediately shows item 2 of 15.
+**Example:** A batch of 15 items is assigned. Clicking **Start Counting** opens item 1 of 15; the counter physically counts 24.5 units on the shelf, types `24.5`, and presses **Enter** — the app immediately shows item 2 of 15.
 
 ## Field Reference
 

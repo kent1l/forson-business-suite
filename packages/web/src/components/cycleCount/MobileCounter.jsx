@@ -70,27 +70,27 @@ const MobileCounter = ({ task, onSubmit, onCancel, itemNumber, totalItems, isUna
         setSearchResults([]);
     };
 
-    const handleNumpadClick = (num) => {
-        if (inputValue === '0' && num !== '.') {
-            setInputValue(num.toString());
-        } else {
-            setInputValue(prev => prev + num.toString());
-        }
-    };
-
     const handleClear = () => {
         setInputValue('');
     };
 
-    const handleDelete = () => {
-        setInputValue(prev => prev.slice(0, -1));
+    const handleAdjustment = (amount) => {
+        const currentValue = Number.parseFloat(inputValue);
+        const nextValue = Math.max(0, (Number.isFinite(currentValue) ? currentValue : 0) + amount);
+        // Inventory quantities use four decimal places. Rounding here avoids
+        // exposing floating-point artefacts after repeated helper-button clicks.
+        setInputValue(String(Number(nextValue.toFixed(4))));
     };
 
     const handleSubmitClick = () => {
-        if (!inputValue) return;
+        const normalizedInput = inputValue.trim();
+        if (!normalizedInput) return;
 
-        const qty = parseFloat(inputValue);
-        if (isNaN(qty) || qty < 0) return;
+        const qty = Number(normalizedInput);
+        if (!Number.isFinite(qty) || qty < 0) {
+            toast.error('Enter a valid quantity of zero or more.');
+            return;
+        }
 
         if (isUnassigned) {
             if (!selectedPart) return;
@@ -105,13 +105,6 @@ const MobileCounter = ({ task, onSubmit, onCancel, itemNumber, totalItems, isUna
     const activePart = isUnassigned ? selectedPart : task;
     const activeDisplayName = getPartDisplayName(activePart);
     const activeSecondaryLabel = getPartSecondaryLabel(activePart);
-
-    const numpadButtons = [
-        [1, 2, 3],
-        [4, 5, 6],
-        [7, 8, 9],
-        ['C', 0, '⌫']
-    ];
 
     return (
         <div className="flex flex-col h-full max-w-lg mx-auto bg-gray-50 dark:bg-slate-900 border-x border-gray-200 dark:border-slate-700">
@@ -191,44 +184,62 @@ const MobileCounter = ({ task, onSubmit, onCancel, itemNumber, totalItems, isUna
                     </div>
                 )}
 
-                {/* Numpad Area (only show if we have a task or a selected part) */}
+                {/* Quantity entry (only show if we have a task or a selected part) */}
                 {(!isUnassigned || selectedPart) && (
                     <div className="mt-auto">
-                        {/* Display Input */}
-                        <div className="bg-white dark:bg-slate-800 border-2 border-primary-200 dark:border-primary-800/60 rounded-xl mb-4 p-4 text-center">
-                            <span className={`text-5xl font-mono tracking-wider ${inputValue ? 'text-gray-900 dark:text-slate-100 font-bold' : 'text-gray-300 dark:text-slate-600'}`}>
-                                {inputValue || '0'}
-                            </span>
+                        <label htmlFor="cycle-count-quantity" className="block mb-2 text-sm font-semibold text-gray-700 dark:text-slate-300">
+                            Counted quantity
+                        </label>
+                        <div className="bg-white dark:bg-slate-800 border-2 border-primary-200 dark:border-primary-800/60 rounded-xl mb-3">
+                            <input
+                                id="cycle-count-quantity"
+                                type="text"
+                                inputMode="decimal"
+                                autoComplete="off"
+                                autoFocus
+                                value={inputValue}
+                                onChange={(event) => {
+                                    const nextValue = event.target.value;
+                                    if (/^\d*(?:\.\d*)?$/.test(nextValue)) {
+                                        setInputValue(nextValue);
+                                    }
+                                }}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                        event.preventDefault();
+                                        handleSubmitClick();
+                                    }
+                                }}
+                                placeholder="0"
+                                aria-describedby="cycle-count-quantity-help"
+                                className="w-full p-4 text-center text-5xl font-mono font-bold tracking-wider text-gray-900 dark:text-slate-100 bg-transparent placeholder:text-gray-300 dark:placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary-500 rounded-xl"
+                            />
                         </div>
+                        <p id="cycle-count-quantity-help" className="mb-3 text-sm text-gray-500 dark:text-slate-400">
+                            Type a whole or decimal quantity. Press Enter to submit.
+                        </p>
 
-                        {/* Large Numpad */}
-                        <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-4">
-                            {numpadButtons.flat().map((btn, idx) => {
-                                const isAction = typeof btn === 'string';
-                                return (
-                                    <button
-                                        key={idx}
-                                        onClick={() => {
-                                            if (btn === 'C') handleClear();
-                                            else if (btn === '⌫') handleDelete();
-                                            else handleNumpadClick(btn);
-                                        }}
-                                        className={`
-                                            h-16 sm:h-20 rounded-xl text-2xl font-semibold transition-colors active:scale-95 shadow-sm cursor-pointer
-                                            ${isAction ? 'bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-slate-200 hover:bg-gray-300 dark:hover:bg-slate-600' : 'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-700/60'}
-                                        `}
-                                    >
-                                        {btn}
-                                    </button>
-                                );
-                            })}
+                        {/* Quick helpers keep common count adjustments one click away. */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-4">
+                            <button type="button" onClick={handleClear} className="min-h-12 rounded-xl font-semibold bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-slate-200 hover:bg-gray-300 dark:hover:bg-slate-600 cursor-pointer">
+                                Clear
+                            </button>
+                            <button type="button" onClick={() => handleAdjustment(-1)} className="min-h-12 rounded-xl font-semibold bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-700/60 cursor-pointer">
+                                −1
+                            </button>
+                            <button type="button" onClick={() => setInputValue('0')} className="min-h-12 rounded-xl font-semibold bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-700/60 cursor-pointer">
+                                0
+                            </button>
+                            <button type="button" onClick={() => handleAdjustment(1)} className="min-h-12 rounded-xl font-semibold bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-900 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-700/60 cursor-pointer">
+                                +1
+                            </button>
                         </div>
 
                         {/* Submit Button */}
                         <button
                             onClick={handleSubmitClick}
-                            disabled={!inputValue}
-                            className={`w-full py-5 rounded-xl font-bold text-2xl flex items-center justify-center space-x-2 shadow-md transition-colors cursor-pointer ${inputValue ? 'bg-success-600 hover:bg-success-700 text-white active:scale-95' : 'bg-gray-300 dark:bg-slate-700 text-gray-500 dark:text-slate-500 cursor-not-allowed opacity-60'
+                            disabled={!inputValue.trim()}
+                            className={`w-full py-5 rounded-xl font-bold text-2xl flex items-center justify-center space-x-2 shadow-md transition-colors cursor-pointer ${inputValue.trim() ? 'bg-success-600 hover:bg-success-700 text-white active:scale-95' : 'bg-gray-300 dark:bg-slate-700 text-gray-500 dark:text-slate-500 cursor-not-allowed opacity-60'
                                 }`}
                         >
                             <span>Submit Count</span>
