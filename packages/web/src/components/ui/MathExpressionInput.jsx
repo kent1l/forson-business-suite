@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { forwardRef, useEffect, useState } from 'react';
 import { evaluateMathExpression } from '../../lib/mathExpression';
 
 const roundTo = (value, precision) => {
@@ -12,7 +12,7 @@ const roundTo = (value, precision) => {
  * committed (calling onChange with the resulting number) on blur or Enter;
  * invalid expressions revert the field to the last valid value.
  */
-const MathExpressionInput = ({
+const MathExpressionInput = forwardRef(({
     value,
     onChange,
     precision = 6,
@@ -23,7 +23,7 @@ const MathExpressionInput = ({
     max,
     onFocus,
     ...rest
-}) => {
+}, ref) => {
     const [draft, setDraft] = useState(String(value ?? ''));
 
     useEffect(() => {
@@ -63,6 +63,7 @@ const MathExpressionInput = ({
 
     return (
         <input
+            ref={ref}
             type="text"
             inputMode="decimal"
             value={draft}
@@ -76,6 +77,6 @@ const MathExpressionInput = ({
             {...rest}
         />
     );
-};
+});
 
 export default MathExpressionInput;

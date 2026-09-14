@@ -44,7 +44,7 @@ const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment, physicalReceip
 
     const requirePRN = String(settings?.REQUIRE_PHYSICAL_RECEIPT_NO || '').toLowerCase() === 'true';
 
-    const handleConfirm = () => {
+    const handleConfirm = ({ tenderedAmount } = {}) => {
         const normalizedPRN = (physicalReceipt || '').trim();
         if (requirePRN && normalizedPRN.length === 0) return; // do nothing if required and empty
         
@@ -57,7 +57,7 @@ const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment, physicalReceip
         
         // Treat empty or zero cash tender as exact cash when confirming
         if (selectedMethod.toLowerCase() === 'cash') {
-            const tender = typeof cashTendered === 'number' ? cashTendered : (parseFloat(cashTendered) || 0);
+            const tender = tenderedAmount ?? (typeof cashTendered === 'number' ? cashTendered : (parseFloat(cashTendered) || 0));
             const amountPaid = tender <= 0 ? total : tender;
             
             const methodId = selectedMethodObj && typeof selectedMethodObj === 'object' ? selectedMethodObj.method_id : selectedMethod;
@@ -70,7 +70,20 @@ const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment, physicalReceip
     };
 
     return (
-        <div className={`fixed inset-0 bg-neutral-800/50 z-40 flex items-center justify-center p-4 ${isOpen ? '' : 'hidden'}`}>
+        <div
+            className={`fixed inset-0 bg-neutral-800/50 z-40 flex items-center justify-center p-4 ${isOpen ? '' : 'hidden'}`}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    // Enter uses the entered tender. When it is empty, retain
+                    // the exact-payment shortcut by using the sale total.
+                    const tenderedAmount = typeof cashTendered === 'string'
+                        ? (cashTendered.trim() === '' ? total : cashTendered)
+                        : (cashTendered ?? total);
+                    handleConfirm({ tenderedAmount });
+                }
+            }}
+        >
             <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-gray-200 dark:border-slate-700 w-full max-w-sm">
                 <div className="p-4 border-b border-gray-200 dark:border-slate-700 flex justify-between items-center">
                     <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Process Payment</h2>
@@ -109,6 +122,7 @@ const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment, physicalReceip
                                 </InfoTip>
                             </label>
                             <MathExpressionInput
+                                ref={cashInputRef}
                                 precision={2}
                                 value={cashTendered}
                                 onChange={(val) => setCashTendered(val)}

@@ -32,11 +32,13 @@ export default function PriceOverrideSheet({ visible, item, onClose, onConfirm }
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [priceText, setPriceText] = useState('');
+  const [wacError, setWacError] = useState<string | null>(null);
   const translateY = useSharedValue(400);
 
   useEffect(() => {
     if (visible) {
       setPriceText(item ? String(item.sale_price ?? '') : '');
+      setWacError(null);
       translateY.value = withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) });
     } else {
       translateY.value = withTiming(400, { duration: 240, easing: Easing.in(Easing.cubic) });
@@ -53,6 +55,13 @@ export default function PriceOverrideSheet({ visible, item, onClose, onConfirm }
       haptics.error();
       return;
     }
+    const wac = item?.wac_cost ?? 0;
+    if (wac > 0 && parsed < wac - 0.005) {
+      haptics.error();
+      setWacError(`₱${parsed.toFixed(2)} is below this item's cost (WAC ₱${wac.toFixed(2)}). Raise the price.`);
+      return;
+    }
+    setWacError(null);
     haptics.success();
     // Dismissed explicitly, in the same gesture as the close, rather than
     // left to whatever implicit blur a tap-outside or button press causes.
@@ -90,10 +99,16 @@ export default function PriceOverrideSheet({ visible, item, onClose, onConfirm }
             Current: {item ? formatPHP(item.sale_price) : '—'}
           </Text>
 
+          {wacError && (
+            <View style={[styles.wacErrorBanner, isDark && styles.wacErrorBannerDark]}>
+              <Text style={[styles.wacErrorText, isDark && styles.wacErrorTextDark]}>{wacError}</Text>
+            </View>
+          )}
+
           <TextInput
-            style={[styles.input, isDark && styles.inputDark]}
+            style={[styles.input, isDark && styles.inputDark, wacError ? styles.inputError : null]}
             value={priceText}
-            onChangeText={setPriceText}
+            onChangeText={(t) => { setPriceText(t); setWacError(null); }}
             keyboardType="decimal-pad"
             placeholder="Enter new price"
             placeholderTextColor="#9ca3af"
@@ -215,5 +230,29 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#fff',
+  },
+  wacErrorBanner: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  wacErrorBannerDark: {
+    backgroundColor: '#450a0a',
+    borderColor: '#991b1b',
+  },
+  wacErrorText: {
+    color: '#DC2626',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  wacErrorTextDark: {
+    color: '#fca5a5',
+  },
+  inputError: {
+    borderColor: '#EF4444',
   },
 });

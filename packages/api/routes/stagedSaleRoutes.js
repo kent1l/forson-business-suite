@@ -49,6 +49,31 @@ router.post('/sales/staging', protect, hasPermission('pos:use'), async (req, res
         }
     }
 
+    // WAC floor: no line may be sold below the item's weighted average cost.
+    // Checked before opening a transaction so a doomed request doesn't burn a
+    // pool connection. wac_cost = 0 means no cost history yet; those pass freely.
+    {
+        const partIds = lines.map(l => l.part_id);
+        const { rows: partWacs } = await db.query(
+            'SELECT part_id, COALESCE(wac_cost, 0) AS wac_cost FROM part WHERE part_id = ANY($1)',
+            [partIds]
+        );
+        const wacByPartId = Object.fromEntries(partWacs.map(p => [p.part_id, parseFloat(p.wac_cost)]));
+        for (const line of lines) {
+            const wac = wacByPartId[line.part_id] ?? 0;
+            const salePrice = parseFloat(line.sale_price);
+            if (wac > 0 && salePrice < wac - 0.005) {
+                return res.status(400).json({
+                    code: 'BELOW_WAC',
+                    message: `Sale price ₱${salePrice.toFixed(2)} for part_id ${line.part_id} is below its cost (WAC ₱${wac.toFixed(2)}). Adjust the price before submitting.`,
+                    part_id: line.part_id,
+                    wac_cost: wac,
+                    sale_price: salePrice,
+                });
+            }
+        }
+    }
+
     // Checked before opening a transaction: a sale too stale to accept should
     // cost nothing. Rejecting does not lose it -- the phone's queue parks a 400
     // as needs-attention, so it stays visible until someone deals with it.

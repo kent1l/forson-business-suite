@@ -48,6 +48,7 @@ const usePosStore = create((set, get) => ({
         // "unknown stock" stays distinguishable from "none in stock".
         stock_qty: product.stock_qty ?? product.stock_on_hand,
         is_tax_inclusive_price: product.is_tax_inclusive_price,
+        wac_cost: parseFloat(product.wac_cost ?? 0),
       };
       const cart = [...state.cart, item];
       return {
