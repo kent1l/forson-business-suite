@@ -75,9 +75,12 @@ const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment, physicalReceip
             onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
                     e.preventDefault();
-                    // Enter is the exact-payment shortcut. It deliberately uses
-                    // the sale total as tendered, regardless of an empty field.
-                    handleConfirm({ tenderedAmount: total });
+                    // Enter uses the entered tender. When it is empty, retain
+                    // the exact-payment shortcut by using the sale total.
+                    const tenderedAmount = typeof cashTendered === 'string'
+                        ? (cashTendered.trim() === '' ? total : cashTendered)
+                        : (cashTendered ?? total);
+                    handleConfirm({ tenderedAmount });
                 }
             }}
         >
@@ -119,6 +122,7 @@ const PaymentModal = ({ isOpen, onClose, total, onConfirmPayment, physicalReceip
                                 </InfoTip>
                             </label>
                             <MathExpressionInput
+                                ref={cashInputRef}
                                 precision={2}
                                 value={cashTendered}
                                 onChange={(val) => setCashTendered(val)}
