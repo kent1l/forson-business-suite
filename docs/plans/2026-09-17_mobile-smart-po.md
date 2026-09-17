@@ -245,6 +245,7 @@ graphify update .
 - `packages/mobile/src/utils/purchaseOrder.ts`, `packages/mobile/src/utils/sharePurchaseOrder.ts` — pure order helpers and secure local PDF sharing.
 - `packages/mobile/src/app/_layout.tsx`, `packages/mobile/src/app/index.tsx` — route/dashboard registration.
 - `packages/api/routes/purchaseOrderRoutes.js` — PDF content type and attachment filename.
+- `packages/api/helpers/pdf/purchaseOrderPdf.js`, `packages/api/templates/pdf/purchase-order.html` — shared web/mobile PO PDF prices, total, optional note, and standard purchasing terms.
 - `packages/mobile/tests/purchaseOrder.test.js` — helper test coverage.
 
 ## 12. Change Log
@@ -253,3 +254,4 @@ graphify update .
 |---|---|---|
 | 2026-09-17 | Codex + product owner | Finalized v1 mobile Smart PO product decisions and implementation handoff. No application code changed. |
 | 2026-09-17 | Codex | Implemented the core mobile flow and recorded the remaining acceptance/device work. |
+| 2026-09-17 | Codex | Updated the shared PO PDF with price/total visibility, optional notes, and supplier terms. |

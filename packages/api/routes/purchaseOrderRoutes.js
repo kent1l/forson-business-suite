@@ -487,6 +487,8 @@ router.get('/purchase-orders/:id/pdf', protect, hasPermission('purchase_orders:v
         const poLinesQuery = `
             SELECT 
                 pol.quantity,
+                pol.unit,
+                pol.cost_price,
                 p.part_id,
                 p.detail,
                 b.brand_name,
