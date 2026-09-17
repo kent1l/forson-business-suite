@@ -1,18 +1,18 @@
 # Mobile Smart PO — PRD & Developer Handoff
 
 > **Forson Business Suite** | **PRD-FBS-MPO-001** | **Date:** 2026-09-17 | **Branch:** `master`
-> **Status:** Planning complete. No mobile Smart PO code, schema change, or delivery integration has been implemented.
+> **Status:** Core mobile Smart PO flow implemented; device acceptance and a few resilience refinements remain.
 
 ## 0. Status at a Glance
 
 | Item | Status | Reference |
 |---|---|---|
 | Existing web/API Smart PO parser and named PO drafts | **Implemented** | Existing Smart PO PRD |
-| Existing mobile PO creation, editing, or draft UI | **Not started** | §5–§7 |
-| V1 delivery: native PDF sharing and text-summary copy | **Decided; not started** | §4, §8 |
+| Existing mobile PO creation, editing, or draft UI | **Partially implemented** | §7, §11 |
+| V1 delivery: native PDF sharing and text-summary copy | **Implemented; device validation pending** | §7, §8 |
 | Automatic email, SMS/WhatsApp delivery, delivery receipts | **Explicitly deferred** | §10 |
 | Multi-contact supplier schema | **Explicitly deferred** | §10 |
-| V1 inputs: supplier text, paste list, manual catalog search | **Decided; not started** | §3, §4.2 |
+| V1 inputs: supplier text, paste list, manual catalog search | **Implemented** | §7 |
 | Barcode-scanner input | **Explicitly deferred** | §10 |
 
 ## 1. For a New Session or Agent Picking This Up
@@ -169,25 +169,21 @@ The existing status route already permits only `Pending → Ordered | Cancelled`
 
 ### Phase 1 — Contracts, navigation, and inbox
 
-- Verify permissions and every existing PO/draft/PDF contract with targeted API tests.
-- Add the permission-gated dashboard module and PO route stack.
-- Build the segmented inbox with cached queries, list states, and deep links to details/receiving.
-- Add tests for permission visibility, query keys, list state selection, and state labels.
+**As built:** permission-gated dashboard and route stack, segmented Drafts/Pending/Ordered inbox, pull-to-refresh, cached React Query lists, PO/draft deep links, and receiving navigation. The API audit confirmed the existing contracts; PDF responses now set `application/pdf` and an attachment filename.
+
+**Remaining:** targeted API contract tests and component-level inbox/permission tests.
 
 ### Phase 2 — Smart Cart + draft resilience
 
-- Implement supplier selection; single supplier-text input; paste-list parsing, review, and selective addition; manual catalog search; parser-state cards; line edits/removal; total calculation; and review guardrails.
-- Integrate server named-draft CRUD with debounced saves, restore, discard, expiry display, and explicit conflict/error states.
-- Never queue PO creation or Ordered status changes in the offline outbox; document creation and status transition need an immediate confirmed server response. Drafts may remain in local form state until connectivity returns.
-- Add unit tests for line adaptation, total/summary formatting, unresolved-state guards, and draft payload serialization.
+**As built:** supplier picker, supplier-text parser, paste parsing (up to 50 lines), local catalogue search, parser-status cards, line edits/removal, totals, and review guards for ambiguous/unconfirmed fuzzy matches. Explicit server draft save/load and expiry display are included. Creation remains online-only and is not put into the offline outbox.
+
+**Remaining:** selectable pasted-result review, debounced automatic draft save, draft discard UI, and dedicated adaptation/serialization tests.
 
 ### Phase 3 — Persist, share, copy, and status confirmation
 
-- Create the Pending PO, clean up the consumed named draft only after server success, and display detail/review.
-- Download the PDF with the authenticated API client into the cache/documents directory, invoke `Sharing.isAvailableAsync()` then `shareAsync()` with PDF MIME metadata, and clean up local temporary files after attempted share.
-- Implement copy-summary action using Expo Clipboard. Summary must include PO number, supplier if present, each line’s quantity/unit/name/unit cost, total, expected date, note, and a clear “Please confirm availability and delivery date” request.
-- Implement the required post-action status dialog. It must appear after Share PDF completes/returns and immediately after Copy summary, but never claim an external action succeeded.
-- Test cancellation, download failure, share-unavailable fallback, clipboard confirmation, ordered success, and status-update failure.
+**As built:** Pending-PO creation, post-success draft deletion, PO detail/review, authenticated cache-only PDF download/share with cleanup, deterministic Clipboard summary, and the explicit Ordered/Not yet confirmation after a completed share action or copy. Neither action claims supplier delivery or receipt. Utility checks cover review guards, totals, and summary output.
+
+**Remaining:** automated native cancellation/download/share/clipboard/status-failure tests and physical-device validation.
 
 ### Phase 4 — Acceptance, regression, and release readiness
 
@@ -244,10 +240,16 @@ graphify update .
 
 ## 11. Files Touched So Far
 
-- `docs/plans/2026-09-17_mobile-smart-po.md` — this planning document only.
+- `packages/mobile/src/app/purchase-orders/*` — inbox, composer, detail, and permission-gated route stack.
+- `packages/mobile/src/components/purchase-orders/*` — supplier, line, and delivery UI.
+- `packages/mobile/src/utils/purchaseOrder.ts`, `packages/mobile/src/utils/sharePurchaseOrder.ts` — pure order helpers and secure local PDF sharing.
+- `packages/mobile/src/app/_layout.tsx`, `packages/mobile/src/app/index.tsx` — route/dashboard registration.
+- `packages/api/routes/purchaseOrderRoutes.js` — PDF content type and attachment filename.
+- `packages/mobile/tests/purchaseOrder.test.js` — helper test coverage.
 
 ## 12. Change Log
 
 | Date | Author / Session | Changes |
 |---|---|---|
 | 2026-09-17 | Codex + product owner | Finalized v1 mobile Smart PO product decisions and implementation handoff. No application code changed. |
+| 2026-09-17 | Codex | Implemented the core mobile flow and recorded the remaining acceptance/device work. |

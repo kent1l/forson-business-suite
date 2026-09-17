@@ -86,6 +86,7 @@ function AppShell() {
         <Stack.Screen name="hr" />
         <Stack.Screen name="stock" />
         <Stack.Screen name="receiving" />
+        <Stack.Screen name="purchase-orders" />
         <Stack.Screen name="pos" />
         <Stack.Screen name="pos-settlement" options={{ animation: 'slide_from_right' }} />
       </Stack>

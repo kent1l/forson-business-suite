@@ -531,6 +531,11 @@ router.get('/purchase-orders/:id/pdf', protect, hasPermission('purchase_orders:v
         console.log(`[PO-PDF][route] PDF created at ${pdfPath}`);
 
     // 5. Send the file and schedule it for deletion
+        // Mobile names the cache file from this header before it opens the native
+        // share sheet. The generated path is intentionally opaque and temporary.
+        const safePoNumber = String(headerRes.rows[0].po_number || `PO-${id}`).replace(/[^a-zA-Z0-9._-]/g, '_');
+        res.type('application/pdf');
+        res.attachment(`${safePoNumber}.pdf`);
         res.sendFile(pdfPath, (err) => {
             if (err) console.error('Error sending PDF file:', err);
             fs.unlink(pdfPath, (unlinkErr) => {
