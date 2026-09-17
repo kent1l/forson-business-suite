@@ -21,20 +21,6 @@
             margin: 1cm;
         }
 
-        /* Footer with counters (used by many PDF engines) */
-        .page-footer {
-            position: fixed;
-            bottom: 0.6cm;
-            left: 0;
-            right: 0;
-            text-align: center;
-            font-size: 10px;
-            color: var(--secondary-color);
-        }
-        .page-footer:after {
-            content: "Page " counter(page) " of " counter(pages);
-        }
-
         body {
             font-family: var(--font-family);
             font-size: 12px;
@@ -185,23 +171,34 @@
         }
 
         .terms {
-            margin-top: 24px;
-            padding-top: 16px;
+            margin-top: 16px;
+            padding: 10px 12px;
             border-top: 1px solid var(--border-color);
+            border-left: 3px solid var(--primary-color);
+            background: #fafafa;
             color: var(--primary-color);
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 8.5px;
+            line-height: 1.28;
+            break-inside: avoid;
         }
-        .terms-title { font-size: 13px; font-weight: 700; margin: 0 0 10px; }
-        .terms ol { margin: 0; padding-left: 18px; }
-        .terms li { margin: 0 0 8px; line-height: 1.45; }
-        .terms-appreciation { margin: 12px 0 0; font-style: italic; }
+        .terms-title {
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.45px;
+            margin: 0 0 6px;
+        }
+        .terms-list { margin: 0; padding-left: 14px; }
+        .terms-list li { margin: 0 0 3px; padding-left: 1px; }
+        .terms-label { font-weight: 700; color: #111827; }
+        .terms-important { font-weight: 700; color: #111827; }
+        .terms-appreciation { margin: 6px 0 0; font-style: italic; font-size: 8px; color: var(--secondary-color); }
 
         /* Small helper */
         .muted { color: var(--secondary-color); font-weight: 400; }
     </style>
 </head>
 <body>
-    <div class="page-footer" aria-hidden="true"></div>
-
     <div class="container">
         <header class="header">
             <div class="company-details">
@@ -255,10 +252,10 @@
             {{notes}}
             <section class="terms">
                 <h3 class="terms-title">PURCHASE ORDER TERMS &amp; INSTRUCTIONS</h3>
-                <ol>
-                    <li><strong>Order Review &amp; Verification:</strong> Quantities, specifications, and unit prices stated on this Purchase Order reflect our current agreement. If any line items require adjustment due to prevailing stock availability or updated pricing, kindly coordinate with our purchasing team prior to dispatch so we may update our records accordingly.</li>
-                    <li><strong>Documentation &amp; Receiving:</strong> To facilitate prompt receiving and seamless payment processing, please indicate this Purchase Order number on all corresponding Delivery Receipts (DR), Packing Lists, and Sales Invoices.</li>
-                    <li><strong>Inspection &amp; Acceptance:</strong> Delivered goods remain subject to final verification for quantity and condition upon arrival at our receiving premises.</li>
+                <ol class="terms-list">
+                    <li><span class="terms-label">Order Review &amp; Verification.</span> Quantities, specifications, and unit prices reflect our current agreement. For stock or pricing adjustments, <span class="terms-important">coordinate with Purchasing before dispatch</span> so records can be updated.</li>
+                    <li><span class="terms-label">Documentation &amp; Receiving.</span> Please indicate this <span class="terms-important">PO number</span> on all Delivery Receipts, Packing Lists, and Sales Invoices to support receiving and payment processing.</li>
+                    <li><span class="terms-label">Inspection &amp; Acceptance.</span> Delivered goods remain subject to final verification for quantity and condition upon arrival.</li>
                 </ol>
                 <p class="terms-appreciation">We sincerely appreciate your prompt service and valued business partnership.</p>
             </section>

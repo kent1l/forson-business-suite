@@ -15,6 +15,13 @@ const formatCurrency = (value) => {
     return `₱${Number(value).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
+// Chromium renders these counters reliably; CSS @page counters do not work in
+// Puppeteer's print pipeline and previously produced the misleading "0 of 0".
+const pageFooterTemplate = `
+  <div style="width:100%; font-family:Arial,Helvetica,sans-serif; font-size:8px; color:#6B7280; text-align:center;">
+    Page <span class="pageNumber"></span> of <span class="totalPages"></span>
+  </div>`;
+
 const generatePurchaseOrderPDF = async (poData, linesData, options = {}) => {
     const debugPrefix = '[PO-PDF]';
     const templatePath = path.join(__dirname, '../../templates/pdf/purchase-order.html');
@@ -104,7 +111,10 @@ const generatePurchaseOrderPDF = async (poData, linesData, options = {}) => {
             path: outputPath,
             printBackground: true,
             format: 'A4',
-            margin: { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' }
+            displayHeaderFooter: true,
+            headerTemplate: '<div></div>',
+            footerTemplate: pageFooterTemplate,
+            margin: { top: '10mm', right: '10mm', bottom: '16mm', left: '10mm' }
         });
         await page.close();
         console.log(`${debugPrefix} PDF generated successfully`);
@@ -119,4 +129,4 @@ const generatePurchaseOrderPDF = async (poData, linesData, options = {}) => {
     }
 };
 
-module.exports = { generatePurchaseOrderPDF, formatCurrency };
+module.exports = { generatePurchaseOrderPDF, formatCurrency, pageFooterTemplate };
