@@ -323,9 +323,9 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1 flex items-center gap-1">
                     Add Part
                     <InfoTip label="Add Part">
-                        Cost is pulled automatically from each part's last recorded cost and isn't editable here.
-                        If the actual price differs when goods arrive, correct it during Goods Receipt — that's
-                        what actually affects inventory valuation.
+                        Unit price starts with the part's latest cost, but can be adjusted for this purchase
+                        order. A price of zero is treated as unprovided and prints as a dash on the PO.
+                        Confirm final supplier charges during Goods Receipt, which affects inventory valuation.
                     </InfoTip>
                 </label>
                 <div className="flex items-center space-x-2">
@@ -373,6 +373,14 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
             {/* New Part modal is rendered outside the form to avoid nested forms */}
             <div className="max-h-64 overflow-y-auto border border-gray-200 dark:border-slate-700 rounded-lg">
                 <table className="w-full text-left text-sm">
+                    <thead className="sticky top-0 bg-gray-50 dark:bg-slate-800 text-xs uppercase tracking-wide text-gray-500 dark:text-slate-400">
+                        <tr>
+                            <th className="p-2 font-semibold">Item</th>
+                            <th className="p-2 w-20 text-center font-semibold">Qty</th>
+                            <th className="p-2 w-28 text-center font-semibold">Unit price</th>
+                            <th className="p-2 w-12"><span className="sr-only">Remove</span></th>
+                        </tr>
+                    </thead>
                     <tbody className="divide-y divide-gray-100 dark:divide-slate-700/60">
                         {formData.lines.map(line => {
                             const key = lineKey(line);
@@ -400,6 +408,17 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                                         value={line.quantity}
                                         onChange={val => handleLineChange(key, 'quantity', val)}
                                         className="w-full p-1 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-md text-center font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                    />
+                                </td>
+                                <td className="p-2 w-28">
+                                    <MathExpressionInput
+                                        precision={2}
+                                        min={0}
+                                        value={line.cost_price}
+                                        onChange={val => handleLineChange(key, 'cost_price', val)}
+                                        placeholder="—"
+                                        aria-label={`Unit price for ${line.display_name || line.custom_item_name}`}
+                                        className="w-full p-1 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-md text-right font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                                     />
                                 </td>
                                 <td className="p-2 w-12 text-center"><button type="button" onClick={() => removeLine(key)} className="text-gray-400 hover:text-danger-600 dark:hover:text-danger-400 p-1"><Icon path={ICONS.trash} className="h-4 w-4" /></button></td>
