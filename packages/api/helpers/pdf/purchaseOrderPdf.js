@@ -88,7 +88,7 @@ const generatePurchaseOrderPDF = async (poData, linesData, options = {}) => {
 
     const outDir = options.outputDir || os.tmpdir();
     const safePoNumber = String(po.po_number || poData.po_id || Date.now()).replace(/[^A-Za-z0-9_-]/g, '_');
-    const outputPath = path.join(outDir, `po_${safePoNumber}.pdf`);
+    const outputPath = path.join(outDir, `ForsonAPS_${safePoNumber}.pdf`);
 
     let browser;
     try {

@@ -199,7 +199,7 @@ const PurchaseOrderPage = () => {
 
     // --- NEW: Download handler using the utility ---
     const handleDownloadPDF = (po) => {
-        downloadFile(`/purchase-orders/${po.po_id}/pdf`, `PO-${po.po_number}.pdf`);
+        downloadFile(`/purchase-orders/${po.po_id}/pdf`, `ForsonAPS_${po.po_number}.pdf`);
     };
 
     if (!hasPermission('purchase_orders:view')) {

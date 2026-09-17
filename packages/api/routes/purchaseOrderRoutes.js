@@ -537,7 +537,7 @@ router.get('/purchase-orders/:id/pdf', protect, hasPermission('purchase_orders:v
         // share sheet. The generated path is intentionally opaque and temporary.
         const safePoNumber = String(headerRes.rows[0].po_number || `PO-${id}`).replace(/[^a-zA-Z0-9._-]/g, '_');
         res.type('application/pdf');
-        res.attachment(`${safePoNumber}.pdf`);
+        res.attachment(`ForsonAPS_${safePoNumber}.pdf`);
         res.sendFile(pdfPath, (err) => {
             if (err) console.error('Error sending PDF file:', err);
             fs.unlink(pdfPath, (unlinkErr) => {
