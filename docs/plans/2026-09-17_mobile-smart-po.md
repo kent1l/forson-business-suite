@@ -175,7 +175,7 @@ The existing status route already permits only `Pending → Ordered | Cancelled`
 
 ### Phase 2 — Smart Cart + draft resilience
 
-**As built:** supplier picker, supplier-text parser, paste parsing (up to 50 lines), local catalogue search, parser-status cards, line edits/removal, totals, and review guards for ambiguous/unconfirmed fuzzy matches. Pending POs reopen in the same editor and use the existing `PUT /purchase-orders/:id` contract. The composer and its supplier/line sheets are keyboard-aware, with one scroll surface and keyboard-safe actions. Explicit server draft save/load and expiry display are included. Creation remains online-only and is not put into the offline outbox.
+**As built:** supplier picker, supplier-text parser, paste parsing (up to 50 lines), local catalogue search, parser-status cards, line edits/removal, totals, and review guards for ambiguous/unconfirmed fuzzy matches. Parsed quantities and purchase UOMs remain structured and are removed from the displayed item name. Pending POs reopen in the same editor and use the existing `PUT /purchase-orders/:id` contract. The composer and its supplier/line sheets are keyboard-aware, with one scroll surface, focused-field scrolling, keyboard-safe actions, and a native expected-date picker. Explicit server draft save/load and expiry display are included. Creation remains online-only and is not put into the offline outbox.
 
 **Remaining:** selectable pasted-result review, debounced automatic draft save, draft discard UI, and dedicated adaptation/serialization tests.
 
