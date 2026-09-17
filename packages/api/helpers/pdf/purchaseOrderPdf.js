@@ -19,7 +19,7 @@ const formatCurrency = (value) => {
 // Chromium renders these counters reliably; CSS @page counters do not work in
 // Puppeteer's print pipeline and previously produced the misleading "0 of 0".
 const pageFooterTemplate = `
-  <div style="width:100%; font-family:Arial,Helvetica,sans-serif; font-size:8px; color:#6B7280; text-align:center;">
+  <div style="width:100%; font-family:Arial,Helvetica,sans-serif; font-size:12px; color:#6B7280; text-align:center;">
     Page <span class="pageNumber"></span> of <span class="totalPages"></span>
   </div>`;
 
