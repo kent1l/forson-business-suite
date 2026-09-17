@@ -9,10 +9,11 @@ const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => 
 
 /** A missing price must look unknown, never like a free item. */
 const formatCurrency = (value) => {
-    if (value === null || value === undefined || value === '' || !Number.isFinite(Number(value))) {
+    const amount = Number(value);
+    if (value === null || value === undefined || value === '' || !Number.isFinite(amount) || amount === 0) {
         return '<span class="price-unavailable">—</span>';
     }
-    return `₱${Number(value).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `₱${amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
 // Chromium renders these counters reliably; CSS @page counters do not work in
