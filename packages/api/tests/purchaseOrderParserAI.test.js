@@ -65,6 +65,27 @@ describe('purchaseOrderParserAI resolver', () => {
         }));
     });
 
+    test('keeps quantity and purchase UOM structured when AI echoes them in the item name', async () => {
+        jest.spyOn(resolver, '_findPartCandidates')
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([candidate(0.9, 'Brake Cleaner')]);
+        jest.spyOn(resolver, 'parseLine').mockResolvedValue({
+            quantity: 2,
+            cost_price: 180,
+            purchase_uom: 'PCS',
+            raw_description: '2 PCS Brake Cleaner',
+        });
+
+        const result = await resolver.resolveLine('2 pcs Brake Cleaner @ 180');
+
+        expect(result).toMatchObject({
+            quantity: 2,
+            unit: 'PCS',
+            raw_description: 'BRAKE CLEANER',
+            match_status: 'ai',
+        });
+    });
+
     test('keeps an editable uncataloged draft when AI and catalog matching cannot resolve a line', async () => {
         jest.spyOn(resolver, '_findPartCandidates').mockResolvedValue([]);
         jest.spyOn(resolver, '_resolveDraftReferences').mockResolvedValue({ brand_id: 12, group_id: 34 });

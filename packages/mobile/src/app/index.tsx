@@ -91,6 +91,11 @@ export default function DashboardScreen() {
       permission: ['goods_receipt:create'],
     },
     {
+      key: 'purchase-orders', title: 'Smart PO', subtitle: 'Create and share orders',
+      icon: 'cart-outline', route: '/purchase-orders', accent: theme.primary,
+      permission: ['purchase_orders:view'],
+    },
+    {
       key: 'activity', title: 'My Activity', subtitle: 'Counts & sales',
       icon: 'stats-chart', route: '/my-activity', accent: theme.info,
       permission: ['pos:use', 'cycle_count:execute'],

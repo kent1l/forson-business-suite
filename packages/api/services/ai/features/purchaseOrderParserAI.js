@@ -18,6 +18,23 @@ const cleanNumber = (value) => value !== null && value !== undefined && value !=
     : null;
 const normalizeMatchText = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
+/**
+ * The quantity and purchase UOM are structured fields, not part of the item
+ * name. AI occasionally echoes them in raw_description, so strip only an
+ * exact leading/trailing structured quantity and unit while preserving product
+ * attributes such as 1L, 10W-40, or 3/4.
+ */
+const withoutStructuredQuantityAndUnit = (description, quantity, unit) => {
+    const cleaned = cleanCatalogString(description);
+    if (!cleaned || !Number.isFinite(Number(quantity))) return cleaned;
+    const numeric = String(Number(quantity)).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const safeUnit = cleanCatalogString(unit)?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const structured = safeUnit ? `${numeric}\\s*${safeUnit}` : numeric;
+    return cleanCatalogString(cleaned
+        .replace(new RegExp(`^${structured}\\s+`, 'i'), '')
+        .replace(new RegExp(`\\s+${structured}$`, 'i'), ''));
+};
+
 class PurchaseOrderParserAI {
     async _resolveDraftReferences(brand, group) {
         const { rows } = await db.query(
@@ -95,7 +112,12 @@ class PurchaseOrderParserAI {
         const group = cleanCatalogString(aiData?.group);
         const packSize = cleanCatalogString(aiData?.pack_size || aiData?.unit || tierOne.pack_size);
         const purchaseUom = cleanCatalogString(aiData?.purchase_uom || tierOne.order_unit);
-        const detail = cleanCatalogString(aiData?.detail || finalParse.raw_description || tierOne.raw_description);
+        const displayDescription = withoutStructuredQuantityAndUnit(
+            finalParse.raw_description || tierOne.raw_description,
+            finalParse.quantity,
+            finalParse.purchase_uom || tierOne.order_unit,
+        ) || cleanCatalogString(tierOne.raw_description);
+        const detail = cleanCatalogString(aiData?.detail || displayDescription);
         const references = unresolved
             ? await this._resolveDraftReferences(brand, group)
             : { brand_id: null, group_id: null };
@@ -103,7 +125,8 @@ class PurchaseOrderParserAI {
             raw,
             quantity: finalParse.quantity ?? null,
             cost_price: finalParse.cost_price ?? null,
-            raw_description: cleanCatalogString(finalParse.raw_description || tierOne.raw_description),
+            unit: purchaseUom || null,
+            raw_description: displayDescription,
             match_status: unresolved ? 'unresolved' : resolution.match_status,
             confidence: tierOne.confidence,
             part: resolution.part,
