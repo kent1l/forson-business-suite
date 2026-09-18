@@ -160,6 +160,128 @@ const ConfigEditor = ({ version, current, fields, onSaved, disabled }) => {
     );
 };
 
+const StatutoryDeductionScheduleCard = ({ canConfig }) => {
+    const [schedule, setSchedule] = useState('SPLIT_HALF');
+    const [savedSchedule, setSavedSchedule] = useState('SPLIT_HALF');
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        let mounted = true;
+        api.get('/payroll/settings')
+            .then(({ data }) => {
+                if (mounted && data?.PAYROLL_STATUTORY_SCHEDULE) {
+                    setSchedule(data.PAYROLL_STATUTORY_SCHEDULE);
+                    setSavedSchedule(data.PAYROLL_STATUTORY_SCHEDULE);
+                }
+            })
+            .catch(() => {})
+            .finally(() => {
+                if (mounted) setLoading(false);
+            });
+        return () => { mounted = false; };
+    }, []);
+
+    const isDirty = schedule !== savedSchedule;
+
+    const handleSave = async () => {
+        setSaving(true);
+        try {
+            await api.put('/payroll/settings', { PAYROLL_STATUTORY_SCHEDULE: schedule });
+            setSavedSchedule(schedule);
+            toast.success('Deduction schedule updated successfully.');
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to update deduction schedule.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    if (loading) return null;
+
+    return (
+        <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-gray-200 dark:border-slate-700 mb-6 space-y-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h2 className="text-sm font-semibold text-gray-900 dark:text-slate-100 flex items-center gap-1.5">
+                        Statutory Deduction Timing Policy
+                        <InfoTip label="Statutory Deduction Timing Policy">
+                            Configures how monthly statutory contributions (SSS, PhilHealth, Pag-IBIG) are split across cutoffs for semi-monthly payroll runs.
+                        </InfoTip>
+                    </h2>
+                    <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
+                        Controls whether contributions are deducted evenly across cutoffs or held until the second cutoff.
+                    </p>
+                </div>
+                {isDirty && (
+                    <button
+                        type="button"
+                        onClick={handleSave}
+                        disabled={!canConfig || saving}
+                        className="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50 transition"
+                    >
+                        {saving ? 'Saving…' : 'Save Deduction Schedule'}
+                    </button>
+                )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                <label className={`flex items-start gap-3 p-3.5 rounded-lg border cursor-pointer transition ${
+                    schedule === 'SPLIT_HALF'
+                        ? 'border-primary-500 bg-primary-50/50 dark:bg-primary-900/20 ring-1 ring-primary-500'
+                        : 'border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-gray-300'
+                }`}>
+                    <input
+                        type="radio"
+                        name="statutory_deduction_schedule"
+                        value="SPLIT_HALF"
+                        checked={schedule === 'SPLIT_HALF'}
+                        onChange={(e) => setSchedule(e.target.value)}
+                        disabled={!canConfig || saving}
+                        className="mt-0.5 text-primary-600 focus:ring-primary-500 border-gray-300"
+                    />
+                    <div className="text-xs">
+                        <span className="font-semibold text-gray-900 dark:text-slate-100 block">
+                            Split Evenly (Both Cutoffs)
+                        </span>
+                        <span className="text-gray-500 dark:text-slate-400 mt-1 block">
+                            Deducts 50% on the 1st cutoff and 50% (+ remainder centavos) on the 2nd cutoff. Standard practice for consistent employee take-home pay.
+                        </span>
+                    </div>
+                </label>
+
+                <label className={`flex items-start gap-3 p-3.5 rounded-lg border cursor-pointer transition ${
+                    schedule === 'SECOND_CUTOFF'
+                        ? 'border-primary-500 bg-primary-50/50 dark:bg-primary-900/20 ring-1 ring-primary-500'
+                        : 'border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-gray-300'
+                }`}>
+                    <input
+                        type="radio"
+                        name="statutory_deduction_schedule"
+                        value="SECOND_CUTOFF"
+                        checked={schedule === 'SECOND_CUTOFF'}
+                        onChange={(e) => setSchedule(e.target.value)}
+                        disabled={!canConfig || saving}
+                        className="mt-0.5 text-primary-600 focus:ring-primary-500 border-gray-300"
+                    />
+                    <div className="text-xs">
+                        <span className="font-semibold text-gray-900 dark:text-slate-100 block">
+                            2nd Cutoff Only
+                        </span>
+                        <span className="text-gray-500 dark:text-slate-400 mt-1 block">
+                            Zero statutory deductions on the 1st cutoff. Full 100% of SSS, PhilHealth, and Pag-IBIG contributions are deducted on the 2nd cutoff.
+                        </span>
+                    </div>
+                </label>
+            </div>
+
+            <div className="p-2.5 rounded-lg bg-gray-50 dark:bg-slate-900/40 border border-gray-100 dark:border-slate-800 text-[11px] text-gray-500 dark:text-slate-400">
+                <strong>Note:</strong> Changes apply to future payroll run computations. To keep monthly remittances reconciled, adjust this schedule at the beginning of a pay cycle before running the 1st cutoff.
+            </div>
+        </div>
+    );
+};
+
 const StatutoryTablesPage = () => {
     const { hasPermission } = useAuth();
     const [versions, setVersions] = useState([]);
@@ -241,6 +363,8 @@ const StatutoryTablesPage = () => {
                 been used by a payroll run is frozen so historical payslips stay reproducible — change those by
                 superseding them with a new version.
             </p>
+
+            <StatutoryDeductionScheduleCard canConfig={canConfig} />
 
             {loading && <LoadingState label="Loading schedules…" />}
             {!loading && error && <ErrorState description={error} onRetry={load} />}
