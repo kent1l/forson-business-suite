@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * Employee × day attendance matrix.
@@ -54,9 +55,67 @@ const dayList = (from, to) => {
 
 const DOW_LABEL = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
-const AttendanceGrid = ({ records, period, canEdit, onChangeDayType, savingId }) => {
-    const [openCell, setOpenCell] = useState(null);
+const PortalDropdown = ({ anchorEl, onClose, children }) => {
+    const [rect, setRect] = useState(null);
     const popoverRef = useRef(null);
+
+    useEffect(() => {
+        if (!anchorEl) return;
+        const update = () => setRect(anchorEl.getBoundingClientRect());
+        update();
+        window.addEventListener('scroll', update, true);
+        window.addEventListener('resize', update);
+        return () => {
+            window.removeEventListener('scroll', update, true);
+            window.removeEventListener('resize', update);
+        };
+    }, [anchorEl]);
+
+    useEffect(() => {
+        if (!rect) return;
+        const onDocClick = (e) => {
+            if (popoverRef.current && popoverRef.current.contains(e.target)) return;
+            if (anchorEl && anchorEl.contains(e.target)) return;
+            onClose();
+        };
+        const onEsc = (e) => { if (e.key === 'Escape') onClose(); };
+        document.addEventListener('mousedown', onDocClick);
+        document.addEventListener('keydown', onEsc);
+        return () => {
+            document.removeEventListener('mousedown', onDocClick);
+            document.removeEventListener('keydown', onEsc);
+        };
+    }, [rect, anchorEl, onClose]);
+
+    if (!rect) return null;
+
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const flip = spaceBelow < 320 && spaceAbove > spaceBelow;
+
+    // Keep it on screen horizontally if it's close to the right edge
+    let leftPos = rect.left;
+    if (leftPos + 160 > window.innerWidth - 16) {
+        leftPos = window.innerWidth - 176;
+    }
+
+    return createPortal(
+        <div 
+            ref={popoverRef}
+            className="fixed z-50 w-40 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-lg py-1"
+            style={{ 
+                left: leftPos, 
+                ...(flip ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 })
+            }}
+        >
+            {children}
+        </div>,
+        document.body
+    );
+};
+
+const AttendanceGrid = ({ records, period, canEdit, onChangeDayType, savingId }) => {
+    const [openState, setOpenState] = useState(null); // { cellKey, el, record }
 
     const days = useMemo(() => dayList(period.from, period.to), [period.from, period.to]);
 
@@ -73,27 +132,13 @@ const AttendanceGrid = ({ records, period, canEdit, onChangeDayType, savingId })
         return Array.from(map.values()).sort((a, b) => String(a.name).localeCompare(String(b.name)));
     }, [records]);
 
-    useEffect(() => {
-        if (!openCell) return undefined;
-        const onDocClick = (e) => {
-            if (popoverRef.current && !popoverRef.current.contains(e.target)) setOpenCell(null);
-        };
-        const onEsc = (e) => { if (e.key === 'Escape') setOpenCell(null); };
-        document.addEventListener('mousedown', onDocClick);
-        document.addEventListener('keydown', onEsc);
-        return () => {
-            document.removeEventListener('mousedown', onDocClick);
-            document.removeEventListener('keydown', onEsc);
-        };
-    }, [openCell]);
-
     const pick = async (record, dayType) => {
-        setOpenCell(null);
+        setOpenState(null);
         if (record.day_type !== dayType) await onChangeDayType(record, dayType);
     };
 
     return (
-        <div className="space-y-4">
+        <div className="space-y-4 relative">
             <div className="overflow-x-auto">
                 <table className="border-separate" style={{ borderSpacing: '2px' }}>
                     <thead>
@@ -133,11 +178,17 @@ const AttendanceGrid = ({ records, period, canEdit, onChangeDayType, savingId })
                                         const editable = canEdit && rec && !rec.is_locked;
                                         const busy = rec && savingId === rec.dtr_id;
                                         return (
-                                            <td key={d.date} className="p-0 relative">
+                                            <td key={d.date} className="p-0">
                                                 <button
                                                     type="button"
                                                     disabled={!editable || busy}
-                                                    onClick={() => setOpenCell(openCell === cellKey ? null : cellKey)}
+                                                    onClick={(e) => {
+                                                        if (openState?.cellKey === cellKey) {
+                                                            setOpenState(null);
+                                                        } else {
+                                                            setOpenState({ cellKey, el: e.currentTarget, record: rec });
+                                                        }
+                                                    }}
                                                     title={rec
                                                         ? `${row.name} — ${d.date}: ${rec.day_type}${rec.is_locked ? ' (locked by payroll)' : ''}`
                                                         : `${row.name} — ${d.date}: no record`}
@@ -149,29 +200,6 @@ const AttendanceGrid = ({ records, period, canEdit, onChangeDayType, savingId })
                                                 >
                                                     {meta ? meta.code : '·'}
                                                 </button>
-
-                                                {openCell === cellKey && editable && (
-                                                    <div ref={popoverRef}
-                                                        className="absolute z-30 mt-1 left-0 w-40 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-lg py-1">
-                                                        {DAY_TYPES.map((t) => (
-                                                            <button
-                                                                key={t}
-                                                                type="button"
-                                                                onClick={() => pick(rec, t)}
-                                                                className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs text-left hover:bg-gray-100 dark:hover:bg-slate-700 ${
-                                                                    rec.day_type === t
-                                                                        ? 'font-bold text-gray-900 dark:text-slate-50'
-                                                                        : 'text-gray-600 dark:text-slate-300'
-                                                                }`}
-                                                            >
-                                                                <span className={`inline-flex items-center justify-center w-5 h-5 rounded border text-[10px] font-bold ${DAY_META[t].cell}`}>
-                                                                    {DAY_META[t].code}
-                                                                </span>
-                                                                {t}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                )}
                                             </td>
                                         );
                                     })}
@@ -199,6 +227,31 @@ const AttendanceGrid = ({ records, period, canEdit, onChangeDayType, savingId })
                     No record
                 </span>
             </div>
+
+            {openState && (
+                <PortalDropdown 
+                    anchorEl={openState.el} 
+                    onClose={() => setOpenState(null)}
+                >
+                    {DAY_TYPES.map((t) => (
+                        <button
+                            key={t}
+                            type="button"
+                            onClick={() => pick(openState.record, t)}
+                            className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs text-left hover:bg-gray-100 dark:hover:bg-slate-700 ${
+                                openState.record.day_type === t
+                                    ? 'font-bold text-gray-900 dark:text-slate-50'
+                                    : 'text-gray-600 dark:text-slate-300'
+                            }`}
+                        >
+                            <span className={`inline-flex items-center justify-center w-5 h-5 rounded border text-[10px] font-bold ${DAY_META[t].cell}`}>
+                                {DAY_META[t].code}
+                            </span>
+                            {t}
+                        </button>
+                    ))}
+                </PortalDropdown>
+            )}
         </div>
     );
 };

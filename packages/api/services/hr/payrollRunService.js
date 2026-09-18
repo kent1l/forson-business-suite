@@ -702,4 +702,5 @@ module.exports = {
     loadPolicy,
     assertTransition,
     ALLOWED_TRANSITIONS,
+    PAYROLL_SETTING_KEYS,
 };

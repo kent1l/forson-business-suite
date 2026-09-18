@@ -35,6 +35,7 @@ describe('discount cannot exceed its line subtotal', () => {
 
     beforeEach(() => {
         jest.clearAllMocks();
+        db.query.mockResolvedValue({ rows: [] });
     });
 
     test('POST /api/invoices rejects an over-large discount without opening a transaction', async () => {

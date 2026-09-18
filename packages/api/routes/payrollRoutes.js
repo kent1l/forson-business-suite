@@ -606,4 +606,51 @@ router.post('/statutory-versions/:id/supersede', protect, hasPermission('payroll
     })
 ));
 
+// --- Payroll Settings -----------------------------------------------------
+
+router.get('/settings', protect, hasPermission('payroll:config'), async (req, res) => {
+    try {
+        const { rows } = await db.query(
+            'SELECT setting_key, setting_value FROM settings WHERE setting_key = ANY($1::text[])',
+            [payrollRunService.PAYROLL_SETTING_KEYS]
+        );
+        const settings = rows.reduce((acc, row) => {
+            acc[row.setting_key] = row.setting_value;
+            return acc;
+        }, {});
+        res.json(settings);
+    } catch (err) { handleError(err, res); }
+});
+
+router.put('/settings', protect, hasPermission('payroll:config'), withTransaction(async (req, client) => {
+    const allowedKeys = payrollRunService.PAYROLL_SETTING_KEYS;
+    const updates = req.body || {};
+
+    if (updates.PAYROLL_STATUTORY_SCHEDULE && !['SPLIT_HALF', 'SECOND_CUTOFF'].includes(updates.PAYROLL_STATUTORY_SCHEDULE)) {
+        const err = new Error('PAYROLL_STATUTORY_SCHEDULE must be SPLIT_HALF or SECOND_CUTOFF');
+        err.code = 'INVALID_BRACKET_PARAMS';
+        throw err;
+    }
+
+    for (const [key, value] of Object.entries(updates)) {
+        if (allowedKeys.includes(key) && value !== undefined && value !== null) {
+            await client.query(
+                `INSERT INTO settings (setting_key, setting_value)
+                 VALUES ($1, $2)
+                 ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value`,
+                [key, String(value)]
+            );
+        }
+    }
+
+    const { rows } = await client.query(
+        'SELECT setting_key, setting_value FROM settings WHERE setting_key = ANY($1::text[])',
+        [allowedKeys]
+    );
+    return rows.reduce((acc, row) => {
+        acc[row.setting_key] = row.setting_value;
+        return acc;
+    }, {});
+}));
+
 module.exports = router;
