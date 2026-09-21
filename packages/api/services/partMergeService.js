@@ -531,68 +531,217 @@ class PartMergeService {
             RETURNING barcode_id
         `, [keepPartId, mergePartIds]);
         counts.barcodes = barcodeResult.rowCount;
-        
+
+        // --- §4-A: part_tag (Move) ---
+        // PK is (part_id, tag_id). Delete source tags already on the keep part,
+        // then reassign the rest. Gated on rules.mergeTags (default: true).
+        if (rules.mergeTags !== false) {
+            await client.query(`
+                DELETE FROM part_tag
+                WHERE part_id = ANY($2)
+                  AND tag_id IN (
+                      SELECT tag_id FROM part_tag WHERE part_id = $1
+                  )
+            `, [keepPartId, mergePartIds]);
+            const tagResult = await client.query(`
+                UPDATE part_tag SET part_id = $1
+                WHERE part_id = ANY($2)
+                RETURNING tag_id
+            `, [keepPartId, mergePartIds]);
+            counts.part_tags = tagResult.rowCount;
+        }
+
+        // --- §4-A: part_inventory_stats (Aggregate) ---
+        // PK is part_id — cannot bulk-move. Merge into survivor row (latest
+        // last_counted_at, OR audit_requested), then delete source rows.
+        const statsResult = await client.query(`
+            INSERT INTO part_inventory_stats (part_id, last_counted_at, audit_requested)
+            SELECT
+                $1,
+                MAX(last_counted_at),
+                BOOL_OR(COALESCE(audit_requested, false))
+            FROM part_inventory_stats
+            WHERE part_id = ANY($2::int[])
+            ON CONFLICT (part_id) DO UPDATE
+                SET last_counted_at = GREATEST(
+                        part_inventory_stats.last_counted_at,
+                        EXCLUDED.last_counted_at
+                    ),
+                    audit_requested = part_inventory_stats.audit_requested
+                        OR EXCLUDED.audit_requested
+            RETURNING part_id
+        `, [keepPartId, mergePartIds]);
+        await client.query(
+            `DELETE FROM part_inventory_stats WHERE part_id = ANY($1)`,
+            [mergePartIds]
+        );
+        counts.part_inventory_stats = statsResult.rowCount;
+
+        // --- §4-A: existing part_aliases rows (Move + reconcile) ---
+        // createAliases() writes new provenance aliases. Here we move any
+        // pre-existing alias rows that belong to source parts.
+        // Skip rows whose alias_value+alias_type already exist on the survivor.
+        const aliasResult = await client.query(`
+            UPDATE part_aliases
+            SET part_id = $1
+            WHERE part_id = ANY($2)
+              AND NOT EXISTS (
+                  SELECT 1 FROM part_aliases keep_a
+                  WHERE keep_a.part_id       = $1
+                    AND keep_a.alias_value   = part_aliases.alias_value
+                    AND keep_a.alias_type    = part_aliases.alias_type
+              )
+            RETURNING id
+        `, [keepPartId, mergePartIds]);
+        // Delete any source alias rows that were exact duplicates of survivor rows
+        // (the NOT EXISTS guard above left them untouched).
+        await client.query(
+            `DELETE FROM part_aliases WHERE part_id = ANY($1)`,
+            [mergePartIds]
+        );
+        counts.part_aliases_reconciled = aliasResult.rowCount;
+
+        // --- §4-A: staged_sale_line open drafts (Move, P2 decision) ---
+        // Only move lines in sales that are not yet approved or rejected.
+        // Completed/approved sales preserve the original source part identity
+        // so historical receipts remain attributable to the correct part.
+        const stagingResult = await client.query(`
+            UPDATE staged_sale_line ssl
+            SET part_id = $1
+            FROM staged_sale ss
+            WHERE ssl.staged_sale_id = ss.staged_sale_id
+              AND ssl.part_id = ANY($2)
+              AND ss.status NOT IN ('APPROVED', 'REJECTED')
+            RETURNING ssl.staged_line_id
+        `, [keepPartId, mergePartIds]);
+        counts.staged_sale_lines_moved = stagingResult.rowCount;
+
+        // --- §4-B: dedupe_scan_queue (Rebuild) ---
+        // Queue entries for source parts are meaningless after merge.
+        // The survivor will be re-enqueued by the normal scan cycle.
+        await client.query(
+            `DELETE FROM dedupe_scan_queue WHERE part_id = ANY($1)`,
+            [mergePartIds]
+        );
+
+        // --- §4-B: ai_match_cache / ai_verification_queue (Rebuild) ---
+        // Cache and queue pairs involving source parts are stale post-merge.
+        await client.query(`
+            DELETE FROM ai_match_cache
+            WHERE part_id_1 = ANY($1) OR part_id_2 = ANY($1)
+        `, [mergePartIds]);
+        await client.query(`
+            DELETE FROM ai_verification_queue
+            WHERE part_id_1 = ANY($1) OR part_id_2 = ANY($1)
+        `, [mergePartIds]);
+
+        // --- §4-B: part_exclusion (Transfer) ---
+        // Remap exclusion pairs that reference source parts to the survivor.
+        // PK is (part_id_1, part_id_2) — ON CONFLICT DO NOTHING avoids
+        // duplicating pairs that already exist for the survivor.
+        // After insertion, remove self-pairs (survivor, survivor) and the
+        // original source rows.
+        await client.query(`
+            INSERT INTO part_exclusion (part_id_1, part_id_2)
+            SELECT
+                CASE WHEN part_id_1 = ANY($2) THEN $1 ELSE part_id_1 END,
+                CASE WHEN part_id_2 = ANY($2) THEN $1 ELSE part_id_2 END
+            FROM part_exclusion
+            WHERE part_id_1 = ANY($2) OR part_id_2 = ANY($2)
+            ON CONFLICT DO NOTHING
+        `, [keepPartId, mergePartIds]);
+        await client.query(
+            `DELETE FROM part_exclusion WHERE part_id_1 = $1 AND part_id_2 = $1`,
+            [keepPartId]
+        );
+        await client.query(`
+            DELETE FROM part_exclusion
+            WHERE part_id_1 = ANY($1) OR part_id_2 = ANY($1)
+        `, [mergePartIds]);
+
+        // --- §4-C: Preserve (explicit no-op) ---
+        // The following tables are intentionally left with their original part_id.
+        // Callers resolve current catalog identity via part.merged_into_part_id:
+        //
+        //   goods_receipt_line, invoice_line, purchase_order_line, credit_note_line
+        //     P1 decision: historical transaction documents retain original attribution.
+        //
+        //   cycle_count_line, cycle_count_audit_log
+        //     P3 decision: count snapshots are historical; do not re-attribute.
+        //
+        //   stock_reconciliation_log, wac_correction_audit_log, wac_repair_log
+        //     Immutable audit logs — never rewritten.
+
         return counts;
     }
 
     async reassignForeignKeys(client, keepPartId, mergePartIds) {
-        const tables = [
-            'goods_receipt_line',
-            'invoice_line',
-            'purchase_order_line',
-            'credit_note_line',
-            'inventory_transaction'
-        ];
-        
-        const counts = {};
-        
-        for (const table of tables) {
-            const result = await client.query(
-                `UPDATE ${table} SET part_id = $1 WHERE part_id = ANY($2)`,
-                [keepPartId, mergePartIds]
-            );
-            counts[table] = result.rowCount;
-        }
-        
-        return counts;
+        // inventory_transaction must follow the survivor so that consolidateInventory()
+        // sees the correct combined stock when it recalculates WAC.
+        //
+        // goods_receipt_line, invoice_line, purchase_order_line, credit_note_line are
+        // intentionally NOT reassigned here (P1 decision — see §4-C comment in
+        // mergeChildRecords). Callers resolve current catalog identity via
+        // part.merged_into_part_id joins in reports.
+        const result = await client.query(
+            `UPDATE inventory_transaction SET part_id = $1 WHERE part_id = ANY($2)`,
+            [keepPartId, mergePartIds]
+        );
+        return { inventory_transaction: result.rowCount };
     }
+
 
     async consolidateInventory(client, keepPartId, mergePartIds) {
         const allPartIds = [keepPartId, ...mergePartIds];
 
-        // Safely calculate new total quantities and WAC values in one pass
-        const wacQuery = `
+        // Calculate combined weighted average cost across all parts being merged.
+        // inventory_transaction rows have already been reassigned to the survivor
+        // by reassignForeignKeys(), so we query the combined pool by survivor id.
+        // We read wac_cost from the part rows (pre-reassignment snapshot) because
+        // per-part WAC captures how each part's stock was valued independently.
+        const wacResult = await client.query(`
             WITH stock_qty AS (
-                SELECT part_id, COALESCE(SUM(quantity), 0) as stock_on_hand
+                SELECT part_id, COALESCE(SUM(quantity), 0) AS stock_on_hand
                 FROM inventory_transaction
                 WHERE part_id = ANY($1)
                 GROUP BY part_id
             )
-            SELECT p.part_id, COALESCE(p.wac_cost, 0) as wac_cost, COALESCE(sq.stock_on_hand, 0) as qty
+            SELECT
+                p.part_id,
+                COALESCE(p.wac_cost, 0)       AS wac_cost,
+                COALESCE(sq.stock_on_hand, 0)  AS qty
             FROM part p
             LEFT JOIN stock_qty sq ON p.part_id = sq.part_id
             WHERE p.part_id = ANY($1)
-        `;
-        const wacResult = await client.query(wacQuery, [allPartIds]);
+        `, [allPartIds]);
 
         let totalValue = 0;
-        let totalQty = 0;
+        let totalQty   = 0;
 
         for (const row of wacResult.rows) {
             const qty = Number(row.qty);
             const wac = Number(row.wac_cost);
-            if (qty > 0) {
-                totalValue += (qty * wac);
-                totalQty += qty;
-            }
+            // Include all signed quantities so that returns/adjustments (negative qty)
+            // correctly reduce the cost pool. Skipping non-positive parts overstates WAC.
+            totalValue += qty * wac;
+            totalQty   += qty;
         }
 
-        const newWac = totalQty > 0 ? (totalValue / totalQty) : 0;
+        // If combined net quantity is ≤ 0 (fully returned stock), retain the
+        // survivor's existing WAC rather than zeroing — zeroing would corrupt the
+        // cost basis for any future receipts on the same part.
+        let newWac;
+        if (totalQty > 0) {
+            newWac = totalValue / totalQty;
+        } else {
+            const keepRow = wacResult.rows.find(r => String(r.part_id) === String(keepPartId));
+            newWac = keepRow ? Number(keepRow.wac_cost) : 0;
+        }
 
-        // Explicitly set the correctly weighted WAC for the master part
-        await client.query(`
-            UPDATE part SET wac_cost = $1 WHERE part_id = $2
-        `, [newWac, keepPartId]);
+        await client.query(
+            `UPDATE part SET wac_cost = $1 WHERE part_id = $2`,
+            [newWac, keepPartId]
+        );
 
         return { inventory_consolidated: totalQty, new_wac: newWac };
     }
