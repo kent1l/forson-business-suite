@@ -228,6 +228,45 @@ const FinancialSettings = ({ settings, handleChange }) => {
     );
 };
 
+const PayrollSettings = ({ settings, handleChange }) => (
+    <div className="space-y-4">
+        <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1 flex items-center gap-1">
+                Statutory Deduction Schedule
+                <InfoTip label="Statutory Deduction Schedule">
+                    Determines how monthly statutory contributions (SSS, PhilHealth, Pag-IBIG) are split across semi-monthly cutoffs.
+                </InfoTip>
+            </label>
+            <select
+                name="PAYROLL_STATUTORY_SCHEDULE"
+                value={settings.PAYROLL_STATUTORY_SCHEDULE || 'SPLIT_HALF'}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-slate-100 rounded-lg"
+            >
+                <option value="SPLIT_HALF">Split Evenly (Half on 1st &amp; 2nd Cutoff)</option>
+                <option value="SECOND_CUTOFF">2nd Cutoff Only (Full deduction on 2nd cutoff)</option>
+            </select>
+            <p className="mt-1 text-xs text-gray-500 dark:text-slate-500">
+                SPLIT_HALF deducts 50% per cutoff. SECOND_CUTOFF deducts 100% on the 2nd cutoff only.
+            </p>
+        </div>
+        <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">
+                Annual Working Days Divisor
+            </label>
+            <input
+                type="number"
+                name="PAYROLL_WORKING_DAYS_PER_YEAR"
+                value={settings.PAYROLL_WORKING_DAYS_PER_YEAR || '313'}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-slate-100 rounded-lg"
+            />
+            <p className="mt-1 text-xs text-gray-500 dark:text-slate-500">
+                Divisor converting daily rates to monthly basis for statutory lookups (default: 313 days/year).
+            </p>
+        </div>
+    </div>
+);
 
 const CycleCountSettings = ({ settings, handleChange }) => (
     <div className="space-y-4">
@@ -665,7 +704,8 @@ const SettingsPage = ({ user }) => {
                                 <button type="button" onClick={() => setActiveTab('company')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'company' ? activeTabClass : inactiveTabClass}`}>Company Info</button>
                                 <button type="button" onClick={() => setActiveTab('brand_identity')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'brand_identity' ? activeTabClass : inactiveTabClass}`}>Brand Identity</button>
                                 <button type="button" onClick={() => setActiveTab('financial')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'financial' ? activeTabClass : inactiveTabClass}`}>Financial</button>
-                                                                <button type="button" onClick={() => setActiveTab('payment_methods')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'payment_methods' ? activeTabClass : inactiveTabClass}`}>Payment Methods</button>
+                                <button type="button" onClick={() => setActiveTab('payroll')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'payroll' ? activeTabClass : inactiveTabClass}`}>Payroll</button>
+                                <button type="button" onClick={() => setActiveTab('payment_methods')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'payment_methods' ? activeTabClass : inactiveTabClass}`}>Payment Methods</button>
                                 <button type="button" onClick={() => setActiveTab('ar_adjustments')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'ar_adjustments' ? activeTabClass : inactiveTabClass}`}>A/R Concessions</button>
                                 <button type="button" onClick={() => setActiveTab('analytics')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'analytics' ? activeTabClass : inactiveTabClass}`}>Analytics</button>
                                 <button type="button" onClick={() => setActiveTab('cycle_count')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'cycle_count' ? activeTabClass : inactiveTabClass}`}>Cycle Count</button>
@@ -678,9 +718,10 @@ const SettingsPage = ({ user }) => {
                             </nav>
                         </div>
 
-                                                {activeTab === 'company' && <CompanyInfoSettings settings={settings} handleChange={handleChange} />}
+                        {activeTab === 'company' && <CompanyInfoSettings settings={settings} handleChange={handleChange} />}
                         {activeTab === 'brand_identity' && <BrandIdentitySettings settings={settings} handleChange={handleChange} handleSave={handleSave} />}
                         {activeTab === 'financial' && <FinancialSettings settings={settings} handleChange={handleChange} />}
+                        {activeTab === 'payroll' && <PayrollSettings settings={settings} handleChange={handleChange} />}
                         {activeTab === 'tax_rates' && <TaxRateSettings settings={settings} handleChange={handleChange} />}
                         {activeTab === 'ar_adjustments' && <ARAdjustmentSettings settings={settings} handleChange={handleChange} />}
                         {activeTab === 'analytics' && <AnalyticsSettings settings={settings} handleChange={handleChange} />}
@@ -691,7 +732,7 @@ const SettingsPage = ({ user }) => {
                         {activeTab === 'data' && <DataUtilsSettings />}
                         {activeTab === 'mobile_app' && <MobileAppSettings settings={settings} handleChange={handleChange} />}
 
-                        {['company', 'financial', 'cycle_count', 'backup', 'mobile_app', 'ar_adjustments', 'analytics'].includes(activeTab) && (
+                        {['company', 'financial', 'payroll', 'cycle_count', 'backup', 'mobile_app', 'ar_adjustments', 'analytics'].includes(activeTab) && (
                             <form onSubmit={handleSave}>
                                 <div className="pt-4 flex justify-end mt-6 border-t border-gray-200 dark:border-slate-700">
                                     <button type="submit" className="bg-primary-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-primary-700 transition">
