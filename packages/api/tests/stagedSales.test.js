@@ -3,13 +3,14 @@ const express = require('express');
 
 // Mock db module
 jest.mock('../db', () => {
-  const queryFn = jest.fn();
+  const clientQueryFn = jest.fn();
+  const dbQueryFn = jest.fn().mockResolvedValue({ rows: [] });
   const client = {
-    query: queryFn,
+    query: clientQueryFn,
     release: jest.fn()
   };
   return {
-    query: queryFn,
+    query: dbQueryFn,
     getClient: jest.fn().mockResolvedValue(client)
   };
 });
