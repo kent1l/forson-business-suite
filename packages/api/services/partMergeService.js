@@ -401,11 +401,16 @@ class PartMergeService {
 
     async captureMergeSnapshots(client, operationId, partIds) {
         for (const table of REVERTABLE_TABLES) {
+            // $1/$2 belong to the snapshot insert. Relationship filters were
+            // originally written for standalone deletion with $1 = part IDs.
+            // Rebind that filter here so UUID operation IDs and bigint arrays
+            // never occupy the same prepared-statement parameter.
+            const snapshotWhere = table.where.replace(/\$1/g, '$3');
             await client.query(`
                 INSERT INTO part_merge_snapshot (operation_id, table_name, record_id, before_image)
                 SELECT $1, $2, ${table.key}, to_jsonb(source)
                 FROM ${table.name} source
-                WHERE ${table.where}
+                WHERE ${snapshotWhere}
                 ON CONFLICT (operation_id, table_name, record_id) DO NOTHING
             `, [operationId, table.name, partIds]);
         }

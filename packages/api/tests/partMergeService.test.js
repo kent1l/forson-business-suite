@@ -114,6 +114,15 @@ describe('PartMergeService Unit Tests', () => {
             expect(mockDb.query.mock.calls[3][0]).toContain('FOR UPDATE');
         });
 
+        test('binds merge snapshots with operation and part IDs in separate parameters', async () => {
+            mockDb.query.mockResolvedValue({ rows: [] });
+            await service.captureMergeSnapshots(mockDb, 'operation-uuid', [2, 3]);
+
+            const [sql, params] = mockDb.query.mock.calls[0];
+            expect(sql).toContain('WHERE part_id = ANY($3::bigint[])');
+            expect(params).toEqual(['operation-uuid', 'part', [2, 3]]);
+        });
+
         test('calculates WAC before inventory transactions are reassigned', async () => {
             const client = { query: jest.fn().mockResolvedValue({ rows: [] }), release: jest.fn() };
             mockDb.getClient = jest.fn().mockResolvedValue(client);
