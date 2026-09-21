@@ -45,7 +45,10 @@ const validBody = (over = {}) => ({
 
 const CLIENT_REF = 'deadbeef-1111-2222-3333-444455556666';
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+    jest.clearAllMocks();
+    db.query.mockResolvedValue({ rows: [] });
+});
 
 describe('POST /sales/staging', () => {
     test('takes the staging employee from the token, never the body', async () => {
@@ -118,9 +121,8 @@ describe('POST /sales/staging', () => {
             return Promise.resolve({ rows: [] });
         });
         db.getClient.mockResolvedValueOnce(client);
-        db.query
-            .mockResolvedValueOnce({ rows: [] }) // WAC check
-            .mockResolvedValueOnce({ rows: [{ staged_sale_id: 12 }] }); // Recovery
+        db.query.mockResolvedValueOnce({ rows: [] }); // WAC check
+        db.query.mockResolvedValueOnce({ rows: [{ staged_sale_id: 12 }] });
 
         const res = await request(app).post('/sales/staging').send(validBody({ client_ref: CLIENT_REF }));
 
@@ -165,7 +167,10 @@ describe('POST /sales/staging with an offline capture time', () => {
                 ? Promise.resolve({ rows: [{ staged_sale_id: stagedSaleId }] })
                 : Promise.resolve({ rows: [] }));
         db.getClient.mockResolvedValueOnce(client);
-        db.query.mockResolvedValue({ rows: [{ setting_value: '720' }] });
+        db.query.mockImplementation((sql) => {
+            if (/setting_key = \$1/.test(sql)) return Promise.resolve({ rows: [{ setting_value: '720' }] });
+            return Promise.resolve({ rows: [] });
+        });
         return client;
     };
 
@@ -206,7 +211,10 @@ describe('POST /sales/staging with an offline capture time', () => {
     });
 
     test('a sale too old to accept is refused before a transaction is opened', async () => {
-        db.query.mockResolvedValue({ rows: [{ setting_value: '720' }] });
+        db.query.mockImplementation((sql) => {
+            if (/setting_key = \$1/.test(sql)) return Promise.resolve({ rows: [{ setting_value: '720' }] });
+            return Promise.resolve({ rows: [] });
+        });
 
         const res = await request(app)
             .post('/sales/staging')
@@ -219,7 +227,10 @@ describe('POST /sales/staging with an offline capture time', () => {
     });
 
     test('a future capture time is refused', async () => {
-        db.query.mockResolvedValue({ rows: [{ setting_value: '720' }] });
+        db.query.mockImplementation((sql) => {
+            if (/setting_key = \$1/.test(sql)) return Promise.resolve({ rows: [{ setting_value: '720' }] });
+            return Promise.resolve({ rows: [] });
+        });
 
         const res = await request(app)
             .post('/sales/staging')
@@ -236,7 +247,10 @@ describe('POST /sales/staging with an offline capture time', () => {
                 ? Promise.resolve({ rows: [{ staged_sale_id: 77 }] })
                 : Promise.resolve({ rows: [] }));
         db.getClient.mockResolvedValueOnce(client);
-        db.query.mockResolvedValue({ rows: [{ setting_value: '720' }] });
+        db.query.mockImplementation((sql) => {
+            if (/setting_key = \$1/.test(sql)) return Promise.resolve({ rows: [{ setting_value: '720' }] });
+            return Promise.resolve({ rows: [] });
+        });
 
         const res = await request(app)
             .post('/sales/staging')

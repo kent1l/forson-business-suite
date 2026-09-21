@@ -3,15 +3,14 @@ const express = require('express');
 
 // Mock db module
 jest.mock('../db', () => {
-  const clientQueryFn = jest.fn();
   const dbQueryFn = jest.fn().mockResolvedValue({ rows: [] });
-  const client = {
-    query: clientQueryFn,
-    release: jest.fn()
-  };
+  const clientQueryFn = jest.fn();
   return {
     query: dbQueryFn,
-    getClient: jest.fn().mockResolvedValue(client)
+    getClient: jest.fn().mockResolvedValue({
+      query: clientQueryFn,
+      release: jest.fn()
+    })
   };
 });
 
@@ -80,6 +79,7 @@ describe('staged sales routes', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    db.query.mockResolvedValue({ rows: [] });
   });
 
   it('POST /api/sales/staging returns 400 for missing fields', async () => {
