@@ -90,4 +90,68 @@ describe('PartMergeService Unit Tests', () => {
             expect(resolved.brand_id).toBe(20);
         });
     });
+
+    describe('updateKeepPart', () => {
+        test('does not try to update the removed part.barcode column', async () => {
+            await service.updateKeepPart(
+                mockDb,
+                1,
+                { part_id: 1 },
+                [],
+                { fieldOverrides: { barcode: '123456789', detail: 'Updated detail' } }
+            );
+
+            expect(mockDb.query).toHaveBeenCalledTimes(1);
+            expect(mockDb.query.mock.calls[0][0]).toContain('detail = $2');
+            expect(mockDb.query.mock.calls[0][0]).not.toContain('barcode =');
+            expect(mockDb.query.mock.calls[0][1]).toEqual([1, 'Updated detail']);
+        });
+    });
+
+    describe('mergeChildRecords', () => {
+        test('deduplicates overlapping source part numbers and applications before reassignment', async () => {
+            mockDb.query
+                .mockResolvedValueOnce({ rowCount: 1 })
+                .mockResolvedValueOnce({ rows: [{ reassigned_count: 2 }] })
+                .mockResolvedValueOnce({ rowCount: 1 })
+                .mockResolvedValueOnce({ rows: [{ reassigned_count: 3 }] })
+                .mockResolvedValueOnce({ rowCount: 0 })
+                .mockResolvedValueOnce({ rowCount: 2 });
+
+            const counts = await service.mergeChildRecords(mockDb, 1, [2, 3, 4], {
+                mergePartNumbers: true,
+                mergeApplications: true
+            });
+
+            const queries = mockDb.query.mock.calls.map(([sql]) => sql);
+            expect(queries[0]).toContain('keep_pn.part_id = $1');
+            expect(queries[0]).toContain('pn.deleted_at IS NULL');
+            expect(queries[1]).toContain('ROW_NUMBER() OVER');
+            expect(queries[1]).toContain('PARTITION BY pn.part_number');
+            expect(queries[1]).toContain('r.rn > 1');
+            expect(queries[1]).toContain('r.rn = 1');
+            expect(queries[2]).toContain('keep_pa.part_id = $1');
+            expect(queries[3]).toContain('PARTITION BY pa.application_id');
+            expect(queries[3]).toContain('r.rn > 1');
+            expect(queries[3]).toContain('r.rn = 1');
+            expect(mockDb.query.mock.calls[1][1]).toEqual([1, [2, 3, 4]]);
+            expect(mockDb.query.mock.calls[3][1]).toEqual([1, [2, 3, 4]]);
+            expect(counts).toEqual({ part_numbers: 2, part_applications: 3, barcodes: 2 });
+        });
+
+        test('reassigns source barcodes through part_barcode', async () => {
+            mockDb.query
+                .mockResolvedValueOnce({ rowCount: 0 })
+                .mockResolvedValueOnce({ rowCount: 4 });
+
+            const counts = await service.mergeChildRecords(mockDb, 1, [2], {});
+
+            expect(mockDb.query).toHaveBeenCalledTimes(2);
+            expect(mockDb.query.mock.calls[0][0]).toContain('DELETE FROM part_barcode');
+            expect(mockDb.query.mock.calls[0][0]).toContain('keep_pb.barcode = pb.barcode');
+            expect(mockDb.query.mock.calls[1][0]).toContain('UPDATE part_barcode');
+            expect(mockDb.query.mock.calls[1][1]).toEqual([1, [2]]);
+            expect(counts).toEqual({ barcodes: 4 });
+        });
+    });
 });

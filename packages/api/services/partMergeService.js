@@ -367,7 +367,6 @@ class PartMergeService {
             const fieldMap = {
                 // UI name : DB column
                 detail: 'detail',
-                barcode: 'barcode',
                 brand_id: 'brand_id',
                 group_id: 'group_id',
                 is_active: 'is_active',
@@ -417,55 +416,121 @@ class PartMergeService {
         
         // Merge part_number
         if (rules.mergePartNumbers) {
-            const result = await client.query(`
-                UPDATE part_number 
-                SET part_id = $1 
-                WHERE part_id = ANY($2)
-                  AND NOT EXISTS (
-                      SELECT 1 FROM part_number pn2 
-                      WHERE pn2.part_id = $1 
-                        AND pn2.part_number = part_number.part_number
-                  )
-                RETURNING part_number_id
-            `, [keepPartId, mergePartIds]);
-            counts.part_numbers = result.rowCount;
-            // Remove duplicates after reassignment using unique(part_id, part_number)
+            // Retire source aliases already present on the keep part before moving
+            // anything. The partial unique index only allows one active alias per
+            // part, so cleanup after an UPDATE is too late.
             await client.query(`
                 UPDATE part_number pn
                 SET deleted_at = NOW()
-                FROM part_number pn2
-                WHERE pn.part_id = $1
-                  AND pn.part_id = pn2.part_id
-                  AND pn.part_number = pn2.part_number
-                  AND pn.part_number_id > pn2.part_number_id
+                WHERE pn.part_id = ANY($2)
                   AND pn.deleted_at IS NULL
-            `, [keepPartId]);
+                  AND EXISTS (
+                      SELECT 1
+                      FROM part_number keep_pn
+                      WHERE keep_pn.part_id = $1
+                        AND keep_pn.part_number = pn.part_number
+                        AND keep_pn.deleted_at IS NULL
+                  )
+            `, [keepPartId, mergePartIds]);
+
+            // Delete surplus source aliases before moving the single winner for
+            // each number. The dependency on retired makes this safe with the
+            // immediate partial unique index during this statement.
+            const result = await client.query(`
+                WITH ranked AS (
+                    SELECT pn.part_number_id,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY pn.part_number
+                               ORDER BY pn.part_number_id
+                           ) AS rn
+                    FROM part_number pn
+                    WHERE pn.part_id = ANY($2)
+                      AND pn.deleted_at IS NULL
+                ), retired AS (
+                    UPDATE part_number pn
+                    SET deleted_at = NOW()
+                    FROM ranked r
+                    WHERE pn.part_number_id = r.part_number_id
+                      AND r.rn > 1
+                    RETURNING pn.part_number_id
+                ), reassigned AS (
+                    UPDATE part_number pn
+                    SET part_id = $1
+                    FROM ranked r
+                    CROSS JOIN (SELECT COUNT(*) FROM retired) AS retired_count
+                    WHERE pn.part_number_id = r.part_number_id
+                      AND r.rn = 1
+                    RETURNING pn.part_number_id
+                )
+                SELECT COUNT(*)::integer AS reassigned_count FROM reassigned
+            `, [keepPartId, mergePartIds]);
+            counts.part_numbers = result.rows[0].reassigned_count;
         }
         
         // Merge part_application
         if (rules.mergeApplications) {
-            const result = await client.query(`
-                UPDATE part_application 
-                SET part_id = $1 
-                WHERE part_id = ANY($2)
-                  AND NOT EXISTS (
-                      SELECT 1 FROM part_application pa2 
-                      WHERE pa2.part_id = $1 
-                        AND pa2.application_id = part_application.application_id
-                  )
-                RETURNING part_app_id
-            `, [keepPartId, mergePartIds]);
-            counts.part_applications = result.rowCount;
-            // Remove duplicates after reassignment using unique(part_id, application_id)
+            // Remove links already represented on the keep part before changing
+            // their part_id, otherwise the immediate unique constraint fires.
             await client.query(`
                 DELETE FROM part_application pa
-                USING part_application pa2
-                WHERE pa.part_id = $1
-                  AND pa.part_id = pa2.part_id
-                  AND pa.application_id = pa2.application_id
-                  AND pa.part_app_id > pa2.part_app_id
-            `, [keepPartId]);
+                WHERE pa.part_id = ANY($2)
+                  AND EXISTS (
+                      SELECT 1
+                      FROM part_application keep_pa
+                      WHERE keep_pa.part_id = $1
+                        AND keep_pa.application_id = pa.application_id
+                  )
+            `, [keepPartId, mergePartIds]);
+
+            const result = await client.query(`
+                WITH ranked AS (
+                    SELECT pa.part_app_id,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY pa.application_id
+                               ORDER BY pa.part_app_id
+                           ) AS rn
+                    FROM part_application pa
+                    WHERE pa.part_id = ANY($2)
+                ), retired AS (
+                    DELETE FROM part_application pa
+                    USING ranked r
+                    WHERE pa.part_app_id = r.part_app_id
+                      AND r.rn > 1
+                    RETURNING pa.part_app_id
+                ), reassigned AS (
+                    UPDATE part_application pa
+                    SET part_id = $1
+                    FROM ranked r
+                    CROSS JOIN (SELECT COUNT(*) FROM retired) AS retired_count
+                    WHERE pa.part_app_id = r.part_app_id
+                      AND r.rn = 1
+                    RETURNING pa.part_app_id
+                )
+                SELECT COUNT(*)::integer AS reassigned_count FROM reassigned
+            `, [keepPartId, mergePartIds]);
+            counts.part_applications = result.rows[0].reassigned_count;
         }
+
+        // Barcodes live in part_barcode, not part. The barcode is globally unique,
+        // but retire an anomalous source duplicate first so a merge stays safe even
+        // if historical data was imported without that constraint.
+        await client.query(`
+            DELETE FROM part_barcode pb
+            WHERE pb.part_id = ANY($2)
+              AND EXISTS (
+                  SELECT 1
+                  FROM part_barcode keep_pb
+                  WHERE keep_pb.part_id = $1
+                    AND keep_pb.barcode = pb.barcode
+              )
+        `, [keepPartId, mergePartIds]);
+        const barcodeResult = await client.query(`
+            UPDATE part_barcode
+            SET part_id = $1
+            WHERE part_id = ANY($2)
+            RETURNING barcode_id
+        `, [keepPartId, mergePartIds]);
+        counts.barcodes = barcodeResult.rowCount;
         
         return counts;
     }
