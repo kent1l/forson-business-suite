@@ -101,7 +101,8 @@ router.post('/parts/merge/merge-preview', protect, hasPermission('parts:merge'),
         });
     } catch (error) {
         console.error('Error generating merge preview:', error);
-        res.status(500).json({
+        const isConflict = /already merged|invalid|cannot be in the list/i.test(error.message || '');
+        res.status(isConflict ? 409 : 500).json({
             success: false,
             message: 'Failed to generate merge preview',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -386,7 +387,15 @@ router.get('/parts/merge/suggestions', protect, hasPermission('parts:merge'), as
         const { confidence, limit = 100, offset = 0 } = req.query;
 
         // Build WHERE clause based on optional confidence filter
-        const conditions = [`status = 'pending'`];
+        const conditions = [
+            `status = 'pending'`,
+            `NOT EXISTS (
+                SELECT 1
+                FROM unnest(part_ids) AS suggestion_part_id
+                LEFT JOIN part p ON p.part_id = suggestion_part_id
+                WHERE p.part_id IS NULL OR p.merged_into_part_id IS NOT NULL OR p.is_active = FALSE
+            )`
+        ];
         const params = [];
         if (confidence && ['exact', 'high', 'medium', 'low'].includes(confidence)) {
             params.push(confidence);
@@ -421,6 +430,12 @@ router.get('/parts/merge/suggestions', protect, hasPermission('parts:merge'), as
             SELECT confidence, COUNT(*) as count
             FROM public.duplicate_suggestion_group
             WHERE status = 'pending'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM unnest(part_ids) AS suggestion_part_id
+                  LEFT JOIN part p ON p.part_id = suggestion_part_id
+                  WHERE p.part_id IS NULL OR p.merged_into_part_id IS NOT NULL OR p.is_active = FALSE
+              )
             GROUP BY confidence
         `);
         const counts = { exact: 0, high: 0, medium: 0, low: 0 };

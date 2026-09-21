@@ -420,16 +420,24 @@ class PartMergeService {
     }
 
     async getRevertableOperations(partId = null) {
-        const { rows } = await this.db.query(`
-            SELECT operation_id, keep_part_id, merged_part_ids, completed_at,
-                   undo_expires_at, status
-            FROM part_merge_operation
-            WHERE status = 'active'
-              AND undo_expires_at > NOW()
-              AND ($1::bigint IS NULL OR keep_part_id = $1 OR $1 = ANY(merged_part_ids))
-            ORDER BY completed_at DESC
-        `, [partId]);
-        return rows;
+        try {
+            const { rows } = await this.db.query(`
+                SELECT operation_id, keep_part_id, merged_part_ids, completed_at,
+                       undo_expires_at, status
+                FROM part_merge_operation
+                WHERE status = 'active'
+                  AND undo_expires_at > NOW()
+                  AND ($1::bigint IS NULL OR keep_part_id = $1 OR $1 = ANY(merged_part_ids))
+                ORDER BY completed_at DESC
+            `, [partId]);
+            return rows;
+        } catch (error) {
+            // A rolling deployment can serve the new page briefly before its
+            // migration is applied. The optional undo panel must stay empty,
+            // not break the entire cleanup workflow.
+            if (error.code === '42P01') return [];
+            throw error;
+        }
     }
 
     async revertMerge(operationId, actorEmployeeId, reason) {

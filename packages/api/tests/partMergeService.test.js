@@ -97,6 +97,11 @@ describe('PartMergeService Unit Tests', () => {
     });
 
     describe('merge transaction safety', () => {
+        test('treats a not-yet-applied revert migration as an empty optional list', async () => {
+            mockDb.query.mockRejectedValue({ code: '42P01' });
+            await expect(service.getRevertableOperations()).resolves.toEqual([]);
+        });
+
         test('takes advisory locks in ascending part order before locking rows', async () => {
             mockDb.query.mockResolvedValue({ rows: [] });
             await service.lockParts(mockDb, [9, 2, 5]);
