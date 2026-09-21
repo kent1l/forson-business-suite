@@ -22,6 +22,7 @@
 | Merge concurrency hardening | **Done** | §5 |
 | Meilisearch durable sync | **Done** | §5 |
 | Expiring merge-revert capability | **Done** | §6 |
+| Dedicated merge-history and recovery UI | **Done** | §6 |
 
 ## 1. For a New Session or Agent Picking This Up
 
@@ -103,6 +104,8 @@ Implemented design:
 4. Revert refuses later part edits or new inventory transactions; use a forward correction when it is unsafe.
 5. A daily worker marks operations expired and purges detailed snapshots 90 days after their undo window. `part_merge_log` remains intact.
 
+The cleanup page keeps the active deduplication wizard uncluttered with separate **Deduplicate parts** and **Merge history** tabs. `GET /api/parts/merge/history` returns the latest 100 non-pending operation metadata records (not before-images), including reverted and expired operations. The history tab loads this endpoint on entry, shows actor/time/status/revert reason, and only shows the revert action for active, unexpired operations to a user with `parts:merge_revert`. Successful reverts refresh the timeline in place.
+
 ## 7. Verification
 
 ```bash
@@ -130,3 +133,4 @@ graphify update .
 | 2026-09-21 | Codex + product owner | Documented committed child-uniqueness fix and the deferred relationship-policy, concurrency, and expiring-undo work. |
 | 2026-09-21 | Antigravity | Implemented full FK policy matrix (§4-A/B/C) + WAC fix (§5) in commit `85c336e`. All 28 FK references classified; 18 unit tests passing. Remaining: concurrency hardening, Meili durable sync, expiring undo (§6). |
 | 2026-09-21 | Codex + product owner | Implemented advisory-lock serialization, transactional Meili outbox events, pre-reassignment signed WAC, 24-hour permission-gated revert with 90-day snapshot retention, maintenance job, and cleanup-page action. |
+| 2026-09-21 | Codex + product owner | Replaced the crowded revertable-only panel with a tabbed merge-history UI, added the metadata-only history endpoint, and verified 23 focused service tests plus web build/lint. |

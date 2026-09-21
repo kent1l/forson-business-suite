@@ -445,6 +445,34 @@ class PartMergeService {
         }
     }
 
+    async getMergeOperations(limit = 100) {
+        try {
+            const { rows } = await this.db.query(`
+                SELECT operation.operation_id, operation.merged_part_ids,
+                       operation.completed_at, operation.undo_expires_at, operation.status,
+                       operation.reverted_at, operation.revert_reason,
+                       kept_part.internal_sku AS keep_part_sku,
+                       COALESCE(kept_part_view.display_name, kept_part.detail, kept_part.internal_sku) AS keep_part_display_name,
+                       CONCAT(actor.first_name, ' ', actor.last_name) AS actor_name,
+                       CONCAT(reverter.first_name, ' ', reverter.last_name) AS reverted_by_name
+                FROM part_merge_operation operation
+                JOIN part kept_part ON kept_part.part_id = operation.keep_part_id
+                LEFT JOIN parts_view kept_part_view ON kept_part_view.part_id = operation.keep_part_id
+                JOIN employee actor ON actor.employee_id = operation.actor_employee_id
+                LEFT JOIN employee reverter ON reverter.employee_id = operation.reverted_by_employee_id
+                WHERE operation.status <> 'pending'
+                ORDER BY operation.completed_at DESC NULLS LAST
+                LIMIT $1
+            `, [Math.min(Math.max(Number(limit) || 100, 1), 100)]);
+            return rows;
+        } catch (error) {
+            // Keep the cleanup page usable while an application deployment is
+            // briefly ahead of its database migration.
+            if (error.code === '42P01') return [];
+            throw error;
+        }
+    }
+
     async revertMerge(operationId, actorEmployeeId, reason) {
         if (!reason || !reason.trim()) throw new Error('A revert reason is required');
         const client = await this.db.getClient();

@@ -201,6 +201,22 @@ router.get('/parts/merge/revertable', protect, hasPermission('parts:merge_revert
     }
 });
 
+// Route: GET /api/parts/merge/history
+// Provides the cleanup page with an auditable merge timeline. Before-images
+// remain private to the service; this exposes only operation metadata.
+router.get('/parts/merge/history', protect, hasPermission('parts:merge'), async (req, res) => {
+    try {
+        const limit = req.query.limit ? Number(req.query.limit) : 100;
+        if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+            return res.status(400).json({ success: false, message: 'limit must be an integer between 1 and 100' });
+        }
+        res.json({ success: true, operations: await partMergeService.getMergeOperations(limit) });
+    } catch (error) {
+        console.error('Error loading part merge history:', error);
+        res.status(500).json({ success: false, message: 'Failed to load part merge history' });
+    }
+});
+
 // Route: POST /api/parts/merge/:operationId/revert
 router.post('/parts/merge/:operationId/revert', protect, hasPermission('parts:merge_revert'), async (req, res) => {
     try {

@@ -102,6 +102,16 @@ describe('PartMergeService Unit Tests', () => {
             await expect(service.getRevertableOperations()).resolves.toEqual([]);
         });
 
+        test('returns recent merge operations for the history view', async () => {
+            const operations = [{ operation_id: 'op-1', status: 'reverted' }];
+            mockDb.query.mockResolvedValue({ rows: operations });
+
+            await expect(service.getMergeOperations(25)).resolves.toEqual(operations);
+            expect(mockDb.query.mock.calls[0][0]).toContain('kept_part.internal_sku AS keep_part_sku');
+            expect(mockDb.query.mock.calls[0][0]).toContain('kept_part_view.display_name');
+            expect(mockDb.query.mock.calls[0][1]).toEqual([25]);
+        });
+
         test('takes advisory locks in ascending part order before locking rows', async () => {
             mockDb.query.mockResolvedValue({ rows: [] });
             await service.lockParts(mockDb, [9, 2, 5]);
