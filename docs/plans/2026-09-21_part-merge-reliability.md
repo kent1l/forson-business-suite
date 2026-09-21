@@ -10,9 +10,17 @@
 | `part_number` collision fix | **Done** in `f39d120` | §3 |
 | `part_application` collision fix | **Done** in `f39d120` | §3 |
 | Barcode transfer through `part_barcode` | **Done** in `f39d120` | §3 |
-| Full foreign-key policy audit | **Not started** | §4 |
-| Tag, staged-sale, inventory-stats, and alias handling | **Not started** | §4 |
+| Full foreign-key policy audit | **Done** in `85c336e` | §4 |
+| `part_tag` move | **Done** in `85c336e` | §4-A |
+| `part_inventory_stats` aggregate | **Done** in `85c336e` | §4-A |
+| `part_aliases` reconciliation | **Done** in `85c336e` | §4-A |
+| `staged_sale_line` open drafts | **Done** in `85c336e` | §4-A (P2) |
+| Dedupe queue / AI cache / AI queue rebuild | **Done** in `85c336e` | §4-B |
+| `part_exclusion` transfer | **Done** in `85c336e` | §4-B |
+| Historical tables — explicit Preserve policy | **Done** in `85c336e` | §4-C |
+| WAC non-positive quantity fix | **Done** in `85c336e` | §5 |
 | Merge concurrency hardening | **Not started** | §5 |
+| Meilisearch durable sync | **Not started** | §5 |
 | Expiring merge-revert capability | **Not started** | §6 |
 
 ## 1. For a New Session or Agent Picking This Up
@@ -115,3 +123,4 @@ graphify update .
 | Date | Session | Change |
 |---|---|---|
 | 2026-09-21 | Codex + product owner | Documented committed child-uniqueness fix and the deferred relationship-policy, concurrency, and expiring-undo work. |
+| 2026-09-21 | Antigravity | Implemented full FK policy matrix (§4-A/B/C) + WAC fix (§5) in commit `85c336e`. All 28 FK references classified; 18 unit tests passing. Remaining: concurrency hardening, Meili durable sync, expiring undo (§6). |
