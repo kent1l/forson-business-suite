@@ -20,6 +20,7 @@
 | Historical tables — explicit Preserve policy | **Done** in `85c336e` | §4-C |
 | WAC non-positive quantity fix | **Done** in `85c336e` | §5 |
 | Merge concurrency hardening | **Done** | §5 |
+| Open cycle-count merge guard | **Done** | §5 |
 | Meilisearch durable sync | **Done** | §5 |
 | Expiring merge-revert capability | **Done** | §6 |
 | Dedicated merge-history and recovery UI | **Done** | §6 |
@@ -89,6 +90,8 @@ Implemented hardening:
 - Historical transaction-document rows preserve original attribution; inventory transactions move only after WAC reads original-owner stock.
 - WAC includes signed quantities and uses the pre-reassignment stock snapshot, retaining survivor WAC for non-positive combined stock.
 - The merge writes a survivor upsert and source deletes to `meili_sync_outbox` inside its transaction. The existing worker provides retries, dead-letter status, and observability.
+- Completed cycle counts remain immutable historical evidence and their already-posted inventory adjustments are included in normal inventory consolidation. A merge is blocked if its survivor or any source part has a `PENDING`, `PENDING_MANAGER_REVIEW`, or `RECOUNT_REQUESTED` cycle-count line. Preview returns an error-severity `open_cycle_count` conflict and the confirmation UI disables execution. The execution-time check runs after the merge locks and returns HTTP 409, so a stale preview cannot bypass the invariant.
+- Migration `20260921_02_part_merge_cycle_count_guard.sql` adds `cycle_count_line` to the existing advisory-lock trigger protocol. This serializes count-state transitions with the merge guard; it prevents a count from being finalized between the guard check and the catalog/inventory consolidation.
 
 Still required: real-PostgreSQL integration tests covering the policy matrix, concurrent writers, WAC ordering, outbox retry, and revert safety.
 
@@ -112,6 +115,9 @@ The cleanup page keeps the active deduplication wizard uncluttered with separate
 # Focused merge coverage
 npm run -w packages/api test -- --runInBand packages/api/tests/partMergeService.test.js
 
+# Build the affected merge-confirmation UI
+npm run -w packages/web build
+
 # API lint
 npm run -w packages/api lint
 
@@ -134,3 +140,4 @@ graphify update .
 | 2026-09-21 | Antigravity | Implemented full FK policy matrix (§4-A/B/C) + WAC fix (§5) in commit `85c336e`. All 28 FK references classified; 18 unit tests passing. Remaining: concurrency hardening, Meili durable sync, expiring undo (§6). |
 | 2026-09-21 | Codex + product owner | Implemented advisory-lock serialization, transactional Meili outbox events, pre-reassignment signed WAC, 24-hour permission-gated revert with 90-day snapshot retention, maintenance job, and cleanup-page action. |
 | 2026-09-21 | Codex + product owner | Replaced the crowded revertable-only panel with a tabbed merge-history UI, added the metadata-only history endpoint, and verified 23 focused service tests plus web build/lint. |
+| 2026-09-21 | Codex + product owner | Added the open-cycle-count merge guard: previews show blocking count conflicts, execution rechecks under locks and returns 409, the confirmation UI disables merge, and cycle-count line writes now share the merge lock protocol. Verified 26 focused service tests, API/web lint (warnings only), and web build. |

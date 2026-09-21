@@ -101,7 +101,7 @@ router.post('/parts/merge/merge-preview', protect, hasPermission('parts:merge'),
         });
     } catch (error) {
         console.error('Error generating merge preview:', error);
-        const isConflict = /already merged|invalid|cannot be in the list/i.test(error.message || '');
+        const isConflict = error.statusCode === 409 || /already merged|invalid|cannot be in the list/i.test(error.message || '');
         res.status(isConflict ? 409 : 500).json({
             success: false,
             message: 'Failed to generate merge preview',
@@ -176,7 +176,7 @@ router.post('/parts/merge/merge', protect, hasPermission('parts:merge'), async (
         });
     } catch (error) {
         console.error('Error executing merge:', error);
-        const isConflict = /already merged|Cannot revert|no longer eligible/i.test(error.message || '');
+        const isConflict = error.statusCode === 409 || /already merged|Cannot revert|no longer eligible/i.test(error.message || '');
         res.status(isConflict ? 409 : 500).json({
             success: false,
             message: 'Failed to execute merge',

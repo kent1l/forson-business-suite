@@ -1,6 +1,15 @@
 const DuplicateFinder = require('./duplicateFinder');
 const { enqueuePartUpsert, enqueuePartDelete } = require('./meiliOutboxService');
 
+// These states still describe work against the original part identity. A merge
+// would consolidate its ledger balance into another part, leaving a later count
+// submission with no safe snapshot or adjustment target.
+const OPEN_CYCLE_COUNT_STATUSES = Object.freeze([
+    'PENDING',
+    'PENDING_MANAGER_REVIEW',
+    'RECOUNT_REQUESTED'
+]);
+
 const REVERTABLE_TABLES = Object.freeze([
     { name: 'part', key: "part_id::text", where: 'part_id = ANY($1::bigint[])' },
     { name: 'part_number', key: "part_number_id::text", where: 'part_id = ANY($1::bigint[])' },
@@ -56,11 +65,16 @@ class PartMergeService {
         
         // Check for conflicts
         const conflicts = await this.detectConflicts(keepPart, mergeParts, rules);
+        const openCycleCountLines = await this.getOpenCycleCountLines([keepPartId, ...mergePartIds]);
+        if (openCycleCountLines.length > 0) {
+            conflicts.push(this.buildOpenCycleCountConflict(openCycleCountLines));
+        }
         
         return {
             resolvedPartDraft,
             impact,
             conflicts,
+            isMergeBlocked: openCycleCountLines.length > 0,
             warnings: this.generateWarnings(impact, conflicts)
         };
     }
@@ -85,6 +99,7 @@ class PartMergeService {
             const allPartIds = [keepPartId, ...mergePartIds];
             await this.lockParts(client, allPartIds);
             await this.validateMergeRequest(keepPartId, mergePartIds, client);
+            await this.assertNoOpenCycleCounts(client, allPartIds);
             const operation = await this.createMergeOperation(client, actorEmployeeId, keepPartId, mergePartIds);
             await this.captureMergeSnapshots(client, operation.operation_id, allPartIds);
             
@@ -181,6 +196,46 @@ class PartMergeService {
         // Check for duplicates in mergePartIds
         if (new Set(mergePartIds).size !== mergePartIds.length) {
             throw new Error('Duplicate part IDs in merge list');
+        }
+    }
+
+    async getOpenCycleCountLines(partIds, executor = this.db) {
+        const { rows } = await executor.query(`
+            SELECT part_id, line_id, status
+            FROM cycle_count_line
+            WHERE part_id = ANY($1::bigint[])
+              AND status = ANY($2::text[])
+            ORDER BY part_id, line_id
+        `, [partIds, OPEN_CYCLE_COUNT_STATUSES]);
+        return rows;
+    }
+
+    buildOpenCycleCountConflict(lines) {
+        const byPart = new Map();
+        for (const line of lines) {
+            const entry = byPart.get(String(line.part_id)) || { partId: line.part_id, statuses: new Set(), count: 0 };
+            entry.count += 1;
+            entry.statuses.add(line.status);
+            byPart.set(String(line.part_id), entry);
+        }
+        const summary = [...byPart.values()]
+            .map(({ partId, count, statuses }) => `part ${partId}: ${count} open line${count === 1 ? '' : 's'} (${[...statuses].join(', ')})`)
+            .join('; ');
+
+        return {
+            type: 'open_cycle_count',
+            severity: 'error',
+            description: `Merge blocked: complete or cancel the open cycle count before merging (${summary}).`
+        };
+    }
+
+    async assertNoOpenCycleCounts(client, partIds) {
+        const lines = await this.getOpenCycleCountLines(partIds, client);
+        if (lines.length > 0) {
+            const error = new Error(this.buildOpenCycleCountConflict(lines).description);
+            error.code = 'OPEN_CYCLE_COUNT';
+            error.statusCode = 409;
+            throw error;
         }
     }
 

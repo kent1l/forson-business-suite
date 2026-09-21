@@ -71,6 +71,45 @@ describe('PartMergeService Unit Tests', () => {
         });
     });
 
+    describe('cycle-count merge guard', () => {
+        test('finds only cycle-count lines whose status is still open', async () => {
+            const lines = [{ part_id: 2, line_id: 7, status: 'PENDING_MANAGER_REVIEW' }];
+            mockDb.query.mockResolvedValueOnce({ rows: lines });
+
+            await expect(service.getOpenCycleCountLines([1, 2])).resolves.toEqual(lines);
+
+            const [sql, params] = mockDb.query.mock.calls[0];
+            expect(sql).toContain('FROM cycle_count_line');
+            expect(sql).toContain('status = ANY($2::text[])');
+            expect(params).toEqual([[1, 2], ['PENDING', 'PENDING_MANAGER_REVIEW', 'RECOUNT_REQUESTED']]);
+        });
+
+        test('blocks a merge with an actionable conflict while a count is open', async () => {
+            mockDb.query.mockResolvedValueOnce({
+                rows: [{ part_id: 2, line_id: 7, status: 'PENDING' }]
+            });
+
+            await expect(service.assertNoOpenCycleCounts(mockDb, [1, 2]))
+                .rejects.toMatchObject({
+                    code: 'OPEN_CYCLE_COUNT',
+                    statusCode: 409,
+                    message: expect.stringContaining('complete or cancel')
+                });
+        });
+
+        test('describes all affected parts in the preview conflict', () => {
+            const conflict = service.buildOpenCycleCountConflict([
+                { part_id: 1, line_id: 4, status: 'PENDING' },
+                { part_id: 2, line_id: 8, status: 'RECOUNT_REQUESTED' },
+                { part_id: 2, line_id: 9, status: 'PENDING_MANAGER_REVIEW' }
+            ]);
+
+            expect(conflict).toMatchObject({ type: 'open_cycle_count', severity: 'error' });
+            expect(conflict.description).toContain('part 1: 1 open line (PENDING)');
+            expect(conflict.description).toContain('part 2: 2 open lines (RECOUNT_REQUESTED, PENDING_MANAGER_REVIEW)');
+        });
+    });
+
     describe('calculateResolvedPart', () => {
         test('should merge fields using keepPart defaults and fieldOverrides', () => {
             const keepPart = {
@@ -138,6 +177,7 @@ describe('PartMergeService Unit Tests', () => {
             mockDb.getClient = jest.fn().mockResolvedValue(client);
             service.validateMergeRequest = jest.fn().mockResolvedValue(undefined);
             service.lockParts = jest.fn().mockResolvedValue(undefined);
+            service.assertNoOpenCycleCounts = jest.fn().mockResolvedValue(undefined);
             service.createMergeOperation = jest.fn().mockResolvedValue({ operation_id: 'op-1' });
             service.captureMergeSnapshots = jest.fn().mockResolvedValue(undefined);
             service.getPartDetails = jest.fn().mockResolvedValue({ part_id: 1 });
